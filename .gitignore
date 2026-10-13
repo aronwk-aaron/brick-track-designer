@@ -3,3 +3,4 @@ dist/
 *.stl
 *.3mf
 .DS_Store
+parity/out/
