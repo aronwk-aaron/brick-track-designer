@@ -5,15 +5,21 @@
   "type": "module",
   "scripts": {
     "test": "vitest run",
-    "parity": "tsx scripts/parity.ts"
+    "parity": "tsx scripts/parity.ts",
+    "dev": "vite",
+    "build": "vite build"
   },
   "dependencies": {
-    "manifold-3d": "3.5.4"
+    "manifold-3d": "3.5.4",
+    "three": "0.186.1"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",
+    "@types/three": "^0.186.0",
+    "playwright-core": "^1.64.0",
     "tsx": "^4.19.0",
     "typescript": "^5.6.0",
+    "vite": "^8.3.4",
     "vitest": "^3.2.0"
   }
 }
