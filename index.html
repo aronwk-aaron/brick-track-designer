@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Brick Track Designer</title>
+  <link rel="icon" href="data:,">
+  <style>
+    body { margin: 0; font: 14px system-ui, sans-serif; display: flex; height: 100vh; background: #f4f4f2; color: #222; }
+    aside { width: 240px; padding: 16px; box-sizing: border-box; border-right: 1px solid #ddd; }
+    aside label { display: block; margin: 10px 0 2px; }
+    aside input, aside select, aside button { width: 100%; box-sizing: border-box; }
+    #view { flex: 1; min-width: 0; }
+    #info { margin-top: 14px; color: #555; }
+  </style>
+</head>
+<body>
+  <aside>
+    <h3>Brick Track Designer</h3>
+    <form id="spec">
+      <label>Piece <select name="kind"><option value="straight">Straight</option><option value="curve" selected>Curve</option></select></label>
+      <label>Gauge (studs between rails) <input name="gauge" type="number" value="4" min="1" max="10"></label>
+      <label>Length (studs) <input name="length" type="number" value="16" min="1" max="64"></label>
+      <label>Radius (studs) <input name="radius" type="number" value="40" min="16" max="120"></label>
+      <label>Angle (°, + = left) <input name="angle" type="number" value="22.5" step="0.5" min="-90" max="90"></label>
+    </form>
+    <p><button id="download" disabled>Download STL</button></p>
+    <div id="info"></div>
+  </aside>
+  <main id="view"></main>
+  <script type="module" src="/src/app/main.ts"></script>
+</body>
+</html>

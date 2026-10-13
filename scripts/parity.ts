@@ -9,6 +9,7 @@ import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { kernel, type Wasm } from '../src/geom/kernel';
 import { railSection, sweepArc, sweepStraight } from '../src/geom/rail';
+import { stlBytes } from '../src/geom/stl';
 
 const OUT = 'parity/out';
 const REPO = process.env.OPENSCAD_REPO ?? join(homedir(), 'Documents/openscad');
@@ -47,21 +48,6 @@ const cases: Case[] = [
   },
 ];
 
-function writeStl(w: Wasm, m: Man, path: string) {
-  const mesh = m.getMesh();
-  const n = mesh.triVerts.length / 3;
-  const buf = Buffer.alloc(84 + n * 50);
-  buf.writeUInt32LE(n, 80);
-  for (let t = 0; t < n; t++) {
-    const o = 84 + t * 50 + 12;
-    for (let k = 0; k < 3; k++) {
-      const v = mesh.triVerts[t * 3 + k];
-      for (let c = 0; c < 3; c++) buf.writeFloatLE(mesh.vertProperties[v * mesh.numProp + c], o + k * 12 + c * 4);
-    }
-  }
-  writeFileSync(path, buf);
-}
-
 function readStl(w: Wasm, path: string): Man {
   const d = readFileSync(path);
   if (d.subarray(0, 5).toString() === 'solid' && d.includes('facet')) throw new Error(`${path}: ASCII STL, export binstl`);
@@ -92,7 +78,7 @@ for (const c of cases) {
   const t0 = performance.now();
   const ours = c.build(w);
   const ourMs = performance.now() - t0;
-  writeStl(w, ours, join(OUT, `${c.name}.btd.stl`));
+  writeFileSync(join(OUT, `${c.name}.btd.stl`), stlBytes(ours.getMesh()));
   const refPath = join(OUT, `${c.name}.scad.stl`);
   const scadMs = renderScad(c, refPath);
   const ref = readStl(w, refPath);
