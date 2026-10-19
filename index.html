@@ -47,6 +47,11 @@
     aside .head { display: flex; align-items: center; gap: 6px; padding: 8px 10px; border-bottom: 1px solid var(--line); }
     aside .head h2 { font-size: 13px; margin: 0; flex: 1; }
     #routes { overflow: auto; padding: 8px; flex: 1; }
+    #options { border-top: 1px solid var(--line); padding: 6px 10px 10px; max-height: 50%; overflow: auto; }
+    #options > summary { cursor: pointer; font-weight: 600; padding: 4px 0; }
+    #options h4 { margin: 10px 0 4px; font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em; }
+    #options .field select { width: 100%; }
+    #options .reset { margin-top: 8px; }
     #routes .empty { color: var(--muted); padding: 10px 4px; }
     details.route { border: 1px solid var(--line); border-radius: 8px; margin: 0 0 8px; background: var(--panel); }
     details.route[open] { background: var(--raise); }
@@ -149,6 +154,7 @@
   <aside>
     <div class="head"><h2 id="routes-title">Routes</h2><button id="add-route" type="button" title="Add a route by numbers">+ Route</button></div>
     <div id="routes"></div>
+    <details id="options"><summary>Piece options</summary><div id="options-body"></div></details>
   </aside>
   <main>
     <div id="plan">

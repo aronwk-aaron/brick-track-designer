@@ -16,7 +16,31 @@ export interface Design {
   grip?: 'edges' | 'all';
   /** Switches' points: one part (both blades on one pivot) or two (each blade on its own, as 4DBrix's). */
   pointsPieces?: 1 | 2;
+  /** The rest of the piece options (switch.scad's), each left out = its default. */
+  options?: Partial<PieceOptions>;
 }
+
+/** Piece options the editor's Options panel sets (switch.scad's Customizer settings). */
+export interface PieceOptions {
+  throwSide: 'auto' | 'left' | 'right'; // which side the lever goes (auto: the main route's side)
+  leverOffset: number;     // mm past the piece's edge
+  pointThrow: number;      // mm the blade tips move
+  pointClearance: number;  // mm round moving parts
+  springPreload: number;   // mm
+  springThickness: number; // mm
+  springLength: number;    // mm
+  flangeway: number;       // mm
+  flangewayDepth: number;  // mm
+  checkRailLen: number;    // mm
+  checkRailW: number;      // mm
+  checkRailFlare: number;  // mm
+  printBedX: number;       // mm
+  printBedY: number;       // mm
+}
+export const OPTION_DEFAULTS: PieceOptions = {
+  throwSide: 'auto', leverOffset: 8, pointThrow: 3, pointClearance: 0.3, springPreload: 1, springThickness: 0.9, springLength: 40,
+  flangeway: 3, flangewayDepth: 3, checkRailLen: 30, checkRailW: 1, checkRailFlare: 1.5, printBedX: 256, printBedY: 256,
+};
 
 export function toRoutes(d: Design): Route[] {
   return d.routes.map((r, i) => ({

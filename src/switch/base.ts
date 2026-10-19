@@ -30,6 +30,8 @@ export interface BaseParams extends SwitchParams {
    * or two (each blade on its own pivot with its own spring, as 4DBrix's).
    */
   pointsPieces: 1 | 2;
+  /** Which side every switch's lever goes: auto (the main route's side), or left / right. */
+  throwSide?: 'auto' | 'left' | 'right';
 }
 
 export const BASE_DEFAULTS: BaseParams = {

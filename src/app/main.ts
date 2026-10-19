@@ -2,7 +2,7 @@
 // 3D piece on the right, rebuilt in a worker as you edit.
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
-import { type Design, type DRoute, type DSeg, TEMPLATES, endOf } from './design';
+import { type Design, type DRoute, type DSeg, OPTION_DEFAULTS, type PieceOptions, TEMPLATES, endOf } from './design';
 import { TrackCanvas } from './canvas';
 import { describe } from './planner';
 import type { Piece } from './build';
@@ -209,7 +209,7 @@ const tpl = $<HTMLSelectElement>('template');
 for (const name of Object.keys(TEMPLATES)) tpl.append(new Option(name, name));
 tpl.addEventListener('change', () => {
   if (!tpl.value) return;
-  design = structuredClone(TEMPLATES[tpl.value]); tpl.value = ''; gauge.value = String(design.gaugeStuds); grip.value = 'edges'; framed = false; changed(true); canvas.fit();
+  design = structuredClone(TEMPLATES[tpl.value]); tpl.value = ''; gauge.value = String(design.gaugeStuds); grip.value = 'edges'; renderOptions(); framed = false; changed(true); canvas.fit();
 });
 $('add-route').addEventListener('click', () => {
   design.routes.push({ name: `R${design.routes.length + 1}`, x: 0, y: 0, heading: 0, segs: [{ kind: 'straight', studs: 16 }] });
@@ -242,7 +242,7 @@ $('load').addEventListener('click', () => loadInput.click());
 loadInput.addEventListener('change', async () => {
   const f = loadInput.files?.[0]; if (!f) return;
   try { const d = JSON.parse(await f.text()) as Design; if (!Array.isArray(d.routes)) throw new Error('not a design');
-    design = d; gauge.value = String(d.gaugeStuds); grip.value = d.grip ?? 'edges'; pointsSel.value = String(d.pointsPieces ?? 1); framed = false; changed(true); canvas.fit();
+    design = d; gauge.value = String(d.gaugeStuds); grip.value = d.grip ?? 'edges'; pointsSel.value = String(d.pointsPieces ?? 1); renderOptions(); framed = false; changed(true); canvas.fit();
   } catch (err) { errEl.textContent = `Couldn't load that file: ${err}`; }
   loadInput.value = '';
 });
@@ -282,7 +282,7 @@ let show3d = true;
 try { show3d = localStorage.getItem('btd-3d') !== '0'; } catch { /* fine */ }
 set3d(show3d);
 $('toggle-3d').addEventListener('click', () => { show3d = !show3d; set3d(show3d); });
-const restore = (json: string) => { design = JSON.parse(json); gauge.value = String(design.gaugeStuds); grip.value = design.grip ?? 'edges'; pointsSel.value = String(design.pointsPieces ?? 1); canvas.selected = undefined; save(); render(); canvas.draw(); updateHistoryButtons(); worker.postMessage({ id: ++seq, design: structuredClone(design) }); };
+const restore = (json: string) => { design = JSON.parse(json); gauge.value = String(design.gaugeStuds); grip.value = design.grip ?? 'edges'; pointsSel.value = String(design.pointsPieces ?? 1); canvas.selected = undefined; save(); render(); renderOptions(); canvas.draw(); updateHistoryButtons(); worker.postMessage({ id: ++seq, design: structuredClone(design) }); };
 const undo = () => { if (history.length > 1) { future.push(history.pop()!); restore(history[history.length - 1]); } };
 const redo = () => { if (future.length) { const j = future.pop()!; history.push(j); restore(j); } };
 function updateHistoryButtons() {
@@ -416,3 +416,34 @@ addEventListener('keydown', (e) => {
   updateSelbar();
 });
 updateSelbar();
+
+
+// ---------- piece options (switch.scad's Customizer settings) ----------
+const OPTION_FORM: [string, [keyof PieceOptions, string, number?][]][] = [
+  ['Throw', [['throwSide', 'Lever side'], ['leverOffset', 'Lever past the edge, mm', 1]]],
+  ['Points', [['pointThrow', 'Blade throw, mm', 0.25], ['pointClearance', 'Clearance, mm', 0.05],
+    ['springPreload', 'Spring preload, mm', 0.25], ['springThickness', 'Spring thickness, mm', 0.05], ['springLength', 'Spring length, mm', 1]]],
+  ['Guards (check rails)', [['checkRailLen', 'Check rail length, mm', 2], ['checkRailW', 'Check rail width, mm', 0.1], ['checkRailFlare', 'End flare, mm', 0.25],
+    ['flangeway', 'Flangeway width, mm', 0.1], ['flangewayDepth', 'Flangeway depth, mm', 0.5]]],
+  ['Print bed', [['printBedX', 'Bed width, mm', 1], ['printBedY', 'Bed depth, mm', 1]]],
+];
+function renderOptions() {
+  const body = $('options-body'); body.replaceChildren();
+  const o = { ...OPTION_DEFAULTS, ...design.options };
+  for (const [title, fields] of OPTION_FORM) {
+    const h = document.createElement('h4'); h.textContent = title; body.append(h);
+    for (const [key, label, step] of fields) {
+      if (key === 'throwSide') {
+        const sel = document.createElement('select');
+        for (const [v, t] of [['auto', 'Auto (main route side)'], ['left', 'Left'], ['right', 'Right']]) sel.append(new Option(t, v));
+        sel.value = o.throwSide;
+        sel.addEventListener('change', () => { design.options = { ...design.options, throwSide: sel.value as PieceOptions['throwSide'] }; changed(true); });
+        body.append(field(label, sel));
+      } else
+        body.append(field(label, num(o[key] as number, (n) => { design.options = { ...design.options, [key]: n }; }, step)));
+    }
+  }
+  body.append(btn('Reset to defaults', () => { design.options = {}; renderOptions(); }, 'Every option back to its default'));
+  body.lastElementChild!.classList.add('reset');
+}
+renderOptions();
