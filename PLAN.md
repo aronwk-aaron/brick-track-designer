@@ -152,8 +152,24 @@ without Aaron's say-so.
 
 - Import a layout or module from the Brick Layout Designer (`.bld-layout`,
   `.bbm`) and generate its custom pieces.
-- Export pieces to the layout designer's parts library (connection points
-  and a top-view sprite).
+- Export custom parts and sets for the Brick Layout Designer (Aaron,
+  2026-10-19). Each printable piece becomes a library part, as BlueBrick
+  part XML:
+  - a top-view sprite (PNG at the library's pixels per stud);
+  - a connection point with type "rail" at every route end: position in
+    studs from the sprite centre, and outward angle, taken from the
+    route's end poses;
+  - the hull or pick shape;
+  - an author/designer line.
+
+  A design split into several pieces becomes a set (BlueBrick's
+  `.set.xml` group) of those parts, at their positions, with the
+  connection preferences that let the layout designer chain them. It
+  exports as a zip the desktop app's library import and the web app's
+  custom parts can take. It keeps the source design (JSON) alongside, so a
+  part can be reopened and regenerated. Check against the layout
+  designer's own part loader and connection snapping (its parts-catalog
+  tests).
 - Monorail pieces.
 - Elevation: ramps, bridges, supports.
 
