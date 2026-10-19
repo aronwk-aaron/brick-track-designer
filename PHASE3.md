@@ -56,6 +56,22 @@ anywhere in a design.
     tenths of a degree (where a sweep crosses from an arc onto a straight);
     those are built by bending an extrusion now.
 
+- Step 3 (moving parts): done. `switchGeometry()` builds each set's
+  points part, throw and lever (as assembled, and the lever lying flat to
+  print). All 47 part renders match switch.scad exactly (left, right, wye,
+  three-way, R24 to R104; both sets of a three-way). The clash checks
+  (scripts/clash.ts, test/switch-clash.test.ts) find only the two designed
+  contacts, as in OpenSCAD: the slider's tongue between the spring tines
+  (about 1.9 mm3, the preload) and the lever's detent bump over its ear at
+  mid-swing (about 0.1 mm3); the catches hold.
+  Better than switch.scad (found by the clash checks):
+  - On a three-way the first set's rails ran on through the second set's
+    points cavity and blocked its heel bar and tines (107 mm3 at R40). The
+    rails, and every points bed, are now cut by every set's pockets.
+  - A three-way at R104 puts its second points set into the first one's
+    (the parts overlap by 209 mm3); switch.scad builds it anyway. The plan
+    now warns that the sets overlap.
+
 ## Parity
 
 Against the OpenSCAD switch regression set with generate_ballast=false:

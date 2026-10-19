@@ -16,7 +16,7 @@ import { Track } from '../src/geom/track';
 import { STRAIGHT_DEFAULTS, straightTrackOnly } from '../src/geom/straight';
 import { CURVE_DEFAULTS, curveTrackOnly } from '../src/geom/curve';
 import type { Route, Segment } from '../src/route/route';
-import { BASE_DEFAULTS, switchBase, switchPlan, type SetSpec } from '../src/switch/base';
+import { BASE_DEFAULTS, switchBase, switchGeometry, switchPlan, type SetSpec } from '../src/switch/base';
 
 const OUT = 'parity/out';
 const REPO = process.env.OPENSCAD_REPO ?? join(homedir(), 'Documents/openscad');
@@ -126,6 +126,21 @@ const cases: Case[] = [
     const [type, r, shape] = cfg.name.split('-');
     const routes = cfg.routes.map((segs, k): Route => ({ id: String(k), start: [0, 0, 0],
       segments: segs.map((sg): Segment => (sg[0] === 'S' ? { kind: 'straight', length: sg[1] } : { kind: 'arc', radius: sg[1], angle: sg[2] })) }));
+    // the moving parts (each points set's, on a three-way)
+    for (const part of ['points', 'throw', 'lever'] as const)
+      for (let k = 0; k < cfg.sets.length; k++) {
+        if (part === 'lever' && !cfg.name.endsWith('R40-arc')) continue;
+        cases.push({
+          name: `switch-${part}${k ? k : ''}-${cfg.name}`,
+          scad: 'include <switch.scad>\n',
+          defines: { part: `"${part}"`, points_set: k, generate_ballast: 'false', switch_type: `"${type}"`,
+            diverge_radius: Number(r.slice(1)), diverge_shape: `"${shape}"` },
+          build: (w: Wasm) => {
+            const gm = switchGeometry(new Scad(w), switchPlan(routes, cfg.sets as SetSpec[], BASE_DEFAULTS, type === 'right' ? -1 : 1));
+            return part === 'points' ? gm.pointsPart(k) : part === 'throw' ? gm.throwPart(k) : gm.leverPrint();
+          },
+        });
+      }
     for (const grip of ['all', 'edges'] as const) {
       // (the anti-stud tube underside on a few)
       if (grip === 'edges' && !['left-R40-s_curve', 'right-R24-arc', 'wye-R40-arc', 'threeway-R40-arc'].includes(cfg.name)) continue;
