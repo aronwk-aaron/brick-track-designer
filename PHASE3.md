@@ -72,6 +72,20 @@ anywhere in a design.
     (the parts overlap by 209 mm3); switch.scad builds it anyway. The plan
     now warns that the sets overlap.
 
+- Step 4 (into the editor): done. Wherever routes split (they start
+  together, or one starts on another), the design gets a switch piece
+  (src/switch/pieces.ts): the routes from the split, in its frame, right to
+  left, as long as the frog and its check rails need and until their ends
+  are clear of each other, on a 4-stud grid (or to their ends, when only
+  stubs under 8 studs would be left). A second split on the same route
+  within 160mm makes it a three-way (tandem). The throw goes on the main
+  route's side. Whatever is left of the routes is the fixed trackwork piece.
+  The 3D view shows the pieces assembled (moving parts in colour); the STL
+  button downloads a zip of every part when there is more than one.
+  Templates: left and right (LEGO), wye, three-way. Not handled yet (a
+  warning, and plain track instead): two branches on the same side of one
+  switch, and routes that end before they part.
+
 ## Parity
 
 Against the OpenSCAD switch regression set with generate_ballast=false:
