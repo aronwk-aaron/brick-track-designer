@@ -32,7 +32,7 @@ self.onmessage = async (e: MessageEvent<{ id: number; design: Design }>) => {
       crossings: sol.crossings.map((c) => c.point),
       splits: sol.splits.map((sp) => railPoint(routes[sp.routes[0]], sp.spans[0][0], 0)),
     };
-    const m = crossingPiece(new Scad(w), routes, { ...CROSSING_DEFAULTS, gaugeStuds: design.gaugeStuds }, sol);
+    const m = crossingPiece(new Scad(w), routes, { ...CROSSING_DEFAULTS, gaugeStuds: design.gaugeStuds, grip: design.grip ?? 'edges' }, sol);
     const mesh = m.getMesh();
     const positions = new Float32Array(mesh.triVerts.length * 3);
     mesh.triVerts.forEach((v, i) => positions.set(mesh.vertProperties.subarray(v * mesh.numProp, v * mesh.numProp + 3), i * 3));
