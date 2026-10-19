@@ -220,12 +220,17 @@ export class TrackCanvas {
     const head = work.segs.slice(0, dr.anchor);
     const from = follow(work, head);
     let good = this.planFrom(from, t);
-    // Dragged back past the other end of a track that's reshaped from its
-    // start: turn the track round (its start's heading flips) instead.
-    if (!good && head.length === 0) {
-      const flipped = { ...from, heading: ((from.heading + 360) % 360) - 180 };
-      good = this.planFrom(flipped, t);
-      if (good) { work.heading = flipped.heading; from.heading = flipped.heading; }
+    // A track reshaped from its start, when that start isn't joined to
+    // anything, can swing round its start: first turned the other way (when
+    // the end is dragged back past it), else aimed straight at the point.
+    if (!good && head.length === 0 && this.endFree(dr.route, dr.end === 'end' ? 'start' : 'end')) {
+      const turned = (h: number) => {
+        const g2 = this.planFrom({ ...from, heading: h }, t);
+        if (g2) { work.heading = h; from.heading = h; }
+        return g2;
+      };
+      good = turned(((from.heading + 360) % 360) - 180)
+        ?? turned(Math.round(((Math.atan2(-(t[0] - from.x), t[1] - from.y) * 180) / Math.PI) * 1e6) / 1e6);
     }
     this.dragBad = !good;
     // (if it can't, show the curve it would need, its bad part in red, and
@@ -246,6 +251,18 @@ export class TrackCanvas {
     if (good) this.drag!.lastGood = structuredClone(cur);
   }
   private dragBad = false;
+  /** Is this end of route i free (not joined to another track's end, nor on another track)? */
+  private endFree(i: number, which: 'start' | 'end'): boolean {
+    const routes = this.host.design().routes, r = routes[i];
+    const p = which === 'start' ? { x: r.x, y: r.y } : follow(r, r.segs);
+    return routes.every((o, j) => {
+      if (j === i) return true;
+      const e = follow(o, o.segs);
+      if (Math.hypot(o.x - p.x, o.y - p.y) < 0.05 || Math.hypot(e.x - p.x, e.y - p.y) < 0.05) return false;
+      // on it (another track branching from here, or this one branching off it)
+      return trace(o, o.segs, 0.25).every(([x, y]) => Math.hypot(x - p.x, y - p.y) > 0.2);
+    });
+  }
   /** While a drag can't reach: the dragged route's segments that are bad ([from, to) by index; -1 = open). */
   private dragBadFrom = -1;
   private dragBadTo = -1;
