@@ -26,6 +26,8 @@
     .row { display: flex; gap: 4px; flex-wrap: wrap; margin-top: 6px; }
     button, select { font: inherit; padding: 4px 8px; }
     main { display: grid; grid-template-rows: 3fr 2fr; min-height: 0; }
+    main.no3d { grid-template-rows: 1fr 0; } main.no3d #view3d canvas { display: none; }
+    main.no3d #status { position: fixed; }
     .group { display: inline-flex; } .group button { border-radius: 0; } button.on { background: var(--accent); color: #fff; border-color: var(--accent); }
     fieldset.selected { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
     canvas#track { display: block; cursor: crosshair; }
@@ -47,6 +49,7 @@
     <label>Curve <select id="radius" title="Radius of the curves the planner lays"></select></label>
     <button id="undo" type="button" title="Undo (Ctrl+Z)">Undo</button><button id="redo" type="button" title="Redo (Ctrl+Shift+Z)">Redo</button>
     <button id="fit" type="button" title="Fit the track in view">Fit</button>
+    <button id="toggle-3d" class="on" type="button" title="Show or hide the 3D preview (P)">3D preview</button>
     <select id="template"><option value="">Start from…</option></select>
     <button id="add-route" type="button">+ Route</button>
     <button id="clear" type="button">Clear</button>

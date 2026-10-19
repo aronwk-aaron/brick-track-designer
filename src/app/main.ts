@@ -190,6 +190,17 @@ const setMode = (m: 'draw' | 'select') => {
 $('mode-draw').addEventListener('click', () => setMode('draw'));
 $('mode-select').addEventListener('click', () => setMode('select'));
 $('fit').addEventListener('click', () => canvas.fit());
+// Show or hide the 3D preview (remembered in the browser).
+const mainEl = document.querySelector('main')!;
+const set3d = (on: boolean) => {
+  mainEl.classList.toggle('no3d', !on);
+  $('toggle-3d').classList.toggle('on', on);
+  try { localStorage.setItem('btd-3d', on ? '1' : '0'); } catch { /* fine */ }
+};
+let show3d = true;
+try { show3d = localStorage.getItem('btd-3d') !== '0'; } catch { /* fine */ }
+set3d(show3d);
+$('toggle-3d').addEventListener('click', () => { show3d = !show3d; set3d(show3d); });
 const restore = (json: string) => { design = JSON.parse(json); gauge.value = String(design.gaugeStuds); canvas.selected = undefined; save(); render(); canvas.draw(); worker.postMessage({ id: ++seq, design: structuredClone(design) }); };
 const undo = () => { if (history.length > 1) { future.push(history.pop()!); restore(history[history.length - 1]); } };
 const redo = () => { if (future.length) { const j = future.pop()!; history.push(j); restore(j); } };
@@ -201,6 +212,7 @@ addEventListener('keydown', (e) => {
   if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'y') { e.preventDefault(); redo(); }
   if (e.key === 'd' || e.key === 'D') setMode('draw');
   if (e.key === 's' || e.key === 'S') setMode('select');
+  if (e.key === 'p' || e.key === 'P') { show3d = !show3d; set3d(show3d); }
 });
 $('clear').addEventListener('click', () => { design.routes = []; canvas.selected = undefined; changed(true); });
 
