@@ -38,3 +38,19 @@ describe('free curves', () => {
     expect(segs[1].kind).toBe('straight');
   });
 });
+
+import { planFreeTurning, planAnyway } from '../src/app/planner';
+describe('free planning turns back for points behind', () => {
+  it('reaches a point behind and to the side with curves of at least R24', () => {
+    for (const t of [[-30, -20], [40, -60], [-60, 0]] as [number, number][]) {
+      const segs = planFreeTurning({ x: 0, y: 0, heading: 0 }, t)!;
+      expect(segs, String(t)).toBeDefined();
+      const e = follow({ x: 0, y: 0, heading: 0 }, segs);
+      expect(e.x).toBeCloseTo(t[0], 3); expect(e.y).toBeCloseTo(t[1], 3);
+      for (const sg of segs) if (sg.kind === 'curve') expect(sg.radius).toBeGreaterThanOrEqual(24 - 1e-6);
+    }
+  });
+  it('the red fallback never loops past 180', () => {
+    for (const sg of planAnyway({ x: 0, y: 0, heading: 0 }, [-10, -40])) if (sg.kind === 'curve') expect(Math.abs(sg.angle)).toBeLessThanOrEqual(180);
+  });
+});

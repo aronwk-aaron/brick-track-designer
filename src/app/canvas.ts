@@ -7,7 +7,7 @@
 // Drag with the right or middle button (or Space + drag) to pan; the wheel
 // zooms.
 import type { Design, DRoute, DSeg } from './design';
-import { describe, follow, plan, planAnyway, planAuto, planFree, planToPose, reversed, trace, type Pose } from './planner';
+import { describe, follow, plan, planAnyway, planAuto, planFreeTurning, planToPose, reversed, trace, type Pose } from './planner';
 
 export interface Overlay { grooves: [number, number][][]; checkRails: [number, number][][]; crossings: [number, number][]; splits: [number, number][] }
 
@@ -342,7 +342,7 @@ export class TrackCanvas {
   /** The track from pose p to point t, by the chosen planner. */
   private planFrom(p: Pose, t: [number, number]): DSeg[] | undefined {
     const r = this.host.radius();
-    return r > 0 ? plan(p, t, r) : r === 0 ? planAuto(p, t) : planFree(p, t);
+    return r > 0 ? plan(p, t, r) : r === 0 ? planAuto(p, t) : planFreeTurning(p, t);
   }
   /** The track planned from the active end to the (snapped) mouse point. */
   private planTo(w: [number, number]): DSeg[] | undefined {
