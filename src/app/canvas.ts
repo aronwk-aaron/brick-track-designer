@@ -36,6 +36,17 @@ export class TrackCanvas {
   /** While drawing: the route being extended (or a new one not yet added), and where it ends. */
   private active: { route: number | undefined; start?: Pose; end?: Pose; newRoute?: DRoute } | undefined;
   selected: number | undefined;
+  /** More selected routes (Shift+click in Select mode), besides selected. */
+  extra = new Set<number>();
+  /** Every selected route, the main one first. */
+  selection(): number[] {
+    return this.selected === undefined ? [...this.extra] : [this.selected, ...[...this.extra].filter((i) => i !== this.selected)];
+  }
+  setSelection(list: number[]) {
+    this.selected = list[0]; this.extra = new Set(list.slice(1)); this.host.select(this.selected); this.draw();
+  }
+  /** The snapped grid point under the mouse (studs), if over the plan. */
+  mouseStuds(): [number, number] | undefined { return this.mouse ? this.snap(this.mouse) : undefined; }
   overlay: Overlay | undefined;
   /** Show where the underside grips (only when not gripping everywhere). */
   showGrips = true;
@@ -139,13 +150,19 @@ export class TrackCanvas {
         work.segs.forEach((sg, k) => { if (sg.kind === 'curve') c = k; });
         const anchor = c < 0 ? Math.max(0, work.segs.length - 1) : c > 0 && work.segs[c - 1].kind === 'straight' ? c - 1 : c;
         this.drag = { route: hit.route, end: hit.end, sx: e.clientX, sy: e.clientY, moved: false, orig: structuredClone(r), anchor, lastGood: structuredClone(r) };
-        this.selected = hit.route; this.host.select(this.selected);
+        this.extra.clear(); this.selected = hit.route; this.host.select(this.selected);
         return;
       }
     }
     if (this.mode === 'select') {
       const hit = this.nearTrack(w, 1.5);
-      this.selected = hit?.route;
+      if (e.shiftKey && hit) {
+        // add to the selection, or take it out
+        if (this.selected === undefined) this.selected = hit.route;
+        else if (hit.route === this.selected) { this.selected = [...this.extra][0]; this.extra.delete(this.selected!); }
+        else if (this.extra.has(hit.route)) this.extra.delete(hit.route);
+        else this.extra.add(hit.route);
+      } else { this.selected = hit?.route; this.extra.clear(); }
       this.host.select(this.selected);
       this.draw();
       return;
@@ -181,11 +198,11 @@ export class TrackCanvas {
     }
     // laid onto another track's end: join them into one track, and stop
     if (snapTo && this.active.route !== undefined) {
-      this.selected = this.join(this.active.route, snapTo.route, snapTo.end);
+      this.extra.clear(); this.selected = this.join(this.active.route, snapTo.route, snapTo.end);
       this.active = undefined;
       this.host.select(this.selected); this.host.changed(true); return this.draw();
     }
-    this.selected = this.active.route;
+    this.extra.clear(); this.selected = this.active.route;
     this.host.select(this.selected);
     this.host.changed(true);
     this.draw();
@@ -217,7 +234,7 @@ export class TrackCanvas {
         // joined: make the two one track (the dragged end meeting the other's end)
         const routes = this.host.design().routes;
         if (dr.end === 'start') routes[dr.route] = { ...routes[dr.route], ...reversed(routes[dr.route]) };
-        this.selected = this.join(dr.route, this.dragSnap.route, this.dragSnap.end);
+        this.extra.clear(); this.selected = this.join(dr.route, this.dragSnap.route, this.dragSnap.end);
         this.host.select(this.selected);
       }
       this.dragBad = false; this.dragSnap = undefined;
@@ -338,8 +355,9 @@ export class TrackCanvas {
     }
     if (e.key === 'Escape') this.stopDrawing();
     if ((e.key === 'Delete' || e.key === 'Backspace') && this.selected !== undefined && !this.active) {
-      this.host.design().routes.splice(this.selected, 1);
-      this.selected = undefined; this.host.select(undefined); this.host.changed(true); this.draw();
+      const routes = this.host.design().routes;
+      for (const i of this.selection().sort((a, b) => b - a)) routes.splice(i, 1);
+      this.selected = undefined; this.extra.clear(); this.host.select(undefined); this.host.changed(true); this.draw();
     }
   }
   stopDrawing() { this.active = undefined; this.draw(); }
@@ -447,7 +465,7 @@ export class TrackCanvas {
       });
     };
     d.routes.forEach((r, i) => {
-      const sel = i === this.selected;
+      const sel = i === this.selected || this.extra.has(i);
       const dragging = this.drag?.moved && this.drag.route === i && this.dragBad;
       const isBad = (k: number) => !!dragging && (this.dragBadFrom >= 0 ? k >= this.dragBadFrom : k < this.dragBadTo);
       // sleeper band, rails, centre line
