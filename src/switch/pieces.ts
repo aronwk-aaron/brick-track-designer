@@ -66,18 +66,19 @@ export function planPieces(routes: Route[], splits: Split[], p: BaseParams = BAS
   const switches: SwitchPiece[] = [];
   for (const [parent, list] of byParent) {
     list.sort((a, b) => a.sa - b.sa);
+    let s0 = 0; // (not cut at the joins: the switch starts where its parent route does)
     while (list.length) {
       const first = list.shift()!;
       if (used.has(first.child)) continue;
       const group = [first];
       while (list.length && list[0].sa - first.sa < 160 && group.length < 2) group.push(list.shift()!);
-      const P = routePose(routes[parent], first.sa);
+      const P = routePose(routes[parent], s0);
       // The routes in the switch's frame: the parent on from the split, and
       // each child (with the parent's stretch up to it, for a later split).
       const frame = (rt: Route): Route => ({ ...rt, start: toFrame(P, rt.start) });
-      const main = frame(subRoute(routes[parent], first.sa, routeLength(routes[parent]), 'main'));
+      const main = frame(subRoute(routes[parent], s0, routeLength(routes[parent]), 'main'));
       const kids = group.map((g) => {
-        const lead = g.sa - first.sa;
+        const lead = g.sa - s0;
         const prefix = lead > 1e-6 ? subRoute(main, 0, lead).segments : [];
         return { ...g, lead, route: { id: `c${g.child}`, start: [0, 0, 0] as Pose, segments: [...prefix, ...routes[g.child].segments] } };
       });
@@ -92,8 +93,8 @@ export function planPieces(routes: Route[], splits: Split[], p: BaseParams = BAS
       // Two branches leaving together, one each side: a true three-way (one
       // slider, three positions); otherwise a set per branch (a tandem
       // three-way when the second leaves further on).
-      const together = kids.length === 2 && kids.every((k) => k.lead < 1) && pos(0) === 1;
-      if (together) sets.push([0, 2, 12, undefined, 1]);
+      const together = kids.length === 2 && Math.abs(kids[0].lead - kids[1].lead) < 1 && pos(0) === 1;
+      if (together) sets.push([0, 2, kids[0].lead + 12, undefined, 1]);
       else kids.forEach((kd, n) => {
         const ci = pos(n + 1), mi = pos(0);
         if (Math.abs(ci - mi) !== 1) { ok = false; return; }
@@ -121,19 +122,20 @@ export function planPieces(routes: Route[], splits: Split[], p: BaseParams = BAS
         built = { L, rts, plan };
       }
       if (!built) { warnings.push("a switch's routes don't part far enough before they end: not built as a switch"); continue; }
-      // Short stubs left over (under 8 studs): take the routes to their ends
-      // instead (as LEGO's switch, whose curve ends past the straight).
-      const whole = sorted.every((rt) => routeLength(rt) - sAtY(rt, built!.L) < 64);
+      // The routes to their ends: the switch and the track on from it are one
+      // piece (it's split for the print bed only where it has to be).
+      const whole = true;
       if (whole) built = { L: Math.max(...sorted.map((rt) => routePose(rt, routeLength(rt))[1])), rts: sorted, plan: switchPlan(sorted, sets, p) };
       warnings.push(...built.plan.warnings);
       for (const k of kids) used.add(k.child);
       const cutAt = (rt: Route) => (whole ? routeLength(rt) : sAtY(rt, built!.L));
-      const covers: [number, number, number][] = [[parent, first.sa, first.sa + cutAt(main)]];
+      const covers: [number, number, number][] = [[parent, s0, s0 + cutAt(main)]];
       kids.forEach((k) => {
         const s = cutAt(k.route) - k.lead;
         covers.push([k.child, 0, Math.min(s, routeLength(routes[k.child]))]);
       });
       switches.push({ pose: P, routes: built.rts, sets, defaultThrowDir: 1, length: built.L, plan: built.plan, covers });
+      s0 = s0 + cutAt(main); // (a later switch on the same route starts after this one)
     }
   }
   // What's left of each route: its stretches outside the switches.

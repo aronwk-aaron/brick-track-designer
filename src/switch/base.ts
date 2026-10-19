@@ -561,6 +561,23 @@ export function switchGeometry(s: Scad, plan: SwitchPlan) {
     });
     return s.union(out);
   };
+  // Ties on the lead-in before the points, when the points start further on
+  // than the start connector (a branch drawn off along a track): every
+  // route runs together there, so one row, square to it, on the grid.
+  const leadTiePoses = (): Pose[] => {
+    const toeS = Math.min(...sets.map((v) => v.sToe)), out: Pose[] = [];
+    for (let st = 8 + 2 * STUD + sleeperW / 2; st + sleeperW / 2 + 2 <= toeS - 2 - 8; st += sleeperW + 2 * STUD) out.push(routePose(routes[0], st));
+    return out;
+  };
+  const leadTies = () => {
+    const out: Man[] = [];
+    for (const ps of leadTiePoses()) {
+      out.push(s.difference(atPose(cube([sleeperLen, sleeperW, PLATE_H], [-sleeperLen / 2, -sleeperW / 2, 0]), ps),
+        g.ballast ? [] : offs.flatMap((o) => [-4, 4].map((dy) => atPose(T(studRecess(), [o, dy, -1]), ps)))));
+      for (const o of offs) for (const dy of [-4, 4]) out.push(atPose(T(t.stud(tc.postD, tc.postH), [o, dy, PLATE_H - 0.2]), ps));
+    }
+    return s.union(out);
+  };
   const connectors = () => s.union([
     T(t.fullEndpoint(!g.ballast, !g.ballast), [0, 4, 0]),
     ...plan.endPoses.map((e) => atPose(T(R(t.fullEndpoint(!g.ballast, !g.ballast), [0, 0, 180]), [0, -4, 0]), e)),
@@ -628,8 +645,13 @@ export function switchGeometry(s: Scad, plan: SwitchPlan) {
       && !plan.endPoses.some((e) => { const dx = x - e[0], dy = y - e[1]; return Math.hypot(dx, dy) < sleeperLen + 16 && dx * sind(e[2]) - dy * cosd(e[2]) < 8 + m; });
     const ty = plan.tieYs(), half = sleeperW / 2 - (TRACK_DEFAULTS.studD + 1) / 2;
     // the solid base round the points, before the first tie, or on a tie
-    const solid = (_x: number, y: number) => ty.length === 0 || y <= ty[0] - sleeperW / 2 - (TRACK_DEFAULTS.studD + 1) / 2
-      || ty.some((tt) => Math.abs(y - tt) <= half);
+    // (the points' base runs from the points bed's start to the first tie;
+    // before it, on a lead-in, only the lead ties are solid)
+    const bedY0 = Math.min(...sets.map((v) => (v.toeY > 20 ? v.toeY - 2 : Math.min(v.toeY - 2, 7.9))));
+    const leads = leadTiePoses();
+    const solid = (x: number, y: number) => (y < bedY0
+      ? leads.some((e) => { const l = localOf(e, [x, y]); return Math.abs(l[1]) <= half && Math.abs(l[0]) <= sleeperLen / 2; })
+      : ty.length === 0 || y <= ty[0] - sleeperW / 2 - (TRACK_DEFAULTS.studD + 1) / 2 || ty.some((tt) => Math.abs(y - tt) <= half));
     return studSpots(s, t, spots, bed, [1, 0], [0, 1], p.studH + 0.21, 0, solid, p.studGrip);
   };
 
@@ -725,7 +747,7 @@ export function switchGeometry(s: Scad, plan: SwitchPlan) {
       // (each set's bed less every set's pockets: on a three-way the sets can
       // overlap, and switch.scad cuts each bed by its own pockets only)
       pointsBeds: s.difference(s.union(sets.map(pointsBed)), sets.map(pointsPockets)),
-      turnoutTies: turnoutTies(), routeTies: routeTies(), connectors: connectors(),
+      turnoutTies: turnoutTies(), routeTies: routeTies(), leadTies: leadTies(), connectors: connectors(),
   };
   if (parts) Object.assign(parts, named, { throwArms: s.union(sets.map(throwArm)), throwChannels: s.union(sets.map(throwChannel)) });
   const track = s.union(Object.values(named));
@@ -733,10 +755,19 @@ export function switchGeometry(s: Scad, plan: SwitchPlan) {
   grips.push(...us.grips);
   const body = s.difference(s.union([track, ...sets.map(throwArm)]), [...sets.map(throwChannel), us.cut]);
   const supportZ = pieceBottomZ - 0.02;
-  if (parts) { parts.body = body; if (us.tubes) parts.tubes = s.difference(us.tubes, [...sets.map(pointsPockets), ...sets.map(throwChannel)]); }
+  // The tubes, less the pockets, and only those that hold on to something
+  // above them (a tube under a gap between ties, or a pocket, would print
+  // as a loose ring).
+  let tubes: Man | undefined;
+  if (us.tubes) {
+    const cut = s.difference(us.tubes, [...sets.map(pointsPockets), ...sets.map(throwChannel)]);
+    const keep = cut.decompose().filter((tb) => tb.intersect(body).volume() > 1);
+    tubes = keep.length ? s.union(keep) : undefined;
+  }
+  if (parts) { parts.body = body; if (tubes) parts.tubes = tubes; }
   return s.union([
     body,
-    us.tubes && s.difference(us.tubes, [...sets.map(pointsPockets), ...sets.map(throwChannel)]),
+    tubes,
     t.startRailSupports(supportZ), t.supportFooting(supportZ, 0, -1),
     ...plan.endPoses.map((e) => atPose(s.union([t.endRailSupports(supportZ), t.supportFooting(supportZ, 0, +1)]), e)),
   ]);

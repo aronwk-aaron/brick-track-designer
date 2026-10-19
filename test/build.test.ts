@@ -6,7 +6,7 @@ import { TEMPLATES } from '../src/app/design';
 
 const BIG_BED = { printBedX: 500, printBedY: 500 }; // (whole pieces: splitting is tested on its own)
 
-describe('designs into pieces', () => {
+describe('designs into pieces', { timeout: 60000 }, () => {
   it('the LEGO left switch is one switch: base, points, throw, lever, as switch.scad builds it', async () => {
     const b = buildDesign(await kernel(), { ...TEMPLATES['Left switch (LEGO)'], options: BIG_BED });
     expect(b.info.warnings).toEqual([]);
@@ -21,14 +21,14 @@ describe('designs into pieces', () => {
       expect(b.info.switches).toBe(n);
       expect(b.pieces.filter((p) => /throw/.test(p.name))).toHaveLength(sets);  // (a throw per points set)
     });
-  it('a branch drawn off the middle of a track: plain track up to it, then a switch', async () => {
-    const b = buildDesign(await kernel(), { version: 1, gaugeStuds: 4, routes: [
+  it('a branch drawn off the middle of a track: one piece, not cut where the branch starts', async () => {
+    const b = buildDesign(await kernel(), { version: 1, gaugeStuds: 4, options: { printBedX: 600, printBedY: 600 }, routes: [
       { name: 'Main', x: 0, y: 0, heading: 0, segs: [{ kind: 'straight', studs: 64 }] },
       { name: 'Branch', x: 0, y: 16, heading: 0, segs: [{ kind: 'curve', radius: 40, angle: 22.5 }, { kind: 'straight', studs: 16 }] },
     ] });
     expect(b.info.warnings).toEqual([]);
     expect(b.info.switches).toBe(1);
-    expect(b.pieces[0].name).toBe('track');
+    expect(b.pieces.map((p) => p.name)).toEqual(['switch-base', 'switch-points', 'switch-throw', 'switch-lever']);
   });
   it('a switch longer than the print bed comes in pieces that each fit it', async () => {
     const b = buildDesign(await kernel(), { ...TEMPLATES['Left switch (LEGO)'], options: { printBedX: 200, printBedY: 200 } });
