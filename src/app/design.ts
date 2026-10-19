@@ -10,7 +10,11 @@ export type DSeg =
   | { kind: 'curve'; radius: number; angle: number }; // radius in studs, angle signed (+ = left)
 
 export interface DRoute { name: string; x: number; y: number; heading: number; segs: DSeg[] } // start in studs
-export interface Design { version: 1; gaugeStuds: number; routes: DRoute[] }
+export interface Design {
+  version: 1; gaugeStuds: number; routes: DRoute[];
+  /** Underside: grip plates only along the edges (default) or at every stud. */
+  grip?: 'edges' | 'all';
+}
 
 export function toRoutes(d: Design): Route[] {
   return d.routes.map((r, i) => ({

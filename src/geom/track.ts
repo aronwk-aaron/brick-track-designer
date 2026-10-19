@@ -64,6 +64,12 @@ export class Track {
     return cs.extrude(h);
   }
 
+  /** A loose recess for a stud: room for it without gripping it (0.5 clear each side). */
+  studRecess(h: number): Man {
+    const w = this.o.studD + 1.0;
+    return T(this.s.cube([w, w, h]), [-w / 2, -w / 2, 0]);
+  }
+
   /** The right-hand kind of rail end (rail_endpoint_right). */
   railEndpointRight(): Man {
     const offH = -0.15;
