@@ -5,6 +5,7 @@ import { STUD, Track, type TrackOptions, DEFAULTS } from './track';
 export interface StraightOptions extends TrackOptions {
   lengthStuds: number;
   sleeperGapStuds: number;  // 2 = LEGO's
+  supports?: boolean;       // breakaway print supports (default on)
 }
 
 export const STRAIGHT_DEFAULTS: StraightOptions = { ...DEFAULTS, lengthStuds: 16, sleeperGapStuds: 2 };
@@ -29,10 +30,12 @@ export function straightTrackOnly(s: Scad, o: StraightOptions = STRAIGHT_DEFAULT
     ...sleeperYs(o).map((y) => T(t.sleeper(false), [0, y, 0])),
     T(t.fullEndpoint(true, true), [0, 4, 0]),
     T(R(t.fullEndpoint(true, true), [0, 0, 180]), [0, L - 4, 0]),
-    t.startRailSupports(supportZ),
-    T(t.endRailSupports(supportZ), [0, L, 0]),
-    t.supportFooting(supportZ, 0, -1),
-    t.supportFooting(supportZ, L, +1),
+    ...(o.supports === false ? [] : [
+      t.startRailSupports(supportZ),
+      T(t.endRailSupports(supportZ), [0, L, 0]),
+      t.supportFooting(supportZ, 0, -1),
+      t.supportFooting(supportZ, L, +1),
+    ]),
   ]);
   const sockets = [];
   for (let x = -c.sleeperLen / 2 - 4; x <= c.sleeperLen / 2 + 4 + 1e-9; x += STUD)
