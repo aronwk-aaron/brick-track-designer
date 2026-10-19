@@ -25,10 +25,12 @@
     .seg button { grid-column: 2; grid-row: 1 / span 2; }
     .row { display: flex; gap: 4px; flex-wrap: wrap; margin-top: 6px; }
     button, select { font: inherit; padding: 4px 8px; }
-    main { display: grid; grid-template-rows: 1fr 1fr; min-height: 0; }
+    main { display: grid; grid-template-rows: 3fr 2fr; min-height: 0; }
+    .group { display: inline-flex; } .group button { border-radius: 0; } button.on { background: var(--accent); color: #fff; border-color: var(--accent); }
+    fieldset.selected { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+    canvas#track { display: block; cursor: crosshair; }
     .planbox { display: flex; flex-direction: column; min-height: 0; border-bottom: 1px solid var(--line); }
-    #plan { flex: 1; min-height: 0; background: #fbfbf8; padding: 6px; }
-    #plan svg { width: 100%; height: 100%; display: block; }
+    #plan { flex: 1; min-height: 0; position: relative; overflow: hidden; }
     #view3d { min-height: 0; position: relative; }
     #view3d canvas { display: block; }
     #status { position: absolute; left: 10px; bottom: 8px; right: 10px; font-size: 12px; color: var(--muted); pointer-events: none; }
@@ -41,8 +43,13 @@
 <body>
   <header>
     <h1>Brick Track Designer</h1>
+    <span class="group"><button id="mode-draw" class="on" type="button" title="Lay track (D): click to start, click to lay, right-click or Esc to stop">Draw</button><button id="mode-select" type="button" title="Select a track (S); Delete removes it">Select</button></span>
+    <label>Curve <select id="radius" title="Radius of the curves the planner lays"></select></label>
+    <button id="undo" type="button" title="Undo (Ctrl+Z)">Undo</button><button id="redo" type="button" title="Redo (Ctrl+Shift+Z)">Redo</button>
+    <button id="fit" type="button" title="Fit the track in view">Fit</button>
     <select id="template"><option value="">Start from…</option></select>
     <button id="add-route" type="button">+ Route</button>
+    <button id="clear" type="button">Clear</button>
     <span class="gauge"><label for="gauge">Gauge (studs between rails)</label><input id="gauge" type="number" min="2" max="10" step="1"></span>
     <button id="export-stl" type="button">Download STL</button>
     <button id="save" type="button">Save design</button>
@@ -52,8 +59,8 @@
   <aside id="routes"></aside>
   <main>
     <div class="planbox">
-      <div class="legend">Plan: <b style="background:#4a5560"></b>rails <b style="background:#e0452b"></b>flangeway cut <b style="background:#2b6fe0"></b>check rails, circles = rail crossings, squares = points (not built yet)</div>
-      <div id="plan"></div>
+      <div class="legend">Click a grid point or a track end to start, move to see the track, click to lay it; right-click or Esc stops. Start on a track to branch off it. Right/middle-drag or Space+drag pans, wheel zooms. <b style="background:#e0452b"></b>flangeway cut <b style="background:#2b6fe0"></b>check rail, circle = rail crossing, square = points (not built yet)</div>
+      <div id="plan"><canvas id="track"></canvas></div>
     </div>
     <div id="view3d"><div id="status"><span id="info"></span> <span id="error"></span></div></div>
   </main>

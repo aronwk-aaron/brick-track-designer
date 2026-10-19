@@ -3,13 +3,16 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { type Design, type DRoute, type DSeg, TEMPLATES, endOf } from './design';
+import { TrackCanvas } from './canvas';
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
-const routesEl = $('routes'), planEl = $('plan'), infoEl = $('info'), errEl = $('error');
+const routesEl = $('routes'), infoEl = $('info'), errEl = $('error');
 const STORE = 'btd-design';
 
 // ---------- the document ----------
-let design: Design = load() ?? structuredClone(TEMPLATES['90° crossing']);
+let design: Design = load() ?? { version: 1, gaugeStuds: 4, routes: [] };
+// Undo history: designs as JSON, the current one last.
+const history: string[] = [JSON.stringify(design)], future: string[] = [];
 
 function load(): Design | undefined {
   try { const s = localStorage.getItem(STORE); return s ? JSON.parse(s) as Design : undefined; } catch { return undefined; }
@@ -46,6 +49,7 @@ function render() {
   routesEl.replaceChildren();
   design.routes.forEach((r, i) => {
     const box = document.createElement('fieldset');
+    if (i === canvas?.selected) box.classList.add('selected');
     const legend = document.createElement('legend');
     const name = document.createElement('input'); name.value = r.name; name.className = 'name';
     name.addEventListener('change', () => { r.name = name.value; changed(); });
@@ -76,8 +80,11 @@ const worker = new Worker(new URL('./worker.ts', import.meta.url), { type: 'modu
 let seq = 0, stl: Uint8Array | undefined, timer: number | undefined;
 
 function changed(rerender = false) {
+  const json = JSON.stringify(design);
+  if (json !== history[history.length - 1]) { history.push(json); future.length = 0; if (history.length > 200) history.shift(); }
   save();
   if (rerender) render();
+  canvas?.draw();
   clearTimeout(timer);
   timer = window.setTimeout(() => worker.postMessage({ id: ++seq, design: structuredClone(design) }), 150);
   infoEl.textContent = 'Building…';
@@ -86,11 +93,10 @@ function changed(rerender = false) {
 worker.onmessage = (e) => {
   const d = e.data;
   if (d.id !== seq) return;          // an older build
-  if (d.error) { errEl.textContent = d.error; infoEl.textContent = ''; return; }
+  if (d.error) { errEl.textContent = d.error; infoEl.textContent = ''; canvas.overlay = undefined; canvas.draw(); return; }
   errEl.textContent = '';
-  planEl.innerHTML = d.svg;
-  const svg = planEl.querySelector('svg');
-  if (svg) { svg.removeAttribute('width'); svg.removeAttribute('height'); }
+  canvas.overlay = d.overlay;
+  canvas.draw();
   stl = d.stl;
   showMesh(d.positions);
   const i = d.info;
@@ -141,7 +147,7 @@ const tpl = $<HTMLSelectElement>('template');
 for (const name of Object.keys(TEMPLATES)) tpl.append(new Option(name, name));
 tpl.addEventListener('change', () => {
   if (!tpl.value) return;
-  design = structuredClone(TEMPLATES[tpl.value]); tpl.value = ''; framed = false; changed(true);
+  design = structuredClone(TEMPLATES[tpl.value]); tpl.value = ''; framed = false; changed(true); canvas.fit();
 });
 $('add-route').addEventListener('click', () => {
   design.routes.push({ name: `R${design.routes.length + 1}`, x: 0, y: 0, heading: 0, segs: [{ kind: 'straight', studs: 16 }] });
@@ -162,10 +168,40 @@ $('load').addEventListener('click', () => loadInput.click());
 loadInput.addEventListener('change', async () => {
   const f = loadInput.files?.[0]; if (!f) return;
   try { const d = JSON.parse(await f.text()) as Design; if (!Array.isArray(d.routes)) throw new Error('not a design');
-    design = d; gauge.value = String(d.gaugeStuds); framed = false; changed(true);
+    design = d; gauge.value = String(d.gaugeStuds); framed = false; changed(true); canvas.fit();
   } catch (err) { errEl.textContent = `Couldn't load that file: ${err}`; }
   loadInput.value = '';
 });
+
+// ---------- the track canvas ----------
+const radiusSel = $<HTMLSelectElement>('radius');
+for (const r of [24, 32, 40, 48, 56, 64, 72, 88, 104, 120]) radiusSel.append(new Option(`R${r}`, String(r), r === 40, r === 40));
+const canvas = new TrackCanvas($<HTMLCanvasElement>('track'), {
+  design: () => design,
+  changed: (commit) => changed(commit),
+  select: () => render(),
+  radius: () => Number(radiusSel.value),
+});
+const setMode = (m: 'draw' | 'select') => {
+  canvas.mode = m; canvas.stopDrawing();
+  $('mode-draw').classList.toggle('on', m === 'draw'); $('mode-select').classList.toggle('on', m === 'select');
+};
+$('mode-draw').addEventListener('click', () => setMode('draw'));
+$('mode-select').addEventListener('click', () => setMode('select'));
+$('fit').addEventListener('click', () => canvas.fit());
+const restore = (json: string) => { design = JSON.parse(json); gauge.value = String(design.gaugeStuds); canvas.selected = undefined; save(); render(); canvas.draw(); worker.postMessage({ id: ++seq, design: structuredClone(design) }); };
+const undo = () => { if (history.length > 1) { future.push(history.pop()!); restore(history[history.length - 1]); } };
+const redo = () => { if (future.length) { const j = future.pop()!; history.push(j); restore(j); } };
+$('undo').addEventListener('click', undo);
+$('redo').addEventListener('click', redo);
+addEventListener('keydown', (e) => {
+  if ((e.target as HTMLElement)?.tagName === 'INPUT') return;
+  if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') { e.preventDefault(); (e.shiftKey ? redo : undo)(); }
+  if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'y') { e.preventDefault(); redo(); }
+  if (e.key === 'd' || e.key === 'D') setMode('draw');
+  if (e.key === 's' || e.key === 'S') setMode('select');
+});
+$('clear').addEventListener('click', () => { design.routes = []; canvas.selected = undefined; changed(true); });
 
 render();
 changed();
