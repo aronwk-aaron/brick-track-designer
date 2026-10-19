@@ -710,6 +710,8 @@ export function switchGeometry(s: Scad, plan: SwitchPlan) {
   /** The lever lying on its -y face, ready to print (part = "lever"). */
   const leverPrint = () => T(R(leverShape(), [90, 0, 0]), [0, 0, g.leverBossLen / 2]);
 
+  /** Where the base's anti-stud tubes grip (filled in by base()). */
+  const grips: [number, number][] = [];
   // ---------- the base ----------
   const base = (parts?: Record<string, Man>) => {
     const named: Record<string, Man> = {
@@ -722,6 +724,7 @@ export function switchGeometry(s: Scad, plan: SwitchPlan) {
   if (parts) Object.assign(parts, named, { throwArms: s.union(sets.map(throwArm)), throwChannels: s.union(sets.map(throwChannel)) });
   const track = s.union(Object.values(named));
   const us = underside();
+  grips.push(...us.grips);
   const body = s.difference(s.union([track, ...sets.map(throwArm)]), [...sets.map(throwChannel), us.cut]);
   const supportZ = pieceBottomZ - 0.02;
   if (parts) { parts.body = body; if (us.tubes) parts.tubes = s.difference(us.tubes, [...sets.map(pointsPockets), ...sets.map(throwChannel)]); }
@@ -742,6 +745,7 @@ export function switchGeometry(s: Scad, plan: SwitchPlan) {
     throwPart: (k = 0) => throwPart(sets[k]),
     leverPart: (k = 0) => leverPart(sets[k]),
     leverShape, leverPrint,
+    grips,
   };
 }
 
