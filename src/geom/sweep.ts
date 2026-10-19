@@ -11,8 +11,24 @@ export const arcSegments = (r: number, angle: number) => Math.ceil(Math.max((Mat
 function sweepSeg(s: Scad, cs: CS, sg: Segment): Man {
   if (sg.kind === 'straight') return T(R(cs.extrude(sg.length), [90, 0, 0]), [0, sg.length, 0]);
   const r = sg.radius, n = arcSegments(r, sg.angle);
-  if (sg.angle > 0) return T(cs.translate([r, 0]).revolve(n, sg.angle), [-r, 0, 0]);
-  return M(T(cs.mirror([1, 0]).translate([r, 0]).revolve(n, -sg.angle), [-r, 0, 0]), [1, 0, 0]);
+  if (sg.angle > 0) return T(revolve(cs.translate([r, 0]), n, sg.angle), [-r, 0, 0]);
+  return M(T(revolve(cs.mirror([1, 0]).translate([r, 0]), n, -sg.angle), [-r, 0, 0]), [1, 0, 0]);
+}
+
+/**
+ * rotate_extrude(angle) in n fragments. manifold's revolve comes out empty
+ * for small angles (it failed at 0.27 degrees in 2 fragments, and for
+ * switch.scad's hulled 0.1mm slices), so those are built by bending an
+ * extrusion with the same rings instead: the same sections at the same
+ * angles, joined by straight edges.
+ */
+function revolve(cs: CS, n: number, angle: number): Man {
+  if (Math.abs(angle) >= 10) return cs.revolve(n, angle);
+  const a = (angle * Math.PI) / 180;
+  return cs.extrude(1, n - 1).warp((v) => {
+    const x = v[0], y = v[1], th = (1 - v[2]) * a; // (1 - z: keeps the faces facing out)
+    v[0] = x * Math.cos(th); v[1] = x * Math.sin(th); v[2] = y;
+  });
 }
 
 /** The part of a segment from l0 to l1 along it. */
