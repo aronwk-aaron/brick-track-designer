@@ -141,6 +141,19 @@ const cases: Case[] = [
           },
         });
       }
+    // the base cut for the print bed, piece by piece
+    if (['left-R40-s_curve', 'right-R24-arc', 'wye-R40-arc'].includes(cfg.name))
+      for (let k = 0; k < 3; k++)
+        cases.push({
+          name: `switch-basepiece${k}-${cfg.name}`,
+          scad: 'include <switch.scad>\n',
+          defines: { part: '"base"', base_piece: k, generate_ballast: 'false', stud_grip: '"all"', switch_type: `"${type}"`,
+            diverge_radius: Number(r.slice(1)), diverge_shape: `"${shape}"` },
+          build: (w: Wasm) => {
+            const bp = switchGeometry(new Scad(w), switchPlan(routes, cfg.sets as SetSpec[], { ...BASE_DEFAULTS, studGrip: 'all' }, type === 'right' ? -1 : 1)).basePieces();
+            return bp[Math.min(k, bp.length - 1)];
+          },
+        });
     for (const grip of ['all', 'edges'] as const) {
       // (the anti-stud tube underside on a few)
       if (grip === 'edges' && !['left-R40-s_curve', 'right-R24-arc', 'wye-R40-arc', 'threeway-R40-arc'].includes(cfg.name)) continue;

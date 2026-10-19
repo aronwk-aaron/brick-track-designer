@@ -57,11 +57,11 @@ export function buildDesign(w: Wasm, design: Design) {
   }
   pc.switches.forEach((sw, n) => {
     const gm = switchGeometry(scad, sw.plan), tag = pc.switches.length > 1 ? `switch${n + 1}` : 'switch';
-    const base = gm.base();
+    const bases = gm.basePieces();
     // (its tubes, for the plan's grip marks, in the design's frame)
     const cz = Math.cos((sw.pose[2] * Math.PI) / 180), sz = Math.sin((sw.pose[2] * Math.PI) / 180);
     for (const [x, y] of gm.grips) overlay.grips.push([sw.pose[0] + x * cz - y * sz, sw.pose[1] + x * sz + y * cz]);
-    add(`${tag}-base`, 0x6f7780, base, place(base, sw.pose));
+    bases.forEach((m, j) => add(bases.length > 1 ? `${tag}-base${j + 1}` : `${tag}-base`, 0x6f7780, m, place(m, sw.pose)));
     sw.sets.forEach((_, k) => {
       const sfx = sw.sets.length > 1 ? `${k + 1}` : '';
       const thr = gm.throwPart(k), pp = gm.pointsParts(k);

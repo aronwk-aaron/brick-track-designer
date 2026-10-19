@@ -9,7 +9,7 @@
 // heading +y). Routes are right to left, as switch.scad's `routes`.
 import type { Pose, Pt, Route } from '../route/route';
 import { railPoint, routeLat, routeLength, routePose, routeSOf } from '../route/route';
-import { R, T, type CS, type Man, type Scad, type Vec2, type Vec3 } from '../geom/scad';
+import { M, R, T, type CS, type Man, type Scad, type Vec2, type Vec3 } from '../geom/scad';
 import { sweepRoute } from '../geom/sweep';
 import { type Spot, studSpots } from '../geom/underside';
 import { DEFAULTS as TRACK_DEFAULTS, PLATE_H, RAIL_PROFILE, STUD, Track } from '../geom/track';
@@ -204,7 +204,7 @@ export function switchPlan(routes: Route[], specs: SetSpec[], p: BaseParams = BA
         if (!setData.slice(1).some((d) => y + sleeperW / 2 + 2 > d.toeY - 2 && y - sleeperW / 2 - 2 < d.pointsEndY)) out.push(y);
     return out;
   };
-  const baseHw = sleeperLen / 2;
+  const baseHw = g.ballast ? (g.buddy ? g.ballastBottomW : g.ballastMidW) / 2 : sleeperLen / 2;
   const baseXRange = (y0: number, y1: number): [number, number] => {
     const xs: number[] = [];
     for (const rt of routes) for (let k = 0; k <= 40; k++) for (const o of [-baseHw, baseHw]) {
@@ -276,6 +276,7 @@ export function switchPlan(routes: Route[], specs: SetSpec[], p: BaseParams = BA
   // Points sets too close: one set's points reach into the next one's (a
   // three-way at a large radius). switch.scad builds them anyway, clashing.
   const warnings = sets.flatMap((v) => v.warnings);
+  if (!planOk(baseCuts)) warnings.push(`the switch doesn't fit the ${p.printBedX} x ${p.printBedY} print bed even when split across: it may be too wide`);
   const bySetY = [...sets].sort((a, b) => a.toeY - b.toeY);
   for (let k = 0; k + 1 < bySetY.length; k++)
     if (bySetY[k + 1].toeY - 2 < bySetY[k].pointsEndY)
@@ -521,7 +522,8 @@ export function switchGeometry(s: Scad, plan: SwitchPlan) {
         const lats = routes.map((rt) => routeLat(rt, q));
         return q[0] - TRACK_DEFAULTS.studD / 2 > xl + 0.5 && q[0] + TRACK_DEFAULTS.studD / 2 < xr - 0.5
           && Math.min(...lats.flatMap((l) => [-G, G].map((o) => Math.abs(l - o)))) >= railClear
-          && !plan.nearCheckRail(q, lats, TRACK_DEFAULTS.studD / 2 + 0.3) && !plan.inEndKeepout(q);
+          && !plan.nearCheckRail(q, lats, TRACK_DEFAULTS.studD / 2 + 0.3) && !plan.inEndKeepout(q)
+          && (!g.ballast || Math.min(...lats.map((l) => Math.abs(l))) <= g.ballastTopW / 2 - TRACK_DEFAULTS.studD / 2 - 0.3);
       };
       const grid: Pt[] = [];
       for (const dy of [-4, 4]) for (let x = Math.ceil((xl + 0.5) / 8) * 8 - 4; x <= xr - 0.5 + 1e-9; x += STUD) {
@@ -534,8 +536,10 @@ export function switchGeometry(s: Scad, plan: SwitchPlan) {
         if (postOk(q)) fill.push(q);
       }
       const spots = dedupe(fill, grid);
-      out.push(s.difference(cube([xr - xl, sleeperW, PLATE_H], [xl, y - sleeperW / 2, 0]),
-        [...spots.map((q) => T(studRecess(), [q[0], q[1], -1])), endKeepout()]));
+      // (with ballast, kept within its top layer: the ends don't stick out over the step below)
+      const tie = cube([xr - xl, sleeperW, PLATE_H], [xl, y - sleeperW / 2, 0]);
+      out.push(s.difference(g.ballast ? s.intersection(tie, s.union(routes.map((rt) => sweep(sq([g.ballastTopW, PLATE_H + 2], [-g.ballastTopW / 2, -1]), rt)))) : tie,
+        [...(g.ballast ? [] : spots.map((q) => T(studRecess(), [q[0], q[1], -1]))), endKeepout()]));
       for (const q of spots) out.push(T(t.stud(tc.postD, tc.postH), [q[0], q[1], PLATE_H - 0.2]));
     }
     return s.union(out);
@@ -550,7 +554,7 @@ export function switchGeometry(s: Scad, plan: SwitchPlan) {
           if (plan.latOthers(i, railPoint(rt, st + dy, o)) > sleeperLen / 2 + 1 + TRACK_DEFAULTS.studD / 2 + 0.3) keep.push([o, dy]);
         out.push(s.difference(atPose(cube([sleeperLen, sleeperW, PLATE_H], [-sleeperLen / 2, -sleeperW / 2, 0]), ps), [
           ...plan.others(i).map((j) => sweep(sq([sleeperLen + 2, PLATE_H + 10], [-sleeperLen / 2 - 1, -1]), routes[j])),
-          ...keep.map((k) => atPose(T(studRecess(), [k[0], k[1], -1]), ps)),
+          ...(g.ballast ? [] : keep.map((k) => atPose(T(studRecess(), [k[0], k[1], -1]), ps))),
         ]));
         for (const k of keep) out.push(atPose(T(t.stud(tc.postD, tc.postH), [k[0], k[1], PLATE_H - 0.2]), ps));
       }
@@ -558,8 +562,8 @@ export function switchGeometry(s: Scad, plan: SwitchPlan) {
     return s.union(out);
   };
   const connectors = () => s.union([
-    T(t.fullEndpoint(true, true), [0, 4, 0]),
-    ...plan.endPoses.map((e) => atPose(T(R(t.fullEndpoint(true, true), [0, 0, 180]), [0, -4, 0]), e)),
+    T(t.fullEndpoint(!g.ballast, !g.ballast), [0, 4, 0]),
+    ...plan.endPoses.map((e) => atPose(T(R(t.fullEndpoint(!g.ballast, !g.ballast), [0, 0, 180]), [0, -4, 0]), e)),
   ]);
 
   // ---------- the throw ----------
@@ -737,8 +741,55 @@ export function switchGeometry(s: Scad, plan: SwitchPlan) {
     ...plan.endPoses.map((e) => atPose(s.union([t.endRailSupports(supportZ), t.supportFooting(supportZ, 0, +1)]), e)),
   ]);
   };
+  // ---------- splitting the base for the print bed (switch_base_split) ----------
+  // Cut straight across through the joint ties (plan.baseCuts); each rail
+  // crossing a cut gets interlocking rail-end tongues (the track
+  // connectors'), turned to the rail's heading, and the tie halves snap pegs
+  // and C-clips, as LEGO track pieces join.
+  const cutRails = (yc: number) => routes.flatMap((rt) => [-G, G].map((o) => { const cr = plan.railCross(rt, o, yc); return [cr[0], cr[1], Math.sign(o)] as const; }));
+  const couplerXs = (yc: number) => {
+    const rs = cutRails(yc), rL = routes[nRoutes - 1], rR = routes[0];
+    const xl = railPoint(rL, routeSOf(rL, [0, yc], 0, -1, 26), -G)[0] - 12 + 5, xr = railPoint(rR, routeSOf(rR, [0, yc], 0, -1, 26), +G)[0] + 12 - 5;
+    const ok: number[] = [];
+    for (let x = xl; x <= xr + 1e-9; x += 0.5) if (Math.min(...rs.map((r) => Math.abs(x - r[0]))) >= 9) ok.push(x);
+    const mid = (xl + xr) / 2, got: number[] = [];
+    for (const x of [...ok].sort((a, b) => Math.abs(a - mid) - Math.abs(b - mid)))
+      if (got.length < 3 && got.every((g2) => Math.abs(g2 - x) >= 16)) got.push(x);
+    return got;
+  };
+  const cz0 = pieceBottomZ, ch = PLATE_H - cz0;
+  const atCut = (m: Man, x: number, yc: number, side: number, heading = 0) => T(R(m, [0, 0, heading + (side < 0 ? 180 : 0)]), [x, yc, 0]);
+  const couplerSocket = () => T(s.cylinder(ch + 1, 2.1, 1.9, 32), [0, 0, cz0 - 0.5]);
+  const couplerNotch = () => T(t.attachPoly(ch + 1), [-4, -0.11, cz0 - 0.5]);
+  const couplerPeg = () => s.difference(s.union([T(s.cylinder(ch, 1, 1, 32), [0, 1.8, cz0]), T(s.cylinder(ch, 1.9, 2.1, 32), [0, 0, cz0])]), [T(s.cylinder(ch + 1, 0.8, 0.8, 32), [0, 0, cz0 - 0.5])]);
+  const couplerTab = () => s.difference(T(M(s.extrude(s.polygon([[-0.3, 0], [1.7, 1.9], [6.3, 1.9], [8.3, 0]]), ch), [0, 1, 0]), [-4, 0.3, cz0]), [couplerSocket()]);
+  const cutTongue = (type: number, z0: number) => s.union([
+    T(type < 0 ? t.railEndpointLeft() : t.railEndpointRight(), [-4, -4, 0]),
+    type < 0 ? T(t.railSupport(3, 3.23 - z0), [-3.3, -3, z0]) : T(t.railSupport(4, 2.08 - z0), [-2.2, -3, z0]),
+  ]);
+  const cutRemovals = (yc: number) => s.union([
+    ...cutRails(yc).map((r) => atCut(cube([8, 8, 30], [-4, -4, -1]), r[0], yc, 1, r[1])),
+    ...couplerXs(yc).flatMap((x) => [atCut(couplerNotch(), x, yc, 1), atCut(couplerSocket(), x, yc, 1)]),
+  ]);
+  const cutJoint = (yc: number, side: number) => s.union([
+    ...cutRails(yc).map((r) => atCut(cutTongue(side > 0 ? r[2] : -r[2], pieceBottomZ - 0.02), r[0], yc, side, r[1])),
+    ...couplerXs(yc).map((x) => (side > 0 ? atCut(couplerPeg(), x, yc, 1) : atCut(couplerTab(), x, yc, -1))),
+  ]);
+  /** The base in pieces that fit the print bed (one piece if it fits whole). */
+  const basePieces = (): Man[] => {
+    const cuts = plan.baseCuts, whole = base();
+    if (!cuts.length) return [whole];
+    const cutBase = s.difference(whole, cuts.map(cutRemovals));
+    const b = [-1e4, ...cuts, 1e4];
+    return b.slice(0, -1).map((y0, k) => s.union([
+      s.intersection(cutBase, cube([2e4, b[k + 1] - y0, 200], [-1e4, y0, -100])),
+      k > 0 && cutJoint(cuts[k - 1], +1),
+      k < cuts.length && cutJoint(cuts[k], -1),
+    ]));
+  };
+
   return {
-    base,
+    base, basePieces,
     pointsPart: (k = 0) => pointsPart(sets[k]),
     /** The points' parts: one, or one per blade (pointsPieces 2). */
     pointsParts: (k = 0) => units(sets[k]).map((u) => unitPart(sets[k], u)),

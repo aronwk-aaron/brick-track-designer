@@ -17,7 +17,11 @@ export interface SwitchParams {
   bladeDiscD: number;       // 14
   leverOffset: number;      // 8
   studH: number;            // 1.8
-  generateBallast: boolean; // false: track only (the only kind so far)
+  generateBallast: boolean; // false: track only; true: on ballast (switch.scad's generate_ballast)
+  /** With ballast: the widest bottom layer (generate_ballast_buddy). */
+  ballastBuddy?: boolean;
+  /** With ballast: the underside, anti-stud (hollow with tubes) or float (flat). */
+  bottomStyle?: 'antistud' | 'float';
   /** The lever's driver length beyond its least (10): longer swings it less for the same travel (a three-way's). */
   leverReach?: number;
 }
@@ -35,19 +39,27 @@ export const STUD = 8;
 export function switchGlobals(p: SwitchParams) {
   const G = ((p.gaugeStuds + 1) * STUD) / 2;
   const sleeperLen = 2 * G + 24;
-  if (p.generateBallast) throw new Error('only track-only switches so far');
-  const pieceBottomZ = 0;
+  // Ballast (track_lib.scad): 2 plates thick, its top at the sleeper top;
+  // the top layer as wide as the sleepers, each step below a stud wider.
+  const ballast = p.generateBallast, buddy = ballast && (p.ballastBuddy ?? true);
+  const antistud = ballast && (p.bottomStyle ?? 'antistud') === 'antistud';
+  const ballastThickness = 2 * PLATE_H, ballastOffsetZ = -PLATE_H;
+  const ballastTopW = sleeperLen, ballastMidW = ballastTopW + 2 * STUD, ballastBottomW = ballastMidW + 2 * STUD;
+  const buddyT = antistud ? PLATE_H : ballastThickness / 4;
+  const pieceBottomZ = ballast ? (buddy ? ballastOffsetZ - buddyT : ballastOffsetZ) : 0;
   const bottomCavity = p.studH + 0.2;
-  const layerZ0 = pieceBottomZ + bottomCavity + 0.2;
+  // (with an anti-stud underside, or none at all, the parts sit above a baseplate's studs)
+  const layerZ0 = pieceBottomZ + (antistud || !ballast ? bottomCavity : 0) + 0.2;
   const layerTop = layerZ0 + 1.4;
   const cavityTop = layerTop + p.pointClearance;
-  const bedTop = Math.max(PLATE_H, cavityTop + 0.8);
+  const bedTop = ballast ? PLATE_H : Math.max(PLATE_H, cavityTop + 0.8);
   const leverTipD = 4.5, leverBossD = 5;
   const leverTipLow = layerZ0 + 0.6 + p.pointClearance + leverTipD / 2;
   const leverPz = Math.max(PLATE_H + leverBossD / 2 + 1.5, leverTipLow + (p.leverReach ?? 10));
   const leverDa = leverPz - leverTipLow;
   const bladeNeed = 2 * HEAD_HW + p.pointThrow + p.pointClearance + 0.6;
   return {
+    ballast, buddy, antistud, ballastThickness, ballastOffsetZ, ballastTopW, ballastMidW, ballastBottomW, buddyT,
     G, sleeperLen, pieceBottomZ, bottomCavity, layerZ0, layerTop, cavityTop, bedTop,
     leverTipD, leverBossD, leverTipLow, leverPz, leverDa, bladeNeed,
     discR: p.bladeDiscD / 2, pivotPinD: 3, pivotPinUp: 0.5, heelBarW: 4,
@@ -109,7 +121,7 @@ export function pointsSet(routes: Route[], ps: PointsSet, p: SwitchParams, defau
   const throwFaceX = throwStockX + throwDir * 3.9;
   const leverAng = deg(Math.asin(Math.min(0.9, leverTravel / 2 / g.leverDa)));
   const leverTipZ = g.leverPz - g.leverDa * Math.cos(rad(leverAng));
-  const throwEdgeX = throwDir * (g.sleeperLen / 2);
+  const throwEdgeX = throwDir * (g.ballast ? (g.buddy ? g.ballastBottomW : g.ballastMidW) / 2 : g.sleeperLen / 2);
   const leverMinD = throwDir * throwFaceX + Math.max(4 + 1.5, leverTravel / 2 + g.leverTipD / 2 + 2 * p.pointClearance + 1.2 + 1.5);
   const leverX = throwDir * Math.max(throwDir * throwEdgeX + p.leverOffset, leverMinD);
   const forkX = leverX - leverTravel / 2;
