@@ -80,6 +80,10 @@
     #hint { left: 10px; bottom: 10px; max-width: calc(100% - 140px); pointer-events: none; }
     #coords:empty, #hint:empty { display: none; }
     #coords { right: 10px; bottom: 10px; color: var(--muted); font-variant-numeric: tabular-nums; pointer-events: none; }
+    #selbar { left: 10px; top: 10px; display: flex; gap: 4px; align-items: center; padding: 4px 6px; z-index: 1; flex-wrap: wrap; max-width: calc(100% - 200px); }
+    #selbar[hidden] { display: none; }
+    #selbar button { padding: 2px 7px; font-size: 12px; }
+    #sel-count { color: var(--muted); margin: 0 4px; font-size: 12px; }
     #legend { right: 10px; top: 10px; color: var(--muted); display: flex; flex-direction: column; gap: 2px; }
     #legend i { display: inline-block; width: 16px; height: 4px; vertical-align: middle; margin-right: 6px; }
     #legend i.dot { width: 9px; height: 9px; border-radius: 50%; border: 1.5px solid currentColor; margin: 0 9px 0 3px; }
@@ -169,9 +173,14 @@
         <h3>View and keys</h3>
         <ul>
           <li>Wheel zooms; right/middle-drag or <kbd>Space</kbd>+drag pans.</li>
+          <li>Select: click a track; <kbd>Shift</kbd>+click adds more; <kbd>Ctrl</kbd>+<kbd>A</kbd> all. <kbd>Ctrl</kbd>+<kbd>C</kbd>/<kbd>X</kbd>/<kbd>V</kbd> copy, cut, paste (at the mouse), <kbd>Ctrl</kbd>+<kbd>D</kbd> duplicate, <kbd>M</kbd> mirror, <kbd>R</kbd> / <kbd>Shift</kbd>+<kbd>R</kbd> turn 90°.</li>
           <li><kbd>D</kbd> draw, <kbd>S</kbd> select, <kbd>Del</kbd> delete, <kbd>F</kbd> fit, <kbd>P</kbd> 3D preview, <kbd>Ctrl</kbd>+<kbd>Z</kbd> undo.</li>
         </ul>
         <button id="help-close" type="button">Close</button>
+      </div>
+      <div id="selbar" class="chip" hidden>
+        <span id="sel-count"></span>
+        <button id="sel-copy" type="button" title="Copy (Ctrl+C)">Copy</button><button id="sel-cut" type="button" title="Cut (Ctrl+X)">Cut</button><button id="sel-paste" type="button" title="Paste at the mouse (Ctrl+V)">Paste</button><button id="sel-dup" type="button" title="Duplicate (Ctrl+D)">Duplicate</button><button id="sel-mirror" type="button" title="Mirror left to right (M)">Mirror</button><button id="sel-rotl" type="button" title="Turn 90° left (Shift+R)">⟲ 90°</button><button id="sel-rotr" type="button" title="Turn 90° right (R)">⟳ 90°</button><button id="sel-del" type="button" class="danger" title="Delete (Del)">Delete</button>
       </div>
       <div id="hint" class="chip"></div>
       <div id="coords" class="chip"></div>

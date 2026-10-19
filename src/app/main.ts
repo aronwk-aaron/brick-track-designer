@@ -256,7 +256,7 @@ for (const r of [24, 32, 40, 48, 56, 64, 72, 88, 104, 120]) radiusSel.append(new
 const canvas = new TrackCanvas($<HTMLCanvasElement>('track'), {
   design: () => design,
   changed: (commit) => changed(commit),
-  select: () => render(),
+  select: () => { render(); updateSelbar(); },
   radius: () => Number(radiusSel.value),
   status: (hint, at) => {
     hintEl.textContent = hint;
@@ -295,6 +295,7 @@ addEventListener('keydown', (e) => {
   if ((e.target as HTMLElement)?.tagName === 'INPUT') return;
   if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') { e.preventDefault(); (e.shiftKey ? redo : undo)(); }
   if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'y') { e.preventDefault(); redo(); }
+  if (e.ctrlKey || e.metaKey || e.altKey) return;
   if (e.key === 'd' || e.key === 'D') setMode('draw');
   if (e.key === 's' || e.key === 'S') setMode('select');
   if (e.key === 'p' || e.key === 'P') { show3d = !show3d; set3d(show3d); }
@@ -342,3 +343,76 @@ $('clear').addEventListener('click', () => { design.routes = []; canvas.selected
 
 render();
 changed();
+
+
+// ---------- selection: copy, cut, paste, duplicate, mirror, turn ----------
+let clipboard: DRoute[] = [];
+const selected = () => canvas.selection().filter((i) => i < design.routes.length);
+const nextName = () => { let n = design.routes.length + 1; while (design.routes.some((r) => r.name === `R${n}`)) n++; return `R${n}`; };
+const r3 = (v: number) => Math.round(v * 1000) / 1000;
+/** Add routes (copies), moved by (dx, dy) studs, and select them. */
+function addRoutes(list: DRoute[], dx: number, dy: number) {
+  const first = design.routes.length;
+  for (const r of list) design.routes.push({ ...structuredClone(r), name: nextName(), x: r3(r.x + dx), y: r3(r.y + dy) });
+  canvas.setSelection(list.map((_, k) => first + k));
+  changed(true);
+}
+function copySel() {
+  clipboard = selected().map((i) => structuredClone(design.routes[i]));
+  try { void navigator.clipboard?.writeText(JSON.stringify({ btdRoutes: clipboard })); } catch { /* fine */ }
+}
+function deleteSel() {
+  for (const i of selected().sort((a, b) => b - a)) design.routes.splice(i, 1);
+  canvas.setSelection([]); openCards.clear(); changed(true);
+}
+function pasteClip() {
+  if (!clipboard.length) return;
+  const m = canvas.mouseStuds(), p0 = clipboard[0];
+  // at the mouse (the first route's start there), or a little over
+  addRoutes(clipboard, m ? m[0] - p0.x : 8, m ? m[1] - p0.y : 8);
+}
+/** Transform the selection about its first route's start. */
+function transformSel(f: (r: DRoute, px: number, py: number) => void) {
+  const sel = selected(); if (!sel.length) return;
+  const { x: px, y: py } = design.routes[sel[0]];
+  for (const i of sel) f(design.routes[i], px, py);
+  changed(true);
+}
+const mirrorSel = () => transformSel((r, px) => {
+  r.x = r3(2 * px - r.x); r.heading = r3(-r.heading);
+  for (const sg of r.segs) if (sg.kind === 'curve') sg.angle = -sg.angle;
+});
+const turnSel = (a: number) => transformSel((r, px, py) => {
+  const c = Math.cos((a * Math.PI) / 180), sn = Math.sin((a * Math.PI) / 180), dx = r.x - px, dy = r.y - py;
+  r.x = r3(px + dx * c - dy * sn); r.y = r3(py + dx * sn + dy * c);
+  r.heading = r3((((r.heading + a + 180) % 360) + 360) % 360 - 180);
+});
+function updateSelbar() {
+  const n = selected().length, bar = $('selbar');
+  bar.hidden = n === 0 && clipboard.length === 0;
+  $('sel-count').textContent = n ? `${n} selected` : 'clipboard:';
+  for (const id of ['sel-copy', 'sel-cut', 'sel-dup', 'sel-mirror', 'sel-rotl', 'sel-rotr', 'sel-del']) ($(id) as HTMLButtonElement).disabled = n === 0;
+  ($('sel-paste') as HTMLButtonElement).disabled = clipboard.length === 0;
+}
+$('sel-copy').addEventListener('click', () => { copySel(); updateSelbar(); });
+$('sel-cut').addEventListener('click', () => { copySel(); deleteSel(); updateSelbar(); });
+$('sel-paste').addEventListener('click', () => { pasteClip(); updateSelbar(); });
+$('sel-dup').addEventListener('click', () => { copySel(); addRoutes(clipboard, 8, 0); updateSelbar(); });
+$('sel-mirror').addEventListener('click', mirrorSel);
+$('sel-rotl').addEventListener('click', () => turnSel(90));
+$('sel-rotr').addEventListener('click', () => turnSel(-90));
+$('sel-del').addEventListener('click', () => { deleteSel(); updateSelbar(); });
+addEventListener('keydown', (e) => {
+  if ((e.target as HTMLElement)?.tagName === 'INPUT' || (e.target as HTMLElement)?.tagName === 'SELECT') return;
+  const k = e.key.toLowerCase(), mod = e.ctrlKey || e.metaKey;
+  if (mod && k === 'c') { e.preventDefault(); copySel(); }
+  else if (mod && k === 'x') { e.preventDefault(); copySel(); deleteSel(); }
+  else if (mod && k === 'v') { e.preventDefault(); pasteClip(); }
+  else if (mod && k === 'd') { e.preventDefault(); copySel(); addRoutes(clipboard, 8, 0); }
+  else if (mod && k === 'a') { e.preventDefault(); canvas.setSelection(design.routes.map((_, i) => i)); }
+  else if (!mod && k === 'm') mirrorSel();
+  else if (!mod && k === 'r') turnSel(e.shiftKey ? 90 : -90);
+  else return;
+  updateSelbar();
+});
+updateSelbar();
