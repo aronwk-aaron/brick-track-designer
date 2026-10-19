@@ -82,7 +82,7 @@
     #legend { right: 10px; top: 10px; color: var(--muted); display: flex; flex-direction: column; gap: 2px; }
     #legend i { display: inline-block; width: 16px; height: 4px; vertical-align: middle; margin-right: 6px; }
     #legend i.dot { width: 9px; height: 9px; border-radius: 50%; border: 1.5px solid currentColor; margin: 0 9px 0 3px; }
-    #legend i.grip { width: 9px; height: 9px; border: 1.5px solid #2b9e4a; margin: 0 9px 0 3px; }
+    #legend i.grip { width: 9px; height: 9px; border-radius: 50%; border: 1.5px solid #2b9e4a; margin: 0 9px 0 3px; }
     #legend i.sq { width: 9px; height: 9px; background: #f0b400; margin: 0 9px 0 3px; }
     #legend button { margin-top: 4px; padding: 1px 6px; font-size: 12px; }
     #help { background: var(--panel); right: 10px; top: 10px; width: min(360px, calc(100% - 20px)); padding: 10px 12px; font-size: 12.5px; display: none; z-index: 2; }
@@ -127,7 +127,7 @@
     <button id="clear" type="button" class="danger" title="Remove all track">Clear</button>
     <span class="sep"></span>
     <label class="inline" title="Studs between the rails (LEGO is 4)">Gauge <input id="gauge" type="number" min="2" max="10" step="1"></label>
-    <label class="inline">Grip <select id="grip" title="How the piece holds on plates: gripping sockets along the edges every 4 studs (loose recesses elsewhere), or at every stud">
+    <label class="inline">Grip <select id="grip" title="Underside: Edges is hollow like a LEGO plate, with anti-stud tubes gripping along the edges and every 4 studs; Every stud has a gripping square socket at every stud (holds hard)">
       <option value="edges">Edges</option><option value="all">Every stud</option></select></label>
     <span class="spacer"></span>
     <button id="fit" type="button" title="Fit the track in view (F)">⤢ Fit</button>
@@ -151,7 +151,7 @@
         <span><i style="background:#2b6fe0"></i>check rail</span>
         <span><i class="dot"></i>rail crossing</span>
         <span><i class="sq"></i>points (not built yet)</span>
-        <span id="legend-grip"><i class="grip"></i>grips the plate below</span>
+        <span id="legend-grip"><i class="grip"></i>anti-stud tube (grips)</span>
         <button id="help-open" type="button" title="How to use the editor (?)">? Help</button>
       </div>
       <div id="help" class="chip" role="dialog" aria-label="Help">

@@ -5,9 +5,9 @@
 // supports at every route end, and square stud sockets on the grid of the
 // first route's start, so the piece sits on plates and baseplates.
 import type { Route } from '../route/route';
-import { routeLat, routeLength, routePose } from '../route/route';
+import { railPoint, routeLat, routeLength, routePose } from '../route/route';
 import { solve, type Solution, type SolverOptions, SOLVER_DEFAULTS } from '../route/solver';
-import { Scad, T, R, type Man, type Vec2 } from './scad';
+import { Scad, T, R, type CS, type Man, type Vec2 } from './scad';
 import { sweepRoute } from './sweep';
 import { DEFAULTS, PLATE_H, RAIL_PROFILE, STUD, Track, type TrackOptions } from './track';
 
@@ -17,9 +17,9 @@ export interface CrossingOptions extends TrackOptions {
   checkRailW: number;      // 1
   supports: boolean;       // breakaway print supports at the route ends
   /**
-   * Underside: 'edges' grips the plate below only at stud spots along the
-   * piece's edges, every 4 studs, with loose recesses everywhere else (a full
-   * grid of gripping sockets holds too hard); 'all' grips at every spot.
+   * Underside: 'edges' is hollow like a LEGO plate, with anti-stud tubes that
+   * grip along the edges and every 4 studs inside, and thin posts elsewhere;
+   * 'all' has a gripping square socket at every stud (holds too hard).
    */
   grip: 'edges' | 'all';
 }
@@ -77,49 +77,87 @@ export function crossingPiece(s: Scad, routes: Route[], o: CrossingOptions = CRO
   });
   const body = s.union(parts);
 
-  // Square stud sockets on the grid of the first route's start, over the piece.
+  // The underside, on the stud grid of the first route's start (spots at
+  // 4 + 8k across and along in that frame, as on a straight).
   const box = body.boundingBox();
   const p0 = routePose(routes[0], 0), h = (p0[2] * Math.PI) / 180;
-  // (grid spots at 4 + 8k across and along, in that frame, as on a straight)
   const reach = Math.ceil((Math.hypot(box.max[0] - box.min[0], box.max[1] - box.min[1]) + Math.hypot(box.min[0] - p0[0], box.min[1] - p0[1])) / STUD) + 2;
-  // Grid spots under the piece, in the first route's start frame. A spot is on
-  // the bed when it is within the sleepers' reach of some route; spots off it
-  // (under the end connectors) keep gripping sockets, as before.
+  const world = (lx: number, ly: number): [number, number] => [p0[0] + lx * Math.cos(h) - ly * Math.sin(h), p0[1] + lx * Math.sin(h) + ly * Math.cos(h)];
   const spots: { i: number; j: number; x: number; y: number }[] = [];
   for (let i = -reach; i <= reach; i++)
     for (let j = -reach; j <= reach; j++) {
-      const lx = 4 + i * STUD, ly = 4 + j * STUD;
-      const x = p0[0] + lx * Math.cos(h) - ly * Math.sin(h), y = p0[1] + lx * Math.sin(h) + ly * Math.cos(h);
+      const [x, y] = world(4 + i * STUD, 4 + j * STUD);
       if (x < box.min[0] - 4 || x > box.max[0] + 4 || y < box.min[1] - 4 || y > box.max[1] + 4) continue;
       spots.push({ i, j, x, y });
     }
-  const bedCache = new Map<string, boolean>();
-  const onBed = (i: number, j: number) => {
+  const cavH = o.studH + 0.21;
+  const socket = (x: number, y: number) => T(R(t.studSocket(cavH), [0, 0, p0[2]]), [x, y, -0.01]);
+  if (o.grip === 'all') return s.difference(body, spots.map(({ x, y }) => socket(x, y)));
+
+  // 'edges': hollow like a LEGO plate, a rim round each route's bed (not
+  // under the end connectors), with anti-stud tubes between the studs that
+  // grip along the edges and every 4 studs inside; elsewhere thin posts hold
+  // the roof up without touching the studs, so it is easy to pull off.
+  // Spots not wholly in the hollow keep gripping square sockets, as before.
+  const WALL = 1.39, TUBE_OD = 6.51 - 0.06, TUBE_ID = 4.8, POST_D = 3;
+  const hw = c.sleeperLen / 2 - WALL;
+  // each route's bed, less the rim, cut square to each end's frame (on a
+  // curve a cut across the bed at one arc length isn't square to the end)
+  const beds = routes.map((rt) => {
+    const L = routeLength(rt), cut = BED_END + WALL;
+    if (L <= 2 * cut) return undefined;
+    const n = Math.max(2, Math.ceil(L));
+    const side = (o2: number) => Array.from({ length: n + 1 }, (_, k) => railPoint(rt, (L * k) / n, o2) as Vec2);
+    let bed = s.polygon([...side(-hw), ...side(hw).reverse()]);
+    for (const [e, k] of [[routePose(rt, 0), 1], [routePose(rt, L), -1]] as const) {
+      const big = 4 * (L + c.sleeperLen);
+      // the half-plane beyond the cut, in the end's frame (+y into the route at the start)
+      const keep = s.w.CrossSection.square([2 * big, big]).translate([-big, cut]).rotate(k > 0 ? 0 : 180).rotate(e[2]).translate([e[0], e[1]]);
+      bed = bed.intersect(keep);
+    }
+    return bed;
+  }).filter((b): b is NonNullable<typeof b> => !!b);
+  const deepCache = new Map<string, boolean>();
+  // a stud at spot (i, j) is wholly inside the hollow of some route's bed
+  const deep = (i: number, j: number) => {
     const k = `${i},${j}`;
-    let v = bedCache.get(k);
+    let v = deepCache.get(k);
     if (v === undefined) {
-      const lx = 4 + i * STUD, ly = 4 + j * STUD;
-      const x = p0[0] + lx * Math.cos(h) - ly * Math.sin(h), y = p0[1] + lx * Math.sin(h) + ly * Math.cos(h);
-      v = routes.some((rt) => Math.abs(routeLat(rt, [x, y])) <= c.sleeperLen / 2 - 4 + 1e-6);
-      bedCache.set(k, v);
+      const pt = world(4 + i * STUD, 4 + j * STUD), m = o.studD / 2 + 0.1; // stud radius and a little clearance
+      v = routes.some((rt) => {
+        const lat = routeLat(rt, pt);
+        if (Math.abs(lat) > hw - m) return false;
+        // and clear of both ends' connectors (measured along each end's frame)
+        const L = routeLength(rt);
+        return [routePose(rt, 0), routePose(rt, L)].every((e, k) => {
+          const dx = pt[0] - e[0], dy = pt[1] - e[1];
+          if (Math.hypot(dx, dy) > c.sleeperLen + 2 * STUD) return true;
+          const hd = (e[2] * Math.PI) / 180, along = (-dx * Math.sin(hd) + dy * Math.cos(hd)) * (k ? -1 : 1);
+          return along >= BED_END + WALL + m;
+        });
+      });
+      deepCache.set(k, v);
     }
     return v;
   };
-  // Edge spots: on the bed with neighbours off it. Grip at the corners first
-  // (most neighbours off), then along the edges, keeping grips 4 studs apart.
-  const offN = (i: number, j: number) => [[1, 0], [-1, 0], [0, 1], [0, -1]].filter(([a, b]) => !onBed(i + a, j + b)).length;
-  const gripAt = new Set<string>();
-  if (o.grip === 'edges') {
-    const edge = spots.filter((p) => onBed(p.i, p.j) && offN(p.i, p.j) > 0)
-      .sort((a, b) => offN(b.i, b.j) - offN(a.i, a.j) || a.j - b.j || a.i - b.i);
-    const kept: { i: number; j: number }[] = [];
-    for (const p of edge)
-      if (kept.every((q) => Math.max(Math.abs(q.i - p.i), Math.abs(q.j - p.j)) >= 4)) { kept.push(p); gripAt.add(`${p.i},${p.j}`); }
+  const tubes: CS[] = [], posts: CS[] = [];
+  for (const { i, j } of spots) {
+    if (!(deep(i, j) && deep(i + 1, j) && deep(i, j + 1) && deep(i + 1, j + 1))) continue;
+    const ring = [-1, 0, 1, 2].flatMap((a) => [-1, 0, 1, 2].map((b) => [a, b])).filter(([a, b]) => a < 0 || a > 1 || b < 0 || b > 1);
+    const edge = ring.some(([a, b]) => !deep(i + a, j + b));
+    const lattice = ((i % 4) + 4) % 4 === 0 && ((j % 4) + 4) % 4 === 0;
+    const [x, y] = world(8 + i * STUD, 8 + j * STUD);
+    if (edge || lattice) {
+      tubes.push(s.w.CrossSection.circle(TUBE_OD / 2, 48).subtract(s.w.CrossSection.circle(TUBE_ID / 2, 48)).translate([x, y]));
+      grips?.push([x, y]);
+    } else posts.push(s.w.CrossSection.circle(POST_D / 2, 24).translate([x, y]));
   }
-  const sockets: Man[] = spots.map(({ i, j, x, y }) => {
-    const grip = o.grip === 'all' || !onBed(i, j) || gripAt.has(`${i},${j}`);
-    if (grip && onBed(i, j)) grips?.push([x, y]);
-    return T(R(grip ? t.studSocket(o.studH + 0.21) : t.studRecess(o.studH + 0.21), [0, 0, p0[2]]), [x, y, -0.01]);
-  });
-  return s.difference(body, sockets);
+  const cuts: Man[] = [];
+  if (beds.length) {
+    let hollow = s.w.CrossSection.union(beds);
+    if (tubes.length || posts.length) hollow = hollow.subtract(s.w.CrossSection.union([...tubes, ...posts]));
+    cuts.push(T(s.extrude(hollow, cavH), [0, 0, -0.01]));
+  }
+  for (const { i, j, x, y } of spots) if (!deep(i, j)) cuts.push(socket(x, y));
+  return s.difference(body, cuts);
 }

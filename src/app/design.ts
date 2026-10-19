@@ -12,7 +12,7 @@ export type DSeg =
 export interface DRoute { name: string; x: number; y: number; heading: number; segs: DSeg[] } // start in studs
 export interface Design {
   version: 1; gaugeStuds: number; routes: DRoute[];
-  /** Underside: grip plates only along the edges (default) or at every stud. */
+  /** Underside: hollow with anti-stud tubes at the edges and every 4 studs (default), or a square socket at every stud. */
   grip?: 'edges' | 'all';
 }
 
