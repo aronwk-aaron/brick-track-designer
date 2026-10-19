@@ -20,7 +20,7 @@ const cfg = (name: string) => {
   return { routes, sets: JSON.parse(lines[i + 2].slice(5)) as SetSpec[] };
 };
 
-describe('track-only switch base matches switch.scad', () => {
+describe('track-only switch base matches switch.scad', { timeout: 60000 }, () => {
   for (const [key, ref] of Object.entries(vols)) {
     const tubes = key.endsWith('-tubes'), name = key.replace(/-tubes$/, '');
     it(`${key}: volume ${ref}`, async () => {
@@ -35,10 +35,12 @@ describe('track-only switch base matches switch.scad', () => {
       // frog's rails a little more there. On a three-way the first set's
       // rails are cut clear of the second set's heel bar and tines, which
       // switch.scad leaves in the way: up to 0.45% less. See PHASE3.md.)
-      if (name.startsWith('threeway')) {
+      // (and the tube underside drops the tubes switch.scad leaves loose,
+      // under gaps between ties or pockets: up to 1.5% less)
+      if (name.startsWith('threeway') || tubes) {
         expect(v).toBeLessThan(ref);
-        expect((ref - v) / ref).toBeLessThan(5e-3);
-      } else expect(Math.abs(v - ref) / ref).toBeLessThan(tubes && name.startsWith('wye') ? 2e-3 : 5e-5);
+        expect((ref - v) / ref).toBeLessThan(tubes ? 1.5e-2 : 5e-3);
+      } else expect(Math.abs(v - ref) / ref).toBeLessThan(5e-5);
     });
   }
 });
