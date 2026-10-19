@@ -22,6 +22,31 @@ function arcEnd(p: Pose, r: number, angle: number): Pose {
   return { x: cx + sn * r * Math.cos(rad(h)), y: cy + sn * r * Math.sin(rad(h)), heading: h };
 }
 
+/** LEGO and common third-party radii, in studs, for the planner's auto mode. */
+export const RADII = [24, 32, 40, 48, 56, 64, 72, 88, 104, 120];
+
+/**
+ * Plan from p to t trying every radius in radii (auto mode): the path where
+ * the curve does most of the work (least straight before and after it),
+ * preferring the bigger radius on a tie.
+ */
+export function planAuto(p: Pose, t: [number, number], radii = RADII, maxTurn = 90): DSeg[] | undefined {
+  let best: { segs: DSeg[]; straight: number; r: number } | undefined;
+  for (const r of radii) {
+    const segs = plan(p, t, r, maxTurn);
+    if (!segs) continue;
+    const straight = segs.reduce((a, sg) => a + (sg.kind === 'straight' ? sg.studs : 0), 0);
+    if (!best || straight < best.straight - 0.5 || (Math.abs(straight - best.straight) <= 0.5 && r > best.r)) best = { segs, straight, r };
+  }
+  return best?.segs;
+}
+
+/** A short description of segments, e.g. "6 studs + R40 45° left + 3.2 studs". */
+export function describe(segs: DSeg[]): string {
+  return segs.map((sg) => sg.kind === 'straight' ? `${fmt(sg.studs)} studs` : `R${fmt(sg.radius)} ${fmt(Math.abs(sg.angle))}° ${sg.angle > 0 ? 'left' : 'right'}`).join(' + ');
+}
+const fmt = (v: number) => String(Math.round(v * 100) / 100);
+
 /**
  * Plan from pose p to target t: [lead straight, curve, tail straight],
  * dropping empty pieces. radius in studs. Returns undefined when t can't be

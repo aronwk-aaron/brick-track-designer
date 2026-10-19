@@ -32,7 +32,7 @@ for (const name of await page.$$eval('#template option', (os) => os.map((o) => (
 // Draw on the canvas: clear, then lay a straight up and a curve, then branch.
 await page.click('#clear');
 await page.click('#fit');
-await page.selectOption('#radius', '24');
+await page.selectOption('#radius', '0');
 const box = (await page.locator('#track').boundingBox())!;
 const at = async (fx: number, fy: number, button: 'left' | 'right' = 'left') => {
   await page.mouse.move(box.x + box.width * fx, box.y + box.height * fy);
