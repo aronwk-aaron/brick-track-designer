@@ -6,7 +6,7 @@
 // full, and each route's flangeways (the band just inside each of its rails
 // where the wheel flanges run) are cut into every other route's rails, so
 // frogs and crossings fall out of the geometry, whatever the layout.
-import { type Pt, type Route, railPolyline, routeLat, routeLength, routePose } from './route';
+import { type Pt, type Route, railPolyline, routeLat, routeLength, routePose, routeSOf } from './route';
 
 export interface SolverOptions {
   gauge: number;        // rail centre to rail centre, mm (40 = LEGO)
@@ -36,7 +36,8 @@ export interface Groove { route: number; side: Side; s0: number; s1: number; by:
 export interface CheckRail { route: number; side: Side; s0: number; s1: number; offset: number; width: number }
 
 /** Two routes that leave a shared stretch: points up to where they part. */
-export interface Split { routes: [number, number]; s: number }
+/** Two routes that run together and part: the points' stretch, as arc lengths along each ([a, b] = routes). */
+export interface Split { routes: [number, number]; s: number; spans: [[number, number], [number, number]] }
 
 export interface Solution {
   crossings: Crossing[];
@@ -68,23 +69,31 @@ export function solve(routes: Route[], opts: Partial<SolverOptions> = {}): Solut
   const g = o.gauge / 2;
   const rails = routes.map((rt) => Object.fromEntries(sides.map((sd) => [sd, railPolyline(rt, sd * g, o.step)])) as Record<Side, [number, number, number][]>);
 
-  // Splits: routes that start together, up to where their centre lines are
-  // far enough apart for their rails to stand separately (two heads and a
-  // flangeway): the points' stretch, built in a later phase. Grooves there
-  // are the points' business, not cut here.
+  // Splits: a route that starts on another (at its start, or anywhere along
+  // it, heading the same way), up to where their centre lines are far enough
+  // apart for their rails to stand separately (two heads and a flangeway):
+  // the points' stretch, built in a later phase. Grooves there are the
+  // points' business, not cut here. (s: the stretch's end along the first.)
   const splits: Split[] = [];
+  const apart = 2 * o.headHw + o.flangeway;
   for (let i = 0; i < routes.length; i++)
-    for (let j = i + 1; j < routes.length; j++) {
+    for (let j = 0; j < routes.length; j++) {
+      if (i === j) continue;
       const a = routes[i], b = routes[j];
-      if (Math.hypot(a.start[0] - b.start[0], a.start[1] - b.start[1]) > 0.01 || Math.abs(a.start[2] - b.start[2]) > 0.01) continue;
-      let s = 0;
-      const L = Math.min(routeLength(a), routeLength(b));
-      while (s < L) {
-        const p = routePose(a, s);
-        if (Math.abs(routeLat(b, [p[0], p[1]])) >= 2 * o.headHw + o.flangeway) break;
-        s += o.step;
+      const st: Pt = [b.start[0], b.start[1]];
+      if (Math.abs(routeLat(a, st)) > 0.01) continue;
+      const sa = routeSOf(a, st);
+      const pa = routePose(a, sa);
+      if (Math.hypot(pa[0] - st[0], pa[1] - st[1]) > 0.01 || Math.abs(((pa[2] - b.start[2] + 540) % 360) - 180) > 0.01) continue;
+      if (sa < 1e-6 && j < i) continue;  // both start together: once, as (i < j)
+      let t = 0;
+      const L = Math.min(routeLength(b), routeLength(a) - sa);
+      while (t < L) {
+        const p = routePose(b, t);
+        if (Math.abs(routeLat(a, [p[0], p[1]])) >= apart) break;
+        t += o.step;
       }
-      splits.push({ routes: [i, j], s });
+      splits.push({ routes: [i, j], s: sa + t, spans: [[sa, sa + t], [0, t]] });
     }
 
   // Rail crossings.
@@ -137,7 +146,10 @@ export function solve(routes: Route[], opts: Partial<SolverOptions> = {}): Solut
         if (open !== undefined) grooves.push({ route: i, side: sd, s0: open, s1: pts[pts.length - 1][0], by: j });
       }
 
-  const inSplit = (gr: Groove) => splits.some((sp) => sp.routes.includes(gr.route) && sp.routes.includes(gr.by) && gr.s1 <= sp.s + 1e-6);
+  const inSplit = (gr: Groove) => splits.some((sp) => {
+    const k = sp.routes.indexOf(gr.route);
+    return k >= 0 && sp.routes[1 - k] === gr.by && gr.s0 >= sp.spans[k][0] - 1 && gr.s1 <= sp.spans[k][1] + 1e-6;
+  });
   for (let k = grooves.length - 1; k >= 0; k--) if (inSplit(grooves[k])) grooves.splice(k, 1);
 
   // Check rails (switch.scad's): opposite each sharp rail crossing, inside the

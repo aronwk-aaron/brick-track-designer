@@ -14,7 +14,8 @@ page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
 page.on('pageerror', (e) => errors.push(String(e)));
 await page.goto(`http://localhost:${port}/`);
 try {
-  await page.waitForFunction(() => /built in/.test(document.getElementById('info')?.textContent ?? ''), null, { timeout: 30000 });
+  // (a fresh browser has an empty design, which asks you to draw)
+  await page.waitForFunction(() => /built in/.test(document.getElementById('info')?.textContent ?? '') || /Draw some track/.test(document.getElementById('error')?.textContent ?? ''), null, { timeout: 30000 });
 } catch { errors.push('timed out waiting for the piece'); }
 console.log('info:', await page.textContent('#info'));
 console.log('error:', await page.textContent('#error'));
@@ -28,5 +29,20 @@ for (const name of await page.$$eval('#template option', (os) => os.map((o) => (
   await page.waitForFunction(() => !/Building/.test(document.getElementById('info')?.textContent ?? ''), null, { timeout: 30000 }).catch(() => {});
   console.log(`template "${name}":`, await page.textContent('#info'), await page.textContent('#error'));
 }
+// Draw on the canvas: clear, then lay a straight up and a curve, then branch.
+await page.click('#clear');
+await page.click('#fit');
+await page.selectOption('#radius', '24');
+const box = (await page.locator('#track').boundingBox())!;
+const at = async (fx: number, fy: number, button: 'left' | 'right' = 'left') => {
+  await page.mouse.move(box.x + box.width * fx, box.y + box.height * fy);
+  await page.mouse.click(box.x + box.width * fx, box.y + box.height * fy, { button });
+};
+await at(0.5, 0.9); await at(0.5, 0.6); await at(0.38, 0.1); await at(0.38, 0.1, 'right');
+await at(0.5, 0.75); await at(0.62, 0.1); await at(0.62, 0.1, 'right');
+await page.waitForTimeout(500);
+await page.waitForFunction(() => /built in/.test(document.getElementById('info')?.textContent ?? '') || /\S/.test(document.getElementById('error')?.textContent ?? ''), null, { timeout: 30000 });
+console.log('drawn:', await page.textContent('#info'), await page.textContent('#error'));
+console.log('design:', await page.evaluate(() => localStorage.getItem('btd-design')));
 await page.screenshot({ path: process.argv[2] ?? 'smoke.png' });
 await browser.close();
