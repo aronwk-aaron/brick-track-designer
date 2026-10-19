@@ -26,10 +26,19 @@ describe('track-only switch base matches switch.scad', () => {
     it(`${key}: volume ${ref}`, async () => {
       const { routes, sets } = cfg(name);
       const plan = switchPlan(routes, sets, { ...BASE_DEFAULTS, studGrip: tubes ? 'edges' : 'all' }, name.startsWith('right') ? -1 : 1);
+      // (a three-way at R104 puts its second points set into the first one's:
+      // switch.scad builds it with the parts clashing; here it's a warning)
+      if (name === 'threeway-R104-arc') { expect(plan.warnings.join()).toMatch(/overlap/); return; }
+      expect(plan.warnings.filter((w) => /overlap/.test(w))).toHaveLength(0);
       const v = switchBase(new Scad(await kernel()), plan).volume();
       // (the tube underside of a wye differs by 0.1%: OpenSCAD cuts the
-      // frog's rails a little more there; see PHASE3.md)
-      expect(Math.abs(v - ref) / ref).toBeLessThan(tubes && name.startsWith('wye') ? 2e-3 : 5e-5);
+      // frog's rails a little more there. On a three-way the first set's
+      // rails are cut clear of the second set's heel bar and tines, which
+      // switch.scad leaves in the way: up to 0.45% less. See PHASE3.md.)
+      if (name.startsWith('threeway')) {
+        expect(v).toBeLessThan(ref);
+        expect((ref - v) / ref).toBeLessThan(5e-3);
+      } else expect(Math.abs(v - ref) / ref).toBeLessThan(tubes && name.startsWith('wye') ? 2e-3 : 5e-5);
     });
   }
 });

@@ -212,7 +212,15 @@ export function switchPlan(routes: Route[], specs: SetSpec[], p: BaseParams = BA
     const cw = p.checkRailW / 2 + r + (d > hl - 4 - r ? p.checkRailFlare : 0);
     return d <= hl + r && Math.abs(lats[cr[0]] - (cr[2] + p.checkRailW / 2)) < cw;
   });
+  // Points sets too close: one set's points reach into the next one's (a
+  // three-way at a large radius). switch.scad builds them anyway, clashing.
+  const warnings = sets.flatMap((v) => v.warnings);
+  const bySetY = [...sets].sort((a, b) => a.toeY - b.toeY);
+  for (let k = 0; k + 1 < bySetY.length; k++)
+    if (bySetY[k + 1].toeY - 2 < bySetY[k].pointsEndY)
+      warnings.push(`two points sets overlap (one's points end at y ${bySetY[k].pointsEndY.toFixed(1)}, the next one's start at ${bySetY[k + 1].toeY.toFixed(1)}): move the second set further along`);
   return {
+    warnings,
     p, g, G, tc, sleeperW, sleeperLen, routes, nRoutes, specs, sets, others, latOthers, isStock, railFixS, frogs, checkList,
     setData, tieYs, baseXRange, baseY0, baseY1, baseCuts, routeTieList, longTieYs, longTieSpan, routeServed, endPoses,
     inEndKeepout, nearCheckRail, railCross,
@@ -228,8 +236,23 @@ function dedupe(pts: Pt[], acc: Pt[] = []): Pt[] {
 }
 
 /** The track-only switch base, as switch_base() with part = "all" (unsplit). */
-/** parts, if given, gets the main parts by name (for checks). */
+/** The track-only switch base, as switch_base() with part = "all" (unsplit). parts, if given, gets the main parts by name (for checks). */
 export function switchBase(s: Scad, plan: SwitchPlan, parts?: Record<string, Man>): Man {
+  return switchGeometry(s, plan).base(parts);
+}
+
+/** OpenSCAD's sphere(r, $fn) as a solid: the hull of its rings of points (it's convex). */
+function sphereScad(s: Scad, r: number, fn: number, scaleZ = 1): Man {
+  const rings = Math.floor((fn + 1) / 2), pts: Vec3[] = [];
+  for (let i = 0; i < rings; i++) {
+    const phi = (180 * (i + 0.5)) / rings;
+    for (let j = 0; j < fn; j++) pts.push([r * sind(phi) * cosd((360 * j) / fn), r * sind(phi) * sind((360 * j) / fn), scaleZ * r * cosd(phi)]);
+  }
+  return s.w.Manifold.hull(pts);
+}
+
+/** Everything switch.scad builds for a switch: the base and each set's moving parts. */
+export function switchGeometry(s: Scad, plan: SwitchPlan) {
   const { p, g, G, routes, nRoutes, sets, sleeperW, sleeperLen } = plan;
   const t = new Track(s, { ...TRACK_DEFAULTS, gaugeStuds: p.gaugeStuds, studH: p.studH });
   const tc = t.c, c = p.pointClearance;
@@ -335,6 +358,11 @@ export function switchBase(s: Scad, plan: SwitchPlan, parts?: Record<string, Man
         const cuts: Man[] = [];
         for (const j of plan.others(i)) for (const o2 of [-G, G]) if (!plan.isStock(j, o2)) cuts.push(sweep(flangeBand2d(o2, -Math.sign(o2)), routes[j]));
         for (const v of sets.slice(1)) cuts.push(stockFootCut(v));
+        // Every set's pockets (heel bar, disc, tines, blade slots, pivot pin):
+        // on a three-way the first set's rails run on through the second
+        // set's points, and their feet would block its heel bar and tines
+        // (switch.scad doesn't cut them: 107 mm3 of clash at R40).
+        for (const v of sets) cuts.push(pointsPockets(v));
         out.push(s.difference(sweep(rail2d(o), routes[i], plan.railFixS(i, o) + c, routeLength(routes[i]) - endTrim), cuts));
       }
     return s.union(out);
@@ -477,11 +505,90 @@ export function switchBase(s: Scad, plan: SwitchPlan, parts?: Record<string, Man
     return studSpots(s, t, spots, bed, [1, 0], [0, 1], p.studH + 0.21, 0, solid, p.studGrip);
   };
 
+  // ---------- the moving parts (points, throw, lever) ----------
+  const tineFloorT = 0.45, postW = 1.2, postL = 3;
+  const bladeSection2d = (o: number) => {
+    let cs = blade2d(o);
+    for (const sg of [-1, 1])
+      cs = cs.subtract(s.polygon([[stemHw, bedTop - 0.01], [3.1, bedTop - 0.01], [3.1, bedTop + 0.3]]).scale([sg, 1]).translate([o, 0]));
+    return cs.add(sq([2 * stemHw, bedTop - partZ0 + 0.01], [o - stemHw, partZ0]));
+  };
+  const blade = (v: SetV, rt: Route, o: number, other: Route, oStock: number) => {
+    const side = oStock < 0 ? 1 : -1, face = oStock + side * (HEAD_HW + c);
+    return s.intersection(
+      sweep(bladeSection2d(o), rt, v.sToe, v.sHeel - c),
+      sweep(sq([30, 30], [side > 0 ? face : face - 30, partZ0 - 1]), other, 0, v.sHeel + 5));
+  };
+  const tineFloor2d = (v: SetV) => {
+    const d = sub(v.tineTip, v.pivotPt), u = mul(d, 1 / norm(d)), n: Pt = [u[1], -u[0]], cs: CS[] = [];
+    for (const k of [-1, 1]) for (const e of [0, 1])
+      cs.push(circle(p.springThickness / 2, 12, add(sub(v.tineTip, mul(u, e * postL)), mul(n, (k * (g.tineGap + p.springThickness)) / 2))));
+    return W.CrossSection.hull(cs);
+  };
+  /** The points part, one piece, as assembled for the right-hand route (points_part). */
+  const pointsPart = (v: SetV) => {
+    const swings = [0, -v.throwAng];
+    const blades = s.difference(
+      s.union([blade(v, v.ra, -G, v.rb, -G), rot3(blade(v, v.rb, +G, v.ra, +G), v.pivotPt, -v.throwAng)]),
+      swings.map((a) => rot3(cube([400, g.throwRodW + 2 * c + 0.6, g.layerTop + c - pieceBottomZ + 1], [-200, v.throwY - g.throwRodW / 2 - c - 0.3, pieceBottomZ - 1]), v.pivotPt, a)));
+    const pin = T(s.cylinder(g.cavityTop - g.layerTop + g.pivotPinUp + 0.01, g.pivotPinD / 2, g.pivotPinD / 2, 32), [v.pivotPt[0], v.pivotPt[1], g.layerTop - 0.01]);
+    const layer = s.difference(s.union([
+      T(s.extrude(W.CrossSection.union([heelBar2d(v), circle(g.discR, 48, v.pivotPt), tines2d(v)]), g.layerTop - partZ0), [0, 0, partZ0]),
+      T(s.extrude(tineFloor2d(v), tineFloorT), [0, 0, partZ0]),
+    ]), swings.flatMap((a) => [0, 1].map((b) => rot3(
+      sweep(sq([7.8, bedTop + 2 - pieceBottomZ], [bO(b) - 3.9, pieceBottomZ - 1]).offset(c, 'Miter', 1000), bRt(v, b), v.sHeel, v.sHeel + 30), v.pivotPt, a))));
+    return s.union([blades, pin, layer]);
+  };
+  /** The throw (slider), as assembled for the right-hand route (throw_part). */
+  const throwPart = (v: SetV) => {
+    const z0 = g.layerZ0, z1 = g.layerTop, rodW = g.throwRodW;
+    const xs = [...v.postX, v.forkX], x0 = Math.min(...xs) - 1.5, x1 = Math.max(...xs) + 1.5;
+    const slotW = g.leverTipD + 2 * c, m = v.forkMouthHw;
+    const body = s.union([
+      cube([x1 - x0, rodW, z1 - z0], [x0, v.throwY - rodW / 2, z0]),
+      ...v.postX.map((x) => cube([postW, rodW / 2 + postL, z1 - z0 - tineFloorT - 0.15], [x - postW / 2, v.throwY, z0 + tineFloorT + 0.15])),
+      cube([2 * forkHw, rodW, v.forkTop - z0], [v.forkX - forkHw, v.throwY - rodW / 2, z0]),
+    ]);
+    const slot2d = W.CrossSection.union([
+      sq([slotW, v.leverTipZ - z0 - 0.6], [-slotW / 2, z0 + 0.6]),
+      W.CrossSection.hull([circle(slotW / 2, 32, [0, v.leverTipZ]), circle(slotW / 2, 32, [0, g.leverTipLow])]),
+      sq([2 * m, v.forkTop - v.leverTipZ + 0.01], [-m, v.leverTipZ]),
+      s.polygon([[-m, v.forkTop - 0.4], [m, v.forkTop - 0.4], [m + 0.5, v.forkTop + 0.01], [-m - 0.5, v.forkTop + 0.01]]),
+    ]);
+    // (linear_extrude(2 * rod w, center = true), turned upright along y)
+    const slot = T(R(T(s.extrude(slot2d, 2 * rodW), [0, 0, -rodW]), [90, 0, 0]), [v.forkX, v.throwY, 0]);
+    return s.difference(body, [slot]);
+  };
+  /** The lever, upright, origin at the pivot (lever_shape). */
+  const leverShape = () => {
+    const tt = g.leverBossLen;
+    const cylY = (d: number, h: number, fn: number) => R(T(s.cylinder(h, d / 2, d / 2, fn), [0, 0, -h / 2]), [90, 0, 0]);
+    const body = s.difference(s.union([
+      cylY(g.leverBossD, tt, 32),
+      cube([g.leverDrvW, tt, g.leverDa], [-g.leverDrvW / 2, -tt / 2, -g.leverDa]),
+      T(cylY(g.leverTipD, tt, 24), [0, 0, -g.leverDa]),
+      cube([2.5, tt, 14], [-1.25, -tt / 2, 0]),
+      s.intersection(T(sphereScad(s, 3, 32), [0, 0, 14]), cube([10, 10, 10], [-5, -tt / 2, 9])),
+    ]), [T(R(s.cylinder(1.2, (2.4 + 2 * c) / 2, (2.4 + 2 * c) / 2, 24), [-90, 0, 0]), [0, -tt / 2 - 0.01, 0])]);
+    return s.union([
+      body,
+      T(R(sphereScad(s, 1.2, 24, 0.7), [-90, 0, 0]), [0, tt / 2, 0]),
+      T(sphereScad(s, 0.6, 12), [0, tt / 2, g.leverBumpR]),
+    ]);
+  };
+  /** The lever as assembled, swung to the right-hand route's position (lever_part). */
+  const leverPart = (v: SetV) => T(R(leverShape(), [0, v.leverAng, 0]), [v.leverX, v.throwY, g.leverPz]);
+  /** The lever lying on its -y face, ready to print (part = "lever"). */
+  const leverPrint = () => T(R(leverShape(), [90, 0, 0]), [0, 0, g.leverBossLen / 2]);
+
   // ---------- the base ----------
-  const named: Record<string, Man> = {
-    stockRails: stockRails(), crossingRails: crossingRails(), checkRails: checkRails(),
-    pointsBeds: s.union(sets.map((v) => s.difference(pointsBed(v), [pointsPockets(v)]))),
-    turnoutTies: turnoutTies(), routeTies: routeTies(), connectors: connectors(),
+  const base = (parts?: Record<string, Man>) => {
+    const named: Record<string, Man> = {
+      stockRails: stockRails(), crossingRails: crossingRails(), checkRails: checkRails(),
+      // (each set's bed less every set's pockets: on a three-way the sets can
+      // overlap, and switch.scad cuts each bed by its own pockets only)
+      pointsBeds: s.difference(s.union(sets.map(pointsBed)), sets.map(pointsPockets)),
+      turnoutTies: turnoutTies(), routeTies: routeTies(), connectors: connectors(),
   };
   if (parts) Object.assign(parts, named, { throwArms: s.union(sets.map(throwArm)), throwChannels: s.union(sets.map(throwChannel)) });
   const track = s.union(Object.values(named));
@@ -495,5 +602,13 @@ export function switchBase(s: Scad, plan: SwitchPlan, parts?: Record<string, Man
     t.startRailSupports(supportZ), t.supportFooting(supportZ, 0, -1),
     ...plan.endPoses.map((e) => atPose(s.union([t.endRailSupports(supportZ), t.supportFooting(supportZ, 0, +1)]), e)),
   ]);
+  };
+  return {
+    base,
+    pointsPart: (k = 0) => pointsPart(sets[k]),
+    throwPart: (k = 0) => throwPart(sets[k]),
+    leverPart: (k = 0) => leverPart(sets[k]),
+    leverShape, leverPrint,
+  };
 }
 
