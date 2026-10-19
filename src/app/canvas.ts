@@ -18,6 +18,8 @@ export interface CanvasHost {
   select(route: number | undefined): void;
   /** Curve radius in studs; 0 = auto (standard radii, 22.5-degree ends); -1 = free (any radius and angle). */
   radius(): number;
+  /** What a click or drag would do now, and where the mouse is (studs), for the status line. */
+  status?(hint: string, at: [number, number] | undefined): void;
 }
 
 const MM = 8; // mm per stud
@@ -326,6 +328,12 @@ export class TrackCanvas {
     if ((e.target as HTMLElement)?.tagName === 'INPUT') return;
     if (e.code === 'Space') { this.space = down; e.preventDefault(); }
     if (!down) return;
+    if (e.key === 'Escape' && this.drag) {
+      // put the dragged track back as it was
+      this.host.design().routes[this.drag.route] = this.drag.orig;
+      this.drag = undefined; this.dragBad = false; this.dragSnap = undefined;
+      this.host.changed(true); return this.draw();
+    }
     if (e.key === 'Escape') this.stopDrawing();
     if ((e.key === 'Delete' || e.key === 'Backspace') && this.selected !== undefined && !this.active) {
       this.host.design().routes.splice(this.selected, 1);
@@ -361,7 +369,25 @@ export class TrackCanvas {
   }
 
   // ---------- drawing ----------
+  /** What a click or drag would do now. */
+  hint(): string {
+    if (this.drag?.moved) return this.dragBad ? "Can't bend the track this way: release to keep the last good shape, Esc puts it back"
+      : this.dragSnap ? 'Release to join the two ends' : 'Release to reshape · drop on another end to join · Esc puts it back';
+    if (this.active) return 'Click to lay track · keep clicking to go on · Esc or right-click stops';
+    const hit = this.mouse ? this.nearTrack(this.mouse) : undefined;
+    if (this.mode === 'select') {
+      if (hit?.end) return 'Drag this end to reshape the track';
+      if (this.selected !== undefined) return `${this.host.design().routes[this.selected]?.name ?? ''} selected · Delete removes it · click elsewhere to deselect`;
+      return 'Click a track to select it · drag an end to reshape it';
+    }
+    if (hit?.end === 'end') return 'Click to carry the track on · drag to reshape it';
+    if (hit?.end === 'start') return 'Click to lay a new track out of this end · drag to reshape it';
+    if (hit) return 'Click to branch off this track';
+    return 'Click a grid point to start a track';
+  }
+
   draw() {
+    this.host.status?.(this.hint(), this.mouse ? this.snap(this.mouse) : undefined);
     const c = this.ctx, dpr = devicePixelRatio, W = this.el.width / dpr, H = this.el.height / dpr;
     c.setTransform(dpr, 0, 0, dpr, 0, 0);
     const css = getComputedStyle(this.el);

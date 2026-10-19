@@ -4,6 +4,7 @@ import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { type Design, type DRoute, type DSeg, TEMPLATES, endOf } from './design';
 import { TrackCanvas } from './canvas';
+import { describe } from './planner';
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 const routesEl = $('routes'), infoEl = $('info'), errEl = $('error');
@@ -45,20 +46,41 @@ function segRow(r: DRoute, k: number): HTMLElement {
   return row;
 }
 
+// Which route cards are open (by index); the selected one always is.
+const openCards = new Set<number>();
+
 function render() {
   routesEl.replaceChildren();
+  $('routes-title').textContent = design.routes.length ? `Routes (${design.routes.length})` : 'Routes';
+  $('empty').hidden = design.routes.length > 0;
+  if (!design.routes.length) {
+    const e = document.createElement('div'); e.className = 'empty';
+    e.textContent = 'No track yet. Draw on the grid, pick a template, or add a route by numbers.';
+    routesEl.append(e);
+  }
   design.routes.forEach((r, i) => {
-    const box = document.createElement('fieldset');
-    if (i === canvas?.selected) box.classList.add('selected');
-    const legend = document.createElement('legend');
-    const name = document.createElement('input'); name.value = r.name; name.className = 'name';
-    name.addEventListener('change', () => { r.name = name.value; changed(); });
-    legend.append(name);
-    box.append(legend,
+    const box = document.createElement('details'); box.className = 'route';
+    const sel = i === canvas?.selected;
+    if (sel) box.classList.add('selected');
+    box.open = sel || openCards.has(i);
+    const sum = document.createElement('summary');
+    const title = document.createElement('b'); title.textContent = r.name || `Route ${i + 1}`;
+    const what = document.createElement('span'); what.textContent = r.segs.length ? describe(r.segs) : 'empty';
+    sum.append(title, what);
+    sum.addEventListener('click', (e) => {
+      e.preventDefault();
+      if (sel) { openCards.delete(i); canvas.selected = undefined; }
+      else { openCards.add(i); canvas.selected = i; }
+      render(); canvas.draw();
+    });
+    const body = document.createElement('div'); body.className = 'body';
+    const name = document.createElement('input'); name.value = r.name; name.type = 'text';
+    name.addEventListener('change', () => { r.name = name.value; changed(true); });
+    body.append(field('Name', name),
       field('Start x, studs', num(r.x, (n) => { r.x = n; }, 1)),
       field('Start y, studs', num(r.y, (n) => { r.y = n; }, 1)),
       field('Heading ° (0 = up, + = left)', num(r.heading, (n) => { r.heading = n; }, 22.5)));
-    r.segs.forEach((_, k) => box.append(segRow(r, k)));
+    r.segs.forEach((_, k) => body.append(segRow(r, k)));
     const add = document.createElement('div'); add.className = 'row';
     add.append(
       btn('+ Straight', () => r.segs.push({ kind: 'straight', studs: 16 })),
@@ -68,9 +90,11 @@ function render() {
     const more = document.createElement('div'); more.className = 'row';
     more.append(
       btn('New route from its end', () => { const e = endOf(design, i); design.routes.push({ name: `R${design.routes.length + 1}`, ...e, segs: [{ kind: 'straight', studs: 16 }] }); }),
-      btn('Delete route', () => { design.routes.splice(i, 1); }),
+      btn('Delete', () => { design.routes.splice(i, 1); if (canvas.selected === i) canvas.selected = undefined; openCards.clear(); }),
     );
-    box.append(add, more);
+    more.lastElementChild!.className = 'danger';
+    body.append(add, more);
+    box.append(sum, body);
     routesEl.append(box);
   });
 }
@@ -85,6 +109,7 @@ function changed(rerender = false) {
   save();
   if (rerender) render();
   canvas?.draw();
+  updateHistoryButtons();
   clearTimeout(timer);
   timer = window.setTimeout(() => worker.postMessage({ id: ++seq, design: structuredClone(design) }), 150);
   infoEl.textContent = 'Building…';
@@ -110,7 +135,9 @@ const renderer = new THREE.WebGLRenderer({ antialias: true });
 renderer.setPixelRatio(devicePixelRatio);
 view.append(renderer.domElement);
 const scene = new THREE.Scene();
-scene.background = new THREE.Color(0xf4f4f2);
+const cssColor = (v: string, fallback: string) => getComputedStyle(document.documentElement).getPropertyValue(v).trim() || fallback;
+scene.background = new THREE.Color(cssColor('--view-bg', '#f4f4f2'));
+matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => { scene.background = new THREE.Color(cssColor('--view-bg', '#f4f4f2')); });
 const camera = new THREE.PerspectiveCamera(35, 1, 1, 10000);
 camera.up.set(0, 0, 1);
 const controls = new OrbitControls(camera, renderer.domElement);
@@ -128,18 +155,27 @@ function showMesh(positions: Float32Array) {
   scene.add(mesh);
   geo.computeBoundingSphere();
   const bs = geo.boundingSphere!;
-  if (!framed) {
-    controls.target.copy(bs.center);
-    camera.position.copy(bs.center).add(new THREE.Vector3(0.6, -1.2, 1.1).normalize().multiplyScalar(bs.radius * 3.2));
-    controls.update();
-    framed = true;
-  }
+  // Frame the piece the first time, and again when it has grown, shrunk or
+  // moved a lot, keeping the direction you are looking from.
+  const moved = !lastSphere || bs.center.distanceTo(lastSphere.center) > lastSphere.radius * 0.35
+    || Math.abs(bs.radius - lastSphere.radius) > lastSphere.radius * 0.35;
+  if (!framed || moved) frame(bs, framed);
+  framed = true;
+}
+let lastSphere: THREE.Sphere | undefined;
+function frame(bs: THREE.Sphere, keepDirection: boolean) {
+  const dir = keepDirection ? camera.position.clone().sub(controls.target).normalize() : new THREE.Vector3(0.6, -1.2, 1.1).normalize();
+  controls.target.copy(bs.center);
+  camera.position.copy(bs.center).add(dir.multiplyScalar(bs.radius / Math.sin(THREE.MathUtils.degToRad(camera.fov / 2)) * Math.max(1, 1 / camera.aspect)));
+  controls.update();
+  lastSphere = bs.clone();
 }
 function resize() {
   const { clientWidth: w, clientHeight: h } = view;
   renderer.setSize(w, h); camera.aspect = w / h; camera.updateProjectionMatrix();
 }
 new ResizeObserver(resize).observe(view);
+renderer.domElement.addEventListener('dblclick', () => { if (mesh?.geometry.boundingSphere) frame(mesh.geometry.boundingSphere, true); });
 renderer.setAnimationLoop(() => renderer.render(scene, camera));
 
 // ---------- toolbar ----------
@@ -147,12 +183,15 @@ const tpl = $<HTMLSelectElement>('template');
 for (const name of Object.keys(TEMPLATES)) tpl.append(new Option(name, name));
 tpl.addEventListener('change', () => {
   if (!tpl.value) return;
-  design = structuredClone(TEMPLATES[tpl.value]); tpl.value = ''; framed = false; changed(true); canvas.fit();
+  design = structuredClone(TEMPLATES[tpl.value]); tpl.value = ''; gauge.value = String(design.gaugeStuds); grip.value = 'edges'; framed = false; changed(true); canvas.fit();
 });
 $('add-route').addEventListener('click', () => {
   design.routes.push({ name: `R${design.routes.length + 1}`, x: 0, y: 0, heading: 0, segs: [{ kind: 'straight', studs: 16 }] });
   changed(true);
 });
+const grip = $<HTMLSelectElement>('grip');
+grip.value = design.grip ?? 'edges';
+grip.addEventListener('change', () => { design.grip = grip.value as Design['grip']; changed(true); });
 const gauge = $<HTMLInputElement>('gauge');
 gauge.value = String(design.gaugeStuds);
 gauge.addEventListener('change', () => { design.gaugeStuds = Number(gauge.value); changed(); });
@@ -168,12 +207,13 @@ $('load').addEventListener('click', () => loadInput.click());
 loadInput.addEventListener('change', async () => {
   const f = loadInput.files?.[0]; if (!f) return;
   try { const d = JSON.parse(await f.text()) as Design; if (!Array.isArray(d.routes)) throw new Error('not a design');
-    design = d; gauge.value = String(d.gaugeStuds); framed = false; changed(true); canvas.fit();
+    design = d; gauge.value = String(d.gaugeStuds); grip.value = d.grip ?? 'edges'; framed = false; changed(true); canvas.fit();
   } catch (err) { errEl.textContent = `Couldn't load that file: ${err}`; }
   loadInput.value = '';
 });
 
 // ---------- the track canvas ----------
+const hintEl = $('hint'), coordsEl = $('coords');
 const radiusSel = $<HTMLSelectElement>('radius');
 radiusSel.append(new Option('Free', '-1', true, true));
 radiusSel.append(new Option('Auto (LEGO radii)', '0'));
@@ -183,7 +223,12 @@ const canvas = new TrackCanvas($<HTMLCanvasElement>('track'), {
   changed: (commit) => changed(commit),
   select: () => render(),
   radius: () => Number(radiusSel.value),
+  status: (hint, at) => {
+    hintEl.textContent = hint;
+    coordsEl.textContent = at ? `x ${at[0]}, y ${at[1]} studs` : '';
+  },
 });
+canvas.draw();
 const setMode = (m: 'draw' | 'select') => {
   canvas.mode = m; canvas.stopDrawing();
   $('mode-draw').classList.toggle('on', m === 'draw'); $('mode-select').classList.toggle('on', m === 'select');
@@ -202,9 +247,13 @@ let show3d = true;
 try { show3d = localStorage.getItem('btd-3d') !== '0'; } catch { /* fine */ }
 set3d(show3d);
 $('toggle-3d').addEventListener('click', () => { show3d = !show3d; set3d(show3d); });
-const restore = (json: string) => { design = JSON.parse(json); gauge.value = String(design.gaugeStuds); canvas.selected = undefined; save(); render(); canvas.draw(); worker.postMessage({ id: ++seq, design: structuredClone(design) }); };
+const restore = (json: string) => { design = JSON.parse(json); gauge.value = String(design.gaugeStuds); grip.value = design.grip ?? 'edges'; canvas.selected = undefined; save(); render(); canvas.draw(); updateHistoryButtons(); worker.postMessage({ id: ++seq, design: structuredClone(design) }); };
 const undo = () => { if (history.length > 1) { future.push(history.pop()!); restore(history[history.length - 1]); } };
 const redo = () => { if (future.length) { const j = future.pop()!; history.push(j); restore(j); } };
+function updateHistoryButtons() {
+  ($('undo') as HTMLButtonElement).disabled = history.length <= 1;
+  ($('redo') as HTMLButtonElement).disabled = !future.length;
+}
 $('undo').addEventListener('click', undo);
 $('redo').addEventListener('click', redo);
 addEventListener('keydown', (e) => {
@@ -214,7 +263,46 @@ addEventListener('keydown', (e) => {
   if (e.key === 'd' || e.key === 'D') setMode('draw');
   if (e.key === 's' || e.key === 'S') setMode('select');
   if (e.key === 'p' || e.key === 'P') { show3d = !show3d; set3d(show3d); }
+  if ((e.key === 'f' || e.key === 'F') && !e.ctrlKey && !e.metaKey) canvas.fit();
+  if (e.key === '?') helpEl.classList.toggle('open');
+  if (e.key === 'Escape') helpEl.classList.remove('open');
 });
+
+// Help
+const helpEl = $('help');
+$('help-open').addEventListener('click', () => helpEl.classList.add('open'));
+$('help-close').addEventListener('click', () => helpEl.classList.remove('open'));
+
+// The routes panel: shown or hidden (remembered).
+const setPanel = (on: boolean) => {
+  document.body.classList.toggle('nopanel', !on);
+  $('toggle-panel').classList.toggle('on', on);
+  try { localStorage.setItem('btd-panel', on ? '1' : '0'); } catch { /* fine */ }
+};
+let showPanel = true;
+try { showPanel = localStorage.getItem('btd-panel') !== '0'; } catch { /* fine */ }
+setPanel(showPanel);
+$('toggle-panel').addEventListener('click', () => { showPanel = !showPanel; setPanel(showPanel); });
+
+// The splitter between the plan and the 3D view (its share remembered).
+const splitter = $('splitter');
+const setSplit = (f: number) => {
+  f = Math.min(0.85, Math.max(0.15, f));
+  mainEl.style.setProperty('--plan', `${f}fr`); mainEl.style.setProperty('--view', `${1 - f}fr`);
+  return f;
+};
+try { const f = Number(localStorage.getItem('btd-split')); if (f) setSplit(f); } catch { /* fine */ }
+splitter.addEventListener('pointerdown', (e) => {
+  splitter.setPointerCapture(e.pointerId); splitter.classList.add('dragging');
+  const box = mainEl.getBoundingClientRect();
+  const mv = (ev: PointerEvent) => {
+    const f = setSplit((ev.clientY - box.top) / box.height);
+    try { localStorage.setItem('btd-split', String(f)); } catch { /* fine */ }
+  };
+  splitter.addEventListener('pointermove', mv);
+  splitter.addEventListener('pointerup', () => { splitter.removeEventListener('pointermove', mv); splitter.classList.remove('dragging'); }, { once: true });
+});
+splitter.addEventListener('dblclick', () => { mainEl.style.removeProperty('--plan'); mainEl.style.removeProperty('--view'); try { localStorage.removeItem('btd-split'); } catch { /* fine */ } });
 $('clear').addEventListener('click', () => { design.routes = []; canvas.selected = undefined; changed(true); });
 
 render();
