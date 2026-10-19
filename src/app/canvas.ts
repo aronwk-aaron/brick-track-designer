@@ -7,7 +7,7 @@
 // Drag with the right or middle button (or Space + drag) to pan; the wheel
 // zooms.
 import type { Design, DRoute, DSeg } from './design';
-import { describe, follow, plan, planAuto, planFree, reversed, trace, type Pose } from './planner';
+import { describe, follow, plan, planAnyway, planAuto, planFree, reversed, trace, type Pose } from './planner';
 
 export interface Overlay { grooves: [number, number][][]; checkRails: [number, number][][]; crossings: [number, number][]; splits: [number, number][] }
 
@@ -36,7 +36,7 @@ export class TrackCanvas {
   selected: number | undefined;
   overlay: Overlay | undefined;
   /** Dragging a track's end: which route and end, where the press was, and the route as it was. */
-  private drag: { route: number; end: 'start' | 'end'; sx: number; sy: number; moved: boolean; orig: DRoute; anchor: number } | undefined;
+  private drag: { route: number; end: 'start' | 'end'; sx: number; sy: number; moved: boolean; orig: DRoute; anchor: number; lastGood?: DRoute } | undefined;
 
   constructor(private el: HTMLCanvasElement, private host: CanvasHost) {
     this.ctx = el.getContext('2d')!;
@@ -134,7 +134,7 @@ export class TrackCanvas {
         let c = -1;
         work.segs.forEach((sg, k) => { if (sg.kind === 'curve') c = k; });
         const anchor = c < 0 ? Math.max(0, work.segs.length - 1) : c > 0 && work.segs[c - 1].kind === 'straight' ? c - 1 : c;
-        this.drag = { route: hit.route, end: hit.end, sx: e.clientX, sy: e.clientY, moved: false, orig: structuredClone(r), anchor };
+        this.drag = { route: hit.route, end: hit.end, sx: e.clientX, sy: e.clientY, moved: false, orig: structuredClone(r), anchor, lastGood: structuredClone(r) };
         this.selected = hit.route; this.host.select(this.selected);
         return;
       }
@@ -200,7 +200,11 @@ export class TrackCanvas {
     const dr = this.drag;
     if (!dr) return;
     this.drag = undefined;
-    if (dr.moved) { this.host.changed(true); return this.draw(); }
+    if (dr.moved) {
+      if (this.dragBad && dr.lastGood) this.host.design().routes[dr.route] = dr.lastGood;
+      this.dragBad = false;
+      this.host.changed(true); return this.draw();
+    }
     // a click on an end: in Draw mode, carry the track on from it
     if (this.mode === 'draw' && e.button === 0) {
       const r = this.host.design().routes[dr.route];
@@ -215,21 +219,29 @@ export class TrackCanvas {
     const work = dr.end === 'end' ? structuredClone(dr.orig) : reversed(dr.orig);
     const head = work.segs.slice(0, dr.anchor);
     const from = follow(work, head);
-    const tail = this.planFrom(from, t);
-    this.dragBad = !tail;
-    if (!tail) return;
+    const good = this.planFrom(from, t);
+    this.dragBad = !good;
+    // (if it can't, show the curve it would need, its bad part in red, and
+    // go back to the last good shape when let go)
+    const tail = good ?? planAnyway(from, t);
     const segs = [...head];
     for (const sg of tail) {
       const last = segs[segs.length - 1];
       if (last?.kind === 'straight' && sg.kind === 'straight') segs[segs.length - 1] = { kind: 'straight', studs: Math.round((last.studs + sg.studs) * 1e6) / 1e6 };
       else segs.push(sg);
     }
+    this.dragBadFrom = dr.end === 'end' ? head.length : -1;
+    this.dragBadTo = dr.end === 'end' ? -1 : segs.length - head.length;
     const next = { ...work, segs };
     const r = dr.end === 'end' ? next : reversed(next);
     const cur = d.routes[dr.route];
     cur.x = Math.round(r.x * 1e4) / 1e4; cur.y = Math.round(r.y * 1e4) / 1e4; cur.heading = Math.round(r.heading * 1e6) / 1e6; cur.segs = r.segs;
+    if (good) this.drag!.lastGood = structuredClone(cur);
   }
   private dragBad = false;
+  /** While a drag can't reach: the dragged route's segments that are bad ([from, to) by index; -1 = open). */
+  private dragBadFrom = -1;
+  private dragBadTo = -1;
   private wheel(e: WheelEvent) {
     e.preventDefault();
     const r = this.el.getBoundingClientRect(), sx = e.clientX - r.left, sy = e.clientY - r.top;
@@ -311,11 +323,30 @@ export class TrackCanvas {
       return pts;
     };
     const railW = Math.max(1, 2.5 / MM * this.scale);
+    /** A label by the mouse, kept inside the canvas. */
+    const tag = (mx: number, my: number, txt: string, color: string) => {
+      c.font = '600 12px system-ui, sans-serif';
+      const tw = c.measureText(txt).width;
+      const x = mx + 10 + tw + 10 > W ? Math.max(4, mx - 10 - tw - 10) : mx + 10, y = my - 26 < 0 ? my + 10 : my - 26;
+      c.fillStyle = 'rgba(255,255,255,0.92)'; c.fillRect(x, y, tw + 10, 18);
+      c.fillStyle = color; c.fillText(txt, x + 5, y + 13);
+    };
+    /** Draw segments from pose p, each in its colour: bad ones red. */
+    const drawSegs = (p: Pose, segs: DSeg[], isBad: (k: number) => boolean, band: string, rail: string) => {
+      let q = p;
+      segs.forEach((sg, k) => {
+        const bad = isBad(k);
+        line(trace(q, [sg], 0.5), bad ? 'rgba(224,69,43,0.22)' : band, (2 * g + 3) * this.scale);
+        for (const o of [-g, g]) line(offsetPts(q, [sg], o), bad ? '#e0452b' : rail, railW);
+        q = follow(q, [sg]);
+      });
+    };
     d.routes.forEach((r, i) => {
       const sel = i === this.selected;
+      const dragging = this.drag?.moved && this.drag.route === i && this.dragBad;
+      const isBad = (k: number) => !!dragging && (this.dragBadFrom >= 0 ? k >= this.dragBadFrom : k < this.dragBadTo);
       // sleeper band, rails, centre line
-      line(trace(r, r.segs, 0.5), sel ? 'rgba(43,111,224,0.18)' : 'rgba(120,110,95,0.16)', (2 * g + 3) * this.scale);
-      for (const o of [-g, g]) line(offsetPts(r, r.segs, o), sel ? '#2b5fb8' : '#4a5560', railW);
+      drawSegs(r, r.segs, isBad, sel ? 'rgba(43,111,224,0.18)' : 'rgba(120,110,95,0.16)', sel ? '#2b5fb8' : '#4a5560');
       line(trace(r, r.segs, 0.5), '#b8b8b0', 1, [4, 4]);
       // what each curve is, at its middle (and straights' lengths when zoomed in)
       let q: Pose = { x: r.x, y: r.y, heading: r.heading };
@@ -350,11 +381,8 @@ export class TrackCanvas {
     if (this.drag?.moved && this.mouse) {
       const r = d.routes[this.drag.route];
       const [mx, my] = this.toScreen(...this.snap(this.mouse));
-      const txt = this.dragBad ? "Can't bend the track to reach here" : describe(r.segs);
-      c.font = '600 12px system-ui, sans-serif';
-      const tw = c.measureText(txt).width;
-      c.fillStyle = 'rgba(255,255,255,0.9)'; c.fillRect(mx + 10, my - 26, tw + 10, 18);
-      c.fillStyle = this.dragBad ? '#e0452b' : '#1d4fae'; c.fillText(txt, mx + 15, my - 13);
+      const txt = this.dragBad ? `Can't bend the track this way (red part: ${describe(this.dragBadFrom >= 0 ? r.segs.slice(this.dragBadFrom) : r.segs.slice(0, this.dragBadTo))}${this.host.radius() < 0 ? ', tighter than R24' : ''})` : describe(r.segs);
+      tag(mx, my, txt, this.dragBad ? '#e0452b' : '#1d4fae');
       c.fillStyle = '#2b9e4a'; c.beginPath(); c.arc(mx, my, 5, 0, 2 * Math.PI); c.fill();
       return;
     }
@@ -369,16 +397,17 @@ export class TrackCanvas {
           for (const o of [-g, g]) line(offsetPts(st, segs, o), '#2b6fe0', railW);
           const [mx, my] = this.toScreen(...this.snap(this.mouse));
           const txt = describe(segs);
-          c.font = '600 12px system-ui, sans-serif';
-          const tw = c.measureText(txt).width;
-          c.fillStyle = 'rgba(255,255,255,0.9)'; c.fillRect(mx + 10, my - 26, tw + 10, 18);
-          c.fillStyle = '#1d4fae'; c.fillText(txt, mx + 15, my - 13);
+          tag(mx, my, txt, '#1d4fae');
         } else {
-          // can't get there going forward with this radius
-          line([[from.x, from.y], this.snap(this.mouse)], '#e0452b', 2, [6, 4]);
+          // can't get there with the allowed curves: show the curve it would
+          // need, in red, and why
+          const bad = planAnyway(st, this.snap(this.mouse));
+          drawSegs(st, bad, () => true, '', '');
           const [mx, my] = this.toScreen(...this.snap(this.mouse));
-          c.fillStyle = '#e0452b'; c.font = '12px system-ui, sans-serif';
-          c.fillText(this.host.radius() > 0 ? `Can't reach this with R${this.host.radius()}: move further ahead, or pick a smaller curve (or Auto)` : "Can't reach this going forward: move further ahead", mx + 10, my - 10);
+          const r = this.host.radius();
+          const why = r > 0 ? `not reachable with R${r}` : r === 0 ? 'not reachable with LEGO radii and 22.5° ends' : 'tighter than R24, or behind';
+          const txt = `${describe(bad)}: ${why}`;
+          tag(mx, my, txt, '#e0452b');
         }
         const [sx, sy] = this.toScreen(from.x, from.y);
         c.strokeStyle = '#2b6fe0'; c.lineWidth = 2; c.beginPath(); c.arc(sx, sy, 6, 0, 2 * Math.PI); c.stroke();

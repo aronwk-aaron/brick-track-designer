@@ -66,6 +66,20 @@ export function planFree(p: Pose, t: [number, number], minRadius = 24): DSeg[] |
   return [...(a > 1e-6 ? [{ kind: 'straight', studs: round(a) } as DSeg] : []), { kind: 'curve', radius: round(r), angle: round(angle) }];
 }
 
+/**
+ * When no allowed track reaches t: the single curve that would (whatever its
+ * radius, even turning back on itself), or a straight back if t is right
+ * behind, to show where the track would have to go.
+ */
+export function planAnyway(p: Pose, t: [number, number]): DSeg[] {
+  const d0 = dir(p.heading);
+  const vx = t[0] - p.x, vy = t[1] - p.y;
+  const f = vx * d0[0] + vy * d0[1], l = -(vx * d0[1] - vy * d0[0]);
+  if (Math.abs(l) < 1e-6) return [{ kind: 'straight', studs: round(f) }];
+  const r = (f * f + l * l) / (2 * Math.abs(l));
+  return [{ kind: 'curve', radius: round(r), angle: round(Math.sign(l) * 2 * (Math.atan2(Math.abs(l), f) * 180) / Math.PI) }];
+}
+
 /** The same route the other way round: from its end back to its start. */
 export function reversed(r: { x: number; y: number; heading: number; segs: DSeg[] }): { x: number; y: number; heading: number; segs: DSeg[] } {
   const e = follow(r, r.segs);
