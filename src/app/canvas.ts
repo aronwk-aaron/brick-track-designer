@@ -7,7 +7,7 @@
 // Drag with the right or middle button (or Space + drag) to pan; the wheel
 // zooms.
 import type { Design, DRoute, DSeg } from './design';
-import { follow, plan, trace, type Pose } from './planner';
+import { describe, follow, plan, planAuto, trace, type Pose } from './planner';
 
 export interface Overlay { grooves: [number, number][][]; checkRails: [number, number][][]; crossings: [number, number][]; splits: [number, number][] }
 
@@ -16,6 +16,7 @@ export interface CanvasHost {
   /** The design changed (commit = an action finished, worth an undo step). */
   changed(commit: boolean): void;
   select(route: number | undefined): void;
+  /** Curve radius in studs, or 0 for auto (the planner picks). */
   radius(): number;
 }
 
@@ -205,7 +206,8 @@ export class TrackCanvas {
       const len = Math.round(((t[0] - a.start.x) * dx + (t[1] - a.start.y) * dy) * 1e6) / 1e6;
       return len > 0 ? [{ kind: 'straight', studs: len }] : undefined;
     }
-    return plan(a.end ?? a.start!, t, this.host.radius());
+    const r = this.host.radius();
+    return r > 0 ? plan(a.end ?? a.start!, t, r) : planAuto(a.end ?? a.start!, t);
   }
 
   // ---------- drawing ----------
@@ -251,6 +253,21 @@ export class TrackCanvas {
       line(trace(r, r.segs, 0.5), sel ? 'rgba(43,111,224,0.18)' : 'rgba(120,110,95,0.16)', (2 * g + 3) * this.scale);
       for (const o of [-g, g]) line(offsetPts(r, r.segs, o), sel ? '#2b5fb8' : '#4a5560', railW);
       line(trace(r, r.segs, 0.5), '#b8b8b0', 1, [4, 4]);
+      // what each curve is, at its middle (and straights' lengths when zoomed in)
+      let q: Pose = { x: r.x, y: r.y, heading: r.heading };
+      c.font = '11px system-ui, sans-serif'; c.textAlign = 'center';
+      for (const sg of r.segs) {
+        const show = sg.kind === 'curve' || this.scale > 10;
+        if (show) {
+          const mid = follow(q, [sg.kind === 'straight' ? { kind: 'straight', studs: sg.studs / 2 } : { ...sg, angle: sg.angle / 2 }]);
+          const off = (g + 2.2) * (sg.kind === 'curve' ? -Math.sign(sg.angle) : 1);  // outside the curve
+          const [sx, sy] = this.toScreen(mid.x + off * Math.cos((mid.heading * Math.PI) / 180), mid.y + off * Math.sin((mid.heading * Math.PI) / 180));
+          const txt = sg.kind === 'curve' ? `R${Math.round(sg.radius * 100) / 100} ${Math.round(Math.abs(sg.angle) * 100) / 100}°` : `${Math.round(sg.studs * 100) / 100}`;
+          c.fillStyle = sel ? '#1d4fae' : '#5c5c55'; c.fillText(txt, sx, sy + 4);
+        }
+        q = follow(q, [sg]);
+      }
+      c.textAlign = 'start';
       // ends
       for (const p of [{ x: r.x, y: r.y }, follow(r, r.segs)]) {
         const [sx, sy] = this.toScreen(p.x, p.y);
@@ -274,12 +291,18 @@ export class TrackCanvas {
         if (segs) {
           line(trace(st, segs, 0.5), 'rgba(43,111,224,0.25)', (2 * g + 3) * this.scale);
           for (const o of [-g, g]) line(offsetPts(st, segs, o), '#2b6fe0', railW);
+          const [mx, my] = this.toScreen(...this.snap(this.mouse));
+          const txt = describe(segs);
+          c.font = '600 12px system-ui, sans-serif';
+          const tw = c.measureText(txt).width;
+          c.fillStyle = 'rgba(255,255,255,0.9)'; c.fillRect(mx + 10, my - 26, tw + 10, 18);
+          c.fillStyle = '#1d4fae'; c.fillText(txt, mx + 15, my - 13);
         } else {
           // can't get there going forward with this radius
           line([[from.x, from.y], this.snap(this.mouse)], '#e0452b', 2, [6, 4]);
           const [mx, my] = this.toScreen(...this.snap(this.mouse));
           c.fillStyle = '#e0452b'; c.font = '12px system-ui, sans-serif';
-          c.fillText(`Can't reach this with R${this.host.radius()}: move further ahead, or pick a smaller curve`, mx + 10, my - 10);
+          c.fillText(this.host.radius() > 0 ? `Can't reach this with R${this.host.radius()}: move further ahead, or pick a smaller curve (or Auto)` : "Can't reach this going forward: move further ahead", mx + 10, my - 10);
         }
         const [sx, sy] = this.toScreen(from.x, from.y);
         c.strokeStyle = '#2b6fe0'; c.lineWidth = 2; c.beginPath(); c.arc(sx, sy, 6, 0, 2 * Math.PI); c.stroke();

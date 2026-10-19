@@ -175,7 +175,8 @@ loadInput.addEventListener('change', async () => {
 
 // ---------- the track canvas ----------
 const radiusSel = $<HTMLSelectElement>('radius');
-for (const r of [24, 32, 40, 48, 56, 64, 72, 88, 104, 120]) radiusSel.append(new Option(`R${r}`, String(r), r === 40, r === 40));
+radiusSel.append(new Option('Auto', '0', true, true));
+for (const r of [24, 32, 40, 48, 56, 64, 72, 88, 104, 120]) radiusSel.append(new Option(`R${r}`, String(r)));
 const canvas = new TrackCanvas($<HTMLCanvasElement>('track'), {
   design: () => design,
   changed: (commit) => changed(commit),
