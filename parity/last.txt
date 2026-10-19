@@ -1,0 +1,17 @@
+endpoint-trackonly  vol 1372.96 / 1372.96 (-0.0000%)  symdiff 0.0000 mm3  bbox 0.0000 mm  tris 1364 / 1378  time 7 ms / 166 ms
+straight-trackonly-S8  vol 8678.52 / 8678.52 (-0.0000%)  symdiff 0.0000 mm3  bbox 0.0000 mm  tris 5260 / 5306  time 7 ms / 199 ms
+straight-trackonly-S16  vol 16687.36 / 16687.36 (-0.0000%)  symdiff 0.0000 mm3  bbox 0.0000 mm  tris 8336 / 8364  time 8 ms / 204 ms
+straight-trackonly-S32  vol 32705.04 / 32705.04 (-0.0000%)  symdiff 0.0000 mm3  bbox 0.0000 mm  tris 14330 / 14318  time 13 ms / 228 ms
+straight-trackonly-ln2  vol 14047.45 / 14047.45 (-0.0000%)  symdiff 0.0000 mm3  bbox 0.0000 mm  tris 6838 / 6884  time 6 ms / 198 ms
+straight-trackonly-ties1  vol 16190.40 / 16190.40 (-0.0000%)  symdiff 0.0000 mm3  bbox 0.0000 mm  tris 8572 / 8564  time 7 ms / 208 ms
+curve-trackonly-R24-22.5001  vol 8507.46 / 8507.46 (-0.0000%)  symdiff 0.0001 mm3  bbox 0.0000 mm  tris 17568 / 17490  time 12 ms / 232 ms
+curve-trackonly-R40-22.5001  vol 15025.09 / 15025.09 (0.0000%)  symdiff 0.0002 mm3  bbox 0.0000 mm  tris 22354 / 22360  time 14 ms / 243 ms
+curve-trackonly-R104-22.5001  vol 37214.55 / 37214.55 (0.0000%)  symdiff 0.0021 mm3  bbox 0.0000 mm  tris 34634 / 34628  time 20 ms / 291 ms
+curve-trackonly-R40-90  vol 57702.73 / 57702.73 (-0.0000%)  symdiff 0.0023 mm3  bbox 0.0000 mm  tris 84598 / 84586  time 47 ms / 380 ms
+curve-trackonly-R24-45  vol 18070.13 / 18070.13 (0.0000%)  symdiff 0.0715 mm3  bbox 0.0000 mm  tris 35390 / 35376  time 19 ms / 267 ms
+curve-trackonly-ln2-end  vol 15230.98 / 15230.98 (-0.0000%)  symdiff 1.5232 mm3  bbox 0.0000 mm  tris 32998 / 32958  time 21 ms / 261 ms
+endpoint-ballast  vol 1672.48 / 1672.48 (-0.0000%)  symdiff 0.0000 mm3  bbox 0.0000 mm  tris 826 / 830  time 1 ms / 156 ms
+rails-straight-128  vol 7951.36 / 7951.36 (0.0000%)  symdiff 0.0000 mm3  bbox 0.0000 mm  tris 232 / 232  time 1 ms / 162 ms
+rails-arc-left-R40-22.5  vol 7806.18 / 7806.18 (-0.0000%)  symdiff 0.0000 mm3  bbox 0.0000 mm  tris 7792 / 7792  time 4 ms / 171 ms
+rails-arc-right-R40-22.5  vol 7806.18 / 7806.18 (0.0000%)  symdiff 0.0000 mm3  bbox 0.0000 mm  tris 7792 / 7792  time 4 ms / 174 ms
+rails-arc-left-R24-90  vol 18733.07 / 18733.07 (-0.0000%)  symdiff 0.0000 mm3  bbox 0.0000 mm  tris 7792 / 7792  time 4 ms / 169 ms
