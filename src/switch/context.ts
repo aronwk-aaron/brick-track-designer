@@ -18,6 +18,8 @@ export interface SwitchParams {
   leverOffset: number;      // 8
   studH: number;            // 1.8
   generateBallast: boolean; // false: track only (the only kind so far)
+  /** The lever's driver length beyond its least (10): longer swings it less for the same travel (a three-way's). */
+  leverReach?: number;
 }
 
 export const SWITCH_DEFAULTS: SwitchParams = {
@@ -42,7 +44,7 @@ export function switchGlobals(p: SwitchParams) {
   const bedTop = Math.max(PLATE_H, cavityTop + 0.8);
   const leverTipD = 4.5, leverBossD = 5;
   const leverTipLow = layerZ0 + 0.6 + p.pointClearance + leverTipD / 2;
-  const leverPz = Math.max(PLATE_H + leverBossD / 2 + 1.5, leverTipLow + 10);
+  const leverPz = Math.max(PLATE_H + leverBossD / 2 + 1.5, leverTipLow + (p.leverReach ?? 10));
   const leverDa = leverPz - leverTipLow;
   const bladeNeed = 2 * HEAD_HW + p.pointThrow + p.pointClearance + 0.6;
   return {
@@ -71,14 +73,16 @@ const rotAbout = (pt: Pt, c: Pt, ang: number): Pt => [
  * defaultThrowDir: the throw side when the set doesn't say (switch.scad: -1
  * for a right switch, else +1).
  */
-export function pointsSet(routes: Route[], ps: PointsSet, p: SwitchParams, defaultThrowDir = 1) {
+export function pointsSet(routes: Route[], ps: PointsSet, p: SwitchParams, defaultThrowDir = 1,
+  /** (a true three-way's own heel and slider travel; see switch/base.ts) */
+  over: { sHeel?: number; leverTravel?: number } = {}) {
   const g = switchGlobals(p), G = g.G;
   const ra = routes[ps.ra], rb = routes[ps.rb], sToe = ps.sToe;
   const lenMin = Math.min(routeLength(ra), routeLength(rb));
   const sepR = (s: number) => Math.abs(routeLat(rb, railPoint(ra, s, -G)) + G);
   const sepL = (s: number) => Math.abs(routeLat(ra, railPoint(rb, s, +G)) - G);
   const firstS = (sep: (s: number) => number) => { let s = sToe; while (!(s > lenMin) && !(sep(s) >= g.bladeNeed)) s += 0.5; return s; };
-  const sHeel = Math.max(firstS(sepR), firstS(sepL), sToe + 20);
+  const sHeel = over.sHeel ?? Math.max(firstS(sepR), firstS(sepL), sToe + 20);
   const toeY = railPoint(ra, sToe, -G)[1];
   const sBpiv = sHeel - 4;
   const a = railPoint(ra, sBpiv, -G), b = railPoint(rb, sBpiv, +G);
@@ -92,7 +96,7 @@ export function pointsSet(routes: Route[], ps: PointsSet, p: SwitchParams, defau
   };
   const tineTip: Pt = [bladeMidAt(yS + 2)[0], yS + 2];
   const throwTravel = (tineLen - g.postL / 2) * rad(throwAng);
-  const leverTravel = throwTravel + 2 * p.springPreload;
+  const leverTravel = over.leverTravel ?? throwTravel + 2 * p.springPreload;
   const postX = [tineTip[0] - p.springPreload];
   const swingRange = [0, throwAng];
   const pointsEndY = pivotPt[1] + Math.max(g.discR, g.heelBarW / 2) + 2;

@@ -38,7 +38,7 @@ export class Scad {
 
   union(parts: (Man | undefined | false)[]): Man {
     const ms = parts.filter((p): p is Man => !!p);
-    return ms.length === 0 ? this.w.Manifold.cube([0, 0, 0]) : this.w.Manifold.union(ms);
+    return this.w.Manifold.union(ms); // (empty: a valid empty solid; cube([0, 0, 0]) is an invalid one, which empties every boolean it meets)
   }
 
   difference(base: Man, cuts: (Man | undefined | false)[]): Man {

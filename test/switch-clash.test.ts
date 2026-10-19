@@ -33,3 +33,18 @@ describe('switch moving parts: no clashes but the designed ones', () => {
       }
     }, 120000);
 });
+
+describe('true three-way (one slider, three positions): no clashes but the designed ones', () => {
+  for (const r of [24, 40, 104])
+    it(`R${r}`, async () => {
+      const arc = (sg: number) => ({ id: 'x', start: [0, 0, 0] as [number, number, number], segments: [{ kind: 'arc' as const, radius: r * 8, angle: sg * 22.5 }, { kind: 'straight' as const, length: 100 }] });
+      const yEnd = r * 8 * Math.sin(Math.PI / 8) + 100 * Math.cos(Math.PI / 8);
+      const routes = [arc(-1), { id: 'S', start: [0, 0, 0] as [number, number, number], segments: [{ kind: 'straight' as const, length: yEnd }] }, arc(+1)];
+      const res = await clashes(routes, [[0, 2, 12, undefined, 1]], 1, 2);
+      for (const [k, v] of Object.entries(res)) {
+        if (k.startsWith('catch')) expect(v, k).toBeGreaterThan(0.1);
+        else if (k.startsWith('points x throw')) expect(v, k).toBeLessThan(4);  // the preloaded tines (both, in the middle)
+        else expect(v, k).toBeLessThan(1e-3);
+      }
+    }, 120000);
+});

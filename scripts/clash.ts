@@ -31,6 +31,14 @@ export async function clashes(routes: Route[], sets: SetSpec[], defaultThrowDir:
     out[`base x throw, left${sfx}`] = vol(base, T(thr, [v.leverTravel, 0, 0]));
     out[`points x throw${sfx}`] = vol(pts, thr);
     out[`points x throw, left${sfx}`] = vol(ptsL, T(thr, [v.leverTravel, 0, 0]));
+    if ((plan.sets[k] as { three?: unknown }).three) {
+      // a three-way's middle position (straight): blade 0 closed, blade 1 closed, the slider half way
+      const half = v.leverTravel / 2, ptsS = w.Manifold.union([parts[0], rotZ(parts[1], us[1].swing, us[1].pivot)]);
+      out[`base x points, straight${sfx}`] = vol(base, ptsS);
+      out[`base x throw, straight${sfx}`] = vol(base, T(thr, [half, 0, 0]));
+      out[`points x throw, straight${sfx}`] = vol(ptsS, T(thr, [half, 0, 0]));
+      out[`points part x part, straight${sfx}`] = parts[0].intersect(rotZ(parts[1], us[1].swing, us[1].pivot)).volume();
+    }
     out[`base x lever, right${sfx}`] = vol(base, lev);
     out[`base x lever, middle${sfx}`] = vol(base, leverAt(0));
     out[`base x lever, left${sfx}`] = vol(base, leverAt(-v.leverAng));
