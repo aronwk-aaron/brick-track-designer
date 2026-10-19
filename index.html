@@ -15,6 +15,8 @@
       --bg: #17191c; --panel: #212428; --raise: #2a2e33; --line: #3a3f45; --ink: #e6e8ea; --muted: #9aa1a8;
       --accent: #5b93f5; --accent-ink: #ffffff; --err: #ff7a6b; --chip: rgba(33,36,40,0.92); --shadow: 0 1px 3px rgba(0,0,0,0.5);
       --view-bg: #2a2d31;
+      --canvas-bg: #1b1d20; --c-grid: #25282c; --c-grid8: #34383d; --c-rail: #c9d0d6; --c-centre: #5a5f66; --c-label: #aab1b8;
+      --c-mark: #e6e8ea; --c-tag-bg: rgba(33,36,40,0.94); --c-band: rgba(200,205,210,0.10); --c-sel: #7fa9f5; --c-sel-ink: #9bbcff;
     } }
     * { box-sizing: border-box; }
     html, body { height: 100%; }
@@ -81,7 +83,7 @@
     #legend i.dot { width: 9px; height: 9px; border-radius: 50%; border: 1.5px solid currentColor; margin: 0 9px 0 3px; }
     #legend i.sq { width: 9px; height: 9px; background: #f0b400; margin: 0 9px 0 3px; }
     #legend button { margin-top: 4px; padding: 1px 6px; font-size: 12px; }
-    #help { right: 10px; top: 10px; width: min(360px, calc(100% - 20px)); padding: 10px 12px; font-size: 12.5px; display: none; z-index: 2; }
+    #help { background: var(--panel); right: 10px; top: 10px; width: min(360px, calc(100% - 20px)); padding: 10px 12px; font-size: 12.5px; display: none; z-index: 2; }
     #help.open { display: block; }
     #help h3 { margin: 0 0 6px; font-size: 13px; }
     #help ul { margin: 0 0 6px; padding-left: 18px; } #help li { margin: 2px 0; }
