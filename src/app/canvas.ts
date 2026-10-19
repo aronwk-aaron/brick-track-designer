@@ -9,7 +9,7 @@
 import type { Design, DRoute, DSeg } from './design';
 import { describe, follow, plan, planAnyway, planAuto, planFreeTurning, planToPose, reversed, trace, type Pose } from './planner';
 
-export interface Overlay { grooves: [number, number][][]; checkRails: [number, number][][]; crossings: [number, number][]; splits: [number, number][] }
+export interface Overlay { grooves: [number, number][][]; checkRails: [number, number][][]; crossings: [number, number][]; splits: [number, number][]; grips?: [number, number][] }
 
 export interface CanvasHost {
   design(): Design;
@@ -37,6 +37,8 @@ export class TrackCanvas {
   private active: { route: number | undefined; start?: Pose; end?: Pose; newRoute?: DRoute } | undefined;
   selected: number | undefined;
   overlay: Overlay | undefined;
+  /** Show where the underside grips (only when not gripping everywhere). */
+  showGrips = true;
   /** Dragging a track's end: which route and end, where the press was, and the route as it was. */
   private drag: { route: number; end: 'start' | 'end'; sx: number; sy: number; moved: boolean; orig: DRoute; anchor: number; lastGood?: DRoute } | undefined;
 
@@ -478,6 +480,12 @@ export class TrackCanvas {
       for (const gr of this.overlay.grooves) line(w(gr), '#e0452b', railW * 0.7);
       for (const cr of this.overlay.checkRails) line(w(cr), '#2b6fe0', Math.max(1, (1 / MM) * this.scale));
       for (const p of this.overlay.crossings) { const [sx, sy] = this.toScreen(p[0] / MM, p[1] / MM); c.strokeStyle = ink.mark; c.lineWidth = 1.2; c.beginPath(); c.arc(sx, sy, 5, 0, 2 * Math.PI); c.stroke(); }
+      // gripping stud sockets underneath (Grip: Edges), small outlined squares
+      if (this.showGrips && this.scale >= 3) {
+        c.strokeStyle = '#2b9e4a'; c.lineWidth = 1.5;
+        const hw = Math.max(2, (2.5 / MM) * this.scale);
+        for (const p of this.overlay.grips ?? []) { const [sx, sy] = this.toScreen(p[0] / MM, p[1] / MM); c.strokeRect(sx - hw, sy - hw, 2 * hw, 2 * hw); }
+      }
       for (const p of this.overlay.splits) { const [sx, sy] = this.toScreen(p[0] / MM, p[1] / MM); c.fillStyle = '#f0b400'; c.fillRect(sx - 5, sy - 5, 10, 10); }
     }
     // while dragging an end: what the reshaped track is, or why not
