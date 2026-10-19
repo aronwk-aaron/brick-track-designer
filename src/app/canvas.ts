@@ -480,11 +480,11 @@ export class TrackCanvas {
       for (const gr of this.overlay.grooves) line(w(gr), '#e0452b', railW * 0.7);
       for (const cr of this.overlay.checkRails) line(w(cr), '#2b6fe0', Math.max(1, (1 / MM) * this.scale));
       for (const p of this.overlay.crossings) { const [sx, sy] = this.toScreen(p[0] / MM, p[1] / MM); c.strokeStyle = ink.mark; c.lineWidth = 1.2; c.beginPath(); c.arc(sx, sy, 5, 0, 2 * Math.PI); c.stroke(); }
-      // gripping stud sockets underneath (Grip: Edges), small outlined squares
+      // the anti-stud tubes underneath that grip the plate (Grip: Edges)
       if (this.showGrips && this.scale >= 3) {
         c.strokeStyle = '#2b9e4a'; c.lineWidth = 1.5;
-        const hw = Math.max(2, (2.5 / MM) * this.scale);
-        for (const p of this.overlay.grips ?? []) { const [sx, sy] = this.toScreen(p[0] / MM, p[1] / MM); c.strokeRect(sx - hw, sy - hw, 2 * hw, 2 * hw); }
+        const r = Math.max(2, (3.2 / MM) * this.scale);
+        for (const p of this.overlay.grips ?? []) { const [sx, sy] = this.toScreen(p[0] / MM, p[1] / MM); c.beginPath(); c.arc(sx, sy, r, 0, 2 * Math.PI); c.stroke(); }
       }
       for (const p of this.overlay.splits) { const [sx, sy] = this.toScreen(p[0] / MM, p[1] / MM); c.fillStyle = '#f0b400'; c.fillRect(sx - 5, sy - 5, 10, 10); }
     }
