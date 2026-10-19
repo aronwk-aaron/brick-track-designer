@@ -7,7 +7,7 @@
 // Drag with the right or middle button (or Space + drag) to pan; the wheel
 // zooms.
 import type { Design, DRoute, DSeg } from './design';
-import { describe, follow, plan, planAuto, trace, type Pose } from './planner';
+import { describe, follow, plan, planAuto, planFree, reversed, trace, type Pose } from './planner';
 
 export interface Overlay { grooves: [number, number][][]; checkRails: [number, number][][]; crossings: [number, number][]; splits: [number, number][] }
 
@@ -16,7 +16,7 @@ export interface CanvasHost {
   /** The design changed (commit = an action finished, worth an undo step). */
   changed(commit: boolean): void;
   select(route: number | undefined): void;
-  /** Curve radius in studs, or 0 for auto (the planner picks). */
+  /** Curve radius in studs; 0 = auto (standard radii, 22.5-degree ends); -1 = free (any radius and angle). */
   radius(): number;
 }
 
@@ -35,6 +35,8 @@ export class TrackCanvas {
   private active: { route: number | undefined; start?: Pose; end?: Pose; newRoute?: DRoute } | undefined;
   selected: number | undefined;
   overlay: Overlay | undefined;
+  /** Dragging a track's end: which route and end, where the press was, and the route as it was. */
+  private drag: { route: number; end: 'start' | 'end'; sx: number; sy: number; moved: boolean; orig: DRoute; anchor: number } | undefined;
 
   constructor(private el: HTMLCanvasElement, private host: CanvasHost) {
     this.ctx = el.getContext('2d')!;
@@ -42,7 +44,7 @@ export class TrackCanvas {
     el.addEventListener('contextmenu', (e) => e.preventDefault());
     el.addEventListener('mousedown', (e) => this.down(e));
     addEventListener('mousemove', (e) => this.move(e));
-    addEventListener('mouseup', () => { this.panning = undefined; });
+    addEventListener('mouseup', (e) => this.up(e));
     el.addEventListener('wheel', (e) => this.wheel(e), { passive: false });
     addEventListener('keydown', (e) => this.key(e, true));
     addEventListener('keyup', (e) => this.key(e, false));
@@ -121,6 +123,22 @@ export class TrackCanvas {
     }
     if (e.button === 2) { this.stopDrawing(); return; }
     const w = this.evWorld(e);
+    // Pressing on a track's end (when not drawing): drag it to reshape the
+    // track, or (Draw mode, no drag) carry the track on from there.
+    if (!this.active) {
+      const hit = this.nearTrack(w);
+      if (hit?.end) {
+        const r = this.host.design().routes[hit.route];
+        const work = hit.end === 'end' ? r : reversed(r);
+        // reshape from the start of the last curve (and the straight before it)
+        let c = -1;
+        work.segs.forEach((sg, k) => { if (sg.kind === 'curve') c = k; });
+        const anchor = c < 0 ? Math.max(0, work.segs.length - 1) : c > 0 && work.segs[c - 1].kind === 'straight' ? c - 1 : c;
+        this.drag = { route: hit.route, end: hit.end, sx: e.clientX, sy: e.clientY, moved: false, orig: structuredClone(r), anchor };
+        this.selected = hit.route; this.host.select(this.selected);
+        return;
+      }
+    }
     if (this.mode === 'select') {
       const hit = this.nearTrack(w, 1.5);
       this.selected = hit?.route;
@@ -166,10 +184,52 @@ export class TrackCanvas {
       this.ox = this.panning.ox + e.clientX - this.panning.x; this.oy = this.panning.oy + e.clientY - this.panning.y;
       return this.draw();
     }
+    if (this.drag) {
+      if (!this.drag.moved && Math.hypot(e.clientX - this.drag.sx, e.clientY - this.drag.sy) < 4) return;
+      this.drag.moved = true;
+      this.mouse = this.evWorld(e);
+      this.reshape(this.snap(this.mouse));
+      return this.draw();
+    }
     if (e.target !== this.el) return;
     this.mouse = this.evWorld(e);
     this.draw();
   }
+  private up(e: MouseEvent) {
+    this.panning = undefined;
+    const dr = this.drag;
+    if (!dr) return;
+    this.drag = undefined;
+    if (dr.moved) { this.host.changed(true); return this.draw(); }
+    // a click on an end: in Draw mode, carry the track on from it
+    if (this.mode === 'draw' && e.button === 0) {
+      const r = this.host.design().routes[dr.route];
+      if (dr.end === 'end') this.active = { route: dr.route, end: follow(r, r.segs) };
+      else { const p = { x: r.x, y: r.y, heading: ((r.heading + 360) % 360) - 180 }; this.active = { route: undefined, start: p, end: p }; }
+    }
+    this.draw();
+  }
+  /** Reshape the dragged route so the dragged end lands on t. */
+  private reshape(t: [number, number]) {
+    const dr = this.drag!, d = this.host.design();
+    const work = dr.end === 'end' ? structuredClone(dr.orig) : reversed(dr.orig);
+    const head = work.segs.slice(0, dr.anchor);
+    const from = follow(work, head);
+    const tail = this.planFrom(from, t);
+    this.dragBad = !tail;
+    if (!tail) return;
+    const segs = [...head];
+    for (const sg of tail) {
+      const last = segs[segs.length - 1];
+      if (last?.kind === 'straight' && sg.kind === 'straight') segs[segs.length - 1] = { kind: 'straight', studs: Math.round((last.studs + sg.studs) * 1e6) / 1e6 };
+      else segs.push(sg);
+    }
+    const next = { ...work, segs };
+    const r = dr.end === 'end' ? next : reversed(next);
+    const cur = d.routes[dr.route];
+    cur.x = Math.round(r.x * 1e4) / 1e4; cur.y = Math.round(r.y * 1e4) / 1e4; cur.heading = Math.round(r.heading * 1e6) / 1e6; cur.segs = r.segs;
+  }
+  private dragBad = false;
   private wheel(e: WheelEvent) {
     e.preventDefault();
     const r = this.el.getBoundingClientRect(), sx = e.clientX - r.left, sy = e.clientY - r.top;
@@ -195,6 +255,11 @@ export class TrackCanvas {
     const ang = (Math.atan2(-(w[0] - st.x), w[1] - st.y) * 180) / Math.PI;
     return norm180(Math.round(ang / 22.5) * 22.5);
   }
+  /** The track from pose p to point t, by the chosen planner. */
+  private planFrom(p: Pose, t: [number, number]): DSeg[] | undefined {
+    const r = this.host.radius();
+    return r > 0 ? plan(p, t, r) : r === 0 ? planAuto(p, t) : planFree(p, t);
+  }
   /** The track planned from the active end to the (snapped) mouse point. */
   private planTo(w: [number, number]): DSeg[] | undefined {
     const a = this.active!;
@@ -206,8 +271,7 @@ export class TrackCanvas {
       const len = Math.round(((t[0] - a.start.x) * dx + (t[1] - a.start.y) * dy) * 1e6) / 1e6;
       return len > 0 ? [{ kind: 'straight', studs: len }] : undefined;
     }
-    const r = this.host.radius();
-    return r > 0 ? plan(a.end ?? a.start!, t, r) : planAuto(a.end ?? a.start!, t);
+    return this.planFrom(a.end ?? a.start!, t);
   }
 
   // ---------- drawing ----------
@@ -281,6 +345,18 @@ export class TrackCanvas {
       for (const cr of this.overlay.checkRails) line(w(cr), '#2b6fe0', Math.max(1, (1 / MM) * this.scale));
       for (const p of this.overlay.crossings) { const [sx, sy] = this.toScreen(p[0] / MM, p[1] / MM); c.strokeStyle = '#111'; c.lineWidth = 1.2; c.beginPath(); c.arc(sx, sy, 5, 0, 2 * Math.PI); c.stroke(); }
       for (const p of this.overlay.splits) { const [sx, sy] = this.toScreen(p[0] / MM, p[1] / MM); c.fillStyle = '#f0b400'; c.fillRect(sx - 5, sy - 5, 10, 10); }
+    }
+    // while dragging an end: what the reshaped track is, or why not
+    if (this.drag?.moved && this.mouse) {
+      const r = d.routes[this.drag.route];
+      const [mx, my] = this.toScreen(...this.snap(this.mouse));
+      const txt = this.dragBad ? "Can't bend the track to reach here" : describe(r.segs);
+      c.font = '600 12px system-ui, sans-serif';
+      const tw = c.measureText(txt).width;
+      c.fillStyle = 'rgba(255,255,255,0.9)'; c.fillRect(mx + 10, my - 26, tw + 10, 18);
+      c.fillStyle = this.dragBad ? '#e0452b' : '#1d4fae'; c.fillText(txt, mx + 15, my - 13);
+      c.fillStyle = '#2b9e4a'; c.beginPath(); c.arc(mx, my, 5, 0, 2 * Math.PI); c.fill();
+      return;
     }
     // the mouse: snapped point, and the planned track while drawing
     if (this.mouse && this.mode === 'draw') {

@@ -16,8 +16,9 @@ pnpm parity     # geometry parity with the OpenSCAD files (needs openscad-nightl
 The editor works like laying rails in a top-down train game: on the stud
 grid, click a point (or the end of a track) to start, move the mouse to see
 the track the planner would lay (straights and one curve of the radius you
-pick, ending on a 22.5-degree direction), click to lay it and carry on from
-its end; right-click or Esc stops. Starting on the middle of a track branches
+pick: Free, any radius and angle; Auto, LEGO radii and 22.5-degree ends; or a
+fixed radius), click to lay it and carry on from its end; right-click or Esc
+stops. Drag a track's end to reshape it live (from its last curve on). Starting on the middle of a track branches
 off it. Select mode picks a track (Delete removes it); the panel on the left
 edits any track's numbers; Undo and Redo, pan and zoom. Over the track the
 canvas shows where flangeways cut the rails, check rails, rail crossings and

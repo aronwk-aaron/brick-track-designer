@@ -41,6 +41,38 @@ export function planAuto(p: Pose, t: [number, number], radii = RADII, maxTurn = 
   return best?.segs;
 }
 
+/**
+ * Free curve: from p, one arc of whatever radius lands exactly on t (ending
+ * at whatever angle that gives), with a straight first if the arc would be
+ * tighter than minRadius. Undefined if t can't be reached going forward
+ * (behind, or too far to the side for minRadius).
+ */
+export function planFree(p: Pose, t: [number, number], minRadius = 24): DSeg[] | undefined {
+  const d0 = dir(p.heading);
+  const vx = t[0] - p.x, vy = t[1] - p.y;
+  const f = vx * d0[0] + vy * d0[1];           // ahead
+  const l = -(vx * d0[1] - vy * d0[0]);        // to the left
+  if (Math.abs(l) < 1e-6) return f > 1e-6 ? [{ kind: 'straight', studs: round(f) }] : undefined;
+  let a = 0, r = (f * f + l * l) / (2 * Math.abs(l));
+  if (r < minRadius) {
+    const q = 2 * minRadius * Math.abs(l) - l * l;
+    if (q < 0) return undefined;
+    a = f - Math.sqrt(q); r = minRadius;
+    if (a < -1e-6) return undefined;
+  }
+  const fr = f - a;
+  if (fr <= 1e-6) return undefined;
+  const angle = Math.sign(l) * 2 * (Math.atan2(Math.abs(l), fr) * 180) / Math.PI;
+  return [...(a > 1e-6 ? [{ kind: 'straight', studs: round(a) } as DSeg] : []), { kind: 'curve', radius: round(r), angle: round(angle) }];
+}
+
+/** The same route the other way round: from its end back to its start. */
+export function reversed(r: { x: number; y: number; heading: number; segs: DSeg[] }): { x: number; y: number; heading: number; segs: DSeg[] } {
+  const e = follow(r, r.segs);
+  return { x: e.x, y: e.y, heading: ((e.heading + 360) % 360) - 180,
+    segs: r.segs.slice().reverse().map((sg) => (sg.kind === 'straight' ? { ...sg } : { ...sg, angle: -sg.angle })) };
+}
+
 /** A short description of segments, e.g. "6 studs + R40 45° left + 3.2 studs". */
 export function describe(segs: DSeg[]): string {
   return segs.map((sg) => sg.kind === 'straight' ? `${fmt(sg.studs)} studs` : `R${fmt(sg.radius)} ${fmt(Math.abs(sg.angle))}° ${sg.angle > 0 ? 'left' : 'right'}`).join(' + ');
