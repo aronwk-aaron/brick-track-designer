@@ -21,7 +21,8 @@ export function planSvg(routes: Route[], sol: Solution, opts: Partial<PlanOption
     return Array.from({ length: n + 1 }, (_, k) => railPoint(routes[i], s0 + ((s1 - s0) * k) / n, off));
   };
   const out: string[] = [];
-  out.push(`<svg xmlns="http://www.w3.org/2000/svg" width="${((x1 - x0) * o.scale).toFixed(0)}" height="${((y1 - y0) * o.scale).toFixed(0)}" style="background:#fbfbf8">`);
+  const W = ((x1 - x0) * o.scale).toFixed(0), H = ((y1 - y0) * o.scale).toFixed(0);
+  out.push(`<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" style="background:#fbfbf8">`);
   // centre lines
   routes.forEach((rt, i) => out.push(line(sub(i, 0, 0, routeLength(rt)), '#c8c8c0', 1, 'stroke-dasharray="6 4"')));
   // rails, heads to scale
