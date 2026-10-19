@@ -10,6 +10,9 @@ import { join } from 'node:path';
 import { kernel, type Wasm } from '../src/geom/kernel';
 import { railSection, sweepArc, sweepStraight } from '../src/geom/rail';
 import { stlBytes } from '../src/geom/stl';
+import { Scad } from '../src/geom/scad';
+import { Track } from '../src/geom/track';
+import { STRAIGHT_DEFAULTS, straightTrackOnly } from '../src/geom/straight';
 
 const OUT = 'parity/out';
 const REPO = process.env.OPENSCAD_REPO ?? join(homedir(), 'Documents/openscad');
@@ -20,12 +23,43 @@ type Man = InstanceType<Wasm['Manifold']>;
 
 interface Case {
   name: string;
-  defines: Record<string, string | number>;
+  /** -D settings for parity/rails.scad, or OpenSCAD source of its own. */
+  defines?: Record<string, string | number>;
+  scad?: string;
   build: (w: Wasm) => Man;
 }
 
 const SEGMENTS = 64;
+const track = (w: Wasm) => new Track(new Scad(w));
 const cases: Case[] = [
+  {
+    name: 'endpoint-trackonly',
+    scad: 'include <track_lib.scad>\nfull_endpoint(true, true);\n',
+    build: (w) => track(w).fullEndpoint(true, true),
+  },
+  ...[8, 16, 32].map((n) => ({
+    name: `straight-trackonly-S${n}`,
+    scad: `include <straight.scad>\n`,
+    defines: { generate_ballast: 'false', length_studs: n },
+    build: (w: Wasm) => straightTrackOnly(new Scad(w), { ...STRAIGHT_DEFAULTS, lengthStuds: n }),
+  })),
+  {
+    name: 'straight-trackonly-ln2',
+    scad: `include <straight.scad>\n`,
+    defines: { generate_ballast: 'false', gauge_studs: 2 },
+    build: (w: Wasm) => straightTrackOnly(new Scad(w), { ...STRAIGHT_DEFAULTS, gaugeStuds: 2 }),
+  },
+  {
+    name: 'straight-trackonly-ties1',
+    scad: `include <straight.scad>\n`,
+    defines: { generate_ballast: 'false', sleeper_width_studs: 1, sleeper_gap_studs: 1, length_studs: 15 },
+    build: (w: Wasm) => straightTrackOnly(new Scad(w), { ...STRAIGHT_DEFAULTS, sleeperWidthStuds: 1, sleeperGapStuds: 1, lengthStuds: 15 }),
+  },
+  {
+    name: 'endpoint-ballast',
+    scad: 'include <track_lib.scad>\nfull_endpoint(false, false);\n',
+    build: (w) => track(w).fullEndpoint(false, false),
+  },
   {
     name: 'rails-straight-128',
     defines: { kind: '"straight"', len_mm: 128 },
@@ -62,8 +96,12 @@ function readStl(w: Wasm, path: string): Man {
 
 function renderScad(c: Case, out: string) {
   const args = ['--backend=manifold', '--export-format', 'binstl', '-o', out];
-  for (const [k, v] of Object.entries(c.defines)) args.push('-D', `${k}=${v}`);
-  args.push('parity/rails.scad');
+  for (const [k, v] of Object.entries(c.defines ?? {})) args.push('-D', `${k}=${v}`);
+  if (c.scad) {
+    const src = join(OUT, `${c.name}.scad`);
+    writeFileSync(src, c.scad);
+    args.push(src);
+  } else args.push('parity/rails.scad');
   const env = { ...process.env, OPENSCADPATH: REPO };
   const [cmd, cmdArgs] = existsSync(SAFE_RUN) ? [SAFE_RUN, ['openscad-nightly', ...args]] : ['openscad-nightly', args];
   const t0 = performance.now();
@@ -74,7 +112,7 @@ function renderScad(c: Case, out: string) {
 const w = await kernel();
 mkdirSync(OUT, { recursive: true });
 const rows: string[] = [];
-for (const c of cases) {
+for (const c of cases.filter((c) => process.argv.length <= 2 || process.argv.slice(2).some((a) => c.name.includes(a)))) {
   const t0 = performance.now();
   const ours = c.build(w);
   const ourMs = performance.now() - t0;
