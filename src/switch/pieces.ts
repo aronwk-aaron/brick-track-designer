@@ -89,7 +89,12 @@ export function planPieces(routes: Route[], splits: Split[], p: BaseParams = BAS
       const pos = (k: number) => order.indexOf(k);
       const sets: SetSpec[] = [];
       let ok = true;
-      kids.forEach((kd, n) => {
+      // Two branches leaving together, one each side: a true three-way (one
+      // slider, three positions); otherwise a set per branch (a tandem
+      // three-way when the second leaves further on).
+      const together = kids.length === 2 && kids.every((k) => k.lead < 1) && pos(0) === 1;
+      if (together) sets.push([0, 2, 12, undefined, 1]);
+      else kids.forEach((kd, n) => {
         const ci = pos(n + 1), mi = pos(0);
         if (Math.abs(ci - mi) !== 1) { ok = false; return; }
         // (the throw on the main route's side, as switch.scad's)

@@ -39,8 +39,20 @@ export const BASE_DEFAULTS: BaseParams = {
   printBedX: 256, printBedY: 256, studGrip: 'edges', pointsPieces: 1,
 };
 
-/** A points set: [right-hand route, left-hand route, toe (arc length), throw side or undefined]. */
-export type SetSpec = [number, number, number, number?];
+/**
+ * A points set: [right-hand route, left-hand route, toe (arc length), throw
+ * side or undefined, and for a true three-way the straight route between
+ * them]. A true three-way has one blade each side, both on the straight
+ * route's rails, on one slider with three positions (4DBrix's 2-04-043).
+ */
+export type SetSpec = [number, number, number, number?, number?];
+
+// Two-piece points (and a three-way's): each blade's pivot level with its
+// heel, so no part of the blade swings out past it into the stock rail, and
+// far enough inside the rail line for its disc to clear the fixed rail's
+// foot that carries on from the heel.
+export const DISC2_R = 4.5;
+const pivotIn = (c: number) => 3.9 + c + DISC2_R + 0.2;
 
 const rad = (d: number) => (d * Math.PI) / 180;
 const sind = (d: number) => Math.sin(rad(d)), cosd = (d: number) => Math.cos(rad(d));
@@ -73,18 +85,60 @@ const roundScad = (x: number) => Math.sign(x) * Math.round(Math.abs(x));
 /** OpenSCAD's fragment count for a radius with $fn = 0, $fa = 12, $fs = 2. */
 const frags = (r: number) => Math.ceil(Math.max(Math.min(360 / 12, (r * 2 * Math.PI) / 2), 5));
 
+/**
+ * A true three-way's machinery: two blades on the straight route's rails,
+ * each closing on the outer route's stock rail on its side, each on its own
+ * pivot and spring, both driven by one slider. Its values are a points set's
+ * (switch/context.ts, for the right- and left-hand routes, which give the
+ * slider, lever and arm), with the heel where both blades clear their stock
+ * rails, and the slider's travel each way enough to open a blade.
+ */
+export function threeWaySet(routes: Route[], ps: SetSpec, p: BaseParams, defaultThrowDir = 1) {
+  const g = switchGlobals(p), G = g.G, c = p.pointClearance;
+  const R = routes[ps[0]], L = routes[ps[1]], S = routes[ps[4]!], sToe = ps[2];
+  const lenMin = Math.min(routeLength(S), routeLength(L), routeLength(R));
+  const sepL = (sx: number) => Math.abs(routeLat(L, railPoint(S, sx, -G)) + G);
+  const sepR = (sx: number) => Math.abs(routeLat(R, railPoint(S, sx, +G)) - G);
+  const firstS = (sep: (sx: number) => number) => { let sx = sToe; while (!(sx > lenMin) && !(sep(sx) >= g.bladeNeed)) sx += 0.5; return sx; };
+  const sHeel = Math.max(firstS(sepL), firstS(sepR), sToe + 20);
+  const base = { ra: ps[0], rb: ps[1], sToe, tside: ps[3] };
+  const v0 = pointsSet(routes, base, p, defaultThrowDir, { sHeel });
+  // half the slider's travel: enough to swing either blade open by the throw,
+  // plus the preload it starts with
+  const toeY = railPoint(S, sToe, -G)[1];
+  const half = Math.max(...[-G, +G].map((o) => {
+    const pv = railPoint(S, sHeel - c, o + Math.sign(-o) * pivotIn(c));
+    const tip = railPoint(S, routeSOf(S, [0, v0.yS + 2], 0, -1, 26), o + Math.sign(-o) * pivotIn(c));
+    const arm = norm(sub(tip, pv)) - 3 / 2;
+    return p.springPreload + arm * ((p.pointThrow / (pv[1] - toeY))) + 0.3;
+  }));
+  const v = pointsSet(routes, base, p, defaultThrowDir, { sHeel, leverTravel: 2 * half });
+  return { ...v, three: { S, L, R, half } };
+}
+
 /** Everything switch.scad works out before building: routes, sets, frogs, check rails, ties, cuts. */
 export function switchPlan(routes: Route[], specs: SetSpec[], p: BaseParams = BASE_DEFAULTS, defaultThrowDir = 1) {
+  // (a three-way's slider goes twice as far: a longer lever driver keeps its
+  // swing small enough, under 17 degrees, for the fork to hold the tip)
+  for (const ps of specs)
+    if (ps[4] !== undefined) {
+      const half = threeWaySet(routes, ps, p, defaultThrowDir).three.half;
+      p = { ...p, leverReach: Math.max(p.leverReach ?? 10, Math.ceil(half / Math.sin((17 * Math.PI) / 180))) };
+    }
   const g = switchGlobals(p), G = g.G;
   const tc = new Track({} as Scad, { ...TRACK_DEFAULTS, gaugeStuds: p.gaugeStuds, studH: p.studH }).c;
   const sleeperW = tc.sleeperW, sleeperLen = tc.sleeperLen;
   const nRoutes = routes.length;
-  const sets = specs.map((ps) => pointsSet(routes, { ra: ps[0], rb: ps[1], sToe: ps[2], tside: ps[3] }, p, defaultThrowDir));
+  const sets = specs.map((ps) => (ps[4] === undefined
+    ? pointsSet(routes, { ra: ps[0], rb: ps[1], sToe: ps[2], tside: ps[3] }, p, defaultThrowDir)
+    : threeWaySet(routes, ps, p, defaultThrowDir)));
   const set0 = sets[0];
   const others = (i: number) => routes.map((_, j) => j).filter((j) => j !== i);
   const latOthers = (i: number, q: Pt) => Math.min(...others(i).map((j) => Math.abs(routeLat(routes[j], q))));
   const isStock = (i: number, o: number) => (i === 0 && o > 0) || (i === nRoutes - 1 && o < 0);
-  const railFixS = (i: number, o: number) => Math.max(0, ...specs.map((ps, k) => ((ps[0] === i && o < 0) || (ps[1] === i && o > 0) ? sets[k].sHeel : -Infinity)));
+  const railFixS = (i: number, o: number) => Math.max(0, ...specs.map((ps, k) => (ps[4] !== undefined
+    ? ([ps[0], ps[1], ps[4]].includes(i) && !isStock(i, o) ? sets[k].sHeel : -Infinity)  // a three-way: every rail but the stock rails starts at the heels
+    : (ps[0] === i && o < 0) || (ps[1] === i && o > 0) ? sets[k].sHeel : -Infinity)));
 
   // Frogs: [i, j, s along i, point, s along j].
   const frogFn = (i: number, j: number, s: number) => routeLat(routes[j], railPoint(routes[i], s, -G)) - G;
@@ -285,9 +339,10 @@ export function switchGeometry(s: Scad, plan: SwitchPlan) {
   };
 
   // ---------- a points set's machinery, in plan ----------
-  type SetV = PointsSetValues;
-  const bRt = (v: SetV, b: number) => (b === 0 ? v.ra : v.rb);
-  const bOther = (v: SetV, b: number) => (b === 0 ? v.rb : v.ra);
+  type SetV = PointsSetValues & { three?: { S: Route; L: Route; R: Route; half: number } };
+  // a blade's route (its rail is the blade) and the route whose stock rail it lies against
+  const bRt = (v: SetV, b: number) => (v.three ? v.three.S : b === 0 ? v.ra : v.rb);
+  const bOther = (v: SetV, b: number) => (v.three ? (b === 0 ? v.three.L : v.three.R) : b === 0 ? v.rb : v.ra);
   const bO = (b: number) => (b === 0 ? -G : +G);
   const bSide = (b: number) => (b === 0 ? +1 : -1);
   const bHeel = (v: SetV, b: number): Pt => (b === 0 ? railPoint(v.ra, v.sBpiv, -G) : rotAbout(railPoint(v.rb, v.sBpiv, +G), v.pivotPt, -v.throwAng));
@@ -333,15 +388,18 @@ export function switchGeometry(s: Scad, plan: SwitchPlan) {
   // blade swings out past it into the stock rail, and far enough inside the
   // rail line for its disc to clear the fixed rail's foot that carries on
   // from the heel)
-  const DISC2_R = 4.5, PIVOT_IN = 3.9 + c + DISC2_R + 0.2;
+  const PIVOT_IN = pivotIn(c);
   const unitsCache = new Map<SetV, Unit[]>();
   const units = (v: SetV): Unit[] => {
     let us = unitsCache.get(v);
     if (us) return us;
-    if (p.pointsPieces === 1)
+    if (p.pointsPieces === 1 && !v.three)
       us = [{ pivot: v.pivotPt, swing: v.throwAng, discR: g.discR, blades: [[0, 0], [1, -v.throwAng]], heelBar: true, tineTip: v.tineTip, postX: v.postX[0] }];
     else {
-      const L = v.leverTravel, pre = p.springPreload;
+      // (a three-way's slider goes half its travel each way from the middle,
+      // straight, where both blades are closed; the closed blade's spring
+      // takes the extra travel, 4DBrix's way)
+      const L = v.three ? v.three.half : v.leverTravel, pre = p.springPreload;
       us = [0, 1].map((b): Unit => {
         const rt = bRt(v, b), o = bO(b), inward = bSide(b) * PIVOT_IN;
         const sp = v.sHeel - c;
@@ -354,7 +412,7 @@ export function switchGeometry(s: Scad, plan: SwitchPlan) {
         const swing = ((L - pre) / arm) * (180 / Math.PI);
         const open = b === 0 ? 0 : -swing; // modelled as for the right-hand route: blade 0 closed, blade 1 open
         const tineTip = rotAbout([tip[0], tipY], pivot, open);
-        return { pivot, swing, discR: DISC2_R, blades: [[b, open]], heelBar: false, tineTip, postX: tineTip[0] - (b === 0 ? pre : 0) };
+        return { pivot, swing, discR: DISC2_R, blades: [[b, open]], heelBar: false, tineTip, postX: tineTip[0] - (b === 0 ? pre + (v.three ? v.three.half : 0) : 0) };
       });
     }
     unitsCache.set(v, us);
@@ -369,14 +427,15 @@ export function switchGeometry(s: Scad, plan: SwitchPlan) {
     }));
   };
   const bladePlan = (v: SetV, b: number, at: number, pivot: Pt): CS => (b === 0
-    ? rot3(bladeStem(v, v.ra, -G, v.rb, -G), pivot, at)
-    : rot3(bladeStem(v, v.rb, +G, v.ra, +G), pivot, at)).project();
+    ? rot3(bladeStem(v, bRt(v, 0), -G, bOther(v, 0), -G), pivot, at)
+    : rot3(bladeStem(v, bRt(v, 1), +G, bOther(v, 1), +G), pivot, at)).project();
   const pointsSweep2d = (v: SetV, m: number) => W.CrossSection.union(units(v).flatMap((u) => {
     const rng = [0, u.swing];
     return [
       ...(u.heelBar ? [W.CrossSection.hull(rng.map((a) => rot2(offR(heelBar2d(v), m), u.pivot, a)))] : []),
       circle(u.discR + m, 48, u.pivot),
-      W.CrossSection.hull(rng.map((a) => rot2(offR(p.pointsPieces === 1 ? tines2d(v) : unitTines2d(u), p.springPreload + m + 0.5), u.pivot, a))),
+      // (a three-way's closed blade's tines bend the extra half travel)
+      W.CrossSection.hull(rng.map((a) => rot2(offR(u.heelBar ? tines2d(v) : unitTines2d(u), p.springPreload + (v.three ? v.three.half : 0) + m + 0.5), u.pivot, a))),
     ];
   }));
   const bladeSlots2d = (v: SetV, m: number) => {
@@ -516,7 +575,7 @@ export function switchGeometry(s: Scad, plan: SwitchPlan) {
       if (sg > 0)
         ear = s.difference(ear, [
           cylY(2.4 + 2 * c, 10, 24, [v.leverX, ey, g.leverPz]),
-          ...[-v.leverAng, v.leverAng].map((a) => cylY(1.4, 10, 12, [v.leverX + g.leverBumpR * sind(a), ey, g.leverPz + g.leverBumpR * cosd(a)])),
+          ...(v.three ? [-v.leverAng, 0, v.leverAng] : [-v.leverAng, v.leverAng]).map((a) => cylY(1.4, 10, 12, [v.leverX + g.leverBumpR * sind(a), ey, g.leverPz + g.leverBumpR * cosd(a)])),
         ]);
       parts.push(ear);
       if (sg < 0) {
@@ -589,19 +648,23 @@ export function switchGeometry(s: Scad, plan: SwitchPlan) {
       cs.push(circle(p.springThickness / 2, 12, add(sub(tip, mul(u, e * postL)), mul(n, (k * (g.tineGap + p.springThickness)) / 2))));
     return W.CrossSection.hull(cs);
   };
+  /** The fixed rails that carry on from the heels (the points' parts keep clear of their feet). */
+  const heelRails = (v: SetV): [Route, number][] => (v.three
+    ? [[v.three.S, -G], [v.three.S, +G], [v.three.L, +G], [v.three.R, -G]]
+    : [[bRt(v, 0), -G], [bRt(v, 1), +G]]);
   /** A points part as assembled for the right-hand route (points_part; with two-piece points, each blade's). */
   const unitPart = (v: SetV, u: Unit) => {
     const swings = [0, -u.swing];
     const blades = s.difference(
-      s.union(u.blades.map(([b, at]) => rot3(b === 0 ? blade(v, v.ra, -G, v.rb, -G) : blade(v, v.rb, +G, v.ra, +G), u.pivot, at))),
+      s.union(u.blades.map(([b, at]) => rot3(blade(v, bRt(v, b), bO(b), bOther(v, b), bO(b)), u.pivot, at))),
       swings.map((a) => rot3(cube([400, g.throwRodW + 2 * c + 0.6, g.layerTop + c - pieceBottomZ + 1], [-200, v.throwY - g.throwRodW / 2 - c - 0.3, pieceBottomZ - 1]), u.pivot, a)));
     const pin = T(s.cylinder(g.cavityTop - g.layerTop + g.pivotPinUp + 0.01, g.pivotPinD / 2, g.pivotPinD / 2, 32), [u.pivot[0], u.pivot[1], g.layerTop - 0.01]);
     const plan2 = W.CrossSection.union([...(u.heelBar ? [heelBar2d(v)] : []), circle(u.discR, 48, u.pivot), u.heelBar ? tines2d(v) : unitTines2d(u)]);
     const layer = s.difference(s.union([
       T(s.extrude(plan2, g.layerTop - partZ0), [0, 0, partZ0]),
       T(s.extrude(tineFloor2d(v, u), tineFloorT), [0, 0, partZ0]),
-    ]), [0, u.swing].flatMap((a) => [0, 1].map((b) => rot3(
-      sweep(sq([7.8, bedTop + 2 - pieceBottomZ], [bO(b) - 3.9, pieceBottomZ - 1]).offset(c, 'Miter', 1000), bRt(v, b), v.sHeel, v.sHeel + 30), u.pivot, -a))));
+    ]), [0, u.swing].flatMap((a) => heelRails(v).map(([rt, o]) => rot3(
+      sweep(sq([7.8, bedTop + 2 - pieceBottomZ], [o - 3.9, pieceBottomZ - 1]).offset(c, 'Miter', 1000), rt, v.sHeel, v.sHeel + 30), u.pivot, -a))));
     return s.union([blades, pin, layer]);
   };
   const pointsPart = (v: SetV) => unitPart(v, units(v)[0]);

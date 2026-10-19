@@ -77,3 +77,30 @@ per switch" layout.
 3. The editor builds three routes leaving one toe as this switch, with
    one throw. The tandem layout stays for routes that split at different
    places.
+
+## Status (2026-10-19)
+
+- Step 1, one- or two-piece points: done, 6452750. Every switch config is
+  clean in the clash checks either way.
+- Step 2, the true three-way: done.
+  - In src/switch/base.ts, a SetSpec with a fifth element (the straight
+    route) is a true three-way. threeWaySet() works out its heel and the
+    slider's travel.
+  - The blades are the straight route's rails. Each closes on the outer
+    route's stock rail on its side, and each has its own pivot and tines.
+    One slider carries a post per blade.
+  - Positions: in the middle (straight) both blades are closed with the
+    preload. Half the travel either way swings one blade open, and the
+    other blade's tines bend the extra.
+  - The lever's ear has three dimples: left, straight and right. The lever
+    driver is longer, so its swing stays under 17 degrees and the fork
+    holds the tip.
+  - Every rail except the stock rails starts at the heels; the solver finds
+    the three frogs.
+  - Clash checks (R24, R40, R104) in all three positions: only the
+    preloaded tines touch, and the catches hold.
+  - In the editor, two branches leaving the same point, one each side,
+    become this switch. Template: "Three-way switch (one throw)".
+- Not printed yet. To check on a print: the closed blade's tines bend about
+  4.6mm when the other blade is open (0.9mm tines, about 33mm long, about
+  0.5% strain).

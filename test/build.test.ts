@@ -12,12 +12,12 @@ describe('designs into pieces', () => {
     // (the same routes as switch.scad's left R40 s_curve: its tube underside base)
     expect(b.info.volume).toBeGreaterThan(54980);
   });
-  for (const [name, n, sets] of [['Right switch (LEGO)', 1, 1], ['Wye switch', 1, 1], ['Three-way switch', 1, 2]] as const)
-    it(`${name}: ${n} switch, ${sets} points set${sets > 1 ? 's' : ''}`, async () => {
+  for (const [name, n, sets] of [['Right switch (LEGO)', 1, 1], ['Wye switch', 1, 1], ['Three-way switch (tandem, two throws)', 1, 2], ['Three-way switch (one throw)', 1, 1]] as const)
+    it(`${name}: ${n} switch, ${sets} throw${sets > 1 ? 's' : ''}`, async () => {
       const b = buildDesign(await kernel(), TEMPLATES[name]);
       expect(b.info.warnings).toEqual([]);
       expect(b.info.switches).toBe(n);
-      expect(b.pieces.filter((p) => /points/.test(p.name))).toHaveLength(sets);
+      expect(b.pieces.filter((p) => /throw/.test(p.name))).toHaveLength(sets);  // (a throw per points set)
     });
   it('a branch drawn off the middle of a track: plain track up to it, then a switch', async () => {
     const b = buildDesign(await kernel(), { version: 1, gaugeStuds: 4, routes: [
