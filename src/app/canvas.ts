@@ -391,10 +391,13 @@ export class TrackCanvas {
     const c = this.ctx, dpr = devicePixelRatio, W = this.el.width / dpr, H = this.el.height / dpr;
     c.setTransform(dpr, 0, 0, dpr, 0, 0);
     const css = getComputedStyle(this.el);
-    c.fillStyle = css.getPropertyValue('--canvas-bg') || '#fbfbf8'; c.fillRect(0, 0, W, H);
+    const v = (name: string, fallback: string) => css.getPropertyValue(name).trim() || fallback;
+    const ink = { rail: v('--c-rail', '#4a5560'), centre: v('--c-centre', '#b8b8b0'), label: v('--c-label', '#5c5c55'), mark: v('--c-mark', '#111'),
+      tagBg: v('--c-tag-bg', 'rgba(255,255,255,0.92)'), band: v('--c-band', 'rgba(120,110,95,0.16)'), sel: v('--c-sel', '#2b5fb8'), selInk: v('--c-sel-ink', '#1d4fae') };
+    c.fillStyle = v('--canvas-bg', '#fbfbf8'); c.fillRect(0, 0, W, H);
     // grid: a line every stud (when not too dense), stronger every 8
     const [wx0, wy1] = this.toWorld(0, 0), [wx1, wy0] = this.toWorld(W, H);
-    for (const [step, color] of [[1, '#ececE6'], [8, '#d4d4cc']] as const) {
+    for (const [step, color] of [[1, v('--c-grid', '#ececE6')], [8, v('--c-grid8', '#d4d4cc')]] as const) {
       if (step * this.scale < 5) continue;
       c.strokeStyle = color; c.lineWidth = 1; c.beginPath();
       for (let x = Math.ceil(wx0 / step) * step; x <= wx1; x += step) { const [sx] = this.toScreen(x, 0); c.moveTo(Math.round(sx) + 0.5, 0); c.lineTo(Math.round(sx) + 0.5, H); }
@@ -428,7 +431,7 @@ export class TrackCanvas {
       c.font = '600 12px system-ui, sans-serif';
       const tw = c.measureText(txt).width;
       const x = mx + 10 + tw + 10 > W ? Math.max(4, mx - 10 - tw - 10) : mx + 10, y = my - 26 < 0 ? my + 10 : my - 26;
-      c.fillStyle = 'rgba(255,255,255,0.92)'; c.fillRect(x, y, tw + 10, 18);
+      c.fillStyle = ink.tagBg; c.fillRect(x, y, tw + 10, 18);
       c.fillStyle = color; c.fillText(txt, x + 5, y + 13);
     };
     /** Draw segments from pose p, each in its colour: bad ones red. */
@@ -446,8 +449,8 @@ export class TrackCanvas {
       const dragging = this.drag?.moved && this.drag.route === i && this.dragBad;
       const isBad = (k: number) => !!dragging && (this.dragBadFrom >= 0 ? k >= this.dragBadFrom : k < this.dragBadTo);
       // sleeper band, rails, centre line
-      drawSegs(r, r.segs, isBad, sel ? 'rgba(43,111,224,0.18)' : 'rgba(120,110,95,0.16)', sel ? '#2b5fb8' : '#4a5560');
-      line(trace(r, r.segs, 0.5), '#b8b8b0', 1, [4, 4]);
+      drawSegs(r, r.segs, isBad, sel ? 'rgba(43,111,224,0.18)' : ink.band, sel ? ink.sel : ink.rail);
+      line(trace(r, r.segs, 0.5), ink.centre, 1, [4, 4]);
       // what each curve is, at its middle (and straights' lengths when zoomed in)
       let q: Pose = { x: r.x, y: r.y, heading: r.heading };
       c.font = '11px system-ui, sans-serif'; c.textAlign = 'center';
@@ -458,7 +461,7 @@ export class TrackCanvas {
           const off = (g + 2.2) * (sg.kind === 'curve' ? -Math.sign(sg.angle) : 1);  // outside the curve
           const [sx, sy] = this.toScreen(mid.x + off * Math.cos((mid.heading * Math.PI) / 180), mid.y + off * Math.sin((mid.heading * Math.PI) / 180));
           const txt = sg.kind === 'curve' ? `R${Math.round(sg.radius * 100) / 100} ${Math.round(Math.abs(sg.angle) * 100) / 100}°` : `${Math.round(sg.studs * 100) / 100}`;
-          c.fillStyle = sel ? '#1d4fae' : '#5c5c55'; c.fillText(txt, sx, sy + 4);
+          c.fillStyle = sel ? ink.selInk : ink.label; c.fillText(txt, sx, sy + 4);
         }
         q = follow(q, [sg]);
       }
@@ -466,7 +469,7 @@ export class TrackCanvas {
       // ends
       for (const p of [{ x: r.x, y: r.y }, follow(r, r.segs)]) {
         const [sx, sy] = this.toScreen(p.x, p.y);
-        c.fillStyle = '#4a5560'; c.beginPath(); c.arc(sx, sy, 3, 0, 2 * Math.PI); c.fill();
+        c.fillStyle = ink.rail; c.beginPath(); c.arc(sx, sy, 3, 0, 2 * Math.PI); c.fill();
       }
     });
     // the solver's results
@@ -474,7 +477,7 @@ export class TrackCanvas {
       const w = (mm: [number, number][]) => mm.map(([x, y]) => [x / MM, y / MM] as [number, number]);
       for (const gr of this.overlay.grooves) line(w(gr), '#e0452b', railW * 0.7);
       for (const cr of this.overlay.checkRails) line(w(cr), '#2b6fe0', Math.max(1, (1 / MM) * this.scale));
-      for (const p of this.overlay.crossings) { const [sx, sy] = this.toScreen(p[0] / MM, p[1] / MM); c.strokeStyle = '#111'; c.lineWidth = 1.2; c.beginPath(); c.arc(sx, sy, 5, 0, 2 * Math.PI); c.stroke(); }
+      for (const p of this.overlay.crossings) { const [sx, sy] = this.toScreen(p[0] / MM, p[1] / MM); c.strokeStyle = ink.mark; c.lineWidth = 1.2; c.beginPath(); c.arc(sx, sy, 5, 0, 2 * Math.PI); c.stroke(); }
       for (const p of this.overlay.splits) { const [sx, sy] = this.toScreen(p[0] / MM, p[1] / MM); c.fillStyle = '#f0b400'; c.fillRect(sx - 5, sy - 5, 10, 10); }
     }
     // while dragging an end: what the reshaped track is, or why not
@@ -482,7 +485,7 @@ export class TrackCanvas {
       const r = d.routes[this.drag.route];
       const [mx, my] = this.toScreen(...this.snap(this.mouse));
       const txt = this.dragSnap && !this.dragBad ? `${describe(r.segs)}: joins ${d.routes[this.dragSnap.route].name}` : this.dragBad ? `Can't bend the track this way (red part: ${describe(this.dragBadFrom >= 0 ? r.segs.slice(this.dragBadFrom) : r.segs.slice(0, this.dragBadTo))}${this.host.radius() < 0 ? ', tighter than R24' : ''})` : describe(r.segs);
-      tag(mx, my, txt, this.dragBad ? '#e0452b' : '#1d4fae');
+      tag(mx, my, txt, this.dragBad ? '#e0452b' : ink.selInk);
       c.fillStyle = '#2b9e4a'; c.beginPath(); c.arc(mx, my, 5, 0, 2 * Math.PI); c.fill();
       return;
     }
@@ -498,7 +501,7 @@ export class TrackCanvas {
           const [mx, my] = this.toScreen(...this.snap(this.mouse));
           const sn = this.active.end && !Number.isNaN(this.active.end.heading) ? this.snapEnd(this.mouse, this.active.route) : undefined;
           const txt = sn ? `${describe(segs)}: joins ${d.routes[sn.route].name}` : describe(segs);
-          tag(mx, my, txt, '#1d4fae');
+          tag(mx, my, txt, ink.selInk);
         } else {
           // can't get there with the allowed curves: show the curve it would
           // need, in red, and why
