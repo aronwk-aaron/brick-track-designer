@@ -18,7 +18,10 @@ grid, click a point (or the end of a track) to start, move the mouse to see
 the track the planner would lay (straights and one curve of the radius you
 pick: Free, any radius and angle; Auto, LEGO radii and 22.5-degree ends; or a
 fixed radius), click to lay it and carry on from its end; right-click or Esc
-stops. Drag a track's end to reshape it live (from its last curve on). Starting on the middle of a track branches
+stops. Drag a track's end to reshape it live (from its last curve on). Laying
+or dragging onto another track's end joins the two into one track, with a
+curve and a straight or an S that arrives heading into it. Free curves run
+from R24 to R1000; gentler than that, R1000 and a straight. Starting on the middle of a track branches
 off it. Select mode picks a track (Delete removes it); the panel on the left
 edits any track's numbers; Undo and Redo, pan and zoom. Over the track the
 canvas shows where flangeways cut the rails, check rails, rail crossings and
