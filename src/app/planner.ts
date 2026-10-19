@@ -47,13 +47,33 @@ export function planAuto(p: Pose, t: [number, number], radii = RADII, maxTurn = 
  * tighter than minRadius. Undefined if t can't be reached going forward
  * (behind, or too far to the side for minRadius).
  */
-export function planFree(p: Pose, t: [number, number], minRadius = 24): DSeg[] | undefined {
+/** The biggest free curve: 1000 studs (curves.scad's radii run 24 + 8k, and 1000 is one of them). */
+export const MAX_RADIUS = 1000;
+
+export function planFree(p: Pose, t: [number, number], minRadius = 24, maxRadius = MAX_RADIUS): DSeg[] | undefined {
   const d0 = dir(p.heading);
   const vx = t[0] - p.x, vy = t[1] - p.y;
   const f = vx * d0[0] + vy * d0[1];           // ahead
   const l = -(vx * d0[1] - vy * d0[0]);        // to the left
   if (Math.abs(l) < 1e-6) return f > 1e-6 ? [{ kind: 'straight', studs: round(f) }] : undefined;
   let a = 0, r = (f * f + l * l) / (2 * Math.abs(l));
+  if (r > maxRadius) {
+    // gentler than the biggest curve: that curve, then a straight on to t
+    // (the straight's line touches the curve's end)
+    const sn = Math.sign(l);
+    const miss = (th: number) => {
+      const e = arcEnd(p, maxRadius, sn * th), d1 = dir(p.heading + sn * th);
+      return d1[0] * (t[1] - e.y) - d1[1] * (t[0] - e.x);
+    };
+    // the first angle where the end's tangent passes through t
+    let lo = 1e-9, hi = -1;
+    for (let th = 0.01; th <= 90; th += 0.01) { if (miss(lo) * miss(th) <= 0) { hi = th; break; } lo = th; }
+    if (hi < 0) return [{ kind: 'straight', studs: round(f) }];
+    for (let k = 0; k < 60; k++) { const mid = (lo + hi) / 2; if (miss(lo) * miss(mid) <= 0) hi = mid; else lo = mid; }
+    const th = (lo + hi) / 2, e = arcEnd(p, maxRadius, sn * th);
+    const b = Math.hypot(t[0] - e.x, t[1] - e.y);
+    return [{ kind: 'curve', radius: maxRadius, angle: round(sn * th) }, ...(b > 1e-6 ? [{ kind: 'straight', studs: round(b) } as DSeg] : [])];
+  }
   if (r < minRadius) {
     const q = 2 * minRadius * Math.abs(l) - l * l;
     if (q < 0) return undefined;
@@ -78,6 +98,61 @@ export function planAnyway(p: Pose, t: [number, number]): DSeg[] {
   if (Math.abs(l) < 1e-6) return [{ kind: 'straight', studs: round(f) }];
   const r = (f * f + l * l) / (2 * Math.abs(l));
   return [{ kind: 'curve', radius: round(r), angle: round(Math.sign(l) * 2 * (Math.atan2(Math.abs(l), f) * 180) / Math.PI) }];
+}
+
+/**
+ * From pose p to pose q (position and heading): the smoothest track that
+ * joins them, with every curve at least minRadius. Tries a curve with a
+ * straight before or after it, and an S of two curves of one radius (for
+ * ends side by side, or facing the same way but offset). Undefined if none.
+ */
+export function planToPose(p: Pose, q: Pose, minRadius = 24): DSeg[] | undefined {
+  const d0 = dir(p.heading);
+  const vx = q.x - p.x, vy = q.y - p.y;
+  const f = vx * d0[0] + vy * d0[1], l = -(vx * d0[1] - vy * d0[0]);   // ahead, to the left
+  const turn = norm180(q.heading - p.heading);
+  // local frame: start at the origin heading +y; an arc of radius r turning a
+  // ends at r * u(a), and a straight of length s heading h adds s * dir(h)
+  const u = (a: number): [number, number] => { const e = arcEnd({ x: 0, y: 0, heading: 0 }, 1, a); return [e.x, e.y]; };
+  const target: [number, number] = [-l, f];
+  const cands: { segs: DSeg[]; r: number }[] = [];
+  const ok = (r: number) => Number.isFinite(r) && r >= minRadius - 1e-6;
+  if (Math.abs(turn) < 1e-6) {
+    if (Math.abs(l) < 1e-6 && f > 1e-6) return [{ kind: 'straight', studs: round(f) }];
+  } else {
+    // curve then straight (b), or straight (a) then curve: solve the 2x2 for (r, b) and (a, r)
+    const w = u(turn), d1 = dir(turn), dS = dir(0);
+    const solve = (c1: [number, number], c2: [number, number]) => {
+      const det = c1[0] * c2[1] - c1[1] * c2[0];
+      if (Math.abs(det) < 1e-9) return undefined;
+      return [(target[0] * c2[1] - target[1] * c2[0]) / det, (c1[0] * target[1] - c1[1] * target[0]) / det];
+    };
+    const rb = solve(w, d1);
+    if (rb && ok(rb[0]) && rb[1] >= -1e-6) cands.push({ r: rb[0], segs: [{ kind: 'curve', radius: round(rb[0]), angle: turn }, ...(rb[1] > 1e-6 ? [{ kind: 'straight', studs: round(rb[1]) } as DSeg] : [])] });
+    const ar = solve(dS, w);
+    if (ar && ok(ar[1]) && ar[0] >= -1e-6) cands.push({ r: ar[1], segs: [...(ar[0] > 1e-6 ? [{ kind: 'straight', studs: round(ar[0]) } as DSeg] : []), { kind: 'curve', radius: round(ar[1]), angle: turn }] });
+  }
+  // S: two curves of one radius r, turning t1 then turn - t1. The end at unit
+  // radius is E(t1) = u(t1) + rot(t1) u(turn - t1); find t1 where E points at
+  // the target, then r = |target| / |E|.
+  const E = (t1: number): [number, number] => {
+    const a = u(t1), b = u(turn - t1), c = Math.cos(rad(t1)), s = Math.sin(rad(t1));
+    return [a[0] + c * b[0] - s * b[1], a[1] + s * b[0] + c * b[1]];
+  };
+  const ang = Math.atan2(target[1], target[0]);
+  const miss = (t1: number) => { const e = E(t1); return norm180((Math.atan2(e[1], e[0]) - ang) * 180 / Math.PI); };
+  for (let t = -179; t < 179; t += 1) {
+    const m0 = miss(t), m1 = miss(t + 1);
+    if (Math.abs(m0) > 90 || Math.abs(m1) > 90 || m0 * m1 > 0) continue;
+    let lo = t, hi = t + 1;
+    for (let k = 0; k < 40; k++) { const mid = (lo + hi) / 2; if (miss(lo) * miss(mid) <= 0) hi = mid; else lo = mid; }
+    const t1 = (lo + hi) / 2, e = E(t1), r = Math.hypot(...target) / Math.hypot(...e);
+    if (!ok(r) || Math.abs(t1) < 1e-6 || Math.abs(turn - t1) < 1e-6) continue;
+    cands.push({ r, segs: [{ kind: 'curve', radius: round(r), angle: round(t1) }, { kind: 'curve', radius: round(r), angle: round(turn - t1) }] });
+  }
+  // the smoothest: the biggest radius
+  cands.sort((x, y) => y.r - x.r);
+  return cands[0]?.segs;
 }
 
 /** The same route the other way round: from its end back to its start. */

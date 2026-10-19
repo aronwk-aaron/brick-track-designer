@@ -7,7 +7,7 @@
 // Drag with the right or middle button (or Space + drag) to pan; the wheel
 // zooms.
 import type { Design, DRoute, DSeg } from './design';
-import { describe, follow, plan, planAnyway, planAuto, planFree, reversed, trace, type Pose } from './planner';
+import { describe, follow, plan, planAnyway, planAuto, planFree, planToPose, reversed, trace, type Pose } from './planner';
 
 export interface Overlay { grooves: [number, number][][]; checkRails: [number, number][][]; crossings: [number, number][]; splits: [number, number][] }
 
@@ -163,6 +163,7 @@ export class TrackCanvas {
     // Lay the planned track.
     const segs = this.planTo(w);
     if (!segs) return;
+    const snapTo = this.active.end && !Number.isNaN(this.active.end.heading) ? this.snapEnd(w, this.active.route) : undefined;
     if (this.active.route === undefined) {
       const st = this.active.start!;
       const heading = Number.isNaN(st.heading) ? this.freeHeading(st, w) : st.heading;
@@ -173,6 +174,12 @@ export class TrackCanvas {
       if (last?.kind === 'straight' && segs[0].kind === 'straight') { last.studs = Math.round((last.studs + segs[0].studs) * 1e6) / 1e6; rs.push(...segs.slice(1)); }
       else rs.push(...segs);
       this.active.end = follow(this.active.end!, segs);
+    }
+    // laid onto another track's end: join them into one track, and stop
+    if (snapTo && this.active.route !== undefined) {
+      this.selected = this.join(this.active.route, snapTo.route, snapTo.end);
+      this.active = undefined;
+      this.host.select(this.selected); this.host.changed(true); return this.draw();
     }
     this.selected = this.active.route;
     this.host.select(this.selected);
@@ -202,7 +209,14 @@ export class TrackCanvas {
     this.drag = undefined;
     if (dr.moved) {
       if (this.dragBad && dr.lastGood) this.host.design().routes[dr.route] = dr.lastGood;
-      this.dragBad = false;
+      else if (this.dragSnap) {
+        // joined: make the two one track (the dragged end meeting the other's end)
+        const routes = this.host.design().routes;
+        if (dr.end === 'start') routes[dr.route] = { ...routes[dr.route], ...reversed(routes[dr.route]) };
+        this.selected = this.join(dr.route, this.dragSnap.route, this.dragSnap.end);
+        this.host.select(this.selected);
+      }
+      this.dragBad = false; this.dragSnap = undefined;
       this.host.changed(true); return this.draw();
     }
     // a click on an end: in Draw mode, carry the track on from it
@@ -219,13 +233,17 @@ export class TrackCanvas {
     const work = dr.end === 'end' ? structuredClone(dr.orig) : reversed(dr.orig);
     const head = work.segs.slice(0, dr.anchor);
     const from = follow(work, head);
-    let good = this.planFrom(from, t);
+    // onto another track's end: join it, arriving heading into it
+    const snap = this.snapEnd(this.mouse ?? t, dr.route);
+    this.dragSnap = snap;
+    let good = snap ? planToPose(from, snap.pose, this.host.radius() > 0 ? this.host.radius() : 24) : this.planFrom(from, t);
     // A track reshaped from its start, when that start isn't joined to
     // anything, can swing round its start: first turned the other way (when
     // the end is dragged back past it), else aimed straight at the point.
     if (!good && head.length === 0 && this.endFree(dr.route, dr.end === 'end' ? 'start' : 'end')) {
       const turned = (h: number) => {
-        const g2 = this.planFrom({ ...from, heading: h }, t);
+        const f2 = { ...from, heading: h };
+        const g2 = snap ? planToPose(f2, snap.pose, this.host.radius() > 0 ? this.host.radius() : 24) : this.planFrom(f2, t);
         if (g2) { work.heading = h; from.heading = h; }
         return g2;
       };
@@ -251,6 +269,36 @@ export class TrackCanvas {
     if (good) this.drag!.lastGood = structuredClone(cur);
   }
   private dragBad = false;
+  private dragSnap: { route: number; end: 'start' | 'end'; pose: Pose } | undefined;
+  /**
+   * Another track's end near p to join onto (not route skip): which route and
+   * end, and the pose to arrive at (heading into that track).
+   */
+  private snapEnd(p: [number, number], skip: number | undefined): { route: number; end: 'start' | 'end'; pose: Pose } | undefined {
+    let best: { route: number; end: 'start' | 'end'; pose: Pose; d: number } | undefined;
+    this.host.design().routes.forEach((r, i) => {
+      if (i === skip) return;
+      const e = follow(r, r.segs);
+      for (const [end, pose] of [['start', { x: r.x, y: r.y, heading: r.heading }], ['end', { ...e, heading: e.heading + 180 }]] as const) {
+        const d = Math.hypot(pose.x - p[0], pose.y - p[1]);
+        if (d < 1.5 && (!best || d < best.d)) best = { route: i, end, pose: { ...pose, heading: ((pose.heading % 360) + 540) % 360 - 180 }, d };
+      }
+    });
+    return best && { route: best.route, end: best.end, pose: best.pose };
+  }
+  /** Join route b onto the end of route a (b's start or end meeting a's end): a gets b's track, b goes. */
+  private join(a: number, b: number, bEnd: 'start' | 'end') {
+    const routes = this.host.design().routes, rb = routes[b];
+    const more = bEnd === 'start' ? rb.segs.map((sg) => ({ ...sg })) : reversed(rb).segs;
+    const segs = routes[a].segs;
+    for (const sg of more) {
+      const last = segs[segs.length - 1];
+      if (last?.kind === 'straight' && sg.kind === 'straight') last.studs = Math.round((last.studs + sg.studs) * 1e6) / 1e6;
+      else segs.push(sg);
+    }
+    routes.splice(b, 1);
+    return b < a ? a - 1 : a;
+  }
   /** Is this end of route i free (not joined to another track's end, nor on another track)? */
   private endFree(i: number, which: 'start' | 'end'): boolean {
     const routes = this.host.design().routes, r = routes[i];
@@ -299,6 +347,8 @@ export class TrackCanvas {
   /** The track planned from the active end to the (snapped) mouse point. */
   private planTo(w: [number, number]): DSeg[] | undefined {
     const a = this.active!;
+    const snap = a.end && !Number.isNaN(a.end.heading) ? this.snapEnd(w, a.route) : undefined;
+    if (snap) return planToPose(a.end!, snap.pose, this.host.radius() > 0 ? this.host.radius() : 24);
     const t = this.snap(w);
     if (a.route === undefined && a.start && Number.isNaN(a.start.heading)) {
       // first piece from an empty point: straight, along the nearest direction
@@ -405,7 +455,7 @@ export class TrackCanvas {
     if (this.drag?.moved && this.mouse) {
       const r = d.routes[this.drag.route];
       const [mx, my] = this.toScreen(...this.snap(this.mouse));
-      const txt = this.dragBad ? `Can't bend the track this way (red part: ${describe(this.dragBadFrom >= 0 ? r.segs.slice(this.dragBadFrom) : r.segs.slice(0, this.dragBadTo))}${this.host.radius() < 0 ? ', tighter than R24' : ''})` : describe(r.segs);
+      const txt = this.dragSnap && !this.dragBad ? `${describe(r.segs)}: joins ${d.routes[this.dragSnap.route].name}` : this.dragBad ? `Can't bend the track this way (red part: ${describe(this.dragBadFrom >= 0 ? r.segs.slice(this.dragBadFrom) : r.segs.slice(0, this.dragBadTo))}${this.host.radius() < 0 ? ', tighter than R24' : ''})` : describe(r.segs);
       tag(mx, my, txt, this.dragBad ? '#e0452b' : '#1d4fae');
       c.fillStyle = '#2b9e4a'; c.beginPath(); c.arc(mx, my, 5, 0, 2 * Math.PI); c.fill();
       return;
@@ -420,7 +470,8 @@ export class TrackCanvas {
           line(trace(st, segs, 0.5), 'rgba(43,111,224,0.25)', (2 * g + 3) * this.scale);
           for (const o of [-g, g]) line(offsetPts(st, segs, o), '#2b6fe0', railW);
           const [mx, my] = this.toScreen(...this.snap(this.mouse));
-          const txt = describe(segs);
+          const sn = this.active.end && !Number.isNaN(this.active.end.heading) ? this.snapEnd(this.mouse, this.active.route) : undefined;
+          const txt = sn ? `${describe(segs)}: joins ${d.routes[sn.route].name}` : describe(segs);
           tag(mx, my, txt, '#1d4fae');
         } else {
           // can't get there with the allowed curves: show the curve it would
