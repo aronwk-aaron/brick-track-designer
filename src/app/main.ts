@@ -213,6 +213,9 @@ $('add-route').addEventListener('click', () => {
 const grip = $<HTMLSelectElement>('grip');
 grip.value = design.grip ?? 'edges';
 grip.addEventListener('change', () => { design.grip = grip.value as Design['grip']; changed(true); });
+const pointsSel = $<HTMLSelectElement>('points');
+pointsSel.value = String(design.pointsPieces ?? 1);
+pointsSel.addEventListener('change', () => { design.pointsPieces = Number(pointsSel.value) as 1 | 2; changed(true); });
 const gripLegend = () => { const on = grip.value === 'edges'; $('legend-grip').hidden = !on; if (canvas) canvas.showGrips = on; };
 const gauge = $<HTMLInputElement>('gauge');
 gauge.value = String(design.gaugeStuds);
@@ -234,7 +237,7 @@ $('load').addEventListener('click', () => loadInput.click());
 loadInput.addEventListener('change', async () => {
   const f = loadInput.files?.[0]; if (!f) return;
   try { const d = JSON.parse(await f.text()) as Design; if (!Array.isArray(d.routes)) throw new Error('not a design');
-    design = d; gauge.value = String(d.gaugeStuds); grip.value = d.grip ?? 'edges'; framed = false; changed(true); canvas.fit();
+    design = d; gauge.value = String(d.gaugeStuds); grip.value = d.grip ?? 'edges'; pointsSel.value = String(d.pointsPieces ?? 1); framed = false; changed(true); canvas.fit();
   } catch (err) { errEl.textContent = `Couldn't load that file: ${err}`; }
   loadInput.value = '';
 });
@@ -274,7 +277,7 @@ let show3d = true;
 try { show3d = localStorage.getItem('btd-3d') !== '0'; } catch { /* fine */ }
 set3d(show3d);
 $('toggle-3d').addEventListener('click', () => { show3d = !show3d; set3d(show3d); });
-const restore = (json: string) => { design = JSON.parse(json); gauge.value = String(design.gaugeStuds); grip.value = design.grip ?? 'edges'; canvas.selected = undefined; save(); render(); canvas.draw(); updateHistoryButtons(); worker.postMessage({ id: ++seq, design: structuredClone(design) }); };
+const restore = (json: string) => { design = JSON.parse(json); gauge.value = String(design.gaugeStuds); grip.value = design.grip ?? 'edges'; pointsSel.value = String(design.pointsPieces ?? 1); canvas.selected = undefined; save(); render(); canvas.draw(); updateHistoryButtons(); worker.postMessage({ id: ++seq, design: structuredClone(design) }); };
 const undo = () => { if (history.length > 1) { future.push(history.pop()!); restore(history[history.length - 1]); } };
 const redo = () => { if (future.length) { const j = future.pop()!; history.push(j); restore(j); } };
 function updateHistoryButtons() {

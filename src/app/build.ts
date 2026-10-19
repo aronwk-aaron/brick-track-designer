@@ -37,7 +37,7 @@ export function buildDesign(w: Wasm, design: Design) {
   };
   // Pieces: a switch wherever routes split, the rest as fixed trackwork.
   const scad = new Scad(w), pieces: Piece[] = [];
-  const params = { ...BASE_DEFAULTS, gaugeStuds: design.gaugeStuds, studGrip: design.grip ?? 'edges' };
+  const params = { ...BASE_DEFAULTS, gaugeStuds: design.gaugeStuds, studGrip: design.grip ?? 'edges', pointsPieces: design.pointsPieces ?? 1 };
   const pc = planPieces(routes, sol.splits, params);
   const place = (m: Man, P: Pose) => T(R(m, [0, 0, P[2]]), [P[0], P[1], 0]);
   let volume = 0;
@@ -58,8 +58,8 @@ export function buildDesign(w: Wasm, design: Design) {
     add(`${tag}-base`, 0x6f7780, base, place(base, sw.pose));
     sw.sets.forEach((_, k) => {
       const sfx = sw.sets.length > 1 ? `${k + 1}` : '';
-      const pts = gm.pointsPart(k), thr = gm.throwPart(k);
-      add(`${tag}-points${sfx}`, 0x4682b4, pts, place(pts, sw.pose));
+      const thr = gm.throwPart(k), pp = gm.pointsParts(k);
+      pp.forEach((pts, j) => add(`${tag}-points${sfx}${pp.length > 1 ? (j === 0 ? '-a' : '-b') : ''}`, 0x4682b4, pts, place(pts, sw.pose)));
       add(`${tag}-throw${sfx}`, 0xe8892b, thr, place(thr, sw.pose));
       add(`${tag}-lever${sfx}`, 0xd4af37, gm.leverPrint(), place(gm.leverPart(k), sw.pose));
     });
