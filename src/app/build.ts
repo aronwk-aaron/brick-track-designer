@@ -10,7 +10,7 @@ import { solve } from '../route/solver';
 import { railPoint, type Pose } from '../route/route';
 import { BASE_DEFAULTS, switchGeometry } from '../switch/base';
 import { planPieces } from '../switch/pieces';
-import { type Design, toRoutes } from './design';
+import { type Design, OPTION_DEFAULTS, toRoutes } from './design';
 
 /** A built piece: its mesh in the design (for the view) and its STL (in its own frame, to print). */
 export interface Piece { name: string; color: number; positions: Float32Array; stl: Uint8Array }
@@ -20,7 +20,9 @@ export function buildDesign(w: Wasm, design: Design) {
   if (routes.length === 0) throw new Error('Draw some track: click a grid point to start, then click where it should go.');
   const t0 = performance.now();
   const gauge = (design.gaugeStuds + 1) * 8;
-  const sol = solve(routes, { gauge, step: 0.5 });
+  const o = { ...OPTION_DEFAULTS, ...design.options };
+  const solverOpts = { gauge, step: 0.5, flangeway: o.flangeway, checkRailLen: o.checkRailLen, checkRailW: o.checkRailW };
+  const sol = solve(routes, solverOpts);
   // What the canvas draws over the track, in mm: flangeway cuts, check rails,
   // rail crossings and points.
   const g = gauge / 2;
@@ -37,7 +39,8 @@ export function buildDesign(w: Wasm, design: Design) {
   };
   // Pieces: a switch wherever routes split, the rest as fixed trackwork.
   const scad = new Scad(w), pieces: Piece[] = [];
-  const params = { ...BASE_DEFAULTS, gaugeStuds: design.gaugeStuds, studGrip: design.grip ?? 'edges', pointsPieces: design.pointsPieces ?? 1 };
+  const params = { ...BASE_DEFAULTS, ...o, gaugeStuds: design.gaugeStuds, studGrip: design.grip ?? 'edges', pointsPieces: design.pointsPieces ?? 1 };
+
   const pc = planPieces(routes, sol.splits, params);
   const place = (m: Man, P: Pose) => T(R(m, [0, 0, P[2]]), [P[0], P[1], 0]);
   let volume = 0;
@@ -48,8 +51,8 @@ export function buildDesign(w: Wasm, design: Design) {
     volume += local.volume();
   };
   if (pc.rest.length) {
-    const restSol = solve(pc.rest, { gauge, step: 0.5 });
-    const m = crossingPiece(scad, pc.rest, { ...CROSSING_DEFAULTS, gaugeStuds: design.gaugeStuds, grip: design.grip ?? 'edges' }, restSol, overlay.grips);
+    const restSol = solve(pc.rest, solverOpts);
+    const m = crossingPiece(scad, pc.rest, { ...CROSSING_DEFAULTS, gaugeStuds: design.gaugeStuds, grip: design.grip ?? 'edges', flangeway: o.flangeway, flangewayDepth: o.flangewayDepth, checkRailW: o.checkRailW }, restSol, overlay.grips);
     add('track', 0x6f7780, m, m);
   }
   pc.switches.forEach((sw, n) => {
