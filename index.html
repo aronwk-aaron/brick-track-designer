@@ -30,7 +30,7 @@
     header .spacer { flex: 1; }
     header label.inline { display: inline-flex; gap: 5px; align-items: center; color: var(--muted); white-space: nowrap; }
     header input[type=number] { width: 48px; }
-    #template { width: 108px; } #radius { width: 96px; } #grip { width: 96px; }
+    #template { width: 108px; } #radius { width: 96px; } #grip { width: 96px; } #points { width: 76px; }
     button, select, input { font: inherit; color: inherit; }
     button, select { background: var(--raise); border: 1px solid var(--line); border-radius: 6px; padding: 4px 9px; cursor: pointer; white-space: nowrap; }
     button:hover:not(:disabled), select:hover { border-color: var(--muted); }
@@ -129,6 +129,7 @@
     <label class="inline" title="Studs between the rails (LEGO is 4)">Gauge <input id="gauge" type="number" min="2" max="10" step="1"></label>
     <label class="inline">Grip <select id="grip" title="Underside: Edges is hollow like a LEGO plate, with anti-stud tubes gripping along the edges and every 4 studs; Every stud has a gripping square socket at every stud (holds hard)">
       <option value="edges">Edges</option><option value="all">Every stud</option></select></label>
+    <label class="inline">Points <select id="points" title="Switch points: one part (both blades on one pivot) or two (each blade on its own pivot and spring, as 4DBrix's)"><option value="1">1 part</option><option value="2">2 parts</option></select></label>
     <span class="spacer"></span>
     <button id="fit" type="button" title="Fit the track in view (F)">⤢ Fit</button>
     <button id="toggle-3d" class="on" type="button" title="Show or hide the 3D preview (P)">3D</button>

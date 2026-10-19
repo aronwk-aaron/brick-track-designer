@@ -25,13 +25,18 @@ export interface BaseParams extends SwitchParams {
   printBedY: number;        // 256
   /** Underside (switch.scad's stud_grip): 'edges' = hollow with anti-stud tubes, 'all' = a gripping square socket at every stud. */
   studGrip: 'edges' | 'all';
+  /**
+   * The points as one part (both blades on a heel bar, one pivot: switch.scad's)
+   * or two (each blade on its own pivot with its own spring, as 4DBrix's).
+   */
+  pointsPieces: 1 | 2;
 }
 
 export const BASE_DEFAULTS: BaseParams = {
   gaugeStuds: 4, pointThrow: 3, pointClearance: 0.3, springPreload: 1, springThickness: 0.9,
   springLength: 40, bladeDiscD: 14, leverOffset: 8, studH: 1.8, generateBallast: false,
   flangeway: 3, flangewayDepth: 3, checkRailLen: 30, checkRailW: 1, checkRailFlare: 1.5,
-  printBedX: 256, printBedY: 256, studGrip: 'edges',
+  printBedX: 256, printBedY: 256, studGrip: 'edges', pointsPieces: 1,
 };
 
 /** A points set: [right-hand route, left-hand route, toe (arc length), throw side or undefined]. */
@@ -312,17 +317,75 @@ export function switchGeometry(s: Scad, plan: SwitchPlan) {
     return circle(g.heelBarW / 2, 24, add(h, mul(d, (g.heelBarW / 2 - HEAD_HW) / norm(d))));
   }));
   const offR = (cs: CS, r: number) => cs.offset(r, 'Round', 2, frags(r));
-  const pointsSweep2d = (v: SetV, m: number) => W.CrossSection.union([
-    W.CrossSection.hull(v.swingRange.map((a) => rot2(offR(heelBar2d(v), m), v.pivotPt, a))),
-    W.CrossSection.hull(v.swingRange.map((a) => rot2(circle(g.discR + m, 48, v.pivotPt), v.pivotPt, a))),
-    W.CrossSection.hull(v.swingRange.map((a) => rot2(offR(tines2d(v), p.springPreload + m + 0.5), v.pivotPt, a))),
-  ]);
+
+  // The points' moving parts ("units"), modelled as assembled for the
+  // right-hand route; each turns about its pivot from 0 (right-hand route)
+  // to swing (left-hand route). One piece: both blades on a heel bar.
+  // Two pieces: each blade on its own pivot, inward of its rail line, with
+  // its own disc, tines and slider post.
+  interface Unit {
+    pivot: Pt; swing: number; discR: number;
+    /** blades on it: [blade, its angle as modelled] */
+    blades: [number, number][];
+    heelBar: boolean; tineTip: Pt; postX: number;
+  }
+  // (two-piece: each blade's pivot level with its heel, so no part of the
+  // blade swings out past it into the stock rail, and far enough inside the
+  // rail line for its disc to clear the fixed rail's foot that carries on
+  // from the heel)
+  const DISC2_R = 4.5, PIVOT_IN = 3.9 + c + DISC2_R + 0.2;
+  const unitsCache = new Map<SetV, Unit[]>();
+  const units = (v: SetV): Unit[] => {
+    let us = unitsCache.get(v);
+    if (us) return us;
+    if (p.pointsPieces === 1)
+      us = [{ pivot: v.pivotPt, swing: v.throwAng, discR: g.discR, blades: [[0, 0], [1, -v.throwAng]], heelBar: true, tineTip: v.tineTip, postX: v.postX[0] }];
+    else {
+      const L = v.leverTravel, pre = p.springPreload;
+      us = [0, 1].map((b): Unit => {
+        const rt = bRt(v, b), o = bO(b), inward = bSide(b) * PIVOT_IN;
+        const sp = v.sHeel - c;
+        const pivot = railPoint(rt, sp, o + inward);
+        const tipY = v.yS + 2, tip = railPoint(rt, routeSOf(rt, [0, tipY], 0, -1, 26), o + inward);
+        const arm = norm(sub(tip, pivot)) - postL / 2;
+        // open: the tines unloaded, centred on the post; closed: the post
+        // presses them by the preload. So the swing takes the slider's
+        // travel less the preload.
+        const swing = ((L - pre) / arm) * (180 / Math.PI);
+        const open = b === 0 ? 0 : -swing; // modelled as for the right-hand route: blade 0 closed, blade 1 open
+        const tineTip = rotAbout([tip[0], tipY], pivot, open);
+        return { pivot, swing, discR: DISC2_R, blades: [[b, open]], heelBar: false, tineTip, postX: tineTip[0] - (b === 0 ? pre : 0) };
+      });
+    }
+    unitsCache.set(v, us);
+    return us;
+  };
+  const unitTines2d = (u: Unit) => {
+    const d = sub(u.tineTip, u.pivot), uu = mul(d, 1 / norm(d)), n: Pt = [uu[1], -uu[0]];
+    return W.CrossSection.union([-1, 1].map((k) => {
+      const off = mul(n, (k * (g.tineGap + p.springThickness)) / 2);
+      const a = add(add(u.pivot, mul(uu, u.discR * 0.5)), off), tt = add(u.tineTip, off);
+      return W.CrossSection.hull([circle(p.springThickness / 2, 12, a), circle(p.springThickness / 2, 12, tt)]);
+    }));
+  };
+  const bladePlan = (v: SetV, b: number, at: number, pivot: Pt): CS => (b === 0
+    ? rot3(bladeStem(v, v.ra, -G, v.rb, -G), pivot, at)
+    : rot3(bladeStem(v, v.rb, +G, v.ra, +G), pivot, at)).project();
+  const pointsSweep2d = (v: SetV, m: number) => W.CrossSection.union(units(v).flatMap((u) => {
+    const rng = [0, u.swing];
+    return [
+      ...(u.heelBar ? [W.CrossSection.hull(rng.map((a) => rot2(offR(heelBar2d(v), m), u.pivot, a)))] : []),
+      circle(u.discR + m, 48, u.pivot),
+      W.CrossSection.hull(rng.map((a) => rot2(offR(p.pointsPieces === 1 ? tines2d(v) : unitTines2d(u), p.springPreload + m + 0.5), u.pivot, a))),
+    ];
+  }));
   const bladeSlots2d = (v: SetV, m: number) => {
     const n = 8, parts: CS[] = [];
-    for (const b of [0, 1]) {
-      const plan2 = blade2dPlan(v, b).offset(m, 'Miter', 1000);
-      for (let k = 0; k <= n; k++) parts.push(rot2(plan2, v.pivotPt, v.swingRange[0] + ((v.swingRange[1] - v.swingRange[0]) * k) / n));
-    }
+    for (const u of units(v))
+      for (const [b, at] of u.blades) {
+        const plan2 = bladePlan(v, b, at, u.pivot).offset(m, 'Miter', 1000);
+        for (let k = 0; k <= n; k++) parts.push(rot2(plan2, u.pivot, (u.swing * k) / n));
+      }
     return W.CrossSection.union(parts);
   };
   const pointsPockets = (v: SetV) => {
@@ -330,7 +393,7 @@ export function switchGeometry(s: Scad, plan: SwitchPlan) {
     return s.union([
       T(s.extrude(W.CrossSection.union([pointsSweep2d(v, c), slots]), g.cavityTop - pieceBottomZ + 1), [0, 0, pieceBottomZ - 1]),
       T(s.extrude(slots, bedTop + 2 - pieceBottomZ), [0, 0, pieceBottomZ - 1]),
-      T(s.cylinder(g.pivotPinUp + c + 0.01, (g.pivotPinD + 2 * c) / 2, (g.pivotPinD + 2 * c) / 2, 32), [v.pivotPt[0], v.pivotPt[1], g.cavityTop - 0.01]),
+      ...units(v).map((u) => T(s.cylinder(g.pivotPinUp + c + 0.01, (g.pivotPinD + 2 * c) / 2, (g.pivotPinD + 2 * c) / 2, 32), [u.pivot[0], u.pivot[1], g.cavityTop - 0.01])),
     ]);
   };
   const pointsBed = (v: SetV) => {
@@ -478,7 +541,7 @@ export function switchGeometry(s: Scad, plan: SwitchPlan) {
   const forkHw = g.leverTipD / 2 + c + g.forkWall;
   const throwChannel = (v: SetV) => {
     const w = g.throwRodW + 1 + 2 * c;
-    const ends = [...v.postX.flatMap((x) => [x - 1.5, x + v.leverTravel + 1.5]), v.forkX - forkHw, v.forkX + v.leverTravel + forkHw];
+    const ends = [...units(v).map((u) => u.postX).flatMap((x) => [x - 1.5, x + v.leverTravel + 1.5]), v.forkX - forkHw, v.forkX + v.leverTravel + forkHw];
     const x0 = Math.min(...ends) - c - 1, x1 = Math.max(...ends) + c + 1;
     const wf = g.leverBossLen + 2 * c;
     const f0 = Math.min(v.forkX - forkHw, v.forkX + v.leverTravel + forkHw) - c - 1, f1 = Math.max(v.forkX - forkHw, v.forkX + v.leverTravel + forkHw) + c + 1;
@@ -519,34 +582,37 @@ export function switchGeometry(s: Scad, plan: SwitchPlan) {
       sweep(bladeSection2d(o), rt, v.sToe, v.sHeel - c),
       sweep(sq([30, 30], [side > 0 ? face : face - 30, partZ0 - 1]), other, 0, v.sHeel + 5));
   };
-  const tineFloor2d = (v: SetV) => {
-    const d = sub(v.tineTip, v.pivotPt), u = mul(d, 1 / norm(d)), n: Pt = [u[1], -u[0]], cs: CS[] = [];
+  const tineFloor2d = (v: SetV, un?: Unit) => {
+    const tip = un ? un.tineTip : v.tineTip, piv = un ? un.pivot : v.pivotPt;
+    const d = sub(tip, piv), u = mul(d, 1 / norm(d)), n: Pt = [u[1], -u[0]], cs: CS[] = [];
     for (const k of [-1, 1]) for (const e of [0, 1])
-      cs.push(circle(p.springThickness / 2, 12, add(sub(v.tineTip, mul(u, e * postL)), mul(n, (k * (g.tineGap + p.springThickness)) / 2))));
+      cs.push(circle(p.springThickness / 2, 12, add(sub(tip, mul(u, e * postL)), mul(n, (k * (g.tineGap + p.springThickness)) / 2))));
     return W.CrossSection.hull(cs);
   };
-  /** The points part, one piece, as assembled for the right-hand route (points_part). */
-  const pointsPart = (v: SetV) => {
-    const swings = [0, -v.throwAng];
+  /** A points part as assembled for the right-hand route (points_part; with two-piece points, each blade's). */
+  const unitPart = (v: SetV, u: Unit) => {
+    const swings = [0, -u.swing];
     const blades = s.difference(
-      s.union([blade(v, v.ra, -G, v.rb, -G), rot3(blade(v, v.rb, +G, v.ra, +G), v.pivotPt, -v.throwAng)]),
-      swings.map((a) => rot3(cube([400, g.throwRodW + 2 * c + 0.6, g.layerTop + c - pieceBottomZ + 1], [-200, v.throwY - g.throwRodW / 2 - c - 0.3, pieceBottomZ - 1]), v.pivotPt, a)));
-    const pin = T(s.cylinder(g.cavityTop - g.layerTop + g.pivotPinUp + 0.01, g.pivotPinD / 2, g.pivotPinD / 2, 32), [v.pivotPt[0], v.pivotPt[1], g.layerTop - 0.01]);
+      s.union(u.blades.map(([b, at]) => rot3(b === 0 ? blade(v, v.ra, -G, v.rb, -G) : blade(v, v.rb, +G, v.ra, +G), u.pivot, at))),
+      swings.map((a) => rot3(cube([400, g.throwRodW + 2 * c + 0.6, g.layerTop + c - pieceBottomZ + 1], [-200, v.throwY - g.throwRodW / 2 - c - 0.3, pieceBottomZ - 1]), u.pivot, a)));
+    const pin = T(s.cylinder(g.cavityTop - g.layerTop + g.pivotPinUp + 0.01, g.pivotPinD / 2, g.pivotPinD / 2, 32), [u.pivot[0], u.pivot[1], g.layerTop - 0.01]);
+    const plan2 = W.CrossSection.union([...(u.heelBar ? [heelBar2d(v)] : []), circle(u.discR, 48, u.pivot), u.heelBar ? tines2d(v) : unitTines2d(u)]);
     const layer = s.difference(s.union([
-      T(s.extrude(W.CrossSection.union([heelBar2d(v), circle(g.discR, 48, v.pivotPt), tines2d(v)]), g.layerTop - partZ0), [0, 0, partZ0]),
-      T(s.extrude(tineFloor2d(v), tineFloorT), [0, 0, partZ0]),
-    ]), swings.flatMap((a) => [0, 1].map((b) => rot3(
-      sweep(sq([7.8, bedTop + 2 - pieceBottomZ], [bO(b) - 3.9, pieceBottomZ - 1]).offset(c, 'Miter', 1000), bRt(v, b), v.sHeel, v.sHeel + 30), v.pivotPt, a))));
+      T(s.extrude(plan2, g.layerTop - partZ0), [0, 0, partZ0]),
+      T(s.extrude(tineFloor2d(v, u), tineFloorT), [0, 0, partZ0]),
+    ]), [0, u.swing].flatMap((a) => [0, 1].map((b) => rot3(
+      sweep(sq([7.8, bedTop + 2 - pieceBottomZ], [bO(b) - 3.9, pieceBottomZ - 1]).offset(c, 'Miter', 1000), bRt(v, b), v.sHeel, v.sHeel + 30), u.pivot, -a))));
     return s.union([blades, pin, layer]);
   };
+  const pointsPart = (v: SetV) => unitPart(v, units(v)[0]);
   /** The throw (slider), as assembled for the right-hand route (throw_part). */
   const throwPart = (v: SetV) => {
     const z0 = g.layerZ0, z1 = g.layerTop, rodW = g.throwRodW;
-    const xs = [...v.postX, v.forkX], x0 = Math.min(...xs) - 1.5, x1 = Math.max(...xs) + 1.5;
+    const posts = units(v).map((u) => u.postX), xs = [...posts, v.forkX], x0 = Math.min(...xs) - 1.5, x1 = Math.max(...xs) + 1.5;
     const slotW = g.leverTipD + 2 * c, m = v.forkMouthHw;
     const body = s.union([
       cube([x1 - x0, rodW, z1 - z0], [x0, v.throwY - rodW / 2, z0]),
-      ...v.postX.map((x) => cube([postW, rodW / 2 + postL, z1 - z0 - tineFloorT - 0.15], [x - postW / 2, v.throwY, z0 + tineFloorT + 0.15])),
+      ...posts.map((x) => cube([postW, rodW / 2 + postL, z1 - z0 - tineFloorT - 0.15], [x - postW / 2, v.throwY, z0 + tineFloorT + 0.15])),
       cube([2 * forkHw, rodW, v.forkTop - z0], [v.forkX - forkHw, v.throwY - rodW / 2, z0]),
     ]);
     const slot2d = W.CrossSection.union([
@@ -606,6 +672,10 @@ export function switchGeometry(s: Scad, plan: SwitchPlan) {
   return {
     base,
     pointsPart: (k = 0) => pointsPart(sets[k]),
+    /** The points' parts: one, or one per blade (pointsPieces 2). */
+    pointsParts: (k = 0) => units(sets[k]).map((u) => unitPart(sets[k], u)),
+    /** Each points part's pivot and swing (to turn it to the left-hand route). */
+    pointsUnits: (k = 0) => units(sets[k]).map((u) => ({ pivot: u.pivot, swing: u.swing })),
     throwPart: (k = 0) => throwPart(sets[k]),
     leverPart: (k = 0) => leverPart(sets[k]),
     leverShape, leverPrint,

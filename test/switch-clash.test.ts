@@ -20,13 +20,14 @@ const cfg = (name: string) => {
 };
 
 describe('switch moving parts: no clashes but the designed ones', () => {
-  for (const name of ['left-R40-s_curve', 'right-R24-arc', 'wye-R40-arc', 'threeway-R40-arc'])
-    it(name, async () => {
+  for (const pieces of [1, 2] as const)
+  for (const name of ['left-R40-s_curve', 'right-R24-arc', 'wye-R24-arc', 'threeway-R40-arc'])
+    it(`${name}, points in ${pieces} piece${pieces > 1 ? 's' : ''}`, async () => {
       const { routes, sets } = cfg(name);
-      const r = await clashes(routes, sets, name.startsWith('right') ? -1 : 1);
+      const r = await clashes(routes, sets, name.startsWith('right') ? -1 : 1, pieces);
       for (const [k, v] of Object.entries(r)) {
         if (k.startsWith('catch')) expect(v, k).toBeGreaterThan(0.1);
-        else if (k.startsWith('points x throw')) expect(v, k).toBeLessThan(3);        // tongue between the tines
+        else if (k.startsWith('points x throw')) expect(v, k).toBeLessThan(3);        // tongue between the tines (the preload)
         else if (k.startsWith('base x lever, middle')) expect(v, k).toBeLessThan(0.3); // detent bump over the ear
         else expect(v, k).toBeLessThan(1e-3);
       }
