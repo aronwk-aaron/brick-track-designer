@@ -149,6 +149,7 @@ scene.add(new THREE.HemisphereLight(0xffffff, 0x777777, 2.2));
 const sun = new THREE.DirectionalLight(0xffffff, 1.4); sun.position.set(300, -400, 700); scene.add(sun);
 const under = new THREE.DirectionalLight(0xffffff, 0.9); under.position.set(-300, 400, -700); scene.add(under);
 let meshes: THREE.Mesh[] = [], framed = false;
+let lastNames = '';
 const sphereOf = () => new THREE.Box3().setFromObject(group).getBoundingSphere(new THREE.Sphere());
 const group = new THREE.Group();
 scene.add(group);
@@ -165,6 +166,9 @@ function showPieces(list: Piece[]) {
     return m;
   });
   const bs = sphereOf();
+  // (a different set of pieces, e.g. a switch appearing: frame again)
+  const names = list.map((p) => p.name).join();
+  if (names !== lastNames) { lastNames = names; lastSphere = undefined; }
   // Frame the piece the first time, and again when it has grown, shrunk or
   // moved a lot, keeping the direction you are looking from.
   const moved = !lastSphere || bs.center.distanceTo(lastSphere.center) > lastSphere.radius * 0.35
@@ -196,6 +200,7 @@ const look = (under: boolean) => {
 };
 $('view-top').addEventListener('click', () => look(false));
 $('view-under').addEventListener('click', () => look(true));
+$('view-frame').addEventListener('click', () => { if (meshes.length) frame(sphereOf(), true); });
 renderer.domElement.addEventListener('dblclick', () => { if (meshes.length) frame(sphereOf(), true); });
 renderer.setAnimationLoop(() => renderer.render(scene, camera));
 
