@@ -245,7 +245,7 @@ loadInput.addEventListener('change', async () => {
 // ---------- the track canvas ----------
 const hintEl = $('hint'), coordsEl = $('coords');
 const radiusSel = $<HTMLSelectElement>('radius');
-radiusSel.append(new Option('Free', '-1', true, true));
+radiusSel.append(new Option('Curves: free', '-1', true, true));
 radiusSel.append(new Option('Auto (LEGO radii)', '0'));
 for (const r of [24, 32, 40, 48, 56, 64, 72, 88, 104, 120]) radiusSel.append(new Option(`R${r}`, String(r)));
 const canvas = new TrackCanvas($<HTMLCanvasElement>('track'), {
