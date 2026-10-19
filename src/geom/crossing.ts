@@ -34,7 +34,8 @@ const BED_END = 8;    // the track bed stops here (the connector's base is the r
 /** Place a shape given in a pose's frame (origin at the pose, +y along the heading). */
 const atPose = (m: Man, p: [number, number, number]) => T(R(m, [0, 0, p[2]]), [p[0], p[1], 0]);
 
-export function crossingPiece(s: Scad, routes: Route[], o: CrossingOptions = CROSSING_DEFAULTS, solution?: Solution): Man {
+/** grips, if given, gets the centres of the gripping stud sockets on the bed (mm). */
+export function crossingPiece(s: Scad, routes: Route[], o: CrossingOptions = CROSSING_DEFAULTS, solution?: Solution, grips?: [number, number][]): Man {
   const t = new Track(s, o), c = t.c, g = c.railOffset;
   const sol = solution ?? solve(routes, { ...SOLVER_DEFAULTS, gauge: c.trackGauge, flangeway: o.flangeway, checkRailW: o.checkRailW } as SolverOptions);
   const rect = (x0: number, x1: number, z0: number, z1: number) => s.square([x1 - x0, z1 - z0]).translate([x0, z0]);
@@ -117,6 +118,7 @@ export function crossingPiece(s: Scad, routes: Route[], o: CrossingOptions = CRO
   }
   const sockets: Man[] = spots.map(({ i, j, x, y }) => {
     const grip = o.grip === 'all' || !onBed(i, j) || gripAt.has(`${i},${j}`);
+    if (grip && onBed(i, j)) grips?.push([x, y]);
     return T(R(grip ? t.studSocket(o.studH + 0.21) : t.studRecess(o.studH + 0.21), [0, 0, p0[2]]), [x, y, -0.01]);
   });
   return s.difference(body, sockets);

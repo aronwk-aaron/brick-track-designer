@@ -77,10 +77,12 @@
     #view3d canvas { display: block; position: absolute; left: 0; top: 0; }
     .chip { position: absolute; background: var(--chip); border: 1px solid var(--line); border-radius: 6px; box-shadow: var(--shadow); padding: 4px 8px; font-size: 12px; }
     #hint { left: 10px; bottom: 10px; max-width: calc(100% - 140px); pointer-events: none; }
+    #coords:empty, #hint:empty { display: none; }
     #coords { right: 10px; bottom: 10px; color: var(--muted); font-variant-numeric: tabular-nums; pointer-events: none; }
     #legend { right: 10px; top: 10px; color: var(--muted); display: flex; flex-direction: column; gap: 2px; }
     #legend i { display: inline-block; width: 16px; height: 4px; vertical-align: middle; margin-right: 6px; }
     #legend i.dot { width: 9px; height: 9px; border-radius: 50%; border: 1.5px solid currentColor; margin: 0 9px 0 3px; }
+    #legend i.grip { width: 9px; height: 9px; border: 1.5px solid #2b9e4a; margin: 0 9px 0 3px; }
     #legend i.sq { width: 9px; height: 9px; background: #f0b400; margin: 0 9px 0 3px; }
     #legend button { margin-top: 4px; padding: 1px 6px; font-size: 12px; }
     #help { background: var(--panel); right: 10px; top: 10px; width: min(360px, calc(100% - 20px)); padding: 10px 12px; font-size: 12.5px; display: none; z-index: 2; }
@@ -91,6 +93,7 @@
     #empty { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; pointer-events: none; }
     #empty div { background: var(--chip); border: 1px solid var(--line); border-radius: 10px; padding: 14px 18px; text-align: center; color: var(--muted); box-shadow: var(--shadow); }
     #empty b { color: var(--ink); display: block; font-size: 14px; margin-bottom: 4px; }
+    #views { right: 10px; top: 10px; display: flex; gap: 4px; padding: 3px; z-index: 1; } #views button { padding: 2px 8px; font-size: 12px; }
     #status { left: 10px; bottom: 10px; right: auto; max-width: calc(100% - 20px); color: var(--muted); pointer-events: none; }
     #status:empty { display: none; }
     #error { color: var(--err); }
@@ -148,6 +151,7 @@
         <span><i style="background:#2b6fe0"></i>check rail</span>
         <span><i class="dot"></i>rail crossing</span>
         <span><i class="sq"></i>points (not built yet)</span>
+        <span id="legend-grip"><i class="grip"></i>grips the plate below</span>
         <button id="help-open" type="button" title="How to use the editor (?)">? Help</button>
       </div>
       <div id="help" class="chip" role="dialog" aria-label="Help">
@@ -169,7 +173,7 @@
       <div id="coords" class="chip"></div>
     </div>
     <div id="splitter" title="Drag to resize; double-click to reset"></div>
-    <div id="view3d"><div id="status" class="chip"><span id="info"></span><span id="error"></span></div></div>
+    <div id="view3d"><div id="views" class="chip"><button id="view-top" type="button" title="Look at the top">Top</button><button id="view-under" type="button" title="Look at the underside, to see where it grips">Underside</button></div><div id="status" class="chip"><span id="info"></span><span id="error"></span></div></div>
   </main>
   <script type="module" src="/src/app/main.ts"></script>
 </body>

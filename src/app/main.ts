@@ -121,6 +121,7 @@ worker.onmessage = (e) => {
   if (d.error) { errEl.textContent = d.error; infoEl.textContent = ''; canvas.overlay = undefined; canvas.draw(); return; }
   errEl.textContent = '';
   canvas.overlay = d.overlay;
+  gripLegend();
   canvas.draw();
   stl = d.stl;
   showMesh(d.positions);
@@ -143,6 +144,7 @@ camera.up.set(0, 0, 1);
 const controls = new OrbitControls(camera, renderer.domElement);
 scene.add(new THREE.HemisphereLight(0xffffff, 0x777777, 2.2));
 const sun = new THREE.DirectionalLight(0xffffff, 1.4); sun.position.set(300, -400, 700); scene.add(sun);
+const under = new THREE.DirectionalLight(0xffffff, 0.9); under.position.set(-300, 400, -700); scene.add(under);
 const material = new THREE.MeshStandardMaterial({ color: 0x6f7780, roughness: 0.55, metalness: 0.15 });
 let mesh: THREE.Mesh | undefined, framed = false;
 
@@ -175,6 +177,17 @@ function resize() {
   renderer.setSize(w, h); camera.aspect = w / h; camera.updateProjectionMatrix();
 }
 new ResizeObserver(resize).observe(view);
+// Top or underside view, from the side you're looking from.
+const look = (under: boolean) => {
+  const bs = mesh?.geometry.boundingSphere; if (!bs) return;
+  const d = camera.position.clone().sub(controls.target);
+  d.z = Math.abs(d.z) * (under ? -1 : 1);
+  if (Math.hypot(d.x, d.y) < 1e-6) d.y = -1;
+  camera.position.copy(controls.target).add(d);
+  frame(bs, true);
+};
+$('view-top').addEventListener('click', () => look(false));
+$('view-under').addEventListener('click', () => look(true));
 renderer.domElement.addEventListener('dblclick', () => { if (mesh?.geometry.boundingSphere) frame(mesh.geometry.boundingSphere, true); });
 renderer.setAnimationLoop(() => renderer.render(scene, camera));
 
@@ -192,6 +205,7 @@ $('add-route').addEventListener('click', () => {
 const grip = $<HTMLSelectElement>('grip');
 grip.value = design.grip ?? 'edges';
 grip.addEventListener('change', () => { design.grip = grip.value as Design['grip']; changed(true); });
+const gripLegend = () => { const on = grip.value === 'edges'; $('legend-grip').hidden = !on; if (canvas) canvas.showGrips = on; };
 const gauge = $<HTMLInputElement>('gauge');
 gauge.value = String(design.gaugeStuds);
 gauge.addEventListener('change', () => { design.gaugeStuds = Number(gauge.value); changed(); });
