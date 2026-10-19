@@ -58,6 +58,7 @@ export function planFree(p: Pose, t: [number, number], minRadius = 24, maxRadius
   if (Math.abs(l) < 1e-6) return f > 1e-6 ? [{ kind: 'straight', studs: round(f) }] : undefined;
   let a = 0, r = (f * f + l * l) / (2 * Math.abs(l));
   if (r > maxRadius) {
+    if (f <= 1e-6) return undefined;
     // gentler than the biggest curve: that curve, then a straight on to t
     // (the straight's line touches the curve's end)
     const sn = Math.sign(l);
@@ -68,7 +69,7 @@ export function planFree(p: Pose, t: [number, number], minRadius = 24, maxRadius
     // the first angle where the end's tangent passes through t
     let lo = 1e-9, hi = -1;
     for (let th = 0.01; th <= 90; th += 0.01) { if (miss(lo) * miss(th) <= 0) { hi = th; break; } lo = th; }
-    if (hi < 0) return [{ kind: 'straight', studs: round(f) }];
+    if (hi < 0) return undefined;
     for (let k = 0; k < 60; k++) { const mid = (lo + hi) / 2; if (miss(lo) * miss(mid) <= 0) hi = mid; else lo = mid; }
     const th = (lo + hi) / 2, e = arcEnd(p, maxRadius, sn * th);
     const b = Math.hypot(t[0] - e.x, t[1] - e.y);
@@ -87,6 +88,32 @@ export function planFree(p: Pose, t: [number, number], minRadius = 24, maxRadius
 }
 
 /**
+ * Free planning that can turn back: if one free curve can't reach t (it's
+ * behind, or too far to the side), first turn on a curve of minRadius (left
+ * or right, toward t) as little as needed, up to 180 degrees, then the free
+ * curve from there. Undefined if even that doesn't reach.
+ */
+export function planFreeTurning(p: Pose, t: [number, number], minRadius = 24): DSeg[] | undefined {
+  const direct = planFree(p, t, minRadius);
+  if (direct) return direct;
+  const d0 = dir(p.heading);
+  const l = -((t[0] - p.x) * d0[1] - (t[1] - p.y) * d0[0]);
+  let best: { segs: DSeg[]; len: number } | undefined;
+  for (const sn of l >= 0 ? [1, -1] : [-1, 1])
+    for (let th = 5; th <= 180 + 1e-9; th += 5) {
+      const turn: DSeg = { kind: 'curve', radius: minRadius, angle: sn * th };
+      const rest = planFree(follow(p, [turn]), t, minRadius);
+      if (!rest) continue;
+      const segs = [turn, ...rest];
+      // merge a free curve that continues the turn at the same radius
+      const len = segs.reduce((a, sg) => a + (sg.kind === 'straight' ? sg.studs : (Math.abs(sg.angle) * Math.PI * sg.radius) / 180), 0);
+      if (!best || len < best.len) best = { segs, len };
+      break;
+    }
+  return best?.segs;
+}
+
+/**
  * When no allowed track reaches t: the single curve that would (whatever its
  * radius, even turning back on itself), or a straight back if t is right
  * behind, to show where the track would have to go.
@@ -97,7 +124,11 @@ export function planAnyway(p: Pose, t: [number, number]): DSeg[] {
   const f = vx * d0[0] + vy * d0[1], l = -(vx * d0[1] - vy * d0[0]);
   if (Math.abs(l) < 1e-6) return [{ kind: 'straight', studs: round(f) }];
   const r = (f * f + l * l) / (2 * Math.abs(l));
-  return [{ kind: 'curve', radius: round(r), angle: round(Math.sign(l) * 2 * (Math.atan2(Math.abs(l), f) * 180) / Math.PI) }];
+  const angle = Math.sign(l) * 2 * (Math.atan2(Math.abs(l), f) * 180) / Math.PI;
+  if (Math.abs(angle) <= 180) return [{ kind: 'curve', radius: round(r), angle: round(angle) }];
+  // (behind: a U-turn across to t's side, then straight back to it)
+  const u: DSeg = { kind: 'curve', radius: round(Math.abs(l) / 2), angle: Math.sign(l) * 180 };
+  return [u, { kind: 'straight', studs: round(-f) }];
 }
 
 /**
