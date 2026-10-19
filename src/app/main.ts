@@ -5,6 +5,8 @@ import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { type Design, type DRoute, type DSeg, TEMPLATES, endOf } from './design';
 import { TrackCanvas } from './canvas';
 import { describe } from './planner';
+import type { Piece } from './build';
+import { zip } from '../geom/zip';
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 const routesEl = $('routes'), infoEl = $('info'), errEl = $('error');
@@ -101,7 +103,7 @@ function render() {
 
 // ---------- building ----------
 const worker = new Worker(new URL('./worker.ts', import.meta.url), { type: 'module' });
-let seq = 0, stl: Uint8Array | undefined, timer: number | undefined;
+let seq = 0, pieces: Piece[] = [], timer: number | undefined;
 
 function changed(rerender = false) {
   const json = JSON.stringify(design);
@@ -123,11 +125,12 @@ worker.onmessage = (e) => {
   canvas.overlay = d.overlay;
   gripLegend();
   canvas.draw();
-  stl = d.stl;
-  showMesh(d.positions);
+  pieces = d.pieces;
+  showPieces(pieces);
   const i = d.info;
-  infoEl.textContent = `${i.crossings} rail crossings, ${i.checkRails} check rails${i.splits ? `, ${i.splits} points (not built yet)` : ''} · `
-    + `${i.size.map((v: number) => v.toFixed(0)).join(' × ')} mm · ${(i.volume / 1000).toFixed(1)} cm³ · built in ${i.ms.toFixed(0)} ms`;
+  infoEl.textContent = `${i.switches ? `${i.switches} switch${i.switches > 1 ? 'es' : ''}, ` : ''}${i.crossings} rail crossings, ${i.checkRails} check rails · `
+    + `${i.pieces} part${i.pieces > 1 ? 's' : ''} · ${i.size.map((v: number) => v.toFixed(0)).join(' × ')} mm · ${(i.volume / 1000).toFixed(1)} cm³ · built in ${i.ms.toFixed(0)} ms`;
+  errEl.textContent = (i.warnings as string[]).join('; ');
 };
 
 // ---------- 3D view ----------
@@ -145,18 +148,23 @@ const controls = new OrbitControls(camera, renderer.domElement);
 scene.add(new THREE.HemisphereLight(0xffffff, 0x777777, 2.2));
 const sun = new THREE.DirectionalLight(0xffffff, 1.4); sun.position.set(300, -400, 700); scene.add(sun);
 const under = new THREE.DirectionalLight(0xffffff, 0.9); under.position.set(-300, 400, -700); scene.add(under);
-const material = new THREE.MeshStandardMaterial({ color: 0x6f7780, roughness: 0.55, metalness: 0.15 });
-let mesh: THREE.Mesh | undefined, framed = false;
+let meshes: THREE.Mesh[] = [], framed = false;
+const sphereOf = () => new THREE.Box3().setFromObject(group).getBoundingSphere(new THREE.Sphere());
+const group = new THREE.Group();
+scene.add(group);
 
-function showMesh(positions: Float32Array) {
-  const geo = new THREE.BufferGeometry();
-  geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
-  geo.computeVertexNormals();
-  if (mesh) { scene.remove(mesh); mesh.geometry.dispose(); }
-  mesh = new THREE.Mesh(geo, material);
-  scene.add(mesh);
-  geo.computeBoundingSphere();
-  const bs = geo.boundingSphere!;
+/** Show the pieces as assembled: the track grey, moving parts in their colours. */
+function showPieces(list: Piece[]) {
+  for (const m of meshes) { group.remove(m); m.geometry.dispose(); (m.material as THREE.Material).dispose(); }
+  meshes = list.map((p) => {
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.BufferAttribute(p.positions, 3));
+    geo.computeVertexNormals();
+    const m = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ color: p.color, roughness: 0.55, metalness: 0.15 }));
+    group.add(m);
+    return m;
+  });
+  const bs = sphereOf();
   // Frame the piece the first time, and again when it has grown, shrunk or
   // moved a lot, keeping the direction you are looking from.
   const moved = !lastSphere || bs.center.distanceTo(lastSphere.center) > lastSphere.radius * 0.35
@@ -179,7 +187,7 @@ function resize() {
 new ResizeObserver(resize).observe(view);
 // Top or underside view, from the side you're looking from.
 const look = (under: boolean) => {
-  const bs = mesh?.geometry.boundingSphere; if (!bs) return;
+  if (!meshes.length) return; const bs = sphereOf();
   const d = camera.position.clone().sub(controls.target);
   d.z = Math.abs(d.z) * (under ? -1 : 1);
   if (Math.hypot(d.x, d.y) < 1e-6) d.y = -1;
@@ -188,7 +196,7 @@ const look = (under: boolean) => {
 };
 $('view-top').addEventListener('click', () => look(false));
 $('view-under').addEventListener('click', () => look(true));
-renderer.domElement.addEventListener('dblclick', () => { if (mesh?.geometry.boundingSphere) frame(mesh.geometry.boundingSphere, true); });
+renderer.domElement.addEventListener('dblclick', () => { if (meshes.length) frame(sphereOf(), true); });
 renderer.setAnimationLoop(() => renderer.render(scene, camera));
 
 // ---------- toolbar ----------
@@ -214,7 +222,12 @@ const download = (blob: Blob, name: string) => {
   const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = name; a.click();
   setTimeout(() => URL.revokeObjectURL(a.href), 1000);
 };
-$('export-stl').addEventListener('click', () => { if (stl) download(new Blob([stl as BlobPart], { type: 'model/stl' }), 'track-piece.stl'); });
+// One piece: its STL; several (a switch and its moving parts): a zip of them.
+$('export-stl').addEventListener('click', () => {
+  if (!pieces.length) return;
+  if (pieces.length === 1) download(new Blob([pieces[0].stl as BlobPart], { type: 'model/stl' }), 'track-piece.stl');
+  else download(new Blob([zip(pieces.map((p) => ({ name: `${p.name}.stl`, data: p.stl }))) as BlobPart], { type: 'application/zip' }), 'track-pieces.zip');
+});
 $('save').addEventListener('click', () => download(new Blob([JSON.stringify(design, null, 2)], { type: 'application/json' }), 'track-piece.btd.json'));
 const loadInput = $<HTMLInputElement>('load-file');
 $('load').addEventListener('click', () => loadInput.click());

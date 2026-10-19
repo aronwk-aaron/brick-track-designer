@@ -50,8 +50,23 @@ export const TEMPLATES: Record<string, Design> = {
     { name: 'Curve', x: 0, y: -12, heading: 0, segs: [{ kind: 'curve', radius: 40, angle: 30 }] },
     { name: 'B', x: 12, y: 0, heading: 90, segs: [{ kind: 'straight', studs: 24 }] },
   ] },
-  'LEGO switch layout (no points yet)': { version: 1, gaugeStuds: 4, routes: [
+  // Switches: LEGO's (R40, out to 36.87 degrees and back to 22.5, so one more
+  // R40 curve makes a parallel track 16 studs over), a wye and a three-way.
+  'Left switch (LEGO)': { version: 1, gaugeStuds: 4, routes: [
     { name: 'Straight', x: 0, y: 0, heading: 0, segs: [{ kind: 'straight', studs: 32 }] },
     { name: 'Branch', x: 0, y: 0, heading: 0, segs: [{ kind: 'curve', radius: 40, angle: 36.8699 }, { kind: 'curve', radius: 40, angle: -14.3699 }] },
+  ] },
+  'Right switch (LEGO)': { version: 1, gaugeStuds: 4, routes: [
+    { name: 'Straight', x: 0, y: 0, heading: 0, segs: [{ kind: 'straight', studs: 32 }] },
+    { name: 'Branch', x: 0, y: 0, heading: 0, segs: [{ kind: 'curve', radius: 40, angle: -36.8699 }, { kind: 'curve', radius: 40, angle: 14.3699 }] },
+  ] },
+  'Wye switch': { version: 1, gaugeStuds: 4, routes: [
+    { name: 'Left', x: 0, y: 0, heading: 0, segs: [{ kind: 'curve', radius: 40, angle: 22.5 }, { kind: 'straight', studs: 16 }] },
+    { name: 'Right', x: 0, y: 0, heading: 0, segs: [{ kind: 'curve', radius: 40, angle: -22.5 }, { kind: 'straight', studs: 16 }] },
+  ] },
+  'Three-way switch': { version: 1, gaugeStuds: 4, routes: [
+    { name: 'Straight', x: 0, y: 0, heading: 0, segs: [{ kind: 'straight', studs: 45 }] },
+    { name: 'Left', x: 0, y: 0, heading: 0, segs: [{ kind: 'curve', radius: 40, angle: 22.5 }, { kind: 'straight', studs: 32 }] },
+    { name: 'Right', x: 0, y: 8, heading: 0, segs: [{ kind: 'curve', radius: 40, angle: -22.5 }, { kind: 'straight', studs: 24 }] },
   ] },
 };
