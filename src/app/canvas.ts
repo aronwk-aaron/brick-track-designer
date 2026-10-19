@@ -219,7 +219,14 @@ export class TrackCanvas {
     const work = dr.end === 'end' ? structuredClone(dr.orig) : reversed(dr.orig);
     const head = work.segs.slice(0, dr.anchor);
     const from = follow(work, head);
-    const good = this.planFrom(from, t);
+    let good = this.planFrom(from, t);
+    // Dragged back past the other end of a track that's reshaped from its
+    // start: turn the track round (its start's heading flips) instead.
+    if (!good && head.length === 0) {
+      const flipped = { ...from, heading: ((from.heading + 360) % 360) - 180 };
+      good = this.planFrom(flipped, t);
+      if (good) { work.heading = flipped.heading; from.heading = flipped.heading; }
+    }
     this.dragBad = !good;
     // (if it can't, show the curve it would need, its bad part in red, and
     // go back to the last good shape when let go)
