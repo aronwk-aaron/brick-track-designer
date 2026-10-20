@@ -242,10 +242,18 @@ const download = (blob: Blob, name: string) => {
 // One piece: its STL; several (a switch and its moving parts): a zip of them.
 $('export-stl').addEventListener('click', () => {
   if (!pieces.length) return;
-  if (pieces.length === 1) download(new Blob([pieces[0].stl as BlobPart], { type: 'model/stl' }), 'track-piece.stl');
-  else download(new Blob([zip(pieces.map((p) => ({ name: `${p.name}.stl`, data: p.stl }))) as BlobPart], { type: 'application/zip' }), 'track-pieces.zip');
+  const base = fileBase();
+  if (pieces.length === 1) download(new Blob([pieces[0].stl as BlobPart], { type: 'model/stl' }), `${base}.stl`);
+  else download(new Blob([zip(pieces.map((p) => ({ name: `${base}-${p.name}.stl`, data: p.stl }))) as BlobPart], { type: 'application/zip' }), `${base}.zip`);
 });
-$('save').addEventListener('click', () => download(new Blob([JSON.stringify(design, null, 2)], { type: 'application/json' }), 'track-piece.btd.json'));
+// The design's name (asked on Save): what it saves and downloads under.
+const fileBase = () => (design.name || 'track-piece').replace(/[\\/:*?"<>|]+/g, '-').trim() || 'track-piece';
+$('save').addEventListener('click', () => {
+  const name = prompt('Save the design as:', design.name || 'track-piece');
+  if (name === null) return;
+  design.name = name.trim() || undefined; changed();
+  download(new Blob([JSON.stringify(design, null, 2)], { type: 'application/json' }), `${fileBase()}.btd.json`);
+});
 const loadInput = $<HTMLInputElement>('load-file');
 $('load').addEventListener('click', () => loadInput.click());
 loadInput.addEventListener('change', async () => {
