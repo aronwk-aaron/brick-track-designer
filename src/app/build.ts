@@ -51,6 +51,8 @@ function cached<T>(key: string, f: () => T): T {
   return v;
 }
 const stlOf = new WeakMap<Man, Uint8Array>();
+/** Forget the pieces built before (tests: each design's solids let go after it, arena() in kernel.ts, and nothing kept that points at them). */
+export function clearBuildCache() { memo.clear(); }
 
 /**
  * Routes drawn the wrong way round for points: the solver finds points where
