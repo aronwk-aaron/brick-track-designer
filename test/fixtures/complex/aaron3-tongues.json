@@ -1,0 +1,128 @@
+{
+ "version": 1,
+ "gaugeStuds": 4,
+ "routes": [
+  {
+   "name": "Left Straight",
+   "x": 8,
+   "y": 0,
+   "heading": 0,
+   "segs": [
+    {
+     "kind": "straight",
+     "studs": 128
+    }
+   ],
+   "throwSide": "auto"
+  },
+  {
+   "name": "Right Striaght",
+   "x": 24,
+   "y": 0,
+   "heading": 0,
+   "segs": [
+    {
+     "kind": "straight",
+     "studs": 128
+    }
+   ],
+   "throwSide": "auto"
+  },
+  {
+   "name": "L->R",
+   "x": 8,
+   "y": 8,
+   "heading": 0,
+   "segs": [
+    {
+     "kind": "curve",
+     "radius": 200,
+     "angle": -16.260205
+    },
+    {
+     "kind": "curve",
+     "radius": 200,
+     "angle": 16.260205
+    }
+   ]
+  },
+  {
+   "name": "R->L",
+   "x": 8,
+   "y": 120,
+   "heading": -180,
+   "segs": [
+    {
+     "kind": "curve",
+     "radius": 200,
+     "angle": 16.260205
+    },
+    {
+     "kind": "curve",
+     "radius": 200,
+     "angle": -16.260205
+    }
+   ]
+  },
+  {
+   "name": "R6",
+   "x": 40,
+   "y": 0,
+   "heading": 0,
+   "segs": [
+    {
+     "kind": "straight",
+     "studs": 128
+    }
+   ],
+   "throwSide": "auto"
+  },
+  {
+   "name": "R7",
+   "x": 24,
+   "y": 8,
+   "heading": 0,
+   "segs": [
+    {
+     "kind": "curve",
+     "radius": 200,
+     "angle": -16.260205
+    },
+    {
+     "kind": "curve",
+     "radius": 200,
+     "angle": 16.260205
+    }
+   ]
+  },
+  {
+   "name": "R8",
+   "x": 24,
+   "y": 120,
+   "heading": -180,
+   "segs": [
+    {
+     "kind": "curve",
+     "radius": 200,
+     "angle": 16.260205
+    },
+    {
+     "kind": "curve",
+     "radius": 200,
+     "angle": -16.260205
+    }
+   ]
+  }
+ ],
+ "grip": "edges",
+ "name": "aaron3-tongues",
+ "options": {
+  "bottomStyle": "antistud",
+  "ballast": "buddy",
+  "baseplate": 64,
+  "printBedX": 128,
+  "printBedY": 128,
+  "joint": "lego",
+  "cutRails": "tongues"
+ }
+}

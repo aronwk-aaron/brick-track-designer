@@ -52,7 +52,7 @@ for (const R of [40, 56, 72, 104, 200]) {
   const R = 40, a = 22.5, dx = 2 * R * (1 - Math.cos(rad(a))), dy = R * Math.sin(rad(a));
   const sx = Math.sin(rad(a)), cy = Math.cos(rad(a));
   const yard = [1, 2, 3].map((k) => (16 * k - dx) / sx); // (where along the diagonal's straight each yard track leaves)
-  const diagLen = yard[2] + 8;
+  const diagLen = yard[2] + 32;
   const diag = rt('Ladder', 0, 0, 0, [cv(R, -a), st(diagLen)]);
   const x0 = dx / 2, y0 = dy;
   const tracks = yard.map((s, k) => rt(`Y${k + 1}`, x0 + s * sx, y0 + s * cy, -a, [cv(R, a), st(40 - k * 8)]));
@@ -60,6 +60,8 @@ for (const R of [40, 56, 72, 104, 200]) {
   save(design('ladder-r40', [main, diag, ...tracks]));
   save(design('ladder-r40-reversed', [rev(main), diag, ...tracks.map((t, k) => (k % 2 ? rev(t) : t))]));
   save(design('ladder-r40-buddy-128', [main, diag, ...tracks], { ballast: 'buddy', printBedX: 128, printBedY: 128 }));
+  // (not buildable: the diagonal stops just past the last points, its end connector on their blades)
+  save(design('ladder-end-in-points', [main, rt('Ladder', 0, 0, 0, [cv(R, -a), st(yard[2] + 8)]), ...tracks]));
 }
 
 // ---- three-ways ----
