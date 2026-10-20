@@ -184,9 +184,9 @@ export function buildDesign(w: Wasm, design: Design, report: (what: string, frac
     if (!bp && fitsBed(world)) return add(name, 0x6f7780, world, world);
     // too big for the print bed (or at the baseplate edges): cut across the
     // track (tiles.ts planCuts), each part joined to the next like LEGO track
-    const plan = planCuts(b, o.printBedX, o.printBedY, bp, (o.baseplateX ?? 0) * 8, (o.baseplateY ?? 0) * 8, cutAvoid, pieceRoutes, bandHalf, jointRoom);
+    const plan = planCuts(b, o.printBedX, o.printBedY, bp, (o.baseplateX ?? 0) * 8, (o.baseplateY ?? 0) * 8, cutAvoid, pieceRoutes, bandHalf, jointRoom, track.c.railOffset);
     // (baseplate edges always peg and clip; the cuts to fit the bed as chosen)
-    const lj = (v: number) => (plan.edges?.has(v) ? { joint: 'lego' as const } : {});
+    const lj = (v: number) => (plan.edges?.has(v) ? { joint: 'lego' as const } : plan.combs?.has(v) ? { comb: true } : {});
     const lines: CutLine[] = [...plan.xs.map((x): CutLine => ({ p: [x, 0], d: [0, 1], ...lj(x) })), ...plan.ys.map((y): CutLine => ({ p: [0, y], d: [1, 0], ...lj(y) }))];
     steps++; progress(plan.why === 'bed' ? `Cutting ${name} to fit the print bed` : `Cutting ${name} at the baseplate edges`);
     const cells = cached(`cut:${bp}:${o.joint}:${JSON.stringify(lines)}:${JSON.stringify(pieceRoutes)}:${world.volume().toFixed(3)}`, () => cutPiece(scad, track, world, pieceRoutes, lines, o.joint === 'ends' ? 'lego' : o.joint ?? 'lego'));
@@ -331,7 +331,7 @@ export function buildDesign(w: Wasm, design: Design, report: (what: string, frac
   const tiled = (name: string, all: Route[], checks: CheckRail[], splits: SplitParts[], copt: typeof CROSSING_DEFAULTS, key: string) => {
     let b = routesBox(all, track.c.sleeperLen / 2 + 24);
     for (const sp of splits) for (const m of sp.adds) { const bb = m.boundingBox(); b = [Math.min(b[0], bb.min[0]), Math.min(b[1], bb.min[1]), Math.max(b[2], bb.max[0]), Math.max(b[3], bb.max[1])]; }
-    const plan = planCuts(b, o.printBedX, o.printBedY, bp, (o.baseplateX ?? 0) * 8, (o.baseplateY ?? 0) * 8, cutAvoid, all, bandHalf, jointRoom);
+    const plan = planCuts(b, o.printBedX, o.printBedY, bp, (o.baseplateX ?? 0) * 8, (o.baseplateY ?? 0) * 8, cutAvoid, all, bandHalf, jointRoom, track.c.railOffset);
     if (!plan.xs.length && !plan.ys.length) return false;
     // (only when it's big: in one build a piece is quicker, but a whole yard
     // runs the kernel out of memory)
@@ -349,8 +349,8 @@ export function buildDesign(w: Wasm, design: Design, report: (what: string, frac
       // its cuts: those on and in the block, couplers along the block only
       // (so the blocks either side of an edge agree)
       const lines: CutLine[] = [
-        ...plan.xs.filter((x) => x >= R[0] && x <= R[2]).map((x): CutLine => ({ p: [x, 0], d: [0, 1], span: [R[1], R[3]], ...(plan.edges?.has(x) ? { joint: 'lego' as const } : {}) })),
-        ...plan.ys.filter((y) => y >= R[1] && y <= R[3]).map((y): CutLine => ({ p: [0, y], d: [1, 0], span: [R[0], R[2]], ...(plan.edges?.has(y) ? { joint: 'lego' as const } : {}) })),
+        ...plan.xs.filter((x) => x >= R[0] && x <= R[2]).map((x): CutLine => ({ p: [x, 0], d: [0, 1], span: [R[1], R[3]], ...(plan.edges?.has(x) ? { joint: 'lego' as const } : plan.combs?.has(x) ? { comb: true } : {}) })),
+        ...plan.ys.filter((y) => y >= R[1] && y <= R[3]).map((y): CutLine => ({ p: [0, y], d: [1, 0], span: [R[0], R[2]], ...(plan.edges?.has(y) ? { joint: 'lego' as const } : plan.combs?.has(y) ? { comb: true } : {}) })),
       ];
       // the points near it, on the cropped routes
       const near = splits.flatMap((sp, k) => (splitBoxes[k].some((bb) => nearCell(bb, R, MARGIN)) ? [{ sp, k }] : []));
