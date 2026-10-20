@@ -34,13 +34,15 @@ function cached<T>(key: string, f: () => T): T {
 }
 const stlOf = new WeakMap<Man, Uint8Array>();
 
-export function buildDesign(w: Wasm, design: Design) {
+/** progress: what it's doing now (for the 3D view's status while it builds). */
+export function buildDesign(w: Wasm, design: Design, progress: (what: string) => void = () => {}) {
   const routes = toRoutes(design).filter((r) => r.segments.length > 0);
   if (routes.length === 0) throw new Error('Draw some track: click a grid point to start, then click where it should go.');
   const t0 = performance.now();
   const gauge = (design.gaugeStuds + 1) * 8;
   const o = { ...OPTION_DEFAULTS, ...design.options };
   const solverOpts = { gauge, step: 0.5, flangeway: o.flangeway, checkRailLen: o.checkRailLen, checkRailW: o.checkRailW };
+  progress('Working out the trackwork');
   const sol = solve(routes, solverOpts);
   // What the canvas draws over the track, in mm: flangeway cuts, check rails,
   // rail crossings and points.
@@ -100,7 +102,7 @@ export function buildDesign(w: Wasm, design: Design) {
   // own (a crossover, a switch on a crossing): the whole design as one
   // network piece with the points built in.
   const groupOf = (r: number) => pc.switches.findIndex((sw) => sw.covers.some((c) => c[0] === r));
-  const network = sol.splits.length > 0 && (sol.splits.some((sp) => sp.merge) || pc.warnings.length > 0
+  const network = sol.splits.length > 0 && (sol.splits.some((sp) => sp.merge) || pc.warnings.some((w2) => !/print bed/.test(w2))
     || sol.crossings.some((c) => groupOf(c.a.route) !== groupOf(c.b.route)));
   const place = (m: Man, P: Pose) => T(R(m, [0, 0, P[2]]), [P[0], P[1], 0]);
   let volume = 0;
@@ -129,6 +131,7 @@ export function buildDesign(w: Wasm, design: Design) {
       };
       for (let k = 1; k < nx; k++) lines.push({ p: [clearAt(b.min[0] + (W * k) / nx, 0), 0], d: [0, 1] });
       for (let k = 1; k < ny; k++) lines.push({ p: [0, clearAt(b.min[1] + (H * k) / ny, 1)], d: [1, 0] });
+      progress(`Cutting ${name} to fit the print bed`);
       const cells = cached(`bedcut:${JSON.stringify(lines)}:${JSON.stringify(pieceRoutes)}:${world.volume().toFixed(3)}`, () => cutPiece(scad, track, world, pieceRoutes, lines));
       cells.forEach((m, k) => add(cells.length > 1 ? `${name}${k + 1}` : name, 0x6f7780, m, m));
       if (cells.some((m) => !fitsBed(m))) bedWarnings.add(`some parts still don't fit the ${o.printBedX} x ${o.printBedY} print bed`);
@@ -137,6 +140,7 @@ export function buildDesign(w: Wasm, design: Design) {
     const ox = (o.baseplateX ?? 0) * 8, oy = (o.baseplateY ?? 0) * 8;
     for (let x = ox + Math.ceil((b.min[0] + 1 - ox) / bp) * bp; x < b.max[0] - 1; x += bp) lines.push({ p: [x, 0], d: [0, 1] });
     for (let y = oy + Math.ceil((b.min[1] + 1 - oy) / bp) * bp; y < b.max[1] - 1; y += bp) lines.push({ p: [0, y], d: [1, 0] });
+    progress(`Cutting ${name} at the baseplate edges`);
     const cells = cached(`cut:${bp}:${JSON.stringify(b)}:${JSON.stringify(pieceRoutes)}:${world.volume().toFixed(3)}`, () => cutPiece(scad, track, world, pieceRoutes, lines));
     cells.forEach((m, k) => add(cells.length > 1 ? `${name}-plate${k + 1}` : name, 0x6f7780, m, m));
     if (cells.some((m) => !fitsBed(m))) bedWarnings.add(`a baseplate's worth of track doesn't fit the ${o.printBedX} x ${o.printBedY} print bed: pick smaller baseplates`);
@@ -150,6 +154,7 @@ export function buildDesign(w: Wasm, design: Design) {
     volume += local.volume();
   };
   if (network) {
+    progress(`Building the piece with its ${sol.splits.length} points`);
     const copt = { ...CROSSING_DEFAULTS, gaugeStuds: design.gaugeStuds, grip: design.grip ?? 'edges', flangeway: o.flangeway, flangewayDepth: o.flangewayDepth, checkRailW: o.checkRailW };
     editChecks(routes, sol.checkRails);
     const tp = { ...params, generateBallast: false }; // (network pieces are track only so far)
@@ -162,6 +167,7 @@ export function buildDesign(w: Wasm, design: Design) {
   }
   if (params.generateBallast && (network || pc.rest.length)) pc.warnings.push('ballast is on switches only so far: crossings and plain track come out track only');
   if (pc.rest.length) {
+    progress('Building the track');
     const copt = { ...CROSSING_DEFAULTS, gaugeStuds: design.gaugeStuds, grip: design.grip ?? 'edges', flangeway: o.flangeway, flangewayDepth: o.flangewayDepth, checkRailW: o.checkRailW };
     // Does a piece fit the print bed (either way round)?
     const fits = (m: Man) => {
@@ -188,6 +194,7 @@ export function buildDesign(w: Wasm, design: Design) {
     }
   }
   pc.switches.forEach((sw, n) => {
+    progress(`Building switch ${n + 1} of ${pc.switches.length}`);
     const tag = pc.switches.length > 1 ? `switch${n + 1}` : 'switch';
     // its check rails, with the hand edits (keyed where they are in the design)
     const ca = Math.cos((sw.pose[2] * Math.PI) / 180), sa = Math.sin((sw.pose[2] * Math.PI) / 180);

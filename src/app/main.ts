@@ -123,13 +123,24 @@ function changed(rerender = false, record = true) {
   canvas?.draw();
   updateHistoryButtons();
   clearTimeout(timer);
-  timer = window.setTimeout(() => worker.postMessage({ id: ++seq, design: structuredClone(design) }), 150);
+  timer = window.setTimeout(() => { worker.postMessage({ id: ++seq, design: structuredClone(design) }); buildStarted(); }, 150);
   infoEl.textContent = 'Building…';
 }
 
+// The 3D view's build status: what the worker is doing, and for how long.
+let buildT0 = 0, buildTick: number | undefined;
+function buildStarted() {
+  buildT0 = performance.now();
+  $('buildstatus').hidden = false; $('build-what').textContent = 'Building…'; $('build-time').textContent = '';
+  clearInterval(buildTick);
+  buildTick = window.setInterval(() => { $('build-time').textContent = `${((performance.now() - buildT0) / 1000).toFixed(1)} s`; }, 100);
+}
+function buildDone() { clearInterval(buildTick); $('buildstatus').hidden = true; }
 worker.onmessage = (e) => {
   const d = e.data;
   if (d.id !== seq) return;          // an older build
+  if (d.progress) { $('build-what').textContent = `${d.progress}…`; return; }
+  buildDone();
   if (d.error) { errEl.textContent = d.error; infoEl.textContent = ''; canvas.overlay = undefined; canvas.draw(); return; }
   errEl.textContent = '';
   canvas.overlay = d.overlay;
@@ -302,7 +313,7 @@ let show3d = true;
 try { show3d = localStorage.getItem('btd-3d') !== '0'; } catch { /* fine */ }
 set3d(show3d);
 $('toggle-3d').addEventListener('click', () => { show3d = !show3d; set3d(show3d); });
-const restore = (json: string) => { design = JSON.parse(json); gauge.value = String(design.gaugeStuds); grip.value = design.grip ?? 'edges'; pointsSel.value = String(design.pointsPieces ?? 1); canvas.selected = undefined; save(); render(); renderOptions(); canvas.draw(); updateHistoryButtons(); worker.postMessage({ id: ++seq, design: structuredClone(design) }); };
+const restore = (json: string) => { buildStarted(); design = JSON.parse(json); gauge.value = String(design.gaugeStuds); grip.value = design.grip ?? 'edges'; pointsSel.value = String(design.pointsPieces ?? 1); canvas.selected = undefined; save(); render(); renderOptions(); canvas.draw(); updateHistoryButtons(); worker.postMessage({ id: ++seq, design: structuredClone(design) }); };
 const undo = () => { if (history.length > 1) { future.push(history.pop()!); restore(history[history.length - 1]); } };
 const redo = () => { if (future.length) { const j = future.pop()!; history.push(j); restore(j); } };
 function updateHistoryButtons() {

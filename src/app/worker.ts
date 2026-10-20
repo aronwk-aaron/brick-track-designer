@@ -7,7 +7,7 @@ import { buildDesign } from './build';
 self.onmessage = async (e: MessageEvent<{ id: number; design: Design }>) => {
   const { id, design } = e.data;
   try {
-    const { overlay, pieces, info } = buildDesign(await kernel(wasmUrl), design);
+    const { overlay, pieces, info } = buildDesign(await kernel(wasmUrl), design, (progress) => (self as unknown as Worker).postMessage({ id, progress }));
     (self as unknown as Worker).postMessage({ id, overlay, pieces, info }, pieces.flatMap((p) => [p.positions.buffer, p.stl.buffer]));
   } catch (err) {
     (self as unknown as Worker).postMessage({ id, error: String(err instanceof Error ? err.message : err) });
