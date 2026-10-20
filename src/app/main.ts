@@ -644,10 +644,10 @@ renderOptions();
 
 
 // ---------- trackwork: hand edits to the check rails, flangeway cuts and points ----------
-type TwItem = { kind: 'check' | 'groove' | 'points' | 'throw'; key: string; at: [number, number]; off?: boolean; len?: number; toe?: number; lever?: { side: number; leverOffset: number; springLength: number; maxTine: number; edited: boolean } };
+type TwItem = { kind: 'check' | 'groove' | 'points' | 'throw'; key: string; at: [number, number]; off?: boolean; len?: number; toe?: number; routes?: string[]; forced?: boolean; cand?: { ok: boolean; why: string }; lever?: { side: number; leverOffset: number; springLength: number; maxTine: number; edited: boolean } };
 let twSig = '';
 function renderTrackwork(list: TwItem[]) {
-  const sig = JSON.stringify(list.map((it) => [it.kind, it.key, it.off, Math.round((it.len ?? 0) * 10), it.toe, it.lever && [it.lever.side, it.lever.leverOffset, it.lever.springLength]]));
+  const sig = JSON.stringify(list.map((it) => [it.kind, it.key, it.off, Math.round((it.len ?? 0) * 10), it.toe, it.routes, it.forced, it.cand, it.lever && [it.lever.side, it.lever.leverOffset, it.lever.springLength]]));
   if (sig === twSig) return; // (don't rebuild the form under the user's fingers)
   twSig = sig;
   const body = $('trackwork-body'); body.replaceChildren();
@@ -658,7 +658,44 @@ function renderTrackwork(list: TwItem[]) {
     changed(true);
   };
   const names = { check: 'Check rail', groove: 'Flangeway cut', points: 'Points', throw: 'Lever' } as const;
-  for (const kind of ['points', 'throw', 'check', 'groove'] as const) {
+  // Points: a row per toe (a three-way's splits share one), built or not (taken out), and a row per near miss, to force points there.
+  {
+    const keys = [...new Set(list.filter((it) => it.kind === 'points').map((it) => it.key))];
+    let n = 0, m = 0;
+    for (const key of keys) {
+      const its = list.filter((it) => it.kind === 'points' && it.key === key), st = canvas.pointsState(key), cand = its.find((it) => it.cand)?.cand;
+      const cur = design.trackwork?.points?.[key] ?? {};
+      const row = document.createElement('div'); row.className = 'tw';
+      row.addEventListener('mouseenter', () => { canvas.highlight = key; canvas.draw(); });
+      row.addEventListener('mouseleave', () => { canvas.highlight = undefined; canvas.draw(); });
+      const t = document.createElement('b');
+      const box = (label: string, on: boolean, change: (v: boolean) => void, tip?: string) => {
+        const i = document.createElement('input'); i.type = 'checkbox'; i.checked = on; if (tip) i.title = tip;
+        i.addEventListener('change', () => change(i.checked));
+        row.append(field(label, i));
+      };
+      if (st.state === 'cand') {
+        t.textContent = `Could be points ${++m}${st.forced && !st.ok ? ' · too far off to build' : ''}`;
+        row.append(t);
+        const why = document.createElement('div'); why.className = 'none'; why.textContent = `${cand?.why ?? ''}${cand?.ok ? '' : ': too far off to force (redraw it to start on the track)'}`;
+        row.append(why);
+        box('Force points here', st.forced, () => canvas.togglePoints(key), 'Make points here though the track end is a hair off the other track');
+      } else {
+        t.textContent = `Points ${++n}${st.state === 'off' ? ' · taken out' : st.forced ? ' · forced' : ''}`;
+        row.append(t);
+        box('Built (off: both tracks\' rails run through as plain track)', st.state === 'built', () => canvas.togglePoints(key));
+        // (a three-way: each route in it or not; one taken out leaves a two-way for the others)
+        const ids = [...new Set(its.flatMap((it) => it.routes ?? []))];
+        if (ids.length > 2 && !cur.off) for (const id of ids) box(`${id} in the points`, !cur.drop?.includes(id), (v) => {
+          const drop = (cur.drop ?? []).filter((d) => d !== id).concat(v ? [] : [id]);
+          edit('points', key, { drop: drop.length ? drop : undefined });
+        });
+        if (st.state === 'built') { const i = num(cur.toe ?? 0, (v) => edit('points', key, { toe: v }), 1); row.append(field('Points moved along, mm', i)); }
+      }
+      body.append(row);
+    }
+  }
+  for (const kind of ['throw', 'check', 'groove'] as const) {
     list.filter((it) => it.kind === kind).forEach((it, n) => {
       const row = document.createElement('div'); row.className = 'tw';
       row.addEventListener('mouseenter', () => { canvas.highlight = it.key; canvas.draw(); });
@@ -691,9 +728,9 @@ function renderTrackwork(list: TwItem[]) {
         row.append(field('Out past the track, mm', out));
         const tine = num(lv.springLength, (v) => edit('throw', it.key, { springLength: Math.min(lv.maxTine, Math.max(16, v)) }), 1); tine.min = '16'; tine.max = String(Math.floor(lv.maxTine));
         row.append(field('Spring tines (shorter: the lever nearer the heel), mm', tine));
-      } else numField('Points moved along, mm', 'toe', 1);
+      }
       body.append(row);
     });
   }
-  body.append(btn('Undo every hand edit', () => { design.trackwork = {}; twSig = ''; }, 'Put the check rails, flangeway cuts and points back to what the app works out'));
+  body.append(btn('Undo every hand edit', () => { design.trackwork = {}; twSig = ''; }, 'Put the check rails, flangeway cuts and points back to what the app works out (points taken out put back, forced ones unforced)'));
 }

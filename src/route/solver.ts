@@ -6,7 +6,7 @@
 // full, and each route's flangeways (the band just inside each of its rails
 // where the wheel flanges run) are cut into every other route's rails, so
 // frogs and crossings fall out of the geometry, whatever the layout.
-import { type Pt, type Route, railPolyline, routeLat, routeLength, routePose, routeSOf } from './route';
+import { type Pose, type Pt, type Route, railPolyline, routeLat, routeLength, routePose, routeSOf } from './route';
 
 export interface SolverOptions {
   gauge: number;        // rail centre to rail centre, mm (40 = LEGO)
@@ -41,6 +41,28 @@ export interface Split {
   routes: [number, number]; s: number; spans: [[number, number], [number, number]];
   /** The second route ends on the first, arriving the same way (it merges in: trailing points), instead of starting on it. */
   merge?: boolean;
+  /** Made by hand (SplitEdits.force): the second route meets the first a hair off (within FORCE_LAT, FORCE_ANGLE). */
+  forced?: boolean;
+}
+
+/** A route end that meets another route nearly, but not quite, as points would: a place points could be forced (SplitEdits.force). */
+export interface NearSplit {
+  /** [the route met, the route whose end meets it], which end, and where (the nearest point on the route met, mm: the toe) */
+  routes: [number, number]; end: 'start' | 'end'; at: Pt;
+  /** how far off: to the side (mm) and in heading (degrees) */
+  lat: number; angle: number;
+  /** heading back along the route met (the route has to be turned round to make points) */
+  opposite?: boolean;
+  /** near enough to force (within FORCE_LAT and FORCE_ANGLE) */
+  ok: boolean;
+}
+
+/** Hand edits to where points go: some left out, some made where the routes are a hair off. */
+export interface SplitEdits {
+  /** Leave out the points where these routes part at toe: their rails run through as plain fixed track. */
+  drop?: (toe: Pt, routes: [number, number]) => boolean;
+  /** Make points at a near miss (NearSplit) with its toe here, if it's near enough. */
+  force?: (toe: Pt) => boolean;
 }
 
 export interface Solution {
@@ -48,12 +70,21 @@ export interface Solution {
   grooves: Groove[];
   checkRails: CheckRail[];
   splits: Split[];
+  /** the points left out by hand (SplitEdits.drop) */
+  dropped?: Split[];
+  /** near misses: where points could be forced */
+  near?: NearSplit[];
 }
 
 const sides: Side[] = [-1, 1];
 
 /** How far off the other route's heading a route may start (or end) on it and still make points, degrees: a branch drawn a hair off true (0.2 degrees, say) is meant as a switch, not a crossing. */
 const SPLIT_ANGLE = 0.5;
+/** How far off a route may meet another and still have points forced there (by hand): to the side (mm) and in heading (degrees). More, and the
+ * blades and the rails on from them wouldn't line up: the route has to be redrawn on the track. */
+export const FORCE_LAT = 0.5, FORCE_ANGLE = 1;
+/** Near misses worth offering (NearSplit): a route end within a stud of another route, heading within this of it (or of back along it). */
+const NEAR_LAT = 8, NEAR_ANGLE = 10;
 
 /** Intersection of segments p1-p2 and p3-p4, as [t, u] along each, or undefined. */
 function segX(p1: Pt, p2: Pt, p3: Pt, p4: Pt): [number, number] | undefined {
@@ -71,7 +102,7 @@ function inFlangeway(rt: Route, p: Pt, o: SolverOptions): boolean {
   return lat <= g - o.headHw + 1e-9 && lat >= g - o.headHw - o.flangeway - 1e-9;
 }
 
-export function solve(routes: Route[], opts: Partial<SolverOptions> = {}): Solution {
+export function solve(routes: Route[], opts: Partial<SolverOptions> = {}, edits: SplitEdits = {}): Solution {
   const o = { ...SOLVER_DEFAULTS, ...opts };
   const g = o.gauge / 2;
   const rails = routes.map((rt) => Object.fromEntries(sides.map((sd) => [sd, railPolyline(rt, sd * g, o.step)])) as Record<Side, [number, number, number][]>);
@@ -117,17 +148,36 @@ export function solve(routes: Route[], opts: Partial<SolverOptions> = {}): Solut
     return a !== b ? a > b : i < j;
   };
   const apart = 2 * o.headHw + o.flangeway;
+  // Near misses (a route end a little off another route, or a little off
+  // its heading): offered as places to force points; true where they're
+  // forced and near enough to build.
+  const near: NearSplit[] = [];
+  const nearMiss = (i: number, j: number, end: 'start' | 'end', sa: number, pa: Pose, lat: number, dh: number) => {
+    const La = routeLength(routes[i]), opposite = dh > 90, angle = opposite ? 180 - dh : dh;
+    if (angle > NEAR_ANGLE) return false;
+    // (heading back along it: only along the middle, as orient() turns such routes round; at an end it's a join)
+    if (opposite && (sa < 1 || sa > La - 1)) return false;
+    // (both start, or end, together: once, from the main route)
+    if (!opposite && (end === 'start' ? sa < 0.6 : sa > La - 0.6) && !mainOf(i, j, end)) return false;
+    const ok = lat <= FORCE_LAT && angle <= FORCE_ANGLE, at: Pt = [pa[0], pa[1]];
+    near.push({ routes: [i, j], end, at, lat, angle, ok, ...(opposite && { opposite: true }) });
+    return ok && !opposite && !!edits.force?.(at);
+  };
   for (let i = 0; i < routes.length; i++)
     for (let j = 0; j < routes.length; j++) {
       if (i === j) continue;
       const a = routes[i], b = routes[j];
       const st: Pt = [b.start[0], b.start[1]];
-      if (Math.abs(routeLat(a, st)) > 0.01) continue;
+      if (Math.abs(routeLat(a, st)) > NEAR_LAT) continue;
       const sa = routeSOf(a, st);
       const pa = routePose(a, sa);
-      if (Math.hypot(pa[0] - st[0], pa[1] - st[1]) > 0.01 || Math.abs(((pa[2] - b.start[2] + 540) % 360) - 180) > SPLIT_ANGLE) continue;
-      if (sa < 1e-6 && !mainOf(i, j, 'start')) continue;  // both start together: once
+      const off = Math.hypot(pa[0] - st[0], pa[1] - st[1]), dh = Math.abs(((pa[2] - b.start[2] + 540) % 360) - 180);
+      if (off > NEAR_LAT) continue;
       if (sa > routeLength(a) - 0.6) continue; // (starting where the other ends: a join, not points)
+      const exact = off <= 0.01 && dh <= SPLIT_ANGLE;
+      const forcing = !exact;
+      if (forcing && !nearMiss(i, j, 'start', sa, pa, off, dh)) continue;
+      if (sa < (forcing ? 0.6 : 1e-6) && !mainOf(i, j, 'start')) continue;  // both start together: once
       let t = 0;
       const L = Math.min(routeLength(b), routeLength(a) - sa);
       while (t < L) {
@@ -135,7 +185,7 @@ export function solve(routes: Route[], opts: Partial<SolverOptions> = {}): Solut
         if (Math.abs(routeLat(a, [p[0], p[1]])) >= apart) break;
         t += o.step;
       }
-      splits.push({ routes: [i, j], s: sa + t, spans: [[sa, sa + t], [0, t]] });
+      splits.push({ routes: [i, j], s: sa + t, spans: [[sa, sa + t], [0, t]], ...(forcing && { forced: true }) });
     }
   // Merges: a route that ends on another, arriving the way it runs (the
   // points seen from the other end).
@@ -143,20 +193,32 @@ export function solve(routes: Route[], opts: Partial<SolverOptions> = {}): Solut
     for (let j = 0; j < routes.length; j++) {
       if (i === j) continue;
       const a = routes[i], b = routes[j], Lb = routeLength(b), e = routePose(b, Lb);
-      if (Math.abs(routeLat(a, [e[0], e[1]])) > 0.01) continue;
+      if (Math.abs(routeLat(a, [e[0], e[1]])) > NEAR_LAT) continue;
       const se = routeSOf(a, [e[0], e[1]]);
       const pa = routePose(a, se);
-      if (Math.hypot(pa[0] - e[0], pa[1] - e[1]) > 0.01 || Math.abs(((pa[2] - e[2] + 540) % 360) - 180) > SPLIT_ANGLE) continue;
-      if (se > routeLength(a) - 0.6 && !mainOf(i, j, 'end')) continue; // both end together: once
+      const off = Math.hypot(pa[0] - e[0], pa[1] - e[1]), dh = Math.abs(((pa[2] - e[2] + 540) % 360) - 180);
+      if (off > NEAR_LAT) continue;
       if (se < 0.6) continue; // (ending where the other starts: a join, not points)
+      const exact = off <= 0.01 && dh <= SPLIT_ANGLE;
+      const forcing = !exact;
+      if (forcing && !nearMiss(i, j, 'end', se, pa, off, dh)) continue;
+      if (se > routeLength(a) - 0.6 && !mainOf(i, j, 'end')) continue; // both end together: once
       let t = 0;
       while (t < Math.min(Lb, se)) {
         const p = routePose(b, Lb - t);
         if (Math.abs(routeLat(a, [p[0], p[1]])) >= apart) break;
         t += o.step;
       }
-      splits.push({ routes: [i, j], s: se - t, spans: [[se - t, se], [Lb - t, Lb]], merge: true });
+      splits.push({ routes: [i, j], s: se - t, spans: [[se - t, se], [Lb - t, Lb]], merge: true, ...(forcing && { forced: true }) });
     }
+
+  // Points left out by hand: the routes' rails run through as fixed track
+  // (and their flangeways are cut, as anywhere else they meet).
+  const dropped: Split[] = [];
+  if (edits.drop) for (let k = splits.length - 1; k >= 0; k--) {
+    const sp = splits[k], q = routePose(routes[sp.routes[0]], sp.merge ? sp.spans[0][1] : sp.spans[0][0]);
+    if (edits.drop([q[0], q[1]], sp.routes)) dropped.unshift(...splits.splice(k, 1));
+  }
 
   // Rail crossings.
   const crossings: Crossing[] = [];
@@ -258,5 +320,5 @@ export function solve(routes: Route[], opts: Partial<SolverOptions> = {}): Solut
     else checkRails.push({ ...cr });
   }
 
-  return { crossings, grooves, checkRails, splits };
+  return { crossings, grooves, checkRails, splits, dropped, near };
 }
