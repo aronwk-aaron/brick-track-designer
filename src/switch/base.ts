@@ -304,6 +304,20 @@ export function switchPlan(routes: Route[], specs: SetSpec[], p: BaseParams = BA
   for (let k = 0; k + 1 < bySetY.length; k++)
     if (bySetY[k + 1].toeY - 2 < bySetY[k].pointsEndY)
       warnings.push(`two points sets overlap (one's points end at y ${bySetY[k].pointsEndY.toFixed(1)}, the next one's start at ${bySetY[k + 1].toeY.toFixed(1)}): move the second set further along`);
+  // (the plate-style blades lie on plates on the bed, reaching in to the slider's posts: another route's rail between a set's
+  // stock rails, toe to heels (a tandem's first branch through its second points), runs through them)
+  if (p.mechStyle === 'plates') specs.forEach((ps, k) => {
+    if (ps[4] !== undefined) return;
+    const v = sets[k], mine = [ps[0], ps[1]];
+    const hit = routes.some((rt, j) => !mine.includes(j) && [-G, G].some((o) => {
+      for (let t = 0; t <= routeLength(rt); t += 1) {
+        const q = railPoint(rt, t, o);
+        if (q[1] > v.toeY + 2 && q[1] < v.pointsEndY && mine.some((i) => Math.abs(routeLat(routes[i], q)) < G - HEAD_HW)) return true;
+      }
+      return false;
+    }));
+    if (hit) warnings.push("another route's rail runs between a set of plate-style points' stock rails (a tandem's first branch through its second points): it would go through their blades' plates; move the second points further along, or use 'tines' points");
+  });
   return {
     warnings, notes,
     p, g, G, tc, sleeperW, sleeperLen, routes, nRoutes, specs, sets, others, latOthers, isStock, railFixS, frogs, checkList,
