@@ -6,7 +6,7 @@ import { Scad, R, T, type Man } from '../geom/scad';
 import { sweepRoute } from '../geom/sweep';
 import { DEFAULTS as TRACK_DEFAULTS, PLATE_H, Track } from '../geom/track';
 import { CROSSING_DEFAULTS, crossingPiece } from '../geom/crossing';
-import { arena, type Wasm } from '../geom/kernel';
+import { arena, flat, type Wasm } from '../geom/kernel';
 import { stlBytes } from '../geom/stl';
 import { FORCE_ANGLE, FORCE_LAT, solve, type SplitEdits } from '../route/solver';
 import { railPoint, routeLat, routeLength, routePose, routeSOf, type Pose } from '../route/route';
@@ -299,8 +299,10 @@ export function buildDesign(w: Wasm, design: Design, report: (what: string, frac
     // a part still too big: split along a stepped path on the stud grid that
     // goes only where a cut can be made (pathsplit.ts), as often as it takes
     // (pieces of track that don't touch are parts of their own; the small bits, the breakaway supports, stay with the biggest)
+    // (each found in a flat copy of it, kernel.ts flat: a cut part's record of what it was made from made decompose()
+    // take most of a gigabyte)
     const bodies = (m: Man): Man[] => {
-      const all2 = m.decompose(), big2 = all2.filter((b2) => b2.volume() > 1000), small = all2.filter((b2) => b2.volume() <= 1000);
+      const all2 = flat(w, m).decompose(), big2 = all2.filter((b2) => b2.volume() > 1000), small = all2.filter((b2) => b2.volume() <= 1000);
       if (big2.length <= 1) return [m];
       // (each small bit with the piece nearest it: the one it supports)
       const boxes = big2.map((b2) => b2.boundingBox()), groups: Man[][] = big2.map((b2) => [b2]);
@@ -334,12 +336,16 @@ export function buildDesign(w: Wasm, design: Design, report: (what: string, frac
       // (no split that leaves a small piece: every part at least 6 studs each way)
       const small = (p2: Man) => { const b3 = p2.boundingBox(); return Math.min(b3.max[0] - b3.min[0], b3.max[1] - b3.min[1]) < 48; };
       const good = (g2: Man[] | undefined) => !!g2 && g2.length > 1 && !g2.flatMap(bodies).some(small);
-      let got = win[0] <= win[1] ? pathSplit(scad, m, pieceRoutes, track.c.railOffset, pointsAvoid, axis, at, { join, window: win }) : undefined;
+      // (each try in an arena of its own, only the parts of a good one kept, as solids of their own (kernel.ts flat):
+      // a big part on a small bed tries many paths, and everything they made, kept to the end, ran the kernel out of
+      // memory (it aborts))
+      const attempt = (f: () => ReturnType<typeof pathSplit>) => arena(w, () => { const g2 = f(); return g2 && good(g2.parts) ? { ...g2, parts: g2.parts.map((p2) => flat(w, p2)) } : undefined; }, (g2) => g2?.parts ?? []);
+      let got = win[0] <= win[1] ? attempt(() => pathSplit(scad, m, pieceRoutes, track.c.railOffset, pointsAvoid, axis, at, { join, window: win })) : undefined;
       // (no way within it: anywhere near the middle, as before)
-      if (!got || !good(got.parts)) got = pathSplit(scad, m, pieceRoutes, track.c.railOffset, pointsAvoid, axis, lo + ext / 2, { join });
-      if (!got || !good(got.parts)) return [m];
+      if (!got) got = attempt(() => pathSplit(scad, m, pieceRoutes, track.c.railOffset, pointsAvoid, axis, lo + ext / 2, { join }));
+      if (!got) return [m];
       for (const r of got.runs) if (r.d[axis] === 0) cutAt[axis].push(r.p[axis]);
-      return got.parts.flatMap((p) => fitAll(p, depth + 1));
+      return got.parts.flatMap((p) => arena(w, () => fitAll(p, depth + 1), (r) => r));
     };
     const all = cached(`fit:${o.printBedX}x${o.printBedY}:${bp}:${o.joint}:${o.cutRails}:${JSON.stringify(lines)}:${JSON.stringify(pieceRoutes)}:${world.volume().toFixed(3)}`, () => {
       // (and each part gripping along its cut edges too)

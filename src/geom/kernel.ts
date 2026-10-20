@@ -67,3 +67,17 @@ export function arena<T>(w: Wasm, f: () => T, keep: (r: T) => unknown[]): T {
   else for (const h of kept) outside.add(h as object);
   return r;
 }
+
+/**
+ * A solid as a fresh one from its own mesh, its triangles only: none of the
+ * record of what it was made from (the runs of triangles from each original
+ * solid, which a part cut from a part cut from a piece has thousands of). The
+ * kernel's decompose() goes through that record for every body it finds:
+ * on such a part it took most of a gigabyte, and a few of them ran the
+ * kernel out of memory (it aborts).
+ */
+export function flat<M>(w: Wasm, m: M): M {
+  const g = (m as unknown as { getMesh(): { numProp: number; vertProperties: Float32Array; triVerts: Uint32Array; mergeFromVert: Uint32Array; mergeToVert: Uint32Array } }).getMesh();
+  const mesh = new w.Mesh({ numProp: g.numProp, vertProperties: g.vertProperties, triVerts: g.triVerts, mergeFromVert: g.mergeFromVert, mergeToVert: g.mergeToVert });
+  return new w.Manifold(mesh) as unknown as M;
+}

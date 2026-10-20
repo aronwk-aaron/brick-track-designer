@@ -6,6 +6,7 @@
 // The joints (jointKit, railCrossings, pickSpots) are shared with the stepped
 // cuts along the stud grid (pathsplit.ts, via pathJoints).
 import { M, R, T, type CS, type Man, type Scad } from './scad';
+import { arena, flat } from './kernel';
 import { PLATE_H, type Track } from './track';
 import type { Route } from '../route/route';
 import { railPoint, routeLat, routeLength, routePose } from '../route/route';
@@ -174,9 +175,14 @@ export function cutPiece(s: Scad, t: Track, body: Man, routes: Route[], lines: C
 
   // cells: by which side of each line a point is
   // cut the piece by each line in turn, keeping the parts that hold any of it
+  // (each cut's leftovers, and the parts before it, let go as it goes, each part a solid of its own (kernel.ts flat):
+  // on a small bed a big piece has many cuts, and every stage of it kept to the end ran the kernel out of memory)
   let parts: Man[] = [cutBody];
-  for (const f of frames)
-    parts = parts.flatMap((m) => (f.L.comb ? combSplit(f, m) : m.splitByPlane([f.n[0], f.n[1], 0], f.n[0] * f.L.p[0] + f.n[1] * f.L.p[1])).filter((c) => c.volume() > 300)); // (not a sliver of print supports)
+  for (const f of frames) {
+    const prev = parts;
+    parts = arena(s.w, () => prev.flatMap((m) => (f.L.comb ? combSplit(f, m) : m.splitByPlane([f.n[0], f.n[1], 0], f.n[0] * f.L.p[0] + f.n[1] * f.L.p[1])).filter((c) => c.volume() > 300)).map((c) => flat(s.w, c)), (r) => r); // (not a sliver of print supports)
+    for (const m of prev) if (m !== body && !parts.includes(m) && !(m as unknown as { isDeleted(): boolean }).isDeleted()) m.delete();
+  }
   // (rather than a plane: the far side's fingers, 16 mm wide and reaching
   // 8 mm either side of the line, their faces on the stud grid; 0.1 mm clear)
   function combSplit(f: typeof frames[number], m: Man): Man[] {
@@ -220,7 +226,7 @@ export function cutPiece(s: Scad, t: Track, body: Man, routes: Route[], lines: C
 
 /** A part with nothing loose: the bits under a few mm3 a cut left over dropped. */
 export function tidy(s: Scad, whole: Man): Man {
-  const bits = whole.decompose();
+  const bits = flat(s.w, whole).decompose(); // (on a flat copy: kernel.ts flat)
   return bits.length > 1 ? s.union(bits.filter((m) => m.volume() > 5)) : whole;
 }
 
