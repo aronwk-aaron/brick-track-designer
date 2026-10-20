@@ -52,6 +52,9 @@ export interface Solution {
 
 const sides: Side[] = [-1, 1];
 
+/** How far off the other route's heading a route may start (or end) on it and still make points, degrees: a branch drawn a hair off true (0.2 degrees, say) is meant as a switch, not a crossing. */
+const SPLIT_ANGLE = 0.5;
+
 /** Intersection of segments p1-p2 and p3-p4, as [t, u] along each, or undefined. */
 function segX(p1: Pt, p2: Pt, p3: Pt, p4: Pt): [number, number] | undefined {
   const d = (p2[0] - p1[0]) * (p4[1] - p3[1]) - (p2[1] - p1[1]) * (p4[0] - p3[0]);
@@ -112,7 +115,7 @@ export function solve(routes: Route[], opts: Partial<SolverOptions> = {}): Solut
       if (Math.abs(routeLat(a, st)) > 0.01) continue;
       const sa = routeSOf(a, st);
       const pa = routePose(a, sa);
-      if (Math.hypot(pa[0] - st[0], pa[1] - st[1]) > 0.01 || Math.abs(((pa[2] - b.start[2] + 540) % 360) - 180) > 0.01) continue;
+      if (Math.hypot(pa[0] - st[0], pa[1] - st[1]) > 0.01 || Math.abs(((pa[2] - b.start[2] + 540) % 360) - 180) > SPLIT_ANGLE) continue;
       if (sa < 1e-6 && j < i) continue;  // both start together: once, as (i < j)
       let t = 0;
       const L = Math.min(routeLength(b), routeLength(a) - sa);
@@ -132,7 +135,7 @@ export function solve(routes: Route[], opts: Partial<SolverOptions> = {}): Solut
       if (Math.abs(routeLat(a, [e[0], e[1]])) > 0.01) continue;
       const se = routeSOf(a, [e[0], e[1]]);
       const pa = routePose(a, se);
-      if (Math.hypot(pa[0] - e[0], pa[1] - e[1]) > 0.01 || Math.abs(((pa[2] - e[2] + 540) % 360) - 180) > 0.01) continue;
+      if (Math.hypot(pa[0] - e[0], pa[1] - e[1]) > 0.01 || Math.abs(((pa[2] - e[2] + 540) % 360) - 180) > SPLIT_ANGLE) continue;
       if (se > routeLength(a) - 1e-6) continue; // (end to end: a join, not points)
       let t = 0;
       while (t < Math.min(Lb, se)) {

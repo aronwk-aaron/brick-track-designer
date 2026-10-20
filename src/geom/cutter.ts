@@ -35,7 +35,8 @@ export function cutPiece(s: Scad, t: Track, body: Man, routes: Route[], lines: C
 
   // where the piece has floor (a slice through its bed), for the couplers
   const floor = body.slice(1.0);
-  const floorAt = (q: [number, number], r: number) => s.w.CrossSection.square([2 * r, 2 * r], true).translate(q).intersect(floor).area() > 4 * r * r * 0.95;
+  const floorAt = (fl: typeof floor, q: [number, number], r: number) => s.w.CrossSection.square([2 * r, 2 * r], true).translate(q).intersect(fl).area() > 4 * r * r * 0.95;
+  const fb = body.boundingBox(), reachAll = Math.hypot(fb.max[0] - fb.min[0], fb.max[1] - fb.min[1]) + Math.hypot(fb.min[0], fb.min[1]) + Math.hypot(fb.max[0], fb.max[1]);
   // ---- each line's frame, rail crossings and coupler spots ----
   const frames = lines.map((L) => {
     const n: [number, number] = [-L.d[1], L.d[0]];        // the far side
@@ -64,10 +65,13 @@ export function cutPiece(s: Scad, t: Track, body: Man, routes: Route[], lines: C
     });
     // coupler spots: on the bed along the line, 9 clear of every rail, at least 16 apart, up to 3 per stretch of bed
     // (on the bed, and with floor all round the peg on both sides of the cut)
+    // (the floor near the line only: testing spots against the whole piece's
+    // floor took minutes on a big layout)
+    const strip = floor.intersect(s.w.CrossSection.square([2 * reachAll, 14], true).rotate(deg(Math.atan2(L.d[1], L.d[0]))).translate(L.p));
     const onBed = (u: number) => {
       const q: [number, number] = [L.p[0] + u * L.d[0], L.p[1] + u * L.d[1]];
       return routes.some((rt) => Math.abs(routeLat(rt, q)) <= half - 5)
-        && floorAt([q[0] + 2.5 * n[0], q[1] + 2.5 * n[1]], 2.5) && floorAt([q[0] - 2.5 * n[0], q[1] - 2.5 * n[1]], 2.5);
+        && floorAt(strip, [q[0] + 2.5 * n[0], q[1] + 2.5 * n[1]], 2.5) && floorAt(strip, [q[0] - 2.5 * n[0], q[1] - 2.5 * n[1]], 2.5);
     };
     const us = rails.map((r) => r[0]), lo = Math.min(...us, 0) - half - 20, hi = Math.max(...us, 0) + half + 20;
     const couplers: number[] = [];
@@ -94,12 +98,10 @@ export function cutPiece(s: Scad, t: Track, body: Man, routes: Route[], lines: C
   const cutBody = s.difference(body, [removals]);
 
   // cells: by which side of each line a point is
-  const b = body.boundingBox(), big = 4 * Math.max(b.max[0] - b.min[0], b.max[1] - b.min[1]) + 100;
-  const halfSpace = (f: typeof frames[number], side: number) => f.place(cube([2 * big, big, 400], [-big, side > 0 ? 0 : -big, -200]), 0);
   // cut the piece by each line in turn, keeping the parts that hold any of it
   let parts: Man[] = [cutBody];
   for (const f of frames)
-    parts = parts.flatMap((m) => [halfSpace(f, 1), halfSpace(f, -1)].map((hs) => s.intersection(m, hs)).filter((c) => c.volume() > 300)); // (not a sliver of print supports)
+    parts = parts.flatMap((m) => m.splitByPlane([f.n[0], f.n[1], 0], f.n[0] * f.L.p[0] + f.n[1] * f.L.p[1]).filter((c) => c.volume() > 300)); // (not a sliver of print supports)
   const cells: Man[] = [];
   for (const cell of parts) {
     // which side of each line the cell is on (from a point of it off the line), and its joints on the lines it meets
