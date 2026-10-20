@@ -21,7 +21,7 @@ import { planSections } from './sections';
 import type { Route } from '../route/route';
 import { cutPiece, type CutLine } from '../geom/cutter';
 import { edgeGrip } from '../geom/underside';
-import { pathSplit } from '../geom/pathsplit';
+import { pathSplit, type Keep } from '../geom/pathsplit';
 import { type Design, OPTION_DEFAULTS, toRoutes } from './design';
 
 /** An item of trackwork the hand edits apply to: a check rail, a flangeway cut, a points set. */
@@ -172,14 +172,22 @@ export function buildDesign(w: Wasm, design: Design, report: (what: string, frac
   const toeShift = (q: [number, number]) => tw.points?.[keyOf(q)]?.toe ?? 0;
   const throwEdit = (q: [number, number]) => tw.throw?.[keyOf(q)];
   /** A points set's lever on the plan (it can be dragged there). */
-  const leverItem = (key: string, P: Pose, v: { throwDir: number; leverX: number; throwY: number; throwStockX: number; throwEdgeX: number; leverMinD: number; tineLen: number; pivotPt: [number, number] }) => {
+  const leverItem = (key: string, P: Pose, v: { throwDir: number; leverX: number; throwY: number; throwStockX: number; throwEdgeX: number; leverMinD: number; tineLen: number; pivotPt: [number, number];
+    ra: Route; rb: Route; sHeel: number; three?: { S: Route } }) => {
     const ca = Math.cos((P[2] * Math.PI) / 180), sa = Math.sin((P[2] * Math.PI) / 180);
     const wd = (x: number, y: number): [number, number] => [P[0] + x * ca - y * sa, P[1] + x * sa + y * ca];
     const ed = tw.throw?.[key];
     // (pts: the arm's outline, as built: from the stock rail out to the stud line past the lever, 3 studs wide)
     const xOut = v.throwDir * Math.ceil((v.throwDir * (v.leverX + v.throwDir * 10)) / 8 - 1e-6) * 8, hw = 12;
-    // (the plate-style slider's line: from past the far blade out to the arm's end, where no cut goes)
-    if (fdbPoints) for (let x = v.throwStockX - v.throwDir * (2 * track.c.railOffset + 16); v.throwDir * x <= v.throwDir * xOut + 1e-9; x += v.throwDir * 8) pointsAvoid.push(wd(x, v.throwY));
+    // (the plate-style: no cut through the slider's tunnel, from past the far blade to the stock rail (the rod and
+    // its walls, 6 mm either side of its line), nor the arm out to its end (3 studs wide, with the lever's
+    // opening), nor the pins the blades turn on (and a little bed round them); under the loose blades is fine)
+    if (fdbPoints) {
+      const G = track.c.railOffset, keep = (q: [number, number], r: number): Keep => [q[0], q[1], r, r];
+      for (let x = v.throwStockX - v.throwDir * (2 * G + 16); v.throwDir * (x - v.throwStockX) < 0; x += v.throwDir * 4) pointsAvoid.push(keep(wd(x, v.throwY), 6.5));
+      for (let x = v.throwStockX; v.throwDir * x <= v.throwDir * xOut + 1e-9; x += v.throwDir * 4) pointsAvoid.push(keep(wd(x, v.throwY), hw + 1));
+      for (const b of [0, 1]) { const q = railPoint(v.three ? v.three.S : b === 0 ? v.ra : v.rb, v.sHeel - 4, (b === 0 ? 1 : -1) * (7 - G)); pointsAvoid.push(keep(wd(q[0], q[1]), 6)); }
+    }
     items.push({ kind: 'throw', key, at: wd(v.leverX, v.throwY), pts: [wd(v.throwStockX, v.throwY - hw), wd(xOut, v.throwY - hw), wd(xOut, v.throwY + hw), wd(v.throwStockX, v.throwY + hw)],
       lever: { frame: P, side: v.throwDir, stockX: Math.abs(v.throwStockX), edge: Math.abs(v.throwEdgeX), minD: Math.abs(v.leverMinD), pivotY: v.pivotPt[1], maxTine: v.pivotPt[1] - 12.5,
         leverOffset: Math.round((Math.abs(v.leverX) - Math.abs(v.throwEdgeX)) * 100) / 100, springLength: Math.round(v.tineLen * 100) / 100, edited: !!ed } });
@@ -225,16 +233,17 @@ export function buildDesign(w: Wasm, design: Design, report: (what: string, frac
   // (where no cut goes: the crossings, and every points set from before its toe to past its heels,
   // so a cut never runs through the blades' slots and leaves strips of track between them)
   // (a split along a path may go through a crossing, across its rails, as a cut down the middle of a crossover has to: only the points are kept clear)
-  // (the plate-style blades lie on the bed, loose: a cut may go under them, between their toes and the pins at their
-  // heels, clear of the slider's tunnel (its line kept clear as each lever's placed: leverItem))
+  // (the plate-style blades lie on the bed, loose: a cut may go under them, clear of the pins at their heels and the
+  // slider's tunnel and arm (kept clear as each lever's placed: leverItem))
   const fdbPoints = params.mechStyle === 'plates';
-  const pointsAvoid: [number, number][] = [];
-  for (const sp of sol.splits) {
+  const pointsAvoid: Keep[] = [];
+  // (the plate-style keep-outs are their parts' own (leverItem): the tines' points keep the whole set clear)
+  if (!fdbPoints) for (const sp of sol.splits) {
     const rt = routes[sp.routes[0]], [a0, a1] = sp.spans[0];
-    const heel = sp.merge ? a0 : a1, [s0, s1] = fdbPoints ? (sp.merge ? [heel - 8, heel + 16] : [heel - 16, heel + 8]) : [a0 - 8, a1 + 8];
-    for (let s2 = s0; s2 <= s1 + 1e-9; s2 += fdbPoints ? 8 : 12) { const q = railPoint(rt, Math.max(0, Math.min(routeLength(rt), s2)), 0); pointsAvoid.push([q[0], q[1]]); }
+    const [s0, s1] = [a0 - 8, a1 + 8];
+    for (let s2 = s0; s2 <= s1 + 1e-9; s2 += 12) { const q = railPoint(rt, Math.max(0, Math.min(routeLength(rt), s2)), 0); pointsAvoid.push([q[0], q[1]]); }
   }
-  const cutAvoid: [number, number][] = [...overlay.crossings, ...pointsAvoid];
+  const cutAvoid: Keep[] = [...overlay.crossings, ...pointsAvoid];
   const addTrack = (name: string, world: Man, pieceRoutes: typeof routes) => {
     const bb = world.boundingBox(), b: Rect = [bb.min[0], bb.min[1], bb.max[0], bb.max[1]];
     if (!bp && fitsBed(world)) return add(name, 0x6f7780, world, world);
@@ -259,20 +268,37 @@ export function buildDesign(w: Wasm, design: Design, report: (what: string, frac
       for (const sm of small) { const sb = sm.boundingBox(); let best = 0; boxes.forEach((bx, k) => { if (gap(sb, bx) < gap(sb, boxes[best])) best = k; }); groups[best].push(sm); }
       return groups.map((g2) => (g2.length > 1 ? scad.union(g2) : g2[0]));
     };
+    // (where the stepped cuts so far ran across each axis: the next part's cut lines up with them where it can)
+    const cutAt: [number[], number[]] = [[], []];
     const fitAll = (m: Man, depth = 0): Man[] => {
       if (depth === 0 || depth > 0) { const bs = bodies(m); if (bs.length > 1) return bs.flatMap((b2) => fitAll(b2, depth + 1)); }
       if (fitsBed(m) || depth > 5) return [m];
       const bb = m.boundingBox(), w2 = bb.max[0] - bb.min[0], h2 = bb.max[1] - bb.min[1];
-      const tryAxis = (axis: 0 | 1) => pathSplit(scad, m, pieceRoutes, track.c.railOffset, pointsAvoid, axis, axis === 0 ? (bb.min[0] + bb.max[0]) / 2 : (bb.min[1] + bb.max[1]) / 2);
+      // (joined as the straight cuts are, along each straight run of the path)
+      const join = { t: track, joint: o.joint === 'ends' ? 'lego' as const : o.joint ?? 'lego', flatRails: o.cutRails === 'flat' };
       // (across whichever side is too long: the longer one if it's longer than the bed, else the shorter)
       const big = Math.max(o.printBedX, o.printBedY), longX = w2 >= h2;
       const axis: 0 | 1 = Math.max(w2, h2) > big ? (longX ? 0 : 1) : (longX ? 1 : 0);
+      // (into as few parts as fit, the first a whole part's width (the rest
+      // split again): not halves and then halves again; the path kept where
+      // the first part fits the bed and the rest fit the others, a little
+      // room left for the joints; at a neighbour's cut if one's near)
+      const ext = axis === 0 ? w2 : h2, lo = axis === 0 ? bb.min[0] : bb.min[1];
+      const room = ((axis === 0 ? h2 : w2) <= Math.min(o.printBedX, o.printBedY) ? big : Math.min(o.printBedX, o.printBedY)) - 4;
+      const n = Math.max(2, Math.ceil(ext / room));
+      const win: [number, number] = [Math.max(lo + 48, lo + ext - (n - 1) * room), Math.min(lo + room, lo + ext - 48)];
+      let at = lo + ext / n;
+      const near = cutAt[axis].filter((v) => v >= win[0] && v <= win[1] && Math.abs(v - at) <= 16).sort((p2, q) => Math.abs(p2 - at) - Math.abs(q - at))[0];
+      if (near !== undefined) at = near;
       // (no split that leaves a small piece: every part at least 6 studs each way)
       const small = (p2: Man) => { const b3 = p2.boundingBox(); return Math.min(b3.max[0] - b3.min[0], b3.max[1] - b3.min[1]) < 48; };
       const good = (g2: Man[] | undefined) => !!g2 && g2.length > 1 && !g2.flatMap(bodies).some(small);
-      const got = tryAxis(axis);
-      if (!good(got)) return [m];
-      return got!.flatMap((p) => fitAll(p, depth + 1));
+      let got = win[0] <= win[1] ? pathSplit(scad, m, pieceRoutes, track.c.railOffset, pointsAvoid, axis, at, { join, window: win }) : undefined;
+      // (no way within it: anywhere near the middle, as before)
+      if (!got || !good(got.parts)) got = pathSplit(scad, m, pieceRoutes, track.c.railOffset, pointsAvoid, axis, lo + ext / 2, { join });
+      if (!got || !good(got.parts)) return [m];
+      for (const r of got.runs) if (r.d[axis] === 0) cutAt[axis].push(r.p[axis]);
+      return got.parts.flatMap((p) => fitAll(p, depth + 1));
     };
     const all = cached(`fit:${o.printBedX}x${o.printBedY}:${bp}:${o.joint}:${o.cutRails}:${JSON.stringify(lines)}:${JSON.stringify(pieceRoutes)}:${world.volume().toFixed(3)}`, () => {
       // (and each part gripping along its cut edges too)
