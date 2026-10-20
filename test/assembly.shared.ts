@@ -52,10 +52,13 @@ describe('every switch can be put together', { timeout: 120000 }, () => {
         const into = bladesTop && blade ? w.Manifold.union([track, ...b.pieces.filter((q) => /throw/.test(q.name)).map(man)]) : track;
         // (a closed blade's tongue is modelled undeflected: in the slider's post by the preload; it bends aside going on)
         const v0 = into === track ? 0 : m.intersect(into).volume() - m.intersect(track).volume();
+        // (a lever or stand snaps in between its ears, which flex apart: its pivot's domes and its detent bump
+        // press into them on the way, a few mm3; nothing at rest)
+        const snap = /lever/.test(p.name) ? 3 : 0.5;
         const lift = (part: typeof m, to: typeof m, base: number) => {
           for (const dz of [0, 1, 2, 3, 4, 6, 8, 12, 16]) {
             const v = part.translate([0, 0, dir * dz]).intersect(to).volume() - base;
-            if (v > 0.5) return `${p.name} ${dz} mm ${dir > 0 ? 'up' : 'down'}: ${v.toFixed(1)} mm3 in the track`;
+            if (v > (dz === 0 ? 0.5 : snap)) return `${p.name} ${dz} mm ${dir > 0 ? 'up' : 'down'}: ${v.toFixed(1)} mm3 in the track`;
           }
           return '';
         };
@@ -67,6 +70,12 @@ describe('every switch can be put together', { timeout: 120000 }, () => {
           if (!lift(open, track, 0)) bad = '';
         }
         if (bad) problems.push(bad);
+      }
+      // (a lever or stand is held by its ears (on the lid, with layered points): slid along its pivot it runs into them)
+      const withLids = w.Manifold.union([track, ...b.pieces.filter((q) => /lid/.test(q.name)).map(man)]);
+      for (const p of b.pieces.filter((q) => /lever/.test(q.name))) {
+        const m = man(p);
+        if ([-0.6, 0.6].some((dy) => m.translate([0, dy, 0]).intersect(withLids).volume() < 0.5)) problems.push(`${p.name} isn't held by its ears`);
       }
       for (const p of b.pieces.filter((q) => /lid/.test(q.name))) {
         const m = man(p), others = w.Manifold.union([track, ...moving]);
