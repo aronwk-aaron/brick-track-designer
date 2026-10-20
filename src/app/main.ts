@@ -550,9 +550,8 @@ function renderOptions() {
         body.append(field(label, cb));
       } else if (key === 'pointsModule') {
         const sel = document.createElement('select');
-        for (const [v, tx, tip] of [['built-in', 'One piece, pockets through (as switch.scad)', 'The points built into the track, their pockets open right through to the bottom'],
-          ['floor', 'One piece, on a floor', 'The same, the pockets stopping on a solid floor under the moving parts (they sit a mm higher)'],
-          ['layers', 'Layers: base with floor + lid over the points and throw', 'The lower layer (with the pockets the moving parts sit in), the moving parts dropped in, then the deck (bed, rails, frogs) laid over, held by studs like LEGO plates. Needs ballast.']]) { const op = new Option(tx, v); op.title = tip; sel.append(op); }
+        for (const [v, tx, tip] of [['built-in', 'One piece: points and throw go in from below', 'The points built into the track, their pockets open through to the bottom: the points and the throw go in from underneath before it goes on the baseplate'],
+          ['layers', 'Layers: points and throw go in from the top, then a lid', 'The lower layer (with the pockets the moving parts sit in), the moving parts dropped in, then the deck (bed, rails, frogs) laid over, held by studs like LEGO plates. Needs ballast.']]) { const op = new Option(tx, v); op.title = tip; sel.append(op); }
         sel.value = o.pointsModule ?? 'built-in';
         sel.title = 'Prototype: how the points are built';
         sel.addEventListener('change', () => { design.options = { ...design.options, pointsModule: sel.value as PieceOptions['pointsModule'] }; changed(true); });

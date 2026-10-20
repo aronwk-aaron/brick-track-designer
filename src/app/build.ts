@@ -149,7 +149,8 @@ export function buildDesign(w: Wasm, design: Design, report: (what: string, frac
   const scad = new Scad(w), pieces: Piece[] = [];
   const params = { ...BASE_DEFAULTS, ...o, gaugeStuds: design.gaugeStuds, studGrip: design.grip ?? 'edges', pointsPieces: design.pointsPieces ?? 1,
     generateBallast: o.ballast !== 'none', ballastBuddy: o.ballast === 'buddy', bottomStyle: o.bottomStyle,
-    ...((o.pointsModule ?? 'built-in') !== 'built-in' && { mechFloor: 1.2 }), endSupports: o.endSupports !== false };
+    // (a floor under the moving parts only with the lid over them: otherwise they go in from below, through their pockets)
+    ...(o.pointsModule === 'layers' && o.ballast !== 'none' && { mechFloor: 1.2 }), endSupports: o.endSupports !== false };
 
   let pc = planPieces(routes, sol.splits, params, toeShift, throwEdit, true);
   steps = 2 + pc.switches.length + (pc.rest.length ? 1 : 0);
@@ -187,12 +188,12 @@ export function buildDesign(w: Wasm, design: Design, report: (what: string, frac
     if (!bp && fitsBed(world)) return add(name, 0x6f7780, world, world);
     // too big for the print bed (or at the baseplate edges): cut across the
     // track (tiles.ts planCuts), each part joined to the next like LEGO track
-    const plan = planCuts(b, o.printBedX, o.printBedY, bp, (o.baseplateX ?? 0) * 8, (o.baseplateY ?? 0) * 8, cutAvoid, pieceRoutes, bandHalf, jointRoom, track.c.railOffset);
+    const plan = planCuts(b, o.printBedX, o.printBedY, bp, (o.baseplateX ?? 0) * 8, (o.baseplateY ?? 0) * 8, pointsAvoid, pieceRoutes, bandHalf, jointRoom, track.c.railOffset, overlay.crossings);
     // (baseplate edges always peg and clip; the cuts to fit the bed as chosen)
     const lj = (v: number) => (plan.edges?.has(v) ? { joint: 'lego' as const } : plan.combs?.has(v) ? { comb: true } : {});
     const lines: CutLine[] = [...plan.xs.map((x): CutLine => ({ p: [x, 0], d: [0, 1], ...lj(x) })), ...plan.ys.map((y): CutLine => ({ p: [0, y], d: [1, 0], ...lj(y) }))];
     steps++; progress(plan.why === 'bed' ? `Cutting ${name} to fit the print bed` : `Cutting ${name} at the baseplate edges`);
-    const cells = cached(`cut:${bp}:${o.joint}:${o.cutRails}:${JSON.stringify(lines)}:${JSON.stringify(pieceRoutes)}:${world.volume().toFixed(3)}`, () => cutPiece(scad, track, world, pieceRoutes, lines, o.joint === 'ends' ? 'lego' : o.joint ?? 'lego', o.cutRails === 'flat'));
+    const cells = cached(`cut:${bp}:${o.joint}:${o.cutRails}:${JSON.stringify(lines)}:${JSON.stringify(pieceRoutes)}:${world.volume().toFixed(3)}`, () => arena(w, () => cutPiece(scad, track, world, pieceRoutes, lines, o.joint === 'ends' ? 'lego' : o.joint ?? 'lego', o.cutRails === 'flat'), (r) => r));
     // a part still too big: split along a stepped path on the stud grid that
     // goes only where a cut can be made (pathsplit.ts), as often as it takes
     // (pieces of track that don't touch are parts of their own; the small bits, the breakaway supports, stay with the biggest)
@@ -237,7 +238,7 @@ export function buildDesign(w: Wasm, design: Design, report: (what: string, frac
   // blades): the moving parts are dropped in and the deck laid on, held by
   // studs on the lower layer in sockets under the deck, as LEGO plates stack.
   const layered = (o.pointsModule ?? 'built-in') === 'layers' && o.ballast !== 'none';
-  if ((o.pointsModule ?? 'built-in') === 'layers' && o.ballast === 'none') bedWarnings.add('layered points need ballast (the track alone is too thin to split): built in one piece');
+  if ((o.pointsModule ?? 'built-in') === 'layers' && o.ballast === 'none') bedWarnings.add('layered points need ballast (the track alone is too thin to split): built in one piece, the moving parts going in from below');
   /**
    * Where the lid goes over a points set, in its frame: the bed across all its
    * routes from before the toe to past the heels, and the throw's arm out to
@@ -360,7 +361,7 @@ export function buildDesign(w: Wasm, design: Design, report: (what: string, frac
   const tiled = (name: string, all: Route[], checks: CheckRail[], splits: SplitParts[], copt: typeof CROSSING_DEFAULTS, key: string) => {
     let b = routesBox(all, track.c.sleeperLen / 2 + 24);
     for (const sp of splits) for (const m of sp.adds) { const bb = m.boundingBox(); b = [Math.min(b[0], bb.min[0]), Math.min(b[1], bb.min[1]), Math.max(b[2], bb.max[0]), Math.max(b[3], bb.max[1])]; }
-    const plan = planCuts(b, o.printBedX, o.printBedY, bp, (o.baseplateX ?? 0) * 8, (o.baseplateY ?? 0) * 8, cutAvoid, all, bandHalf, jointRoom, track.c.railOffset);
+    const plan = planCuts(b, o.printBedX, o.printBedY, bp, (o.baseplateX ?? 0) * 8, (o.baseplateY ?? 0) * 8, pointsAvoid, all, bandHalf, jointRoom, track.c.railOffset, overlay.crossings);
     if (!plan.xs.length && !plan.ys.length) return false;
     // (only when it's big: in one build a piece is quicker, but a whole yard
     // runs the kernel out of memory)
