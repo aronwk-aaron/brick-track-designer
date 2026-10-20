@@ -622,7 +622,7 @@ export function switchGeometry(s: Scad, plan: SwitchPlan, extraCuts: Man[] = [])
     const pz = v.stand ? v.standZ : g.leverPz;
     for (const sg of [-1, 1]) {
       const ey = v.stand ? v.throwY + (sg > 0 ? standY(v)[2] + c : standY(v)[0] - c) + sg * g.leverEarT / 2
-        : v.throwY + sg * (g.leverBossLen / 2 + c + g.leverEarT / 2);
+        : v.throwY + sg * (leverT() / 2 + c + g.leverEarT / 2);
       let ear = W.Manifold.hull([
         cube([8, g.leverEarT, 0.01], [v.leverX - 4, ey - g.leverEarT / 2, z0 - 0.01]),
         cylY(7, g.leverEarT, 32, [v.leverX, ey, pz]),
@@ -668,12 +668,18 @@ export function switchGeometry(s: Scad, plan: SwitchPlan, extraCuts: Man[] = [])
   const bracketPart = (v: SetV) => {
     const z0 = bedTop, plate = cube([3 * STUD - 0.2, 3 * STUD - 0.2, PLATE_H], [v.leverX - 1.5 * STUD + 0.1, v.throwY - 1.5 * STUD + 0.1, z0]);
     const socks = bracketStuds(v).map(([x, y]) => T(t.studSocket(t.o.studH + 0.2), [x, y, z0 - 0.01]));
-    const wf = (scadParity() ? g.leverBossLen : Math.max(g.leverBossLen, g.leverTipD)) + 2 * c, f0 = Math.min(v.forkX - forkHw, v.forkX + v.leverTravel + forkHw) - c - 1, f1 = Math.max(v.forkX - forkHw, v.forkX + v.leverTravel + forkHw) + c + 1;
+    const wf = leverT() + 2 * c, f0 = Math.min(v.forkX - forkHw, v.forkX + v.leverTravel + forkHw) - c - 1, f1 = Math.max(v.forkX - forkHw, v.forkX + v.leverTravel + forkHw) + c + 1;
     const slot = cube([f1 - f0, wf, 30], [f0, v.throwY - wf / 2, z0 - 1]);
     return s.union([s.difference(plate, [...socks, slot]), ...ears(v, z0 + PLATE_H)]);
   };
   // (the switch stand's yoke holds its eccentric, wider than the lever's tip)
   const forkHw = (p.throwStand && fdb ? STAND.eccD / 2 : g.leverTipD / 2) + c + g.forkWall;
+  /**
+   * How thick the lever is, along its pivot: as wide as the opening it swings in (wide enough for its tip, and
+   * 4DBrix's slider, to go down through), the ears standing either side of it, so its snap domes and its
+   * detent bump reach into them. (switch.scad's lever is 3 thick, its opening as wide plus the clearance.)
+   */
+  const leverT = () => (scadParity() ? g.leverBossLen : Math.max(g.leverBossLen, g.leverTipD, ...(fdb ? [FDB.rodW + 2 * c] : [])));
   /** The lever clicks into dimples in its ear (not with Peco's spring: that holds the points instead). */
   const leverDetent = (v: SetV) => !v.stand && !(fdb && p.throwAction === 'overcentre' && !v.three);
   const throwChannel = (v: SetV) => {
@@ -682,7 +688,7 @@ export function switchGeometry(s: Scad, plan: SwitchPlan, extraCuts: Man[] = [])
     const ends = [...units(v).map((u) => u.postX).flatMap((x) => [x - 1.5, x + v.leverTravel + 1.5]), v.forkX - forkHw, v.forkX + v.leverTravel + forkHw];
     const x0 = Math.min(...ends) - c - 1, x1 = Math.max(...ends) + c + 1;
     // (wide enough for the lever's tip to go down through it)
-    const wf = (scadParity() ? g.leverBossLen : Math.max(g.leverBossLen, g.leverTipD)) + 2 * c;
+    const wf = leverT() + 2 * c;
     const f0 = Math.min(v.forkX - forkHw, v.forkX + v.leverTravel + forkHw) - c - 1, f1 = Math.max(v.forkX - forkHw, v.forkX + v.leverTravel + forkHw) + c + 1;
     return s.union([
       cube([x1 - x0, w, g.layerTop + c - floorZ], [x0, v.throwY - w / 2, floorZ]),
@@ -935,7 +941,7 @@ export function switchGeometry(s: Scad, plan: SwitchPlan, extraCuts: Man[] = [])
   /** The channel through the arm for the slider's fork and the lever. */
   const fdbChannel = (v: SetV) => {
     // (wide enough for the slider to go down through, as well as the lever's tip)
-    const wf = Math.max(g.leverBossLen, g.leverTipD, FDB.rodW + 2 * c) + 2 * c, [g0, g1] = fdbMouth(v);
+    const wf = leverT() + 2 * c, [g0, g1] = fdbMouth(v);
     // (and the posts' groove: the arm's top is over it too)
     return s.union([T(s.extrude(fdbSlot2d(v, 0), g.layerTop + c - fdbFloor()), [0, 0, fdbFloor()]), cube([g1 - g0, wf, 30], [g0, v.throwY - wf / 2, fdbFloor()]), fdbGroove(v),
       ...(v.stand ? [standPocket(v)] : [])]);
@@ -997,7 +1003,8 @@ export function switchGeometry(s: Scad, plan: SwitchPlan, extraCuts: Man[] = [])
     const o = ocGeo(v), Q: Pt = [o.P[0] + o.T, o.P[1]];
     const sweep2d = W.CrossSection.union([W.CrossSection.hull([ocRing2d().translate(o.P as Vec2), ocRing2d().translate(Q as Vec2)]),
       ...o.A.map((a) => W.CrossSection.hull([ocSpring2d(o.P, [a]), ocSpring2d(Q, [a])]))]).offset(c + 0.2, 'Round', 2, 16);
-    return T(s.extrude(sweep2d, bedTop + 2 - (ocZ0() - c)), [0, 0, ocZ0() - c]);
+    // (not where its pins stand: on a network's piece the pockets are cut after the pins go on)
+    return s.difference(T(s.extrude(sweep2d, bedTop + 2 - (ocZ0() - c)), [0, 0, ocZ0() - c]), ocPins(v));
   };
   /** The pins the spring's ends go on, standing on its pocket's floor, each with a snap lip. */
   const ocPins = (v: SetV) => ocGeo(v).A.flatMap((q) => [
@@ -1071,7 +1078,7 @@ export function switchGeometry(s: Scad, plan: SwitchPlan, extraCuts: Man[] = [])
   };
   /** The lever, upright, origin at the pivot (lever_shape); with its detent bump, unless not. */
   const leverShape = (detent = true) => {
-    const tt = g.leverBossLen;
+    const tt = leverT();
     const cylY = (d: number, h: number, fn: number) => R(T(s.cylinder(h, d / 2, d / 2, fn), [0, 0, -h / 2]), [90, 0, 0]);
     // (4DBrix's lever (2-05-004) is a flat paddle: a round knob 14 above
     // the pivot, the arm narrowing to the boss, the tail narrowing to the tip;
@@ -1104,7 +1111,7 @@ export function switchGeometry(s: Scad, plan: SwitchPlan, extraCuts: Man[] = [])
   /** The lever as assembled, swung to the right-hand route's position (lever_part); the switch stand's handle with it. */
   const leverPart = (v: SetV) => (v.stand ? standPart(v) : T(R(leverShape(leverDetent(v)), [0, v.leverAng, 0]), [v.leverX, v.throwY, g.leverPz]));
   /** The lever lying on its -y face, ready to print (part = "lever"); the stand's handle the same way. */
-  const leverPrint = (v?: SetV) => (v?.stand ? standPrint(v) : T(R(leverShape(!v || leverDetent(v)), [90, 0, 0]), [0, 0, g.leverBossLen / 2]));
+  const leverPrint = (v?: SetV) => (v?.stand ? standPrint(v) : T(R(leverShape(!v || leverDetent(v)), [90, 0, 0]), [0, 0, leverT() / 2]));
 
   // ---------- the switch stand (throwStand) ----------
   // A ground throw as Caboose Industries' (and the prototype's low switch
@@ -1120,7 +1127,7 @@ export function switchGeometry(s: Scad, plan: SwitchPlan, extraCuts: Man[] = [])
   const standY = (v: SetV): [number, number, number] => {
     void v;
     // (the eccentric out to the channel's side less the clearance: the +y ear stands beside the channel)
-    return [-FDB.rodW / 2 - c - STAND.handleT, -FDB.rodW / 2 - c, Math.max(g.leverBossLen, g.leverTipD, FDB.rodW + 2 * c) / 2];
+    return [-FDB.rodW / 2 - c - STAND.handleT, -FDB.rodW / 2 - c, leverT() / 2];
   };
   /** Where the eccentric is at rest (the right-hand route's), turned from straight out (+x): past dead centre, low. */
   const standRest = 180 + STAND.overDeg;
@@ -1207,7 +1214,7 @@ export function switchGeometry(s: Scad, plan: SwitchPlan, extraCuts: Man[] = [])
       return -1;
     };
     const nearLever = (q: Pt, r: number) => {
-      const earHw = g.leverBossLen / 2 + c + g.leverEarT, wf = g.leverBossLen / 2 + c;
+      const earHw = leverT() / 2 + c + g.leverEarT, wf = leverT() / 2 + c;
       return plan.setData.some((d) => (p.throwModule && Math.abs(q[0] - d.leverX) < 1.5 * STUD + r && Math.abs(q[1] - d.throwY) < 1.5 * STUD + r) // (under the bracket)
         || (Math.abs(q[0] - d.leverX) < 4 + r && Math.abs(q[1] - d.throwY) < earHw + r)
         || (Math.abs(q[0] - d.leverX) < d.leverTravel / 2 + forkHw + 1.5 + r && Math.abs(q[1] - d.throwY) < wf + r));
