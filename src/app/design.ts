@@ -51,10 +51,14 @@ export interface PieceOptions {
   checkRailFlare: number;  // mm
   printBedX: number;       // mm
   printBedY: number;       // mm
+  /** Cut the track at baseplate edges: their size in studs (32, 48, or multiples), 0 = don't. */
+  baseplate: number;
+  /** Where a baseplate's corner is, studs (the plate grid's offset). */
+  baseplateX: number; baseplateY: number;
 }
 export const OPTION_DEFAULTS: PieceOptions = {
   throwSide: 'auto', leverOffset: 8, pointThrow: 3, pointClearance: 0.3, springPreload: 1, springThickness: 0.9, springLength: 40,
-  flangeway: 3, flangewayDepth: 3, checkRailLen: 30, checkRailW: 1, checkRailFlare: 1.5, printBedX: 256, printBedY: 256,
+  flangeway: 3, flangewayDepth: 3, checkRailLen: 30, checkRailW: 1, checkRailFlare: 1.5, printBedX: 256, printBedY: 256, baseplate: 0, baseplateX: 0, baseplateY: 0,
 };
 
 export function toRoutes(d: Design): Route[] {

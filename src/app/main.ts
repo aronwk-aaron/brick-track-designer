@@ -444,7 +444,7 @@ const OPTION_FORM: [string, [keyof PieceOptions, string, number?][]][] = [
     ['springPreload', 'Spring preload, mm', 0.25], ['springThickness', 'Spring thickness, mm', 0.05], ['springLength', 'Spring length, mm', 1]]],
   ['Guards (check rails)', [['checkRailLen', 'Check rail length, mm', 2], ['checkRailW', 'Check rail width, mm', 0.1], ['checkRailFlare', 'End flare, mm', 0.25],
     ['flangeway', 'Flangeway width, mm', 0.1], ['flangewayDepth', 'Flangeway depth, mm', 0.5]]],
-  ['Print bed', [['printBedX', 'Bed width, mm', 1], ['printBedY', 'Bed depth, mm', 1]]],
+  ['Print bed', [['printBedX', 'Bed width, mm', 1], ['printBedY', 'Bed depth, mm', 1], ['baseplate', 'Cut at baseplate edges'], ['baseplateX', 'Plate corner x, studs', 1], ['baseplateY', 'Plate corner y, studs', 1]]],
 ];
 function renderOptions() {
   const body = $('options-body'); body.replaceChildren();
@@ -452,7 +452,14 @@ function renderOptions() {
   for (const [title, fields] of OPTION_FORM) {
     const h = document.createElement('h4'); h.textContent = title; body.append(h);
     for (const [key, label, step] of fields) {
-      if (key === 'throwSide') {
+      if (key === 'baseplate') {
+        const sel = document.createElement('select');
+        for (const [v, t] of [['0', "Don't"], ['16', '16 x 16 studs'], ['32', '32 x 32 studs'], ['48', '48 x 48 studs'], ['64', '64 x 64 studs'], ['96', '96 x 96 studs']]) sel.append(new Option(t, v));
+        sel.value = String(o.baseplate ?? 0);
+        sel.title = 'Cut the track where baseplates of this size meet, on the design\'s stud grid, so every part sits on one plate';
+        sel.addEventListener('change', () => { design.options = { ...design.options, baseplate: Number(sel.value) }; changed(true); });
+        body.append(field(label, sel));
+      } else if (key === 'throwSide') {
         const sel = document.createElement('select');
         for (const [v, t] of [['auto', 'Auto (main route side)'], ['left', 'Left'], ['right', 'Right']]) sel.append(new Option(t, v));
         sel.value = o.throwSide;
