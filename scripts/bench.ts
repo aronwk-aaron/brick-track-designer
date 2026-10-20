@@ -12,9 +12,11 @@ for (const [name, d] of Object.entries(designs)) {
   if (only && !only.endsWith('.json') && !name.includes(only)) continue;
   const t0 = performance.now(); let last = t0, lastWhat = 'start';
   const stages: string[] = [];
-  const b = buildDesign(w, { ...d, name: `${name}-${Math.random()}` } as never, (what) => {
-    const t = performance.now(); if (process.env.BENCH) console.log(`  ${(t - t0).toFixed(0)} ms: ${what}`); stages.push(`${lastWhat} ${(t - last).toFixed(0)}`); last = t; lastWhat = what;
+  let b: ReturnType<typeof buildDesign>;
+  try { b = buildDesign(w, { ...d, name: `${name}-${Math.random()}` } as never, (what) => {
+    const t = performance.now(); if (process.env.BENCH) console.log(`  ${(t - t0).toFixed(0)} ms: ${what}  (heap ${(((w as unknown as { HEAPU8?: Uint8Array }).HEAPU8?.byteLength ?? 0) / 1e6).toFixed(0)} MB)`); stages.push(`${lastWhat} ${(t - last).toFixed(0)}`); last = t; lastWhat = what;
   });
+  } catch (e) { const ex = w as unknown as { getExceptionMessage?: (e: unknown) => string[] }; console.log('FAILED', typeof e === 'number' && ex.getExceptionMessage ? ex.getExceptionMessage(e) : e); continue; }
   const t = performance.now(); stages.push(`${lastWhat} ${(t - last).toFixed(0)}`);
   console.log(`${name}: ${(t - t0).toFixed(0)} ms  [${stages.join(' | ')}]  ${b.info.switches} switches, ${b.info.pieces} parts${b.info.warnings.length ? ` (${b.info.warnings.join('; ')})` : ''}`);
 }

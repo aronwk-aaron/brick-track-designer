@@ -48,12 +48,17 @@ export interface SwitchPiece {
   plan: SwitchPlan;
   /** The design's routes it covers: [route, s0, s1]. */
   covers: [number, number, number][];
+  /** Where each set's points are in the design (where its branch leaves): the key its hand edits go by. */
+  setAts: [number, number][];
 }
+/** A points set's lever, as moved by hand: which side, how far out, and (by its tines' length) how far along. */
+export interface ThrowEdit { side?: 'left' | 'right'; leverOffset?: number; springLength?: number }
 export interface Pieces { switches: SwitchPiece[]; rest: Route[]; warnings: string[] }
 
 /** Work out the switch pieces of a design and what's left over. */
 /** toeShift: how far (mm) to move the points from where the branch leaves, by that point in the design (hand edits). */
-export function planPieces(routes: Route[], splits: Split[], p: BaseParams = BASE_DEFAULTS, toeShift: (at: [number, number]) => number = () => 0): Pieces {
+export function planPieces(routes: Route[], splits: Split[], p: BaseParams = BASE_DEFAULTS, toeShift: (at: [number, number]) => number = () => 0,
+  throwEdit: (at: [number, number]) => ThrowEdit | undefined = () => undefined): Pieces {
   const warnings: string[] = [];
   // (the ends must clear each other's base: the sleepers, or with ballast its widest layer)
   const sleeperLen = (p.gaugeStuds + 1) * 8 + 24;
@@ -98,21 +103,26 @@ export function planPieces(routes: Route[], splits: Split[], p: BaseParams = BAS
       // slider, three positions); otherwise a set per branch (a tandem
       // three-way when the second leaves further on).
       const together = kids.length === 2 && Math.abs(kids[0].lead - kids[1].lead) < 1 && pos(0) === 1;
-      const shift = (sa: number) => { const q = routePose(routes[parent], sa); return toeShift([q[0], q[1]]); };
-      if (together) sets.push([0, 2, kids[0].lead + 12 + shift(kids[0].sa), undefined, 1]);
+      const atOf = (sa: number): [number, number] => { const q = routePose(routes[parent], sa); return [q[0], q[1]]; };
+      const shift = (sa: number) => toeShift(atOf(sa));
+      const setAts: [number, number][] = [];
+      if (together) { sets.push([0, 2, kids[0].lead + 12 + shift(kids[0].sa), undefined, 1]); setAts.push(atOf(kids[0].sa)); }
       else kids.forEach((kd, n) => {
         const ci = pos(n + 1), mi = pos(0);
         if (Math.abs(ci - mi) !== 1) { ok = false; return; }
         // (the throw on the main route's side, as switch.scad's)
         const toe = kd.lead + 12 + shift(kd.sa);
         sets.push(ci < mi ? [ci, mi, toe, -1] : [mi, ci, toe, +1]);
+        setAts.push(atOf(kd.sa));
       });
       if (!ok) { warnings.push('two branches on the same side of one switch: not built as a switch'); continue; }
-      // (the lever's side: the branch's own setting, else the options')
+      // (the lever: as moved by hand, else the branch's own side, else the options')
       sets.forEach((st, n) => {
-        const own = routes[kids[Math.min(n, kids.length - 1)].child].throwSide;
+        const ed = throwEdit(setAts[n]);
+        const own = ed?.side ?? routes[kids[Math.min(n, kids.length - 1)].child].throwSide;
         const side = own && own !== 'auto' ? own : p.throwSide;
         if (side === 'left' || side === 'right') st[3] = side === 'right' ? 1 : -1;
+        if (ed && (ed.leverOffset !== undefined || ed.springLength !== undefined)) st[5] = { ...(ed.leverOffset !== undefined && { leverOffset: ed.leverOffset }), ...(ed.springLength !== undefined && { springLength: ed.springLength }) };
       });
       const sorted = order.map((k) => frameRoutes[k]);
       // Long enough for the frog and its check rails, and for the ends to be
@@ -144,7 +154,7 @@ export function planPieces(routes: Route[], splits: Split[], p: BaseParams = BAS
         const s = cutAt(k.route) - k.lead;
         covers.push([k.child, 0, Math.min(s, routeLength(routes[k.child]))]);
       });
-      switches.push({ pose: P, routes: built.rts, sets, defaultThrowDir: 1, length: built.L, plan: built.plan, covers });
+      switches.push({ pose: P, routes: built.rts, sets, defaultThrowDir: 1, length: built.L, plan: built.plan, covers, setAts });
       s0 = s0 + cutAt(main); // (a later switch on the same route starts after this one)
     }
   }

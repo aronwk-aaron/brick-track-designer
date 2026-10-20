@@ -28,11 +28,13 @@ export interface Design {
   trackwork?: Trackwork;
 }
 
-/** Hand edits: check rails lengthened (+) or shortened (-) at each end, moved, or taken out; flangeway cuts lengthened; points moved along. */
+/** Hand edits: check rails lengthened (+) or shortened (-) at each end, moved, or taken out; flangeway cuts lengthened; points moved along; levers moved. */
 export interface Trackwork {
   check?: Record<string, { d0?: number; d1?: number; shift?: number; off?: boolean }>;
   groove?: Record<string, { d0?: number; d1?: number }>;
   points?: Record<string, { toe?: number }>;
+  /** each points set's lever, moved on the plan: its side, how far out (lever offset, mm), and how far along (its tines' length, mm) */
+  throw?: Record<string, { side?: 'left' | 'right'; leverOffset?: number; springLength?: number }>;
 }
 
 /** Piece options the editor's Options panel sets (switch.scad's Customizer settings). */

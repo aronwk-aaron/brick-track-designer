@@ -155,6 +155,8 @@ function onBuilt(e: MessageEvent) {
   const d = e.data;
   started = Math.max(started, d.id);
   if (d.id !== seq) return;          // an older build
+  // (the trackwork, ahead of the pieces: the plan and the Trackwork panel can be worked on while they build)
+  if (d.early) { errEl.textContent = ''; canvas.overlay = d.early; canvas.draw(); renderTrackwork(d.early.items ?? []); return; }
   if (d.progress) { $('build-what').textContent = `${d.progress}…`; $('build-bar').style.width = `${Math.round((d.frac ?? 0) * 100)}%`; return; }
   buildDone();
   if (d.error) { errEl.textContent = d.error; infoEl.textContent = ''; canvas.overlay = undefined; canvas.draw(); return; }
@@ -515,10 +517,10 @@ renderOptions();
 
 
 // ---------- trackwork: hand edits to the check rails, flangeway cuts and points ----------
-type TwItem = { kind: 'check' | 'groove' | 'points'; key: string; at: [number, number]; off?: boolean; len?: number; toe?: number };
+type TwItem = { kind: 'check' | 'groove' | 'points' | 'throw'; key: string; at: [number, number]; off?: boolean; len?: number; toe?: number; lever?: { side: number; leverOffset: number; springLength: number; maxTine: number; edited: boolean } };
 let twSig = '';
 function renderTrackwork(list: TwItem[]) {
-  const sig = JSON.stringify(list.map((it) => [it.kind, it.key, it.off, Math.round((it.len ?? 0) * 10), it.toe]));
+  const sig = JSON.stringify(list.map((it) => [it.kind, it.key, it.off, Math.round((it.len ?? 0) * 10), it.toe, it.lever && [it.lever.side, it.lever.leverOffset, it.lever.springLength]]));
   if (sig === twSig) return; // (don't rebuild the form under the user's fingers)
   twSig = sig;
   const body = $('trackwork-body'); body.replaceChildren();
@@ -528,8 +530,8 @@ function renderTrackwork(list: TwItem[]) {
     group[key] = { ...group[key], ...patch };
     changed(true);
   };
-  const names = { check: 'Check rail', groove: 'Flangeway cut', points: 'Points' } as const;
-  for (const kind of ['points', 'check', 'groove'] as const) {
+  const names = { check: 'Check rail', groove: 'Flangeway cut', points: 'Points', throw: 'Lever' } as const;
+  for (const kind of ['points', 'throw', 'check', 'groove'] as const) {
     list.filter((it) => it.kind === kind).forEach((it, n) => {
       const row = document.createElement('div'); row.className = 'tw';
       row.addEventListener('mouseenter', () => { canvas.highlight = it.key; canvas.draw(); });
@@ -550,6 +552,18 @@ function renderTrackwork(list: TwItem[]) {
         row.append(field('Take it out', off));
       } else if (kind === 'groove') {
         numField('Longer at the start, mm', 'd0', 1, 0); numField('Longer at the end, mm', 'd1', 1, 0);
+      } else if (kind === 'throw' && it.lever) {
+        // (drag the lever on the plan, or set it here)
+        const lv = it.lever;
+        const side = document.createElement('select');
+        for (const [v, l] of [['left', 'Left'], ['right', 'Right']]) { const op = document.createElement('option'); op.value = v; op.textContent = l; side.append(op); }
+        side.value = lv.side > 0 ? 'right' : 'left';
+        side.addEventListener('change', () => edit('throw', it.key, { side: side.value }));
+        row.append(field('Side (as you face along the points)', side));
+        const out = num(lv.leverOffset, (v) => edit('throw', it.key, { leverOffset: Math.max(0, v) }), 1); out.min = '0';
+        row.append(field('Out past the track, mm', out));
+        const tine = num(lv.springLength, (v) => edit('throw', it.key, { springLength: Math.min(lv.maxTine, Math.max(16, v)) }), 1); tine.min = '16'; tine.max = String(Math.floor(lv.maxTine));
+        row.append(field('Spring tines (shorter: the lever nearer the heel), mm', tine));
       } else numField('Points moved along, mm', 'toe', 1);
       body.append(row);
     });
