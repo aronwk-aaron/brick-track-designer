@@ -47,6 +47,8 @@ describe('every switch can be put together', { timeout: 120000 }, () => {
         if (bladesTop && /throw/.test(p.name)) continue;
         const dir = /lever|bracket/.test(p.name) || fromTop || bladesTop ? 1 : -1;
         const blade = /points/.test(p.name) && !/throw|lever|bracket/.test(p.name);
+        // (4DBrix's blades each turn on a pin standing up through the hole in the plate: some of the track inside the blade's outline)
+        if (bladesTop && blade && m.hull().intersect(track).volume() < 10) problems.push(`${p.name} has no pin to turn on`);
         const into = bladesTop && blade ? w.Manifold.union([track, ...b.pieces.filter((q) => /throw/.test(q.name)).map(man)]) : track;
         // (a closed blade's tongue is modelled undeflected: in the slider's post by the preload; it bends aside going on)
         const v0 = into === track ? 0 : m.intersect(into).volume() - m.intersect(track).volume();
