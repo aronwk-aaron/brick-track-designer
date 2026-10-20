@@ -199,6 +199,20 @@ const group = new THREE.Group();
 scene.add(group);
 
 /** Show the pieces as assembled: the track grey, moving parts in their colours. */
+// What the 3D view shows (Track, Points, Throws, Levers buttons), remembered.
+const shown = new Set(['track', 'points', 'throw', 'lever']);
+try { const v = localStorage.getItem('btd-shown'); if (v) { shown.clear(); for (const k of JSON.parse(v) as string[]) shown.add(k); } } catch { /* fine */ }
+const kindOf = (name: string) => (/lever/.test(name) ? 'lever' : /throw/.test(name) ? 'throw' : /points/.test(name) ? 'points' : 'track');
+let meshKinds: string[] = [];
+function applyShown() {
+  meshes.forEach((m, k) => { m.visible = shown.has(meshKinds[k]); });
+  document.querySelectorAll<HTMLButtonElement>('#views .show').forEach((b) => b.classList.toggle('on', shown.has(b.dataset.show!)));
+}
+document.querySelectorAll<HTMLButtonElement>('#views .show').forEach((b) => b.addEventListener('click', () => {
+  const k = b.dataset.show!; if (shown.has(k)) shown.delete(k); else shown.add(k);
+  try { localStorage.setItem('btd-shown', JSON.stringify([...shown])); } catch { /* fine */ }
+  applyShown();
+}));
 function showPieces(list: Piece[]) {
   for (const m of meshes) { group.remove(m); m.geometry.dispose(); (m.material as THREE.Material).dispose(); }
   meshes = list.map((p) => {
@@ -209,6 +223,8 @@ function showPieces(list: Piece[]) {
     group.add(m);
     return m;
   });
+  meshKinds = list.map((p) => kindOf(p.name));
+  applyShown();
   const bs = sphereOf();
   // (a different set of pieces, e.g. a switch appearing: frame again)
   const names = list.map((p) => p.name).join();
@@ -320,6 +336,19 @@ const canvas = new TrackCanvas($<HTMLCanvasElement>('track'), {
     hintEl.textContent = hint;
     coordsEl.textContent = at ? `x ${at[0]}, y ${at[1]} studs` : '';
   },
+});
+// Plan layers on and off: click one in the legend (remembered).
+try { const v = localStorage.getItem('btd-hidden'); if (v) for (const k of JSON.parse(v) as string[]) canvas.hidden.add(k); } catch { /* fine */ }
+document.querySelectorAll<HTMLElement>('#legend [data-layer]').forEach((el) => {
+  const k = el.dataset.layer!;
+  el.title = 'Click to show or hide this on the plan';
+  el.classList.toggle('off', canvas.hidden.has(k));
+  el.addEventListener('click', () => {
+    if (canvas.hidden.has(k)) canvas.hidden.delete(k); else canvas.hidden.add(k);
+    el.classList.toggle('off', canvas.hidden.has(k));
+    try { localStorage.setItem('btd-hidden', JSON.stringify([...canvas.hidden])); } catch { /* fine */ }
+    canvas.draw();
+  });
 });
 canvas.draw();
 (window as unknown as { btdCanvas: unknown }).btdCanvas = canvas; // (for the browser checks)

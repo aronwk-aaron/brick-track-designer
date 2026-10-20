@@ -70,6 +70,8 @@ export class TrackCanvas {
   highlight: string | undefined;
   /** Show where the underside grips (only when not gripping everywhere). */
   showGrips = true;
+  /** Plan layers turned off from the legend: grooves, checks, crossings, ballast, points, levers, grips. */
+  hidden = new Set<string>();
   /** Dragging a track's end: which route and end, where the press was, and the route as it was. */
   private drag: { route: number; end: 'start' | 'end'; sx: number; sy: number; moved: boolean; orig: DRoute; anchor: number; lastGood?: DRoute } | undefined;
   /** Dragging a lever: its item, and where it would go (mm) with what settings. */
@@ -83,12 +85,12 @@ export class TrackCanvas {
     const unit = (a: [number, number], b: [number, number]): [number, number] => { const l = Math.hypot(a[0] - b[0], a[1] - b[1]) || 1; return [(a[0] - b[0]) / l, (a[1] - b[1]) / l]; };
     for (const it of this.overlay?.items ?? []) {
       const cur = ((d.trackwork as Record<string, Record<string, Record<string, number>>> | undefined)?.[it.kind]?.[it.key]) ?? {};
-      if ((it.kind === 'check' || it.kind === 'groove') && it.pts.length > 1) {
+      if ((it.kind === 'check' || it.kind === 'groove') && it.pts.length > 1 && !this.hidden.has(it.kind === 'check' ? 'checks' : 'grooves')) {
         const n = it.pts.length;
         if (near(it.pts[0])) return { it, prop: 'd0' as const, from: w, dir: unit(it.pts[0], it.pts[1]), base: cur.d0 ?? 0 };
         if (near(it.pts[n - 1])) return { it, prop: 'd1' as const, from: w, dir: unit(it.pts[n - 1], it.pts[n - 2]), base: cur.d1 ?? 0 };
       }
-      if (it.kind === 'points' && it.dir && near(it.at)) return { it, prop: 'toe' as const, from: w, dir: it.dir, base: cur.toe ?? 0 };
+      if (it.kind === 'points' && it.dir && !this.hidden.has('points') && near(it.at)) return { it, prop: 'toe' as const, from: w, dir: it.dir, base: cur.toe ?? 0 };
     }
     return undefined;
   }
@@ -104,6 +106,7 @@ export class TrackCanvas {
       }
       return inside;
     };
+    if (this.hidden.has('levers')) return undefined;
     return this.overlay?.items?.find((it) => it.kind === 'throw' && it.lever && (Math.hypot(it.at[0] / MM - w[0], it.at[1] / MM - w[1]) < r || inPoly(it.pts)));
   }
   /** Move a lever to (near) w, studs: its side, how far out and how far along, as the switch allows. */
@@ -681,7 +684,7 @@ export class TrackCanvas {
     // each side than the sleepers, and with the bottom ("buddy") layer
     // another stud wider each side
     const ballast = d.options?.ballast ?? 'none';
-    if (ballast !== 'none') {
+    if (ballast !== 'none' && !this.hidden.has('ballast')) {
       const wide = (2 * g + 3 + (ballast === 'buddy' ? 4 : 2)) * this.scale;
       layer(ink.ballastLow, (draw) => { for (const r of d.routes) draw(trace(r, r.segs, 0.5), wide); });
       if (ballast === 'buddy') layer(ink.ballast, (draw) => { for (const r of d.routes) draw(trace(r, r.segs, 0.5), (2 * g + 5) * this.scale); });
@@ -754,11 +757,11 @@ export class TrackCanvas {
     // the solver's results
     if (this.overlay) {
       const w = (mm: [number, number][]) => mm.map(([x, y]) => [x / MM, y / MM] as [number, number]);
-      for (const gr of this.overlay.grooves) line(w(gr), '#e0452b', railW * 0.7);
-      for (const cr of this.overlay.checkRails) line(w(cr), '#2b6fe0', Math.max(1, (1 / MM) * this.scale));
-      for (const p of this.overlay.crossings) { const [sx, sy] = this.toScreen(p[0] / MM, p[1] / MM); c.strokeStyle = ink.mark; c.lineWidth = 1.2; c.beginPath(); c.arc(sx, sy, 5, 0, 2 * Math.PI); c.stroke(); }
+      if (!this.hidden.has('grooves')) for (const gr of this.overlay.grooves) line(w(gr), '#e0452b', railW * 0.7);
+      if (!this.hidden.has('checks')) for (const cr of this.overlay.checkRails) line(w(cr), '#2b6fe0', Math.max(1, (1 / MM) * this.scale));
+      if (!this.hidden.has('crossings')) for (const p of this.overlay.crossings) { const [sx, sy] = this.toScreen(p[0] / MM, p[1] / MM); c.strokeStyle = ink.mark; c.lineWidth = 1.2; c.beginPath(); c.arc(sx, sy, 5, 0, 2 * Math.PI); c.stroke(); }
       // the anti-stud tubes underneath that grip the plate (Grip: Edges)
-      if (this.showGrips && this.scale >= 3) {
+      if (this.showGrips && !this.hidden.has('grips') && this.scale >= 3) {
         c.strokeStyle = '#2b9e4a'; c.lineWidth = 1.5;
         const r = Math.max(2, (3.2 / MM) * this.scale);
         for (const p of this.overlay.grips ?? []) { const [sx, sy] = this.toScreen(p[0] / MM, p[1] / MM); c.beginPath(); c.arc(sx, sy, r, 0, 2 * Math.PI); c.stroke(); }
@@ -770,17 +773,17 @@ export class TrackCanvas {
         const [hx, hy] = this.toScreen(hi.at[0] / MM, hi.at[1] / MM);
         c.strokeStyle = '#f0b400'; c.lineWidth = 2.5; c.beginPath(); c.arc(hx, hy, 12, 0, 2 * Math.PI); c.stroke();
       }
-      for (const p of this.overlay.splits) { const [sx, sy] = this.toScreen(p[0] / MM, p[1] / MM); c.fillStyle = '#f0b400'; c.fillRect(sx - 5, sy - 5, 10, 10); }
+      if (!this.hidden.has('points')) for (const p of this.overlay.splits) { const [sx, sy] = this.toScreen(p[0] / MM, p[1] / MM); c.fillStyle = '#f0b400'; c.fillRect(sx - 5, sy - 5, 10, 10); }
       // handles: check rail and flangeway cut ends, dragged longer or shorter (and the one being dragged)
       if (this.scale >= 4) for (const it of this.overlay.items ?? []) {
-        if ((it.kind !== 'check' && it.kind !== 'groove') || it.pts.length < 2) continue;
+        if ((it.kind !== 'check' && it.kind !== 'groove') || it.pts.length < 2 || this.hidden.has(it.kind === 'check' ? 'checks' : 'grooves')) continue;
         c.fillStyle = it.kind === 'check' ? '#2b6fe0' : '#e0452b';
         for (const q of [it.pts[0], it.pts[it.pts.length - 1]]) { const [hx, hy] = this.toScreen(q[0] / MM, q[1] / MM); c.fillRect(hx - 2.5, hy - 2.5, 5, 5); }
       }
       if (this.itemDrag?.at) { const [hx, hy] = this.toScreen(this.itemDrag.at[0] / MM, this.itemDrag.at[1] / MM); c.strokeStyle = '#f0b400'; c.lineWidth = 2.5; c.beginPath(); c.arc(hx, hy, 7, 0, 2 * Math.PI); c.stroke(); }
       // each points set's lever: its arm out to the knob (drag the knob to move it)
       for (const it of this.overlay.items ?? []) {
-        if (it.kind !== 'throw') continue;
+        if (it.kind !== 'throw' || this.hidden.has('levers')) continue;
         const live = this.leverDrag?.it.key === it.key && this.leverDrag.at;
         const arm = live ? this.leverDrag!.arm! : it.pts, at = live ? this.leverDrag!.at! : it.at;
         // the arm as it's built (on the studs), and the lever on it
