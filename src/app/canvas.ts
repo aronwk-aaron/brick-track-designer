@@ -6,7 +6,7 @@
 // branches off it (a switch). Select mode picks a track to edit or delete.
 // Drag with the right or middle button (or Space + drag) to pan; the wheel
 // zooms.
-import type { Design, DRoute, DSeg } from './design';
+import { type Design, type DRoute, type DSeg, freeName } from './design';
 import { describe, follow, plan, planAnyway, planAuto, planFreeTurning, planToPose, reversed, trace as traceRaw, type Pose } from './planner';
 
 // Track outlines traced once and kept (they're in studs, the same at any
@@ -41,6 +41,31 @@ export interface CanvasHost {
 }
 
 const MM = 8; // mm per stud
+
+/** Can a lever be moved along the points (its spring tines longer or shorter)? Only on tines: 4DBrix's lever is level with the slider bar. */
+export const leverSlides = (d: Design) => (d.options?.mechStyle ?? '4dbrix') === 'tines';
+
+/** Which way round a lever is, and what set it: dragged across by hand, the branch route's own setting, the Piece options', or auto (away from the branch). */
+export interface LeverSide { side: 'left' | 'right'; by: 'hand' | 'route' | 'options' | 'auto'; main?: string; branch?: string; why: string }
+export function leverSide(d: Design, lever: OverlayItem, items: OverlayItem[]): LeverSide {
+  const side = (lever.lever?.side ?? 1) > 0 ? 'right' : 'left';
+  const ids = items.filter((it) => it.kind === 'points' && it.key === lever.key && !it.cand).flatMap((it) => it.routes ?? []);
+  const main = ids[0], branches = [...new Set(ids.slice(1))].filter((id) => id !== main);
+  const routeOf = (id: string) => d.routes.find((r, i) => (r.name || String(i)) === id);
+  // (a setting that would put it the other side isn't the one that did: a three-way takes its first branch's)
+  const own = branches.find((id) => routeOf(id)?.throwSide === side);
+  const branch = own ?? branches[0], opt = d.options?.throwSide ?? 'auto';
+  if (d.trackwork?.throw?.[lever.key]?.side) return { side, by: 'hand', main, branch, why: 'dragged there on the plan' };
+  if (own) return { side, by: 'route', main, branch, why: `${own}'s own Lever side (on its card)` };
+  if (opt === side) return { side, by: 'options', main, branch, why: 'the Piece options\' Lever side' };
+  return { side, by: 'auto', main, branch, why: branches.length > 1 ? 'auto: a three-way\'s goes on the right' : branch ? `auto: away from ${branch}, the branch` : 'auto: away from the branch' };
+}
+
+/** A key pressed while typing in a field (a number, a name, a drop-down): not a shortcut. */
+export function typingIn(e: KeyboardEvent) {
+  const t = e.target as HTMLElement | null;
+  return !!t && (t.tagName === 'INPUT' || t.tagName === 'SELECT' || t.tagName === 'TEXTAREA' || t.isContentEditable);
+}
 const norm180 = (a: number) => ((((a + 180) % 360) + 360) % 360) - 180;
 
 export class TrackCanvas {
@@ -83,17 +108,14 @@ export class TrackCanvas {
   /** A lever just let go of, shown where it was put until the rebuilt plan arrives with it there. */
   private leverPending: { key: string; at: [number, number]; arm: [number, number][] } | undefined;
   get overlay() { return this.overlayNow; }
-  set overlay(o: Overlay | undefined) {
-    this.overlayNow = o;
-    // (the new plan has the lever where it was put, near enough: stop holding it there)
-    const lp = this.leverPending, it = lp && o?.items?.find((i) => i.key === lp.key);
-    if (lp && (!it || Math.hypot(it.at[0] - lp.at[0], it.at[1] - lp.at[1]) < 1)) this.leverPending = undefined;
-  }
+  set overlay(o: Overlay | undefined) { this.overlayNow = o; }
+  /** The overlay now is of the design as it was last let go of: show the levers where they were built (on the stud grid, as far as they could go). */
+  settled() { this.leverPending = undefined; }
   /** A trackwork item to pick out (hovered in the Trackwork panel). */
   highlight: string | undefined;
   /** Show where the underside grips (only when not gripping everywhere). */
   showGrips = true;
-  /** Plan layers turned off from the legend: grooves, checks, crossings, ballast, points, levers, grips. */
+  /** Plan layers turned off from the legend: grooves, checks, crossings, ballast, baseplate, points, levers, grips. */
   hidden = new Set<string>();
   /** Dragging a track's end: which route and end, where the press was, and the route as it was. */
   private drag: { route: number; end: 'start' | 'end'; sx: number; sy: number; moved: boolean; orig: DRoute; anchor: number; lastGood?: DRoute } | undefined;
@@ -171,15 +193,23 @@ export class TrackCanvas {
       [lx, ly] = snapL([wx, wy]);
     }
     const leverOffset = Math.max(0, Math.min(80, Math.round((Math.abs(lx) - lv.edge) * 100) / 100));
-    // (along: a stud at a time back into the tines' reach)
-    for (let k = 0; k < 12 && lv.pivotY - 2 - ly > lv.maxTine + 0.01; k++) ly += MM;
-    for (let k = 0; k < 12 && lv.pivotY - 2 - ly < 16; k++) ly -= MM;
-    const springLength = Math.max(16, Math.min(Math.floor(lv.maxTine), Math.round((lv.pivotY - 2 - ly) * 100) / 100));
     const d = this.host.design(), tw = (d.trackwork ??= {}), group = (tw.throw ??= {});
     const was = JSON.stringify(group[ld.it.key] ?? {});
-    group[ld.it.key] = { side: side > 0 ? 'right' : 'left', leverOffset, springLength };
     const wd = (x: number, y: number): [number, number] => [fx + x * Math.cos(h) - y * Math.sin(h), fy + x * Math.sin(h) + y * Math.cos(h)];
-    const y = lv.pivotY - 2 - Math.min(springLength, lv.maxTine);
+    let y: number;
+    if (!leverSlides(d)) {
+      // (4DBrix's points: the slider bar meets the blades where it must, so the lever stays level with it: across and out only)
+      const ax = ld.it.at[0] - fx, ay = ld.it.at[1] - fy;
+      y = -ax * Math.sin(h) + ay * Math.cos(h);
+      group[ld.it.key] = { side: side > 0 ? 'right' : 'left', leverOffset };
+    } else {
+      // (along: a stud at a time back into the tines' reach)
+      for (let k = 0; k < 12 && lv.pivotY - 2 - ly > lv.maxTine + 0.01; k++) ly += MM;
+      for (let k = 0; k < 12 && lv.pivotY - 2 - ly < 16; k++) ly -= MM;
+      const springLength = Math.max(16, Math.min(Math.floor(lv.maxTine), Math.round((lv.pivotY - 2 - ly) * 100) / 100));
+      group[ld.it.key] = { side: side > 0 ? 'right' : 'left', leverOffset, springLength };
+      y = lv.pivotY - 2 - Math.min(springLength, lv.maxTine);
+    }
     const lxNew = side * (lv.edge + leverOffset), xOut = side * Math.ceil((Math.abs(lxNew) + 10) / MM - 1e-6) * MM;
     ld.at = wd(lxNew, y);
     ld.arm = [wd(side * lv.stockX, y - 12), wd(xOut, y - 12), wd(xOut, y + 12), wd(side * lv.stockX, y + 12)];
@@ -359,7 +389,7 @@ export class TrackCanvas {
     if (this.active.route === undefined) {
       const st = this.active.start!;
       const heading = Number.isNaN(st.heading) ? this.freeHeading(st, w) : st.heading;
-      d.routes.push({ name: `T${d.routes.length + 1}`, x: st.x, y: st.y, heading, segs });
+      d.routes.push({ name: freeName(d, 'T'), x: st.x, y: st.y, heading, segs });
       this.active = { route: d.routes.length - 1, end: follow({ ...st, heading }, segs) };
     } else {
       const rs = d.routes[this.active.route].segs, last = rs[rs.length - 1];
@@ -597,9 +627,10 @@ export class TrackCanvas {
     this.drawPending = requestAnimationFrame(() => { this.drawPending = 0; this.draw(); });
   }
   private key(e: KeyboardEvent, down: boolean) {
-    if ((e.target as HTMLElement)?.tagName === 'INPUT') return;
-    if (e.code === 'Space') { this.space = down; e.preventDefault(); }
-    if (!down) return;
+    if (e.code === 'Space' && !down) this.space = false;
+    if (typingIn(e) || !down) return;
+    // (Space held pans; not when a button has the focus: Space presses it)
+    if (e.code === 'Space' && (e.target as HTMLElement)?.tagName !== 'BUTTON') { this.space = true; e.preventDefault(); }
     if (e.key === 'Escape' && this.drag) {
       // put the dragged track back as it was
       this.host.design().routes[this.drag.route] = this.drag.orig;
@@ -607,9 +638,11 @@ export class TrackCanvas {
       this.host.changed(true); return this.draw();
     }
     // Esc: stop the track being drawn; pressed again (nothing being drawn), back to Select
+    // (in Select mode, Esc lets go of the selection)
     if (e.key === 'Escape') {
       if (this.active) this.stopDrawing();
       else if (this.mode === 'draw') this.host.leaveDraw?.();
+      else if (this.selection().length) this.setSelection([]);
     }
     if ((e.key === 'Delete' || e.key === 'Backspace') && this.selected !== undefined && !this.active) {
       const routes = this.host.design().routes;
@@ -654,6 +687,13 @@ export class TrackCanvas {
     if (this.drag?.moved) return this.dragBad ? "Can't bend the track this way: release to keep the last good shape, Esc puts it back"
       : this.dragSnap ? 'Release to join the two ends' : 'Release to reshape · drop on another end to join · Esc puts it back';
     if (this.active) return 'Click to lay track · keep clicking to go on · Esc or right-click stops · right-drag pans';
+    // (over a lever: which side it's on and what put it there)
+    const lv = this.leverDrag?.it ?? (this.mouse && !this.itemDrag ? this.leverAt(this.mouse) : undefined);
+    if (lv) {
+      const d = this.host.design(), ls = leverSide(d, lv, this.overlay?.items ?? []);
+      if (this.leverDrag?.moved) return 'Let go to put the lever here: it goes on the nearest stud it can';
+      return `Lever on the ${ls.side} (${ls.why}) · drag it across the track to change sides, or further out${leverSlides(d) ? ' or along' : ''}`;
+    }
     const hit = this.mouse ? this.nearTrack(this.mouse) : undefined;
     // (over points: what a click does to them)
     const pi = !this.active && this.mouse ? this.itemAt(this.mouse) : undefined;
@@ -669,6 +709,7 @@ export class TrackCanvas {
       if (hit?.end) return 'Drag this end to reshape the track';
       if (this.moving?.moved) return 'Moving: let go to put it down';
       if (this.selected !== undefined) return `${this.selection().length > 1 ? `${this.selection().length} tracks` : this.host.design().routes[this.selected]?.name ?? ''} selected · drag to move · Shift+click adds more · Delete removes`;
+      if (!this.host.design().routes.length) return 'No track yet: press D (or ✎ Draw) to lay some';
       return 'Click a track to select it, drag it to move it · drag an end to reshape it · D to draw';
     }
     if (hit?.end === 'end') return 'Click to carry the track on · drag to reshape it';
@@ -698,7 +739,7 @@ export class TrackCanvas {
     const d = this.host.design(), g = (d.gaugeStuds + 1) / 2;
     // baseplate edges, where the track is cut (Piece options)
     const bpS = d.options?.baseplate ?? 0;
-    if (bpS > 0) {
+    if (bpS > 0 && !this.hidden.has('baseplate')) {
       const ox = d.options?.baseplateX ?? 0, oy = d.options?.baseplateY ?? 0;
       c.strokeStyle = 'rgba(224,120,40,0.7)'; c.lineWidth = 1.5; c.setLineDash([8, 6]); c.beginPath();
       for (let x = ox + Math.ceil((wx0 - ox) / bpS) * bpS; x <= wx1; x += bpS) { const [sx] = this.toScreen(x, 0); c.moveTo(sx, 0); c.lineTo(sx, H); }
@@ -878,6 +919,13 @@ export class TrackCanvas {
         for (const q of [it.pts[0], it.pts[it.pts.length - 1]]) { const [hx, hy] = this.toScreen(q[0] / MM, q[1] / MM); c.fillRect(hx - 2.5, hy - 2.5, 5, 5); }
       }
       if (this.itemDrag?.at) { const [hx, hy] = this.toScreen(this.itemDrag.at[0] / MM, this.itemDrag.at[1] / MM); c.strokeStyle = '#f0b400'; c.lineWidth = 2.5; c.beginPath(); c.arc(hx, hy, 7, 0, 2 * Math.PI); c.stroke(); }
+      // the lever hovered, dragged or picked out in the Trackwork panel: the branch route whose points it throws, the one whose card sets its side
+      const focus = this.hidden.has('levers') ? undefined : this.leverDrag?.it ?? (this.mouse && !this.active && !this.itemDrag && !this.drag ? this.leverAt(this.mouse) : undefined)
+        ?? this.overlay.items?.find((it) => it.kind === 'throw' && it.key === this.highlight);
+      if (focus) {
+        const ls = leverSide(d, focus, this.overlay.items ?? []), r = d.routes.find((q, i) => (q.name || String(i)) === ls.branch);
+        if (r) line(trace(r, r.segs, 0.5), 'rgba(232,137,43,0.55)', Math.max(3, 1.2 * this.scale));
+      }
       // each points set's lever: its arm out to the knob (drag the knob to move it)
       for (const it of this.overlay.items ?? []) {
         if (it.kind !== 'throw' || this.hidden.has('levers')) continue;

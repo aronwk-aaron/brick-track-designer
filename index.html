@@ -8,12 +8,12 @@
   <style>
     :root {
       --bg: #eef0f2; --panel: #ffffff; --raise: #f5f6f8; --line: #d9dde2; --ink: #1f2328; --muted: #67707a;
-      --accent: #2b6fe0; --accent-ink: #ffffff; --err: #c0392b; --chip: rgba(255,255,255,0.92); --shadow: 0 1px 3px rgba(0,0,0,0.12);
+      --accent: #2b6fe0; --accent-ink: #ffffff; --err: #c0392b; --warn: #a15c00; --chip: rgba(255,255,255,0.92); --shadow: 0 1px 3px rgba(0,0,0,0.12);
       --canvas-bg: #fbfbf8; --view-bg: #f4f4f2;
     }
     @media (prefers-color-scheme: dark) { :root {
       --bg: #17191c; --panel: #212428; --raise: #2a2e33; --line: #3a3f45; --ink: #e6e8ea; --muted: #9aa1a8;
-      --accent: #5b93f5; --accent-ink: #ffffff; --err: #ff7a6b; --chip: rgba(33,36,40,0.92); --shadow: 0 1px 3px rgba(0,0,0,0.5);
+      --accent: #5b93f5; --accent-ink: #ffffff; --err: #ff7a6b; --warn: #f0b45a; --chip: rgba(33,36,40,0.92); --shadow: 0 1px 3px rgba(0,0,0,0.5);
       --view-bg: #2a2d31;
       --canvas-bg: #1b1d20; --c-grid: #25282c; --c-grid8: #34383d; --c-rail: #c9d0d6; --c-centre: #5a5f66; --c-label: #aab1b8;
       --c-mark: #e6e8ea; --c-tag-bg: rgba(33,36,40,0.94); --c-band: rgba(200,205,210,0.10); --c-sel: #7fa9f5; --c-sel-ink: #9bbcff;
@@ -31,7 +31,7 @@
     header .spacer { flex: 1; }
     header label.inline { display: inline-flex; gap: 5px; align-items: center; color: var(--muted); white-space: nowrap; }
     header input[type=number] { width: 48px; }
-    #template { width: 108px; } #radius { width: 116px; } #grip { width: 120px; } #points { width: 124px; }
+    #template { width: 108px; } #radius { width: 150px; }
     button, select, input { font: inherit; color: inherit; }
     button, select { background: var(--raise); border: 1px solid var(--line); border-radius: 6px; padding: 4px 9px; cursor: pointer; white-space: nowrap; }
     button:hover:not(:disabled), select:hover { border-color: var(--muted); }
@@ -46,18 +46,26 @@
     aside { display: flex; flex-direction: column; min-height: 0; border-right: 1px solid var(--line); background: var(--panel); }
     aside .head { display: flex; align-items: center; gap: 6px; padding: 8px 10px; border-bottom: 1px solid var(--line); }
     aside .head h2 { font-size: 13px; margin: 0; flex: 1; }
-    #routes { overflow: auto; padding: 8px; flex: 1; }
-    #trackwork { border-top: 1px solid var(--line); padding: 6px 10px 10px; max-height: 40%; overflow: auto; }
+    #routes { overflow: auto; padding: 8px; flex: 1; min-height: 120px; }
+    #trackwork { border-top: 1px solid var(--line); padding: 6px 10px 10px; max-height: 40%; overflow: auto; flex: 0 1 auto; }
     #trackwork > summary { cursor: pointer; font-weight: 600; padding: 4px 0; }
     #trackwork .tw { border: 1px solid var(--line); border-radius: 6px; padding: 4px 6px; margin: 4px 0; }
     #trackwork .tw:hover { border-color: #f0b400; }
     #trackwork .tw b { font-size: 12px; }
     #trackwork .tw .field { grid-template-columns: 1fr 64px; }
+    #trackwork .tw .field.stack { grid-template-columns: minmax(0, 1fr); gap: 2px; }
     #trackwork .none { color: var(--muted); font-size: 12px; }
-    #options { border-top: 1px solid var(--line); padding: 6px 10px 10px; max-height: 50%; overflow: auto; }
+    #trackwork > summary .count, #options > summary .count { font-weight: 400; color: var(--muted); }
+    #trackwork .row button, #trackwork > div > button { margin-top: 6px; }
+    #options { border-top: 1px solid var(--line); padding: 6px 10px 10px; max-height: 45%; overflow: auto; flex: 0 1 auto; }
     #options > summary { cursor: pointer; font-weight: 600; padding: 4px 0; }
     #options h4 { margin: 10px 0 4px; font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em; }
     #options .field select { width: 100%; }
+    .field.stack { grid-template-columns: minmax(0, 1fr); gap: 2px; margin-top: 8px; }
+    #options .desc { display: block; color: var(--muted); font-size: 11.5px; margin: 2px 0 4px; }
+    #options .desc.bad { color: var(--warn); }
+    #options .note { color: var(--muted); font-size: 12px; font-style: italic; margin: 2px 0 4px; }
+    #options .sec.idle .field, #options .sec.idle .desc { opacity: 0.6; }
     #options .reset { margin-top: 8px; }
     #routes .empty { color: var(--muted); padding: 10px 4px; }
     details.route { border: 1px solid var(--line); border-radius: 8px; margin: 0 0 8px; background: var(--panel); }
@@ -69,6 +77,7 @@
     details.route > summary b { white-space: nowrap; }
     details.route > summary span { color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
     details.route .body { padding: 0 9px 9px; }
+    details.route .desc { display: block; color: var(--warn); font-size: 11.5px; margin: 2px 0 4px; }
     .field { display: grid; grid-template-columns: 1fr 84px; gap: 6px; align-items: center; margin: 4px 0; }
     .field span { color: var(--muted); }
     .field input { width: 100%; }
@@ -104,12 +113,21 @@
     #legend i.sq.off { background: none; border: 2px solid #8a8f99; width: 5px; height: 5px; }
     #legend i.sq.cand { background: none; border: 2px solid #f0b400; width: 5px; height: 5px; }
     #legend .sub { padding-left: 14px; font-size: 11.5px; }
+    #legend .lhead { display: flex; align-items: center; gap: 6px; color: var(--ink); font-size: 12px; }
+    #legend .lhead b { flex: 1; }
+    #legend .lhead button { margin: 0; padding: 0 6px; line-height: 16px; }
+    #legend-rows { display: flex; flex-direction: column; gap: 2px; }
+    #legend-rows [hidden] { display: none; }
+    #legend.folded #legend-rows { display: none; }
+    #legend .hintline { font-size: 11px; opacity: 0.8; max-width: 230px; margin-top: 2px; }
+    #legend i.bp { height: 0; border-top: 2px dashed rgba(224,120,40,0.8); background: none; }
     #legend [data-layer] { cursor: pointer; user-select: none; }
     #legend [data-layer].off { opacity: 0.4; text-decoration: line-through; }
     #views .sep { display: inline-block; width: 1px; height: 18px; background: var(--line); margin: 0 4px; vertical-align: middle; }
     #views .explode { font-size: 12px; display: inline-flex; align-items: center; gap: 4px; padding: 0 4px; }
     #views .explode input { width: 80px; }
     #views .show:not(.on) { opacity: 0.45; text-decoration: line-through; }
+    #views [hidden] { display: none; }
     #legend i.knob { width: 9px; height: 9px; border-radius: 50%; background: #e8892b; margin: 0 9px 0 3px; }
     #legend button { margin-top: 4px; padding: 1px 6px; font-size: 12px; }
     #help { background: var(--panel); right: 10px; top: 10px; width: min(360px, calc(100% - 20px)); padding: 10px 12px; font-size: 12.5px; display: none; z-index: 2; }
@@ -120,9 +138,13 @@
     #empty { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; pointer-events: none; }
     #empty div { background: var(--chip); border: 1px solid var(--line); border-radius: 10px; padding: 14px 18px; text-align: center; color: var(--muted); box-shadow: var(--shadow); }
     #empty b { color: var(--ink); display: block; font-size: 14px; margin-bottom: 4px; }
-    #views { right: 10px; top: 10px; display: flex; gap: 4px; padding: 3px; z-index: 1; } #views button { padding: 2px 8px; font-size: 12px; }
-    #buildstatus { left: 50%; top: 10px; transform: translateX(-50%); display: flex; gap: 8px; align-items: center; z-index: 2; }
+    #views { right: 10px; top: 10px; display: flex; flex-wrap: wrap; justify-content: flex-end; align-items: center; gap: 4px; padding: 3px; z-index: 1; max-width: calc(100% - 20px); } #views button { padding: 2px 8px; font-size: 12px; }
+    /* (the build's progress takes the status line's place while it builds) */
+    #buildstatus { left: 10px; bottom: 10px; display: flex; gap: 8px; align-items: center; z-index: 2; max-width: calc(100% - 20px); }
     #buildstatus[hidden] { display: none; }
+    #buildstatus:not([hidden]) ~ #status { display: none; }
+    #buildstatus button, #status button { padding: 1px 8px; font-size: 12px; pointer-events: auto; margin-left: 6px; }
+    #view3d.stale canvas { opacity: 0.45; filter: grayscale(0.6); }
     #buildstatus .bar { width: 120px; height: 6px; border-radius: 3px; background: var(--line); overflow: hidden; }
     #buildstatus .bar i { display: block; height: 100%; width: 0; background: var(--accent); transition: width 0.2s; }
     #build-time { color: var(--muted); font-variant-numeric: tabular-nums; }
@@ -130,8 +152,10 @@
     @keyframes spin { to { transform: rotate(360deg); } }
     #status { left: 10px; bottom: 10px; right: auto; max-width: calc(100% - 20px); color: var(--muted); pointer-events: none; }
     #status:empty { display: none; }
+    #plan > #status, #plan > #buildstatus { bottom: 46px; z-index: 1; }
     #error { color: var(--err); }
-    #error:not(:empty)::before { content: ' · '; color: var(--muted); }
+    #error.warn { color: var(--warn); }
+    #info:not(:empty) + #error:not(:empty)::before { content: ' · '; color: var(--muted); }
 
     @media (max-width: 1640px) { header h1 { display: none; } }
     @media (max-width: 1480px) { header .lbl { display: none; } }
@@ -141,31 +165,29 @@
       body > main { grid-column: 1; grid-row: 3; }
       aside { max-height: 40vh; border-right: 0; border-bottom: 1px solid var(--line); }
       header { grid-column: 1; } header h1 { display: none; } header .spacer { display: none; }
-      #legend { display: none; }
+      #legend #legend-rows, #legend .lhead { display: none; } /* (just its Help button: the plan's too small for the rest) */
+      #views .sep { display: none; } #views .explode input { width: 60px; }
     }
   </style>
 </head>
 <body>
   <header>
     <h1>Brick Track Designer</h1>
-    <button id="toggle-panel" type="button" title="Show or hide the routes panel">☰</button>
+    <button id="toggle-panel" type="button" title="Show or hide the side panel (routes, trackwork, piece options)">☰</button>
     <span class="sep"></span>
     <span class="group" role="group" aria-label="Tool">
       <button id="mode-select" class="on" type="button" title="Select tracks (S): click, Shift+click for more; drag to move them; Delete removes them">⬚ Select</button><button id="mode-draw" type="button" title="Lay track (D)">✎ Draw</button>
     </span>
-    <label class="inline"><select id="radius" title="Radius of the curves the planner lays: Free bends to fit (R24 to R1000), Auto uses LEGO radii with 22.5° ends"></select></label>
+    <label class="inline"><select id="radius" title="The curves Draw lays: Free bends to fit (R24 to R1000, any angle); LEGO radii with 22.5° ends; or one radius"></select></label>
     <span class="sep"></span>
     <span class="group" role="group" aria-label="History">
       <button id="undo" type="button" title="Undo (Ctrl+Z)">↶<span class="lbl"> Undo</span></button><button id="redo" type="button" title="Redo (Ctrl+Shift+Z)">↷<span class="lbl"> Redo</span></button>
     </span>
     <span class="sep"></span>
     <select id="template" title="Replace the design with a starting point"><option value="">Templates…</option></select>
-    <button id="clear" type="button" class="danger" title="Remove all track">Clear</button>
+    <button id="clear" type="button" class="danger" title="Remove all the track (Undo brings it back)">Clear</button>
     <span class="sep"></span>
     <label class="inline" title="Studs between the rails (LEGO is 4)">Gauge <input id="gauge" type="number" min="2" max="10" step="1"></label>
-    <label class="inline"><select id="grip" title="Underside: Edges is hollow like a LEGO plate, with anti-stud tubes gripping along the edges and every 4 studs; Every stud has a gripping square socket at every stud (holds hard)">
-      <option value="edges">Grip: edges</option><option value="all">Grip: every stud</option></select></label>
-    <label class="inline"><select id="points" title="Switch points: one part (both blades on one pivot) or two (each blade on its own pivot and spring, as 4DBrix's)"><option value="1">Points: 1 part</option><option value="2">Points: 2 parts</option></select></label>
     <span class="spacer"></span>
     <button id="fit" type="button" title="Fit the track in view (F)">⤢<span class="lbl"> Fit</span></button>
     <button id="toggle-3d" class="on" type="button" title="Show or hide the 3D preview (P)">3D</button>
@@ -179,39 +201,49 @@
   <aside>
     <div class="head"><h2 id="routes-title">Routes</h2><button id="add-route" type="button" title="Add a route by numbers">+ Route</button></div>
     <div id="routes"></div>
-    <details id="trackwork"><summary>Trackwork (hand edits)</summary><div id="trackwork-body"></div></details>
+    <details id="trackwork"><summary title="The check rails, flangeway cuts, points and levers the app works out, each to change by hand">Trackwork<span id="trackwork-count" class="count"></span></summary><div id="trackwork-body"></div></details>
     <details id="options"><summary>Piece options</summary><div id="options-body"></div></details>
   </aside>
   <main>
     <div id="plan">
       <canvas id="track"></canvas>
-      <div id="empty" hidden><div><b>Lay some track</b>Click a grid point to start, then click where the track should go.<br>Or pick one of the Templates.</div></div>
+      <div id="empty" hidden><div><b>Lay some track</b>In Draw mode (<kbd>D</kbd>), click a grid point to start, then click where the track should go.<br>Or pick one of the Templates.</div></div>
       <div id="legend" class="chip">
-        <span data-layer="grooves"><i style="background:#e0452b"></i>flangeway cut</span>
-        <span data-layer="checks"><i style="background:#2b6fe0"></i>check rail</span>
-        <span data-layer="crossings"><i class="dot"></i>rail crossing</span>
-        <span id="legend-ballast" data-layer="ballast" hidden><i style="background:rgba(150,128,96,0.45)"></i>ballast</span>
-        <span data-layer="points" title="Click points on the plan to take them out or put them back; drag them to move them along"><i class="sq"></i>points (built as a switch; click: take out)</span>
-        <span class="sub"><i class="sq off"></i>points taken out (click: put back)</span>
-        <span class="sub" title="A track end a little off another track: points could be made there. Dashed: too far off to force."><i class="sq cand"></i>could be points (click: force)</span>
-        <span data-layer="levers"><i class="knob"></i>lever (drag it: side, out, along)</span>
-        <span id="legend-grip" data-layer="grips"><i class="grip"></i>anti-stud tube (grips)</span>
+        <div class="lhead"><b>On the plan</b><button id="legend-fold" type="button" title="Fold the legend away (or open it)">–</button></div>
+        <div id="legend-rows">
+          <span id="legend-grooves" data-layer="grooves"><i style="background:#e0452b"></i>flangeway cut</span>
+          <span id="legend-checks" data-layer="checks"><i style="background:#2b6fe0"></i>check rail</span>
+          <span id="legend-crossings" data-layer="crossings"><i class="dot"></i>rail crossing</span>
+          <span id="legend-ballast" data-layer="ballast" hidden><i style="background:rgba(150,128,96,0.45)"></i>ballast</span>
+          <span id="legend-baseplate" data-layer="baseplate" hidden><i class="bp"></i>baseplate edge (cut there)</span>
+          <span id="legend-points" data-layer="points"><i class="sq"></i>points (built as a switch)</span>
+          <span id="legend-points-off" class="sub"><i class="sq off"></i>points taken out</span>
+          <span id="legend-points-cand" class="sub"><i class="sq cand"></i>could be points</span>
+          <span id="legend-levers" data-layer="levers"><i class="knob"></i>lever (its arm: the side it's on)</span>
+          <span id="legend-grip" data-layer="grips"><i class="grip"></i>anti-stud tube (grips the plate)</span>
+          <span id="legend-hint" class="hintline">Click a row to hide it; hover the plan for what a click does.</span>
+        </div>
         <button id="help-open" type="button" title="How to use the editor (?)">? Help</button>
       </div>
       <div id="help" class="chip" role="dialog" aria-label="Help">
         <h3>Laying track</h3>
         <ul>
-          <li>Click a grid point or a track end to start; move to see the track; click to lay it.</li>
-          <li><kbd>Esc</kbd> or right-click stops drawing.</li>
-          <li>Start on the middle of a track to branch off it.</li>
-          <li>Points (yellow squares): click to take them out (both tracks' rails run through as plain track; grey square), click again to put them back; drag to move them along. A hollow yellow square is a track end a little off another track: click it to force points there (dashed: too far off; redraw it to start on the track). A three-way's branches one at a time: Trackwork panel.</li>
+          <li><kbd>D</kbd> or ✎ Draw, then click a grid point or a track's end to start; move to see the track; click to lay it and carry on.</li>
+          <li><kbd>Esc</kbd> or a right-click stops drawing; <kbd>Esc</kbd> again goes back to Select.</li>
+          <li>Start on the middle of a track to branch off it: a switch.</li>
           <li>Drag a track's end to reshape it; drop it on another end to join them. <kbd>Esc</kbd> while dragging puts it back.</li>
+        </ul>
+        <h3>Switches</h3>
+        <ul>
+          <li>Points (yellow squares): click to take them out (both tracks' rails run through as plain track: a grey square), again to put them back; drag to move them along. A hollow yellow square is a track end a little off another track: click it to force points there (dashed: too far off; redraw it to start on the track).</li>
+          <li>Levers (orange): drag one across the track to swap its side, or further out (on tines, along too). Hover a lever to see what set its side, the branch it throws picked out in orange: a lever dragged across wins, then the branch route's own Lever side (on its card), then the Piece options'.</li>
+          <li>The Trackwork panel has each one's numbers, and a three-way's branches one at a time.</li>
         </ul>
         <h3>View and keys</h3>
         <ul>
-          <li>Wheel zooms; right/middle-drag or <kbd>Space</kbd>+drag pans.</li>
-          <li>Select: click a track; <kbd>Shift</kbd>+click adds more; <kbd>Ctrl</kbd>+<kbd>A</kbd> all. <kbd>Ctrl</kbd>+<kbd>C</kbd>/<kbd>X</kbd>/<kbd>V</kbd> copy, cut, paste (at the mouse), <kbd>Ctrl</kbd>+<kbd>D</kbd> duplicate, <kbd>M</kbd> mirror, <kbd>R</kbd> / <kbd>Shift</kbd>+<kbd>R</kbd> turn 90°.</li>
-          <li><kbd>D</kbd> draw, <kbd>S</kbd> select, <kbd>Del</kbd> delete, <kbd>F</kbd> fit, <kbd>P</kbd> 3D preview, <kbd>Ctrl</kbd>+<kbd>Z</kbd> undo.</li>
+          <li>Wheel zooms; right/middle-drag or <kbd>Space</kbd>+drag pans (while drawing too).</li>
+          <li>Select: click a track; <kbd>Shift</kbd>+click adds more; drag on empty ground for a box; <kbd>Ctrl</kbd>+<kbd>A</kbd> all; <kbd>Esc</kbd> none. <kbd>Ctrl</kbd>+<kbd>C</kbd>/<kbd>X</kbd>/<kbd>V</kbd> copy, cut, paste (at the mouse), <kbd>Ctrl</kbd>+<kbd>D</kbd> duplicate, <kbd>M</kbd> mirror, <kbd>R</kbd> / <kbd>Shift</kbd>+<kbd>R</kbd> turn 90°, <kbd>Del</kbd> delete.</li>
+          <li><kbd>D</kbd> draw, <kbd>S</kbd> select, <kbd>F</kbd> fit, <kbd>P</kbd> 3D preview, <kbd>?</kbd> this help, <kbd>Ctrl</kbd>+<kbd>Z</kbd> undo, <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>Z</kbd> or <kbd>Ctrl</kbd>+<kbd>Y</kbd> redo.</li>
         </ul>
         <button id="help-close" type="button">Close</button>
       </div>
@@ -223,7 +255,7 @@
       <div id="coords" class="chip"></div>
     </div>
     <div id="splitter" title="Drag to resize; double-click to reset"></div>
-    <div id="view3d"><div id="buildstatus" class="chip" hidden><span class="spin"></span><span id="build-what">Building…</span> <span id="build-time"></span><span class="bar"><i id="build-bar"></i></span></div><div id="views" class="chip"><button id="view-top" type="button" title="Look at the top">Top</button><button id="view-under" type="button" title="Look at the underside, to see where it grips">Underside</button><button id="view-frame" type="button" title="Fit the piece in the view (or double-click it)">Frame</button><span class="sep"></span><button class="show on" data-show="track" type="button" title="Show or hide the track (bases)">Track</button><button class="show on" data-show="points" type="button" title="Show or hide the points">Points</button><button class="show on" data-show="throw" type="button" title="Show or hide the throws">Throws</button><button class="show on" data-show="lever" type="button" title="Show or hide the levers">Levers</button><span class="sep"></span><label class="explode" title="Pull the parts apart to see where they separate">Explode <input id="explode" type="range" min="0" max="1" step="0.02" value="0"></label></div><div id="status" class="chip"><span id="info"></span><span id="error"></span></div></div>
+    <div id="view3d"><div id="buildstatus" class="chip" hidden><span class="spin"></span><span id="build-what">Building…</span> <span id="build-time"></span><span class="bar"><i id="build-bar"></i></span><button id="build-stop" type="button" title="Stop this build (the 3D view stays as it was; Rebuild when you're ready)">Stop</button></div><div id="views" class="chip"><button id="view-top" type="button" title="Look at the top">Top</button><button id="view-under" type="button" title="Look at the underside, to see where it grips">Underside</button><button id="view-frame" type="button" title="Fit the piece in the view (or double-click it)">Frame</button><span class="sep" id="views-sep2"></span><button class="show on" data-show="track" type="button" title="Show or hide the track (bases)">Track</button><button class="show on" data-show="points" type="button" title="Show or hide the points">Points</button><button class="show on" data-show="throw" type="button" title="Show or hide the throws">Throws</button><button class="show on" data-show="lever" type="button" title="Show or hide the levers">Levers</button><span class="sep"></span><label class="explode" title="Pull the parts apart to see where they separate">Explode <input id="explode" type="range" min="0" max="1" step="0.02" value="0"></label></div><div id="status" class="chip"><span id="info"></span><span id="error"></span><button id="rebuild" type="button" hidden>Rebuild</button></div></div>
   </main>
   <script type="module" src="/src/app/main.ts"></script>
 </body>

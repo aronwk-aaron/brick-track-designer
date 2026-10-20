@@ -97,6 +97,13 @@ export function toRoutes(d: Design): Route[] {
   }));
 }
 
+/** A name for a new route, prefix and the first number no route has (routes are known by their names: two the same would be mixed up). */
+export function freeName(d: Design, prefix: string): string {
+  let n = d.routes.length + 1;
+  while (d.routes.some((r) => r.name === `${prefix}${n}`)) n++;
+  return `${prefix}${n}`;
+}
+
 /** The end pose of a route, in studs and degrees (to start another route there). */
 export function endOf(d: Design, i: number): { x: number; y: number; heading: number } {
   const rt = toRoutes(d)[i];
