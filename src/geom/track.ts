@@ -45,6 +45,15 @@ export function constants(o: TrackOptions) {
   };
 }
 
+/**
+ * Stud sockets: 'round' anti-stud holes; 'square' as the OpenSCAD library
+ * cut them, for the parity checks. (Round holes the same size as the
+ * square's flats: the same grip, with a vertex where the studs touch.)
+ */
+let socketShape: 'round' | 'square' = 'round';
+export const setSocketShape = (m: 'round' | 'square') => { socketShape = m; };
+export const getSocketShape = () => socketShape;
+
 export class Track {
   readonly c: ReturnType<typeof constants>;
   constructor(readonly s: Scad, readonly o: TrackOptions = DEFAULTS) {
@@ -56,9 +65,10 @@ export class Track {
     return this.s.cylinder(h, d / 2, d / 2, this.c.studFn);
   }
 
-  /** stud_socket(h, corner): a square socket, a corner cut off if given. */
+  /** A socket a stud grips in: round (an anti-stud hole); 'square' (stud_socket(h, corner), a corner cut off if given) for the parity checks against OpenSCAD. */
   studSocket(h: number, corner?: Vec2): Man {
     const s = this.s, w = this.c.studSocketW / 2, cc = 1.2;
+    if (socketShape === 'round') return s.cylinder(h, w, w, 24);
     let cs = s.square([2 * w, 2 * w], true);
     if (corner) cs = cs.subtract(s.square([cc * Math.SQRT2, cc * Math.SQRT2], true).rotate(45).translate([corner[0] * w, corner[1] * w]));
     return cs.extrude(h);
@@ -67,7 +77,13 @@ export class Track {
   /** A loose recess for a stud: room for it without gripping it (0.5 clear each side). */
   studRecess(h: number): Man {
     const w = this.o.studD + 1.0;
+    if (socketShape === 'round') return this.s.cylinder(h, w / 2, w / 2, 24);
     return T(this.s.cube([w, w, h]), [-w / 2, -w / 2, 0]);
+  }
+
+  /** A 5mm stud hole centred at (x, y), from z: round, or square for the parity checks. */
+  hole5(x: number, y: number, z: number, h: number): Man {
+    return socketShape === 'round' ? T(this.s.cylinder(h, 2.5, 2.5, 24), [x, y, z]) : T(this.s.cube([5, 5, h]), [x - 2.5, y - 2.5, z]);
   }
 
   /** The right-hand kind of rail end (rail_endpoint_right). */
@@ -117,7 +133,7 @@ export class Track {
       c.hasCoupler && T(s.cylinder(4, 2 + off, 2 - off, 32), [c.couplerX, -4, -0.5]),
     ];
     if (studRecesses) {
-      for (const x of [-c.outerPostX, c.outerPostX]) cuts.push(T(s.cube([5, 5, PLATE_H]), [x - 2.5, -2.5, -1]));
+      for (const x of [-c.outerPostX, c.outerPostX]) cuts.push(this.hole5(x, 0, -1, PLATE_H));
       cuts.push(T(this.studSocket(1 + this.o.studH + 0.2), [g, 0, -1]));
       for (const x of c.betweenRailsRaw) {
         const toward = (x < 0 ? -c.couplerX : c.couplerX) > x ? 1 : -1;
@@ -205,9 +221,9 @@ export class Track {
     if (simplifiedBottom) return body;
     const cuts: Man[] = [];
     for (const y of this.sleeperRows().map((r) => r - 2.5)) {
-      cuts.push(T(s.cube([5, 5, PLATE_H]), [-(g + 10.5), y, -1]));
+      cuts.push(this.hole5(-(g + 8), y + 2.5, -1, PLATE_H));
       cuts.push(T(s.cube([2 * (g - 5), 5, PLATE_H]), [-(g - 5), y, -1]));
-      cuts.push(T(s.cube([5, 5, PLATE_H]), [g + 5.5, y, -1]));
+      cuts.push(this.hole5(g + 8, y + 2.5, -1, PLATE_H));
     }
     return s.difference(body, cuts);
   }

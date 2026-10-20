@@ -2,6 +2,7 @@
 // off): volumes of OpenSCAD renders with its own routes for ballast
 // (test/fixtures/switch-sets-ballast.txt, -ballast-volumes.json; pnpm
 // parity switch-ballast compares the meshes).
+import { setSocketShape } from '../src/geom/track';
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { kernel } from '../src/geom/kernel';
@@ -11,6 +12,7 @@ import type { Route, Segment } from '../src/route/route';
 import { BASE_DEFAULTS, switchBase, switchPlan, type SetSpec } from '../src/switch/base';
 
 setArcMode('scad');
+setSocketShape('square'); // (and its square stud sockets)
 const vols = JSON.parse(readFileSync(new URL('./fixtures/switch-ballast-volumes.json', import.meta.url), 'utf8')) as Record<string, number>;
 const lines = readFileSync(new URL('./fixtures/switch-sets-ballast.txt', import.meta.url), 'utf8').split('\n');
 const cfg = (name: string) => {

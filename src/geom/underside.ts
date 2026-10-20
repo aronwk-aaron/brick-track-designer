@@ -2,9 +2,9 @@
 // stud_spots(), ported): hollow like a LEGO plate where there is floor over
 // the studs, with anti-stud tubes along the piece's edges and every 4 studs
 // and thin posts elsewhere; loose recesses for studs wholly under the piece
-// but off the hollow; gripping square sockets for the rest.
+// but off the hollow; gripping round sockets for the rest.
 import { T, R, type CS, type Man, type Scad } from './scad';
-import { PLATE_H, STUD, type Track } from './track';
+import { getSocketShape, PLATE_H, STUD, type Track } from './track';
 
 /** A grid spot: position and its place on the grid. */
 export type Spot = [number, number, number, number];
@@ -35,8 +35,8 @@ export function studSpots(s: Scad, t: Track, spots: Spot[], bed: (x: number, y: 
   // (everything cut is the same height: drawn in plan, unioned there and
   // extruded once, much faster than hundreds of solids)
   const sq2 = (w: number, x: number, y: number) => W.CrossSection.square([w, w], true).rotate(turn).translate([x, y]);
-  const socket = (x: number, y: number) => sq2(t.c.studSocketW, x, y);
-  const recess = (x: number, y: number) => sq2(recessW, x, y);
+  const socket = (x: number, y: number) => (getSocketShape() === 'round' ? W.CrossSection.circle(t.c.studSocketW / 2, 24).translate([x, y]) : sq2(t.c.studSocketW, x, y));
+  const recess = (x: number, y: number) => (getSocketShape() === 'round' ? W.CrossSection.circle(recessW / 2, 24).translate([x, y]) : sq2(recessW, x, y));
   const extrudeCut = (cs: CS[]) => T(s.extrude(W.CrossSection.union(cs), h), [0, 0, -0.01]);
   if (grip === 'all') return { cut: extrudeCut(spots.map(([x, y]) => socket(x, y))), grips: [] };
   const at = (q: Spot | [number, number], a: number, b: number): [number, number] =>

@@ -12,7 +12,7 @@ import { railPoint, routeLat, routeLength, routePose, routeSOf, segStarts } from
 import { M, R, T, type CS, type Man, type Scad, type Vec2, type Vec3 } from '../geom/scad';
 import { sweepRoute } from '../geom/sweep';
 import { type Spot, studSpots } from '../geom/underside';
-import { DEFAULTS as TRACK_DEFAULTS, PLATE_H, RAIL_PROFILE, STUD, Track } from '../geom/track';
+import { DEFAULTS as TRACK_DEFAULTS, getSocketShape, PLATE_H, RAIL_PROFILE, STUD, Track } from '../geom/track';
 import { HEAD_HW, pointsSet, type PointsSetValues, type SwitchParams, switchGlobals } from './context';
 
 export interface BaseParams extends SwitchParams {
@@ -853,7 +853,7 @@ export function switchGeometry(s: Scad, plan: SwitchPlan, extraCuts: Man[] = [])
     let cav = outline.offset(-1.39, 'Miter', 1000);
     for (const yc of plan.baseCuts) cav = cav.subtract(sq([2000, 2 * 1.39 + 8], [-1000, yc - 1.39 - 4]));
     const xr = plan.baseXRange(plan.baseY0, plan.baseY1), socks: CS[] = [];
-    for (let x = Math.floor(xr[0] / 8) * 8 + 4; x <= xr[1] + 1e-9; x += 8) for (let y = 4; y <= plan.baseY1 + 1e-9; y += 8) socks.push(W.CrossSection.square([tc.studSocketW, tc.studSocketW], true).translate([x, y]));
+    for (let x = Math.floor(xr[0] / 8) * 8 + 4; x <= xr[1] + 1e-9; x += 8) for (let y = 4; y <= plan.baseY1 + 1e-9; y += 8) socks.push(getSocketShape() === 'round' ? circle(tc.studSocketW / 2, 24, [x, y]) : W.CrossSection.square([tc.studSocketW, tc.studSocketW], true).translate([x, y]));
     const under = T(s.extrude(W.CrossSection.union([cav, ...socks]), g.bottomCavity + 0.01), [0, 0, pieceBottomZ - 0.01]);
     const rings: CS[] = [];
     for (let x = Math.floor(xr[0] / 8) * 8; x <= xr[1] + 1e-9; x += 8) for (let y = 0; y <= plan.baseY1 + 1e-9; y += 8)
