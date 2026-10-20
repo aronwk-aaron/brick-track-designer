@@ -16,6 +16,8 @@ export interface DRoute {
 }
 export interface Design {
   version: 1; gaugeStuds: number; routes: DRoute[];
+  /** The design's name: the file names it saves and downloads under. */
+  name?: string;
   /** Underside: hollow with anti-stud tubes at the edges and every 4 studs (default), or a square socket at every stud. */
   grip?: 'edges' | 'all';
   /** Switches' points: one part (both blades on one pivot) or two (each blade on its own, as 4DBrix's). */
