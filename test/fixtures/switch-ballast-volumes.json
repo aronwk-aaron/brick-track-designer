@@ -4,5 +4,7 @@
  "ballast-right-R24-arc": 368939.41,
  "ballast-wye-R40-arc": 205830.515,
  "ballast-float-nobuddy-wye-R40-arc": 158286.003,
- "ballast-threeway-R40-arc": 635370.452
+ "ballast-threeway-R40-arc": 635370.452,
+ "ballast-float-nobuddy-right-R24-arc": 247705.11,
+ "ballast-float-nobuddy-threeway-R40-arc": 379089.43
 }
