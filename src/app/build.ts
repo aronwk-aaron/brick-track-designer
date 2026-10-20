@@ -165,42 +165,21 @@ export function buildDesign(w: Wasm, design: Design, report: (what: string, frac
   // parts) on the design's stud grid, every `baseplate` studs both ways.
   const bp = (o.baseplate ?? 0) * 8, bedWarnings = new Set<string>();
   const track = new Track(scad, { ...TRACK_DEFAULTS, gaugeStuds: design.gaugeStuds });
+  // (how far each side of a centre line the track's base reaches: its sleepers, or its widest ballast layer)
+  const bandHalf = (o.ballast === 'buddy' ? track.c.sleeperLen + 32 : o.ballast === 'ballast' ? track.c.sleeperLen + 16 : track.c.sleeperLen) / 2;
   const addTrack = (name: string, world: Man, pieceRoutes: typeof routes) => {
-    const b = world.boundingBox(), lines: CutLine[] = [];
-    if (!bp) {
-      if (fitsBed(world)) return add(name, 0x6f7780, world, world);
-      // too big for the print bed: cut across, into equal parts that fit (the
-      // way that needs fewest cuts), a few mm short for the joints
-      const W = b.max[0] - b.min[0], H = b.max[1] - b.min[1], room = Math.max(o.printBedX, o.printBedY) - 8, small = Math.min(o.printBedX, o.printBedY) - 8;
-      const nx = Math.max(1, Math.ceil(W / (H > W ? small : room))), ny = Math.max(1, Math.ceil(H / (H > W ? room : small)));
-      // (moved off points and frogs: a cut wants plain track)
-      const avoid = [...overlay.splits, ...overlay.crossings];
-      const clearAt = (v: number, axis: 0 | 1) => {
-        for (const dv of [0, 8, -8, 16, -16, 24, -24, 32, -32, 48, -48, 64, -64])
-          if (avoid.every((q) => Math.abs(q[axis] - (v + dv)) > 45)) return v + dv;
-        return v;
-      };
-      for (let k = 1; k < nx; k++) lines.push({ p: [clearAt(b.min[0] + (W * k) / nx, 0), 0], d: [0, 1] });
-      for (let k = 1; k < ny; k++) lines.push({ p: [0, clearAt(b.min[1] + (H * k) / ny, 1)], d: [1, 0] });
-      steps++; progress(`Cutting ${name} to fit the print bed`);
-      const cells = cached(`bedcut:${JSON.stringify(lines)}:${JSON.stringify(pieceRoutes)}:${world.volume().toFixed(3)}`, () => cutPiece(scad, track, world, pieceRoutes, lines));
-      cells.forEach((m, k) => add(cells.length > 1 ? `${name}${k + 1}` : name, 0x6f7780, m, m));
-      if (cells.some((m) => !fitsBed(m))) bedWarnings.add(`some parts still don't fit the ${o.printBedX} x ${o.printBedY} print bed`);
-      return;
-    }
-    const ox = (o.baseplateX ?? 0) * 8, oy = (o.baseplateY ?? 0) * 8;
-    // at the baseplate edges, and, where a baseplate is bigger than the print
-    // bed, across each baseplate too, on the stud grid, into parts that fit
-    const kk = Math.max(1, Math.ceil(bp / (Math.min(o.printBedX, o.printBedY) - 8)));
-    const sub = Array.from({ length: kk }, (_, i) => Math.round((i * bp) / kk / 8) * 8);
-    for (let x = ox + Math.floor((b.min[0] - ox) / bp) * bp; x < b.max[0] - 1; x += bp)
-      for (const dx of sub) if (x + dx > b.min[0] + 1 && x + dx < b.max[0] - 1) lines.push({ p: [x + dx, 0], d: [0, 1] });
-    for (let y = oy + Math.floor((b.min[1] - oy) / bp) * bp; y < b.max[1] - 1; y += bp)
-      for (const dy of sub) if (y + dy > b.min[1] + 1 && y + dy < b.max[1] - 1) lines.push({ p: [0, y + dy], d: [1, 0] });
-    steps++; progress(`Cutting ${name} at the baseplate edges`);
-    const cells = cached(`cut:${bp}:${JSON.stringify(b)}:${JSON.stringify(pieceRoutes)}:${world.volume().toFixed(3)}`, () => cutPiece(scad, track, world, pieceRoutes, lines));
-    cells.forEach((m, k) => add(cells.length > 1 ? `${name}-plate${k + 1}` : name, 0x6f7780, m, m));
-    if (cells.some((m) => !fitsBed(m))) bedWarnings.add(`a baseplate's worth of track doesn't fit the ${o.printBedX} x ${o.printBedY} print bed: pick a smaller print bed cut or smaller baseplates`);
+    const bb = world.boundingBox(), b: Rect = [bb.min[0], bb.min[1], bb.max[0], bb.max[1]];
+    if (!bp && fitsBed(world)) return add(name, 0x6f7780, world, world);
+    // too big for the print bed (or at the baseplate edges): cut across the
+    // track (tiles.ts planCuts), each part joined to the next like LEGO track
+    const plan = planCuts(b, o.printBedX, o.printBedY, bp, (o.baseplateX ?? 0) * 8, (o.baseplateY ?? 0) * 8, [...overlay.splits, ...overlay.crossings], pieceRoutes, bandHalf);
+    const lines: CutLine[] = [...plan.xs.map((x): CutLine => ({ p: [x, 0], d: [0, 1] })), ...plan.ys.map((y): CutLine => ({ p: [0, y], d: [1, 0] }))];
+    steps++; progress(plan.why === 'bed' ? `Cutting ${name} to fit the print bed` : `Cutting ${name} at the baseplate edges`);
+    const cells = cached(`cut:${bp}:${JSON.stringify(lines)}:${JSON.stringify(pieceRoutes)}:${world.volume().toFixed(3)}`, () => cutPiece(scad, track, world, pieceRoutes, lines));
+    cells.forEach((m, k) => add(cells.length > 1 ? `${name}${plan.why === 'baseplate' ? '-plate' : ''}${k + 1}` : name, 0x6f7780, m, m));
+    if (cells.some((m) => !fitsBed(m))) bedWarnings.add(plan.why === 'bed'
+      ? `some parts don't fit the ${o.printBedX} x ${o.printBedY} print bed without cutting along the track (it isn't)`
+      : `a baseplate's worth of track doesn't fit the ${o.printBedX} x ${o.printBedY} print bed without cutting along the track (it isn't)`);
   };
   /** A part as plain data (its mesh for the view, its STL, its volume, whether it fits the bed), so its solid can be let go. */
   const bake = (m: Man) => {
@@ -225,7 +204,7 @@ export function buildDesign(w: Wasm, design: Design, report: (what: string, frac
   const tiled = (name: string, all: Route[], checks: CheckRail[], splits: SplitParts[], copt: typeof CROSSING_DEFAULTS, key: string) => {
     let b = routesBox(all, track.c.sleeperLen / 2 + 24);
     for (const sp of splits) for (const m of sp.adds) { const bb = m.boundingBox(); b = [Math.min(b[0], bb.min[0]), Math.min(b[1], bb.min[1]), Math.max(b[2], bb.max[0]), Math.max(b[3], bb.max[1])]; }
-    const plan = planCuts(b, o.printBedX, o.printBedY, bp, (o.baseplateX ?? 0) * 8, (o.baseplateY ?? 0) * 8, [...overlay.splits, ...overlay.crossings]);
+    const plan = planCuts(b, o.printBedX, o.printBedY, bp, (o.baseplateX ?? 0) * 8, (o.baseplateY ?? 0) * 8, [...overlay.splits, ...overlay.crossings], all, bandHalf);
     if (!plan.xs.length && !plan.ys.length) return false;
     // (only when it's big: in one build a piece is quicker, but a whole yard
     // runs the kernel out of memory)
@@ -274,8 +253,9 @@ export function buildDesign(w: Wasm, design: Design, report: (what: string, frac
       out.push(...part.ms);
     });
     for (const b2 of out) { pieces.push({ name: out.length > 1 ? `${name}${++n}` : name, color: 0x6f7780, positions: b2.positions.slice(), stl: b2.stl.slice() }); volume += b2.volume; }
-    if (out.some((b2) => !b2.fits)) bedWarnings.add(plan.why === 'bed' ? `some parts still don't fit the ${o.printBedX} x ${o.printBedY} print bed`
-      : `a baseplate's worth of track doesn't fit the ${o.printBedX} x ${o.printBedY} print bed: pick a smaller print bed cut or smaller baseplates`);
+    if (out.some((b2) => !b2.fits)) bedWarnings.add(plan.why === 'bed'
+      ? `some parts don't fit the ${o.printBedX} x ${o.printBedY} print bed without cutting along the track (it isn't)`
+      : `a baseplate's worth of track doesn't fit the ${o.printBedX} x ${o.printBedY} print bed without cutting along the track (it isn't)`);
     return true;
   };
   // ---- the trackwork first (what the plan shows and the hand edits work

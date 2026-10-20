@@ -25,33 +25,70 @@ export function routesBox(routes: Route[], pad: number): Rect {
 
 export interface CutPlan { xs: number[]; ys: number[]; why: 'bed' | 'baseplate' }
 
+/** The shortest part a cut may leave (mm): no slivers of track. */
+const MIN_PART = 40;
+/** Cuts on one axis, sorted, none leaving a part shorter than MIN_PART (keeping the ones in keep first, the baseplate edges). */
+function spaced(cuts: number[], lo: number, hi: number, keep: Set<number> = new Set()): number[] {
+  const sorted = [...new Set(cuts)].sort((p, q) => p - q).filter((v) => v - lo >= MIN_PART && hi - v >= MIN_PART);
+  const out: number[] = [];
+  for (const v of sorted) {
+    const prev = out[out.length - 1];
+    if (prev === undefined || v - prev >= MIN_PART) out.push(v);
+    else if (keep.has(v) && !keep.has(prev)) out[out.length - 1] = v; // (an edge over a cut across the plate)
+  }
+  return out;
+}
+
 /**
  * Where to cut a piece in box b: across, into equal parts that fit the print
  * bed (the way that needs fewest cuts, a few mm short for the joints, moved
  * off points and frogs); or at the baseplate edges (bp mm, from ox, oy), and
  * across any baseplate bigger than the bed, on the stud grid.
  */
-export function planCuts(b: Rect, bedX: number, bedY: number, bp: number, ox: number, oy: number, avoid: [number, number][]): CutPlan {
+export function planCuts(b: Rect, bedX: number, bedY: number, bp: number, ox: number, oy: number, avoid: [number, number][],
+  routes: Route[] = [], half = 40): CutPlan {
   const xs: number[] = [], ys: number[] = [];
+  // How much of the track a cut would run along, not across (mm): a cut
+  // must go across the track, never down it (that splits the rails and the
+  // bed lengthwise). Points and frogs are kept clear too.
+  const samples = routes.flatMap((rt) => {
+    const L = routeLength(rt), n = Math.max(1, Math.ceil(L / 4));
+    return Array.from({ length: n + 1 }, (_, k) => routePose(rt, (L * k) / n));
+  });
+  const along = (v: number, axis: 0 | 1) => {
+    let mm = 0;
+    for (const p of samples) {
+      // (heading 0 runs along +y: an x cut (axis 0) runs along it when the heading is near 0 or 180)
+      const h = ((p[2] % 180) + 180) % 180, alongY = h < 45 || h > 135;
+      if (Math.abs(p[axis] - v) < half + 4 && (axis === 0 ? alongY : !alongY)) mm += 4;
+    }
+    return mm;
+  };
+  const ok = (v: number, axis: 0 | 1) => along(v, axis) <= 8 && avoid.every((q) => Math.abs(q[axis] - v) > 45);
+  /** The nearest place to v (within reach, on the 8 mm grid from v) a cut can go; undefined: nowhere near. */
+  const place = (v: number, axis: 0 | 1, reach: number) => {
+    for (let dv = 0; dv <= reach; dv += 8) for (const sg of dv ? [1, -1] : [1]) if (ok(v + sg * dv, axis)) return v + sg * dv;
+    return undefined;
+  };
   if (!bp) {
     const W = b[2] - b[0], H = b[3] - b[1], room = Math.max(bedX, bedY) - 8, small = Math.min(bedX, bedY) - 8;
     const nx = Math.max(1, Math.ceil(W / (H > W ? small : room))), ny = Math.max(1, Math.ceil(H / (H > W ? room : small)));
-    const clearAt = (v: number, axis: 0 | 1) => {
-      for (const dv of [0, 8, -8, 16, -16, 24, -24, 32, -32, 48, -48, 64, -64])
-        if (avoid.every((q) => Math.abs(q[axis] - (v + dv)) > 45)) return v + dv;
-      return v;
-    };
-    for (let k = 1; k < nx; k++) xs.push(clearAt(b[0] + (W * k) / nx, 0));
-    for (let k = 1; k < ny; k++) ys.push(clearAt(b[1] + (H * k) / ny, 1));
-    return { xs, ys, why: 'bed' };
+    for (let k = 1; k < nx; k++) { const v = place(b[0] + (W * k) / nx, 0, W / nx / 2); if (v !== undefined) xs.push(v); }
+    for (let k = 1; k < ny; k++) { const v = place(b[1] + (H * k) / ny, 1, H / ny / 2); if (v !== undefined) ys.push(v); }
+    return { xs: spaced(xs, b[0], b[2]), ys: spaced(ys, b[1], b[3]), why: 'bed' };
   }
+  // (the baseplate edges are where they are; the cuts across a baseplate too
+  // big for the bed move to go across the track, or are left out)
   const kk = Math.max(1, Math.ceil(bp / (Math.min(bedX, bedY) - 8)));
   const sub = Array.from({ length: kk }, (_, i) => Math.round((i * bp) / kk / 8) * 8);
-  for (let x = ox + Math.floor((b[0] - ox) / bp) * bp; x < b[2] - 1; x += bp)
-    for (const dx of sub) if (x + dx > b[0] + 1 && x + dx < b[2] - 1) xs.push(x + dx);
-  for (let y = oy + Math.floor((b[1] - oy) / bp) * bp; y < b[3] - 1; y += bp)
-    for (const dy of sub) if (y + dy > b[1] + 1 && y + dy < b[3] - 1) ys.push(y + dy);
-  return { xs, ys, why: 'baseplate' };
+  const edges = new Set<number>();
+  const add = (out: number[], v: number, axis: 0 | 1, edge: boolean, lo: number, hi: number) => {
+    const w = edge ? v : place(v, axis, bp / kk / 2);
+    if (w !== undefined && w > lo + 1 && w < hi - 1) { out.push(w); if (edge) edges.add(w); }
+  };
+  for (let x = ox + Math.floor((b[0] - ox) / bp) * bp; x < b[2] - 1; x += bp) for (const dx of sub) add(xs, x + dx, 0, dx === 0, b[0], b[2]);
+  for (let y = oy + Math.floor((b[1] - oy) / bp) * bp; y < b[3] - 1; y += bp) for (const dy of sub) add(ys, y + dy, 1, dy === 0, b[1], b[3]);
+  return { xs: spaced(xs, b[0], b[2], edges), ys: spaced(ys, b[1], b[3], edges), why: 'baseplate' };
 }
 
 /**

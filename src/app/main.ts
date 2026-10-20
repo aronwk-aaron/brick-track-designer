@@ -204,6 +204,18 @@ const shown = new Set(['track', 'points', 'throw', 'lever']);
 try { const v = localStorage.getItem('btd-shown'); if (v) { shown.clear(); for (const k of JSON.parse(v) as string[]) shown.add(k); } } catch { /* fine */ }
 const kindOf = (name: string) => (/lever/.test(name) ? 'lever' : /throw/.test(name) ? 'throw' : /points/.test(name) ? 'points' : 'track');
 let meshKinds: string[] = [];
+// Exploded view: each part pulled out from the middle (the moving parts lifted too), to see where they separate.
+let meshCentres: THREE.Vector3[] = [];
+const explodeEl = $<HTMLInputElement>('explode');
+function applyExplode() {
+  const e = Number(explodeEl.value), all = new THREE.Vector3();
+  meshCentres.forEach((c) => all.add(c)); if (meshCentres.length) all.divideScalar(meshCentres.length);
+  meshes.forEach((m, k) => {
+    const c = meshCentres[k];
+    m.position.set((c.x - all.x) * e * 0.5, (c.y - all.y) * e * 0.5, meshKinds[k] === 'track' ? 0 : e * 40);
+  });
+}
+explodeEl.addEventListener('input', applyExplode);
 function applyShown() {
   meshes.forEach((m, k) => { m.visible = shown.has(meshKinds[k]); });
   document.querySelectorAll<HTMLButtonElement>('#views .show').forEach((b) => b.classList.toggle('on', shown.has(b.dataset.show!)));
@@ -224,7 +236,8 @@ function showPieces(list: Piece[]) {
     return m;
   });
   meshKinds = list.map((p) => kindOf(p.name));
-  applyShown();
+  meshCentres = meshes.map((m) => { m.geometry.computeBoundingBox(); return m.geometry.boundingBox!.getCenter(new THREE.Vector3()); });
+  applyShown(); applyExplode();
   const bs = sphereOf();
   // (a different set of pieces, e.g. a switch appearing: frame again)
   const names = list.map((p) => p.name).join();
