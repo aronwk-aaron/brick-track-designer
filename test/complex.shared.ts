@@ -20,6 +20,9 @@ export function complexSuite(cases: ComplexCase[]) {
   describe('complex designs', { timeout: 300000 }, () => {
     for (const [name, d0, expectWarn = [], more = {}, clashOk = false, heavy = false] of cases)
       it.skipIf(heavy && !process.env.BTD_HEAVY)(name, async () => {
+        // (a turn of the event loop first: the builds run without one, and a file of them back to back held up the
+        // worker's messages to vitest past their timeout (Timeout calling onTaskUpdate))
+        await new Promise((r) => setTimeout(r, 0));
         const w = await kernel();
         const d: Design = { ...d0, options: { printBedX: 2000, printBedY: 2000, ...d0.options, ...more } };
         // (every solid the build and the checks make let go after, the build's cache with them: kept, a file's worth of
