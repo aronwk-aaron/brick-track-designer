@@ -114,9 +114,10 @@ function render() {
 const worker = new Worker(new URL('./worker.ts', import.meta.url), { type: 'module' });
 let seq = 0, pieces: Piece[] = [], timer: number | undefined;
 
-function changed(rerender = false) {
+/** The design changed: save it and rebuild. record: an undo step (not while a drag or a draw is still going on). */
+function changed(rerender = false, record = true) {
   const json = JSON.stringify(design);
-  if (json !== history[history.length - 1]) { history.push(json); future.length = 0; if (history.length > 200) history.shift(); }
+  if (record && json !== history[history.length - 1]) { history.push(json); future.length = 0; if (history.length > 200) history.shift(); }
   save();
   if (rerender) render();
   canvas?.draw();
@@ -273,7 +274,7 @@ radiusSel.append(new Option('Auto (LEGO radii)', '0'));
 for (const r of [24, 32, 40, 48, 56, 64, 72, 88, 104, 120]) radiusSel.append(new Option(`R${r}`, String(r)));
 const canvas = new TrackCanvas($<HTMLCanvasElement>('track'), {
   design: () => design,
-  changed: (commit) => changed(commit),
+  changed: (commit) => changed(commit, commit), // (one undo step per finished action, none for each mouse move)
   select: () => { render(); updateSelbar(); },
   radius: () => Number(radiusSel.value),
   status: (hint, at) => {
@@ -439,6 +440,7 @@ updateSelbar();
 
 // ---------- piece options (switch.scad's Customizer settings) ----------
 const OPTION_FORM: [string, [keyof PieceOptions, string, number?][]][] = [
+  ['Ballast', [['ballast', 'Ballast'], ['bottomStyle', 'Underside']]],
   ['Throw', [['throwSide', 'Lever side'], ['leverOffset', 'Lever past the edge, mm', 1]]],
   ['Points', [['pointThrow', 'Blade throw, mm', 0.25], ['pointClearance', 'Clearance, mm', 0.05],
     ['springPreload', 'Spring preload, mm', 0.25], ['springThickness', 'Spring thickness, mm', 0.05], ['springLength', 'Spring length, mm', 1]]],
@@ -452,7 +454,15 @@ function renderOptions() {
   for (const [title, fields] of OPTION_FORM) {
     const h = document.createElement('h4'); h.textContent = title; body.append(h);
     for (const [key, label, step] of fields) {
-      if (key === 'baseplate') {
+      if (key === 'ballast' || key === 'bottomStyle') {
+        const sel = document.createElement('select');
+        const opts = key === 'ballast' ? [['none', 'None (track only)'], ['ballast', 'Ballast'], ['buddy', 'Ballast + buddy layer']] : [['antistud', 'Anti-stud (grips plates)'], ['float', 'Flat']];
+        for (const [v, tx] of opts) sel.append(new Option(tx, v));
+        sel.value = String(o[key]);
+        sel.title = key === 'ballast' ? 'Ballast under the track, as the OpenSCAD switches have it (switches only so far)' : 'With ballast: the underside';
+        sel.addEventListener('change', () => { design.options = { ...design.options, [key]: sel.value }; changed(true); });
+        body.append(field(label, sel));
+      } else       if (key === 'baseplate') {
         const sel = document.createElement('select');
         for (const [v, t] of [['0', "Don't"], ['16', '16 x 16 studs'], ['32', '32 x 32 studs'], ['48', '48 x 48 studs'], ['64', '64 x 64 studs'], ['96', '96 x 96 studs']]) sel.append(new Option(t, v));
         sel.value = String(o.baseplate ?? 0);
