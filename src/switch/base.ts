@@ -892,8 +892,9 @@ export function switchGeometry(s: Scad, plan: SwitchPlan, extraCuts: Man[] = [])
     // above the bed (with ballast); without, only the head's above the bed, and the plate runs under all the rail)
     // (a straight edge, as far out as the foot reaches over the plate's height: following the foot's shape, its edge would overhang)
     const plateOff = keep ?? sweep(sq([30, 40], [sideS > 0 ? face + flareW : face - 30 - flareW, z0 - 1]), bOther(v, b), 0, v.sHeel + 5);
-    // (and clear of the stock rail's actual shape, foot and all; the prototype's undercut: the keep above)
-    const stock = protoOn ? s.union([]) : sweep(rail2d(oStock).offset(c, 'Miter', 1000), bOther(v, b), 0, v.sHeel + 10);
+    // (and clear of the stock rail's actual shape, foot and all; the prototype's undercut: the keep above, and past
+    // the undercut's end the rail as it is: with ballast its foot's flare is above the bed there, in the plate's way)
+    const stock = sweep(rail2d(oStock).offset(c, 'Miter', 1000), bOther(v, b), protoOn ? protoPlaneEnd(v, b) : 0, v.sHeel + 10);
     const plate = s.difference(s.intersection(s.intersection(T(s.extrude(fdbPlate2d(v, b), FDB.plateT), [0, 0, z0]), plateOff), cube([400, 400, 50], [-200, y0, z0 - 10])), [stock]);
     return rot3(s.union([plate, bar]), fb.pivot, fb.open);
   };
