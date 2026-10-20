@@ -186,10 +186,15 @@ view.append(renderer.domElement);
 const scene = new THREE.Scene();
 const cssColor = (v: string, fallback: string) => getComputedStyle(document.documentElement).getPropertyValue(v).trim() || fallback;
 scene.background = new THREE.Color(cssColor('--view-bg', '#f4f4f2'));
-matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => { scene.background = new THREE.Color(cssColor('--view-bg', '#f4f4f2')); });
+matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => { scene.background = new THREE.Color(cssColor('--view-bg', '#f4f4f2')); redraw3d(); });
 const camera = new THREE.PerspectiveCamera(35, 1, 1, 10000);
 camera.up.set(0, 0, 1);
 const controls = new OrbitControls(camera, renderer.domElement);
+// (drawn only when something's changed: drawing every frame regardless kept the page busy, and the plan's zoom lagged)
+let dirty3d = true;
+const redraw3d = () => { dirty3d = true; };
+controls.addEventListener('change', redraw3d);
+controls.zoomToCursor = true; // (zooming toward the mouse, as the plan does)
 scene.add(new THREE.HemisphereLight(0xffffff, 0x777777, 2.2));
 const sun = new THREE.DirectionalLight(0xffffff, 1.4); sun.position.set(300, -400, 700); scene.add(sun);
 const under = new THREE.DirectionalLight(0xffffff, 0.9); under.position.set(-300, 400, -700); scene.add(under);
@@ -209,6 +214,7 @@ let meshKinds: string[] = [];
 let meshCentres: THREE.Vector3[] = [];
 const explodeEl = $<HTMLInputElement>('explode');
 function applyExplode() {
+  redraw3d();
   const e = Number(explodeEl.value), all = new THREE.Vector3();
   meshCentres.forEach((c) => all.add(c)); if (meshCentres.length) all.divideScalar(meshCentres.length);
   // (track parts spread out from the middle; each moving part goes with the track part it sits in, and lifts straight up out of it)
@@ -233,6 +239,7 @@ function applyExplode() {
 }
 explodeEl.addEventListener('input', applyExplode);
 function applyShown() {
+  redraw3d();
   meshes.forEach((m, k) => { m.visible = shown.has(meshKinds[k] === 'cassette' ? 'track' : meshKinds[k] === 'bracket' ? 'lever' : meshKinds[k]); });
   document.querySelectorAll<HTMLButtonElement>('#views .show').forEach((b) => b.classList.toggle('on', shown.has(b.dataset.show!)));
 }
@@ -275,7 +282,7 @@ function frame(bs: THREE.Sphere, keepDirection: boolean) {
 }
 function resize() {
   const { clientWidth: w, clientHeight: h } = view;
-  renderer.setSize(w, h); camera.aspect = w / h; camera.updateProjectionMatrix();
+  renderer.setSize(w, h); camera.aspect = w / h; camera.updateProjectionMatrix(); redraw3d();
 }
 new ResizeObserver(resize).observe(view);
 // Top or underside view, from the side you're looking from.
@@ -291,7 +298,7 @@ $('view-top').addEventListener('click', () => look(false));
 $('view-under').addEventListener('click', () => look(true));
 $('view-frame').addEventListener('click', () => { if (meshes.length) frame(sphereOf(), true); });
 renderer.domElement.addEventListener('dblclick', () => { if (meshes.length) frame(sphereOf(), true); });
-renderer.setAnimationLoop(() => renderer.render(scene, camera));
+renderer.setAnimationLoop(() => { if (!dirty3d) return; dirty3d = false; renderer.render(scene, camera); });
 
 // ---------- toolbar ----------
 const tpl = $<HTMLSelectElement>('template');

@@ -2,12 +2,23 @@
 // top-down train games. Click a grid point (or the end of a track) to start,
 // move the mouse to see the planned track (straights and a curve of the chosen
 // radius, ending on a 22.5-degree direction), click to lay it and carry on
-// from its end; right-click or Esc stops. Starting from the middle of a track
+// from its end; a right click (no drag) or Esc stops. Starting from the middle of a track
 // branches off it (a switch). Select mode picks a track to edit or delete.
 // Drag with the right or middle button (or Space + drag) to pan; the wheel
 // zooms.
 import type { Design, DRoute, DSeg } from './design';
-import { describe, follow, plan, planAnyway, planAuto, planFreeTurning, planToPose, reversed, trace, type Pose } from './planner';
+import { describe, follow, plan, planAnyway, planAuto, planFreeTurning, planToPose, reversed, trace as traceRaw, type Pose } from './planner';
+
+// Track outlines traced once and kept (they're in studs, the same at any
+// zoom): tracing every track on every redraw made zooming and panning lag.
+// (the points shared: nothing changes them)
+const tracedPts = new Map<string, [number, number][]>();
+function tracedOnce(key: string, make: () => [number, number][]) {
+  let v = tracedPts.get(key);
+  if (!v) { if (tracedPts.size > 20000) tracedPts.clear(); v = make(); tracedPts.set(key, v); }
+  return v;
+}
+const trace = (p: Pose, segs: DSeg[], step = 0.5) => tracedOnce(`t${p.x},${p.y},${p.heading},${step}${JSON.stringify(segs)}`, () => traceRaw(p, segs, step));
 
 export interface Overlay { grooves: [number, number][][]; checkRails: [number, number][][]; crossings: [number, number][]; splits: [number, number][]; grips?: [number, number][]; items?: OverlayItem[] }
 /** A trackwork item on the plan (mm); a lever ('throw') has its points' frame and settings, to drag it. */
@@ -35,7 +46,7 @@ export class TrackCanvas {
   private scale = 6;            // px per stud
   private ox = 0; private oy = 0; // screen px of world (0, 0)
   private mouse: [number, number] | undefined;   // world, studs
-  private panning: { x: number; y: number; ox: number; oy: number } | undefined;
+  private panning: { x: number; y: number; ox: number; oy: number; right?: boolean; moved?: boolean } | undefined;
   private space = false;
   mode: 'draw' | 'select' = 'select';
   /** Moving the selected tracks: where the press was (studs) and where they started. */
@@ -245,11 +256,11 @@ export class TrackCanvas {
 
   // ---------- input ----------
   private down(e: MouseEvent) {
-    if (e.button === 1 || e.button === 2 && !this.active || this.space) {
-      this.panning = { x: e.clientX, y: e.clientY, ox: this.ox, oy: this.oy };
+    // (the right button pans, drawing or not: a right click without a drag stops the track being drawn)
+    if (e.button === 1 || e.button === 2 || this.space) {
+      this.panning = { x: e.clientX, y: e.clientY, ox: this.ox, oy: this.oy, right: e.button === 2 };
       return;
     }
-    if (e.button === 2) { this.stopDrawing(); return; }
     const w = this.evWorld(e);
     // Pressing on a lever: drag it (side, out, along)
     if (!this.active && e.button === 0) {
@@ -346,7 +357,7 @@ export class TrackCanvas {
   private move(e: MouseEvent) {
     if (this.box) {
       const p = this.evWorld(e); this.box.x1 = p[0]; this.box.y1 = p[1]; this.mouse = p;
-      return this.draw();
+      return this.drawSoon();
     }
     if (this.itemDrag) {
       const id = this.itemDrag, p = this.evWorld(e), d = this.host.design();
@@ -358,12 +369,12 @@ export class TrackCanvas {
       if ((group[id.it.key]?.[id.prop] ?? 0) !== v) { group[id.it.key] = { ...group[id.it.key], [id.prop]: v }; this.host.changed(false); }
       const end = id.prop === 'd0' ? id.it.pts[0] : id.prop === 'd1' ? id.it.pts[id.it.pts.length - 1] : id.it.at;
       id.at = [end[0] + id.dir[0] * (v - id.base), end[1] + id.dir[1] * (v - id.base)];
-      return this.draw();
+      return this.drawSoon();
     }
     if (this.leverDrag) {
       this.mouse = this.evWorld(e); this.leverDrag.moved = true;
       this.dragLever([this.mouse[0] + this.leverDrag.off[0], this.mouse[1] + this.leverDrag.off[1]]);
-      return this.draw();
+      return this.drawSoon();
     }
     if (this.moving) {
       const m = this.moving, p = this.evWorld(e), d = this.host.design();
@@ -374,26 +385,31 @@ export class TrackCanvas {
         this.host.changed(false);
       }
       this.mouse = p;
-      return this.draw();
+      return this.drawSoon();
     }
     if (this.panning) {
       this.ox = this.panning.ox + e.clientX - this.panning.x; this.oy = this.panning.oy + e.clientY - this.panning.y;
-      return this.draw();
+      if (Math.hypot(e.clientX - this.panning.x, e.clientY - this.panning.y) >= 4) this.panning.moved = true;
+      // (the track being drawn still follows the mouse)
+      if (this.active) this.mouse = this.evWorld(e);
+      return this.drawSoon();
     }
     if (this.drag) {
       if (!this.drag.moved && Math.hypot(e.clientX - this.drag.sx, e.clientY - this.drag.sy) < 4) return;
       this.drag.moved = true;
       this.mouse = this.evWorld(e);
       this.reshape(this.snap(this.mouse));
-      return this.draw();
+      return this.drawSoon();
     }
     if (e.target !== this.el) return;
     this.mouse = this.evWorld(e);
     this.aimEither();
-    this.draw();
+    this.drawSoon();
   }
   private up(e: MouseEvent) {
+    const pan = this.panning;
     this.panning = undefined;
+    if (pan) { if (pan.right && !pan.moved && this.active) this.stopDrawing(); return; }
     if (this.itemDrag) { const moved = !!this.itemDrag.at; this.itemDrag = undefined; if (moved) this.host.changed(true); return this.draw(); }
     if (this.leverDrag) {
       const ld = this.leverDrag, moved = ld.moved; this.leverDrag = undefined;
@@ -535,9 +551,17 @@ export class TrackCanvas {
     e.preventDefault();
     const r = this.el.getBoundingClientRect(), sx = e.clientX - r.left, sy = e.clientY - r.top;
     const before = this.toWorld(sx, sy);
-    this.scale = Math.min(80, Math.max(0.5, this.scale * Math.exp(-e.deltaY * 0.0015)));
+    // (in pixels whatever the device reports, a notch at most a step: a smooth, even zoom from a wheel or a trackpad)
+    const dy = e.deltaY * (e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? r.height : 1) * (e.ctrlKey ? 4 : 1);
+    this.scale = Math.min(80, Math.max(0.5, this.scale * Math.exp(-Math.max(-150, Math.min(150, dy)) * 0.0015)));
     this.ox = sx - before[0] * this.scale; this.oy = sy + before[1] * this.scale;
-    this.draw();
+    this.drawSoon();
+  }
+  /** Redraw at the next frame, once however many wheel or pan events come before it (a redraw per event fell behind them). */
+  private drawPending = 0;
+  drawSoon() {
+    if (this.drawPending) return;
+    this.drawPending = requestAnimationFrame(() => { this.drawPending = 0; this.draw(); });
   }
   private key(e: KeyboardEvent, down: boolean) {
     if ((e.target as HTMLElement)?.tagName === 'INPUT') return;
@@ -596,7 +620,7 @@ export class TrackCanvas {
   hint(): string {
     if (this.drag?.moved) return this.dragBad ? "Can't bend the track this way: release to keep the last good shape, Esc puts it back"
       : this.dragSnap ? 'Release to join the two ends' : 'Release to reshape · drop on another end to join · Esc puts it back';
-    if (this.active) return 'Click to lay track · keep clicking to go on · Esc or right-click stops';
+    if (this.active) return 'Click to lay track · keep clicking to go on · Esc or right-click stops · right-drag pans';
     const hit = this.mouse ? this.nearTrack(this.mouse) : undefined;
     if (this.mode === 'select') {
       if (hit?.end) return 'Drag this end to reshape the track';
@@ -655,12 +679,15 @@ export class TrackCanvas {
       const off = (this.scratch ??= document.createElement('canvas'));
       if (off.width !== this.el.width || off.height !== this.el.height) { off.width = this.el.width; off.height = this.el.height; }
       const oc = off.getContext('2d')!;
-      oc.setTransform(1, 0, 0, 1, 0, 0); oc.clearRect(0, 0, off.width, off.height); oc.setTransform(c.getTransform());
+      let cleared = false;
+      const clear = () => { if (cleared) return; cleared = true; oc.setTransform(1, 0, 0, 1, 0, 0); oc.clearRect(0, 0, off.width, off.height); oc.setTransform(c.getTransform()); };
       const solid = `rgb(${parts[0]}, ${parts[1]}, ${parts[2]})`;
-      bands((pts, width) => line(pts, solid, width, [], oc));
+      let any = false;
+      bands((pts, width) => { any = true; clear(); line(pts, solid, width, [], oc); });
+      if (!any) return; // (laying on a whole empty canvas cost as much as drawing the track)
       c.save(); c.setTransform(1, 0, 0, 1, 0, 0); c.globalAlpha = parts[3] === undefined ? 1 : Number(parts[3]); c.drawImage(off, 0, 0); c.restore();
     };
-    const offsetPts = (r: { x: number; y: number; heading: number }, segs: DSeg[], o: number) => {
+    const offsetPts = (r: { x: number; y: number; heading: number }, segs: DSeg[], o: number) => tracedOnce(`o${r.x},${r.y},${r.heading},${o}${JSON.stringify(segs)}`, () => {
       // rail at offset o (studs, + = right) from the centre line
       const pts: [number, number][] = [];
       let q: Pose = { x: r.x, y: r.y, heading: r.heading };
@@ -673,7 +700,7 @@ export class TrackCanvas {
         q = follow(q, [sg]);
       }
       return pts;
-    };
+    });
     const railW = Math.max(1, 2.5 / MM * this.scale);
     /** A label by the mouse, kept inside the canvas. */
     const tag = (mx: number, my: number, txt: string, color: string) => {
