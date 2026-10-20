@@ -28,11 +28,13 @@ export interface Design {
   trackwork?: Trackwork;
 }
 
-/** Hand edits: check rails lengthened (+) or shortened (-) at each end, moved, or taken out; flangeway cuts lengthened; points moved along; levers moved. */
+/** Hand edits: check rails lengthened (+) or shortened (-) at each end, moved, or taken out; flangeway cuts lengthened; points moved along, taken out or forced; levers moved. */
 export interface Trackwork {
   check?: Record<string, { d0?: number; d1?: number; shift?: number; off?: boolean }>;
   groove?: Record<string, { d0?: number; d1?: number }>;
-  points?: Record<string, { toe?: number }>;
+  /** each points set (by its toe): moved along (mm); taken out (off: no points, both routes' rails run through as fixed track); routes
+   * taken out of it (drop, by id: a three-way's branch, leaving a two-way); or forced where a route meets another a hair off (force) */
+  points?: Record<string, { toe?: number; off?: boolean; drop?: string[]; force?: boolean }>;
   /** each points set's lever, moved on the plan: its side, how far out (lever offset, mm), and how far along (its tines' length, mm) */
   throw?: Record<string, { side?: 'left' | 'right'; leverOffset?: number; springLength?: number }>;
 }

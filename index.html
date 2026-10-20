@@ -101,6 +101,9 @@
     #legend i.dot { width: 9px; height: 9px; border-radius: 50%; border: 1.5px solid currentColor; margin: 0 9px 0 3px; }
     #legend i.grip { width: 9px; height: 9px; border-radius: 50%; border: 1.5px solid #2b9e4a; margin: 0 9px 0 3px; }
     #legend i.sq { width: 9px; height: 9px; background: #f0b400; margin: 0 9px 0 3px; }
+    #legend i.sq.off { background: none; border: 2px solid #8a8f99; width: 5px; height: 5px; }
+    #legend i.sq.cand { background: none; border: 2px solid #f0b400; width: 5px; height: 5px; }
+    #legend .sub { padding-left: 14px; font-size: 11.5px; }
     #legend [data-layer] { cursor: pointer; user-select: none; }
     #legend [data-layer].off { opacity: 0.4; text-decoration: line-through; }
     #views .sep { display: inline-block; width: 1px; height: 18px; background: var(--line); margin: 0 4px; vertical-align: middle; }
@@ -188,7 +191,9 @@
         <span data-layer="checks"><i style="background:#2b6fe0"></i>check rail</span>
         <span data-layer="crossings"><i class="dot"></i>rail crossing</span>
         <span id="legend-ballast" data-layer="ballast" hidden><i style="background:rgba(150,128,96,0.45)"></i>ballast</span>
-        <span data-layer="points"><i class="sq"></i>points (built as a switch)</span>
+        <span data-layer="points" title="Click points on the plan to take them out or put them back; drag them to move them along"><i class="sq"></i>points (built as a switch; click: take out)</span>
+        <span class="sub"><i class="sq off"></i>points taken out (click: put back)</span>
+        <span class="sub" title="A track end a little off another track: points could be made there. Dashed: too far off to force."><i class="sq cand"></i>could be points (click: force)</span>
         <span data-layer="levers"><i class="knob"></i>lever (drag it: side, out, along)</span>
         <span id="legend-grip" data-layer="grips"><i class="grip"></i>anti-stud tube (grips)</span>
         <button id="help-open" type="button" title="How to use the editor (?)">? Help</button>
@@ -199,6 +204,7 @@
           <li>Click a grid point or a track end to start; move to see the track; click to lay it.</li>
           <li><kbd>Esc</kbd> or right-click stops drawing.</li>
           <li>Start on the middle of a track to branch off it.</li>
+          <li>Points (yellow squares): click to take them out (both tracks' rails run through as plain track; grey square), click again to put them back; drag to move them along. A hollow yellow square is a track end a little off another track: click it to force points there (dashed: too far off; redraw it to start on the track). A three-way's branches one at a time: Trackwork panel.</li>
           <li>Drag a track's end to reshape it; drop it on another end to join them. <kbd>Esc</kbd> while dragging puts it back.</li>
         </ul>
         <h3>View and keys</h3>

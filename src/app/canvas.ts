@@ -22,7 +22,10 @@ const trace = (p: Pose, segs: DSeg[], step = 0.5) => tracedOnce(`t${p.x},${p.y},
 
 export interface Overlay { grooves: [number, number][][]; checkRails: [number, number][][]; crossings: [number, number][]; splits: [number, number][]; grips?: [number, number][]; items?: OverlayItem[] }
 /** A trackwork item on the plan (mm); a lever ('throw') has its points' frame and settings, to drag it. */
-export interface OverlayItem { kind: string; key: string; at: [number, number]; pts: [number, number][]; dir?: [number, number]; lever?: { frame: [number, number, number]; side: number; stockX: number; edge: number; minD: number; pivotY: number; maxTine: number; leverOffset: number; springLength: number } }
+export interface OverlayItem { kind: string; key: string; at: [number, number]; pts: [number, number][]; dir?: [number, number];
+  /** points: taken out (off), made by hand (forced), or a near miss where they could be forced (cand) */
+  off?: boolean; forced?: boolean; cand?: { ok: boolean; why: string }; routes?: string[];
+  lever?: { frame: [number, number, number]; side: number; stockX: number; edge: number; minD: number; pivotY: number; maxTine: number; leverOffset: number; springLength: number } }
 
 export interface CanvasHost {
   design(): Design;
@@ -97,7 +100,27 @@ export class TrackCanvas {
   /** Dragging a lever: its item, and where it would go (mm) with what settings. */
   private leverDrag: { it: OverlayItem; moved: boolean; off: [number, number]; at?: [number, number]; arm?: [number, number][] } | undefined;
   /** Dragging a check rail's or flangeway cut's end (longer or shorter), or points along: what, which setting, from where (studs), the way that adds (mm), and its value before. */
-  private itemDrag: { it: OverlayItem; prop: 'd0' | 'd1' | 'toe'; from: [number, number]; dir: [number, number]; base: number; at?: [number, number] } | undefined;
+  private itemDrag: { it: OverlayItem; prop: 'd0' | 'd1' | 'toe'; from: [number, number]; dir: [number, number]; base: number; at?: [number, number]; sx?: number; sy?: number; moved?: boolean } | undefined;
+  /** The points at a toe (by its key), as built: 'built' (forced or not), 'off' (taken out), or 'cand' (a near miss, forced or not, and whether it can be). */
+  pointsState(key: string) {
+    const its = (this.overlay?.items ?? []).filter((it) => it.kind === 'points' && it.key === key);
+    const built = its.filter((it) => !it.off && !it.cand), cand = its.find((it) => it.cand);
+    if (built.length) return { state: 'built' as const, forced: built.some((it) => it.forced) };
+    if (its.some((it) => it.off)) return { state: 'off' as const, forced: false };
+    return { state: 'cand' as const, forced: !!cand?.forced, ok: !!cand?.cand?.ok };
+  }
+  /** A click on points: built ones taken out (forced ones back to a near miss), taken-out ones put back, a near miss forced (or not). */
+  togglePoints(key: string) {
+    const st = this.pointsState(key), d = this.host.design();
+    const tw = (d.trackwork ??= {}), group = (tw.points ??= {}), e = { ...group[key] };
+    if (st.state === 'built' && st.forced) delete e.force;
+    else if (st.state === 'built') e.off = true;
+    else if (st.state === 'off') { delete e.off; delete e.drop; }
+    else if (st.forced) delete e.force;
+    else e.force = true;
+    if (Object.keys(e).length) group[key] = e; else delete group[key];
+    this.host.changed(true);
+  }
   /** The check rail end, flangeway cut end or points under a point (studs), to drag. */
   private itemAt(w: [number, number]) {
     const r = Math.max(1, 9 / this.scale), d = this.host.design();
@@ -110,7 +133,8 @@ export class TrackCanvas {
         if (near(it.pts[0])) return { it, prop: 'd0' as const, from: w, dir: unit(it.pts[0], it.pts[1]), base: cur.d0 ?? 0 };
         if (near(it.pts[n - 1])) return { it, prop: 'd1' as const, from: w, dir: unit(it.pts[n - 1], it.pts[n - 2]), base: cur.d1 ?? 0 };
       }
-      if (it.kind === 'points' && it.dir && !this.hidden.has('points') && near(it.at)) return { it, prop: 'toe' as const, from: w, dir: it.dir, base: cur.toe ?? 0 };
+      // (points: dragged along, or clicked to take them out, put them back or force them)
+      if (it.kind === 'points' && !this.hidden.has('points') && near(it.at)) return { it, prop: 'toe' as const, from: w, dir: it.dir ?? [0, 0], base: cur.toe ?? 0 };
     }
     return undefined;
   }
@@ -267,7 +291,7 @@ export class TrackCanvas {
       const it = this.leverAt(w);
       if (it) { this.leverDrag = { it, moved: false, off: [it.at[0] / MM - w[0], it.at[1] / MM - w[1]] }; return; }  // (held where it was grabbed)
       const id = this.itemAt(w);
-      if (id) { this.itemDrag = id; return; }
+      if (id) { this.itemDrag = { ...id, sx: e.clientX, sy: e.clientY }; return; }
     }
     // Pressing on a track's end (when not drawing): drag it to reshape the
     // track, or (Draw mode, no drag) carry the track on from there.
@@ -362,6 +386,10 @@ export class TrackCanvas {
     if (this.itemDrag) {
       const id = this.itemDrag, p = this.evWorld(e), d = this.host.design();
       this.mouse = p;
+      // (a press without a drag is a click: points toggled; only built points move along)
+      if (!id.moved && Math.hypot(e.clientX - (id.sx ?? e.clientX), e.clientY - (id.sy ?? e.clientY)) < 4) return;
+      id.moved = true;
+      if (id.it.kind === 'points' && (!id.it.dir || this.pointsState(id.it.key).state !== 'built')) return this.drawSoon();
       const along = ((p[0] - id.from[0]) * id.dir[0] + (p[1] - id.from[1]) * id.dir[1]) * MM;
       let v = Math.round(id.base + along);
       if (id.it.kind === 'groove') v = Math.max(0, v);
@@ -410,7 +438,12 @@ export class TrackCanvas {
     const pan = this.panning;
     this.panning = undefined;
     if (pan) { if (pan.right && !pan.moved && this.active) this.stopDrawing(); return; }
-    if (this.itemDrag) { const moved = !!this.itemDrag.at; this.itemDrag = undefined; if (moved) this.host.changed(true); return this.draw(); }
+    if (this.itemDrag) {
+      const id = this.itemDrag, moved = !!id.at; this.itemDrag = undefined;
+      if (!id.moved && id.it.kind === 'points') this.togglePoints(id.it.key);
+      else if (moved) this.host.changed(true);
+      return this.draw();
+    }
     if (this.leverDrag) {
       const ld = this.leverDrag, moved = ld.moved; this.leverDrag = undefined;
       if (moved && ld.at && ld.arm) this.leverPending = { key: ld.it.key, at: ld.at, arm: ld.arm };
@@ -622,6 +655,16 @@ export class TrackCanvas {
       : this.dragSnap ? 'Release to join the two ends' : 'Release to reshape · drop on another end to join · Esc puts it back';
     if (this.active) return 'Click to lay track · keep clicking to go on · Esc or right-click stops · right-drag pans';
     const hit = this.mouse ? this.nearTrack(this.mouse) : undefined;
+    // (over points: what a click does to them)
+    const pi = !this.active && this.mouse ? this.itemAt(this.mouse) : undefined;
+    if (pi?.it.kind === 'points' && !this.itemDrag?.moved) {
+      const st = this.pointsState(pi.it.key);
+      if (st.state === 'built') return `Click to take these points out (the rails run through as plain track)${st.forced ? ' · they were forced' : ''} · drag to move them along`;
+      if (st.state === 'off') return 'Points taken out: click to put them back';
+      const why = pi.it.cand?.why ?? '';
+      if (st.forced) return `Points forced here${st.ok ? '' : `, but ${why}: too far off to build`} · click to unforce`;
+      return st.ok ? `No points here (${why}): click to force them` : `No points here: ${why}, too far off to force (redraw it to start on the track)`;
+    }
     if (this.mode === 'select') {
       if (hit?.end) return 'Drag this end to reshape the track';
       if (this.moving?.moved) return 'Moving: let go to put it down';
@@ -813,7 +856,21 @@ export class TrackCanvas {
         const [hx, hy] = this.toScreen(hi.at[0] / MM, hi.at[1] / MM);
         c.strokeStyle = '#f0b400'; c.lineWidth = 2.5; c.beginPath(); c.arc(hx, hy, 12, 0, 2 * Math.PI); c.stroke();
       }
-      if (!this.hidden.has('points')) for (const p of this.overlay.splits) { const [sx, sy] = this.toScreen(p[0] / MM, p[1] / MM); c.fillStyle = '#f0b400'; c.fillRect(sx - 5, sy - 5, 10, 10); }
+      // points: built (filled; forced ones ringed), taken out (hollow grey), and near misses where they could be forced (hollow yellow;
+      // dashed where they're too far off to, red where they're forced anyway)
+      if (!this.hidden.has('points')) {
+        const done = new Set<string>();
+        for (const it of this.overlay.items ?? []) {
+          if (it.kind !== 'points' || done.has(it.key)) continue;
+          done.add(it.key);
+          const st = this.pointsState(it.key), [sx, sy] = this.toScreen(it.at[0] / MM, it.at[1] / MM);
+          c.lineWidth = 2; c.setLineDash([]);
+          if (st.state === 'built') { c.fillStyle = '#f0b400'; c.fillRect(sx - 5, sy - 5, 10, 10); if (st.forced) { c.strokeStyle = ink.mark; c.lineWidth = 1.2; c.strokeRect(sx - 6.5, sy - 6.5, 13, 13); } continue; }
+          if (st.state === 'off') c.strokeStyle = '#8a8f99';
+          else { c.strokeStyle = st.forced && !st.ok ? '#e0452b' : '#f0b400'; if (!st.ok) c.setLineDash([3, 2]); }
+          c.strokeRect(sx - 4.5, sy - 4.5, 9, 9); c.setLineDash([]);
+        }
+      }
       // handles: check rail and flangeway cut ends, dragged longer or shorter (and the one being dragged)
       if (this.scale >= 4) for (const it of this.overlay.items ?? []) {
         if ((it.kind !== 'check' && it.kind !== 'groove') || it.pts.length < 2 || this.hidden.has(it.kind === 'check' ? 'checks' : 'grooves')) continue;
