@@ -72,6 +72,30 @@ export function solve(routes: Route[], opts: Partial<SolverOptions> = {}): Solut
   const o = { ...SOLVER_DEFAULTS, ...opts };
   const g = o.gauge / 2;
   const rails = routes.map((rt) => Object.fromEntries(sides.map((sd) => [sd, railPolyline(rt, sd * g, o.step)])) as Record<Side, [number, number, number][]>);
+  // Each route's box (its rails, and its flangeways beside them), grown by
+  // pad: routes whose boxes don't meet can't cross, cut or crowd each other,
+  // which on a big layout saves nearly all the work.
+  const boxes = rails.map((r) => {
+    const b = [Infinity, Infinity, -Infinity, -Infinity];
+    for (const sd of sides) for (const q of r[sd]) { b[0] = Math.min(b[0], q[1]); b[1] = Math.min(b[1], q[2]); b[2] = Math.max(b[2], q[1]); b[3] = Math.max(b[3], q[2]); }
+    return b;
+  });
+  const pad = o.headHw + 1;
+  const meet = (i: number, j: number) => boxes[i][0] - pad <= boxes[j][2] + pad && boxes[j][0] - pad <= boxes[i][2] + pad
+    && boxes[i][1] - pad <= boxes[j][3] + pad && boxes[j][1] - pad <= boxes[i][3] + pad;
+  const inBox = (j: number, q: Pt) => q[0] >= boxes[j][0] - pad && q[0] <= boxes[j][2] + pad && q[1] >= boxes[j][1] - pad && q[1] <= boxes[j][3] + pad;
+  // a rail's samples in runs of CH segments, each with its box
+  const CH = 16;
+  const chunks = (A: [number, number, number][]) => {
+    const out: { k0: number; k1: number; b: number[] }[] = [];
+    for (let k0 = 0; k0 + 1 < A.length; k0 += CH) {
+      const k1 = Math.min(A.length - 1, k0 + CH), b = [Infinity, Infinity, -Infinity, -Infinity];
+      for (let k = k0; k <= k1; k++) { b[0] = Math.min(b[0], A[k][1]); b[1] = Math.min(b[1], A[k][2]); b[2] = Math.max(b[2], A[k][1]); b[3] = Math.max(b[3], A[k][2]); }
+      out.push({ k0, k1, b });
+    }
+    return out;
+  };
+  const railChunks = rails.map((r) => Object.fromEntries(sides.map((sd) => [sd, chunks(r[sd])])) as Record<Side, ReturnType<typeof chunks>>);
 
   // Splits: a route that starts on another (at its start, or anywhere along
   // it, heading the same way), up to where their centre lines are far enough
@@ -125,9 +149,12 @@ export function solve(routes: Route[], opts: Partial<SolverOptions> = {}): Solut
     for (let j = i + 1; j < routes.length; j++)
       for (const sa of sides)
         for (const sb of sides) {
-          const A = rails[i][sa], B = rails[j][sb];
-          for (let k = 0; k + 1 < A.length; k++)
-            for (let m = 0; m + 1 < B.length; m++) {
+          if (!meet(i, j)) continue;
+          const A = rails[i][sa], B = rails[j][sb], found: [number, number, Crossing][] = [];
+          for (const ca of railChunks[i][sa]) for (const cb of railChunks[j][sb]) {
+            if (ca.b[2] < cb.b[0] || cb.b[2] < ca.b[0] || ca.b[3] < cb.b[1] || cb.b[3] < ca.b[1]) continue;
+            for (let k = ca.k0; k < ca.k1; k++)
+            for (let m = cb.k0; m < cb.k1; m++) {
               const p1: Pt = [A[k][1], A[k][2]], p2: Pt = [A[k + 1][1], A[k + 1][2]];
               const p3: Pt = [B[m][1], B[m][2]], p4: Pt = [B[m + 1][1], B[m + 1][2]];
               // quick reject on bounding boxes
@@ -140,34 +167,41 @@ export function solve(routes: Route[], opts: Partial<SolverOptions> = {}): Solut
               let ang = Math.abs(((da - db) * 180) / Math.PI) % 180;
               if (ang > 90) ang = 180 - ang;
               if (ang < 0.5) continue;  // rails running together (a split), not a crossing
-              crossings.push({
+              found.push([k, m, {
                 a: { route: i, side: sa, s: A[k][0] + t * (A[k + 1][0] - A[k][0]) },
                 b: { route: j, side: sb, s: B[m][0] + u * (B[m + 1][0] - B[m][0]) },
                 point: [p1[0] + t * (p2[0] - p1[0]), p1[1] + t * (p2[1] - p1[1])],
                 angle: ang,
-              });
+              }]);
             }
+          }
+          // (in the order of a plain pass along both rails)
+          found.sort((x, y) => x[0] - y[0] || x[1] - y[1]);
+          crossings.push(...found.map((f) => f[2]));
         }
 
   // Grooves: where a rail's head runs through another route's flangeway.
   const grooves: Groove[] = [];
   for (let i = 0; i < routes.length; i++)
-    for (const sd of sides)
+    for (const sd of sides) {
+      const pts = rails[i][sd];
+      // (the three points across the rail's head at each sample)
+      const heads = pts.map(([s]) => {
+        const p = routePose(routes[i], s), r = (Math.PI * p[2]) / 180;
+        return [-o.headHw, 0, o.headHw].map((d): Pt => [p[0] + (sd * g + d) * Math.cos(r), p[1] + (sd * g + d) * Math.sin(r)]);
+      });
       for (let j = 0; j < routes.length; j++) {
-        if (j === i) continue;
+        if (j === i || !meet(i, j)) continue;
         let open: number | undefined;
-        const pts = railPolyline(routes[i], sd * g, o.step);
-        for (const [s] of pts) {
-          const cut = [-o.headHw, 0, o.headHw].some((d) => {
-            const p = routePose(routes[i], s);
-            const r = (Math.PI * p[2]) / 180, off = sd * g + d;
-            return inFlangeway(routes[j], [p[0] + off * Math.cos(r), p[1] + off * Math.sin(r)], o);
-          });
+        for (let n = 0; n < pts.length; n++) {
+          const s = pts[n][0];
+          const cut = heads[n].some((q) => inBox(j, q) && inFlangeway(routes[j], q, o));
           if (cut && open === undefined) open = s;
           if (!cut && open !== undefined) { grooves.push({ route: i, side: sd, s0: open, s1: s, by: j }); open = undefined; }
         }
         if (open !== undefined) grooves.push({ route: i, side: sd, s0: open, s1: pts[pts.length - 1][0], by: j });
       }
+    }
 
   const inSplit = (gr: Groove) => splits.some((sp) => {
     const k = sp.routes.indexOf(gr.route);
@@ -185,7 +219,7 @@ export function solve(routes: Route[], opts: Partial<SolverOptions> = {}): Solut
   const clear = (r: number, span: [number, number], s: number) => {
     const p = routePose(routes[r], s), rr = (Math.PI * p[2]) / 180;
     const pts: Pt[] = [span[0] - 0.5, span[1] + 0.5].map((off) => [p[0] + off * Math.cos(rr), p[1] + off * Math.sin(rr)]);
-    return routes.every((_, j) => j === r || pts.every((q) => sides.every((sd) => Math.abs(routeLat(routes[j], q) - sd * g) >= o.headHw + 0.3)));
+    return routes.every((_, j) => j === r || pts.every((q) => !inBox(j, q)) || pts.every((q) => sides.every((sd) => Math.abs(routeLat(routes[j], q) - sd * g) >= o.headHw + 0.3)));
   };
   for (const c of crossings) {
     if (c.angle >= o.checkAngle) continue;

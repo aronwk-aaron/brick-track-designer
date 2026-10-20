@@ -111,8 +111,23 @@ function render() {
 }
 
 // ---------- building ----------
-const worker = new Worker(new URL('./worker.ts', import.meta.url), { type: 'module' });
-let seq = 0, pieces: Piece[] = [], timer: number | undefined;
+// (one build at a time; a build still going when a newer one is asked for is
+// given a second to finish, then the worker is replaced, so a slow build of
+// a big layout never holds up the next change)
+const newWorker = () => { const w2 = new Worker(new URL('./worker.ts', import.meta.url), { type: 'module' }); w2.onmessage = onBuilt; return w2; };
+let worker: Worker;
+let seq = 0, started = 0, pieces: Piece[] = [], timer: number | undefined, restartCheck: number | undefined;
+function requestBuild() {
+  const id = ++seq;
+  worker.postMessage({ id, design: structuredClone(design) });
+  buildStarted();
+  clearTimeout(restartCheck);
+  restartCheck = window.setTimeout(() => {
+    if (started >= id || id !== seq) return;
+    worker.terminate(); worker = newWorker();
+    worker.postMessage({ id, design: structuredClone(design) });
+  }, 1000);
+}
 
 /** The design changed: save it and rebuild. record: an undo step (not while a drag or a draw is still going on). */
 function changed(rerender = false, record = true) {
@@ -123,7 +138,7 @@ function changed(rerender = false, record = true) {
   canvas?.draw();
   updateHistoryButtons();
   clearTimeout(timer);
-  timer = window.setTimeout(() => { worker.postMessage({ id: ++seq, design: structuredClone(design) }); buildStarted(); }, 150);
+  timer = window.setTimeout(requestBuild, 150);
   infoEl.textContent = 'Building…';
 }
 
@@ -136,8 +151,9 @@ function buildStarted() {
   buildTick = window.setInterval(() => { $('build-time').textContent = `${((performance.now() - buildT0) / 1000).toFixed(1)} s`; }, 100);
 }
 function buildDone() { clearInterval(buildTick); $('buildstatus').hidden = true; }
-worker.onmessage = (e) => {
+function onBuilt(e: MessageEvent) {
   const d = e.data;
+  started = Math.max(started, d.id);
   if (d.id !== seq) return;          // an older build
   if (d.progress) { $('build-what').textContent = `${d.progress}…`; $('build-bar').style.width = `${Math.round((d.frac ?? 0) * 100)}%`; return; }
   buildDone();
@@ -153,7 +169,8 @@ worker.onmessage = (e) => {
   infoEl.textContent = `${i.switches ? `${i.switches} switch${i.switches > 1 ? 'es' : ''}, ` : ''}${i.crossings} rail crossings, ${i.checkRails} check rails · `
     + `${i.pieces} part${i.pieces > 1 ? 's' : ''} · ${i.size.map((v: number) => v.toFixed(0)).join(' × ')} mm · ${(i.volume / 1000).toFixed(1)} cm³ · built in ${i.ms.toFixed(0)} ms`;
   errEl.textContent = (i.warnings as string[]).join('; ');
-};
+}
+worker = newWorker();
 
 // ---------- 3D view ----------
 const view = $('view3d');
@@ -314,7 +331,7 @@ let show3d = true;
 try { show3d = localStorage.getItem('btd-3d') !== '0'; } catch { /* fine */ }
 set3d(show3d);
 $('toggle-3d').addEventListener('click', () => { show3d = !show3d; set3d(show3d); });
-const restore = (json: string) => { buildStarted(); design = JSON.parse(json); gauge.value = String(design.gaugeStuds); grip.value = design.grip ?? 'edges'; pointsSel.value = String(design.pointsPieces ?? 1); canvas.selected = undefined; save(); render(); renderOptions(); canvas.draw(); updateHistoryButtons(); worker.postMessage({ id: ++seq, design: structuredClone(design) }); };
+const restore = (json: string) => { design = JSON.parse(json); gauge.value = String(design.gaugeStuds); grip.value = design.grip ?? 'edges'; pointsSel.value = String(design.pointsPieces ?? 1); canvas.selected = undefined; save(); render(); renderOptions(); canvas.draw(); updateHistoryButtons(); requestBuild(); };
 const undo = () => { if (history.length > 1) { future.push(history.pop()!); restore(history[history.length - 1]); } };
 const redo = () => { if (future.length) { const j = future.pop()!; history.push(j); restore(j); } };
 function updateHistoryButtons() {

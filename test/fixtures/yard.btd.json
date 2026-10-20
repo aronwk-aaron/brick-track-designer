@@ -1,0 +1,673 @@
+{
+  "version": 1,
+  "gaugeStuds": 4,
+  "routes": [
+    {
+      "name": "left straight",
+      "x": 0,
+      "y": 0,
+      "heading": 0,
+      "segs": [
+        {
+          "kind": "straight",
+          "studs": 128
+        }
+      ]
+    },
+    {
+      "name": "R->L",
+      "x": 16,
+      "y": 1,
+      "heading": 0,
+      "segs": [
+        {
+          "kind": "curve",
+          "radius": 252.0625,
+          "angle": 14.473844
+        },
+        {
+          "kind": "curve",
+          "radius": 252.0625,
+          "angle": -14.473844
+        }
+      ]
+    },
+    {
+      "name": "L->R",
+      "x": 16,
+      "y": 127,
+      "heading": -180,
+      "segs": [
+        {
+          "kind": "curve",
+          "radius": 252.0625,
+          "angle": -14.473844
+        },
+        {
+          "kind": "curve",
+          "radius": 252.062504,
+          "angle": 14.473844
+        }
+      ]
+    },
+    {
+      "name": "R6",
+      "x": 32,
+      "y": 0,
+      "heading": 0,
+      "segs": [
+        {
+          "kind": "straight",
+          "studs": 128
+        }
+      ]
+    },
+    {
+      "name": "R7",
+      "x": 32,
+      "y": 1,
+      "heading": 0,
+      "segs": [
+        {
+          "kind": "curve",
+          "radius": 252.0625,
+          "angle": 14.473844
+        },
+        {
+          "kind": "curve",
+          "radius": 252.0625,
+          "angle": -14.473844
+        }
+      ]
+    },
+    {
+      "name": "R8",
+      "x": 48,
+      "y": 127,
+      "heading": -180,
+      "segs": [
+        {
+          "kind": "curve",
+          "radius": 252.0625,
+          "angle": -14.473844
+        },
+        {
+          "kind": "curve",
+          "radius": 252.062504,
+          "angle": 14.473844
+        }
+      ]
+    },
+    {
+      "name": "R9",
+      "x": 48,
+      "y": 0,
+      "heading": 0,
+      "segs": [
+        {
+          "kind": "straight",
+          "studs": 128
+        }
+      ]
+    },
+    {
+      "name": "R11",
+      "x": 80,
+      "y": 0,
+      "heading": 0,
+      "segs": [
+        {
+          "kind": "straight",
+          "studs": 128
+        }
+      ]
+    },
+    {
+      "name": "R12",
+      "x": 32,
+      "y": 127,
+      "heading": -180,
+      "segs": [
+        {
+          "kind": "curve",
+          "radius": 252.0625,
+          "angle": -14.473844
+        },
+        {
+          "kind": "curve",
+          "radius": 252.062504,
+          "angle": 14.473844
+        }
+      ]
+    },
+    {
+      "name": "R13",
+      "x": 64,
+      "y": 127,
+      "heading": -180,
+      "segs": [
+        {
+          "kind": "curve",
+          "radius": 252.0625,
+          "angle": -14.473844
+        },
+        {
+          "kind": "curve",
+          "radius": 252.062504,
+          "angle": 14.473844
+        }
+      ]
+    },
+    {
+      "name": "R15",
+      "x": 48,
+      "y": 1,
+      "heading": 0,
+      "segs": [
+        {
+          "kind": "curve",
+          "radius": 252.0625,
+          "angle": 14.473844
+        },
+        {
+          "kind": "curve",
+          "radius": 252.0625,
+          "angle": -14.473844
+        }
+      ]
+    },
+    {
+      "name": "R14",
+      "x": 80,
+      "y": 127,
+      "heading": -180,
+      "segs": [
+        {
+          "kind": "curve",
+          "radius": 252.0625,
+          "angle": -14.473844
+        },
+        {
+          "kind": "curve",
+          "radius": 252.062504,
+          "angle": 14.473844
+        }
+      ]
+    },
+    {
+      "name": "R16",
+      "x": 64,
+      "y": 1,
+      "heading": 0,
+      "segs": [
+        {
+          "kind": "curve",
+          "radius": 252.0625,
+          "angle": 14.473844
+        },
+        {
+          "kind": "curve",
+          "radius": 252.0625,
+          "angle": -14.473844
+        }
+      ]
+    },
+    {
+      "name": "R17",
+      "x": 80,
+      "y": 1,
+      "heading": 0,
+      "segs": [
+        {
+          "kind": "curve",
+          "radius": 252.0625,
+          "angle": 14.473844
+        },
+        {
+          "kind": "curve",
+          "radius": 252.0625,
+          "angle": -14.473844
+        }
+      ]
+    },
+    {
+      "name": "R18",
+      "x": 32,
+      "y": -128,
+      "heading": 0,
+      "segs": [
+        {
+          "kind": "straight",
+          "studs": 128
+        }
+      ]
+    },
+    {
+      "name": "R19",
+      "x": 48,
+      "y": -128,
+      "heading": 0,
+      "segs": [
+        {
+          "kind": "straight",
+          "studs": 128
+        }
+      ]
+    },
+    {
+      "name": "T23",
+      "x": 0,
+      "y": 0,
+      "heading": -180,
+      "segs": [
+        {
+          "kind": "curve",
+          "radius": 134.007813,
+          "angle": 28.284693
+        },
+        {
+          "kind": "curve",
+          "radius": 134.007813,
+          "angle": -28.284693
+        }
+      ]
+    },
+    {
+      "name": "T24",
+      "x": 80,
+      "y": 0,
+      "heading": -180,
+      "segs": [
+        {
+          "kind": "curve",
+          "radius": 134.007813,
+          "angle": -28.284693
+        },
+        {
+          "kind": "curve",
+          "radius": 134.007813,
+          "angle": 28.284693
+        }
+      ]
+    },
+    {
+      "name": "R24",
+      "x": 0,
+      "y": 128,
+      "heading": 0,
+      "segs": [
+        {
+          "kind": "straight",
+          "studs": 128
+        }
+      ]
+    },
+    {
+      "name": "R26",
+      "x": 16,
+      "y": 129,
+      "heading": 0,
+      "segs": [
+        {
+          "kind": "curve",
+          "radius": 252.0625,
+          "angle": 14.473844
+        },
+        {
+          "kind": "curve",
+          "radius": 252.0625,
+          "angle": -14.473844
+        }
+      ]
+    },
+    {
+      "name": "R27",
+      "x": 16,
+      "y": 255,
+      "heading": -180,
+      "segs": [
+        {
+          "kind": "curve",
+          "radius": 252.0625,
+          "angle": -14.473844
+        },
+        {
+          "kind": "curve",
+          "radius": 252.062504,
+          "angle": 14.473844
+        }
+      ]
+    },
+    {
+      "name": "R28",
+      "x": 32,
+      "y": 128,
+      "heading": 0,
+      "segs": [
+        {
+          "kind": "straight",
+          "studs": 128
+        }
+      ]
+    },
+    {
+      "name": "R29",
+      "x": 32,
+      "y": 129,
+      "heading": 0,
+      "segs": [
+        {
+          "kind": "curve",
+          "radius": 252.0625,
+          "angle": 14.473844
+        },
+        {
+          "kind": "curve",
+          "radius": 252.0625,
+          "angle": -14.473844
+        }
+      ]
+    },
+    {
+      "name": "R30",
+      "x": 48,
+      "y": 255,
+      "heading": -180,
+      "segs": [
+        {
+          "kind": "curve",
+          "radius": 252.0625,
+          "angle": -14.473844
+        },
+        {
+          "kind": "curve",
+          "radius": 252.062504,
+          "angle": 14.473844
+        }
+      ]
+    },
+    {
+      "name": "R31",
+      "x": 48,
+      "y": 128,
+      "heading": 0,
+      "segs": [
+        {
+          "kind": "straight",
+          "studs": 128
+        }
+      ]
+    },
+    {
+      "name": "R33",
+      "x": 80,
+      "y": 128,
+      "heading": 0,
+      "segs": [
+        {
+          "kind": "straight",
+          "studs": 128
+        }
+      ]
+    },
+    {
+      "name": "R34",
+      "x": 32,
+      "y": 255,
+      "heading": -180,
+      "segs": [
+        {
+          "kind": "curve",
+          "radius": 252.0625,
+          "angle": -14.473844
+        },
+        {
+          "kind": "curve",
+          "radius": 252.062504,
+          "angle": 14.473844
+        }
+      ]
+    },
+    {
+      "name": "R35",
+      "x": 64,
+      "y": 255,
+      "heading": -180,
+      "segs": [
+        {
+          "kind": "curve",
+          "radius": 252.0625,
+          "angle": -14.473844
+        },
+        {
+          "kind": "curve",
+          "radius": 252.062504,
+          "angle": 14.473844
+        }
+      ]
+    },
+    {
+      "name": "R36",
+      "x": 48,
+      "y": 129,
+      "heading": 0,
+      "segs": [
+        {
+          "kind": "curve",
+          "radius": 252.0625,
+          "angle": 14.473844
+        },
+        {
+          "kind": "curve",
+          "radius": 252.0625,
+          "angle": -14.473844
+        }
+      ]
+    },
+    {
+      "name": "R37",
+      "x": 80,
+      "y": 255,
+      "heading": -180,
+      "segs": [
+        {
+          "kind": "curve",
+          "radius": 252.0625,
+          "angle": -14.473844
+        },
+        {
+          "kind": "curve",
+          "radius": 252.062504,
+          "angle": 14.473844
+        }
+      ]
+    },
+    {
+      "name": "R38",
+      "x": 64,
+      "y": 129,
+      "heading": 0,
+      "segs": [
+        {
+          "kind": "curve",
+          "radius": 252.0625,
+          "angle": 14.473844
+        },
+        {
+          "kind": "curve",
+          "radius": 252.0625,
+          "angle": -14.473844
+        }
+      ]
+    },
+    {
+      "name": "R39",
+      "x": 80,
+      "y": 129,
+      "heading": 0,
+      "segs": [
+        {
+          "kind": "curve",
+          "radius": 252.0625,
+          "angle": 14.473844
+        },
+        {
+          "kind": "curve",
+          "radius": 252.0625,
+          "angle": -14.473844
+        }
+      ]
+    },
+    {
+      "name": "T37",
+      "x": 48,
+      "y": -127,
+      "heading": 0,
+      "segs": [
+        {
+          "kind": "curve",
+          "radius": 256.015625,
+          "angle": -14.361071
+        },
+        {
+          "kind": "curve",
+          "radius": 256.015625,
+          "angle": 14.361071
+        },
+        {
+          "kind": "straight",
+          "studs": 128
+        }
+      ]
+    },
+    {
+      "name": "R40",
+      "x": 32,
+      "y": -127,
+      "heading": 0,
+      "segs": [
+        {
+          "kind": "curve",
+          "radius": 256.015625,
+          "angle": 14.361071
+        },
+        {
+          "kind": "curve",
+          "radius": 256.015625,
+          "angle": -14.361071
+        },
+        {
+          "kind": "straight",
+          "studs": 128
+        }
+      ]
+    },
+    {
+      "name": "R41",
+      "x": 48,
+      "y": 384,
+      "heading": -180,
+      "segs": [
+        {
+          "kind": "straight",
+          "studs": 128
+        }
+      ]
+    },
+    {
+      "name": "R42",
+      "x": 32,
+      "y": 384,
+      "heading": -180,
+      "segs": [
+        {
+          "kind": "straight",
+          "studs": 128
+        }
+      ]
+    },
+    {
+      "name": "R43",
+      "x": 80,
+      "y": 256,
+      "heading": 0,
+      "segs": [
+        {
+          "kind": "curve",
+          "radius": 134.007813,
+          "angle": 28.284693
+        },
+        {
+          "kind": "curve",
+          "radius": 134.007813,
+          "angle": -28.284693
+        }
+      ]
+    },
+    {
+      "name": "R44",
+      "x": 0,
+      "y": 256,
+      "heading": 0,
+      "segs": [
+        {
+          "kind": "curve",
+          "radius": 134.007813,
+          "angle": -28.284693
+        },
+        {
+          "kind": "curve",
+          "radius": 134.007813,
+          "angle": 28.284693
+        }
+      ]
+    },
+    {
+      "name": "R45",
+      "x": 32,
+      "y": 383,
+      "heading": -180,
+      "segs": [
+        {
+          "kind": "curve",
+          "radius": 256.015625,
+          "angle": -14.361071
+        },
+        {
+          "kind": "curve",
+          "radius": 256.015625,
+          "angle": 14.361071
+        },
+        {
+          "kind": "straight",
+          "studs": 128
+        }
+      ]
+    },
+    {
+      "name": "R46",
+      "x": 48,
+      "y": 383,
+      "heading": -180,
+      "segs": [
+        {
+          "kind": "curve",
+          "radius": 256.015625,
+          "angle": 14.361071
+        },
+        {
+          "kind": "curve",
+          "radius": 256.015625,
+          "angle": -14.361071
+        },
+        {
+          "kind": "straight",
+          "studs": 128
+        }
+      ]
+    }
+  ],
+  "grip": "edges",
+  "pointsPieces": 1,
+  "name": "yard-w-monster"
+}
