@@ -9,6 +9,7 @@ import { DEFAULTS, Track } from '../src/geom/track';
 import { CROSSING_DEFAULTS, crossingPiece } from '../src/geom/crossing';
 import { TEMPLATES, toRoutes } from '../src/app/design';
 import { pathSplit } from '../src/geom/pathsplit';
+import { cutPiece, spreadSpots } from '../src/geom/cutter';
 import { buildDesign } from '../src/app/build';
 import { crossover } from './assembly.shared';
 
@@ -27,7 +28,8 @@ describe('stepped cuts are joined', { timeout: 120000 }, () => {
       const plain = pathSplit(s, m, routes, t.c.railOffset, keep, 1, 96)!;
       expect(got.parts).toHaveLength(2);
       expect(got.runs.filter((r) => r.d[0] === 0).length).toBeGreaterThan(0); // (a step in it)
-      expect(got.couplers).toBeGreaterThan(0);
+      // (at least two axles across every split; a peg and clip or dovetail at least one)
+      expect(got.couplers).toBeGreaterThanOrEqual(flatRails ? 2 : 1);
       if (!flatRails) expect(got.tongues).toBeGreaterThan(0); else expect(got.tongues).toBe(0);
       const [a, b] = got.parts, vol = (ps: Man[]) => ps.reduce((v, p) => v + p.volume(), 0);
       const over = a.intersect(b).volume();
@@ -67,5 +69,22 @@ describe('a crossover cut to a small bed', { timeout: 300000 }, () => {
       if (on !== 1) problems.push(`${p.name} lies over ${on} parts`);
     }
     expect(problems.join('; ')).toBe('');
+  });
+
+  it('a straight cut with the rails cut flat: at least two axles across it', async () => {
+    const w = await kernel(), s = new Scad(w), t = new Track(s, { ...DEFAULTS, gaugeStuds: 4 });
+    const routes = toRoutes({ version: 1, gaugeStuds: 4, routes: [{ name: 'A', x: 0, y: 0, heading: 0, segs: [{ kind: 'straight', studs: 24 }] }] });
+    const m = crossingPiece(s, routes, { ...CROSSING_DEFAULTS, ballast: 'buddy' });
+    const parts = cutPiece(s, t, m, routes, [{ p: [0, 96], d: [1, 0] }], 'lego', true);
+    expect(parts).toHaveLength(2);
+    // (each axle hole takes about 490 mm3 out: a cross 4.9 x 1.9, 32.4 long)
+    expect(m.volume() - parts.reduce((a, p) => a + p.volume(), 0)).toBeGreaterThan(2 * 400);
+  });
+
+  it('axles go as far apart as they will, more in wide gaps, each stretch between other cuts on its own', () => {
+    expect(spreadSpots(0, 100, () => true)).toEqual([0, 50, 100]);
+    expect(spreadSpots(0, 60, () => true)).toEqual([0, 60]);
+    expect(spreadSpots(0, 100, () => true, [50])).toEqual([0, 46, 54, 100]);
+    expect(spreadSpots(0, 100, (u) => u >= 30 && u <= 34)).toEqual([32]); // (too short a stretch for two a stud apart)
   });
 });

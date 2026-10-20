@@ -130,6 +130,34 @@ export function pickSpots(lo: number, hi: number, ok: (u: number) => boolean): n
 }
 
 /**
+ * Where axles go along a cut (Aaron: at least two across every split, as
+ * far apart as they'll go, for the firmest hold): of the spots where ok(u),
+ * between each pair of breaks (where other cuts cross this one: each stretch
+ * between them joins a different pair of parts), the two furthest apart,
+ * then more in the widest gaps while a gap's over 64 mm (8 studs).
+ */
+export function spreadSpots(lo: number, hi: number, ok: (u: number) => boolean, breaks: number[] = [], clearOfBreak = 4): number[] {
+  const out: number[] = [], bs = [lo - 1, ...breaks.filter((b) => b > lo && b < hi).sort((a, b) => a - b), hi + 1];
+  for (let k = 0; k + 1 < bs.length; k++) {
+    const cand: number[] = [];
+    for (let u = k === 0 ? lo : bs[k] + clearOfBreak; u <= (k + 2 === bs.length ? hi : bs[k + 1] - clearOfBreak) + 1e-9; u += 0.5) if (ok(u)) cand.push(u);
+    if (!cand.length) continue;
+    const got = cand.length > 1 && cand[cand.length - 1] - cand[0] >= 8 ? [cand[0], cand[cand.length - 1]] : [cand[Math.floor(cand.length / 2)]];
+    for (;;) {
+      got.sort((a, b) => a - b);
+      let gi = -1, gw = 64;
+      for (let i = 0; i + 1 < got.length; i++) if (got[i + 1] - got[i] > gw) { gw = got[i + 1] - got[i]; gi = i; }
+      if (gi < 0 || got.length >= 6) break;
+      const mid = (got[gi] + got[gi + 1]) / 2, best = cand.filter((u) => u - got[gi] >= 16 && got[gi + 1] - u >= 16).sort((a, b) => Math.abs(a - mid) - Math.abs(b - mid))[0];
+      if (best === undefined) break;
+      got.push(best);
+    }
+    out.push(...got);
+  }
+  return out;
+}
+
+/**
  * Cut body along the lines into cells (each the part of the piece between
  * neighbouring lines), joints added. routes: the piece's routes (for the
  * rails and the bed), in the same frame as body.
@@ -145,6 +173,8 @@ export function cutPiece(s: Scad, t: Track, body: Man, routes: Route[], lines: C
   const floor = body.slice(1.0);
   // (and where it has rail: none where a loose blade lies on the bed, so no rail-end tongue there)
   const railSl = body.slice(PLATE_H + 4.5);
+  // (an axle hole all in solid, at its height: it may pass under a rail, inside the bed)
+  const axleSl = kit.axleFits ? body.slice(kit.axleZ) : undefined;
   const fb = body.boundingBox(), reachAll = Math.hypot(fb.max[0] - fb.min[0], fb.max[1] - fb.min[1]) + Math.hypot(fb.min[0], fb.min[1]) + Math.hypot(fb.max[0], fb.max[1]);
   // ---- each line's frame, rail crossings and coupler spots ----
   const frames = lines.map((L) => {
@@ -163,7 +193,13 @@ export function cutPiece(s: Scad, t: Track, body: Man, routes: Route[], lines: C
     };
     const us = rails.map((r) => r[0]), lo = L.span ? L.span[0] : Math.min(...us, 0) - half - 20, hi = L.span ? L.span[1] : Math.max(...us, 0) + half + 20;
     // (no couplers on a comb; a flat cut's are axle holes, nothing sticking out, where the bed's thick enough for one)
-    const couplers = L.comb || kit.kindOf(L.joint ?? joint, flatRails) === 'butt' ? [] : pickSpots(lo, hi, (u) => onBed(u) && us.every((r) => Math.abs(u - r) >= 9));
+    const kind = kit.kindOf(L.joint ?? joint, flatRails);
+    const axleOk = (u: number) => { const [a, n0, n1] = kit.couplerReach('axle'), b = s.polygon([f.at(u - a - 1, -n0 - 1), f.at(u + a + 1, -n0 - 1), f.at(u + a + 1, n1 + 1), f.at(u - a - 1, n1 + 1)]); return b.intersect(axleSl!).area() > b.area() * 0.99; };
+    // (where the other cuts cross this one: its stretches between them join different parts)
+    const breaks = lines.flatMap((L2) => { const cr = L.d[0] * L2.d[1] - L.d[1] * L2.d[0]; return L2 === L || Math.abs(cr) < 1e-9 ? [] : [((L2.p[0] - L.p[0]) * L2.d[1] - (L2.p[1] - L.p[1]) * L2.d[0]) / cr]; });
+    const couplers = L.comb || kind === 'butt' ? [] : kind === 'axle'
+      ? spreadSpots(lo, hi, (u) => onBed(u) && axleOk(u), breaks, kit.couplerReach('axle')[0] + 1.5)
+      : pickSpots(lo, hi, (u) => onBed(u) && us.every((r) => Math.abs(u - r) >= 9));
     return { L, ...f, rails, couplers, kind: kit.kindOf(L.joint ?? joint, flatRails), tongues: kit.tongues(L.joint ?? joint, flatRails) };
   });
 
@@ -279,7 +315,35 @@ export function pathJoints(s: Scad, t: Track, body: Man, routes: Route[], runs: 
     }
   });
   const got: [number, number][] = [];
-  if (kind !== 'butt') fs.forEach((f, k) => {
+  const place = (k: number, u: number) => {
+    const q = fs[k].at(u);
+    got.push(q); couplers++;
+    cut.push(...kit.couplerCut(kind).map((m) => fs[k].place(m, u)));
+    for (const [i, side] of [[0, 1], [1, -1]] as const) { const m = kit.couplerPart(kind, side); if (m) add[i].push(fs[k].place(m, u)); }
+  };
+  if (kind === 'axle') {
+    // (axles as far apart as they'll go over the whole cut: the two furthest apart, then each next the furthest from those taken, while 64 mm clear)
+    const cand: [number, number, [number, number]][] = [];
+    fs.forEach((f, k) => {
+      const ok = (u: number) => clear(k, u, ra, rn0, rn1) && routes.some((rt) => Math.abs(routeLat(rt, f.at(u))) <= half - 5)
+        && floorAt(s, floor, f.at(u, 2.5), 2.5) && floorAt(s, floor, f.at(u, -2.5), 2.5) && filled(solid, k, u, ra + 1, rn0 + 1, rn1 + 1);
+      for (let u = 0; u <= f.len + 1e-9; u += 1) if (ok(u)) cand.push([k, u, f.at(u)]);
+    });
+    const dist = (a: [number, number], b: [number, number]) => Math.hypot(a[0] - b[0], a[1] - b[1]);
+    const taken: typeof cand = [];
+    if (cand.length) {
+      let best: [number, number] = [0, 0], bd = -1;
+      for (let i = 0; i < cand.length; i++) for (let j = i + 1; j < cand.length; j++) { const dd = dist(cand[i][2], cand[j][2]); if (dd > bd) { bd = dd; best = [i, j]; } }
+      taken.push(cand[best[0]]); if (bd >= 8) taken.push(cand[best[1]]);
+      while (taken.length < 6) {
+        let pick = -1, pd = 64;
+        cand.forEach((c, i) => { const dd = Math.min(...taken.map((t2) => dist(t2[2], c[2]))); if (dd > pd) { pd = dd; pick = i; } });
+        if (pick < 0) break;
+        taken.push(cand[pick]);
+      }
+    }
+    for (const [k, u] of taken) place(k, u);
+  } else if (kind !== 'butt') fs.forEach((f, k) => {
     const ok = (u: number) => {
       const q = f.at(u);
       return railPts.every((p) => Math.hypot(p[0] - q[0], p[1] - q[1]) >= 9) && clear(k, u, ra, rn0, rn1)
@@ -289,9 +353,7 @@ export function pathJoints(s: Scad, t: Track, body: Man, routes: Route[], runs: 
     for (const u of pickSpots(0, f.len, ok)) {
       const q = f.at(u);
       if (got.some((p) => Math.hypot(p[0] - q[0], p[1] - q[1]) < 16)) continue;
-      got.push(q); couplers++;
-      cut.push(...kit.couplerCut(kind).map((m) => f.place(m, u)));
-      for (const [i, side] of [[0, 1], [1, -1]] as const) { const m = kit.couplerPart(kind, side); if (m) add[i].push(f.place(m, u)); }
+      place(k, u);
     }
   });
   return { cut: cut.length ? s.union(cut) : undefined, add, couplers, tongues: nTongues };
