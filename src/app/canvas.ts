@@ -20,6 +20,8 @@ export interface CanvasHost {
   radius(): number;
   /** What a click or drag would do now, and where the mouse is (studs), for the status line. */
   status?(hint: string, at: [number, number] | undefined): void;
+  /** Esc with nothing being drawn: back to Select mode. */
+  leaveDraw?(): void;
 }
 
 const MM = 8; // mm per stud
@@ -436,7 +438,11 @@ export class TrackCanvas {
       this.drag = undefined; this.dragBad = false; this.dragSnap = undefined;
       this.host.changed(true); return this.draw();
     }
-    if (e.key === 'Escape') this.stopDrawing();
+    // Esc: stop the track being drawn; pressed again (nothing being drawn), back to Select
+    if (e.key === 'Escape') {
+      if (this.active) this.stopDrawing();
+      else if (this.mode === 'draw') this.host.leaveDraw?.();
+    }
     if ((e.key === 'Delete' || e.key === 'Backspace') && this.selected !== undefined && !this.active) {
       const routes = this.host.design().routes;
       for (const i of this.selection().sort((a, b) => b - a)) routes.splice(i, 1);

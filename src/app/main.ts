@@ -131,7 +131,7 @@ function changed(rerender = false, record = true) {
 let buildT0 = 0, buildTick: number | undefined;
 function buildStarted() {
   buildT0 = performance.now();
-  $('buildstatus').hidden = false; $('build-what').textContent = 'Building…'; $('build-time').textContent = '';
+  $('buildstatus').hidden = false; $('build-what').textContent = 'Building…'; $('build-time').textContent = ''; $('build-bar').style.width = '0%';
   clearInterval(buildTick);
   buildTick = window.setInterval(() => { $('build-time').textContent = `${((performance.now() - buildT0) / 1000).toFixed(1)} s`; }, 100);
 }
@@ -139,7 +139,7 @@ function buildDone() { clearInterval(buildTick); $('buildstatus').hidden = true;
 worker.onmessage = (e) => {
   const d = e.data;
   if (d.id !== seq) return;          // an older build
-  if (d.progress) { $('build-what').textContent = `${d.progress}…`; return; }
+  if (d.progress) { $('build-what').textContent = `${d.progress}…`; $('build-bar').style.width = `${Math.round((d.frac ?? 0) * 100)}%`; return; }
   buildDone();
   if (d.error) { errEl.textContent = d.error; infoEl.textContent = ''; canvas.overlay = undefined; canvas.draw(); return; }
   errEl.textContent = '';
@@ -288,6 +288,7 @@ const canvas = new TrackCanvas($<HTMLCanvasElement>('track'), {
   changed: (commit) => changed(commit, commit), // (one undo step per finished action, none for each mouse move)
   select: () => { render(); updateSelbar(); },
   radius: () => Number(radiusSel.value),
+  leaveDraw: () => setMode('select'),
   status: (hint, at) => {
     hintEl.textContent = hint;
     coordsEl.textContent = at ? `x ${at[0]}, y ${at[1]} studs` : '';

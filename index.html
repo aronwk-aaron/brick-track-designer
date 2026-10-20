@@ -113,6 +113,8 @@
     #views { right: 10px; top: 10px; display: flex; gap: 4px; padding: 3px; z-index: 1; } #views button { padding: 2px 8px; font-size: 12px; }
     #buildstatus { left: 50%; top: 10px; transform: translateX(-50%); display: flex; gap: 8px; align-items: center; z-index: 2; }
     #buildstatus[hidden] { display: none; }
+    #buildstatus .bar { width: 120px; height: 6px; border-radius: 3px; background: var(--line); overflow: hidden; }
+    #buildstatus .bar i { display: block; height: 100%; width: 0; background: var(--accent); transition: width 0.2s; }
     #build-time { color: var(--muted); font-variant-numeric: tabular-nums; }
     .spin { width: 12px; height: 12px; border: 2px solid var(--line); border-top-color: var(--accent); border-radius: 50%; animation: spin 0.8s linear infinite; }
     @keyframes spin { to { transform: rotate(360deg); } }
@@ -205,7 +207,7 @@
       <div id="coords" class="chip"></div>
     </div>
     <div id="splitter" title="Drag to resize; double-click to reset"></div>
-    <div id="view3d"><div id="buildstatus" class="chip" hidden><span class="spin"></span><span id="build-what">Building…</span> <span id="build-time"></span></div><div id="views" class="chip"><button id="view-top" type="button" title="Look at the top">Top</button><button id="view-under" type="button" title="Look at the underside, to see where it grips">Underside</button><button id="view-frame" type="button" title="Fit the piece in the view (or double-click it)">Frame</button></div><div id="status" class="chip"><span id="info"></span><span id="error"></span></div></div>
+    <div id="view3d"><div id="buildstatus" class="chip" hidden><span class="spin"></span><span id="build-what">Building…</span> <span id="build-time"></span><span class="bar"><i id="build-bar"></i></span></div><div id="views" class="chip"><button id="view-top" type="button" title="Look at the top">Top</button><button id="view-under" type="button" title="Look at the underside, to see where it grips">Underside</button><button id="view-frame" type="button" title="Fit the piece in the view (or double-click it)">Frame</button></div><div id="status" class="chip"><span id="info"></span><span id="error"></span></div></div>
   </main>
   <script type="module" src="/src/app/main.ts"></script>
 </body>
