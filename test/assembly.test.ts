@@ -14,6 +14,15 @@ const cases: [string, Design][] = [
   ['left switch, 4DBrix points', { ...TEMPLATES['Left switch (LEGO)'], options: { mechStyle: '4dbrix' } }],
   ['wye on ballast, 4DBrix points', { ...TEMPLATES['Wye switch'], options: { ballast: 'buddy', mechStyle: '4dbrix' } }],
   ['crossover, 4DBrix points', { ...crossover, options: { mechStyle: '4dbrix' } }],
+  // (the throw's actions, the switch stand and the prototype blades)
+  ['left switch, switch stand', { ...TEMPLATES['Left switch (LEGO)'], options: { throwStyle: 'stand' } }],
+  ['left switch, over-centre spring', { ...TEMPLATES['Left switch (LEGO)'], options: { throwAction: 'overcentre' } }],
+  ['left switch, spring-back points on a stand', { ...TEMPLATES['Left switch (LEGO)'], options: { throwAction: 'springback', throwStyle: 'stand' } }],
+  ['left switch, prototype blades', { ...TEMPLATES['Left switch (LEGO)'], options: { bladeStyle: 'prototype' } }],
+  ['left switch, prototype blades and over-centre spring', { ...TEMPLATES['Left switch (LEGO)'], options: { bladeStyle: 'prototype', throwAction: 'overcentre' } }],
+  ['wye on ballast, stand and prototype blades', { ...TEMPLATES['Wye switch'], options: { ballast: 'buddy', throwStyle: 'stand', bladeStyle: 'prototype' } }],
+  ['crossover, over-centre spring and prototype blades', { ...crossover, options: { throwAction: 'overcentre', bladeStyle: 'prototype' } }],
+  ['crossover, spring-back points on stands', { ...crossover, options: { throwAction: 'springback', throwStyle: 'stand' } }],
 ];
 
 assemblySuite(cases);

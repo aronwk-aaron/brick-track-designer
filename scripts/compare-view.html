@@ -1,0 +1,62 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Compare view</title>
+<style>html, body { margin: 0; background: #f4f4f2; } canvas { display: block; } #label { position: absolute; left: 12px; top: 8px; font: 600 15px system-ui, sans-serif; color: #333; }</style>
+</head>
+<body>
+<div id="label"></div>
+<script type="module">
+// The comparison viewer: loads a variant dumped by scripts/compare-dump.mts
+// and draws it as asked (window.shot(spec)), for scripts/compare-shots.mts.
+import * as THREE from 'three';
+const renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
+renderer.localClippingEnabled = true;
+document.body.append(renderer.domElement);
+const kindOf = (n) => (/spring/.test(n) ? 'spring' : /bracket/.test(n) ? 'bracket' : /lever|stand/.test(n) ? 'lever' : /throw/.test(n) ? 'throw' : /points/.test(n) ? 'points' : 'track');
+const colors = { track: 0x9aa0a8, points: 0x4682b4, throw: 0xe8892b, lever: 0xd4af37, bracket: 0x8a8f99, spring: 0xc0392b };
+window.shot = async (spec) => {
+  const W = spec.w ?? 1200, H = spec.h ?? 800;
+  renderer.setSize(W, H); renderer.setPixelRatio(1);
+  document.getElementById('label').textContent = spec.label ?? '';
+  const meta = await (await fetch(`/compare/.data/${spec.data}.json?${Date.now()}`)).json();
+  const bin = new Float32Array(await (await fetch(`/compare/.data/${spec.data}.bin?${Date.now()}`)).arrayBuffer());
+  const scene = new THREE.Scene();
+  scene.background = new THREE.Color(0xf4f4f2);
+  scene.add(new THREE.HemisphereLight(0xffffff, 0x777777, 2.0));
+  const sun = new THREE.DirectionalLight(0xffffff, 1.5); sun.position.set(300, -400, 700); scene.add(sun);
+  const fill = new THREE.DirectionalLight(0xffffff, 0.6); fill.position.set(-300, 300, 200); scene.add(fill);
+  const clips = (spec.clip ?? []).map((c) => new THREE.Plane(new THREE.Vector3(...c.n), c.d));
+  let k = 0;
+  for (const p of meta.parts) {
+    const kind = kindOf(p.name);
+    if ((spec.hide ?? []).includes(kind) || (spec.only && !spec.only.some((o) => p.name.includes(o)))) { k++; continue; }
+    const [o, n] = spec.print ? p.print : p.world;
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.BufferAttribute(bin.slice(o, o + n), 3));
+    geo.computeVertexNormals();
+    const col = kind === 'track' ? (spec.trackColor ?? colors.track) : colors[kind];
+    const mat = new THREE.MeshStandardMaterial({ color: col, roughness: 0.6, metalness: 0.1, side: THREE.DoubleSide, clippingPlanes: kind === 'track' || spec.clipAll ? clips : [],
+      transparent: kind === 'track' && spec.trackAlpha !== undefined, opacity: spec.trackAlpha ?? 1 });
+    const m = new THREE.Mesh(geo, mat);
+    if (spec.print) { geo.computeBoundingBox(); const bb = geo.boundingBox; m.position.set(-(bb.min.x + bb.max.x) / 2 + (spec.printAt?.[p.name]?.[0] ?? 0), -(bb.min.y + bb.max.y) / 2 + (spec.printAt?.[p.name]?.[1] ?? 0), -bb.min.z); }
+    else m.position.z = (spec.explode ?? {})[kind] ?? 0;
+    if (spec.edges) { const e = new THREE.LineSegments(new THREE.EdgesGeometry(geo, 30), new THREE.LineBasicMaterial({ color: 0x222222, transparent: true, opacity: 0.35, clippingPlanes: mat.clippingPlanes })); m.add(e); }
+    scene.add(m); k++;
+  }
+  let cam;
+  const c = spec.cam;
+  if (c.ortho) {
+    const hh = c.ortho, hw = hh * W / H;
+    cam = new THREE.OrthographicCamera(-hw, hw, hh, -hh, 0.1, 5000);
+  } else cam = new THREE.PerspectiveCamera(c.fov ?? 30, W / H, 0.5, 5000);
+  cam.up.set(...(c.up ?? [0, 0, 1]));
+  cam.position.set(...c.pos); cam.lookAt(new THREE.Vector3(...c.at));
+  renderer.render(scene, cam);
+  return meta.warnings;
+};
+window.ready = true;
+</script>
+</body>
+</html>

@@ -34,7 +34,11 @@ export interface TrackworkItem {
 }
 
 /** A built piece: its mesh in the design (for the view) and its STL (in its own frame, to print). */
-export interface Piece { name: string; color: number; positions: Float32Array; stl: Uint8Array }
+export interface Piece {
+  name: string; color: number; positions: Float32Array; stl: Uint8Array;
+  /** (4DBrix's blades) the pin it turns on, as assembled, and how far to turn it there to open it (degrees): it goes on open */
+  turn?: { at: [number, number]; by: number };
+}
 
 // Pieces built before, by what they were built from: an edit rebuilds only
 // the pieces it changes (the worker keeps this between builds).
@@ -206,7 +210,8 @@ export function buildDesign(w: Wasm, design: Design, report: (what: string, frac
     generateBallast: o.ballast !== 'none', ballastBuddy: o.ballast === 'buddy', bottomStyle: o.bottomStyle,
     // (a floor under the moving parts only with the lid over them: otherwise they go in from below, through their pockets)
     ...(o.pointsModule === 'layers' && o.ballast !== 'none' && { mechFloor: 1.2 }), endSupports: o.endSupports !== false,
-    throwModule: o.throwStyle === 'bracket', mechStyle: o.mechStyle ?? '4dbrix' };
+    throwModule: o.throwStyle === 'bracket', mechStyle: o.mechStyle ?? '4dbrix',
+    throwStand: o.throwStyle === 'stand', throwAction: o.throwAction ?? 'detent', bladeStyle: o.bladeStyle ?? 'simple' };
 
   let pc = planPieces(routes, sol.splits, params, toeShift, throwEdit, true);
   steps = 2 + pc.switches.length + (pc.rest.length ? 1 : 0);
@@ -373,13 +378,13 @@ export function buildDesign(w: Wasm, design: Design, report: (what: string, frac
     if (studs.length) { lower = scad.union([lower, ...studs]); deck = scad.difference(deck, socks); }
     return { lower, deck };
   };
-  const add = (name: string, color: number, local: Man, world: Man) => {
+  const add = (name: string, color: number, local: Man, world: Man, turn?: Piece['turn']) => {
     // (a part that comes apart into loose bits is no good to print: say so)
     const wm = world.getMesh(), positions = new Float32Array(wm.triVerts.length * 3);
     wm.triVerts.forEach((v, i) => positions.set(wm.vertProperties.subarray(v * wm.numProp, v * wm.numProp + 3), i * 3));
     let stl = stlOf.get(local);
     if (!stl) { stl = stlBytes(local.getMesh()); stlOf.set(local, stl); }
-    pieces.push({ name, color, positions, stl: stl.slice() });
+    pieces.push({ name, color, positions, stl: stl.slice(), ...(turn && { turn }) });
     volume += local.volume();
   };
   // A big piece in tiles (src/app/tiles.ts): each cell of the cuts built
@@ -562,7 +567,7 @@ export function buildDesign(w: Wasm, design: Design, report: (what: string, frac
         lidParts.forEach((m, k) => add(`points${lidParts.length > 1 ? k + 1 : ''}-lid`, 0x6f7780, m, m));
       } else addTrack('track', whole.body, routes);
     }
-    for (const sp of net.splits) for (const m of sp.moving) add(m.name, m.color, m.local, m.world);
+    for (const sp of net.splits) for (const m of sp.moving) add(m.name, m.color, m.local, m.world, m.turn);
     pc = { switches: [], rest: [], warnings: [...net.warnings] };
 
   }
@@ -597,7 +602,8 @@ export function buildDesign(w: Wasm, design: Design, report: (what: string, frac
     const frameCuts = grooveCuts.map((m) => R(T(m, [-sw.pose[0], -sw.pose[1], 0]), [0, 0, -sw.pose[2]]));
     const gm = cached(`sw:${JSON.stringify({ routes: sw.routes, sets: sw.sets, params, cl, tw: tw.groove })}`, () => {
       const g = switchGeometry(scad, sw.plan, frameCuts);
-      return { bases: g.basePieces(), whole: g.base(), grips: g.grips, sets: sw.sets.map((_, k) => ({ thr: g.throwPart(k), thrPrint: g.throwPrint(k), pp: g.pointsParts(k), print: g.leverPrint(), lever: g.leverPart(k), bracket: params.throwModule ? g.bracketPart(k) : undefined })) };
+      return { bases: g.basePieces(), whole: g.base(), grips: g.grips, sets: sw.sets.map((_, k) => ({ thr: g.throwPart(k), thrPrint: g.throwPrint(k), pp: g.pointsParts(k), print: g.leverPrint(k), lever: g.leverPart(k), bracket: params.throwModule ? g.bracketPart(k) : undefined,
+        spring: g.springPart(k), springPrint: g.springPrint(k), turns: g.pointsTurns(k) })) };
     });
     const bases = gm.bases;
     // (its tubes, for the plan's grip marks, in the design's frame)
@@ -611,10 +617,14 @@ export function buildDesign(w: Wasm, design: Design, report: (what: string, frac
       add(`${tag}-lid`, 0x6f7780, ls.deck, ls.deck);
     } else if (bp || !bases.every(fitsBed)) addTrack(`${tag}-base`, place(gm.whole, sw.pose), sw.covers.map(([ri, a, bb]) => subRoute(routes[ri], a, bb)));
     else bases.forEach((m, j) => add(bases.length > 1 ? `${tag}-base${j + 1}` : `${tag}-base`, 0x6f7780, m, place(m, sw.pose)));
-    gm.sets.forEach(({ thr, thrPrint, pp, print, lever, bracket }, k) => {
+    gm.sets.forEach(({ thr, thrPrint, pp, print, lever, bracket, spring, springPrint, turns }, k) => {
       const sfx = sw.sets.length > 1 ? `${k + 1}` : '';
       if (bracket) add(`${tag}-bracket${sfx}`, 0x8a8f99, bracket, place(bracket, sw.pose));
-      pp.forEach((pts, j) => add(`${tag}-points${sfx}${pp.length > 1 ? (j === 0 ? '-a' : '-b') : ''}`, 0x4682b4, pts, place(pts, sw.pose)));
+      const cz2 = Math.cos((sw.pose[2] * Math.PI) / 180), sz2 = Math.sin((sw.pose[2] * Math.PI) / 180);
+      const turnOf = (j: number): Piece['turn'] => { const t2 = turns?.[j]; return t2 && { at: [sw.pose[0] + t2.at[0] * cz2 - t2.at[1] * sz2, sw.pose[1] + t2.at[0] * sz2 + t2.at[1] * cz2], by: t2.by }; };
+      pp.forEach((pts, j) => add(`${tag}-points${sfx}${pp.length > 1 ? (j === 0 ? '-a' : '-b') : ''}`, 0x4682b4, pts, place(pts, sw.pose), turnOf(j)));
+      // (Peco's spring: printed flat and straight, as assembled squeezed between its pins)
+      if (spring && springPrint) add(`${tag}-points${sfx}-spring`, 0xc0392b, springPrint, place(spring, sw.pose));
       add(`${tag}-throw${sfx}`, 0xe8892b, thrPrint, place(thr, sw.pose));
       add(`${tag}-lever${sfx}`, 0xd4af37, print, place(lever, sw.pose));
     });

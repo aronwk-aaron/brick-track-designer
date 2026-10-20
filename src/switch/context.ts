@@ -32,7 +32,31 @@ export interface SwitchParams {
   throwModule?: boolean;
   /** The points' mechanism: switch.scad's ('tines': the points under the bed, in pockets, on springy tines) or 4DBrix's ('4dbrix': each blade on its own plate on top of the bed, on a pin, a slider bar through the bed under them). */
   mechStyle?: 'tines' | '4dbrix';
+  /**
+   * (4DBrix's points) What holds the points over, and what a train trailing
+   * through them the wrong way does: 'detent' (the lever's click, as before);
+   * 'overcentre' (Peco's V spring between the bed and the slider: the points
+   * snap to either side, a train trailing through pushes them over and they
+   * stay); 'springback' (a spring switch: each blade's tongue a long spring,
+   * the throw locked, so the blades give way to a trailing train and spring
+   * back after it).
+   */
+  throwAction?: 'detent' | 'overcentre' | 'springback';
+  /** (4DBrix's points) The throw as a switch stand (a ground throw, Caboose Industries' way): a handle swung over on an eccentric in the slider's yoke, locked past dead centre at each end. */
+  throwStand?: boolean;
+  /** (4DBrix's points) The blades: 'simple' (as before) or 'prototype' (planed to a point and laid tight under the stock rail's undercut head, the tie bar at the points). */
+  bladeStyle?: 'simple' | 'prototype';
 }
+
+/** The switch stand's handle and eccentric (throwStand). */
+export const STAND = {
+  /** the eccentric's diameter, and the angle past dead centre it rests at each end */
+  eccD: 7, overDeg: 8,
+  /** the handle: from the hub to its end; its width (across, in its plane), its thickness (along the hub) */
+  handleLen: 12, handleW: 3, handleT: 3,
+  /** the hub's disc under the eccentric, on the handle's side */
+  rootR: 5.2,
+};
 
 export const SWITCH_DEFAULTS: SwitchParams = {
   gaugeStuds: 4, pointThrow: 3, pointClearance: 0.3, springPreload: 1, springThickness: 0.9,
@@ -126,7 +150,12 @@ export function pointsSet(routes: Route[], ps: PointsSet, p: SwitchParams, defau
   // pin to its toe, on a stud of the frame's grid; its travel opens the
   // blade by the throw there, plus the preload its tongue takes)
   const fdbPivotY = railPoint(ra, sHeel - 4, -G)[1];
-  const fdbY = Math.max(toeY + 8, Math.min(fdbPivotY - 8, Math.round((fdbPivotY - 0.6 * (fdbPivotY - toeY) - 4) / 8) * 8 + 4));
+  // (prototype blades: the tie bar at the points, as a switch's head rod is: on the first stud line where the
+  // throw arm clears the end connector (half its width past it) and its post has plate round it)
+  const fdbYSimple = Math.max(toeY + 8, Math.min(fdbPivotY - 8, Math.round((fdbPivotY - 0.6 * (fdbPivotY - toeY) - 4) / 8) * 8 + 4));
+  const fdbY = p.bladeStyle === 'prototype' && p.mechStyle === '4dbrix'
+    // (and with Peco's spring, room for its pin on the toe's side, past the plates' start)
+    ? Math.min(fdbYSimple, Math.ceil((Math.max(toeY + 8, 8 + g.armW / 2, p.throwAction === 'overcentre' ? 8 + 12 + 4 : 0) - 4) / 8 - 1e-6) * 8 + 4) : fdbYSimple;
   const fdbTravel = p.pointThrow * (fdbPivotY - fdbY) / Math.max(1, fdbPivotY - toeY) + p.springPreload;
   const leverTravel = over.leverTravel ?? (p.mechStyle === '4dbrix' ? fdbTravel : throwTravel + 2 * p.springPreload);
   const postX = [tineTip[0] - p.springPreload];
@@ -140,15 +169,24 @@ export function pointsSet(routes: Route[], ps: PointsSet, p: SwitchParams, defau
   const throwStockX = railPoint(throwStockRt, sOf(throwStockRt, [0, throwY]), throwDir * G)[0];
   const throwFaceX = throwStockX + throwDir * 3.9;
   const leverAng = deg(Math.asin(Math.min(0.9, leverTravel / 2 / g.leverDa)));
+  // The switch stand (throwStand): its eccentric's offset, so that it moves the slider by the travel between
+  // its two rests, each the over angle past dead centre; the hub as low as lets the handle lie on the arm's top
+  const stand = !!p.throwStand && p.mechStyle === '4dbrix';
+  const standE = leverTravel / 2 / Math.cos(rad(STAND.overDeg));
+  // (its grip, at its end, the lowest of it)
+  const standZ = g.bedTop + p.pointClearance + (STAND.handleLen - 0.6) * Math.sin(rad(STAND.overDeg)) + STAND.handleW / 2 + 0.6;
   const leverTipZ = g.leverPz - g.leverDa * Math.cos(rad(leverAng));
   // (from the sleepers' end, ballast or not: the arm stands over the ballast's lower steps)
   const throwEdgeX = throwDir * (g.ballast && scadParityNow() ? (g.buddy ? g.ballastBottomW : g.ballastMidW) / 2 : g.sleeperLen / 2);
-  const leverMinD = Math.max(throwDir * throwFaceX + Math.max(4 + 1.5, leverTravel / 2 + g.leverTipD / 2 + 2 * p.pointClearance + 1.2 + 1.5),
+  const leverMinD = Math.max(throwDir * throwFaceX + Math.max(4 + 1.5, leverTravel / 2 + g.leverTipD / 2 + 2 * p.pointClearance + 1.2 + 1.5,
+    // (the stand: its yoke, and its handle lying toward the track, clear of the stock rail's foot)
+    stand ? Math.max(leverTravel / 2 + STAND.eccD / 2 + 2 * p.pointClearance + 1.2 + 1.5, STAND.handleLen + 1.5) : 0),
     p.throwModule ? g.sleeperLen / 2 + 1.5 * STUD + 0.2 : 0); // (a bracket, 3 studs square, clear of the sleepers (the top of the bed): over a ballast's lower steps is fine)
   const leverX = throwDir * Math.max(throwDir * throwEdgeX + p.leverOffset, leverMinD);
   const forkX = leverX - leverTravel / 2;
   const forkLipZ = leverTipZ + g.leverTipD / 2 + p.pointClearance;
-  const forkTop = forkLipZ + 0.8;
+  // (the stand's yoke: up past the eccentric's centre at its highest)
+  const forkTop = stand ? standZ + standE + 0.4 : forkLipZ + 0.8;
   const forkMouthHw = g.leverDrvW / 2 + (forkTop - leverTipZ) * Math.tan(rad(leverAng)) + p.pointClearance;
   const stepYa = Math.max(0, Math.floor((throwY - g.armW / 2) / STUD) * STUD - STUD);
   const stepYb = Math.ceil((throwY + g.armW / 2) / STUD) * STUD + STUD;
@@ -157,11 +195,11 @@ export function pointsSet(routes: Route[], ps: PointsSet, p: SwitchParams, defau
   const warnings: string[] = [];
   if (tipGap - HEAD_HW - p.pointClearance < p.springThickness + g.tineGap / 2 + leverTravel + p.springPreload + 0.5)
     warnings.push('not enough room between the blades for the spring tines; lower point_throw or spring_preload');
-  if (forkMouthHw > g.leverTipD / 2 - 0.25) warnings.push("the fork's mouth is too wide to hold the lever's tip");
+  if (!stand && forkMouthHw > g.leverTipD / 2 - 0.25) warnings.push("the fork's mouth is too wide to hold the lever's tip");
   return {
     ra, rb, sToe, sHeel, toeY, sBpiv, pivotPt, throwAng, tineLen, yS, tineTip, throwTravel, leverTravel, postX, fdbTravel,
     swingRange, pointsEndY, tipGap, throwDir, throwY, throwStockRt, throwStockX, throwFaceX, leverAng, leverTipZ,
-    throwEdgeX, leverMinD, leverX, forkX, forkLipZ, forkTop, forkMouthHw, stepYa, stepYb, stepXo, armRect,
+    throwEdgeX, leverMinD, leverX, forkX, forkLipZ, forkTop, forkMouthHw, stepYa, stepYb, stepXo, armRect, stand, standE, standZ,
     bladeMidAt, warnings,
   };
 }
