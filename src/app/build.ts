@@ -290,7 +290,9 @@ export function buildDesign(w: Wasm, design: Design, report: (what: string, frac
       if (q[0] < bb.min[0] || q[0] > bb.max[0] || q[1] < bb.min[1] || q[1] > bb.max[1]) continue;
       if (!(solid(sl, q) && solid(d0, q) && solid(d1, q))) continue;
       studs.push(T(track.stud(), [q[0], q[1], zs - 0.01]));
-      socks.push(T(scad.cylinder(track.o.studH + 0.2, track.c.studSocketW / 2, track.c.studSocketW / 2, 24), [q[0], q[1], zs - 0.01]));
+      // (square sockets under the lid: a round one grips a stud too hard to lift the lid off again)
+      const sw2 = track.c.studSocketW;
+      socks.push(T(R(scad.cube([sw2, sw2, track.o.studH + 0.2]), [0, 0, gp[2]]), [q[0] - (sw2 / 2) * (Math.cos(hd) - Math.sin(hd)), q[1] - (sw2 / 2) * (Math.sin(hd) + Math.cos(hd)), zs - 0.01]));
     }
     if (studs.length) { lower = scad.union([lower, ...studs]); deck = scad.difference(deck, socks); }
     return { lower, deck };
