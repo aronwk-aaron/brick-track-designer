@@ -25,7 +25,7 @@ export const segDist = (q: [number, number], a: [number, number], b: [number, nu
   return Math.hypot(q[0] - a[0] - k * dx, q[1] - a[1] - k * dy);
 };
 /** How to join the parts (cutter.ts's joints): none given, they just butt together. */
-export interface PathJoin { t: Track; joint: Joint; flatRails: boolean }
+export interface PathJoin { t: Track; joint: Joint; flatRails: boolean; /** where no rail-end tongue may go (cutter.ts cutPiece) */ noTongue?: (q: [number, number]) => boolean }
 
 /**
  * Split m in two along a stud-grid path running in y (axis 0: the parts left
@@ -156,7 +156,7 @@ export function pathSplit(s: Scad, m: Man, routes: Route[], railG: number, avoid
     const d: [number, number] = [Math.sign(path[k][0] - path[k - 1][0]), Math.sign(path[k][1] - path[k - 1][1])], last = runs[runs.length - 1];
     if (last && last.d[0] === d[0] && last.d[1] === d[1]) last.len += STEP; else runs.push({ p: path[k - 1], d, len: STEP });
   }
-  const j = join ? pathJoints(s, join.t, m, routes, runs, join.joint, join.flatRails) : undefined;
+  const j = join ? pathJoints(s, join.t, m, routes, runs, join.joint, join.flatRails, join.noTongue) : undefined;
   const body = j?.cut ? s.difference(m, [j.cut]) : m;
   let a = s.intersection(body, region(0)), b = s.difference(body, [region(0.1)]);
   if (j?.add[0].length) a = tidy(s, s.union([a, ...j.add[0]]));

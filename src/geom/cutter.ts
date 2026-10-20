@@ -82,7 +82,7 @@ export function jointKit(s: Scad, t: Track, bz: number) {
  * routes goes from one side to the other, and has rail there (railStrip: a
  * slice through the rails near the cut; none where a loose blade lies on the bed).
  */
-export function railCrossings(s: Scad, routes: Route[], G: number, f: CutFrame, railStrip: CS, lo = -Infinity, hi = Infinity): RailCross[] {
+export function railCrossings(s: Scad, routes: Route[], G: number, f: CutFrame, railStrip: CS, lo = -Infinity, hi = Infinity, noTongue?: (q: [number, number]) => boolean): RailCross[] {
   const rails: RailCross[] = [];
   routes.forEach((rt) => {
     const len = routeLength(rt), step = 0.5;
@@ -98,7 +98,7 @@ export function railCrossings(s: Scad, routes: Route[], G: number, f: CutFrame, 
           const fwd = Math.abs(hn) <= 90;
           // (rail all along where its tongues go, 4 mm each side: not by a loose blade's heel either, a baseplate edge just past it, say)
           const hr = (routePose(rt, a)[2] * Math.PI) / 180, along = (d: number): [number, number] => [q[0] - d * Math.sin(hr), q[1] + d * Math.cos(hr)];
-          if (u >= lo && u <= hi && [0, -4.5, 4.5].every((d) => s.w.CrossSection.square([1.2, 1.2], true).translate(along(d)).intersect(railStrip).area() > 0.4)) rails.push([u, fwd ? hn : hn + 180, fwd ? Math.sign(o) : -Math.sign(o)]);
+          if (u >= lo && u <= hi && !noTongue?.(q) && [0, -4.5, 4.5].every((d) => s.w.CrossSection.square([1.2, 1.2], true).translate(along(d)).intersect(railStrip).area() > 0.4)) rails.push([u, fwd ? hn : hn + 180, fwd ? Math.sign(o) : -Math.sign(o)]);
         }
         prev = v;
       }
@@ -135,7 +135,8 @@ export function pickSpots(lo: number, hi: number, ok: (u: number) => boolean): n
  * rails and the bed), in the same frame as body.
  */
 /** flatRails: cut flat: the rails straight across with no tongues, and no peg and clip (nothing sticks out, nothing to support). */
-export function cutPiece(s: Scad, t: Track, body: Man, routes: Route[], lines: CutLine[], joint: Joint = 'lego', flatRails = false): Man[] {
+/** noTongue: where no rail-end tongue may go (beside loose blades: a set of points' stretch), the rail cut plain there. */
+export function cutPiece(s: Scad, t: Track, body: Man, routes: Route[], lines: CutLine[], joint: Joint = 'lego', flatRails = false, noTongue?: (q: [number, number]) => boolean): Man[] {
   if (!lines.length) return [body];
   const G = t.c.railOffset, half = t.c.sleeperLen / 2;
   const kit = jointKit(s, t, body.boundingBox().min[2]);
@@ -150,7 +151,7 @@ export function cutPiece(s: Scad, t: Track, body: Man, routes: Route[], lines: C
     const f = cutFrame(L.p, L.d);
     // rails crossing the line (a comb cut has no rail joints: the rails run along it, or are cut plain where one crosses)
     const band = s.w.CrossSection.square([2 * reachAll, 14], true).rotate(deg(Math.atan2(L.d[1], L.d[0]))).translate(L.p);
-    const rails = L.comb ? [] : railCrossings(s, routes, G, f, railSl.intersect(band));
+    const rails = L.comb ? [] : railCrossings(s, routes, G, f, railSl.intersect(band), -Infinity, Infinity, noTongue);
     // coupler spots: on the bed along the line, 9 clear of every rail, at least 16 apart, up to 3 per stretch of bed
     // (on the bed, and with floor all round the peg on both sides of the cut)
     // (the floor near the line only: testing spots against the whole piece's
@@ -242,7 +243,7 @@ export interface Run { p: [number, number]; d: [number, number]; len: number }
  * cut plain). Side +1: left of the runs (d turned left). Returns what to
  * take away from body before it's split, and what each side gets.
  */
-export function pathJoints(s: Scad, t: Track, body: Man, routes: Route[], runs: Run[], joint: Joint, flatRails: boolean) {
+export function pathJoints(s: Scad, t: Track, body: Man, routes: Route[], runs: Run[], joint: Joint, flatRails: boolean, noTongue?: (q: [number, number]) => boolean) {
   const G = t.c.railOffset, half = t.c.sleeperLen / 2;
   const kit = jointKit(s, t, body.boundingBox().min[2]);
   const kind = kit.kindOf(joint, flatRails), tongues = kit.tongues(joint, flatRails), [ra, rn0, rn1] = kit.couplerReach(kind);
@@ -262,7 +263,7 @@ export function pathJoints(s: Scad, t: Track, body: Man, routes: Route[], runs: 
   // the rails crossing each run (where they have rail: none under a loose blade)
   const rails = fs.map((f) => {
     const band = s.polygon([f.at(-10, -7), f.at(f.len + 10, -7), f.at(f.len + 10, 7), f.at(-10, 7)]);
-    return railCrossings(s, routes, G, f, railSl.intersect(band), 0, f.len);
+    return railCrossings(s, routes, G, f, railSl.intersect(band), 0, f.len, noTongue);
   });
   const railPts = rails.flatMap((rs, k) => rs.map((r) => fs[k].at(r[0])));
   if (tongues) rails.forEach((rs, k) => {
