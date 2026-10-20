@@ -32,15 +32,28 @@ export function pathSplit(s: Scad, m: Man, routes: Route[], railG: number, avoid
   const x0 = Math.floor(bb.min[0] / STEP) * STEP - STEP, x1 = Math.ceil(bb.max[0] / STEP) * STEP + STEP;
   const y0 = Math.floor(bb.min[1] / STEP) * STEP - STEP, y1 = Math.ceil(bb.max[1] / STEP) * STEP + STEP;
   const nx = Math.round((x1 - x0) / STEP) + 1, ny = Math.round((y1 - y0) / STEP) + 1;
+  // which grid cells have track in them (worked out once: a cross-section per edge filled the kernel's memory)
+  const filled = new Uint8Array(nx * ny);
+  {
+    const polys = floor.toPolygons() as [number, number][][];
+    const inside = (q: [number, number]) => { let w = 0; for (const poly of polys) for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) { const [xi, yi] = poly[i], [xj, yj] = poly[j]; if ((yi > q[1]) !== (yj > q[1]) && q[0] < ((xj - xi) * (q[1] - yi)) / (yj - yi) + xi) w ^= 1; } return w === 1; };
+    for (let j = 0; j < ny - 1; j++) for (let i = 0; i < nx - 1; i++) {
+      // (a cell has track if any of a few points in it is on the floor)
+      const cx = x0 + i * STEP, cy = y0 + j * STEP;
+      if ([[2, 2], [6, 2], [2, 6], [6, 6], [4, 4]].some(([dx, dy]) => inside([cx + dx, cy + dy]))) filled[j * nx + i] = 1;
+    }
+  }
+  const cellAt = (q: [number, number]) => { const i = Math.floor((q[0] - x0) / STEP), j = Math.floor((q[1] - y0) / STEP); return i >= 0 && j >= 0 && i < nx - 1 && j < ny - 1 && filled[j * nx + i] === 1; };
   // the cost of a cut along the edge from a to b: Infinity where it can't go
   const edgeCost = (a: [number, number], b: [number, number]) => {
     const mid: [number, number] = [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2], ed: [number, number] = [(b[0] - a[0]) / STEP, (b[1] - a[1]) / STEP];
-    const sq = s.w.CrossSection.square([STEP, STEP], true).translate(mid);
     // (it must go through the part near the middle, not round it: within a third of its width either side of where it aims)
     const across = axis === 0 ? mid[0] : mid[1], half3 = (axis === 0 ? bb.max[0] - bb.min[0] : bb.max[1] - bb.min[1]) / 3;
     if (Math.abs(across - at) > half3) return Infinity;
-    if (sq.intersect(floor).area() < 0.5) return 0.05; // (nothing there to cut)
-    if (avoid.some((q) => Math.hypot(q[0] - mid[0], q[1] - mid[1]) < 30)) return Infinity;
+    // (the cells either side of the edge: nothing there, nothing to cut)
+    const nrm: [number, number] = [-ed[1] * 4, ed[0] * 4];
+    if (!cellAt([mid[0] + nrm[0], mid[1] + nrm[1]]) && !cellAt([mid[0] - nrm[0], mid[1] - nrm[1]])) return 0.05;
+    if (avoid.some((q) => Math.hypot(q[0] - mid[0], q[1] - mid[1]) < 22)) return Infinity;
     for (const r of rails) {
       if (Math.abs(r.p[0] - mid[0]) > 14 || Math.abs(r.p[1] - mid[1]) > 14) continue;
       // (a rail running along the edge, near it: no)
@@ -49,7 +62,7 @@ export function pathSplit(s: Scad, m: Man, routes: Route[], railG: number, avoid
       if (along && off < 12) return Infinity;
     }
     // (and a little dearer the further from where an even split would be)
-    return 1 + Math.abs((axis === 0 ? mid[0] : mid[1]) - at) / 64;
+    return 1 + Math.abs((axis === 0 ? mid[0] : mid[1]) - at) / 4; // (as straight down the middle as it can go)
   };
   // Dijkstra over the grid nodes, from the bottom (or left) edge to the top (or right)
   const id = (i: number, j: number) => j * nx + i, pos = (i: number, j: number): [number, number] => [x0 + i * STEP, y0 + j * STEP];

@@ -175,11 +175,13 @@ export function buildDesign(w: Wasm, design: Design, report: (what: string, frac
   const jointRoom = o.joint === 'dovetail' ? 14 : o.joint === 'butt' ? 2 : 8;
   // (where no cut goes: the crossings, and every points set from before its toe to past its heels,
   // so a cut never runs through the blades' slots and leaves strips of track between them)
-  const cutAvoid: [number, number][] = [...overlay.crossings];
+  // (a split along a path may go through a crossing, across its rails, as a cut down the middle of a crossover has to: only the points are kept clear)
+  const pointsAvoid: [number, number][] = [];
   for (const sp of sol.splits) {
     const rt = routes[sp.routes[0]], [a0, a1] = sp.spans[0];
-    for (let s2 = a0 - 8; s2 <= a1 + 8; s2 += 12) { const q = railPoint(rt, Math.max(0, Math.min(routeLength(rt), s2)), 0); cutAvoid.push([q[0], q[1]]); }
+    for (let s2 = a0 - 8; s2 <= a1 + 8; s2 += 12) { const q = railPoint(rt, Math.max(0, Math.min(routeLength(rt), s2)), 0); pointsAvoid.push([q[0], q[1]]); }
   }
+  const cutAvoid: [number, number][] = [...overlay.crossings, ...pointsAvoid];
   const addTrack = (name: string, world: Man, pieceRoutes: typeof routes) => {
     const bb = world.boundingBox(), b: Rect = [bb.min[0], bb.min[1], bb.max[0], bb.max[1]];
     if (!bp && fitsBed(world)) return add(name, 0x6f7780, world, world);
@@ -204,14 +206,18 @@ export function buildDesign(w: Wasm, design: Design, report: (what: string, frac
       if (depth === 0 || depth > 0) { const bs = bodies(m); if (bs.length > 1) return bs.flatMap((b2) => fitAll(b2, depth + 1)); }
       if (fitsBed(m) || depth > 5) return [m];
       const bb = m.boundingBox(), w2 = bb.max[0] - bb.min[0], h2 = bb.max[1] - bb.min[1];
-      const tryAxis = (axis: 0 | 1) => pathSplit(scad, m, pieceRoutes, track.c.railOffset, cutAvoid, axis, axis === 0 ? (bb.min[0] + bb.max[0]) / 2 : (bb.min[1] + bb.max[1]) / 2);
+      const tryAxis = (axis: 0 | 1) => pathSplit(scad, m, pieceRoutes, track.c.railOffset, pointsAvoid, axis, axis === 0 ? (bb.min[0] + bb.max[0]) / 2 : (bb.min[1] + bb.max[1]) / 2);
       // (across whichever side is too long: the longer one if it's longer than the bed, else the shorter)
       const big = Math.max(o.printBedX, o.printBedY), longX = w2 >= h2;
       const axis: 0 | 1 = Math.max(w2, h2) > big ? (longX ? 0 : 1) : (longX ? 1 : 0);
+      // (no split that leaves a small piece: every part at least 6 studs each way)
+      const small = (p2: Man) => { const b3 = p2.boundingBox(); return Math.min(b3.max[0] - b3.min[0], b3.max[1] - b3.min[1]) < 48; };
+      const good = (g2: Man[] | undefined) => !!g2 && g2.length > 1 && !g2.flatMap(bodies).some(small);
       const got = tryAxis(axis);
-      return got && got.length > 1 ? got.flatMap((p) => fitAll(p, depth + 1)) : [m];
+      if (!good(got)) return [m];
+      return got!.flatMap((p) => fitAll(p, depth + 1));
     };
-    const all = cached(`fit:${o.printBedX}x${o.printBedY}:${bp}:${o.joint}:${JSON.stringify(lines)}:${JSON.stringify(pieceRoutes)}:${world.volume().toFixed(3)}`, () => cells.flatMap((m) => fitAll(m)));
+    const all = cached(`fit:${o.printBedX}x${o.printBedY}:${bp}:${o.joint}:${JSON.stringify(lines)}:${JSON.stringify(pieceRoutes)}:${world.volume().toFixed(3)}`, () => cells.flatMap((m) => arena(w, () => fitAll(m), (r) => r))); // (each cell's leftovers freed as it goes)
     all.forEach((m, k) => add(all.length > 1 ? `${name}${plan.why === 'baseplate' ? '-plate' : ''}${k + 1}` : name, 0x6f7780, m, m));
     if (all.some((m) => !fitsBed(m))) bedWarnings.add(`some parts don't fit the ${o.printBedX} x ${o.printBedY} print bed: there's nowhere left to cut them`);
   };
@@ -278,7 +284,6 @@ export function buildDesign(w: Wasm, design: Design, report: (what: string, frac
   };
   const add = (name: string, color: number, local: Man, world: Man) => {
     // (a part that comes apart into loose bits is no good to print: say so)
-    if (color === 0x6f7780) { const n2 = local.decompose().filter((m) => m.volume() > 1000).length; if (n2 > 1) bedWarnings.add(`${name} comes apart into ${n2} pieces`); } // (the breakaway supports at the ends are meant to be separate: small)
     const wm = world.getMesh(), positions = new Float32Array(wm.triVerts.length * 3);
     wm.triVerts.forEach((v, i) => positions.set(wm.vertProperties.subarray(v * wm.numProp, v * wm.numProp + 3), i * 3));
     let stl = stlOf.get(local);
