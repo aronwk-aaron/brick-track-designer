@@ -70,6 +70,25 @@ describe('every switch can be put together', { timeout: 120000 }, () => {
           if (!lift(open, track, 0)) bad = '';
         }
         if (bad) problems.push(bad);
+        // (and swung to its other end, it's clear of the track)
+        if (p.turn?.swing) {
+          const [cx, cy] = p.turn.at, v = m.translate([-cx, -cy, 0]).rotate([0, 0, p.turn.swing]).translate([cx, cy, 0]).intersect(track).volume();
+          if (v > 0.5) problems.push(`${p.name} swung over: ${v.toFixed(1)} mm3 in the track`);
+        }
+      }
+      // (the blades, Peco's spring and the plate-style slider print without supports: nothing as printed faces down,
+      // steeper than 45 degrees, above the first layer; a teardrop's 45 is fine)
+      if (bladesTop) for (const p of b.pieces.filter((q) => /points|throw/.test(q.name) && !/lever|bracket/.test(q.name))) {
+        const dv = new DataView(p.stl.buffer, p.stl.byteOffset), n = dv.getUint32(80, true);
+        const at = (i: number, k: number, j: number) => dv.getFloat32(84 + i * 50 + 12 + k * 12 + j * 4, true);
+        let zmin = Infinity, area = 0;
+        for (let i = 0; i < n; i++) for (let k = 0; k < 3; k++) zmin = Math.min(zmin, at(i, k, 2));
+        for (let i = 0; i < n; i++) {
+          const u = [0, 1, 2].map((j) => at(i, 1, j) - at(i, 0, j)), v = [0, 1, 2].map((j) => at(i, 2, j) - at(i, 0, j));
+          const nz = u[0] * v[1] - u[1] * v[0], L = Math.hypot(u[1] * v[2] - u[2] * v[1], u[2] * v[0] - u[0] * v[2], nz);
+          if (L > 1e-9 && nz / L < -0.75 && (at(i, 0, 2) + at(i, 1, 2) + at(i, 2, 2)) / 3 > zmin + 0.05) area += L / 2;
+        }
+        if (area > 1) problems.push(`${p.name} has ${area.toFixed(1)} mm2 hanging as printed`);
       }
       // (a lever or stand is held by its ears (on the lid, with layered points): slid along its pivot it runs into them)
       const withLids = w.Manifold.union([track, ...b.pieces.filter((q) => /lid/.test(q.name)).map(man)]);

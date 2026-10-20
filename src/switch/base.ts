@@ -282,18 +282,20 @@ export function switchPlan(routes: Route[], specs: SetSpec[], p: BaseParams = BA
   // Points sets too close: one set's points reach into the next one's (a
   // three-way at a large radius). switch.scad builds them anyway, clashing.
   const warnings = sets.flatMap((v) => v.warnings);
-  // (the throw's actions, the stand and the prototype blades are built on the plate-style points)
+  // Notes on the options chosen (not problems with the switch's layout, as the warnings are, which make a
+  // switch a network piece): the throw's actions, the stand and the prototype blades are built on the plate-style points
+  const notes: string[] = [];
   if (p.mechStyle !== 'plates' && ((p.throwAction ?? 'detent') !== 'detent' || p.throwStand || (p.bladeStyle ?? 'simple') !== 'simple'))
-    warnings.push("the over-centre spring, spring-back points, the switch stand and the prototype blades are only built with the plate-style points: left out");
+    notes.push("the over-centre spring, spring-back points, the switch stand and the prototype blades are only built with the plate-style points: left out");
   else if (p.mechStyle === 'plates') {
     if (p.throwAction === 'overcentre' && sets.some((v) => 'three' in v))
-      warnings.push("a three-way's points have three positions: Peco's over-centre spring has two, so it's left out (they click on the lever instead)");
+      notes.push("a three-way's points have three positions: Peco's over-centre spring has two, so it's left out (they click on the lever instead)");
     if (p.throwAction === 'overcentre' && p.throwStand)
-      warnings.push("a switch stand locks the points at each end, so a train can't push them over: Peco's over-centre spring is left out");
+      notes.push("a switch stand locks the points at each end, so a train can't push them over: Peco's over-centre spring is left out");
     if (p.throwAction === 'springback' && !p.throwStand)
-      warnings.push("spring-back points: the lever's detent won't hold the slider against the blades' springs, so a train trailing through may move it; the switch stand locks it");
+      notes.push("spring-back points: the lever's detent won't hold the slider against the blades' springs, so a train trailing through may move it; the switch stand locks it");
     if (p.throwStand && sets.some((v) => 'three' in v))
-      warnings.push("a switch stand locks at its two ends: a three-way's middle (straight) position is with the handle upright, not locked");
+      notes.push("a switch stand locks at its two ends: a three-way's middle (straight) position is with the handle upright, not locked");
   }
   if (!planOk(baseCuts)) warnings.push(`the switch doesn't fit the ${p.printBedX} x ${p.printBedY} print bed even when split across: it may be too wide`);
   const bySetY = [...sets].sort((a, b) => a.toeY - b.toeY);
@@ -301,7 +303,7 @@ export function switchPlan(routes: Route[], specs: SetSpec[], p: BaseParams = BA
     if (bySetY[k + 1].toeY - 2 < bySetY[k].pointsEndY)
       warnings.push(`two points sets overlap (one's points end at y ${bySetY[k].pointsEndY.toFixed(1)}, the next one's start at ${bySetY[k + 1].toeY.toFixed(1)}): move the second set further along`);
   return {
-    warnings,
+    warnings, notes,
     p, g, G, tc, sleeperW, sleeperLen, routes, nRoutes, specs, sets, others, latOthers, isStock, railFixS, frogs, checkList,
     setData, tieYs, baseXRange, baseY0, baseY1, baseCuts, routeTieList, longTieYs, longTieSpan, routeServed, endPoses,
     inEndKeepout, nearCheckRail, railCross,
@@ -758,12 +760,15 @@ export function switchGeometry(s: Scad, plan: SwitchPlan, extraCuts: Man[] = [])
   /** A blade's plate in plan, closed: from the toe to the heel along its rail, inward of it, round the pivot; with the tongue's slot. */
   const fdbPlate2d = (v: SetV, b: number) => {
     const rt = bRt(v, b), o = bO(b), side = bSide(b), fb = fdbBlades(v)[b];
-    const n = 24, s0 = v.sToe + 2, s1 = v.sHeel - 4;
+    // (on to where the blade's rail ends at the heel: under all of it)
+    const n = 24, s0 = v.sToe + 2, s1 = v.sHeel - c;
     const edge = (off: number) => Array.from({ length: n + 1 }, (_, k) => railPoint(rt, s0 + ((s1 - s0) * k) / n, o + side * off) as Vec2);
     // (from the blade bar's inner face inward; tapering to the toe)
     // (tapering toward the toe, to full width before the slider's post: the tongue's slot in the full plate)
     const sPost = sOf(rt, fb.post), kFull = Math.max(1, Math.min(6, Math.floor(((sPost - 5 - s0) / (s1 - s0)) * n)));
-    const outer = edge(HEAD_HW - 0.2), inner = edge(HEAD_HW + plateW).map((q, k) => { const t = Math.min(1, k / kFull); const e = outer[k]; return [e[0] + (q[0] - e[0]) * (0.35 + 0.65 * t), e[1] + (q[1] - e[1]) * (0.35 + 0.65 * t)] as Vec2; });
+    // (the plate under the whole of the blade's rail, so the rail stands on it as printed: out to the rail's
+    // outer face, and with prototype blades on in under the stock rail's undercut head)
+    const outer = edge(protoOn ? -HEAD_HW - PROTO.cut - 0.5 : -HEAD_HW), inner = edge(HEAD_HW + plateW).map((q, k) => { const t = Math.min(1, k / kFull); const e = outer[k]; return [e[0] + (q[0] - e[0]) * (0.35 + 0.65 * t), e[1] + (q[1] - e[1]) * (0.35 + 0.65 * t)] as Vec2; });
     let plate = W.CrossSection.union([s.polygon([...outer, ...inner.reverse()]), circle(FDB.discR, 40, fb.pivot)]);
     // the tongue: a U-slot round the post's hole, the tongue running toward the heel
     const d = sub(fb.pivot, fb.post), u = mul(d, 1 / norm(d)), nn: Pt = [u[1], -u[0]];
@@ -821,11 +826,19 @@ export function switchGeometry(s: Scad, plan: SwitchPlan, extraCuts: Man[] = [])
     // (prototype blades: tight against the stock rail, tucked under its undercut head, from where the point's wide enough to print)
     const keep = protoOn ? sweep(protoKeep2d(oStock, sideS, PROTO.fit, z0 - 1, railTop + 1), bOther(v, b), 0, v.sHeel + 5) : undefined;
     // (both the rail and its plate kept off the stock rail it closes on, and clear of the end connector)
-    const offStock = keep ?? sweep(sq([30, 40], [sideS > 0 ? face : face - 30, z0 - 1]), bOther(v, b), 0, v.sHeel + 5);
+    // (with ballast the stock rail's foot flares out above the bed, and the plate is kept off it: there the
+    // rail's lower outer corner is bevelled at 45 degrees, from the plate's edge up, so it prints)
+    // (how far the stock rail reaches out over the plate's height, past its head)
+    const flareW = z0 < PLATE_H + 2.0 ? rail2d(0).intersect(sq([20, z1 - z0], [-10, z0])).bounds().max[0] - HEAD_HW : 0;
+    const bevel = (q: Vec2[]) => s.polygon(sideS > 0 ? q : q.map(([x, y]) => [2 * face - x, y] as Vec2).reverse());
+    const offStock = keep ?? sweep(flareW ? bevel([[face + flareW, z0 - 1], [face + flareW, z1], [face, z1 + flareW], [face, z1 + 40], [face + 30, z1 + 40], [face + 30, z0 - 1]])
+      : sq([30, 40], [sideS > 0 ? face : face - 30, z0 - 1]), bOther(v, b), 0, v.sHeel + 5);
     const bar = s.intersection(sweep(sq([2 * HEAD_HW, railTop - z1 + 0.01], [o - HEAD_HW, z1 - 0.01]), rt, protoOn ? protoTip(v, b) : v.sToe, v.sHeel - c), offStock);
     const y0 = Math.max(v.toeY - 1, 8 + c);
-    // (the plate a little further off the stock rail than the rail is: clear of its foot's flare)
-    const plateOff = keep ?? sweep(sq([30, 40], [sideS > 0 ? face + 1 : face - 31, z0 - 1]), bOther(v, b), 0, v.sHeel + 5);
+    // (the plate a little further off the stock rail than the rail is: clear of its foot's flare, where that's
+    // above the bed (with ballast); without, only the head's above the bed, and the plate runs under all the rail)
+    // (a straight edge, as far out as the foot reaches over the plate's height: following the foot's shape, its edge would overhang)
+    const plateOff = keep ?? sweep(sq([30, 40], [sideS > 0 ? face + flareW : face - 30 - flareW, z0 - 1]), bOther(v, b), 0, v.sHeel + 5);
     // (and clear of the stock rail's actual shape, foot and all; the prototype's undercut: the keep above)
     const stock = protoOn ? s.union([]) : sweep(rail2d(oStock).offset(c, 'Miter', 1000), bOther(v, b), 0, v.sHeel + 10);
     const plate = s.difference(s.intersection(s.intersection(T(s.extrude(fdbPlate2d(v, b), FDB.plateT), [0, 0, z0]), plateOff), cube([400, 400, 50], [-200, y0, z0 - 10])), [stock]);
@@ -1426,8 +1439,8 @@ export function switchGeometry(s: Scad, plan: SwitchPlan, extraCuts: Man[] = [])
     /** (throwAction 'overcentre') Peco's spring, as assembled and as printed; undefined without it. */
     springPart: (k = 0) => (ocOn(sets[k]) ? ocPart(sets[k]) : undefined),
     springPrint: (k = 0) => (ocOn(sets[k]) ? ocPrint(sets[k]) : undefined),
-    /** Each points part's pin (where it turns) and how far to turn it, from as assembled, to open (the plate-style blades: blade 0 is closed as assembled; else undefined). */
-    pointsTurns: (k = 0) => (fdb ? fdbBlades(sets[k]).map((f, b) => ({ at: f.pivot, by: b === 0 ? f.ang : 0 })) : undefined),
+    /** Each points part's pin (where it turns), how far to turn it from as assembled to open it (blade 0 is closed as assembled), and to its other end (the plate-style blades; else undefined). */
+    pointsTurns: (k = 0) => (fdb ? fdbBlades(sets[k]).map((f, b) => ({ at: f.pivot, by: b === 0 ? f.ang : 0, swing: b === 0 ? f.ang : -f.open })) : undefined),
     /** (throwModule) the lever's bracket, on the arm's studs. */
     bracketPart: (k = 0) => bracketPart(sets[k]),
     leverShape, leverPrint: (k = 0) => leverPrint(sets[k]),
