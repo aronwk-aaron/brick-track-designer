@@ -1,0 +1,118 @@
+{
+ "version": 1,
+ "gaugeStuds": 4,
+ "name": "threeway-net-split-merge-buddy",
+ "routes": [
+  {
+   "name": "L",
+   "x": 0,
+   "y": 0,
+   "heading": 0,
+   "segs": [
+    {
+     "kind": "straight",
+     "studs": 208
+    }
+   ]
+  },
+  {
+   "name": "M",
+   "x": 16,
+   "y": 0,
+   "heading": 0,
+   "segs": [
+    {
+     "kind": "straight",
+     "studs": 208
+    }
+   ]
+  },
+  {
+   "name": "R",
+   "x": 32,
+   "y": 0,
+   "heading": 0,
+   "segs": [
+    {
+     "kind": "straight",
+     "studs": 208
+    }
+   ]
+  },
+  {
+   "name": "ML",
+   "x": 16,
+   "y": 8,
+   "heading": 0,
+   "segs": [
+    {
+     "kind": "curve",
+     "radius": 104,
+     "angle": 22.619865
+    },
+    {
+     "kind": "curve",
+     "radius": 104,
+     "angle": -22.619865
+    }
+   ]
+  },
+  {
+   "name": "MR",
+   "x": 16,
+   "y": 8,
+   "heading": 0,
+   "segs": [
+    {
+     "kind": "curve",
+     "radius": 104,
+     "angle": -22.619865
+    },
+    {
+     "kind": "curve",
+     "radius": 104,
+     "angle": 22.619865
+    }
+   ]
+  },
+  {
+   "name": "LM",
+   "x": 0,
+   "y": 104,
+   "heading": 0,
+   "segs": [
+    {
+     "kind": "curve",
+     "radius": 104,
+     "angle": -22.619865
+    },
+    {
+     "kind": "curve",
+     "radius": 104,
+     "angle": 22.619865
+    }
+   ]
+  },
+  {
+   "name": "RM",
+   "x": 32,
+   "y": 104,
+   "heading": 0,
+   "segs": [
+    {
+     "kind": "curve",
+     "radius": 104,
+     "angle": 22.619865
+    },
+    {
+     "kind": "curve",
+     "radius": 104,
+     "angle": -22.619865
+    }
+   ]
+  }
+ ],
+ "options": {
+  "ballast": "buddy"
+ }
+}

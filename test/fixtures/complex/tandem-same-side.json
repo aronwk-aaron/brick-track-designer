@@ -1,0 +1,54 @@
+{
+ "version": 1,
+ "gaugeStuds": 4,
+ "name": "tandem-same-side",
+ "routes": [
+  {
+   "name": "Main",
+   "x": 0,
+   "y": 0,
+   "heading": 0,
+   "segs": [
+    {
+     "kind": "straight",
+     "studs": 96
+    }
+   ]
+  },
+  {
+   "name": "B1",
+   "x": 0,
+   "y": 0,
+   "heading": 0,
+   "segs": [
+    {
+     "kind": "curve",
+     "radius": 40,
+     "angle": -22.5
+    },
+    {
+     "kind": "straight",
+     "studs": 24
+    }
+   ]
+  },
+  {
+   "name": "B2",
+   "x": 0,
+   "y": 24,
+   "heading": 0,
+   "segs": [
+    {
+     "kind": "curve",
+     "radius": 40,
+     "angle": -22.5
+    },
+    {
+     "kind": "straight",
+     "studs": 24
+    }
+   ]
+  }
+ ],
+ "options": {}
+}

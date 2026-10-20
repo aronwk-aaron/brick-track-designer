@@ -1,0 +1,68 @@
+{
+ "version": 1,
+ "gaugeStuds": 4,
+ "name": "scissors-r104",
+ "routes": [
+  {
+   "name": "A",
+   "x": 0,
+   "y": 0,
+   "heading": 0,
+   "segs": [
+    {
+     "kind": "straight",
+     "studs": 112
+    }
+   ]
+  },
+  {
+   "name": "B",
+   "x": 16,
+   "y": 0,
+   "heading": 0,
+   "segs": [
+    {
+     "kind": "straight",
+     "studs": 112
+    }
+   ]
+  },
+  {
+   "name": "AB",
+   "x": 0,
+   "y": 16,
+   "heading": 0,
+   "segs": [
+    {
+     "kind": "curve",
+     "radius": 104,
+     "angle": -22.619865
+    },
+    {
+     "kind": "curve",
+     "radius": 104,
+     "angle": 22.619865
+    }
+   ]
+  },
+  {
+   "name": "BA",
+   "x": 16,
+   "y": 16,
+   "heading": 0,
+   "segs": [
+    {
+     "kind": "curve",
+     "radius": 104,
+     "angle": 22.619865
+    },
+    {
+     "kind": "curve",
+     "radius": 104,
+     "angle": -22.619865
+    }
+   ]
+  }
+ ],
+ "options": {}
+}

@@ -1,0 +1,70 @@
+{
+ "version": 1,
+ "gaugeStuds": 4,
+ "name": "two-crossovers-plates",
+ "routes": [
+  {
+   "name": "A",
+   "x": 0,
+   "y": 0,
+   "heading": 0,
+   "segs": [
+    {
+     "kind": "straight",
+     "studs": 144
+    }
+   ]
+  },
+  {
+   "name": "B",
+   "x": 16,
+   "y": 0,
+   "heading": 0,
+   "segs": [
+    {
+     "kind": "straight",
+     "studs": 144
+    }
+   ]
+  },
+  {
+   "name": "AB",
+   "x": 0,
+   "y": 8,
+   "heading": 0,
+   "segs": [
+    {
+     "kind": "curve",
+     "radius": 40,
+     "angle": -36.869898
+    },
+    {
+     "kind": "curve",
+     "radius": 40,
+     "angle": 36.869898
+    }
+   ]
+  },
+  {
+   "name": "BA",
+   "x": 0,
+   "y": 120,
+   "heading": -180,
+   "segs": [
+    {
+     "kind": "curve",
+     "radius": 40,
+     "angle": 36.869898
+    },
+    {
+     "kind": "curve",
+     "radius": 40,
+     "angle": -36.869898
+    }
+   ]
+  }
+ ],
+ "options": {
+  "baseplate": 48
+ }
+}

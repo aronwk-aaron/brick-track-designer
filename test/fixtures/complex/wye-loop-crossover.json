@@ -1,0 +1,130 @@
+{
+ "version": 1,
+ "gaugeStuds": 4,
+ "name": "wye-loop-crossover",
+ "routes": [
+  {
+   "name": "In",
+   "x": 8,
+   "y": -16,
+   "heading": 0,
+   "segs": [
+    {
+     "kind": "straight",
+     "studs": 16
+    }
+   ]
+  },
+  {
+   "name": "WL",
+   "x": 8,
+   "y": 0,
+   "heading": 0,
+   "segs": [
+    {
+     "kind": "curve",
+     "radius": 72,
+     "angle": 19.188136
+    },
+    {
+     "kind": "curve",
+     "radius": 72,
+     "angle": -19.188136
+    },
+    {
+     "kind": "straight",
+     "studs": 81.96969
+    }
+   ]
+  },
+  {
+   "name": "WR",
+   "x": 8,
+   "y": 0,
+   "heading": 0,
+   "segs": [
+    {
+     "kind": "curve",
+     "radius": 72,
+     "angle": -19.188136
+    },
+    {
+     "kind": "curve",
+     "radius": 72,
+     "angle": 19.188136
+    },
+    {
+     "kind": "straight",
+     "studs": 81.96969
+    }
+   ]
+  },
+  {
+   "name": "X",
+   "x": 0,
+   "y": 55.328638,
+   "heading": 0,
+   "segs": [
+    {
+     "kind": "curve",
+     "radius": 72,
+     "angle": -27.266044
+    },
+    {
+     "kind": "curve",
+     "radius": 72,
+     "angle": 27.266044
+    }
+   ]
+  },
+  {
+   "name": "ML",
+   "x": 0,
+   "y": 129.298328,
+   "heading": 0,
+   "segs": [
+    {
+     "kind": "curve",
+     "radius": 72,
+     "angle": -19.188136
+    },
+    {
+     "kind": "curve",
+     "radius": 72,
+     "angle": 19.188136
+    }
+   ]
+  },
+  {
+   "name": "MR",
+   "x": 16,
+   "y": 129.298328,
+   "heading": 0,
+   "segs": [
+    {
+     "kind": "curve",
+     "radius": 72,
+     "angle": 19.188136
+    },
+    {
+     "kind": "curve",
+     "radius": 72,
+     "angle": -19.188136
+    }
+   ]
+  },
+  {
+   "name": "Out",
+   "x": 8,
+   "y": 176.626967,
+   "heading": 0,
+   "segs": [
+    {
+     "kind": "straight",
+     "studs": 16
+    }
+   ]
+  }
+ ],
+ "options": {}
+}

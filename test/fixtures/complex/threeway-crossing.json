@@ -1,0 +1,88 @@
+{
+ "version": 1,
+ "gaugeStuds": 4,
+ "name": "threeway-crossing",
+ "routes": [
+  {
+   "name": "L",
+   "x": 0,
+   "y": 0,
+   "heading": 0,
+   "segs": [
+    {
+     "kind": "straight",
+     "studs": 96
+    }
+   ]
+  },
+  {
+   "name": "M",
+   "x": 16,
+   "y": 0,
+   "heading": 0,
+   "segs": [
+    {
+     "kind": "straight",
+     "studs": 96
+    }
+   ]
+  },
+  {
+   "name": "R",
+   "x": 32,
+   "y": 0,
+   "heading": 0,
+   "segs": [
+    {
+     "kind": "straight",
+     "studs": 96
+    }
+   ]
+  },
+  {
+   "name": "MLL",
+   "x": 16,
+   "y": 8,
+   "heading": 0,
+   "segs": [
+    {
+     "kind": "curve",
+     "radius": 56,
+     "angle": 44.415309
+    },
+    {
+     "kind": "curve",
+     "radius": 56,
+     "angle": -44.415309
+    },
+    {
+     "kind": "straight",
+     "studs": 8
+    }
+   ]
+  },
+  {
+   "name": "MRR",
+   "x": 16,
+   "y": 8,
+   "heading": 0,
+   "segs": [
+    {
+     "kind": "curve",
+     "radius": 56,
+     "angle": -44.415309
+    },
+    {
+     "kind": "curve",
+     "radius": 56,
+     "angle": 44.415309
+    },
+    {
+     "kind": "straight",
+     "studs": 8
+    }
+   ]
+  }
+ ],
+ "options": {}
+}

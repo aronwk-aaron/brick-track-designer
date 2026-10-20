@@ -1,0 +1,54 @@
+{
+ "version": 1,
+ "gaugeStuds": 4,
+ "name": "threeway-r104",
+ "routes": [
+  {
+   "name": "S",
+   "x": 0,
+   "y": 0,
+   "heading": 0,
+   "segs": [
+    {
+     "kind": "straight",
+     "studs": 48
+    }
+   ]
+  },
+  {
+   "name": "L",
+   "x": 0,
+   "y": 0,
+   "heading": 0,
+   "segs": [
+    {
+     "kind": "curve",
+     "radius": 104,
+     "angle": 22.5
+    },
+    {
+     "kind": "straight",
+     "studs": 16
+    }
+   ]
+  },
+  {
+   "name": "R",
+   "x": 0,
+   "y": 0,
+   "heading": 0,
+   "segs": [
+    {
+     "kind": "curve",
+     "radius": 104,
+     "angle": -22.5
+    },
+    {
+     "kind": "straight",
+     "studs": 16
+    }
+   ]
+  }
+ ],
+ "options": {}
+}

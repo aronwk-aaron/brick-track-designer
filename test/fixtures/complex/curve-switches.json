@@ -1,0 +1,50 @@
+{
+ "version": 1,
+ "gaugeStuds": 4,
+ "name": "curve-switches",
+ "routes": [
+  {
+   "name": "Curve",
+   "x": 0,
+   "y": 0,
+   "heading": 0,
+   "segs": [
+    {
+     "kind": "curve",
+     "radius": 104,
+     "angle": 60
+    }
+   ]
+  },
+  {
+   "name": "In",
+   "x": -3.543714,
+   "y": 26.917181,
+   "heading": 15,
+   "segs": [
+    {
+     "kind": "curve",
+     "radius": 56,
+     "angle": 30
+    },
+    {
+     "kind": "straight",
+     "studs": 16
+    }
+   ]
+  },
+  {
+   "name": "Out",
+   "x": -24.331378,
+   "y": 66.849911,
+   "heading": 40,
+   "segs": [
+    {
+     "kind": "straight",
+     "studs": 32
+    }
+   ]
+  }
+ ],
+ "options": {}
+}

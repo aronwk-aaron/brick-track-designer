@@ -1,0 +1,52 @@
+{
+ "version": 1,
+ "gaugeStuds": 4,
+ "name": "curve-crossover",
+ "routes": [
+  {
+   "name": "Inner",
+   "x": 0,
+   "y": 0,
+   "heading": 0,
+   "segs": [
+    {
+     "kind": "curve",
+     "radius": 72,
+     "angle": 70
+    }
+   ]
+  },
+  {
+   "name": "Outer",
+   "x": 16,
+   "y": 0,
+   "heading": 0,
+   "segs": [
+    {
+     "kind": "curve",
+     "radius": 88,
+     "angle": 70
+    }
+   ]
+  },
+  {
+   "name": "XO",
+   "x": 14.663082,
+   "y": 15.28104,
+   "heading": 10,
+   "segs": [
+    {
+     "kind": "curve",
+     "radius": 56,
+     "angle": 66.867604
+    },
+    {
+     "kind": "curve",
+     "radius": 56,
+     "angle": -13.291177
+    }
+   ]
+  }
+ ],
+ "options": {}
+}

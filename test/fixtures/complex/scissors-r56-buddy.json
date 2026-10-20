@@ -1,0 +1,70 @@
+{
+ "version": 1,
+ "gaugeStuds": 4,
+ "name": "scissors-r56-buddy",
+ "routes": [
+  {
+   "name": "A",
+   "x": 0,
+   "y": 0,
+   "heading": 0,
+   "segs": [
+    {
+     "kind": "straight",
+     "studs": 90
+    }
+   ]
+  },
+  {
+   "name": "B",
+   "x": 16,
+   "y": 0,
+   "heading": 0,
+   "segs": [
+    {
+     "kind": "straight",
+     "studs": 90
+    }
+   ]
+  },
+  {
+   "name": "AB",
+   "x": 0,
+   "y": 16,
+   "heading": 0,
+   "segs": [
+    {
+     "kind": "curve",
+     "radius": 56,
+     "angle": -31.002719
+    },
+    {
+     "kind": "curve",
+     "radius": 56,
+     "angle": 31.002719
+    }
+   ]
+  },
+  {
+   "name": "BA",
+   "x": 16,
+   "y": 16,
+   "heading": 0,
+   "segs": [
+    {
+     "kind": "curve",
+     "radius": 56,
+     "angle": 31.002719
+    },
+    {
+     "kind": "curve",
+     "radius": 56,
+     "angle": -31.002719
+    }
+   ]
+  }
+ ],
+ "options": {
+  "ballast": "buddy"
+ }
+}
