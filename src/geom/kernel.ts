@@ -48,7 +48,11 @@ function patch(w: Wasm) {
       obj[k] = function (this: unknown, ...a: unknown[]) { const r = f.apply(this, a); note(r); return r; };
     }
   };
-  for (const c of classes) { wrap(c); wrap(c.prototype); }
+  // (the instances' methods are on the kernel's own class prototypes, not on
+  // the JS constructors' .prototype: found from an instance of each)
+  const protos = new Set<Record<string, unknown>>([w.Manifold.cube([1, 1, 1]), w.CrossSection.square([1, 1])].map((x) => Object.getPrototypeOf(x)));
+  for (const c of classes) wrap(c);
+  for (const pr of protos) wrap(pr);
 }
 export function arena<T>(w: Wasm, f: () => T, keep: (r: T) => unknown[]): T {
   patch(w);

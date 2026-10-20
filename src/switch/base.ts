@@ -649,7 +649,7 @@ export function switchGeometry(s: Scad, plan: SwitchPlan, extraCuts: Man[] = [])
     // (the throw arms too: hollow with tubes underneath, like the rest)
     const onArm = (x: number, y: number, m: number) => !scadParity() && sets.some((v) => {
       const xEnd = v.leverX + v.throwDir * 10, xOut = v.throwDir * Math.ceil((v.throwDir * xEnd) / STUD - 1e-6) * STUD;
-      return x >= Math.min(v.throwStockX, xOut) + m && x <= Math.max(v.throwStockX, xOut) - m && Math.abs(y - v.throwY) <= g.armW / 2 - m;
+      return x >= Math.min(v.throwStockX, xOut) + m - 0.02 && x <= Math.max(v.throwStockX, xOut) - m + 0.02 && Math.abs(y - v.throwY) <= g.armW / 2 - m + 0.02;
     });
     const bed = (x: number, y: number, m: number) => (y >= 8 + m
       && Math.min(...routes.map((rt) => Math.abs(routeLat(rt, [x, y])))) <= sleeperLen / 2 - m || onArm(x, y, m))

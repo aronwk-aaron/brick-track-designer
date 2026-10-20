@@ -102,7 +102,12 @@ export function networkBody(s: Scad, routes: Route[], sol: Solution, copt: Cross
   // (a broken solid would empty the whole piece it meets: leave any out)
   const ok = (m: Man) => m.status() === 'NoError';
   for (const [i, ms] of railCuts) railCuts.set(i, ms.filter(ok));
-  return crossingPiece(s, routes, copt, sol, grips, { railCuts, innerEnds, adds: adds.filter(ok), cuts: [...cuts, ...(more.cuts ?? [])].filter(ok), gridPose: more.gridPose });
+  // (the throw arms hollow underneath with tubes, like the bed: out to the stud line past the lever)
+  const hollows = splits.map((sp) => {
+    const v = sp.set, xEnd = v.leverX + v.throwDir * 10, xOut = v.throwDir * Math.ceil((v.throwDir * xEnd) / 8 - 1e-6) * 8, hw = 12;
+    return { P: sp.frame, r: [Math.min(v.throwStockX, xOut), Math.max(v.throwStockX, xOut), v.throwY - hw, v.throwY + hw] as [number, number, number, number] };
+  });
+  return crossingPiece(s, routes, copt, sol, grips, { railCuts, innerEnds, adds: adds.filter(ok), cuts: [...cuts, ...(more.cuts ?? [])].filter(ok), gridPose: more.gridPose, hollows });
 }
 
 export function networkPiece(s: Scad, routes: Route[], sol: Solution, p: BaseParams, copt: CrossingOptions, grips?: [number, number][],
