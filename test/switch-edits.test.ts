@@ -91,7 +91,8 @@ describe('points taken out and forced (pieces)', { timeout: 60000 }, () => {
   it("a three-way with a branch taken out is a two-way (the branch's rails through it as fixed track)", async () => {
     for (const drop of ['Right', 'Straight']) {
       const b = buildDesign(await kernel(), { ...TEMPLATES['Three-way switch (one throw)'], options: BED, trackwork: { points: { '0,0': { drop: [drop] } } } });
-      expect(b.info.warnings).toEqual([]);
+      // (the branch taken out still runs through the two-way's points, its rail where a blade lies (53 mm3 in it): said so)
+      expect(b.info.warnings).toEqual([expect.stringMatching(/branch taken out of them/)]);
       expect(b.info.switches).toBe(1);
       expect(b.pieces.filter((p) => /throw/.test(p.name))).toHaveLength(1);
       const pts = pointsOf(b);
