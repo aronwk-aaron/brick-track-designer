@@ -106,6 +106,16 @@ export function solve(routes: Route[], opts: Partial<SolverOptions> = {}): Solut
   // the points' stretch, built in a later phase. Grooves there are the
   // points' business, not cut here. (s: the stretch's end along the first.)
   const splits: Split[] = [];
+  // Two routes that start (or end) together: one set of points, the
+  // straighter of them (at that end) the main route, else the first.
+  const straightness = (rt: Route, end: 'start' | 'end') => {
+    const sg = end === 'start' ? rt.segments[0] : rt.segments[rt.segments.length - 1];
+    return !sg || sg.kind === 'straight' ? Infinity : sg.radius;
+  };
+  const mainOf = (i: number, j: number, end: 'start' | 'end') => {
+    const a = straightness(routes[i], end), b = straightness(routes[j], end);
+    return a !== b ? a > b : i < j;
+  };
   const apart = 2 * o.headHw + o.flangeway;
   for (let i = 0; i < routes.length; i++)
     for (let j = 0; j < routes.length; j++) {
@@ -116,7 +126,7 @@ export function solve(routes: Route[], opts: Partial<SolverOptions> = {}): Solut
       const sa = routeSOf(a, st);
       const pa = routePose(a, sa);
       if (Math.hypot(pa[0] - st[0], pa[1] - st[1]) > 0.01 || Math.abs(((pa[2] - b.start[2] + 540) % 360) - 180) > SPLIT_ANGLE) continue;
-      if (sa < 1e-6 && j < i) continue;  // both start together: once, as (i < j)
+      if (sa < 1e-6 && !mainOf(i, j, 'start')) continue;  // both start together: once
       if (sa > routeLength(a) - 0.6) continue; // (starting where the other ends: a join, not points)
       let t = 0;
       const L = Math.min(routeLength(b), routeLength(a) - sa);
@@ -137,7 +147,7 @@ export function solve(routes: Route[], opts: Partial<SolverOptions> = {}): Solut
       const se = routeSOf(a, [e[0], e[1]]);
       const pa = routePose(a, se);
       if (Math.hypot(pa[0] - e[0], pa[1] - e[1]) > 0.01 || Math.abs(((pa[2] - e[2] + 540) % 360) - 180) > SPLIT_ANGLE) continue;
-      if (se > routeLength(a) - 1e-6) continue; // (end to end: a join, not points)
+      if (se > routeLength(a) - 0.6 && !mainOf(i, j, 'end')) continue; // both end together: once
       if (se < 0.6) continue; // (ending where the other starts: a join, not points)
       let t = 0;
       while (t < Math.min(Lb, se)) {
@@ -210,7 +220,7 @@ export function solve(routes: Route[], opts: Partial<SolverOptions> = {}): Solut
 
   const inSplit = (gr: Groove) => splits.some((sp) => {
     const k = sp.routes.indexOf(gr.route);
-    return k >= 0 && sp.routes[1 - k] === gr.by && gr.s0 >= sp.spans[k][0] - 1 && gr.s1 <= sp.spans[k][1] + 1e-6;
+    return k >= 0 && sp.routes[1 - k] === gr.by && gr.s0 >= sp.spans[k][0] - 1 && gr.s1 <= sp.spans[k][1] + 1;
   });
   for (let k = grooves.length - 1; k >= 0; k--) if (inSplit(grooves[k])) grooves.splice(k, 1);
 
