@@ -142,12 +142,18 @@ export function buildDesign(w: Wasm, design: Design, report: (what: string, frac
       return;
     }
     const ox = (o.baseplateX ?? 0) * 8, oy = (o.baseplateY ?? 0) * 8;
-    for (let x = ox + Math.ceil((b.min[0] + 1 - ox) / bp) * bp; x < b.max[0] - 1; x += bp) lines.push({ p: [x, 0], d: [0, 1] });
-    for (let y = oy + Math.ceil((b.min[1] + 1 - oy) / bp) * bp; y < b.max[1] - 1; y += bp) lines.push({ p: [0, y], d: [1, 0] });
+    // at the baseplate edges, and, where a baseplate is bigger than the print
+    // bed, across each baseplate too, on the stud grid, into parts that fit
+    const kk = Math.max(1, Math.ceil(bp / (Math.min(o.printBedX, o.printBedY) - 8)));
+    const sub = Array.from({ length: kk }, (_, i) => Math.round((i * bp) / kk / 8) * 8);
+    for (let x = ox + Math.floor((b.min[0] - ox) / bp) * bp; x < b.max[0] - 1; x += bp)
+      for (const dx of sub) if (x + dx > b.min[0] + 1 && x + dx < b.max[0] - 1) lines.push({ p: [x + dx, 0], d: [0, 1] });
+    for (let y = oy + Math.floor((b.min[1] - oy) / bp) * bp; y < b.max[1] - 1; y += bp)
+      for (const dy of sub) if (y + dy > b.min[1] + 1 && y + dy < b.max[1] - 1) lines.push({ p: [0, y + dy], d: [1, 0] });
     steps++; progress(`Cutting ${name} at the baseplate edges`);
     const cells = cached(`cut:${bp}:${JSON.stringify(b)}:${JSON.stringify(pieceRoutes)}:${world.volume().toFixed(3)}`, () => cutPiece(scad, track, world, pieceRoutes, lines));
     cells.forEach((m, k) => add(cells.length > 1 ? `${name}-plate${k + 1}` : name, 0x6f7780, m, m));
-    if (cells.some((m) => !fitsBed(m))) bedWarnings.add(`a baseplate's worth of track doesn't fit the ${o.printBedX} x ${o.printBedY} print bed: pick smaller baseplates`);
+    if (cells.some((m) => !fitsBed(m))) bedWarnings.add(`a baseplate's worth of track doesn't fit the ${o.printBedX} x ${o.printBedY} print bed: pick a smaller print bed cut or smaller baseplates`);
   };
   const add = (name: string, color: number, local: Man, world: Man) => {
     const wm = world.getMesh(), positions = new Float32Array(wm.triVerts.length * 3);
