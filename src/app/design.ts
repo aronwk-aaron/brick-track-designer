@@ -61,6 +61,8 @@ export interface PieceOptions {
   joint?: 'lego' | 'dovetail' | 'butt' | 'ends';
   /** (prototype) The points: built into the one piece, their pockets through to the bottom (switch.scad's); on a solid floor, the pockets stopping on it ('floor'); or the piece in layers stacked from the top (the lower layer with the moving parts' pockets, the deck with the bed and rails over it, held by studs; needs ballast). */
   pointsModule?: 'built-in' | 'floor' | 'layers';
+  /** Breakaway print supports under the rail-end tongues at each end (off: the slicer supports them). */
+  endSupports?: boolean;
   /** Ballast under the track: none, ballast, or ballast with the wider buddy layer under it. */
   ballast: 'none' | 'ballast' | 'buddy';
   /** With ballast: the underside, anti-stud (hollow with tubes) or flat. */
@@ -68,7 +70,7 @@ export interface PieceOptions {
 }
 export const OPTION_DEFAULTS: PieceOptions = {
   throwSide: 'auto', leverOffset: 8, pointThrow: 3, pointClearance: 0.3, springPreload: 1, springThickness: 0.9, springLength: 40,
-  flangeway: 3, flangewayDepth: 3, checkRailLen: 30, checkRailW: 1, checkRailFlare: 1.5, printBedX: 256, printBedY: 256, baseplate: 0, baseplateX: 0, baseplateY: 0, ballast: 'none', bottomStyle: 'antistud', joint: 'lego', pointsModule: 'built-in',
+  flangeway: 3, flangewayDepth: 3, checkRailLen: 30, checkRailW: 1, checkRailFlare: 1.5, printBedX: 256, printBedY: 256, baseplate: 0, baseplateX: 0, baseplateY: 0, ballast: 'none', bottomStyle: 'antistud', joint: 'lego', pointsModule: 'built-in', endSupports: true,
 };
 
 export function toRoutes(d: Design): Route[] {
