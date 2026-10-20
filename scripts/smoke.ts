@@ -31,6 +31,7 @@ for (const name of await page.$$eval('#template option', (os) => os.map((o) => (
 }
 // Draw on the canvas: clear, then lay a straight up and a curve, then branch.
 await page.click('#clear');
+await page.click('#mode-draw'); // (Select is the default mode)
 await page.click('#fit');
 await page.selectOption('#radius', '0');
 const box = (await page.locator('#track').boundingBox())!;
