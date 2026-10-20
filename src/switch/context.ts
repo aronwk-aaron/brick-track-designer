@@ -130,7 +130,7 @@ export function pointsSet(routes: Route[], ps: PointsSet, p: SwitchParams, defau
   const leverTipZ = g.leverPz - g.leverDa * Math.cos(rad(leverAng));
   const throwEdgeX = throwDir * (g.ballast ? (g.buddy ? g.ballastBottomW : g.ballastMidW) / 2 : g.sleeperLen / 2);
   const leverMinD = Math.max(throwDir * throwFaceX + Math.max(4 + 1.5, leverTravel / 2 + g.leverTipD / 2 + 2 * p.pointClearance + 1.2 + 1.5),
-    p.throwModule ? throwDir * throwFaceX + 1.5 * STUD + 0.5 : 0); // (a bracket, 3 studs square, clear of the stock rail's foot: it may stand over the bed's edge)
+    p.throwModule ? g.sleeperLen / 2 + 1.5 * STUD + 0.2 : 0); // (a bracket, 3 studs square, clear of the sleepers (the top of the bed): over a ballast's lower steps is fine)
   const leverX = throwDir * Math.max(throwDir * throwEdgeX + p.leverOffset, leverMinD);
   const forkX = leverX - leverTravel / 2;
   const forkLipZ = leverTipZ + g.leverTipD / 2 + p.pointClearance;

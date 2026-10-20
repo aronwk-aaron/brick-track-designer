@@ -202,7 +202,7 @@ scene.add(group);
 // What the 3D view shows (Track, Points, Throws, Levers buttons), remembered.
 const shown = new Set(['track', 'points', 'throw', 'lever']);
 try { const v = localStorage.getItem('btd-shown'); if (v) { shown.clear(); for (const k of JSON.parse(v) as string[]) shown.add(k); } } catch { /* fine */ }
-const kindOf = (name: string) => (/lid/.test(name) ? 'cassette' : /lever|bracket/.test(name) ? 'lever' : /throw/.test(name) ? 'throw' : /points/.test(name) ? 'points' : 'track');
+const kindOf = (name: string) => (/lid/.test(name) ? 'cassette' : /bracket/.test(name) ? 'bracket' : /lever/.test(name) ? 'lever' : /throw/.test(name) ? 'throw' : /points/.test(name) ? 'points' : 'track');
 let meshKinds: string[] = [];
 // Exploded view: each part pulled out from the middle (the moving parts lifted too), to see where they separate.
 let meshCentres: THREE.Vector3[] = [];
@@ -210,14 +210,25 @@ const explodeEl = $<HTMLInputElement>('explode');
 function applyExplode() {
   const e = Number(explodeEl.value), all = new THREE.Vector3();
   meshCentres.forEach((c) => all.add(c)); if (meshCentres.length) all.divideScalar(meshCentres.length);
+  // (track parts spread out from the middle; each moving part goes with the track part it sits in, and lifts straight up out of it)
+  const boxes = meshes.map((m) => m.geometry.boundingBox!);
+  const spread = (k: number) => new THREE.Vector3((meshCentres[k].x - all.x) * e * 0.5, (meshCentres[k].y - all.y) * e * 0.5, 0);
+  const trackIdx = meshKinds.map((kd, k) => (kd === 'track' ? k : -1)).filter((k) => k >= 0);
   meshes.forEach((m, k) => {
+    if (meshKinds[k] === 'track') { m.position.copy(spread(k)); return; }
     const c = meshCentres[k];
-    m.position.set((c.x - all.x) * e * 0.5, (c.y - all.y) * e * 0.5, meshKinds[k] === 'track' ? 0 : meshKinds[k] === 'cassette' ? e * 70 : e * 35);
+    let host = trackIdx.find((t) => c.x >= boxes[t].min.x && c.x <= boxes[t].max.x && c.y >= boxes[t].min.y && c.y <= boxes[t].max.y);
+    if (host === undefined) host = trackIdx.reduce((best, t) => (best < 0 || meshCentres[t].distanceTo(c) < meshCentres[best].distanceTo(c) ? t : best), -1);
+    const off = host !== undefined && host >= 0 ? spread(host) : spread(k);
+    // (as they're put together: the slider from underneath, the points and the lid from above, the bracket on its studs, the lever into it)
+    const fromTop = design.options?.pointsModule === 'layers' && (design.options?.ballast ?? 'none') !== 'none';
+    const lift: Record<string, number> = { throw: fromTop ? 15 : -30, points: fromTop ? 25 : -18, cassette: 45, bracket: 30, lever: 60 };
+    m.position.set(off.x, off.y, e * (lift[meshKinds[k]] ?? 40));
   });
 }
 explodeEl.addEventListener('input', applyExplode);
 function applyShown() {
-  meshes.forEach((m, k) => { m.visible = shown.has(meshKinds[k] === 'cassette' ? 'track' : meshKinds[k]); });
+  meshes.forEach((m, k) => { m.visible = shown.has(meshKinds[k] === 'cassette' ? 'track' : meshKinds[k] === 'bracket' ? 'lever' : meshKinds[k]); });
   document.querySelectorAll<HTMLButtonElement>('#views .show').forEach((b) => b.classList.toggle('on', shown.has(b.dataset.show!)));
 }
 document.querySelectorAll<HTMLButtonElement>('#views .show').forEach((b) => b.addEventListener('click', () => {
