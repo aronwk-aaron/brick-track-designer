@@ -59,7 +59,7 @@ export function studSpots(s: Scad, t: Track, spots: Spot[], bed: (x: number, y: 
     if (edge || lattice || allHollow) corners.push({ c, tube: edge || lattice });
   });
   const shape = (q: { c: [number, number]; tube: boolean }): CS => (q.tube
-    ? W.CrossSection.circle((TUBE_OD - ANTISTUD_FIT) / 2, 48).subtract(W.CrossSection.circle(TUBE_ID / 2, 48))
+    ? W.CrossSection.circle((TUBE_OD - ANTISTUD_FIT) / 2, 24).subtract(W.CrossSection.circle(TUBE_ID / 2, 24))
     : W.CrossSection.circle(POST_D / 2, 24)).translate(q.c);
   const tubes = corners.length ? s.extrude(W.CrossSection.union(corners.map(shape)), PLATE_H) : undefined;
   const squares = spots.filter((_, k) => hol[k])

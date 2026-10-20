@@ -83,13 +83,26 @@ function segLat(p0: Pose, sg: Segment, pt: Pt): number | undefined {
 
 /** Signed offset (+ = right) of pt from a route's centre line, on the segment it's nearest beside (route_lat); 1e6 if none. */
 export function routeLat(rt: Route, pt: Pt): number {
-  const st = segStarts(rt);
+  const sp = startPoses(rt);
   let best = 1e6;
   rt.segments.forEach((sg, i) => {
-    const v = segLat(routePose(rt, st[i]), sg, pt);
+    const v = segLat(sp[i], sg, pt);
     if (v !== undefined && Math.abs(v) < Math.abs(best)) best = v;
   });
   return best;
+}
+
+// (each segment's start pose, kept per route: routeLat is called a great many
+// times on the same routes; worked out again if the route is changed)
+const startCache = new WeakMap<Route, { start: Pose; segments: Segment[]; n: number; poses: Pose[] }>();
+function startPoses(rt: Route): Pose[] {
+  const c = startCache.get(rt);
+  if (c && c.start === rt.start && c.segments === rt.segments && c.n === rt.segments.length) return c.poses;
+  const poses: Pose[] = [];
+  let p = rt.start;
+  for (const sg of rt.segments) { poses.push(p); p = poseAfter(p, sg); }
+  startCache.set(rt, { start: rt.start, segments: rt.segments, n: rt.segments.length, poses });
+  return poses;
 }
 
 /** Arc length along a route of the point on its centre line level with pt (route_s_of). */

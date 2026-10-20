@@ -6,6 +6,7 @@ import { buildDesign } from './build';
 
 self.onmessage = async (e: MessageEvent<{ id: number; design: Design }>) => {
   const { id, design } = e.data;
+  (self as unknown as Worker).postMessage({ id, progress: 'Starting', frac: 0 }); // (picked up: the page knows this worker isn't stuck)
   try {
     const { overlay, pieces, info } = buildDesign(await kernel(wasmUrl), design, (progress, frac) => (self as unknown as Worker).postMessage({ id, progress, frac }));
     (self as unknown as Worker).postMessage({ id, overlay, pieces, info }, pieces.flatMap((p) => [p.positions.buffer, p.stl.buffer]));
