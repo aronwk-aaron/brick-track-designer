@@ -22,9 +22,13 @@ stops. Drag a track's end to reshape it live (from its last curve on). Laying
 or dragging onto another track's end joins the two into one track, with a
 curve and a straight or an S that arrives heading into it. Free curves run
 from R24 to R1000; gentler than that, R1000 and a straight. Starting on the middle of a track branches
-off it. Select mode picks a track (Delete removes it); the panel on the left
-edits any track's numbers; Undo and Redo, pan and zoom. Over the track the
-canvas shows where flangeways cut the rails, check rails, rail crossings and
-points (not built yet); below it, the printable track-only piece in 3D, which
-downloads as STL. Designs save and open as JSON, and the last one is kept in
+off it: a switch. Select mode picks a track (Delete removes it); the panel on
+the left edits any track's numbers, the trackwork by hand (Trackwork) and the
+piece's settings (Piece options: ballast and the underside, the switches'
+mechanism and throw, check rails, the print bed and joints); Undo and Redo, pan
+and zoom. Over the track the plan shows where flangeways cut the rails, check
+rails, rail crossings, points (click to take them out or force them) and each
+switch's lever (drag it across to swap sides; hover it to see what set its
+side); below it, the pieces in 3D, which download as STL or one 3MF laid out
+on the print bed. Designs save and open as JSON, and the last one is kept in
 the browser.
