@@ -49,7 +49,7 @@ function check(w: Awaited<ReturnType<typeof kernel>>, d: Design, expectWarn: Reg
         }
         // (a track part: one body (bar breakaway end supports), not a sliver)
         for (const p of trackPs) {
-          const m = man(p), bb = m.boundingBox(), bodies = m.decompose().filter((z) => z.volume() > 300).length;
+          const m = man(p), bb = m.boundingBox(), bodies = m.decompose().filter((z) => z.volume() > 1000).length; // (smaller: breakaway end supports, as fitAll takes them)
           if (bodies !== 1) problems.push(`${p.name} is in ${bodies} pieces`);
           if (m.volume() < 3000 || Math.min(bb.max[0] - bb.min[0], bb.max[1] - bb.min[1]) < 24) problems.push(`${p.name} is a sliver`);
         }
