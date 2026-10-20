@@ -20,6 +20,7 @@ import type { CheckRail, Split } from '../route/solver';
 import { planSections } from './sections';
 import type { Route } from '../route/route';
 import { cutPiece, type CutLine } from '../geom/cutter';
+import { edgeGrip } from '../geom/underside';
 import { pathSplit } from '../geom/pathsplit';
 import { type Design, OPTION_DEFAULTS, toRoutes } from './design';
 
@@ -223,7 +224,13 @@ export function buildDesign(w: Wasm, design: Design, report: (what: string, frac
       if (!good(got)) return [m];
       return got!.flatMap((p) => fitAll(p, depth + 1));
     };
-    const all = cached(`fit:${o.printBedX}x${o.printBedY}:${bp}:${o.joint}:${o.cutRails}:${JSON.stringify(lines)}:${JSON.stringify(pieceRoutes)}:${world.volume().toFixed(3)}`, () => cells.flatMap((m) => arena(w, () => fitAll(m), (r) => r))); // (each cell's leftovers freed as it goes)
+    const all = cached(`fit:${o.printBedX}x${o.printBedY}:${bp}:${o.joint}:${o.cutRails}:${JSON.stringify(lines)}:${JSON.stringify(pieceRoutes)}:${world.volume().toFixed(3)}`, () => {
+      // (and each part gripping along its cut edges too)
+      const parts = cells.flatMap((m) => arena(w, () => fitAll(m), (r) => r)); // (each cell's leftovers freed as it goes)
+      if (parts.length < 2) return parts;
+      const gp = routePose(pieceRoutes[0], 0), bottom = world.boundingBox().min[2] + 0.02;
+      return parts.map((m) => arena(w, () => edgeGrip(scad, track, m, gp, bottom), (r) => [r]));
+    });
     all.forEach((m, k) => add(all.length > 1 ? `${name}${plan.why === 'baseplate' ? '-plate' : ''}${k + 1}` : name, 0x6f7780, m, m));
     if (all.some((m) => !fitsBed(m))) bedWarnings.add(`some parts don't fit the ${o.printBedX} x ${o.printBedY} print bed: there's nowhere left to cut them`);
   };
@@ -344,7 +351,7 @@ export function buildDesign(w: Wasm, design: Design, report: (what: string, frac
           const bb = body.boundingBox(), ox = (o.baseplateX ?? 0) * 8, oy = (o.baseplateY ?? 0) * 8, lines: CutLine[] = [];
           for (let x = ox + Math.ceil((bb.min[0] + 1 - ox) / bp) * bp; x < bb.max[0] - 1; x += bp) lines.push({ p: [x, 0], d: [0, 1], joint: 'lego' });
           for (let y = oy + Math.ceil((bb.min[1] + 1 - oy) / bp) * bp; y < bb.max[1] - 1; y += bp) lines.push({ p: [0, y], d: [1, 0], joint: 'lego' });
-          if (lines.length) parts2 = cutPiece(scad, track, body, rts, lines, 'lego', o.cutRails === 'flat');
+          if (lines.length) { const bottom = body.boundingBox().min[2] + 0.02; parts2 = cutPiece(scad, track, body, rts, lines, 'lego', o.cutRails === 'flat').map((m) => edgeGrip(scad, track, m, gridPose, bottom)); }
         }
         return { ms: parts2.filter((m) => m.numTri() > 0).map(bake), grips };
       }, () => [])); } catch (err) {
@@ -401,7 +408,8 @@ export function buildDesign(w: Wasm, design: Design, report: (what: string, frac
           return cx > R[0] && cx < R[2] && cy > R[1] && cy < R[3];
         });
         // (baked: the block's solids are all let go, a whole yard's would fill the kernel's memory)
-        return { ms: got.filter((m) => m.numTri() > 0).map(bake), grips: grips.filter((q) => q[0] > R[0] && q[0] <= R[2] && q[1] > R[1] && q[1] <= R[3]) };
+        const bottom = body.boundingBox().min[2] + 0.02;
+        return { ms: got.filter((m) => m.numTri() > 0).map((m) => bake(edgeGrip(scad, track, m, gridPose, bottom))), grips: grips.filter((q) => q[0] > R[0] && q[0] <= R[2] && q[1] > R[1] && q[1] <= R[3]) };
       }, () => [])); } catch (err) {
         if (err instanceof WebAssembly.RuntimeError || typeof err === 'number') throw err; // (the kernel's broken now: no use carrying on)
         bedWarnings.add(`part ${ci + 1} of ${name} (x ${Math.max(R[0], b[0]).toFixed(0)} to ${Math.min(R[2], b[2]).toFixed(0)}, y ${Math.max(R[1], b[1]).toFixed(0)} to ${Math.min(R[3], b[3]).toFixed(0)}) failed to build: ${err instanceof Error ? err.message : `kernel error ${String(err)}`}`);

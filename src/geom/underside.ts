@@ -114,3 +114,38 @@ export function hollowGrid(s: Scad, t: Track, cav: CS, wd: (lx: number, ly: numb
   }
   return { cut: W.CrossSection.union([cav, ...socks]), tubes: shapes.length ? W.CrossSection.union(shapes).intersect(cav) : undefined, grips };
 }
+
+/**
+ * Grip along a cut part's edges: where a piece was cut (for the bed or the
+ * baseplates), its new edges had neither the rim nor the anti-stud tubes the
+ * piece's own edges have, so the part sat loose on the plate. Adds the rim
+ * round the whole of the part's outline (under its roof) and a tube at each
+ * stud corner a stud in from it, wherever the part is hollow there. gp: the
+ * stud grid (studs at 4 + 8k in its frame); bottom: the underside's z.
+ */
+export function edgeGrip(s: Scad, t: Track, part: Man, gp: [number, number, number], bottom: number): Man {
+  const W = s.w, cavH = t.o.studH + 0.2;
+  const roof = part.slice(bottom + cavH + 0.3), mid = part.slice(bottom + cavH / 2);
+  if (roof.area() < 1) return part;
+  const inner = roof.offset(-BOTTOM_WALL, 'Miter', 1000);
+  // (the rim, only where it's hollow now)
+  const rim = roof.subtract(inner).subtract(mid);
+  const bb = roof.bounds(), h = (gp[2] * Math.PI) / 180;
+  const toG = (x: number, y: number) => { const dx = x - gp[0], dy = y - gp[1]; return [(dx * Math.cos(h) + dy * Math.sin(h)) / STUD, (-dx * Math.sin(h) + dy * Math.cos(h)) / STUD]; };
+  const cs = [toG(bb.min[0], bb.min[1]), toG(bb.max[0], bb.min[1]), toG(bb.min[0], bb.max[1]), toG(bb.max[0], bb.max[1])];
+  const i0 = Math.floor(Math.min(...cs.map((q) => q[0]))) - 1, i1 = Math.ceil(Math.max(...cs.map((q) => q[0]))) + 1;
+  const j0 = Math.floor(Math.min(...cs.map((q) => q[1]))) - 1, j1 = Math.ceil(Math.max(...cs.map((q) => q[1]))) + 1;
+  const rings: CS[] = [];
+  for (let i = i0; i <= i1; i++) for (let j = j0; j <= j1; j++) {
+    const lx = i * STUD, ly = j * STUD, q: [number, number] = [gp[0] + lx * Math.cos(h) - ly * Math.sin(h), gp[1] + lx * Math.sin(h) + ly * Math.cos(h)];
+    const ring = W.CrossSection.circle((TUBE_OD - ANTISTUD_FIT) / 2, 24).subtract(W.CrossSection.circle((TUBE_ID + ANTISTUD_FIT) / 2, 24)).translate(q);
+    // (a stud in from the edge: the tube under the roof and clear of the rim, but within 10 mm of the outline)
+    if (W.CrossSection.circle(TUBE_OD / 2 + 0.2, 24).translate(q).subtract(inner).area() > 0.01) continue;
+    if (W.CrossSection.circle(10, 24).translate(q).subtract(roof).area() < 0.01) continue;
+    // (and where it's hollow: not in a pocket, nor on a tube or post already there)
+    if (ring.intersect(mid).area() > 0.5) continue;
+    rings.push(ring);
+  }
+  const add = [rim.area() > 0.5 ? T(s.extrude(rim, cavH), [0, 0, bottom]) : undefined, rings.length ? T(s.extrude(W.CrossSection.union(rings), cavH), [0, 0, bottom]) : undefined].filter((m): m is Man => !!m);
+  return add.length ? s.union([part, ...add]) : part;
+}
