@@ -22,7 +22,7 @@ const man = (p: { positions: Float32Array }) => {
   return new w.Manifold(mesh);
 };
 const fill = (n: string) => (/spring/.test(n) ? '#c0392b' : /lever/.test(n) ? '#d4af37' : /throw/.test(n) ? '#e8892b' : /points/.test(n) ? '#4682b4' : '#9aa0a8');
-const S = 60, W = (x1 - x0) * S, H = (z1 - z0) * S;
+const S = Math.min(60, 1800 / (x1 - x0)), W = (x1 - x0) * S, H = (z1 - z0) * S;
 let paths = '';
 for (const p of b.pieces) {
   // (y up to z: the slice at z = y is the section at y; x stays, the slice's y is -z)
