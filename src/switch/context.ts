@@ -30,6 +30,8 @@ export interface SwitchParams {
   endSupports?: boolean;
   /** The throw as the plate-style: the lever on its own bracket (a 3 x 3 stud plate with the ears) on studs on the arm, not built into it. */
   throwModule?: boolean;
+  /** The points' mechanism: switch.scad's ('tines': the points under the bed, in pockets, on springy tines) or the plate-style ('plates': each blade on its own plate on top of the bed, on a pin, a slider bar through the bed under them). */
+  mechStyle?: 'tines' | 'plates';
 }
 
 export const SWITCH_DEFAULTS: SwitchParams = {
@@ -58,7 +60,8 @@ export function switchGlobals(p: SwitchParams) {
   const bottomCavity = p.studH + 0.2;
   // (with an anti-stud underside, or none at all, the parts sit above a baseplate's studs)
   const layerZ0 = pieceBottomZ + (antistud || !ballast ? bottomCavity : 0) + (p.mechFloor ?? 0.2);
-  const layerTop = layerZ0 + 1.4;
+  // (the plate-style: the slider bar, 2.4 tall, in the bed under the blade plates)
+  const layerTop = layerZ0 + (p.mechStyle === 'plates' ? 2.4 : 1.4);
   const cavityTop = layerTop + p.pointClearance;
   const bedTop = ballast ? PLATE_H : Math.max(PLATE_H, cavityTop + 0.8);
   const leverTipD = 4.5, leverBossD = 5;
@@ -117,14 +120,20 @@ export function pointsSet(routes: Route[], ps: PointsSet, p: SwitchParams, defau
   };
   const tineTip: Pt = [bladeMidAt(yS + 2)[0], yS + 2];
   const throwTravel = (tineLen - g.postL / 2) * rad(throwAng);
-  const leverTravel = over.leverTravel ?? throwTravel + 2 * p.springPreload;
+  // (the plate-style: the slider's post meets each blade 0.6 of the way from its
+  // pin to its toe, on a stud of the frame's grid; its travel opens the
+  // blade by the throw there, plus the preload its tongue takes)
+  const fdbPivotY = railPoint(ra, sHeel - 4, -G)[1];
+  const fdbY = Math.max(toeY + 8, Math.min(fdbPivotY - 8, Math.round((fdbPivotY - 0.6 * (fdbPivotY - toeY) - 4) / 8) * 8 + 4));
+  const fdbTravel = p.pointThrow * (fdbPivotY - fdbY) / Math.max(1, fdbPivotY - toeY) + p.springPreload;
+  const leverTravel = over.leverTravel ?? (p.mechStyle === 'plates' ? fdbTravel : throwTravel + 2 * p.springPreload);
   const postX = [tineTip[0] - p.springPreload];
   const swingRange = [0, throwAng];
   const pointsEndY = pivotPt[1] + Math.max(g.discR, g.heelBarW / 2) + 2;
   const tipGap = Math.min(Math.abs(bladeMidAt(tineTip[1])[0] - railPoint(ra, sOf(ra, tineTip), -G)[0]),
     Math.abs(railPoint(rb, sOf(rb, tineTip), +G)[0] - bladeMidAt(tineTip[1])[0]));
   const throwDir = ps.tside ?? defaultThrowDir;
-  const throwY = yS;
+  const throwY = p.mechStyle === 'plates' ? fdbY : yS;
   const throwStockRt = throwDir > 0 ? ra : rb;
   const throwStockX = railPoint(throwStockRt, sOf(throwStockRt, [0, throwY]), throwDir * G)[0];
   const throwFaceX = throwStockX + throwDir * 3.9;

@@ -12,12 +12,18 @@ const crossover: Design = { version: 1, gaugeStuds: 4, routes: [
   { name: 'B', x: 16, y: 0, heading: 0, segs: [{ kind: 'straight', studs: 64 }] },
   { name: 'X', x: 0, y: 8, heading: 0, segs: [{ kind: 'curve', radius: 40, angle: -22.5 }, { kind: 'curve', radius: 40, angle: 22.5 }] },
 ] };
+const crossoverT = () => crossover;
 const cases: [string, Design][] = [
   ['left switch', TEMPLATES['Left switch (LEGO)']],
+  ['left switch, points on tines', { ...TEMPLATES['Left switch (LEGO)'], options: { mechStyle: 'tines' } }],
+  ['crossover, points on tines', { ...crossoverT(), options: { mechStyle: 'tines' } }],
   ['wye on ballast', { ...TEMPLATES['Wye switch'], options: { ballast: 'buddy' } }],
   ['left switch, lever on a bracket', { ...TEMPLATES['Left switch (LEGO)'], options: { throwStyle: 'bracket' } }],
-  ['left switch on ballast, layered points', { ...TEMPLATES['Left switch (LEGO)'], options: { ballast: 'buddy', pointsModule: 'layers' } }],
+  ['left switch on ballast, layered points', { ...TEMPLATES['Left switch (LEGO)'], options: { ballast: 'buddy', pointsModule: 'layers', mechStyle: 'tines' } }],
   ['crossover', crossover],
+  ['left switch, plate-style points', { ...TEMPLATES['Left switch (LEGO)'], options: { mechStyle: 'plates' } }],
+  ['wye on ballast, plate-style points', { ...TEMPLATES['Wye switch'], options: { ballast: 'buddy', mechStyle: 'plates' } }],
+  ['crossover, plate-style points', { ...crossover, options: { mechStyle: 'plates' } }],
 ];
 
 describe('every switch can be put together', { timeout: 120000 }, () => {
@@ -33,10 +39,11 @@ describe('every switch can be put together', { timeout: 120000 }, () => {
       // (the lid goes on last: the parts go in without it, then it goes on from above over them)
       const track = w.Manifold.union(b.pieces.filter((p) => !/points|throw|lever|bracket|lid/.test(p.name)).map(man));
       const moving = b.pieces.filter((q) => /points|throw/.test(q.name)).map(man); // (the lever goes in after the lid)
-      const fromTop = d.options?.pointsModule === 'layers';
+      const fromTop = d.options?.pointsModule === 'layers', bladesTop = (d.options?.mechStyle ?? 'plates') === 'plates';
       const problems: string[] = [];
       for (const p of b.pieces.filter((q) => /points|throw|lever|bracket/.test(q.name))) {
-        const m = man(p), dir = /lever|bracket/.test(p.name) || fromTop ? 1 : -1;
+        // (the plate-style blades go in from above, the slider still from below)
+        const m = man(p), dir = /lever|bracket/.test(p.name) || fromTop || (bladesTop && !/throw/.test(p.name)) ? 1 : -1;
         for (const dz of [0, 1, 2, 3, 4, 6, 8, 12, 16]) {
           const v = m.translate([0, 0, dir * dz]).intersect(track).volume();
           if (v > 0.5) { problems.push(`${p.name} ${dz} mm ${dir > 0 ? 'up' : 'down'}: ${v.toFixed(1)} mm3 in the track`); break; }

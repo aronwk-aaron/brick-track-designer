@@ -10,7 +10,7 @@ describe('designs into pieces', { timeout: 60000 }, () => {
   it('the LEGO left switch is one switch: base, points, throw, lever', async () => {
     const b = buildDesign(await kernel(), { ...TEMPLATES['Left switch (LEGO)'], options: BIG_BED });
     expect(b.info.warnings).toEqual([]);
-    expect(b.pieces.map((p) => p.name)).toEqual(['switch-base', 'switch-points', 'switch-throw', 'switch-lever']);
+    expect(b.pieces.map((p) => p.name)).toEqual(['switch-base', 'switch-points-a', 'switch-points-b', 'switch-throw', 'switch-lever']);
     // (the same routes as switch.scad's left R40 s_curve: its tube underside base)
     expect(b.info.volume).toBeGreaterThan(54980);
   });
@@ -28,7 +28,7 @@ describe('designs into pieces', { timeout: 60000 }, () => {
     ] });
     expect(b.info.warnings).toEqual([]);
     expect(b.info.switches).toBe(1);
-    expect(b.pieces.map((p) => p.name)).toEqual(['switch-base', 'switch-points', 'switch-throw', 'switch-lever']);
+    expect(b.pieces.map((p) => p.name)).toEqual(['switch-base', 'switch-points-a', 'switch-points-b', 'switch-throw', 'switch-lever']);
   });
   it('a switch longer than the print bed comes in pieces that each fit it', async () => {
     const b = buildDesign(await kernel(), { ...TEMPLATES['Left switch (LEGO)'], options: { printBedX: 200, printBedY: 200 } });
@@ -60,6 +60,6 @@ describe('designs into pieces', { timeout: 60000 }, () => {
     ] });
     expect(b.info.warnings).toEqual([]);
     expect(b.info.switches).toBe(2);
-    expect(b.pieces.map((p) => p.name)).toEqual(['track', 'points1', 'points1-throw', 'points1-lever', 'points2', 'points2-throw', 'points2-lever']);
+    expect(b.pieces.map((p) => p.name)).toEqual(['track', 'points1-a', 'points1-b', 'points1-throw', 'points1-lever', 'points2-a', 'points2-b', 'points2-throw', 'points2-lever']);
   });
 });
