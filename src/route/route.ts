@@ -15,6 +15,8 @@ export interface Route {
   id: string;
   start: Pose;
   segments: Segment[];
+  /** (editor) a branch's lever side, if set per switch */
+  throwSide?: 'auto' | 'left' | 'right';
 }
 
 const rad = (d: number) => (d * Math.PI) / 180;

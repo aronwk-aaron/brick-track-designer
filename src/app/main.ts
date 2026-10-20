@@ -83,6 +83,15 @@ function render() {
       field('Start y, studs', num(r.y, (n) => { r.y = n; }, 1)),
       field('Heading ° (0 = up, + = left)', num(r.heading, (n) => { r.heading = n; }, 22.5)));
     r.segs.forEach((_, k) => body.append(segRow(r, k)));
+    // (a branch, i.e. a switch: its lever's side)
+    if (r.segs.length && design.routes.length > 1) {
+      const sel = document.createElement('select');
+      for (const [v, t] of [['auto', 'Auto'], ['left', 'Left'], ['right', 'Right']]) sel.append(new Option(t, v));
+      sel.value = r.throwSide ?? 'auto';
+      sel.title = 'If this track branches off another (a switch), which side its lever goes';
+      sel.addEventListener('change', () => { r.throwSide = sel.value as DRoute['throwSide']; changed(); });
+      body.append(field('Switch lever side (if a branch)', sel));
+    }
     const add = document.createElement('div'); add.className = 'row';
     add.append(
       btn('+ Straight', () => r.segs.push({ kind: 'straight', studs: 16 })),
