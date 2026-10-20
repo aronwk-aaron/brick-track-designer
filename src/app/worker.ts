@@ -12,6 +12,8 @@ self.onmessage = async (e: MessageEvent<{ id: number; design: Design }>) => {
       (early) => (self as unknown as Worker).postMessage({ id, early }));
     (self as unknown as Worker).postMessage({ id, overlay, pieces, info }, pieces.flatMap((p) => [p.positions.buffer, p.stl.buffer]));
   } catch (err) {
-    (self as unknown as Worker).postMessage({ id, error: String(err instanceof Error ? err.message : err) });
+    // (a crash inside the kernel leaves it broken for every build after: the page starts a new worker)
+    const fatal = err instanceof WebAssembly.RuntimeError || typeof err === 'number';
+    (self as unknown as Worker).postMessage({ id, fatal, error: String(err instanceof Error ? err.message : typeof err === 'number' ? 'the geometry kernel failed' : err) });
   }
 };
