@@ -527,7 +527,7 @@ const OPTION_FORM: [string, [keyof PieceOptions, string, number?][]][] = [
     ['springPreload', 'Spring preload, mm', 0.25], ['springThickness', 'Spring thickness, mm', 0.05], ['springLength', 'Spring length, mm', 1]]],
   ['Guards (check rails)', [['checkRailLen', 'Check rail length, mm', 2], ['checkRailW', 'Check rail width, mm', 0.1], ['checkRailFlare', 'End flare, mm', 0.25],
     ['flangeway', 'Flangeway width, mm', 0.1], ['flangewayDepth', 'Flangeway depth, mm', 0.5]]],
-  ['Print bed', [['printBedX', 'Bed width, mm', 1], ['printBedY', 'Bed depth, mm', 1], ['baseplate', 'Cut at baseplate edges'], ['baseplateX', 'Plate corner x, studs', 1], ['baseplateY', 'Plate corner y, studs', 1], ['joint', 'Parts join with'], ['endSupports', 'Supports under the rail ends']]],
+  ['Print bed', [['printBedX', 'Bed width, mm', 1], ['printBedY', 'Bed depth, mm', 1], ['baseplate', 'Cut at baseplate edges'], ['baseplateX', 'Plate corner x, studs', 1], ['baseplateY', 'Plate corner y, studs', 1], ['joint', 'Parts join with'], ['cutRails', 'Rails where parts are cut'], ['endSupports', 'Supports under the rail ends']]],
   ['Points (prototype)', [['pointsModule', 'Points built as']]],
 ];
 function renderOptions() {
@@ -536,7 +536,14 @@ function renderOptions() {
   for (const [title, fields] of OPTION_FORM) {
     const h = document.createElement('h4'); h.textContent = title; body.append(h);
     for (const [key, label, step] of fields) {
-      if (key === 'endSupports') {
+      if (key === 'cutRails') {
+        const sel = document.createElement('select');
+        for (const [v, tx, tip] of [['tongues', 'Interlocking tongues (LEGO)', 'The rails at a cut get interlocking tongues, as LEGO track ends: they overhang, so they print with supports'],
+          ['flat', 'Cut flat', 'The rails cut flat across: nothing overhangs, no supports to print; the bed joint and the baseplate hold the parts in line']]) { const op = new Option(tx, v); op.title = tip; sel.append(op); }
+        sel.value = o.cutRails ?? 'tongues';
+        sel.addEventListener('change', () => { design.options = { ...design.options, cutRails: sel.value as PieceOptions['cutRails'] }; changed(true); });
+        body.append(field(label, sel));
+      } else if (key === 'endSupports') {
         const cb = document.createElement('input'); cb.type = 'checkbox'; cb.checked = o.endSupports !== false;
         cb.title = 'Breakaway print supports under the rail-end tongues at each end; off: let the slicer support them';
         cb.addEventListener('change', () => { design.options = { ...design.options, endSupports: cb.checked }; changed(true); });

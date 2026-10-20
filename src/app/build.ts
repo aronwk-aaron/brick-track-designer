@@ -172,7 +172,7 @@ export function buildDesign(w: Wasm, design: Design, report: (what: string, frac
   // (how far each side of a centre line the track's base reaches: its sleepers, or its widest ballast layer)
   const bandHalf = (o.ballast === 'buddy' ? track.c.sleeperLen + 32 : o.ballast === 'ballast' ? track.c.sleeperLen + 16 : track.c.sleeperLen) / 2;
   // (what the joints stick out past a cut, both ends of a part: rail tongues, and the peg or dovetail)
-  const jointRoom = o.joint === 'dovetail' ? 14 : o.joint === 'butt' ? 2 : 8;
+  const jointRoom = (o.joint === 'dovetail' ? 14 : o.joint === 'butt' ? 2 : 8) - (o.cutRails === 'flat' && o.joint !== 'butt' ? 4 : 0);
   // (where no cut goes: the crossings, and every points set from before its toe to past its heels,
   // so a cut never runs through the blades' slots and leaves strips of track between them)
   // (a split along a path may go through a crossing, across its rails, as a cut down the middle of a crossover has to: only the points are kept clear)
@@ -192,7 +192,7 @@ export function buildDesign(w: Wasm, design: Design, report: (what: string, frac
     const lj = (v: number) => (plan.edges?.has(v) ? { joint: 'lego' as const } : plan.combs?.has(v) ? { comb: true } : {});
     const lines: CutLine[] = [...plan.xs.map((x): CutLine => ({ p: [x, 0], d: [0, 1], ...lj(x) })), ...plan.ys.map((y): CutLine => ({ p: [0, y], d: [1, 0], ...lj(y) }))];
     steps++; progress(plan.why === 'bed' ? `Cutting ${name} to fit the print bed` : `Cutting ${name} at the baseplate edges`);
-    const cells = cached(`cut:${bp}:${o.joint}:${JSON.stringify(lines)}:${JSON.stringify(pieceRoutes)}:${world.volume().toFixed(3)}`, () => cutPiece(scad, track, world, pieceRoutes, lines, o.joint === 'ends' ? 'lego' : o.joint ?? 'lego'));
+    const cells = cached(`cut:${bp}:${o.joint}:${o.cutRails}:${JSON.stringify(lines)}:${JSON.stringify(pieceRoutes)}:${world.volume().toFixed(3)}`, () => cutPiece(scad, track, world, pieceRoutes, lines, o.joint === 'ends' ? 'lego' : o.joint ?? 'lego', o.cutRails === 'flat'));
     // a part still too big: split along a stepped path on the stud grid that
     // goes only where a cut can be made (pathsplit.ts), as often as it takes
     // (pieces of track that don't touch are parts of their own; the small bits, the breakaway supports, stay with the biggest)
@@ -221,7 +221,7 @@ export function buildDesign(w: Wasm, design: Design, report: (what: string, frac
       if (!good(got)) return [m];
       return got!.flatMap((p) => fitAll(p, depth + 1));
     };
-    const all = cached(`fit:${o.printBedX}x${o.printBedY}:${bp}:${o.joint}:${JSON.stringify(lines)}:${JSON.stringify(pieceRoutes)}:${world.volume().toFixed(3)}`, () => cells.flatMap((m) => arena(w, () => fitAll(m), (r) => r))); // (each cell's leftovers freed as it goes)
+    const all = cached(`fit:${o.printBedX}x${o.printBedY}:${bp}:${o.joint}:${o.cutRails}:${JSON.stringify(lines)}:${JSON.stringify(pieceRoutes)}:${world.volume().toFixed(3)}`, () => cells.flatMap((m) => arena(w, () => fitAll(m), (r) => r))); // (each cell's leftovers freed as it goes)
     all.forEach((m, k) => add(all.length > 1 ? `${name}${plan.why === 'baseplate' ? '-plate' : ''}${k + 1}` : name, 0x6f7780, m, m));
     if (all.some((m) => !fitsBed(m))) bedWarnings.add(`some parts don't fit the ${o.printBedX} x ${o.printBedY} print bed: there's nowhere left to cut them`);
   };
@@ -342,7 +342,7 @@ export function buildDesign(w: Wasm, design: Design, report: (what: string, frac
           const bb = body.boundingBox(), ox = (o.baseplateX ?? 0) * 8, oy = (o.baseplateY ?? 0) * 8, lines: CutLine[] = [];
           for (let x = ox + Math.ceil((bb.min[0] + 1 - ox) / bp) * bp; x < bb.max[0] - 1; x += bp) lines.push({ p: [x, 0], d: [0, 1], joint: 'lego' });
           for (let y = oy + Math.ceil((bb.min[1] + 1 - oy) / bp) * bp; y < bb.max[1] - 1; y += bp) lines.push({ p: [0, y], d: [1, 0], joint: 'lego' });
-          if (lines.length) parts2 = cutPiece(scad, track, body, rts, lines, 'lego');
+          if (lines.length) parts2 = cutPiece(scad, track, body, rts, lines, 'lego', o.cutRails === 'flat');
         }
         return { ms: parts2.filter((m) => m.numTri() > 0).map(bake), grips };
       }, () => [])); } catch (err) {
@@ -389,12 +389,12 @@ export function buildDesign(w: Wasm, design: Design, report: (what: string, frac
         return { ...sp, inner: whole ? `${kj}:${end}` : '-', bladeCuts: sp.bladeCuts.filter(([i]) => cr.map[i] >= 0).map(([i, m]) => [cr.map[i], m] as [number, Man]) };
       });
       const tileCuts = grooveCuts.filter((m) => nearCell(m.boundingBox(), R, MARGIN));
-      const tk = `tile:${key}:${JSON.stringify({ r: cr.routes, c: cr.checks, i: [...cr.inner], R, lines, near: near.map((x) => x.k), copt, joint: o.joint, g: grooveCuts.length ? tw.groove : 0 })}`;
+      const tk = `tile:${key}:${JSON.stringify({ r: cr.routes, c: cr.checks, i: [...cr.inner], R, lines, near: near.map((x) => x.k), copt, joint: o.joint, cutRails: o.cutRails, g: grooveCuts.length ? tw.groove : 0 })}`;
       let part: { ms: ReturnType<typeof bake>[]; grips: [number, number][] };
       try { part = cached(tk, () => arena(w, () => {
         const grips: [number, number][] = [];
         const body = networkBody(scad, cr.routes, { crossings: [], grooves: [], splits: [], checkRails: cr.checks }, copt, tileSplits, grips, { cuts: tileCuts, innerEnds: cr.inner, gridPose });
-        const got = cutPiece(scad, track, body, cr.routes, lines, o.joint === 'ends' ? 'lego' : o.joint ?? 'lego').filter((m) => {
+        const got = cutPiece(scad, track, body, cr.routes, lines, o.joint === 'ends' ? 'lego' : o.joint ?? 'lego', o.cutRails === 'flat').filter((m) => {
           const bb = m.boundingBox(), cx = (bb.min[0] + bb.max[0]) / 2, cy = (bb.min[1] + bb.max[1]) / 2;
           return cx > R[0] && cx < R[2] && cy > R[1] && cy < R[3];
         });
