@@ -553,13 +553,13 @@ updateSelbar();
 // ---------- piece options (switch.scad's Customizer settings) ----------
 const OPTION_FORM: [string, [keyof PieceOptions, string, number?][]][] = [
   ['Ballast', [['ballast', 'Ballast'], ['bottomStyle', 'Underside']]],
-  ['Throw', [['throwStyle', 'Lever mounted'], ['throwSide', 'Lever side'], ['leverOffset', 'Lever past the edge, mm', 1]]],
+  ['Throw', [['throwStyle', 'Lever or stand'], ['throwAction', 'Points held by'], ['throwSide', 'Lever side'], ['leverOffset', 'Lever past the edge, mm', 1]]],
   ['Points', [['pointThrow', 'Blade throw, mm', 0.25], ['pointClearance', 'Clearance, mm', 0.05],
     ['springPreload', 'Spring preload, mm', 0.25], ['springThickness', 'Spring thickness, mm', 0.05], ['springLength', 'Spring length, mm', 1]]],
   ['Guards (check rails)', [['checkRailLen', 'Check rail length, mm', 2], ['checkRailW', 'Check rail width, mm', 0.1], ['checkRailFlare', 'End flare, mm', 0.25],
     ['flangeway', 'Flangeway width, mm', 0.1], ['flangewayDepth', 'Flangeway depth, mm', 0.5]]],
   ['Print bed', [['printBedX', 'Bed width, mm', 1], ['printBedY', 'Bed depth, mm', 1], ['baseplate', 'Cut at baseplate edges'], ['baseplateX', 'Plate corner x, studs', 1], ['baseplateY', 'Plate corner y, studs', 1], ['joint', 'Parts join with'], ['cutRails', 'Rails where parts are cut'], ['endSupports', 'Supports under the rail ends']]],
-  ['Points (prototype)', [['mechStyle', 'Mechanism'], ['pointsModule', 'Points built as']]],
+  ['Points (prototype)', [['mechStyle', 'Mechanism'], ['bladeStyle', 'Blades'], ['pointsModule', 'Points built as']]],
 ];
 function renderOptions() {
   const body = $('options-body'); body.replaceChildren();
@@ -577,9 +577,27 @@ function renderOptions() {
       } else if (key === 'throwStyle') {
         const sel = document.createElement('select');
         for (const [v, tx, tip] of [['bracket', 'On its own bracket (4DBrix)', 'The lever on a separate 3 x 3 stud bracket that sits on studs on the arm, as 4DBrix throws are'],
-          ['built-in', 'Built into the arm', 'The lever\'s ears part of the track piece\'s arm']]) { const op = new Option(tx, v); op.title = tip; sel.append(op); }
+          ['built-in', 'Built into the arm', 'The lever\'s ears part of the track piece\'s arm'],
+          ['stand', 'Switch stand (ground throw)', 'A handle beside the track on an eccentric, as Caboose Industries\' ground throws: swing it over to throw the points; at each end it rests on the arm just past dead centre, so the points can\'t push it back (locked). Drawbacks: 4DBrix points only; a train trailing through against it is stopped (and derails) unless the points spring back; a three-way\'s middle position isn\'t locked']]) { const op = new Option(tx, v); op.title = tip; sel.append(op); }
         sel.value = o.throwStyle ?? 'built-in';
         sel.addEventListener('change', () => { design.options = { ...design.options, throwStyle: sel.value as PieceOptions['throwStyle'] }; changed(true); });
+        body.append(field(label, sel));
+      } else if (key === 'throwAction') {
+        const sel = document.createElement('select');
+        for (const [v, tx, tip] of [['detent', 'The lever\'s click (as before)', 'The lever clicks into a dimple in its ear at each end. A train trailing through the wrong way pushes the points part way over and can derail'],
+          ['overcentre', 'Over-centre spring (Peco)', 'A printed spring between the bed and the slider pushes the points to whichever side they\'re past, as Peco\'s V spring does: a train trailing through pushes them over and they stay, the lever with them. Drawbacks: a PLA spring is light (about 0.3 N at the ends) and its force depends on how accurately it prints; not on three-ways or with a switch stand; 4DBrix points only'],
+          ['springback', 'Spring-back (spring switch)', 'Each blade\'s tongue is a long spring: a train trailing through pushes the blades over and they spring back after it, the throw staying where it\'s set. Use the switch stand, which locks the throw (the lever\'s click won\'t hold it). Drawbacks: wider blade plates; the blades snap back between wheelsets (no dashpot, as the prototype has); a lighter hold on the closed blade; 4DBrix points only']]) { const op = new Option(tx, v); op.title = tip; sel.append(op); }
+        sel.value = o.throwAction ?? 'detent';
+        sel.title = 'What holds the points over, and what a train trailing through them the wrong way does';
+        sel.addEventListener('change', () => { design.options = { ...design.options, throwAction: sel.value as PieceOptions['throwAction'] }; changed(true); });
+        body.append(field(label, sel));
+      } else if (key === 'bladeStyle') {
+        const sel = document.createElement('select');
+        for (const [v, tx, tip] of [['simple', 'Simple (as before)', 'Each blade is its route\'s rail, cut off along the stock rail it closes on'],
+          ['prototype', 'Prototype: planed, tucked under the stock rail', 'Each blade planed to a blunt point (as thin as prints well), tight against the stock rail and tucked in under its undercut head, so a wheel\'s flange can\'t catch it and the head holds it down; the tie bar (the slider) moved up to the points. Drawbacks: the blades go on swung open, then shut; the stock rail\'s head is thinner low down along the points; with the over-centre spring the tie bar stays further back; 4DBrix points only']]) { const op = new Option(tx, v); op.title = tip; sel.append(op); }
+        sel.value = o.bladeStyle ?? 'simple';
+        sel.title = 'How the blades (switch rails) are shaped';
+        sel.addEventListener('change', () => { design.options = { ...design.options, bladeStyle: sel.value as PieceOptions['bladeStyle'] }; changed(true); });
         body.append(field(label, sel));
       } else if (key === 'cutRails') {
         const sel = document.createElement('select');
