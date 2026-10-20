@@ -202,7 +202,7 @@ scene.add(group);
 // What the 3D view shows (Track, Points, Throws, Levers buttons), remembered.
 const shown = new Set(['track', 'points', 'throw', 'lever']);
 try { const v = localStorage.getItem('btd-shown'); if (v) { shown.clear(); for (const k of JSON.parse(v) as string[]) shown.add(k); } } catch { /* fine */ }
-const kindOf = (name: string) => (/deck/.test(name) ? 'cassette' : /lever/.test(name) ? 'lever' : /throw/.test(name) ? 'throw' : /points/.test(name) ? 'points' : 'track');
+const kindOf = (name: string) => (/lid/.test(name) ? 'cassette' : /lever/.test(name) ? 'lever' : /throw/.test(name) ? 'throw' : /points/.test(name) ? 'points' : 'track');
 let meshKinds: string[] = [];
 // Exploded view: each part pulled out from the middle (the moving parts lifted too), to see where they separate.
 let meshCentres: THREE.Vector3[] = [];
@@ -540,7 +540,7 @@ function renderOptions() {
         const sel = document.createElement('select');
         for (const [v, tx, tip] of [['built-in', 'One piece, pockets through (as switch.scad)', 'The points built into the track, their pockets open right through to the bottom'],
           ['floor', 'One piece, on a floor', 'The same, the pockets stopping on a solid floor under the moving parts (they sit a mm higher)'],
-          ['layers', 'Layers: base with floor + deck', 'The lower layer (with the pockets the moving parts sit in), the moving parts dropped in, then the deck (bed, rails, frogs) laid over, held by studs like LEGO plates. Needs ballast.']]) { const op = new Option(tx, v); op.title = tip; sel.append(op); }
+          ['layers', 'Layers: base with floor + lid over the points and throw', 'The lower layer (with the pockets the moving parts sit in), the moving parts dropped in, then the deck (bed, rails, frogs) laid over, held by studs like LEGO plates. Needs ballast.']]) { const op = new Option(tx, v); op.title = tip; sel.append(op); }
         sel.value = o.pointsModule ?? 'built-in';
         sel.title = 'Prototype: how the points are built';
         sel.addEventListener('change', () => { design.options = { ...design.options, pointsModule: sel.value as PieceOptions['pointsModule'] }; changed(true); });
