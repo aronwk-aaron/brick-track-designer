@@ -9,7 +9,11 @@ export type DSeg =
   | { kind: 'straight'; studs: number }
   | { kind: 'curve'; radius: number; angle: number }; // radius in studs, angle signed (+ = left)
 
-export interface DRoute { name: string; x: number; y: number; heading: number; segs: DSeg[] } // start in studs
+export interface DRoute {
+  name: string; x: number; y: number; heading: number; segs: DSeg[]; // start in studs
+  /** When this route branches off another (a switch): which side its lever goes (auto: the options' setting). */
+  throwSide?: 'auto' | 'left' | 'right';
+}
 export interface Design {
   version: 1; gaugeStuds: number; routes: DRoute[];
   /** Underside: hollow with anti-stud tubes at the edges and every 4 studs (default), or a square socket at every stud. */
@@ -45,6 +49,7 @@ export const OPTION_DEFAULTS: PieceOptions = {
 export function toRoutes(d: Design): Route[] {
   return d.routes.map((r, i) => ({
     id: r.name || String(i),
+    throwSide: r.throwSide,
     start: [r.x * STUD, r.y * STUD, r.heading],
     segments: r.segs.map((sg): Segment => (sg.kind === 'straight'
       ? { kind: 'straight', length: sg.studs * STUD }

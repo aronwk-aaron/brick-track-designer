@@ -102,8 +102,12 @@ export function planPieces(routes: Route[], splits: Split[], p: BaseParams = BAS
         sets.push(ci < mi ? [ci, mi, kd.lead + 12, -1] : [mi, ci, kd.lead + 12, +1]);
       });
       if (!ok) { warnings.push('two branches on the same side of one switch: not built as a switch'); continue; }
-      // (the lever's side, if the options say)
-      if (p.throwSide === 'left' || p.throwSide === 'right') for (const st of sets) st[3] = p.throwSide === 'right' ? 1 : -1;
+      // (the lever's side: the branch's own setting, else the options')
+      sets.forEach((st, n) => {
+        const own = routes[kids[Math.min(n, kids.length - 1)].child].throwSide;
+        const side = own && own !== 'auto' ? own : p.throwSide;
+        if (side === 'left' || side === 'right') st[3] = side === 'right' ? 1 : -1;
+      });
       const sorted = order.map((k) => frameRoutes[k]);
       // Long enough for the frog and its check rails, and for the ends to be
       // clear of each other (switch.scad's auto length), on a 4-stud grid.
