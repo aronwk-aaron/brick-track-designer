@@ -37,7 +37,11 @@ export interface CheckRail { route: number; side: Side; s0: number; s1: number; 
 
 /** Two routes that leave a shared stretch: points up to where they part. */
 /** Two routes that run together and part: the points' stretch, as arc lengths along each ([a, b] = routes). */
-export interface Split { routes: [number, number]; s: number; spans: [[number, number], [number, number]] }
+export interface Split {
+  routes: [number, number]; s: number; spans: [[number, number], [number, number]];
+  /** The second route ends on the first, arriving the same way (it merges in: trailing points), instead of starting on it. */
+  merge?: boolean;
+}
 
 export interface Solution {
   crossings: Crossing[];
@@ -94,6 +98,25 @@ export function solve(routes: Route[], opts: Partial<SolverOptions> = {}): Solut
         t += o.step;
       }
       splits.push({ routes: [i, j], s: sa + t, spans: [[sa, sa + t], [0, t]] });
+    }
+  // Merges: a route that ends on another, arriving the way it runs (the
+  // points seen from the other end).
+  for (let i = 0; i < routes.length; i++)
+    for (let j = 0; j < routes.length; j++) {
+      if (i === j) continue;
+      const a = routes[i], b = routes[j], Lb = routeLength(b), e = routePose(b, Lb);
+      if (Math.abs(routeLat(a, [e[0], e[1]])) > 0.01) continue;
+      const se = routeSOf(a, [e[0], e[1]]);
+      const pa = routePose(a, se);
+      if (Math.hypot(pa[0] - e[0], pa[1] - e[1]) > 0.01 || Math.abs(((pa[2] - e[2] + 540) % 360) - 180) > 0.01) continue;
+      if (se > routeLength(a) - 1e-6) continue; // (end to end: a join, not points)
+      let t = 0;
+      while (t < Math.min(Lb, se)) {
+        const p = routePose(b, Lb - t);
+        if (Math.abs(routeLat(a, [p[0], p[1]])) >= apart) break;
+        t += o.step;
+      }
+      splits.push({ routes: [i, j], s: se - t, spans: [[se - t, se], [Lb - t, Lb]], merge: true });
     }
 
   // Rail crossings.

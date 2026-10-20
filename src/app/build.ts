@@ -10,6 +10,7 @@ import { solve } from '../route/solver';
 import { railPoint, routeLength, type Pose } from '../route/route';
 import { BASE_DEFAULTS, switchGeometry } from '../switch/base';
 import { planPieces, subRoute } from '../switch/pieces';
+import { networkPiece } from '../switch/network';
 import { type Design, OPTION_DEFAULTS, toRoutes } from './design';
 
 /** A built piece: its mesh in the design (for the view) and its STL (in its own frame, to print). */
@@ -41,15 +42,33 @@ export function buildDesign(w: Wasm, design: Design) {
   const scad = new Scad(w), pieces: Piece[] = [];
   const params = { ...BASE_DEFAULTS, ...o, gaugeStuds: design.gaugeStuds, studGrip: design.grip ?? 'edges', pointsPieces: design.pointsPieces ?? 1 };
 
-  const pc = planPieces(routes, sol.splits, params);
+  let pc = planPieces(routes, sol.splits, params);
+  // Switches that merge back in, cross other track, or can't stand on their
+  // own (a crossover, a switch on a crossing): the whole design as one
+  // network piece with the points built in.
+  const groupOf = (r: number) => pc.switches.findIndex((sw) => sw.covers.some((c) => c[0] === r));
+  const network = sol.splits.length > 0 && (sol.splits.some((sp) => sp.merge) || pc.warnings.length > 0
+    || sol.crossings.some((c) => groupOf(c.a.route) !== groupOf(c.b.route)));
   const place = (m: Man, P: Pose) => T(R(m, [0, 0, P[2]]), [P[0], P[1], 0]);
   let volume = 0;
+  const fitsBed = (m: Man) => {
+    const b = m.boundingBox(), w = b.max[0] - b.min[0], h = b.max[1] - b.min[1];
+    return (w <= o.printBedX && h <= o.printBedY) || (w <= o.printBedY && h <= o.printBedX);
+  };
   const add = (name: string, color: number, local: Man, world: Man) => {
     const wm = world.getMesh(), positions = new Float32Array(wm.triVerts.length * 3);
     wm.triVerts.forEach((v, i) => positions.set(wm.vertProperties.subarray(v * wm.numProp, v * wm.numProp + 3), i * 3));
     pieces.push({ name, color, positions, stl: stlBytes(local.getMesh()) });
     volume += local.volume();
   };
+  if (network) {
+    const copt = { ...CROSSING_DEFAULTS, gaugeStuds: design.gaugeStuds, grip: design.grip ?? 'edges', flangeway: o.flangeway, flangewayDepth: o.flangewayDepth, checkRailW: o.checkRailW };
+    const net = networkPiece(scad, routes, sol, params, copt, overlay.grips);
+    add('track', 0x6f7780, net.body, net.body);
+    for (const m of net.moving) add(m.name, m.color, m.local, m.world);
+    pc = { switches: [], rest: [], warnings: net.warnings };
+    pc.warnings.push(...(fitsBed(net.body) ? [] : [`the piece doesn't fit the ${o.printBedX} x ${o.printBedY} print bed (cutting a piece with built-in points comes later)`]));
+  }
   if (pc.rest.length) {
     const copt = { ...CROSSING_DEFAULTS, gaugeStuds: design.gaugeStuds, grip: design.grip ?? 'edges', flangeway: o.flangeway, flangewayDepth: o.flangewayDepth, checkRailW: o.checkRailW };
     // Does a piece fit the print bed (either way round)?
@@ -93,7 +112,7 @@ export function buildDesign(w: Wasm, design: Design) {
     ms: performance.now() - t0, volume,
     size: [0, 1, 2].map((k) => mx[k] - mn[k]),
     crossings: sol.crossings.length, checkRails: sol.checkRails.length, splits: sol.splits.length,
-    switches: pc.switches.length, pieces: pieces.length, warnings: pc.warnings,
+    switches: network ? sol.splits.length : pc.switches.length, pieces: pieces.length, warnings: pc.warnings,
   };
   return { overlay, pieces, info };
 }
