@@ -4,3 +4,4 @@ dist/
 *.3mf
 .DS_Store
 parity/out/
+compare/.data/

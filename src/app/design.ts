@@ -67,8 +67,12 @@ export interface PieceOptions {
   endSupports?: boolean;
   /** Where a part is cut: the rails with interlocking tongues (as LEGO track), or cut flat across (no overhangs, no supports to print). */
   cutRails?: 'tongues' | 'flat';
-  /** The throw: 'bracket' (the plate-style: the lever on its own 3 x 3 stud bracket, on studs on the arm) or 'built-in' (the ears part of the arm). */
-  throwStyle?: 'bracket' | 'built-in';
+  /** The throw: 'bracket' (the plate-style: the lever on its own 3 x 3 stud bracket, on studs on the arm), 'built-in' (the ears part of the arm) or 'stand' (a switch stand, a ground throw as Caboose Industries': a handle swung over on an eccentric, locked at each end; plate-style points). */
+  throwStyle?: 'bracket' | 'built-in' | 'stand';
+  /** (plate-style points) What holds the points, and what a train trailing through them does: 'detent' (the lever's click), 'overcentre' (Peco's V spring: they snap over and stay), 'springback' (a spring switch: the blades give way and spring back). */
+  throwAction?: 'detent' | 'overcentre' | 'springback';
+  /** (plate-style points) The blades: 'simple', or 'prototype' (planed to a point, tight under the stock rail's undercut head, the tie bar at the points). */
+  bladeStyle?: 'simple' | 'prototype';
   /** The points' mechanism: 'tines' (switch.scad's: under the bed, from below) or 'plates' (each blade on a plate on top of the bed on a pin, a slider bar through the bed; the blades go in from above). */
   mechStyle?: 'tines' | 'plates';
   /** Ballast under the track: none, ballast, or ballast with the wider buddy layer under it. */
@@ -79,6 +83,7 @@ export interface PieceOptions {
 export const OPTION_DEFAULTS: PieceOptions = {
   throwSide: 'auto', leverOffset: 8, pointThrow: 3, pointClearance: 0.3, springPreload: 1, springThickness: 0.9, springLength: 40,
   flangeway: 3, flangewayDepth: 3, checkRailLen: 30, checkRailW: 1, checkRailFlare: 1.5, printBedX: 256, printBedY: 256, baseplate: 0, baseplateX: 0, baseplateY: 0, ballast: 'none', bottomStyle: 'antistud', joint: 'lego', pointsModule: 'built-in', endSupports: true, cutRails: 'tongues', throwStyle: 'built-in', mechStyle: 'plates',
+  throwAction: 'detent', bladeStyle: 'simple',
 };
 
 export function toRoutes(d: Design): Route[] {

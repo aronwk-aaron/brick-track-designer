@@ -52,10 +52,21 @@ describe('every switch can be put together', { timeout: 120000 }, () => {
         const into = bladesTop && blade ? w.Manifold.union([track, ...b.pieces.filter((q) => /throw/.test(q.name)).map(man)]) : track;
         // (a closed blade's tongue is modelled undeflected: in the slider's post by the preload; it bends aside going on)
         const v0 = into === track ? 0 : m.intersect(into).volume() - m.intersect(track).volume();
-        for (const dz of [0, 1, 2, 3, 4, 6, 8, 12, 16]) {
-          const v = m.translate([0, 0, dir * dz]).intersect(into).volume() - v0;
-          if (v > 0.5) { problems.push(`${p.name} ${dz} mm ${dir > 0 ? 'up' : 'down'}: ${v.toFixed(1)} mm3 in the track`); break; }
+        const lift = (part: typeof m, to: typeof m, base: number) => {
+          for (const dz of [0, 1, 2, 3, 4, 6, 8, 12, 16]) {
+            const v = part.translate([0, 0, dir * dz]).intersect(to).volume() - base;
+            if (v > 0.5) return `${p.name} ${dz} mm ${dir > 0 ? 'up' : 'down'}: ${v.toFixed(1)} mm3 in the track`;
+          }
+          return '';
+        };
+        let bad = lift(m, into, v0);
+        // (a blade tucked in under the stock rail's head (prototype blades) goes on open: turned on its pin, the
+        // slider at the other end, its post where the blade's hole is then; then it's swung shut)
+        if (bad && p.turn && p.turn.by !== 0) {
+          const [cx, cy] = p.turn.at, open = m.translate([-cx, -cy, 0]).rotate([0, 0, p.turn.by]).translate([cx, cy, 0]);
+          if (!lift(open, track, 0)) bad = '';
         }
+        if (bad) problems.push(bad);
       }
       for (const p of b.pieces.filter((q) => /lid/.test(q.name))) {
         const m = man(p), others = w.Manifold.union([track, ...moving]);

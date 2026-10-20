@@ -15,7 +15,7 @@ import { reversedRoute } from './reverse';
 import { type BaseParams, type SetSpec, switchGeometry, switchPlan, type SwitchPlan } from './base';
 import { gridLever, subRoute, type ThrowEdit, toFrame } from './pieces';
 
-export interface NetworkPart { name: string; color: number; local: Man; world: Man }
+export interface NetworkPart { name: string; color: number; local: Man; world: Man; turn?: { at: [number, number]; by: number } }
 
 const LOCAL_LEN = 400; // (how much of each route the points' frame looks at)
 
@@ -100,10 +100,15 @@ export function networkSplits(s: Scad, routes: Route[], sol: Solution, p: BasePa
     const moving: NetworkPart[] = [];
     const tag = `points${groups.length > 1 ? n + 1 : ''}`;
     const pts = gm.pointsParts(0);
-    pts.forEach((m, k) => moving.push({ name: `${tag}${pts.length > 1 ? (k === 0 ? '-a' : '-b') : ''}`, color: 0x4682b4, local: m, world: place(m, P) }));
+    const turns = gm.pointsTurns(0), cz = Math.cos((P[2] * Math.PI) / 180), sz = Math.sin((P[2] * Math.PI) / 180);
+    pts.forEach((m, k) => moving.push({ name: `${tag}${pts.length > 1 ? (k === 0 ? '-a' : '-b') : ''}`, color: 0x4682b4, local: m, world: place(m, P),
+      ...(turns?.[k] && { turn: { at: [P[0] + turns[k].at[0] * cz - turns[k].at[1] * sz, P[1] + turns[k].at[0] * sz + turns[k].at[1] * cz] as [number, number], by: turns[k].by } }) }));
+    // (Peco's spring: printed flat and straight, as assembled squeezed between its pins)
+    const spr = gm.springPart(0), sprP = gm.springPrint(0);
+    if (spr && sprP) moving.push({ name: `${tag}-spring`, color: 0xc0392b, local: sprP, world: place(spr, P) });
     const thr = gm.throwPart(0);
     moving.push({ name: `${tag}-throw`, color: 0xe8892b, local: gm.throwPrint(0), world: place(thr, P) });
-    moving.push({ name: `${tag}-lever`, color: 0xd4af37, local: gm.leverPrint(), world: place(gm.leverPart(0), P) });
+    moving.push({ name: `${tag}-lever`, color: 0xd4af37, local: gm.leverPrint(0), world: place(gm.leverPart(0), P) });
     if (p.throwModule) { const br = gm.bracketPart(0); moving.push({ name: `${tag}-bracket`, color: 0x8a8f99, local: br, world: place(br, P) }); }
     const end = sp.merge ? 'end' : 'start';
     built.push({
