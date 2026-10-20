@@ -7,6 +7,7 @@ import type { CheckRail } from '../route/solver';
 import type { Route } from '../route/route';
 import { routeLength, routePose } from '../route/route';
 import { subRoute } from '../switch/pieces';
+import type { Keep } from '../geom/pathsplit';
 
 export type Rect = [number, number, number, number]; // x0, y0, x1, y1
 
@@ -45,7 +46,7 @@ function spaced(cuts: number[], lo: number, hi: number, keep: Set<number> = new 
  * off points and frogs); or at the baseplate edges (bp mm, from ox, oy), and
  * across any baseplate bigger than the bed, on the stud grid.
  */
-export function planCuts(b: Rect, bedX: number, bedY: number, bp: number, ox: number, oy: number, avoid: [number, number][],
+export function planCuts(b: Rect, bedX: number, bedY: number, bp: number, ox: number, oy: number, avoid: Keep[],
   routes: Route[] = [], half = 40, joints = 8, railG = 20, crossings: [number, number][] = []): CutPlan {
   const xs: number[] = [], ys: number[] = [];
   // How much of the track a cut would run along, not across (mm): a cut
@@ -64,8 +65,9 @@ export function planCuts(b: Rect, bedX: number, bedY: number, bp: number, ox: nu
     }
     return mm;
   };
-  // (clear of the points by 32 mm; of a crossing's rail crossings by 12, so a crossover's middle can still be cut evenly)
-  const ok = (v: number, axis: 0 | 1) => along(v, axis) <= 8 && avoid.every((q) => Math.abs(q[axis] - v) > 32) && crossings.every((q) => Math.abs(q[axis] - v) > 12);
+  // (clear of the points' keep-outs (32 mm unless they say); of a crossing's rail crossings by 12, so a crossover's middle can still be cut evenly)
+  const clearOf = (v: number, axis: 0 | 1) => avoid.every((q) => Math.abs(q[axis] - v) > (q[3] ?? 32));
+  const ok = (v: number, axis: 0 | 1) => along(v, axis) <= 8 && clearOf(v, axis) && crossings.every((q) => Math.abs(q[axis] - v) > 12);
   /** Can a finger cut go along the track at v: no rail running along within 12 mm of it, clear of points and crossings? */
   /** How close (mm) the nearest rail running along comes to a finger cut at v (and whether it's clear of points and crossings). */
   const railClear = (v: number, axis: 0 | 1) => {
@@ -76,7 +78,7 @@ export function planCuts(b: Rect, bedX: number, bedY: number, bp: number, ox: nu
       const c = axis === 0 ? Math.cos((p[2] * Math.PI) / 180) : Math.sin((p[2] * Math.PI) / 180);
       for (const sd of [-1, 1]) near = Math.min(near, Math.abs(p[axis] + sd * railG * Math.abs(c) - v));
     }
-    return avoid.every((q) => Math.abs(q[axis] - v) > 32) ? near : -1;
+    return clearOf(v, axis) ? near : -1;
   };
   const combOk = (v: number, axis: 0 | 1) => railClear(v, axis) >= 12;
   const combs = new Set<number>();

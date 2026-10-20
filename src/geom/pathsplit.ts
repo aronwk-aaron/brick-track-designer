@@ -5,20 +5,39 @@
 // rail running within 12 mm along the edge), not through points or
 // crossings; across a rail is fine. Found as the cheapest path from one
 // side of the part to the other near where an even split would be, with as
-// few turns as it can.
+// few turns as it can. Each straight run of it is joined as a straight cut
+// would be (cutter.ts pathJoints).
 import { T, type Man, type Scad } from './scad';
+import type { Track } from './track';
+import { pathJoints, tidy, type Joint, type Run } from './cutter';
 import type { Route } from '../route/route';
 import { routeLength, routePose } from '../route/route';
 
 const STEP = 8;
+/** What running along a part's edge, two studs or less in from it, costs (a stud's worth of cut is 1). */
+const STRIP = 3;
+
+/** Where no cut may go: within r of (x, y); r: for a stepped cut's edge (22 mm unless given), rLine: for a straight cut across the piece (32 mm unless given). */
+export type Keep = [number, number, number?, number?];
+/** How far a point is from the segment a-b. */
+export const segDist = (q: [number, number], a: [number, number], b: [number, number]) => {
+  const dx = b[0] - a[0], dy = b[1] - a[1], l2 = dx * dx + dy * dy, k = l2 ? Math.max(0, Math.min(1, ((q[0] - a[0]) * dx + (q[1] - a[1]) * dy) / l2)) : 0;
+  return Math.hypot(q[0] - a[0] - k * dx, q[1] - a[1] - k * dy);
+};
+/** How to join the parts (cutter.ts's joints): none given, they just butt together. */
+export interface PathJoin { t: Track; joint: Joint; flatRails: boolean }
 
 /**
  * Split m in two along a stud-grid path running in y (axis 0: the parts left
  * and right of it) or in x (axis 1), near `at`. railG: rails' offset from
- * the centre line; avoid: points where no cut goes near (45 mm). Returns
- * the two parts, or undefined when there's no path.
+ * the centre line; avoid: where no cut goes (Keep). o.join: the joints along
+ * the cut's straight runs; o.window: where across the part the path may go
+ * (default: within a third of its width of at). Returns the two parts (and
+ * the path, and how many couplers and rail-end tongues join them), or
+ * undefined when there's no path.
  */
-export function pathSplit(s: Scad, m: Man, routes: Route[], railG: number, avoid: [number, number][], axis: 0 | 1, at: number): Man[] | undefined {
+export function pathSplit(s: Scad, m: Man, routes: Route[], railG: number, avoid: Keep[], axis: 0 | 1, at: number, o: { join?: PathJoin; window?: [number, number] } = {}) {
+  const join = o.join;
   const bb = m.boundingBox();
   // rails as sampled points with their direction
   const rails: { p: [number, number]; d: [number, number] }[] = [];
@@ -29,8 +48,10 @@ export function pathSplit(s: Scad, m: Man, routes: Route[], railG: number, avoid
       for (const sd of [-1, 1]) rails.push({ p: [p[0] + sd * railG * Math.cos(h), p[1] + sd * railG * Math.sin(h)], d });
     }
   }
-  // (through the bed, above any hollow underneath)
-  const floor = m.slice(2.7);
+  // (all of it seen from above: a slice through the bed missed the ballast
+  // between tracks, and holes, and the path went through them as if there
+  // were nothing there to cut)
+  const floor = m.project();
   const x0 = Math.floor(bb.min[0] / STEP) * STEP - STEP, x1 = Math.ceil(bb.max[0] / STEP) * STEP + STEP;
   const y0 = Math.floor(bb.min[1] / STEP) * STEP - STEP, y1 = Math.ceil(bb.max[1] / STEP) * STEP + STEP;
   const nx = Math.round((x1 - x0) / STEP) + 1, ny = Math.round((y1 - y0) / STEP) + 1;
@@ -49,14 +70,18 @@ export function pathSplit(s: Scad, m: Man, routes: Route[], railG: number, avoid
   // the cost of a cut along the edge from a to b: Infinity where it can't go
   const edgeCost = (a: [number, number], b: [number, number]) => {
     const mid: [number, number] = [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2], ed: [number, number] = [(b[0] - a[0]) / STEP, (b[1] - a[1]) / STEP];
-    // (it must go through the part near the middle, not round it: within a third of its width either side of where it aims)
+    // (it must go through the part near where it aims, not round it: within the window, or a third of its width either side)
     const across = axis === 0 ? mid[0] : mid[1], half3 = (axis === 0 ? bb.max[0] - bb.min[0] : bb.max[1] - bb.min[1]) / 3;
-    if (Math.abs(across - at) > half3) return Infinity;
+    if (o.window ? across < o.window[0] - 1e-6 || across > o.window[1] + 1e-6 : Math.abs(across - at) > half3) return Infinity;
     // (the cells either side of the edge: nothing there, nothing to cut)
     const nrm: [number, number] = [-ed[1] * 4, ed[0] * 4];
-    const bias = Math.abs(across - at) / 4; // (as straight down the middle as it can go)
-    if (!cellAt([mid[0] + nrm[0], mid[1] + nrm[1]]) && !cellAt([mid[0] - nrm[0], mid[1] - nrm[1]])) return 0.05 + bias;
-    if (avoid.some((q) => Math.hypot(q[0] - mid[0], q[1] - mid[1]) < 22)) return Infinity;
+    // (a little dearer the further from where it aims: but straight a stud or
+    // three off it is better than a step to keep to it)
+    const bias = Math.abs(across - at) / 32;
+    const cellOff = (k: number) => cellAt([mid[0] + k * nrm[0], mid[1] + k * nrm[1]]);
+    if (!cellOff(1) && !cellOff(-1)) return 0.05 + bias;
+    // (the whole edge clear of each keep-out, not just its middle)
+    if (avoid.some((q) => segDist([q[0], q[1]], a, b) < (q[2] ?? 22))) return Infinity;
     for (const r of rails) {
       if (Math.abs(r.p[0] - mid[0]) > 14 || Math.abs(r.p[1] - mid[1]) > 14) continue;
       // (a rail running along the edge, near it: no)
@@ -65,16 +90,19 @@ export function pathSplit(s: Scad, m: Man, routes: Route[], railG: number, avoid
       const off = Math.abs((r.p[0] - mid[0]) * -ed[1] + (r.p[1] - mid[1]) * ed[0]);
       if (along && off < 12) return Infinity;
     }
-    // (and a little dearer the further from where an even split would be)
-    return 1 + bias;
+    // (and dearer along the part's edge, two studs or less in from it: it'd leave a strip there)
+    const strip = [1, -1].some((sg) => cellOff(sg) && (!cellOff(3 * sg) || !cellOff(5 * sg)));
+    return 1 + bias + (strip ? STRIP : 0);
   };
   // Dijkstra over the grid nodes and the way the path last went (a turn costs
   // more: a cut with as few steps as it can, not a staircase of little
   // tabs), from the bottom (or left) edge to the top (or right)
-  const TURN = 6;
+  // (and each run through the part two studs long at least, the steps too: no tabs a stud wide)
+  const TURN = 6, RUN = 2;
   const id = (i: number, j: number) => j * nx + i, pos = (i: number, j: number): [number, number] => [x0 + i * STEP, y0 + j * STEP];
   const dirs: [number, number][] = [[1, 0], [-1, 0], [0, 1], [0, -1]];
-  const N = nx * ny * 4, st = (k: number, d: number) => k * 4 + d;
+  // (a state: the node, the way the path last went, and how many studs it's gone that way through the part (up to RUN))
+  const NS = 4 * (RUN + 1), N = nx * ny * NS, st = (k: number, d: number, r = RUN) => k * NS + d * (RUN + 1) + r;
   const dist = new Float64Array(N).fill(Infinity), prev = new Int32Array(N).fill(-1), done = new Uint8Array(N);
   const heap: [number, number][] = [];
   const push = (d: number, k: number) => { heap.push([d, k]); let c = heap.length - 1; while (c > 0) { const p = (c - 1) >> 1; if (heap[p][0] <= heap[c][0]) break; [heap[p], heap[c]] = [heap[c], heap[p]]; c = p; } };
@@ -95,21 +123,26 @@ export function pathSplit(s: Scad, m: Man, routes: Route[], railG: number, avoid
     const [d, sk] = pop();
     if (done[sk]) continue;
     done[sk] = 1;
-    const k = sk >> 2, dk = sk & 3, i = k % nx, j = Math.floor(k / nx);
+    const k = Math.floor(sk / NS), dk = Math.floor((sk % NS) / (RUN + 1)), rk = sk % (RUN + 1), i = k % nx, j = Math.floor(k / nx);
     if ((axis === 0 && j === ny - 1) || (axis === 1 && i === nx - 1)) { goal = sk; break; }
     dirs.forEach(([di, dj], nd) => {
       const i2 = i + di, j2 = j + dj;
       if (i2 < 0 || j2 < 0 || i2 >= nx || j2 >= ny) return;
-      const k2 = id(i2, j2), s2 = st(k2, nd), c = cost(k, k2);
-      if (!Number.isFinite(c) || done[s2]) return;
+      const k2 = id(i2, j2), c = cost(k, k2);
+      if (!Number.isFinite(c)) return;
       // (a turn only counts where the cut goes through the part: outside it, anywhere will do)
-      const dc = d + c + (nd !== dk && c >= 1 ? TURN : 0);
+      const inside = c >= 1, turn = nd !== dk && inside;
+      if (turn && rk < RUN) return;
+      if (inside && nd === (dk ^ 1)) return; // (nor straight back the way it came)
+      const s2 = st(k2, nd, !inside ? RUN : turn ? 1 : Math.min(RUN, rk + 1));
+      if (done[s2]) return;
+      const dc = d + c + (turn ? TURN : 0);
       if (dc < dist[s2]) { dist[s2] = dc; prev[s2] = sk; push(dc, s2); }
     });
   }
   if (goal < 0) return undefined;
   const path: [number, number][] = [];
-  for (let sk = goal; sk >= 0; sk = prev[sk]) { const k = sk >> 2; path.push(pos(k % nx, Math.floor(k / nx))); }
+  for (let sk = goal; sk >= 0; sk = prev[sk]) { const k = Math.floor(sk / NS); path.push(pos(k % nx, Math.floor(k / nx))); }
   path.reverse();
   // the region on one side: the path closed round by the far side of the box
   const big = 4000;
@@ -117,6 +150,16 @@ export function pathSplit(s: Scad, m: Man, routes: Route[], railG: number, avoid
     ? [[path[0][0], y0 - big], ...path, [path[path.length - 1][0], y1 + big], [x0 - big, y1 + big], [x0 - big, y0 - big]]
     : [[x0 - big, path[0][1]], ...path, [x1 + big, path[path.length - 1][1]], [x1 + big, y1 + big], [x0 - big, y1 + big]];
   const region = (grow: number) => T(s.extrude(s.polygon(poly).offset(grow, 'Miter', 10), 1000), [0, 0, -500]);
-  const a = s.intersection(m, region(0)), b = s.difference(m, [region(0.1)]);
-  return [a, b].filter((p) => p.volume() > 300);
+  // (the region's to the left of the path as it goes: the left side of each run is part a's)
+  const runs: Run[] = [];
+  for (let k = 1; k < path.length; k++) {
+    const d: [number, number] = [Math.sign(path[k][0] - path[k - 1][0]), Math.sign(path[k][1] - path[k - 1][1])], last = runs[runs.length - 1];
+    if (last && last.d[0] === d[0] && last.d[1] === d[1]) last.len += STEP; else runs.push({ p: path[k - 1], d, len: STEP });
+  }
+  const j = join ? pathJoints(s, join.t, m, routes, runs, join.joint, join.flatRails) : undefined;
+  const body = j?.cut ? s.difference(m, [j.cut]) : m;
+  let a = s.intersection(body, region(0)), b = s.difference(body, [region(0.1)]);
+  if (j?.add[0].length) a = tidy(s, s.union([a, ...j.add[0]]));
+  if (j?.add[1].length) b = tidy(s, s.union([b, ...j.add[1]]));
+  return { parts: [a, b].filter((p) => p.volume() > 300), path, runs, couplers: j?.couplers ?? 0, tongues: j?.tongues ?? 0 };
 }
