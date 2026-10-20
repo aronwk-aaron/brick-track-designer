@@ -9,6 +9,7 @@ import { railPoint, routeLat, routeLength, routePose } from '../route/route';
 import { solve, type Solution, type SolverOptions, SOLVER_DEFAULTS } from '../route/solver';
 import { Scad, T, R, type CS, type Man, type Vec2 } from './scad';
 import { sweepRoute } from './sweep';
+import { hollowGrid } from './underside';
 import { DEFAULTS, PLATE_H, RAIL_PROFILE, STUD, Track, type TrackOptions } from './track';
 
 export interface CrossingOptions extends TrackOptions {
@@ -22,6 +23,10 @@ export interface CrossingOptions extends TrackOptions {
    * 'all' has a gripping square socket at every stud (holds too hard).
    */
   grip: 'edges' | 'all';
+  /** On ballast (switch.scad's generate_ballast), with the wider bottom ("buddy") layer, or none: track only. */
+  ballast?: 'none' | 'ballast' | 'buddy';
+  /** With ballast: the underside, anti-stud (hollow with tubes) or float (flat). */
+  bottomStyle?: 'antistud' | 'float';
 }
 
 export const CROSSING_DEFAULTS: CrossingOptions = { ...DEFAULTS, flangeway: 3, flangewayDepth: 3, checkRailW: 1, supports: true, grip: 'edges' };
@@ -70,6 +75,13 @@ export function crossingPiece(s: Scad, routes: Route[], o: CrossingOptions = CRO
   const othersBands = (i: number) => bands.filter((_, j) => j !== i && meet(boxes[i], boxes[j]));
   const nearCuts = (i: number, ms: Man[]) => ms.filter((m) => { const bb = m.boundingBox(); return meet(boxes[i], [bb.min[0], bb.min[1], bb.max[0], bb.max[1]]); });
 
+  // On ballast (track_lib.scad's, as the switches have it): two plates
+  // thick, its top at the sleepers' top, the top layer as wide as the
+  // sleepers and each step below a stud wider; with buddy, a wider bottom
+  // layer under it.
+  const onBallast = !!o.ballast && o.ballast !== 'none', buddy = o.ballast === 'buddy', antistud = (o.bottomStyle ?? 'antistud') === 'antistud';
+  const topW = c.sleeperLen, midW = topW + 2 * STUD, botW = midW + 2 * STUD, thick = 2 * PLATE_H, bz0 = -PLATE_H;
+  const buddyT = antistud ? PLATE_H : thick / 4, bottomZ = onBallast ? (buddy ? bz0 - buddyT : bz0) : 0;
   const parts: Man[] = [];
   routes.forEach((rt, i) => {
     const L = routeLength(rt);
@@ -92,14 +104,17 @@ export function crossingPiece(s: Scad, routes: Route[], o: CrossingOptions = CRO
     // Track bed under the route.
     parts.push(s.difference(sweepRoute(s, rect(-c.sleeperLen / 2, c.sleeperLen / 2, 0, PLATE_H), rt), endBoxes(BED_END)));
     // End connectors and breakaway supports, at both ends.
-    if (!inStart) parts.push(atPose(T(t.fullEndpoint(true, true), [0, 4, 0]), p0));
-    if (!inEnd) parts.push(atPose(T(R(t.fullEndpoint(true, true), [0, 0, 180]), [0, -4, 0]), p1));
+    // (on ballast: no peg and clip, no stud recesses, as the switches')
+    if (!inStart) parts.push(atPose(T(t.fullEndpoint(!onBallast, !onBallast), [0, 4, 0]), p0));
+    if (!inEnd) parts.push(atPose(T(R(t.fullEndpoint(!onBallast, !onBallast), [0, 0, 180]), [0, -4, 0]), p1));
     if (o.supports) {
-      if (!inStart) parts.push(atPose(s.union([t.startRailSupports(-0.02), t.supportFooting(-0.02, 0, -1)]), p0));
-      if (!inEnd) parts.push(atPose(s.union([t.endRailSupports(-0.02), t.supportFooting(-0.02, 0, +1)]), p1));
+      const zs = bottomZ - 0.02;
+      if (!inStart) parts.push(atPose(s.union([t.startRailSupports(zs), t.supportFooting(zs, 0, -1)]), p0));
+      if (!inEnd) parts.push(atPose(s.union([t.endRailSupports(zs), t.supportFooting(zs, 0, +1)]), p1));
     }
   });
   const body = s.union([...parts, ...(x.adds ?? [])]);
+  if (onBallast) return ballastPiece();
 
   // The underside, on the stud grid of the first route's start (spots at
   // 4 + 8k across and along in that frame, as on a straight).
@@ -193,4 +208,67 @@ export function crossingPiece(s: Scad, routes: Route[], o: CrossingOptions = CRO
   }
   for (const { i, j, x, y } of spots) if (!deep(i, j)) cuts.push(socket(x, y));
   return s.difference(body, [...cuts, ...(x.cuts ?? [])]);
+
+  /** The piece on ballast: the layers under every route, studs on each step, and the underside (anti-stud or flat). */
+  function ballastPiece(): Man {
+    // (its own constants: it runs before the track-only underside's are set)
+    const W = s.w, studR = t.o.studD / 2, RIM = 1.39, TUBE_D = 6.51 - 0.06;
+    const layer2d = rect(-topW / 2, topW / 2, bz0, bz0 + thick).add(rect(-midW / 2, midW / 2, bz0, bz0 + thick / 2));
+    const layers = routes.map((rt) => sweepRoute(s, layer2d, rt));
+    const buddies = buddy ? routes.map((rt) => sweepRoute(s, rect(-botW / 2, botW / 2, bottomZ, bz0), rt)) : [];
+    // (the top layer cut back at each connector, which sits on the one below)
+    const endCuts = routes.flatMap((rt, i) => [
+      !x.innerEnds?.has(`${i}:start`) && atPose(T(s.cube([topW + STUD, 12, PLATE_H + 1]), [-(topW + STUD) / 2, -4, 0]), routePose(rt, 0)),
+      !x.innerEnds?.has(`${i}:end`) && atPose(T(s.cube([topW + STUD, 12, PLATE_H + 1]), [-(topW + STUD) / 2, -8, 0]), routePose(rt, routeLength(rt))),
+    ]);
+    // studs along each step, about a stud apart, none under another route's higher layer
+    const latOthers = (i: number, q: [number, number]) => Math.min(Infinity, ...routes.map((rt, j) => (j === i ? Infinity : Math.abs(routeLat(rt, q)))));
+    const pts: [number, number, number][] = [];
+    const row = (i: number, off: number, z: number, hwUp: number) => {
+      const rt = routes[i], L = routeLength(rt);
+      const rowL = L; // (near enough: studs a little under or over a stud apart on a curve)
+      const n = Math.max(1, Math.round((rowL - 8) / STUD));
+      for (let k = 0; k <= n; k++) {
+        const q = railPoint(rt, 4 + (k * (L - 8)) / n, off);
+        if (latOthers(i, q) > hwUp + studR + 0.5 && !pts.some((p) => Math.abs(p[2] - z) < 0.1 && Math.hypot(p[0] - q[0], p[1] - q[1]) < 6)) pts.push([q[0], q[1], z]);
+      }
+    };
+    routes.forEach((_, i) => {
+      for (const sd of [-1, 1]) {
+        row(i, sd * (midW / 2 - 4), 0, topW / 2);
+        if (buddy) row(i, sd * (botW / 2 - 4), bz0, midW / 2);
+      }
+    });
+    const studs = s.union(pts.map(([px, py, z]) => T(t.stud(), [px, py, z - 0.01])));
+    const ballastBody = s.difference(s.union([...layers, ...buddies]), endCuts);
+    let out = s.union([body, ballastBody, studs]);
+    if (antistud) {
+      // hollow inside a rim, LEGO tubes on the stud grid (of the grid pose), a socket at every stud
+      const wOut = buddy ? botW : midW;
+      const outline = W.CrossSection.union([
+        ...routes.map((rt) => {
+          const L = routeLength(rt), n = Math.max(2, Math.ceil(L));
+          const side = (o2: number) => Array.from({ length: n + 1 }, (_, k) => railPoint(rt, (L * k) / n, o2) as Vec2);
+          return s.polygon([...side(-wOut / 2), ...side(wOut / 2).reverse()]);
+        }),
+        ...(x.hollows ?? []).map(({ P, r }) => s.w.CrossSection.square([r[1] - r[0], r[3] - r[2]]).translate([r[0], r[2]]).rotate(P[2]).translate([P[0], P[1]])),
+      ]);
+      const cav = outline.offset(-RIM, 'Miter', 1000), cavH = o.studH + 0.2;
+      const bb = outline.bounds(), gp = x.gridPose ?? routePose(routes[0], 0), hd = (gp[2] * Math.PI) / 180;
+      const reach2 = Math.ceil((Math.hypot(bb.max[0] - bb.min[0], bb.max[1] - bb.min[1]) + Math.hypot(bb.min[0] - gp[0], bb.min[1] - gp[1])) / STUD) + 2;
+      const wd = (lx: number, ly: number): [number, number] => [gp[0] + lx * Math.cos(hd) - ly * Math.sin(hd), gp[1] + lx * Math.sin(hd) + ly * Math.cos(hd)];
+      // (only the grid spots over the outline's box)
+      const toG = (q: [number, number]) => { const dx = q[0] - gp[0], dy = q[1] - gp[1]; return [(dx * Math.cos(hd) + dy * Math.sin(hd)) / STUD, (-dx * Math.sin(hd) + dy * Math.cos(hd)) / STUD]; };
+      const cs = [toG([bb.min[0], bb.min[1]]), toG([bb.max[0], bb.min[1]]), toG([bb.min[0], bb.max[1]]), toG([bb.max[0], bb.max[1]])];
+      const i0 = Math.floor(Math.min(...cs.map((q) => q[0]))) - 2, i1 = Math.ceil(Math.max(...cs.map((q) => q[0]))) + 1;
+      const j0 = Math.floor(Math.min(...cs.map((q) => q[1]))) - 2, j1 = Math.ceil(Math.max(...cs.map((q) => q[1]))) + 1;
+      void reach2;
+      const hg = hollowGrid(s, t, cav, wd, i0, i1, j0, j1, o.grip);
+      grips?.push(...hg.grips);
+      const under = T(s.extrude(hg.cut, cavH + 0.01), [0, 0, bottomZ - 0.01]);
+      const tubes = hg.tubes ? T(s.extrude(hg.tubes, cavH), [0, 0, bottomZ]) : undefined;
+      out = s.union([s.difference(out, [under]), tubes]);
+    }
+    return s.difference(out, x.cuts ?? []);
+  }
 }

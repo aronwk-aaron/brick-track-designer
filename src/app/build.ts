@@ -223,7 +223,7 @@ export function buildDesign(w: Wasm, design: Design, report: (what: string, frac
   const BLOCK = 450; // (built together: about as much as builds quickly)
   const TILE_OVER = 8000; // mm of track: more, and it's built in tiles
   const tiled = (name: string, all: Route[], checks: CheckRail[], splits: SplitParts[], copt: typeof CROSSING_DEFAULTS, key: string) => {
-    let b = routesBox(all, track.c.sleeperLen / 2 + 16);
+    let b = routesBox(all, track.c.sleeperLen / 2 + 24);
     for (const sp of splits) for (const m of sp.adds) { const bb = m.boundingBox(); b = [Math.min(b[0], bb.min[0]), Math.min(b[1], bb.min[1]), Math.max(b[2], bb.max[0]), Math.max(b[3], bb.max[1])]; }
     const plan = planCuts(b, o.printBedX, o.printBedY, bp, (o.baseplateX ?? 0) * 8, (o.baseplateY ?? 0) * 8, [...overlay.splits, ...overlay.crossings]);
     if (!plan.xs.length && !plan.ys.length) return false;
@@ -280,8 +280,9 @@ export function buildDesign(w: Wasm, design: Design, report: (what: string, frac
   };
   // ---- the trackwork first (what the plan shows and the hand edits work
   // on), sent on ahead of the pieces, which take longer ----
-  const copt = { ...CROSSING_DEFAULTS, gaugeStuds: design.gaugeStuds, grip: design.grip ?? 'edges', flangeway: o.flangeway, flangewayDepth: o.flangewayDepth, checkRailW: o.checkRailW };
-  const tp = { ...params, generateBallast: false }; // (network pieces are track only so far)
+  const copt = { ...CROSSING_DEFAULTS, gaugeStuds: design.gaugeStuds, grip: design.grip ?? 'edges', flangeway: o.flangeway, flangewayDepth: o.flangewayDepth, checkRailW: o.checkRailW,
+    ballast: o.ballast, bottomStyle: o.bottomStyle };
+  const tp = params;
   const netKey = JSON.stringify({ routes, tp, copt, tw });
   let net: ReturnType<typeof networkSplits> | undefined;
   if (network) {
@@ -325,7 +326,6 @@ export function buildDesign(w: Wasm, design: Design, report: (what: string, frac
     pc = { switches: [], rest: [], warnings: [...net.warnings] };
 
   }
-  if (params.generateBallast && (network || pc.rest.length)) pc.warnings.push('ballast is on switches only so far: crossings and plain track come out track only');
   if (restSol) {
     progress('Building the track');
     // Does a piece fit the print bed (either way round)?
