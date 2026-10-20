@@ -167,15 +167,17 @@ export function buildDesign(w: Wasm, design: Design, report: (what: string, frac
   const track = new Track(scad, { ...TRACK_DEFAULTS, gaugeStuds: design.gaugeStuds });
   // (how far each side of a centre line the track's base reaches: its sleepers, or its widest ballast layer)
   const bandHalf = (o.ballast === 'buddy' ? track.c.sleeperLen + 32 : o.ballast === 'ballast' ? track.c.sleeperLen + 16 : track.c.sleeperLen) / 2;
+  // (what the joints stick out past a cut, both ends of a part: rail tongues, and the peg or dovetail)
+  const jointRoom = o.joint === 'dovetail' ? 14 : o.joint === 'butt' ? 2 : 8;
   const addTrack = (name: string, world: Man, pieceRoutes: typeof routes) => {
     const bb = world.boundingBox(), b: Rect = [bb.min[0], bb.min[1], bb.max[0], bb.max[1]];
     if (!bp && fitsBed(world)) return add(name, 0x6f7780, world, world);
     // too big for the print bed (or at the baseplate edges): cut across the
     // track (tiles.ts planCuts), each part joined to the next like LEGO track
-    const plan = planCuts(b, o.printBedX, o.printBedY, bp, (o.baseplateX ?? 0) * 8, (o.baseplateY ?? 0) * 8, [...overlay.splits, ...overlay.crossings], pieceRoutes, bandHalf);
+    const plan = planCuts(b, o.printBedX, o.printBedY, bp, (o.baseplateX ?? 0) * 8, (o.baseplateY ?? 0) * 8, [...overlay.splits, ...overlay.crossings], pieceRoutes, bandHalf, jointRoom);
     const lines: CutLine[] = [...plan.xs.map((x): CutLine => ({ p: [x, 0], d: [0, 1] })), ...plan.ys.map((y): CutLine => ({ p: [0, y], d: [1, 0] }))];
     steps++; progress(plan.why === 'bed' ? `Cutting ${name} to fit the print bed` : `Cutting ${name} at the baseplate edges`);
-    const cells = cached(`cut:${bp}:${JSON.stringify(lines)}:${JSON.stringify(pieceRoutes)}:${world.volume().toFixed(3)}`, () => cutPiece(scad, track, world, pieceRoutes, lines));
+    const cells = cached(`cut:${bp}:${o.joint}:${JSON.stringify(lines)}:${JSON.stringify(pieceRoutes)}:${world.volume().toFixed(3)}`, () => cutPiece(scad, track, world, pieceRoutes, lines, o.joint ?? 'lego'));
     cells.forEach((m, k) => add(cells.length > 1 ? `${name}${plan.why === 'baseplate' ? '-plate' : ''}${k + 1}` : name, 0x6f7780, m, m));
     if (cells.some((m) => !fitsBed(m))) bedWarnings.add(plan.why === 'bed'
       ? `some parts don't fit the ${o.printBedX} x ${o.printBedY} print bed without cutting along the track (it isn't)`
@@ -204,7 +206,7 @@ export function buildDesign(w: Wasm, design: Design, report: (what: string, frac
   const tiled = (name: string, all: Route[], checks: CheckRail[], splits: SplitParts[], copt: typeof CROSSING_DEFAULTS, key: string) => {
     let b = routesBox(all, track.c.sleeperLen / 2 + 24);
     for (const sp of splits) for (const m of sp.adds) { const bb = m.boundingBox(); b = [Math.min(b[0], bb.min[0]), Math.min(b[1], bb.min[1]), Math.max(b[2], bb.max[0]), Math.max(b[3], bb.max[1])]; }
-    const plan = planCuts(b, o.printBedX, o.printBedY, bp, (o.baseplateX ?? 0) * 8, (o.baseplateY ?? 0) * 8, [...overlay.splits, ...overlay.crossings], all, bandHalf);
+    const plan = planCuts(b, o.printBedX, o.printBedY, bp, (o.baseplateX ?? 0) * 8, (o.baseplateY ?? 0) * 8, [...overlay.splits, ...overlay.crossings], all, bandHalf, jointRoom);
     if (!plan.xs.length && !plan.ys.length) return false;
     // (only when it's big: in one build a piece is quicker, but a whole yard
     // runs the kernel out of memory)
@@ -233,12 +235,12 @@ export function buildDesign(w: Wasm, design: Design, report: (what: string, frac
         return { ...sp, inner: whole ? `${kj}:${end}` : '-', bladeCuts: sp.bladeCuts.filter(([i]) => cr.map[i] >= 0).map(([i, m]) => [cr.map[i], m] as [number, Man]) };
       });
       const tileCuts = grooveCuts.filter((m) => nearCell(m.boundingBox(), R, MARGIN));
-      const tk = `tile:${key}:${JSON.stringify({ r: cr.routes, c: cr.checks, i: [...cr.inner], R, lines, near: near.map((x) => x.k), copt, g: grooveCuts.length ? tw.groove : 0 })}`;
+      const tk = `tile:${key}:${JSON.stringify({ r: cr.routes, c: cr.checks, i: [...cr.inner], R, lines, near: near.map((x) => x.k), copt, joint: o.joint, g: grooveCuts.length ? tw.groove : 0 })}`;
       let part: { ms: ReturnType<typeof bake>[]; grips: [number, number][] };
       try { part = cached(tk, () => arena(w, () => {
         const grips: [number, number][] = [];
         const body = networkBody(scad, cr.routes, { crossings: [], grooves: [], splits: [], checkRails: cr.checks }, copt, tileSplits, grips, { cuts: tileCuts, innerEnds: cr.inner, gridPose });
-        const got = cutPiece(scad, track, body, cr.routes, lines).filter((m) => {
+        const got = cutPiece(scad, track, body, cr.routes, lines, o.joint ?? 'lego').filter((m) => {
           const bb = m.boundingBox(), cx = (bb.min[0] + bb.max[0]) / 2, cy = (bb.min[1] + bb.max[1]) / 2;
           return cx > R[0] && cx < R[2] && cy > R[1] && cy < R[3];
         });

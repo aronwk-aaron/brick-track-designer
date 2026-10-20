@@ -41,12 +41,12 @@ function spaced(cuts: number[], lo: number, hi: number, keep: Set<number> = new 
 
 /**
  * Where to cut a piece in box b: across, into equal parts that fit the print
- * bed (the way that needs fewest cuts, a few mm short for the joints, moved
+ * bed (the way that needs fewest cuts, joints mm short for what the joints add, moved
  * off points and frogs); or at the baseplate edges (bp mm, from ox, oy), and
  * across any baseplate bigger than the bed, on the stud grid.
  */
 export function planCuts(b: Rect, bedX: number, bedY: number, bp: number, ox: number, oy: number, avoid: [number, number][],
-  routes: Route[] = [], half = 40): CutPlan {
+  routes: Route[] = [], half = 40, joints = 8): CutPlan {
   const xs: number[] = [], ys: number[] = [];
   // How much of the track a cut would run along, not across (mm): a cut
   // must go across the track, never down it (that splits the rails and the
@@ -71,15 +71,34 @@ export function planCuts(b: Rect, bedX: number, bedY: number, bp: number, ox: nu
     return undefined;
   };
   if (!bp) {
-    const W = b[2] - b[0], H = b[3] - b[1], room = Math.max(bedX, bedY) - 8, small = Math.min(bedX, bedY) - 8;
+    const W = b[2] - b[0], H = b[3] - b[1], room = Math.max(bedX, bedY) - joints, small = Math.min(bedX, bedY) - joints;
     const nx = Math.max(1, Math.ceil(W / (H > W ? small : room))), ny = Math.max(1, Math.ceil(H / (H > W ? room : small)));
-    for (let k = 1; k < nx; k++) { const v = place(b[0] + (W * k) / nx, 0, W / nx / 2); if (v !== undefined) xs.push(v); }
-    for (let k = 1; k < ny; k++) { const v = place(b[1] + (H * k) / ny, 1, H / ny / 2); if (v !== undefined) ys.push(v); }
+    // (each part as long as fits: the next cut as far on as the bed allows
+    // where it goes across the track, on the stud grid; then evened out
+    // where there's room)
+    const greedy = (lo: number, hi: number, len: number, axis: 0 | 1, n: number) => {
+      const out: number[] = [];
+      let p = lo;
+      while (hi - p > len) {
+        let got: number | undefined;
+        // (aim for even parts, but go as far as fits if that's what it takes)
+        const even = p + (hi - p) / Math.max(1, n - out.length);
+        for (const v0 of [even, p + len]) {
+          for (let v = Math.floor(Math.min(v0, p + len) / 8) * 8; v >= p + MIN_PART && got === undefined; v -= 8) if (ok(v, axis)) got = v;
+          if (got !== undefined) break;
+        }
+        if (got === undefined) break; // (no way across: warned about once it's built)
+        out.push(got); p = got;
+      }
+      return out;
+    };
+    xs.push(...greedy(b[0], b[2], H > W ? small : room, 0, nx));
+    ys.push(...greedy(b[1], b[3], H > W ? room : small, 1, ny));
     return { xs: spaced(xs, b[0], b[2]), ys: spaced(ys, b[1], b[3]), why: 'bed' };
   }
   // (the baseplate edges are where they are; the cuts across a baseplate too
   // big for the bed move to go across the track, or are left out)
-  const kk = Math.max(1, Math.ceil(bp / (Math.min(bedX, bedY) - 8)));
+  const kk = Math.max(1, Math.ceil(bp / (Math.min(bedX, bedY) - joints)));
   const sub = Array.from({ length: kk }, (_, i) => Math.round((i * bp) / kk / 8) * 8);
   const edges = new Set<number>();
   const add = (out: number[], v: number, axis: 0 | 1, edge: boolean, lo: number, hi: number) => {
