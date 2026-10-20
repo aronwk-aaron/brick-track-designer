@@ -144,13 +144,29 @@ for (const R of [56, 104]) {
     rt('B1', 0, 0, 0, [cv(56, -22.5), st(16)]),
     rt('B2', 0, 12, 0, [cv(56, 22.5), st(16)]),
   ]));
-  // a switch on the branch just past its points (a cascade)
-  const e = endOf({ version: 1, gaugeStuds: 4, routes: [rt('x', 0, 0, 0, [cv(40, -22.5)])] }, 0);
+  // a switch on the branch just past the first one's frog (a cascade)
+  const e = endOf({ version: 1, gaugeStuds: 4, routes: [rt('x', 0, 0, 0, [cv(40, -22.5), st(16)])] }, 0);
   save(design('cascade', [
-    rt('Main', 0, 0, 0, [st(80)]),
-    rt('B1', 0, 0, 0, [cv(40, -22.5), st(48)]),
+    rt('Main', 0, 0, 0, [st(96)]),
+    rt('B1', 0, 0, 0, [cv(40, -22.5), st(56)]),
     rt('B2', e.x, e.y, -22.5, [cv(40, 22.5), st(32)]),
   ]));
+  // (not buildable: the second points start inside the first one's frog, the main track's rail through them)
+  const e2 = endOf({ version: 1, gaugeStuds: 4, routes: [rt('x', 0, 0, 0, [cv(40, -22.5)])] }, 0);
+  save(design('points-in-frog', [
+    rt('Main', 0, 0, 0, [st(80)]),
+    rt('B1', 0, 0, 0, [cv(40, -22.5), st(48)]),
+    rt('B2', e2.x, e2.y, -22.5, [cv(40, 22.5), st(32)]),
+  ]));
+  // a tandem three-way in a network: its branches merge into the tracks either side
+  {
+    const R = 56, a = sAng(R), L = sLen(R);
+    save(design('tandem-net', [
+      rt('L', -16, 0, 0, [st(96)]), rt('M', 0, 0, 0, [st(96)]), rt('R', 16, 0, 0, [st(96)]),
+      rt('ML', 0, 8, 0, [cv(R, a), cv(R, -a)]), rt('MR', 0, 20, 0, [cv(R, -a), cv(R, a)]),
+    ]));
+    void L;
+  }
 }
 
 // ---- crossovers between two parallel tracks, one each way (a "universal" crossover), on baseplates ----
