@@ -46,7 +46,7 @@ function spaced(cuts: number[], lo: number, hi: number, keep: Set<number> = new 
  * across any baseplate bigger than the bed, on the stud grid.
  */
 export function planCuts(b: Rect, bedX: number, bedY: number, bp: number, ox: number, oy: number, avoid: [number, number][],
-  routes: Route[] = [], half = 40, joints = 8, railG = 20): CutPlan {
+  routes: Route[] = [], half = 40, joints = 8, railG = 20, crossings: [number, number][] = []): CutPlan {
   const xs: number[] = [], ys: number[] = [];
   // How much of the track a cut would run along, not across (mm): a cut
   // must go across the track, never down it (that splits the rails and the
@@ -64,7 +64,8 @@ export function planCuts(b: Rect, bedX: number, bedY: number, bp: number, ox: nu
     }
     return mm;
   };
-  const ok = (v: number, axis: 0 | 1) => along(v, axis) <= 8 && avoid.every((q) => Math.abs(q[axis] - v) > 32);
+  // (clear of the points by 32 mm; of a crossing's rail crossings by 12, so a crossover's middle can still be cut evenly)
+  const ok = (v: number, axis: 0 | 1) => along(v, axis) <= 8 && avoid.every((q) => Math.abs(q[axis] - v) > 32) && crossings.every((q) => Math.abs(q[axis] - v) > 12);
   /** Can a finger cut go along the track at v: no rail running along within 12 mm of it, clear of points and crossings? */
   /** How close (mm) the nearest rail running along comes to a finger cut at v (and whether it's clear of points and crossings). */
   const railClear = (v: number, axis: 0 | 1) => {
@@ -83,6 +84,34 @@ export function planCuts(b: Rect, bedX: number, bedY: number, bp: number, ox: nu
   const place = (v: number, axis: 0 | 1, reach: number) => {
     for (let dv = 0; dv <= reach; dv += 8) for (const sg of dv ? [1, -1] : [1]) if (ok(v + sg * dv, axis)) return v + sg * dv;
     return undefined;
+  };
+  /**
+   * Even parts: where to cut between lo and hi (on the stud grid, only
+   * where a cut can go across the track) so that, in order: as few parts as
+   * possible are longer than len (and by as little as possible), there are
+   * as few parts as can be, and they're as even as can be (least sum of
+   * squared lengths). undefined: nowhere to cut at all, when one is needed.
+   */
+  const evenCuts = (lo: number, hi: number, len: number, axis: 0 | 1): number[] | undefined => {
+    if (hi - lo <= len) return [];
+    const cand = [lo];
+    for (let v = Math.ceil((lo + MIN_PART) / 8) * 8; v <= hi - MIN_PART; v += 8) if (ok(v, axis)) cand.push(v);
+    cand.push(hi);
+    if (cand.length === 2) return undefined;
+    type C = [number, number, number]; // over (mm too long), parts, sum of squares
+    const less = (a: C, b: C) => a[0] !== b[0] ? a[0] < b[0] : a[1] !== b[1] ? a[1] < b[1] : a[2] < b[2];
+    const best: (C | undefined)[] = cand.map(() => undefined), prev = cand.map(() => -1);
+    best[0] = [0, 0, 0];
+    for (let k = 1; k < cand.length; k++) for (let i = 0; i < k; i++) {
+      const bi = best[i]; if (!bi) continue;
+      const l = cand[k] - cand[i];
+      if (l < MIN_PART && !(i === 0 && k === cand.length - 1)) continue;
+      const c: C = [bi[0] + Math.max(0, l - len), bi[1] + 1, bi[2] + l * l];
+      if (!best[k] || less(c, best[k]!)) { best[k] = c; prev[k] = i; }
+    }
+    const out: number[] = [];
+    for (let k = prev[cand.length - 1]; k > 0; k = prev[k]) out.push(cand[k]);
+    return out.reverse();
   };
   if (!bp) {
     const W = b[2] - b[0], H = b[3] - b[1], room = Math.max(bedX, bedY) - joints, small = Math.min(bedX, bedY) - joints;
@@ -118,8 +147,8 @@ export function planCuts(b: Rect, bedX: number, bedY: number, bp: number, ox: nu
       }
       return out;
     };
-    xs.push(...greedy(b[0], b[2], H > W ? small : room, 0, nx));
-    ys.push(...greedy(b[1], b[3], H > W ? room : small, 1, ny));
+    xs.push(...(evenCuts(b[0], b[2], H > W ? small : room, 0) ?? greedy(b[0], b[2], H > W ? small : room, 0, nx)));
+    ys.push(...(evenCuts(b[1], b[3], H > W ? room : small, 1) ?? greedy(b[1], b[3], H > W ? room : small, 1, ny)));
     return { xs: spaced(xs, b[0], b[2]), ys: spaced(ys, b[1], b[3]), why: 'bed', combs };
   }
   // (the baseplate edges are where they are; the cuts across a baseplate too
@@ -131,8 +160,16 @@ export function planCuts(b: Rect, bedX: number, bedY: number, bp: number, ox: nu
     const w = edge ? v : place(v, axis, bp / kk / 2);
     if (w !== undefined && w > lo + 1 && w < hi - 1) { out.push(w); if (edge) edges.add(w); }
   };
-  for (let x = ox + Math.floor((b[0] - ox) / bp) * bp; x < b[2] - 1; x += bp) for (const dx of sub) add(xs, x + dx, 0, dx === 0, b[0], b[2]);
-  for (let y = oy + Math.floor((b[1] - oy) / bp) * bp; y < b[3] - 1; y += bp) for (const dy of sub) add(ys, y + dy, 1, dy === 0, b[1], b[3]);
+  // (each plate's stretch cut evenly between its edges where it can be, else at the plate's own even places)
+  const room2 = Math.min(bedX, bedY) - joints;
+  for (const [axis, lo0, hi0, o0, out] of [[0, b[0], b[2], ox, xs], [1, b[1], b[3], oy, ys]] as [0 | 1, number, number, number, number[]][]) {
+    for (let e = o0 + Math.floor((lo0 - o0) / bp) * bp; e < hi0 - 1; e += bp) {
+      add(out, e, axis, true, lo0, hi0);
+      const lo = Math.max(lo0, e), hi = Math.min(hi0, e + bp);
+      const ev = evenCuts(lo, hi, room2, axis);
+      if (ev) out.push(...ev); else for (const d of sub.slice(1)) add(out, e + d, axis, false, lo0, hi0);
+    }
+  }
   return { xs: spaced(xs, b[0], b[2], edges), ys: spaced(ys, b[1], b[3], edges), why: 'baseplate', edges };
 }
 
