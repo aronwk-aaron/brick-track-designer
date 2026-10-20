@@ -339,8 +339,10 @@ export function switchGeometry(s: Scad, plan: SwitchPlan, extraCuts: Man[] = [])
   // ---------- cross-sections ----------
   const rail2d = (o: number) => s.polygon(RAIL_PROFILE.map(([x, y]) => [x + o, y + PLATE_H] as Vec2));
   const blade2d = (o: number) => {
-    let cs = rail2d(o).intersect(sq([10, 10], [o - 5, bedTop]));
-    if (bedTop > PLATE_H) cs = cs.add(sq([6.2, 0.6], [o - 3.1, bedTop]));
+    // (no wider than its stem: on ballast the rail's foot is above the bed, and it would catch going in through the slot)
+    let cs = rail2d(o).intersect(scadParity() ? sq([10, 10], [o - 5, bedTop]) : sq([2 * stemHw, 10], [o - stemHw, bedTop]));
+    // (switch.scad's flange over the slot is wider than the slot: the points couldn't go in from below past it)
+    if (bedTop > PLATE_H && scadParity()) cs = cs.add(sq([6.2, 0.6], [o - 3.1, bedTop]));
     return cs;
   };
   const flangeBand2d = (o: number, side: number) => {
@@ -642,7 +644,7 @@ export function switchGeometry(s: Scad, plan: SwitchPlan, extraCuts: Man[] = [])
   const bracketPart = (v: SetV) => {
     const z0 = bedTop, plate = cube([3 * STUD - 0.2, 3 * STUD - 0.2, PLATE_H], [v.leverX - 1.5 * STUD + 0.1, v.throwY - 1.5 * STUD + 0.1, z0]);
     const socks = bracketStuds(v).map(([x, y]) => T(s.cylinder(t.o.studH + 0.2, tc.studSocketW / 2, tc.studSocketW / 2, 24), [x, y, z0 - 0.01]));
-    const wf = g.leverBossLen + 2 * c, f0 = Math.min(v.forkX - forkHw, v.forkX + v.leverTravel + forkHw) - c - 1, f1 = Math.max(v.forkX - forkHw, v.forkX + v.leverTravel + forkHw) + c + 1;
+    const wf = (scadParity() ? g.leverBossLen : Math.max(g.leverBossLen, g.leverTipD)) + 2 * c, f0 = Math.min(v.forkX - forkHw, v.forkX + v.leverTravel + forkHw) - c - 1, f1 = Math.max(v.forkX - forkHw, v.forkX + v.leverTravel + forkHw) + c + 1;
     const slot = cube([f1 - f0, wf, 30], [f0, v.throwY - wf / 2, z0 - 1]);
     return s.union([s.difference(plate, [...socks, slot]), ...ears(v, z0 + PLATE_H)]);
   };
@@ -651,7 +653,8 @@ export function switchGeometry(s: Scad, plan: SwitchPlan, extraCuts: Man[] = [])
     const w = g.throwRodW + 1 + 2 * c;
     const ends = [...units(v).map((u) => u.postX).flatMap((x) => [x - 1.5, x + v.leverTravel + 1.5]), v.forkX - forkHw, v.forkX + v.leverTravel + forkHw];
     const x0 = Math.min(...ends) - c - 1, x1 = Math.max(...ends) + c + 1;
-    const wf = g.leverBossLen + 2 * c;
+    // (wide enough for the lever's tip to go down through it)
+    const wf = (scadParity() ? g.leverBossLen : Math.max(g.leverBossLen, g.leverTipD)) + 2 * c;
     const f0 = Math.min(v.forkX - forkHw, v.forkX + v.leverTravel + forkHw) - c - 1, f1 = Math.max(v.forkX - forkHw, v.forkX + v.leverTravel + forkHw) + c + 1;
     return s.union([
       cube([x1 - x0, w, g.layerTop + c - floorZ], [x0, v.throwY - w / 2, floorZ]),

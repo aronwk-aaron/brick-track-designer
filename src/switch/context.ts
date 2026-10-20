@@ -42,6 +42,8 @@ export const HEAD_HW = 1.25;
 export const STUD = 8;
 
 /** Values for the whole switch (not per set). */
+import { scadParity as scadParityNow } from '../geom/track';
+
 export function switchGlobals(p: SwitchParams) {
   const G = ((p.gaugeStuds + 1) * STUD) / 2;
   const sleeperLen = 2 * G + 24;
@@ -128,7 +130,8 @@ export function pointsSet(routes: Route[], ps: PointsSet, p: SwitchParams, defau
   const throwFaceX = throwStockX + throwDir * 3.9;
   const leverAng = deg(Math.asin(Math.min(0.9, leverTravel / 2 / g.leverDa)));
   const leverTipZ = g.leverPz - g.leverDa * Math.cos(rad(leverAng));
-  const throwEdgeX = throwDir * (g.ballast ? (g.buddy ? g.ballastBottomW : g.ballastMidW) / 2 : g.sleeperLen / 2);
+  // (from the sleepers' end, ballast or not: the arm stands over the ballast's lower steps)
+  const throwEdgeX = throwDir * (g.ballast && scadParityNow() ? (g.buddy ? g.ballastBottomW : g.ballastMidW) / 2 : g.sleeperLen / 2);
   const leverMinD = Math.max(throwDir * throwFaceX + Math.max(4 + 1.5, leverTravel / 2 + g.leverTipD / 2 + 2 * p.pointClearance + 1.2 + 1.5),
     p.throwModule ? g.sleeperLen / 2 + 1.5 * STUD + 0.2 : 0); // (a bracket, 3 studs square, clear of the sleepers (the top of the bed): over a ballast's lower steps is fine)
   const leverX = throwDir * Math.max(throwDir * throwEdgeX + p.leverOffset, leverMinD);
