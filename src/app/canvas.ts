@@ -11,7 +11,7 @@ import { describe, follow, plan, planAnyway, planAuto, planFreeTurning, planToPo
 
 export interface Overlay { grooves: [number, number][][]; checkRails: [number, number][][]; crossings: [number, number][]; splits: [number, number][]; grips?: [number, number][]; items?: OverlayItem[] }
 /** A trackwork item on the plan (mm); a lever ('throw') has its points' frame and settings, to drag it. */
-export interface OverlayItem { kind: string; key: string; at: [number, number]; pts: [number, number][]; dir?: [number, number]; lever?: { frame: [number, number, number]; side: number; edge: number; minD: number; pivotY: number; maxTine: number; leverOffset: number; springLength: number } }
+export interface OverlayItem { kind: string; key: string; at: [number, number]; pts: [number, number][]; dir?: [number, number]; lever?: { frame: [number, number, number]; side: number; stockX: number; edge: number; minD: number; pivotY: number; maxTine: number; leverOffset: number; springLength: number } }
 
 export interface CanvasHost {
   design(): Design;
@@ -72,7 +72,7 @@ export class TrackCanvas {
   /** Dragging a track's end: which route and end, where the press was, and the route as it was. */
   private drag: { route: number; end: 'start' | 'end'; sx: number; sy: number; moved: boolean; orig: DRoute; anchor: number; lastGood?: DRoute } | undefined;
   /** Dragging a lever: its item, and where it would go (mm) with what settings. */
-  private leverDrag: { it: OverlayItem; moved: boolean; at?: [number, number]; arm?: [number, number][] } | undefined;
+  private leverDrag: { it: OverlayItem; moved: boolean; off: [number, number]; at?: [number, number]; arm?: [number, number][] } | undefined;
   /** Dragging a check rail's or flangeway cut's end (longer or shorter), or points along: what, which setting, from where (studs), the way that adds (mm), and its value before. */
   private itemDrag: { it: OverlayItem; prop: 'd0' | 'd1' | 'toe'; from: [number, number]; dir: [number, number]; base: number; at?: [number, number] } | undefined;
   /** The check rail end, flangeway cut end or points under a point (studs), to drag. */
@@ -94,7 +94,16 @@ export class TrackCanvas {
   /** The lever under a point (studs), if any. */
   private leverAt(w: [number, number]) {
     const r = Math.max(1.5, 12 / this.scale);
-    return this.overlay?.items?.find((it) => it.kind === 'throw' && it.lever && Math.hypot(it.at[0] / MM - w[0], it.at[1] / MM - w[1]) < r);
+    // (on the knob, or anywhere on the arm)
+    const inPoly = (pts: [number, number][]) => {
+      let inside = false;
+      for (let i = 0, j = pts.length - 1; i < pts.length; j = i++) {
+        const [xi, yi] = [pts[i][0] / MM, pts[i][1] / MM], [xj, yj] = [pts[j][0] / MM, pts[j][1] / MM];
+        if ((yi > w[1]) !== (yj > w[1]) && w[0] < ((xj - xi) * (w[1] - yi)) / (yj - yi) + xi) inside = !inside;
+      }
+      return inside;
+    };
+    return this.overlay?.items?.find((it) => it.kind === 'throw' && it.lever && (Math.hypot(it.at[0] / MM - w[0], it.at[1] / MM - w[1]) < r || inPoly(it.pts)));
   }
   /** Move a lever to (near) w, studs: its side, how far out and how far along, as the switch allows. */
   private dragLever(w: [number, number]) {
@@ -123,7 +132,9 @@ export class TrackCanvas {
     group[ld.it.key] = { side: side > 0 ? 'right' : 'left', leverOffset, springLength };
     const wd = (x: number, y: number): [number, number] => [fx + x * Math.cos(h) - y * Math.sin(h), fy + x * Math.sin(h) + y * Math.cos(h)];
     const y = lv.pivotY - 2 - Math.min(springLength, lv.maxTine);
-    ld.at = wd(side * (lv.edge + leverOffset), y); ld.arm = [wd(side * (lv.edge - 8), y), ld.at];
+    const lxNew = side * (lv.edge + leverOffset), xOut = side * Math.ceil((Math.abs(lxNew) + 10) / MM - 1e-6) * MM;
+    ld.at = wd(lxNew, y);
+    ld.arm = [wd(side * lv.stockX, y - 12), wd(xOut, y - 12), wd(xOut, y + 12), wd(side * lv.stockX, y + 12)];
     if (JSON.stringify(group[ld.it.key]) !== was) this.host.changed(false);
   }
 
@@ -230,7 +241,7 @@ export class TrackCanvas {
     // Pressing on a lever: drag it (side, out, along)
     if (!this.active && e.button === 0) {
       const it = this.leverAt(w);
-      if (it) { this.leverDrag = { it, moved: false }; return; }
+      if (it) { this.leverDrag = { it, moved: false, off: [it.at[0] / MM - w[0], it.at[1] / MM - w[1]] }; return; }  // (held where it was grabbed)
       const id = this.itemAt(w);
       if (id) { this.itemDrag = id; return; }
     }
@@ -338,7 +349,7 @@ export class TrackCanvas {
     }
     if (this.leverDrag) {
       this.mouse = this.evWorld(e); this.leverDrag.moved = true;
-      this.dragLever(this.mouse);
+      this.dragLever([this.mouse[0] + this.leverDrag.off[0], this.mouse[1] + this.leverDrag.off[1]]);
       return this.draw();
     }
     if (this.moving) {
@@ -731,8 +742,11 @@ export class TrackCanvas {
         if (it.kind !== 'throw') continue;
         const live = this.leverDrag?.it.key === it.key && this.leverDrag.at;
         const arm = live ? this.leverDrag!.arm! : it.pts, at = live ? this.leverDrag!.at! : it.at;
-        line(w(arm), 'rgba(232,137,43,0.35)', Math.max(3, (24 / MM) * this.scale));
-        const [kx, ky] = this.toScreen(at[0] / MM, at[1] / MM), kr = Math.max(5, (5 / MM) * this.scale);
+        // the arm as it's built (on the studs), and the lever on it
+        c.beginPath();
+        w(arm).forEach(([x, y], k) => { const [sx, sy] = this.toScreen(x, y); if (k) c.lineTo(sx, sy); else c.moveTo(sx, sy); });
+        c.closePath(); c.fillStyle = 'rgba(232,137,43,0.30)'; c.fill(); c.strokeStyle = '#e8892b'; c.lineWidth = 1.5; c.stroke();
+        const [kx, ky] = this.toScreen(at[0] / MM, at[1] / MM), kr = Math.max(4, Math.min(9, (3 / MM) * this.scale));
         c.fillStyle = '#e8892b'; c.strokeStyle = '#fff'; c.lineWidth = 1.5;
         c.beginPath(); c.arc(kx, ky, kr, 0, 2 * Math.PI); c.fill(); c.stroke();
       }
