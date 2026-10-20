@@ -59,8 +59,8 @@ export interface PieceOptions {
   baseplateX: number; baseplateY: number;
   /** How parts cut for the bed or the baseplates join: 'lego' rail-end tongues with a peg and C-clip (as LEGO track); 'dovetail' rail tongues with dovetails through the bed; 'butt' straight cuts, held only by the baseplate under them; 'ends' separate pieces joined by ordinary track ends, cut only where the tracks are clear of each other (the plate-style way). */
   joint?: 'lego' | 'dovetail' | 'butt' | 'ends';
-  /** (prototype) The points: built into the track piece, or a drop-in cassette (its own part, from the top) through the track ('drop-in', it sits on the baseplate's studs) or on a ledge round the hole ('shelf'). */
-  pointsModule?: 'built-in' | 'drop-in' | 'shelf';
+  /** (prototype) The points: built into the one piece, or the piece in layers stacked from the top (the lower layer with the moving parts' pockets, the deck with the bed and rails over it, held by studs; needs ballast). */
+  pointsModule?: 'built-in' | 'layers';
   /** Ballast under the track: none, ballast, or ballast with the wider buddy layer under it. */
   ballast: 'none' | 'ballast' | 'buddy';
   /** With ballast: the underside, anti-stud (hollow with tubes) or flat. */
