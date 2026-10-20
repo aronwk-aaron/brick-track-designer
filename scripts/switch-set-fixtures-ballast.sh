@@ -32,5 +32,11 @@ for t in left right wye threeway; do for r in 24 40 104; do for sh in s_curve ar
     -D generate_ballast=true -D 'part="none"' -o $TMP/x.echo $TMP/e.scad >/dev/null 2>&1
   grep -E '^ECHO: "(CFG|ROUTES|SETS|SET) ' $TMP/x.echo | sed 's/^ECHO: "//; s/"$//; s/\\"/"/g' >> $OUT
 done; done; done
+# (and without the buddy, on a float bottom, where switch.scad makes the routes shorter: the ballast's narrower)
+for c in "right 24 arc" "threeway 40 arc"; do set -- $c; cfg="float-nobuddy-$1-R$2-$3"
+  OPENSCADPATH=$REPO $RUN -D "cfg=\"$cfg\"" -D "switch_type=\"$1\"" -D diverge_radius=$2 -D "diverge_shape=\"$3\"" \
+    -D generate_ballast=true -D 'bottom_style="float"' -D generate_ballast_buddy=false -D 'part="none"' -o $TMP/x.echo $TMP/e.scad >/dev/null 2>&1
+  grep -E '^ECHO: "(CFG|ROUTES|SETS|SET) ' $TMP/x.echo | sed 's/^ECHO: "//; s/"$//; s/\\"/"/g' >> $OUT
+done
 rm -rf $TMP
 grep -c ^CFG $OUT
