@@ -9,7 +9,8 @@ import { CROSSING_DEFAULTS, crossingPiece } from '../geom/crossing';
 import { arena, type Wasm } from '../geom/kernel';
 import { stlBytes } from '../geom/stl';
 import { solve } from '../route/solver';
-import { railPoint, routeLength, routePose, type Pose } from '../route/route';
+import { railPoint, routeLat, routeLength, routePose, routeSOf, type Pose } from '../route/route';
+import { reversedRoute } from '../switch/reverse';
 import { BASE_DEFAULTS, switchGeometry } from '../switch/base';
 import { planPieces, subRoute } from '../switch/pieces';
 import { networkBody, networkSplits, type SplitParts } from '../switch/network';
@@ -41,12 +42,35 @@ function cached<T>(key: string, f: () => T): T {
 }
 const stlOf = new WeakMap<Man, Uint8Array>();
 
+/**
+ * Routes drawn the wrong way round for points: one that starts on another
+ * track heading back along it (it's a branch that merges, drawn from the
+ * merge), or ends on one heading back along it (a branch drawn from its far
+ * end), is turned round, so the solver sees the points either way it was
+ * drawn. (Everything else goes by where things are, not which way a route
+ * runs.)
+ */
+function orient(routes: Route[]): Route[] {
+  const out = [...routes];
+  const onOpposite = (q: Pose, k: number) => out.some((a, i) => {
+    if (i === k || Math.abs(routeLat(a, [q[0], q[1]])) > 0.01) return false;
+    const pa = routePose(a, routeSOf(a, [q[0], q[1]]));
+    const dh = Math.abs((((pa[2] - q[2]) % 360) + 540) % 360 - 180);
+    return Math.hypot(pa[0] - q[0], pa[1] - q[1]) < 0.01 && dh > 179.5;
+  });
+  out.forEach((rt, k) => {
+    const st = rt.start, e = routePose(rt, routeLength(rt));
+    if (onOpposite(st, k) || onOpposite(e, k)) out[k] = reversedRoute(rt);
+  });
+  return out;
+}
+
 /** progress: what it's doing now (for the 3D view's status while it builds). */
 export function buildDesign(w: Wasm, design: Design, report: (what: string, frac: number) => void = () => {}, early?: (overlay: unknown) => void) {
   // (progress: steps done of the steps there are, worked out as the plan firms up)
   let stepsDone = 0, steps = 3;
   const progress = (what: string) => { report(what, Math.min(0.97, stepsDone / steps)); stepsDone++; };
-  const routes = toRoutes(design).filter((r) => r.segments.length > 0);
+  const routes = orient(toRoutes(design).filter((r) => r.segments.length > 0));
   if (routes.length === 0) throw new Error('Draw some track: click a grid point to start, then click where it should go.');
   const t0 = performance.now();
   const gauge = (design.gaugeStuds + 1) * 8;
