@@ -34,7 +34,7 @@ export class TrackCanvas {
   private space = false;
   mode: 'draw' | 'select' = 'draw';
   /** While drawing: the route being extended (or a new one not yet added), and where it ends. */
-  private active: { route: number | undefined; start?: Pose; end?: Pose; newRoute?: DRoute; either?: number } | undefined;
+  private active: { route: number | undefined; start?: Pose; end?: Pose; newRoute?: DRoute; either?: number; from?: number } | undefined;
   /** Starting on a track (its start, or along it): lay the new track whichever way the mouse is, along it or back out of it. */
   private aimEither() {
     const a = this.active;
@@ -101,9 +101,22 @@ export class TrackCanvas {
 
   // ---------- finding things ----------
   /** The nearest point on a track's centre line within reach (studs): its route, pose, and whether it's an end. */
-  private nearTrack(p: [number, number], reach = 1.2): { route: number; pose: Pose; end: 'start' | 'end' | undefined } | undefined {
+  /**
+   * Onto the middle of another track (not route skip): the track that arrives
+   * there along it, either way, merging in (trailing points), if it can.
+   */
+  private mergeOnto(p: [number, number], from: Pose, skip: number | undefined): DSeg[] | undefined {
+    const hit = this.nearTrack(p, 1.2, skip);
+    if (!hit || hit.end) return undefined;
+    const r = this.host.radius() > 0 ? this.host.radius() : 24;
+    const plans = [hit.pose.heading, norm180(hit.pose.heading + 180)].map((h) => planToPose(from, { ...hit.pose, heading: h }, r)).filter((x): x is DSeg[] => !!x);
+    // (the gentler one)
+    return plans.sort((a, b) => a.reduce((t, sg) => t + (sg.kind === 'curve' ? Math.abs(sg.angle) : 0), 0) - b.reduce((t, sg) => t + (sg.kind === 'curve' ? Math.abs(sg.angle) : 0), 0))[0];
+  }
+  private nearTrack(p: [number, number], reach = 1.2, skip?: number): { route: number; pose: Pose; end: 'start' | 'end' | undefined } | undefined {
     let best: { route: number; pose: Pose; end: 'start' | 'end' | undefined; d: number } | undefined;
     this.host.design().routes.forEach((r, i) => {
+      if (i === skip) return;
       const end = follow(r, r.segs);
       for (const [pose, which] of [[{ x: r.x, y: r.y, heading: r.heading }, 'start'], [end, 'end']] as const) {
         const d = Math.hypot(pose.x - p[0], pose.y - p[1]);
@@ -186,7 +199,7 @@ export class TrackCanvas {
         // from a track's start, or along it: a new track starting there,
         // along it (a branch: a switch) or back out of it, whichever way the
         // mouse goes
-        this.active = { route: undefined, start: hit.pose, end: hit.pose, either: hit.pose.heading };
+        this.active = { route: undefined, start: hit.pose, end: hit.pose, either: hit.pose.heading, from: hit.route };
         this.aimEither();
       }
       else { const g = this.snap(w); this.active = { route: undefined, start: { x: g[0], y: g[1], heading: NaN } }; }
@@ -272,6 +285,8 @@ export class TrackCanvas {
     let good = snap ? planToPose(from, snap.pose, this.host.radius() > 0 ? this.host.radius() : 24) : this.planFrom(from, t);
     // (an end nearby that it can't join head on: just go to the point, beside it)
     if (snap && !good) { snap = undefined; good = this.planFrom(from, t); }
+    // onto the middle of another track: merge into it
+    if (!snap) { const m = this.mergeOnto(this.mouse ?? t, from, dr.route); if (m) good = m; }
     this.dragSnap = snap;
     // A track reshaped from its start, when that start isn't joined to
     // anything, can swing round its start: first turned the other way (when
@@ -400,6 +415,8 @@ export class TrackCanvas {
     const snap = a.end && !Number.isNaN(a.end.heading) ? this.snapEnd(w, a.route) : undefined;
     const joined = snap && planToPose(a.end!, snap.pose, this.host.radius() > 0 ? this.host.radius() : 24);
     if (joined) return joined;
+    const from0 = a.end ?? a.start;
+    if (from0 && !Number.isNaN(from0.heading)) { const m = this.mergeOnto(w, from0, a.route ?? a.from); if (m) return m; }
     const t = this.snap(w);
     if (a.route === undefined && a.start && Number.isNaN(a.start.heading)) {
       // first piece from an empty point: straight, along the nearest direction
