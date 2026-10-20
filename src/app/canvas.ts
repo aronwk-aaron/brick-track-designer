@@ -65,7 +65,16 @@ export class TrackCanvas {
   }
   /** The snapped grid point under the mouse (studs), if over the plan. */
   mouseStuds(): [number, number] | undefined { return this.mouse ? this.snap(this.mouse) : undefined; }
-  overlay: Overlay | undefined;
+  private overlayNow: Overlay | undefined;
+  /** A lever just let go of, shown where it was put until the rebuilt plan arrives with it there. */
+  private leverPending: { key: string; at: [number, number]; arm: [number, number][] } | undefined;
+  get overlay() { return this.overlayNow; }
+  set overlay(o: Overlay | undefined) {
+    this.overlayNow = o;
+    // (the new plan has the lever where it was put, near enough: stop holding it there)
+    const lp = this.leverPending, it = lp && o?.items?.find((i) => i.key === lp.key);
+    if (lp && (!it || Math.hypot(it.at[0] - lp.at[0], it.at[1] - lp.at[1]) < 1)) this.leverPending = undefined;
+  }
   /** A trackwork item to pick out (hovered in the Trackwork panel). */
   highlight: string | undefined;
   /** Show where the underside grips (only when not gripping everywhere). */
@@ -386,7 +395,11 @@ export class TrackCanvas {
   private up(e: MouseEvent) {
     this.panning = undefined;
     if (this.itemDrag) { const moved = !!this.itemDrag.at; this.itemDrag = undefined; if (moved) this.host.changed(true); return this.draw(); }
-    if (this.leverDrag) { const moved = this.leverDrag.moved; this.leverDrag = undefined; if (moved) this.host.changed(true); return this.draw(); }
+    if (this.leverDrag) {
+      const ld = this.leverDrag, moved = ld.moved; this.leverDrag = undefined;
+      if (moved && ld.at && ld.arm) this.leverPending = { key: ld.it.key, at: ld.at, arm: ld.arm };
+      if (moved) this.host.changed(true); return this.draw();
+    }
     if (this.moving) { const moved = this.moving.moved; this.moving = undefined; if (moved) this.host.changed(true); return this.draw(); }
     if (this.box) {
       const b = this.box; this.box = undefined;
@@ -784,8 +797,8 @@ export class TrackCanvas {
       // each points set's lever: its arm out to the knob (drag the knob to move it)
       for (const it of this.overlay.items ?? []) {
         if (it.kind !== 'throw' || this.hidden.has('levers')) continue;
-        const live = this.leverDrag?.it.key === it.key && this.leverDrag.at;
-        const arm = live ? this.leverDrag!.arm! : it.pts, at = live ? this.leverDrag!.at! : it.at;
+        const live = this.leverDrag?.it.key === it.key && this.leverDrag.at, held = !live && this.leverPending?.key === it.key ? this.leverPending : undefined;
+        const arm = live ? this.leverDrag!.arm! : held ? held.arm : it.pts, at = live ? this.leverDrag!.at! : held ? held.at : it.at;
         // the arm as it's built (on the studs), and the lever on it
         c.beginPath();
         w(arm).forEach(([x, y], k) => { const [sx, sy] = this.toScreen(x, y); if (k) c.lineTo(sx, sy); else c.moveTo(sx, sy); });

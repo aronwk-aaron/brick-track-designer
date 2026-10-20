@@ -1,6 +1,7 @@
 // Clash checks for a switch's moving parts (the OpenSCAD intersection suite,
 // ported): how much each pair of parts overlaps, in each position.
 // Usage: tsx scripts/clash.ts [config filter]
+import { scadParity } from '../src/geom/track';
 import { readFileSync } from 'node:fs';
 import { kernel } from '../src/geom/kernel';
 import { Scad, R, T } from '../src/geom/scad';
@@ -45,7 +46,9 @@ export async function clashes(routes: Route[], sets: SetSpec[], defaultThrowDir:
     out[`throw x lever, right${sfx}`] = vol(thr, lev);
     out[`throw x lever, left${sfx}`] = vol(T(thr, [v.leverTravel, 0, 0]), leverAt(-v.leverAng));
     // the catches: points dropped 0.5 still hang on the top; slider dropped 0.8 held by the lever's tip
-    out[`catch: points dropped 0.5 x base${sfx}`] = vol(base, T(pts, [0, 0, -0.5]));
+    // (switch.scad's blades had a flange over their slots that hung them on the top; it also stopped
+    // them going in at all, so it's gone: the points go in from below and rest on the baseplate)
+    if (scadParity()) out[`catch: points dropped 0.5 x base${sfx}`] = vol(base, T(pts, [0, 0, -0.5]));
     out[`catch: throw dropped 0.8 x lever${sfx}`] = vol(T(thr, [0, 0, -0.8]), lev);
   });
   return out;

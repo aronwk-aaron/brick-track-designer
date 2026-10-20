@@ -551,7 +551,7 @@ function renderOptions() {
         const sel = document.createElement('select');
         for (const [v, tx, tip] of [['bracket', 'On its own bracket (plate-style)', 'The lever on a separate 3 x 3 stud bracket that sits on studs on the arm, as plate-style throws are'],
           ['built-in', 'Built into the arm', 'The lever\'s ears part of the track piece\'s arm']]) { const op = new Option(tx, v); op.title = tip; sel.append(op); }
-        sel.value = o.throwStyle ?? 'bracket';
+        sel.value = o.throwStyle ?? 'built-in';
         sel.addEventListener('change', () => { design.options = { ...design.options, throwStyle: sel.value as PieceOptions['throwStyle'] }; changed(true); });
         body.append(field(label, sel));
       } else if (key === 'cutRails') {
