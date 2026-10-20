@@ -510,7 +510,10 @@ export function switchGeometry(s: Scad, plan: SwitchPlan, extraCuts: Man[] = [])
       for (const o of [-G, G]) {
         if (plan.isStock(i, o)) continue;
         const cuts: Man[] = [];
-        for (const j of plan.others(i)) for (const o2 of [-G, G]) if (!plan.isStock(j, o2)) cuts.push(sweep(flangeBand2d(o2, -Math.sign(o2)), routes[j]));
+        for (const j of plan.others(i)) for (const o2 of [-G, G]) if (!plan.isStock(j, o2)) {
+          cuts.push(sweep(flangeBand2d(o2, -Math.sign(o2)), routes[j]));
+          if (protoOn) cuts.push(...wingFlares(i, o, j, o2));
+        }
         for (const v of sets.slice(1)) cuts.push(stockFootCut(v));
         // Every set's pockets (heel bar, disc, tines, blade slots, pivot pin):
         // on a three-way the first set's rails run on through the second
@@ -520,6 +523,23 @@ export function switchGeometry(s: Scad, plan: SwitchPlan, extraCuts: Man[] = [])
         out.push(s.difference(sweep(rail2d(o), routes[i], plan.railFixS(i, o) + c, routeLength(routes[i]) - endTrim), cuts));
       }
     return s.union(out);
+  };
+  // (prototype blades: the wing rails flared at the frog's throat as a real frog's are, and the flangeways'
+  // other ends opened out the same: each groove through a rail widened at its mouths, away from the rail
+  // it guides, by the check rails' flare, over twice its length)
+  /** Where route j's flangeway (beside its rail at o2) crosses route i's rail at o: a wedge widening it at each end. */
+  const wingFlares = (i: number, o: number, j: number, o2: number): Man[] => {
+    const side = -Math.sign(o2), rj = routes[j], ri = routes[i], L = routeLength(rj), mid = o2 + side * (HEAD_HW + p.flangeway / 2);
+    const inRail = (sj: number) => Math.abs(routeLat(ri, railPoint(rj, sj, mid)) - o) < HEAD_HW + p.flangeway / 2;
+    const ends: [number, number][] = [];
+    let prev = inRail(0);
+    for (let sj = 0.5; sj <= L; sj += 0.5) { const now = inRail(sj); if (now !== prev) ends.push([sj, now ? +1 : -1]); prev = now; }
+    const fl = 2 * p.checkRailFlare + 2, wide = (w: number) => {
+      const x0 = o2 + side * HEAD_HW;
+      return sq([p.flangeway + w, p.flangewayDepth + 5], [Math.min(x0, x0 + side * (p.flangeway + w)), railTop - p.flangewayDepth]);
+    };
+    // (at a mouth, as wide as the flare; fl into the rail, the groove's own width)
+    return ends.map(([sj, into]) => W.Manifold.hull([sweep(wide(p.checkRailFlare), rj, sj - into * 2 - 0.05, sj - into * 2 + 0.05), sweep(wide(0), rj, sj + into * fl - 0.05, sj + into * fl + 0.05)]));
   };
   const checkRails = () => {
     const check2d = (x0: number) => sq([p.checkRailW, railTop - 0.4], [x0, 0]);
