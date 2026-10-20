@@ -2,6 +2,7 @@
 // from OpenSCAD renders of the same routes and sets (pnpm parity switch-base
 // writes the meshes; test/fixtures/switch-base-volumes.json keeps their
 // volumes). The full comparison, column by column, is in scripts/parity.ts.
+import { setSocketShape } from '../src/geom/track';
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { kernel } from '../src/geom/kernel';
@@ -10,6 +11,7 @@ import type { Route, Segment } from '../src/route/route';
 import { BASE_DEFAULTS, switchBase, switchPlan, type SetSpec } from '../src/switch/base';
 import { setArcMode } from '../src/geom/sweep';
 setArcMode('scad'); // (OpenSCAD's arc pieces, to compare mesh for mesh)
+setSocketShape('square'); // (and its square stud sockets)
 
 const vols = JSON.parse(readFileSync(new URL('./fixtures/switch-base-volumes.json', import.meta.url), 'utf8')) as Record<string, number>;
 const lines = readFileSync(new URL('./fixtures/switch-sets.txt', import.meta.url), 'utf8').split('\n');

@@ -6,17 +6,17 @@ import { TEMPLATES, toRoutes } from '../src/app/design';
 import { T } from '../src/geom/scad';
 import { routePose } from '../src/route/route';
 
-// Count the underside's square holes by size, in a slice just above the bottom.
+// Count the underside's stud sockets (round, 5.0 across: a 24-gon) by size, in a slice just above the bottom.
 const area = (p: number[][]) => Math.abs(p.reduce((a, [x, y], k) => { const [u, v] = p[(k + 1) % p.length]; return a + x * v - u * y; }, 0) / 2);
 async function build(name: string, grip: 'edges' | 'all') {
   const tubes: [number, number][] = [];
   const m = crossingPiece(new Scad(await kernel()), toRoutes(TEMPLATES[name]), { ...CROSSING_DEFAULTS, grip }, undefined, tubes);
   const polys = m.slice(0.5).toPolygons() as number[][][];
-  return { m, tubes, sockets: polys.filter((p) => Math.abs(area(p) - 5.0 ** 2) < 1).length };
+  return { m, tubes, sockets: polys.filter((p) => Math.abs(area(p) - 12 * 2.5 ** 2 * Math.sin(Math.PI / 12)) < 0.5).length };
 }
 
 describe('underside grip', () => {
-  it("'all' has a gripping square socket at every stud", async () => {
+  it("'all' has a gripping socket at every stud", async () => {
     const b = await build('90° crossing', 'all');
     expect(b.sockets).toBeGreaterThan(150);
     expect(b.tubes).toHaveLength(0);
@@ -26,7 +26,7 @@ describe('underside grip', () => {
     // the cross's arms are 6 studs wide: tubes all round the hollow's edge, a few inside
     expect(b.tubes.length).toBeGreaterThan(40);
     expect(b.tubes.length).toBeLessThan(70);
-    // square sockets only under the end connectors (4 ends)
+    // sockets only under the end connectors (4 ends)
     expect(b.sockets).toBeLessThan(60);
     expect(b.m.volume()).toBeLessThan(all.m.volume());
     // every tube sits between four studs: at 8 + 8k in the start frame (route A starts at (0, -64) heading 0)
