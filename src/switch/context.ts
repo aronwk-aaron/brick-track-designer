@@ -28,6 +28,8 @@ export interface SwitchParams {
   mechFloor?: number;
   /** Breakaway print supports under the rail-end tongues at each end (default on; off: leave them to the slicer). */
   endSupports?: boolean;
+  /** The throw as 4DBrix's: the lever on its own bracket (a 3 x 3 stud plate with the ears) on studs on the arm, not built into it. */
+  throwModule?: boolean;
 }
 
 export const SWITCH_DEFAULTS: SwitchParams = {
@@ -59,7 +61,8 @@ export function switchGlobals(p: SwitchParams) {
   const bedTop = ballast ? PLATE_H : Math.max(PLATE_H, cavityTop + 0.8);
   const leverTipD = 4.5, leverBossD = 5;
   const leverTipLow = layerZ0 + 0.6 + p.pointClearance + leverTipD / 2;
-  const leverPz = Math.max(PLATE_H + leverBossD / 2 + 1.5, leverTipLow + (p.leverReach ?? 10));
+  // (on a bracket the pivot is a plate higher: over the arm's top, its studs and the bracket's plate)
+  const leverPz = Math.max((p.throwModule ? bedTop + PLATE_H : PLATE_H) + leverBossD / 2 + 1.5, leverTipLow + (p.leverReach ?? 10));
   const leverDa = leverPz - leverTipLow;
   const bladeNeed = 2 * HEAD_HW + p.pointThrow + p.pointClearance + 0.6;
   return {
@@ -126,7 +129,8 @@ export function pointsSet(routes: Route[], ps: PointsSet, p: SwitchParams, defau
   const leverAng = deg(Math.asin(Math.min(0.9, leverTravel / 2 / g.leverDa)));
   const leverTipZ = g.leverPz - g.leverDa * Math.cos(rad(leverAng));
   const throwEdgeX = throwDir * (g.ballast ? (g.buddy ? g.ballastBottomW : g.ballastMidW) / 2 : g.sleeperLen / 2);
-  const leverMinD = throwDir * throwFaceX + Math.max(4 + 1.5, leverTravel / 2 + g.leverTipD / 2 + 2 * p.pointClearance + 1.2 + 1.5);
+  const leverMinD = Math.max(throwDir * throwFaceX + Math.max(4 + 1.5, leverTravel / 2 + g.leverTipD / 2 + 2 * p.pointClearance + 1.2 + 1.5),
+    p.throwModule ? throwDir * throwEdgeX + 1.5 * STUD : 0); // (a bracket clear of the track's edge)
   const leverX = throwDir * Math.max(throwDir * throwEdgeX + p.leverOffset, leverMinD);
   const forkX = leverX - leverTravel / 2;
   const forkLipZ = leverTipZ + g.leverTipD / 2 + p.pointClearance;
