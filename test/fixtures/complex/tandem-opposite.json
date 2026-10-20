@@ -1,0 +1,54 @@
+{
+ "version": 1,
+ "gaugeStuds": 4,
+ "name": "tandem-opposite",
+ "routes": [
+  {
+   "name": "Main",
+   "x": 0,
+   "y": 0,
+   "heading": 0,
+   "segs": [
+    {
+     "kind": "straight",
+     "studs": 80
+    }
+   ]
+  },
+  {
+   "name": "B1",
+   "x": 0,
+   "y": 0,
+   "heading": 0,
+   "segs": [
+    {
+     "kind": "curve",
+     "radius": 56,
+     "angle": -22.5
+    },
+    {
+     "kind": "straight",
+     "studs": 16
+    }
+   ]
+  },
+  {
+   "name": "B2",
+   "x": 0,
+   "y": 12,
+   "heading": 0,
+   "segs": [
+    {
+     "kind": "curve",
+     "radius": 56,
+     "angle": 22.5
+    },
+    {
+     "kind": "straight",
+     "studs": 16
+    }
+   ]
+  }
+ ],
+ "options": {}
+}

@@ -1,0 +1,88 @@
+{
+ "version": 1,
+ "gaugeStuds": 4,
+ "name": "ladder-r40-reversed",
+ "routes": [
+  {
+   "name": "Main",
+   "x": 0,
+   "y": 163.879,
+   "heading": -180,
+   "segs": [
+    {
+     "kind": "straight",
+     "studs": 171.878939
+    }
+   ]
+  },
+  {
+   "name": "Ladder",
+   "x": 0,
+   "y": 0,
+   "heading": 0,
+   "segs": [
+    {
+     "kind": "curve",
+     "radius": 40,
+     "angle": -22.5
+    },
+    {
+     "kind": "straight",
+     "studs": 117.517055
+    }
+   ]
+  },
+  {
+   "name": "Y1",
+   "x": 12.955181,
+   "y": 39.233069,
+   "heading": -22.5,
+   "segs": [
+    {
+     "kind": "curve",
+     "radius": 40,
+     "angle": 22.5
+    },
+    {
+     "kind": "straight",
+     "studs": 40
+    }
+   ]
+  },
+  {
+   "name": "Y2",
+   "x": 32,
+   "y": 125.168,
+   "heading": -180,
+   "segs": [
+    {
+     "kind": "straight",
+     "studs": 32
+    },
+    {
+     "kind": "curve",
+     "radius": 40,
+     "angle": -22.5
+    }
+   ]
+  },
+  {
+   "name": "Y3",
+   "x": 44.955181,
+   "y": 116.487903,
+   "heading": -22.5,
+   "segs": [
+    {
+     "kind": "curve",
+     "radius": 40,
+     "angle": 22.5
+    },
+    {
+     "kind": "straight",
+     "studs": 24
+    }
+   ]
+  }
+ ],
+ "options": {}
+}

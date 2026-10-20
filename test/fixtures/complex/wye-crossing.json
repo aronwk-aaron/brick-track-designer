@@ -1,0 +1,54 @@
+{
+ "version": 1,
+ "gaugeStuds": 4,
+ "name": "wye-crossing",
+ "routes": [
+  {
+   "name": "Wye-L",
+   "x": 0,
+   "y": 0,
+   "heading": 0,
+   "segs": [
+    {
+     "kind": "curve",
+     "radius": 56,
+     "angle": 30
+    },
+    {
+     "kind": "straight",
+     "studs": 24
+    }
+   ]
+  },
+  {
+   "name": "Wye-R",
+   "x": 0,
+   "y": 0,
+   "heading": 0,
+   "segs": [
+    {
+     "kind": "curve",
+     "radius": 56,
+     "angle": -30
+    },
+    {
+     "kind": "straight",
+     "studs": 24
+    }
+   ]
+  },
+  {
+   "name": "Cross",
+   "x": -40,
+   "y": 40,
+   "heading": -90,
+   "segs": [
+    {
+     "kind": "straight",
+     "studs": 80
+    }
+   ]
+  }
+ ],
+ "options": {}
+}
