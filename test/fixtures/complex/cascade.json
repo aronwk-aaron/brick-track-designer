@@ -11,7 +11,7 @@
    "segs": [
     {
      "kind": "straight",
-     "studs": 80
+     "studs": 96
     }
    ]
   },
@@ -28,14 +28,14 @@
     },
     {
      "kind": "straight",
-     "studs": 48
+     "studs": 56
     }
    ]
   },
   {
    "name": "B2",
-   "x": 3.045,
-   "y": 15.307,
+   "x": 9.168,
+   "y": 30.089,
    "heading": -22.5,
    "segs": [
     {

@@ -1,0 +1,54 @@
+{
+ "version": 1,
+ "gaugeStuds": 4,
+ "name": "points-in-frog",
+ "routes": [
+  {
+   "name": "Main",
+   "x": 0,
+   "y": 0,
+   "heading": 0,
+   "segs": [
+    {
+     "kind": "straight",
+     "studs": 80
+    }
+   ]
+  },
+  {
+   "name": "B1",
+   "x": 0,
+   "y": 0,
+   "heading": 0,
+   "segs": [
+    {
+     "kind": "curve",
+     "radius": 40,
+     "angle": -22.5
+    },
+    {
+     "kind": "straight",
+     "studs": 48
+    }
+   ]
+  },
+  {
+   "name": "B2",
+   "x": 3.045,
+   "y": 15.307,
+   "heading": -22.5,
+   "segs": [
+    {
+     "kind": "curve",
+     "radius": 40,
+     "angle": 22.5
+    },
+    {
+     "kind": "straight",
+     "studs": 32
+    }
+   ]
+  }
+ ],
+ "options": {}
+}
