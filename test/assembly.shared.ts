@@ -90,6 +90,13 @@ describe('every switch can be put together', { timeout: 120000 }, () => {
         }
         if (area > 1) problems.push(`${p.name} has ${area.toFixed(1)} mm2 hanging as printed`);
       }
+      // (the moving parts clear of each other at rest (a blade's tongue on the slider's post is the blades' check above))
+      const mv = b.pieces.filter((q) => /points|throw/.test(q.name) && !/lever|bracket/.test(q.name));
+      for (let i = 0; i < mv.length; i++) for (let j = i + 1; j < mv.length; j++) {
+        if (/throw/.test(mv[i].name) || /throw/.test(mv[j].name)) continue;
+        const v = man(mv[i]).intersect(man(mv[j])).volume();
+        if (v > 0.5) problems.push(`${mv[i].name} and ${mv[j].name} overlap: ${v.toFixed(1)} mm3`);
+      }
       // (a lever or stand is held by its ears (on the lid, with layered points): slid along its pivot it runs into them)
       const withLids = w.Manifold.union([track, ...b.pieces.filter((q) => /lid/.test(q.name)).map(man)]);
       for (const p of b.pieces.filter((q) => /lever/.test(q.name))) {
