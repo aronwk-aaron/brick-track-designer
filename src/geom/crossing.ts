@@ -44,6 +44,8 @@ export interface CrossingExtras {
   adds?: Man[]; cuts?: Man[];
   /** the stud grid's origin and heading (default: the first route's start), so tiles of one layout share it */
   gridPose?: Pose;
+  /** more floor to hollow out underneath with tubes, like the track bed's (the throw arms): rectangles [x0, x1, y0, y1] in frame P */
+  hollows?: { P: Pose; r: [number, number, number, number] }[];
 }
 
 /** grips, if given, gets the centres of the gripping stud sockets on the bed (mm). */
@@ -139,6 +141,15 @@ export function crossingPiece(s: Scad, routes: Route[], o: CrossingOptions = CRO
     }
     return bed;
   }).filter((b): b is NonNullable<typeof b> => !!b);
+  // (and the extra floor: each rectangle less the rim)
+  const extra = (x.hollows ?? []).map(({ P, r }) => ({ P, r: [r[0] + WALL, r[1] - WALL, r[2] + WALL, r[3] - WALL] as const }))
+    .filter(({ r }) => r[1] > r[0] && r[3] > r[2]);
+  const inExtra = (pt: [number, number], m: number) => extra.some(({ P, r }) => {
+    const dx = pt[0] - P[0], dy = pt[1] - P[1], hd = (P[2] * Math.PI) / 180;
+    const lx = dx * Math.cos(hd) + dy * Math.sin(hd), ly = -dx * Math.sin(hd) + dy * Math.cos(hd);
+    return lx >= r[0] + m && lx <= r[1] - m && ly >= r[2] + m && ly <= r[3] - m;
+  });
+  for (const { P, r } of extra) beds.push(s.w.CrossSection.square([r[1] - r[0], r[3] - r[2]]).translate([r[0], r[2]]).rotate(P[2]).translate([P[0], P[1]]));
   const deepCache = new Map<string, boolean>();
   // a stud at spot (i, j) is wholly inside the hollow of some route's bed
   const deep = (i: number, j: number) => {
@@ -146,7 +157,7 @@ export function crossingPiece(s: Scad, routes: Route[], o: CrossingOptions = CRO
     let v = deepCache.get(k);
     if (v === undefined) {
       const pt = world(4 + i * STUD, 4 + j * STUD), m = o.studD / 2 + 0.1; // stud radius and a little clearance
-      v = routes.some((rt) => {
+      v = inExtra(pt, m) || routes.some((rt) => {
         const lat = routeLat(rt, pt);
         if (Math.abs(lat) > hw - m) return false;
         // and clear of both ends' connectors (measured along each end's frame)

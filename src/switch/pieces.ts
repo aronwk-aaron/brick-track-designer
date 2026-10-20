@@ -72,7 +72,8 @@ export function gridLever(P: Pose, v: { leverX: number; throwY: number; throwEdg
     const tine = v.pivotPt[1] - 2 - ly;
     if (tine < 16 || tine > maxTine + 0.01) continue;
     const d = Math.hypot(lx - v.leverX, ly - v.throwY);
-    if (d < bestD) { bestD = d; best = { leverOffset: Math.round((Math.abs(lx) - edge) * 100) / 100, springLength: Math.round(tine * 100) / 100 }; }
+    // (exact, not rounded: the arm right on the studs)
+    if (d < bestD) { bestD = d; best = { leverOffset: Math.abs(lx) - edge, springLength: tine }; }
   }
   if (!best) return {};
   return { ...best, ...(keep.leverOffset !== undefined && { leverOffset: keep.leverOffset }), ...(keep.springLength !== undefined && { springLength: keep.springLength }) };
