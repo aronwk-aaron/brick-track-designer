@@ -13,13 +13,13 @@ import { routePose } from '../src/route/route';
 
 export const fixture = (n: string): Design => JSON.parse(readFileSync(new URL(`./fixtures/complex/${n}.json`, import.meta.url), 'utf8'));
 
-/** [name, design, warnings expected (each matched by one), more options, whether its moving parts may meet the track (a design that can't work, and says so)]. */
-export type ComplexCase = [string, Design, RegExp[]?, Design['options']?, boolean?];
+/** [name, design, warnings expected (each matched by one), more options, whether its moving parts may meet the track (a design that can't work, and says so), heavy (a minute's build: only with BTD_HEAVY=1, as a build that long holds up vitest's worker past its RPC timeout)]. */
+export type ComplexCase = [string, Design, RegExp[]?, Design['options']?, boolean?, boolean?];
 
 export function complexSuite(cases: ComplexCase[]) {
   describe('complex designs', { timeout: 300000 }, () => {
-    for (const [name, d0, expectWarn = [], more = {}, clashOk = false] of cases)
-      it(name, async () => {
+    for (const [name, d0, expectWarn = [], more = {}, clashOk = false, heavy = false] of cases)
+      it.skipIf(heavy && !process.env.BTD_HEAVY)(name, async () => {
         const w = await kernel();
         const d: Design = { ...d0, options: { printBedX: 2000, printBedY: 2000, ...d0.options, ...more } };
         // (every solid the build and the checks make let go after, the build's cache with them: kept, a file's worth of
