@@ -73,3 +73,44 @@ export function studSpots(s: Scad, t: Track, spots: Spot[], bed: (x: number, y: 
   spots.forEach((p, k) => { if (!hol[k]) plan.push(under([p[0], p[1]]) ? recess(p[0], p[1]) : socket(p[0], p[1])); });
   return { cut: extrudeCut(plan), tubes, shapes: corners.map((q) => ({ ...q, cs: shape(q) })), grips: corners.filter((q) => q.tube).map((q) => q.c) };
 }
+
+/**
+ * A hollow underside on the stud grid (the ballast's bottom): cav is the
+ * hollow (inside its rim), studs at wd(4 + 8i, 4 + 8j). 'edges': anti-stud
+ * tubes where a stud next to the corner isn't wholly in the hollow (along
+ * its edges) and every 4 studs inside, thin posts elsewhere (they hold the
+ * roof up without touching the studs), and a socket for each stud not
+ * wholly in the hollow; 'all': a tube at every corner and a socket at every
+ * stud (holds too hard). cut: what to take out (the hollow and sockets);
+ * tubes: the tubes and posts (in the hollow); grips: the tubes' centres.
+ */
+export function hollowGrid(s: Scad, t: Track, cav: CS, wd: (lx: number, ly: number) => [number, number], i0: number, i1: number, j0: number, j1: number,
+  grip: 'edges' | 'all'): { cut: CS; tubes?: CS; grips: [number, number][] } {
+  const W = s.w, studR = t.o.studD / 2 + 0.1;
+  const deepC = new Map<string, boolean>();
+  const deep = (i: number, j: number) => {
+    const k = `${i},${j}`;
+    let v = deepC.get(k);
+    if (v === undefined) { v = W.CrossSection.circle(studR, 12).translate(wd(4 + i * STUD, 4 + j * STUD)).subtract(cav).area() < 0.01; deepC.set(k, v); }
+    return v;
+  };
+  const tubeCS = (q: [number, number]) => W.CrossSection.circle((TUBE_OD - ANTISTUD_FIT) / 2, 24).subtract(W.CrossSection.circle((TUBE_ID + ANTISTUD_FIT) / 2, 24)).translate(q);
+  const socks: CS[] = [], shapes: CS[] = [], grips: [number, number][] = [];
+  const mod4 = (n: number) => ((n % 4) + 4) % 4;
+  for (let i = i0; i <= i1; i++) for (let j = j0; j <= j1; j++) {
+    const sp = wd(4 + i * STUD, 4 + j * STUD), cn = wd(8 + i * STUD, 8 + j * STUD);
+    if (grip === 'all' || !deep(i, j)) socks.push(W.CrossSection.circle(t.c.studSocketW / 2, 24).translate(sp));
+    if (grip === 'all') {
+      const ring = tubeCS(cn);
+      if (ring.intersect(cav).area() > 1) { shapes.push(ring); grips.push(cn); }
+      continue;
+    }
+    if (!(deep(i, j) && deep(i + 1, j) && deep(i, j + 1) && deep(i + 1, j + 1))) continue;
+    let edge = false;
+    for (let a = -1; a <= 2 && !edge; a++) for (let b = -1; b <= 2 && !edge; b++)
+      if ((a < 0 || a > 1 || b < 0 || b > 1) && !deep(i + a, j + b)) edge = true;
+    if (edge || (mod4(i) === 0 && mod4(j) === 0)) { shapes.push(tubeCS(cn)); grips.push(cn); }
+    else shapes.push(W.CrossSection.circle(POST_D / 2, 24).translate(cn));
+  }
+  return { cut: W.CrossSection.union([cav, ...socks]), tubes: shapes.length ? W.CrossSection.union(shapes).intersect(cav) : undefined, grips };
+}

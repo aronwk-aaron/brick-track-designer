@@ -11,7 +11,7 @@ import type { Pose, Pt, Route } from '../route/route';
 import { railPoint, routeLat, routeLength, routePose, routeSOf, segStarts } from '../route/route';
 import { M, R, T, type CS, type Man, type Scad, type Vec2, type Vec3 } from '../geom/scad';
 import { sweepRoute } from '../geom/sweep';
-import { type Spot, studSpots } from '../geom/underside';
+import { hollowGrid, type Spot, studSpots } from '../geom/underside';
 import { DEFAULTS as TRACK_DEFAULTS, getSocketShape, scadParity, PLATE_H, RAIL_PROFILE, STUD, Track } from '../geom/track';
 import { HEAD_HW, pointsSet, type PointsSetValues, type SwitchParams, switchGlobals } from './context';
 
@@ -864,6 +864,12 @@ export function switchGeometry(s: Scad, plan: SwitchPlan, extraCuts: Man[] = [])
     let cav = outline.offset(-1.39, 'Miter', 1000);
     for (const yc of plan.baseCuts) cav = cav.subtract(sq([2000, 2 * 1.39 + 8], [-1000, yc - 1.39 - 4]));
     const xr = plan.baseXRange(plan.baseY0, plan.baseY1), socks: CS[] = [];
+    if (!scadParity()) {
+      // grip along the edges and every 4 studs, thin posts elsewhere (underside.ts), not a tube at every corner
+      const hg = hollowGrid(s, t, cav, (lx, ly) => [lx, ly], Math.floor(xr[0] / 8) - 1, Math.ceil(xr[1] / 8), -1, Math.ceil(plan.baseY1 / 8), p.studGrip);
+      grips.push(...hg.grips);
+      return { under: T(s.extrude(hg.cut, g.bottomCavity + 0.01), [0, 0, pieceBottomZ - 0.01]), tubes: hg.tubes ? T(s.extrude(hg.tubes, g.bottomCavity), [0, 0, pieceBottomZ]) : s.union([]) };
+    }
     for (let x = Math.floor(xr[0] / 8) * 8 + 4; x <= xr[1] + 1e-9; x += 8) for (let y = 4; y <= plan.baseY1 + 1e-9; y += 8) socks.push(getSocketShape() === 'round' ? circle(tc.studSocketW / 2, 24, [x, y]) : W.CrossSection.square([tc.studSocketW, tc.studSocketW], true).translate([x, y]));
     const under = T(s.extrude(W.CrossSection.union([cav, ...socks]), g.bottomCavity + 0.01), [0, 0, pieceBottomZ - 0.01]);
     const rings: CS[] = [];
