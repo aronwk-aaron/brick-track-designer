@@ -117,6 +117,7 @@ export function solve(routes: Route[], opts: Partial<SolverOptions> = {}): Solut
       const pa = routePose(a, sa);
       if (Math.hypot(pa[0] - st[0], pa[1] - st[1]) > 0.01 || Math.abs(((pa[2] - b.start[2] + 540) % 360) - 180) > SPLIT_ANGLE) continue;
       if (sa < 1e-6 && j < i) continue;  // both start together: once, as (i < j)
+      if (sa > routeLength(a) - 0.6) continue; // (starting where the other ends: a join, not points)
       let t = 0;
       const L = Math.min(routeLength(b), routeLength(a) - sa);
       while (t < L) {
@@ -137,6 +138,7 @@ export function solve(routes: Route[], opts: Partial<SolverOptions> = {}): Solut
       const pa = routePose(a, se);
       if (Math.hypot(pa[0] - e[0], pa[1] - e[1]) > 0.01 || Math.abs(((pa[2] - e[2] + 540) % 360) - 180) > SPLIT_ANGLE) continue;
       if (se > routeLength(a) - 1e-6) continue; // (end to end: a join, not points)
+      if (se < 0.6) continue; // (ending where the other starts: a join, not points)
       let t = 0;
       while (t < Math.min(Lb, se)) {
         const p = routePose(b, Lb - t);

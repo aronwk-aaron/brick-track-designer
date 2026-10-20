@@ -46,8 +46,11 @@ export const BASE_DEFAULTS: BaseParams = {
  * side or undefined, and for a true three-way the straight route between
  * them]. A true three-way has one blade each side, both on the straight
  * route's rails, on one slider with three positions (the plate-style 2-04-043).
+ * Last, this set's own lever settings (moved by hand in the editor), over
+ * the switch's.
  */
-export type SetSpec = [number, number, number, number?, number?];
+export type SetSpec = [number, number, number, number?, number?, SetOver?];
+export interface SetOver { leverOffset?: number; springLength?: number }
 
 // Two-piece points (and a three-way's): each blade's pivot level with its
 // heel, so no part of the blade swings out past it into the stock rail, and
@@ -96,6 +99,7 @@ const frags = (r: number) => Math.ceil(Math.max(Math.min(360 / 12, (r * 2 * Math
  * rails, and the slider's travel each way enough to open a blade.
  */
 export function threeWaySet(routes: Route[], ps: SetSpec, p: BaseParams, defaultThrowDir = 1) {
+  p = { ...p, ...ps[5] };
   const g = switchGlobals(p), G = g.G, c = p.pointClearance;
   const R = routes[ps[0]], L = routes[ps[1]], S = routes[ps[4]!], sToe = ps[2];
   const lenMin = Math.min(routeLength(S), routeLength(L), routeLength(R));
@@ -132,7 +136,7 @@ export function switchPlan(routes: Route[], specs: SetSpec[], p: BaseParams = BA
   const sleeperW = tc.sleeperW, sleeperLen = tc.sleeperLen;
   const nRoutes = routes.length;
   const sets = specs.map((ps) => (ps[4] === undefined
-    ? pointsSet(routes, { ra: ps[0], rb: ps[1], sToe: ps[2], tside: ps[3] }, p, defaultThrowDir)
+    ? pointsSet(routes, { ra: ps[0], rb: ps[1], sToe: ps[2], tside: ps[3] }, { ...p, ...ps[5] }, defaultThrowDir)
     : threeWaySet(routes, ps, p, defaultThrowDir)));
   const set0 = sets[0];
   const others = (i: number) => routes.map((_, j) => j).filter((j) => j !== i);

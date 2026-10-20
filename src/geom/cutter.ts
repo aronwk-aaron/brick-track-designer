@@ -8,8 +8,8 @@ import { PLATE_H, type Track } from './track';
 import type { Route } from '../route/route';
 import { railPoint, routeLat, routeLength, routePose } from '../route/route';
 
-/** A cut: through point p, along unit direction d. */
-export interface CutLine { p: [number, number]; d: [number, number] }
+/** A cut: through point p, along unit direction d; span: only the stretch from p + span[0] d to p + span[1] d gets couplers (a tile's edge, so the tiles either side agree). */
+export interface CutLine { p: [number, number]; d: [number, number]; span?: [number, number] }
 
 const deg = (r: number) => (r * 180) / Math.PI;
 
@@ -73,7 +73,7 @@ export function cutPiece(s: Scad, t: Track, body: Man, routes: Route[], lines: C
       return routes.some((rt) => Math.abs(routeLat(rt, q)) <= half - 5)
         && floorAt(strip, [q[0] + 2.5 * n[0], q[1] + 2.5 * n[1]], 2.5) && floorAt(strip, [q[0] - 2.5 * n[0], q[1] - 2.5 * n[1]], 2.5);
     };
-    const us = rails.map((r) => r[0]), lo = Math.min(...us, 0) - half - 20, hi = Math.max(...us, 0) + half + 20;
+    const us = rails.map((r) => r[0]), lo = L.span ? L.span[0] : Math.min(...us, 0) - half - 20, hi = L.span ? L.span[1] : Math.max(...us, 0) + half + 20;
     const couplers: number[] = [];
     let run: number[] = [];
     const flush = () => {

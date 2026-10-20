@@ -4,7 +4,7 @@
 // them, a track bed under all the routes, end connectors and breakaway
 // supports at every route end, and square stud sockets on the grid of the
 // first route's start, so the piece sits on plates and baseplates.
-import type { Route } from '../route/route';
+import type { Pose, Route } from '../route/route';
 import { railPoint, routeLat, routeLength, routePose } from '../route/route';
 import { solve, type Solution, type SolverOptions, SOLVER_DEFAULTS } from '../route/solver';
 import { Scad, T, R, type CS, type Man, type Vec2 } from './scad';
@@ -42,6 +42,8 @@ export interface CrossingExtras {
   innerEnds?: Set<string>;
   /** added to the piece, and cut from it at the end */
   adds?: Man[]; cuts?: Man[];
+  /** the stud grid's origin and heading (default: the first route's start), so tiles of one layout share it */
+  gridPose?: Pose;
 }
 
 /** grips, if given, gets the centres of the gripping stud sockets on the bed (mm). */
@@ -55,7 +57,16 @@ export function crossingPiece(s: Scad, routes: Route[], o: CrossingOptions = CRO
   const bands = routes.map((rt) => sweepRoute(s,
     rect(g - HEAD_HW - o.flangeway, g - HEAD_HW, RAIL_TOP - o.flangewayDepth, RAIL_TOP + 1)
       .add(rect(-g + HEAD_HW, -g + HEAD_HW + o.flangeway, RAIL_TOP - o.flangewayDepth, RAIL_TOP + 1)), rt));
-  const othersBands = (i: number) => bands.filter((_, j) => j !== i);
+  // (only the routes near enough to cut each other: on a big layout, every
+  // route against every other is most of the work)
+  const boxes = routes.map((rt) => {
+    const L = routeLength(rt), n = Math.max(1, Math.ceil(L / 4)), b = [Infinity, Infinity, -Infinity, -Infinity], pad = c.sleeperLen / 2 + 4;
+    for (let k = 0; k <= n; k++) { const p = routePose(rt, (L * k) / n); b[0] = Math.min(b[0], p[0] - pad); b[1] = Math.min(b[1], p[1] - pad); b[2] = Math.max(b[2], p[0] + pad); b[3] = Math.max(b[3], p[1] + pad); }
+    return b;
+  });
+  const meet = (a: number[], b: number[]) => a[0] <= b[2] && b[0] <= a[2] && a[1] <= b[3] && b[1] <= a[3];
+  const othersBands = (i: number) => bands.filter((_, j) => j !== i && meet(boxes[i], boxes[j]));
+  const nearCuts = (i: number, ms: Man[]) => ms.filter((m) => { const bb = m.boundingBox(); return meet(boxes[i], [bb.min[0], bb.min[1], bb.max[0], bb.max[1]]); });
 
   const parts: Man[] = [];
   routes.forEach((rt, i) => {
@@ -75,7 +86,7 @@ export function crossingPiece(s: Scad, routes: Route[], o: CrossingOptions = CRO
       sweepRoute(s, s.polygon(RAIL_PROFILE.map(([px, py]) => [px + x, py + PLATE_H] as Vec2)), rt))), endBoxes(END));
     const checks = sol.checkRails.filter((cr) => cr.route === i)
       .map((cr) => sweepRoute(s, rect(cr.offset, cr.offset + cr.width, PLATE_H - 0.01, RAIL_TOP), rt, cr.s0, cr.s1));
-    parts.push(s.difference(s.union([rails, ...checks]), [...othersBands(i), ...(x.railCuts?.get(i) ?? [])]));
+    parts.push(s.difference(s.union([rails, ...checks]), [...othersBands(i), ...nearCuts(i, x.railCuts?.get(i) ?? [])]));
     // Track bed under the route.
     parts.push(s.difference(sweepRoute(s, rect(-c.sleeperLen / 2, c.sleeperLen / 2, 0, PLATE_H), rt), endBoxes(BED_END)));
     // End connectors and breakaway supports, at both ends.
@@ -91,7 +102,7 @@ export function crossingPiece(s: Scad, routes: Route[], o: CrossingOptions = CRO
   // The underside, on the stud grid of the first route's start (spots at
   // 4 + 8k across and along in that frame, as on a straight).
   const box = body.boundingBox();
-  const p0 = routePose(routes[0], 0), h = (p0[2] * Math.PI) / 180;
+  const p0 = x.gridPose ?? routePose(routes[0], 0), h = (p0[2] * Math.PI) / 180;
   const reach = Math.ceil((Math.hypot(box.max[0] - box.min[0], box.max[1] - box.min[1]) + Math.hypot(box.min[0] - p0[0], box.min[1] - p0[1])) / STUD) + 2;
   const world = (lx: number, ly: number): [number, number] => [p0[0] + lx * Math.cos(h) - ly * Math.sin(h), p0[1] + lx * Math.sin(h) + ly * Math.cos(h)];
   const spots: { i: number; j: number; x: number; y: number }[] = [];
@@ -159,7 +170,7 @@ export function crossingPiece(s: Scad, routes: Route[], o: CrossingOptions = CRO
     const lattice = ((i % 4) + 4) % 4 === 0 && ((j % 4) + 4) % 4 === 0;
     const [x, y] = world(8 + i * STUD, 8 + j * STUD);
     if (edge || lattice) {
-      tubes.push(s.w.CrossSection.circle(TUBE_OD / 2, 48).subtract(s.w.CrossSection.circle(TUBE_ID / 2, 48)).translate([x, y]));
+      tubes.push(s.w.CrossSection.circle(TUBE_OD / 2, 24).subtract(s.w.CrossSection.circle(TUBE_ID / 2, 24)).translate([x, y]));
       grips?.push([x, y]);
     } else posts.push(s.w.CrossSection.circle(POST_D / 2, 24).translate([x, y]));
   }

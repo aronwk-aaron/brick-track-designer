@@ -9,7 +9,9 @@
 import type { Design, DRoute, DSeg } from './design';
 import { describe, follow, plan, planAnyway, planAuto, planFreeTurning, planToPose, reversed, trace, type Pose } from './planner';
 
-export interface Overlay { grooves: [number, number][][]; checkRails: [number, number][][]; crossings: [number, number][]; splits: [number, number][]; grips?: [number, number][]; items?: { kind: string; key: string; at: [number, number]; pts: [number, number][] }[] }
+export interface Overlay { grooves: [number, number][][]; checkRails: [number, number][][]; crossings: [number, number][]; splits: [number, number][]; grips?: [number, number][]; items?: OverlayItem[] }
+/** A trackwork item on the plan (mm); a lever ('throw') has its points' frame and settings, to drag it. */
+export interface OverlayItem { kind: string; key: string; at: [number, number]; pts: [number, number][]; dir?: [number, number]; lever?: { frame: [number, number, number]; side: number; edge: number; pivotY: number; maxTine: number; leverOffset: number; springLength: number } }
 
 export interface CanvasHost {
   design(): Design;
@@ -69,6 +71,51 @@ export class TrackCanvas {
   showGrips = true;
   /** Dragging a track's end: which route and end, where the press was, and the route as it was. */
   private drag: { route: number; end: 'start' | 'end'; sx: number; sy: number; moved: boolean; orig: DRoute; anchor: number; lastGood?: DRoute } | undefined;
+  /** Dragging a lever: its item, and where it would go (mm) with what settings. */
+  private leverDrag: { it: OverlayItem; moved: boolean; at?: [number, number]; arm?: [number, number][] } | undefined;
+  /** Dragging a check rail's or flangeway cut's end (longer or shorter), or points along: what, which setting, from where (studs), the way that adds (mm), and its value before. */
+  private itemDrag: { it: OverlayItem; prop: 'd0' | 'd1' | 'toe'; from: [number, number]; dir: [number, number]; base: number; at?: [number, number] } | undefined;
+  /** The check rail end, flangeway cut end or points under a point (studs), to drag. */
+  private itemAt(w: [number, number]) {
+    const r = Math.max(1, 9 / this.scale), d = this.host.design();
+    const near = (q: [number, number]) => Math.hypot(q[0] / MM - w[0], q[1] / MM - w[1]) < r;
+    const unit = (a: [number, number], b: [number, number]): [number, number] => { const l = Math.hypot(a[0] - b[0], a[1] - b[1]) || 1; return [(a[0] - b[0]) / l, (a[1] - b[1]) / l]; };
+    for (const it of this.overlay?.items ?? []) {
+      const cur = ((d.trackwork as Record<string, Record<string, Record<string, number>>> | undefined)?.[it.kind]?.[it.key]) ?? {};
+      if ((it.kind === 'check' || it.kind === 'groove') && it.pts.length > 1) {
+        const n = it.pts.length;
+        if (near(it.pts[0])) return { it, prop: 'd0' as const, from: w, dir: unit(it.pts[0], it.pts[1]), base: cur.d0 ?? 0 };
+        if (near(it.pts[n - 1])) return { it, prop: 'd1' as const, from: w, dir: unit(it.pts[n - 1], it.pts[n - 2]), base: cur.d1 ?? 0 };
+      }
+      if (it.kind === 'points' && it.dir && near(it.at)) return { it, prop: 'toe' as const, from: w, dir: it.dir, base: cur.toe ?? 0 };
+    }
+    return undefined;
+  }
+  /** The lever under a point (studs), if any. */
+  private leverAt(w: [number, number]) {
+    const r = Math.max(1.5, 12 / this.scale);
+    return this.overlay?.items?.find((it) => it.kind === 'throw' && it.lever && Math.hypot(it.at[0] / MM - w[0], it.at[1] / MM - w[1]) < r);
+  }
+  /** Move a lever to (near) w, studs: its side, how far out and how far along, as the switch allows. */
+  private dragLever(w: [number, number]) {
+    const ld = this.leverDrag!, lv = ld.it.lever!, [fx, fy, fh] = lv.frame, h = (fh * Math.PI) / 180;
+    // (snapped to a stud of the design's grid, so the arm sits square on the
+    // studs: the track's centre lines run between studs, so studs are at
+    // 4 + 8k mm; then held to where the switch lets the lever go)
+    const sx = Math.round((w[0] * MM - 4) / MM) * MM + 4, sy = Math.round((w[1] * MM - 4) / MM) * MM + 4;
+    const dx = sx - fx, dy = sy - fy;
+    const lx = dx * Math.cos(h) + dy * Math.sin(h), ly = -dx * Math.sin(h) + dy * Math.cos(h);
+    const side = lx >= 0 ? 1 : -1;
+    const leverOffset = Math.max(0, Math.min(80, Math.round((Math.abs(lx) - lv.edge) * 100) / 100));
+    const springLength = Math.max(16, Math.min(Math.floor(lv.maxTine), Math.round((lv.pivotY - 2 - ly) * 100) / 100));
+    const d = this.host.design(), tw = (d.trackwork ??= {}), group = (tw.throw ??= {});
+    const was = JSON.stringify(group[ld.it.key] ?? {});
+    group[ld.it.key] = { side: side > 0 ? 'right' : 'left', leverOffset, springLength };
+    const wd = (x: number, y: number): [number, number] => [fx + x * Math.cos(h) - y * Math.sin(h), fy + x * Math.sin(h) + y * Math.cos(h)];
+    const y = lv.pivotY - 2 - Math.min(springLength, lv.maxTine);
+    ld.at = wd(side * (lv.edge + leverOffset), y); ld.arm = [wd(side * (lv.edge - 8), y), ld.at];
+    if (JSON.stringify(group[ld.it.key]) !== was) this.host.changed(false);
+  }
 
   constructor(private el: HTMLCanvasElement, private host: CanvasHost) {
     this.ctx = el.getContext('2d')!;
@@ -170,6 +217,13 @@ export class TrackCanvas {
     }
     if (e.button === 2) { this.stopDrawing(); return; }
     const w = this.evWorld(e);
+    // Pressing on a lever: drag it (side, out, along)
+    if (!this.active && e.button === 0) {
+      const it = this.leverAt(w);
+      if (it) { this.leverDrag = { it, moved: false }; return; }
+      const id = this.itemAt(w);
+      if (id) { this.itemDrag = id; return; }
+    }
     // Pressing on a track's end (when not drawing): drag it to reshape the
     // track, or (Draw mode, no drag) carry the track on from there.
     if (!this.active) {
@@ -260,6 +314,23 @@ export class TrackCanvas {
       const p = this.evWorld(e); this.box.x1 = p[0]; this.box.y1 = p[1]; this.mouse = p;
       return this.draw();
     }
+    if (this.itemDrag) {
+      const id = this.itemDrag, p = this.evWorld(e), d = this.host.design();
+      this.mouse = p;
+      const along = ((p[0] - id.from[0]) * id.dir[0] + (p[1] - id.from[1]) * id.dir[1]) * MM;
+      let v = Math.round(id.base + along);
+      if (id.it.kind === 'groove') v = Math.max(0, v);
+      const tw = (d.trackwork ??= {}) as Record<string, Record<string, Record<string, number>>>, group = (tw[id.it.kind] ??= {});
+      if ((group[id.it.key]?.[id.prop] ?? 0) !== v) { group[id.it.key] = { ...group[id.it.key], [id.prop]: v }; this.host.changed(false); }
+      const end = id.prop === 'd0' ? id.it.pts[0] : id.prop === 'd1' ? id.it.pts[id.it.pts.length - 1] : id.it.at;
+      id.at = [end[0] + id.dir[0] * (v - id.base), end[1] + id.dir[1] * (v - id.base)];
+      return this.draw();
+    }
+    if (this.leverDrag) {
+      this.mouse = this.evWorld(e); this.leverDrag.moved = true;
+      this.dragLever(this.mouse);
+      return this.draw();
+    }
     if (this.moving) {
       const m = this.moving, p = this.evWorld(e), d = this.host.design();
       const dx = Math.round(p[0] - m.x), dy = Math.round(p[1] - m.y); // (whole studs: stays on the grid)
@@ -289,6 +360,8 @@ export class TrackCanvas {
   }
   private up(e: MouseEvent) {
     this.panning = undefined;
+    if (this.itemDrag) { const moved = !!this.itemDrag.at; this.itemDrag = undefined; if (moved) this.host.changed(true); return this.draw(); }
+    if (this.leverDrag) { const moved = this.leverDrag.moved; this.leverDrag = undefined; if (moved) this.host.changed(true); return this.draw(); }
     if (this.moving) { const moved = this.moving.moved; this.moving = undefined; if (moved) this.host.changed(true); return this.draw(); }
     if (this.box) {
       const b = this.box; this.box = undefined;
@@ -636,6 +709,23 @@ export class TrackCanvas {
         c.strokeStyle = '#f0b400'; c.lineWidth = 2.5; c.beginPath(); c.arc(hx, hy, 12, 0, 2 * Math.PI); c.stroke();
       }
       for (const p of this.overlay.splits) { const [sx, sy] = this.toScreen(p[0] / MM, p[1] / MM); c.fillStyle = '#f0b400'; c.fillRect(sx - 5, sy - 5, 10, 10); }
+      // handles: check rail and flangeway cut ends, dragged longer or shorter (and the one being dragged)
+      if (this.scale >= 4) for (const it of this.overlay.items ?? []) {
+        if ((it.kind !== 'check' && it.kind !== 'groove') || it.pts.length < 2) continue;
+        c.fillStyle = it.kind === 'check' ? '#2b6fe0' : '#e0452b';
+        for (const q of [it.pts[0], it.pts[it.pts.length - 1]]) { const [hx, hy] = this.toScreen(q[0] / MM, q[1] / MM); c.fillRect(hx - 2.5, hy - 2.5, 5, 5); }
+      }
+      if (this.itemDrag?.at) { const [hx, hy] = this.toScreen(this.itemDrag.at[0] / MM, this.itemDrag.at[1] / MM); c.strokeStyle = '#f0b400'; c.lineWidth = 2.5; c.beginPath(); c.arc(hx, hy, 7, 0, 2 * Math.PI); c.stroke(); }
+      // each points set's lever: its arm out to the knob (drag the knob to move it)
+      for (const it of this.overlay.items ?? []) {
+        if (it.kind !== 'throw') continue;
+        const live = this.leverDrag?.it.key === it.key && this.leverDrag.at;
+        const arm = live ? this.leverDrag!.arm! : it.pts, at = live ? this.leverDrag!.at! : it.at;
+        line(w(arm), 'rgba(232,137,43,0.35)', Math.max(3, (24 / MM) * this.scale));
+        const [kx, ky] = this.toScreen(at[0] / MM, at[1] / MM), kr = Math.max(5, (5 / MM) * this.scale);
+        c.fillStyle = '#e8892b'; c.strokeStyle = '#fff'; c.lineWidth = 1.5;
+        c.beginPath(); c.arc(kx, ky, kr, 0, 2 * Math.PI); c.fill(); c.stroke();
+      }
     }
     // while dragging an end: what the reshaped track is, or why not
     if (this.drag?.moved && this.mouse) {
