@@ -7,6 +7,7 @@ import { TrackCanvas } from './canvas';
 import { describe } from './planner';
 import type { Piece } from './build';
 import { zip } from '../geom/zip';
+import { threeMF } from '../geom/threemf';
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 const routesEl = $('routes'), infoEl = $('info'), errEl = $('error');
@@ -220,9 +221,13 @@ function applyExplode() {
     let host = trackIdx.find((t) => c.x >= boxes[t].min.x && c.x <= boxes[t].max.x && c.y >= boxes[t].min.y && c.y <= boxes[t].max.y);
     if (host === undefined) host = trackIdx.reduce((best, t) => (best < 0 || meshCentres[t].distanceTo(c) < meshCentres[best].distanceTo(c) ? t : best), -1);
     const off = host !== undefined && host >= 0 ? spread(host) : spread(k);
-    // (as they're put together: the slider from underneath, the points and the lid from above, the bracket on its studs, the lever into it)
+    // (as they're put together, each lifted clear of the last: 4DBrix's slider down into its opening, then the
+    // blades on it, the bracket on its studs, the lever into it; on tines, the slider and points from underneath,
+    // or with the layered points from above under the lid)
+    const fdb = (design.options?.mechStyle ?? '4dbrix') === '4dbrix';
     const fromTop = design.options?.pointsModule === 'layers' && (design.options?.ballast ?? 'none') !== 'none';
-    const lift: Record<string, number> = { throw: fromTop ? 15 : -30, points: fromTop ? 25 : -18, cassette: 45, bracket: 30, lever: 60 };
+    const lift: Record<string, number> = fdb ? { throw: 35, points: 70, cassette: 90, bracket: 50, lever: 110 }
+      : { throw: fromTop ? 15 : -30, points: fromTop ? 25 : -18, cassette: 45, bracket: 30, lever: 60 };
     m.position.set(off.x, off.y, e * (lift[meshKinds[k]] ?? 40));
   });
 }
@@ -306,6 +311,8 @@ const pointsSel = $<HTMLSelectElement>('points');
 pointsSel.value = String(design.pointsPieces ?? 1);
 pointsSel.addEventListener('change', () => { design.pointsPieces = Number(pointsSel.value) as 1 | 2; changed(true); });
 function gripLegend() {
+  // (one or two points parts only means anything for points on tines: 4DBrix's are always a blade each)
+  $('points').parentElement!.hidden = (design.options?.mechStyle ?? '4dbrix') === '4dbrix';
   $('legend-ballast').hidden = (design.options?.ballast ?? 'none') === 'none';
   let on: boolean; try { on = grip.value === 'edges'; } catch { return; } // (before the toolbar is set up)
   $('legend-grip').hidden = !on;
@@ -325,6 +332,12 @@ $('export-stl').addEventListener('click', () => {
   const base = fileBase();
   if (pieces.length === 1) download(new Blob([pieces[0].stl as BlobPart], { type: 'model/stl' }), `${base}.stl`);
   else download(new Blob([zip(pieces.map((p) => ({ name: `${base}-${p.name}.stl`, data: p.stl }))) as BlobPart], { type: 'application/zip' }), `${base}.zip`);
+});
+// All the pieces in one 3MF, each its own object laid out on the print bed, for Orca Slicer (or any slicer).
+$('export-3mf').addEventListener('click', () => {
+  if (!pieces.length) return;
+  const o = design.options ?? {};
+  download(new Blob([threeMF(pieces.map((p) => ({ name: p.name, stl: p.stl })), o.printBedX ?? 256, o.printBedY ?? 256) as BlobPart], { type: 'model/3mf' }), `${fileBase()}.3mf`);
 });
 // The design's name (asked on Save): what it saves and downloads under.
 const fileBase = () => (design.name || 'track-piece').replace(/[\\/:*?"<>|]+/g, '-').trim() || 'track-piece';

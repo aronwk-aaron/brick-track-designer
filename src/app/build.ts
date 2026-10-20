@@ -134,6 +134,8 @@ export function buildDesign(w: Wasm, design: Design, report: (what: string, frac
     const ed = tw.throw?.[key];
     // (pts: the arm's outline, as built: from the stock rail out to the stud line past the lever, 3 studs wide)
     const xOut = v.throwDir * Math.ceil((v.throwDir * (v.leverX + v.throwDir * 10)) / 8 - 1e-6) * 8, hw = 12;
+    // (4DBrix's slider's line: from past the far blade out to the arm's end, where no cut goes)
+    if (fdbPoints) for (let x = v.throwStockX - v.throwDir * (2 * track.c.railOffset + 16); v.throwDir * x <= v.throwDir * xOut + 1e-9; x += v.throwDir * 8) pointsAvoid.push(wd(x, v.throwY));
     items.push({ kind: 'throw', key, at: wd(v.leverX, v.throwY), pts: [wd(v.throwStockX, v.throwY - hw), wd(xOut, v.throwY - hw), wd(xOut, v.throwY + hw), wd(v.throwStockX, v.throwY + hw)],
       lever: { frame: P, side: v.throwDir, stockX: Math.abs(v.throwStockX), edge: Math.abs(v.throwEdgeX), minD: Math.abs(v.leverMinD), pivotY: v.pivotPt[1], maxTine: v.pivotPt[1] - 12.5,
         leverOffset: Math.round((Math.abs(v.leverX) - Math.abs(v.throwEdgeX)) * 100) / 100, springLength: Math.round(v.tineLen * 100) / 100, edited: !!ed } });
@@ -179,10 +181,14 @@ export function buildDesign(w: Wasm, design: Design, report: (what: string, frac
   // (where no cut goes: the crossings, and every points set from before its toe to past its heels,
   // so a cut never runs through the blades' slots and leaves strips of track between them)
   // (a split along a path may go through a crossing, across its rails, as a cut down the middle of a crossover has to: only the points are kept clear)
+  // (4DBrix's blades lie on the bed, loose: a cut may go under them, between their toes and the pins at their
+  // heels, clear of the slider's tunnel (its line kept clear as each lever's placed: leverItem))
+  const fdbPoints = params.mechStyle === '4dbrix';
   const pointsAvoid: [number, number][] = [];
   for (const sp of sol.splits) {
     const rt = routes[sp.routes[0]], [a0, a1] = sp.spans[0];
-    for (let s2 = a0 - 8; s2 <= a1 + 8; s2 += 12) { const q = railPoint(rt, Math.max(0, Math.min(routeLength(rt), s2)), 0); pointsAvoid.push([q[0], q[1]]); }
+    const heel = sp.merge ? a0 : a1, [s0, s1] = fdbPoints ? (sp.merge ? [heel - 8, heel + 16] : [heel - 16, heel + 8]) : [a0 - 8, a1 + 8];
+    for (let s2 = s0; s2 <= s1 + 1e-9; s2 += fdbPoints ? 8 : 12) { const q = railPoint(rt, Math.max(0, Math.min(routeLength(rt), s2)), 0); pointsAvoid.push([q[0], q[1]]); }
   }
   const cutAvoid: [number, number][] = [...overlay.crossings, ...pointsAvoid];
   const addTrack = (name: string, world: Man, pieceRoutes: typeof routes) => {
@@ -514,7 +520,7 @@ export function buildDesign(w: Wasm, design: Design, report: (what: string, frac
     const frameCuts = grooveCuts.map((m) => R(T(m, [-sw.pose[0], -sw.pose[1], 0]), [0, 0, -sw.pose[2]]));
     const gm = cached(`sw:${JSON.stringify({ routes: sw.routes, sets: sw.sets, params, cl, tw: tw.groove })}`, () => {
       const g = switchGeometry(scad, sw.plan, frameCuts);
-      return { bases: g.basePieces(), whole: g.base(), grips: g.grips, sets: sw.sets.map((_, k) => ({ thr: g.throwPart(k), pp: g.pointsParts(k), print: g.leverPrint(), lever: g.leverPart(k), bracket: params.throwModule ? g.bracketPart(k) : undefined })) };
+      return { bases: g.basePieces(), whole: g.base(), grips: g.grips, sets: sw.sets.map((_, k) => ({ thr: g.throwPart(k), thrPrint: g.throwPrint(k), pp: g.pointsParts(k), print: g.leverPrint(), lever: g.leverPart(k), bracket: params.throwModule ? g.bracketPart(k) : undefined })) };
     });
     const bases = gm.bases;
     // (its tubes, for the plan's grip marks, in the design's frame)
@@ -526,13 +532,13 @@ export function buildDesign(w: Wasm, design: Design, report: (what: string, frac
       const ls = cached(`lay:${JSON.stringify({ routes: sw.routes, sets: sw.sets, params, cl, tw: tw.groove })}`, () => layerSplit(place(gm.whole, sw.pose), lids, sw.pose));
       addTrack(`${tag}-base`, ls.lower, sw.covers.map(([ri, a, bb]) => subRoute(routes[ri], a, bb)));
       add(`${tag}-lid`, 0x6f7780, ls.deck, ls.deck);
-    } else if (bp) addTrack(`${tag}-base`, place(gm.whole, sw.pose), sw.covers.map(([ri, a, bb]) => subRoute(routes[ri], a, bb)));
+    } else if (bp || !bases.every(fitsBed)) addTrack(`${tag}-base`, place(gm.whole, sw.pose), sw.covers.map(([ri, a, bb]) => subRoute(routes[ri], a, bb)));
     else bases.forEach((m, j) => add(bases.length > 1 ? `${tag}-base${j + 1}` : `${tag}-base`, 0x6f7780, m, place(m, sw.pose)));
-    gm.sets.forEach(({ thr, pp, print, lever, bracket }, k) => {
+    gm.sets.forEach(({ thr, thrPrint, pp, print, lever, bracket }, k) => {
       const sfx = sw.sets.length > 1 ? `${k + 1}` : '';
       if (bracket) add(`${tag}-bracket${sfx}`, 0x8a8f99, bracket, place(bracket, sw.pose));
       pp.forEach((pts, j) => add(`${tag}-points${sfx}${pp.length > 1 ? (j === 0 ? '-a' : '-b') : ''}`, 0x4682b4, pts, place(pts, sw.pose)));
-      add(`${tag}-throw${sfx}`, 0xe8892b, thr, place(thr, sw.pose));
+      add(`${tag}-throw${sfx}`, 0xe8892b, thrPrint, place(thr, sw.pose));
       add(`${tag}-lever${sfx}`, 0xd4af37, print, place(lever, sw.pose));
     });
   });

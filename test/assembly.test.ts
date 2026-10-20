@@ -24,6 +24,9 @@ const cases: [string, Design][] = [
   ['left switch, 4DBrix points', { ...TEMPLATES['Left switch (LEGO)'], options: { mechStyle: '4dbrix' } }],
   ['wye on ballast, 4DBrix points', { ...TEMPLATES['Wye switch'], options: { ballast: 'buddy', mechStyle: '4dbrix' } }],
   ['crossover, 4DBrix points', { ...crossover, options: { mechStyle: '4dbrix' } }],
+  // (cut to a small bed: the cuts may go under the loose blades, but no rail-end tongue there)
+  ['crossover cut to a 128 bed', { ...crossover, options: { printBedX: 128, printBedY: 128 } }],
+  ['left switch cut to a 128 bed', { ...TEMPLATES['Left switch (LEGO)'], options: { printBedX: 128, printBedY: 128 } }],
 ];
 
 describe('every switch can be put together', { timeout: 120000 }, () => {
@@ -42,10 +45,18 @@ describe('every switch can be put together', { timeout: 120000 }, () => {
       const fromTop = d.options?.pointsModule === 'layers', bladesTop = (d.options?.mechStyle ?? '4dbrix') === '4dbrix';
       const problems: string[] = [];
       for (const p of b.pieces.filter((q) => /points|throw|lever|bracket/.test(q.name))) {
-        // (4DBrix's blades go in from above, the slider still from below)
-        const m = man(p), dir = /lever|bracket/.test(p.name) || fromTop || (bladesTop && !/throw/.test(p.name)) ? 1 : -1;
+        // (each moving part one piece)
+        const m = man(p);
+        if (m.decompose().length !== 1) problems.push(`${p.name} is in ${m.decompose().length} pieces`);
+        // (4DBrix's slider goes in from the top and along its tunnel: checked below; its blades go on after it, from above)
+        if (bladesTop && /throw/.test(p.name)) continue;
+        const dir = /lever|bracket/.test(p.name) || fromTop || bladesTop ? 1 : -1;
+        const blade = /points/.test(p.name) && !/throw|lever|bracket/.test(p.name);
+        const into = bladesTop && blade ? w.Manifold.union([track, ...b.pieces.filter((q) => /throw/.test(q.name)).map(man)]) : track;
+        // (a closed blade's tongue is modelled undeflected: in the slider's post by the preload; it bends aside going on)
+        const v0 = into === track ? 0 : m.intersect(into).volume() - m.intersect(track).volume();
         for (const dz of [0, 1, 2, 3, 4, 6, 8, 12, 16]) {
-          const v = m.translate([0, 0, dir * dz]).intersect(track).volume();
+          const v = m.translate([0, 0, dir * dz]).intersect(into).volume() - v0;
           if (v > 0.5) { problems.push(`${p.name} ${dz} mm ${dir > 0 ? 'up' : 'down'}: ${v.toFixed(1)} mm3 in the track`); break; }
         }
       }
@@ -53,6 +64,19 @@ describe('every switch can be put together', { timeout: 120000 }, () => {
         const m = man(p), others = w.Manifold.union([track, ...moving]);
         for (const dz of [0, 1, 2, 4, 8, 16]) { const v = m.translate([0, 0, dz]).intersect(others).volume(); if (v > 0.5) { problems.push(`${p.name} ${dz} mm up: ${v.toFixed(1)} mm3 in the rest`); break; } }
       }
-      expect(problems).toEqual([]);
+      // (4DBrix's slider: a floor under it, nothing open underneath; it goes in from the top, down through the
+      // lever's opening, and along its tunnel and the posts' groove: everything ahead of where its end is, clear
+      // all the way as it slides in (the part of it still out of the tunnel is in the opening, bent up out of it))
+      if (bladesTop) for (const p of b.pieces.filter((q) => /throw/.test(q.name))) {
+        const m = man(p), bb = m.boundingBox(), len = bb.max[0] - bb.min[0];
+        if (m.translate([0, 0, -1]).intersect(track).volume() < 0.5) problems.push(`${p.name} isn't floored`);
+        const clear = [-1, 1].some((sg) => {
+          const end = sg > 0 ? bb.max[0] : bb.min[0];
+          const ahead = track.intersect(w.Manifold.cube([1000, 1000, 1000]).translate([sg > 0 ? end + 0.5 - 1000 : end - 0.5, -500, -500]));
+          return [1, 2, 4, 8, 16, 32, 48, 64, 96].filter((dx) => dx < len).every((dx) => m.translate([sg * dx, 0, 0]).intersect(ahead).volume() < 0.5);
+        });
+        if (!clear) problems.push(`${p.name} can't slide in along its tunnel`);
+      }
+      expect(problems.join("; ")).toBe("");
     });
 });

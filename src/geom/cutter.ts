@@ -52,6 +52,8 @@ export function cutPiece(s: Scad, t: Track, body: Man, routes: Route[], lines: C
 
   // where the piece has floor (a slice through its bed), for the couplers
   const floor = body.slice(1.0);
+  // (and where it has rail: none where a loose blade lies on the bed, so no rail-end tongue there)
+  const railSl = body.slice(PLATE_H + 4.5);
   const floorAt = (fl: typeof floor, q: [number, number], r: number) => s.w.CrossSection.square([2 * r, 2 * r], true).translate(q).intersect(fl).area() > 4 * r * r * 0.95;
   const fb = body.boundingBox(), reachAll = Math.hypot(fb.max[0] - fb.min[0], fb.max[1] - fb.min[1]) + Math.hypot(fb.min[0], fb.min[1]) + Math.hypot(fb.max[0], fb.max[1]);
   // ---- each line's frame, rail crossings and coupler spots ----
@@ -62,6 +64,7 @@ export function cutPiece(s: Scad, t: Track, body: Man, routes: Route[], lines: C
     const place = (m: Man, u: number) => T(R(m, [0, 0, phi]), [L.p[0] + u * L.d[0], L.p[1] + u * L.d[1], 0]);
     // rails crossing the line: [u, heading in the cut's frame, rail type (-1 left, +1 right, as seen crossing to +y)]
     const rails: [number, number, number][] = [];
+    const band = s.w.CrossSection.square([2 * reachAll, 14], true).rotate(deg(Math.atan2(L.d[1], L.d[0]))).translate(L.p), railStrip = railSl.intersect(band);
     routes.forEach((rt) => {
       if (L.comb) return; // (a comb cut has no rail joints: the rails run along it, or are cut plain where one crosses)
       const len = routeLength(rt), step = 0.5;
@@ -75,7 +78,7 @@ export function cutPiece(s: Scad, t: Track, body: Man, routes: Route[], lines: C
             const q = railPoint(rt, lo, o), h = routePose(rt, lo)[2] - phi, hn = ((h + 540) % 360) - 180;
             // (a route crossing to -y: seen from the far side its rails swap)
             const fwd = Math.abs(hn) <= 90;
-            rails.push([toLocal(q)[0], fwd ? hn : hn + 180, fwd ? Math.sign(o) : -Math.sign(o)]);
+            if (s.w.CrossSection.square([1.2, 1.2], true).translate(q).intersect(railStrip).area() > 0.4) rails.push([toLocal(q)[0], fwd ? hn : hn + 180, fwd ? Math.sign(o) : -Math.sign(o)]);
           }
           prev = v;
         }
@@ -85,7 +88,7 @@ export function cutPiece(s: Scad, t: Track, body: Man, routes: Route[], lines: C
     // (on the bed, and with floor all round the peg on both sides of the cut)
     // (the floor near the line only: testing spots against the whole piece's
     // floor took minutes on a big layout)
-    const strip = floor.intersect(s.w.CrossSection.square([2 * reachAll, 14], true).rotate(deg(Math.atan2(L.d[1], L.d[0]))).translate(L.p));
+    const strip = floor.intersect(band);
     const onBed = (u: number) => {
       const q: [number, number] = [L.p[0] + u * L.d[0], L.p[1] + u * L.d[1]];
       return routes.some((rt) => Math.abs(routeLat(rt, q)) <= half - 5)
