@@ -9,7 +9,7 @@ import type { Route } from '../route/route';
 import { railPoint, routeLat, routeLength, routePose } from '../route/route';
 
 /** A cut: through point p, along unit direction d; span: only the stretch from p + span[0] d to p + span[1] d gets couplers (a tile's edge, so the tiles either side agree). */
-export interface CutLine { p: [number, number]; d: [number, number]; span?: [number, number]; /** this cut's own joint (baseplate edges: always 'lego') */ joint?: 'lego' | 'dovetail' | 'butt';
+export interface CutLine { p: [number, number]; d: [number, number]; span?: [number, number]; /** this cut's own joint (baseplate edges: always 'lego') */ joint?: 'lego' | 'dovetail' | 'butt' | 'axle';
   /** a cut along the track (4DBrix's way): interlocking fingers two studs wide and two deep, on the stud grid, instead of a straight cut */
   comb?: boolean }
 
@@ -21,7 +21,7 @@ const deg = (r: number) => (r * 180) / Math.PI;
  * rails and the bed), in the same frame as body.
  */
 /** flatRails: cut flat: the rails straight across with no tongues, and no peg and clip (nothing sticks out, nothing to support). */
-export function cutPiece(s: Scad, t: Track, body: Man, routes: Route[], lines: CutLine[], joint: 'lego' | 'dovetail' | 'butt' = 'lego', flatRails = false): Man[] {
+export function cutPiece(s: Scad, t: Track, body: Man, routes: Route[], lines: CutLine[], joint: 'lego' | 'dovetail' | 'butt' | 'axle' = 'lego', flatRails = false): Man[] {
   if (!lines.length) return [body];
   const G = t.c.railOffset, half = t.c.sleeperLen / 2;
   const cz0 = 0, ch = PLATE_H - cz0;
@@ -36,6 +36,15 @@ export function cutPiece(s: Scad, t: Track, body: Man, routes: Route[], lines: C
   // bottom up; 0.15 mm clear all round
   const bz = body.boundingBox().min[2];
   const tail = (grow: number) => T(s.extrude(s.polygon([[-2.2 - grow, 0.01], [2.2 + grow, 0.01], [3.6 + grow, -4.5 - grow], [-3.6 - grow, -4.5 - grow]]), PLATE_H - bz + (grow ? 2 : 0)), [0, 0, bz - (grow ? 1 : 0)]);
+  // axle (joint 'axle'): a LEGO cross-axle hole across the cut, two studs
+  // deep each side, in the solid between the underside's hollow and the top
+  // of the bed, for an axle (4 studs long) to pin the parts together;
+  // 0.1 mm over a LEGO axle's 4.8 x 1.8 cross
+  const axleZ = (bz + t.o.studH + 0.2 + PLATE_H) / 2, axleFits = PLATE_H - (bz + t.o.studH + 0.2) >= 5.4;
+  const axleHole = () => {
+    const cross = s.w.CrossSection.union([s.square([4.9, 1.9], true), s.square([1.9, 4.9], true)]);
+    return T(R(T(s.extrude(cross, 2 * 2 * 8 + 0.4), [0, 0, -(2 * 8 + 0.2)]), [90, 0, 0]), [0, 0, axleZ]);
+  };
   const cutTongue = (type: number, z0: number) => s.union([
     T(type < 0 ? t.railEndpointLeft() : t.railEndpointRight(), [-4, -4, 0]),
     type < 0 ? T(t.railSupport(3, 3.23 - z0), [-3.3, -3, z0]) : T(t.railSupport(4, 2.08 - z0), [-2.2, -3, z0]),
@@ -104,7 +113,7 @@ export function cutPiece(s: Scad, t: Track, body: Man, routes: Route[], lines: C
   // material removed at every cut: the rails round each joint, the notches and sockets on the far side
   const removals = s.union(frames.flatMap((f) => [
     ...(jointOf(f) === 'butt' || flatRails ? [] : f.rails.map((r) => f.place(R(cube([8, 8, 30], [-4, -4, -1]), [0, 0, r[1]]), r[0]))),
-    ...f.couplers.flatMap((u) => (jointOf(f) === 'lego' ? [f.place(couplerNotch(), u), f.place(couplerSocket(), u)] : jointOf(f) === 'dovetail' ? [f.place(tail(0.15), u)] : [])),
+    ...f.couplers.flatMap((u) => (jointOf(f) === 'lego' || (jointOf(f) === 'axle' && !axleFits) ? [f.place(couplerNotch(), u), f.place(couplerSocket(), u)] : jointOf(f) === 'dovetail' ? [f.place(tail(0.15), u)] : jointOf(f) === 'axle' ? [f.place(axleHole(), u)] : [])),
   ]));
   const cutBody = s.difference(body, [removals]);
 
@@ -148,7 +157,8 @@ export function cutPiece(s: Scad, t: Track, body: Man, routes: Route[], lines: C
       for (const u of f.couplers) {
         const q: [number, number] = [f.L.p[0] + u * f.L.d[0], f.L.p[1] + u * f.L.d[1]];
         if (!inCell(q)) continue;
-        if (jointOf(f) === 'lego') joints.push(side > 0 ? f.place(couplerPeg(), u) : f.place(R(couplerTab(), [0, 0, 180]), u));
+        // (an axle joint where the piece is too thin for the hole: peg and clip)
+        if (jointOf(f) === 'lego' || (jointOf(f) === 'axle' && !axleFits)) joints.push(side > 0 ? f.place(couplerPeg(), u) : f.place(R(couplerTab(), [0, 0, 180]), u));
         else if (jointOf(f) === 'dovetail' && side > 0) joints.push(f.place(tail(0), u));
       }
     });
