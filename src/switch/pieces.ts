@@ -58,6 +58,7 @@ export function planPieces(routes: Route[], splits: Split[], p: BaseParams = BAS
   // Splits by parent route, along it; those close together make one switch (a three-way).
   const byParent = new Map<number, { child: number; sa: number }[]>();
   for (const sp of splits) {
+    if (sp.merge) continue; // (merging points: the network piece's)
     const [i, j] = sp.routes, sa = sp.spans[0][0];
     if (!byParent.has(i)) byParent.set(i, []);
     byParent.get(i)!.push({ child: j, sa });

@@ -819,8 +819,21 @@ export function switchGeometry(s: Scad, plan: SwitchPlan) {
     ]));
   };
 
+  /**
+   * One points set's machinery on its own, for points built into a bigger
+   * piece (switch/network.ts): the raised bed, its pockets, the planed stock
+   * feet, the throw arm and its channel, and the cuts that take out the
+   * routes' rails the blades replace ([route, cut] in this frame).
+   */
+  const mech = (k = 0) => {
+    const v = sets[k];
+    return {
+      bed: pointsBed(v), pockets: pointsPockets(v), stockCut: stockFootCut(v), arm: throwArm(v), channel: throwChannel(v),
+      bladeRails: [0, 1].map((b) => [b === 0 ? v.ra : v.rb, sweep(sq([9, 30], [bO(b) - 4.5, -5]), bRt(v, b), 0, v.sHeel + c)] as [Route, Man]),
+    };
+  };
   return {
-    base, basePieces,
+    base, basePieces, mech,
     pointsPart: (k = 0) => pointsPart(sets[k]),
     /** The points' parts: one, or one per blade (pointsPieces 2). */
     pointsParts: (k = 0) => units(sets[k]).map((u) => unitPart(sets[k], u)),

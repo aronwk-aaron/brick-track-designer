@@ -34,8 +34,18 @@ const BED_END = 8;    // the track bed stops here (the connector's base is the r
 /** Place a shape given in a pose's frame (origin at the pose, +y along the heading). */
 const atPose = (m: Man, p: [number, number, number]) => T(R(m, [0, 0, p[2]]), [p[0], p[1], 0]);
 
+/** What a network piece (switch/network.ts) adds to the fixed trackwork: points built in. */
+export interface CrossingExtras {
+  /** cuts to each route's rails only (by route index): blades replacing rails, planed stock feet */
+  railCuts?: Map<number, Man[]>;
+  /** route ends inside the piece ("i:start" / "i:end"), where a route starts or ends on another: no connector there */
+  innerEnds?: Set<string>;
+  /** added to the piece, and cut from it at the end */
+  adds?: Man[]; cuts?: Man[];
+}
+
 /** grips, if given, gets the centres of the gripping stud sockets on the bed (mm). */
-export function crossingPiece(s: Scad, routes: Route[], o: CrossingOptions = CROSSING_DEFAULTS, solution?: Solution, grips?: [number, number][]): Man {
+export function crossingPiece(s: Scad, routes: Route[], o: CrossingOptions = CROSSING_DEFAULTS, solution?: Solution, grips?: [number, number][], x: CrossingExtras = {}): Man {
   const t = new Track(s, o), c = t.c, g = c.railOffset;
   const sol = solution ?? solve(routes, { ...SOLVER_DEFAULTS, gauge: c.trackGauge, flangeway: o.flangeway, checkRailW: o.checkRailW } as SolverOptions);
   const rect = (x0: number, x1: number, z0: number, z1: number) => s.square([x1 - x0, z1 - z0]).translate([x0, z0]);
@@ -55,27 +65,28 @@ export function crossingPiece(s: Scad, routes: Route[], o: CrossingOptions = CRO
     // Ends cut square to each end, as curves.scad does (so a curve's rails end
     // where the next piece's rail ends begin): boxes from the end in, in each
     // end's frame.
+    const inStart = x.innerEnds?.has(`${i}:start`), inEnd = x.innerEnds?.has(`${i}:end`);
     const endBoxes = (depth: number) => {
       const w = c.sleeperLen + 2 * STUD;
-      return [atPose(T(s.cube([w, depth + 1, 30]), [-w / 2, -1, -5]), p0),
-        atPose(T(s.cube([w, depth + 1, 30]), [-w / 2, -depth, -5]), p1)];
+      return [!inStart && atPose(T(s.cube([w, depth + 1, 30]), [-w / 2, -1, -5]), p0),
+        !inEnd && atPose(T(s.cube([w, depth + 1, 30]), [-w / 2, -depth, -5]), p1)];
     };
     const rails = s.difference(s.union([-g, g].map((x) =>
       sweepRoute(s, s.polygon(RAIL_PROFILE.map(([px, py]) => [px + x, py + PLATE_H] as Vec2)), rt))), endBoxes(END));
     const checks = sol.checkRails.filter((cr) => cr.route === i)
       .map((cr) => sweepRoute(s, rect(cr.offset, cr.offset + cr.width, PLATE_H - 0.01, RAIL_TOP), rt, cr.s0, cr.s1));
-    parts.push(s.difference(s.union([rails, ...checks]), othersBands(i)));
+    parts.push(s.difference(s.union([rails, ...checks]), [...othersBands(i), ...(x.railCuts?.get(i) ?? [])]));
     // Track bed under the route.
     parts.push(s.difference(sweepRoute(s, rect(-c.sleeperLen / 2, c.sleeperLen / 2, 0, PLATE_H), rt), endBoxes(BED_END)));
     // End connectors and breakaway supports, at both ends.
-    parts.push(atPose(T(t.fullEndpoint(true, true), [0, 4, 0]), p0));
-    parts.push(atPose(T(R(t.fullEndpoint(true, true), [0, 0, 180]), [0, -4, 0]), p1));
+    if (!inStart) parts.push(atPose(T(t.fullEndpoint(true, true), [0, 4, 0]), p0));
+    if (!inEnd) parts.push(atPose(T(R(t.fullEndpoint(true, true), [0, 0, 180]), [0, -4, 0]), p1));
     if (o.supports) {
-      parts.push(atPose(s.union([t.startRailSupports(-0.02), t.supportFooting(-0.02, 0, -1)]), p0));
-      parts.push(atPose(s.union([t.endRailSupports(-0.02), t.supportFooting(-0.02, 0, +1)]), p1));
+      if (!inStart) parts.push(atPose(s.union([t.startRailSupports(-0.02), t.supportFooting(-0.02, 0, -1)]), p0));
+      if (!inEnd) parts.push(atPose(s.union([t.endRailSupports(-0.02), t.supportFooting(-0.02, 0, +1)]), p1));
     }
   });
-  const body = s.union(parts);
+  const body = s.union([...parts, ...(x.adds ?? [])]);
 
   // The underside, on the stud grid of the first route's start (spots at
   // 4 + 8k across and along in that frame, as on a straight).
@@ -92,7 +103,7 @@ export function crossingPiece(s: Scad, routes: Route[], o: CrossingOptions = CRO
     }
   const cavH = o.studH + 0.21;
   const socket = (x: number, y: number) => T(R(t.studSocket(cavH), [0, 0, p0[2]]), [x, y, -0.01]);
-  if (o.grip === 'all') return s.difference(body, spots.map(({ x, y }) => socket(x, y)));
+  if (o.grip === 'all') return s.difference(body, [...spots.map(({ x, y }) => socket(x, y)), ...(x.cuts ?? [])]);
 
   // 'edges': hollow like a LEGO plate, a rim round each route's bed (not
   // under the end connectors), with anti-stud tubes between the studs that
@@ -159,5 +170,5 @@ export function crossingPiece(s: Scad, routes: Route[], o: CrossingOptions = CRO
     cuts.push(T(s.extrude(hollow, cavH), [0, 0, -0.01]));
   }
   for (const { i, j, x, y } of spots) if (!deep(i, j)) cuts.push(socket(x, y));
-  return s.difference(body, cuts);
+  return s.difference(body, [...cuts, ...(x.cuts ?? [])]);
 }
