@@ -12,7 +12,7 @@ import type { Pose, Route } from '../route/route';
 import { routeLength, routePose } from '../route/route';
 import type { Solution } from '../route/solver';
 import { reversedRoute } from './reverse';
-import { type BaseParams, switchGeometry, switchPlan, type SwitchPlan } from './base';
+import { type BaseParams, type SetSpec, switchGeometry, switchPlan, type SwitchPlan } from './base';
 import { gridLever, subRoute, type ThrowEdit, toFrame } from './pieces';
 
 export interface NetworkPart { name: string; color: number; local: Man; world: Man }
@@ -29,64 +29,93 @@ export interface SplitParts {
   stock: Man;
   /** cut from one route's rails (by route index): the rails the blades replace */
   bladeCuts: [number, Man][];
-  /** the route end that starts (or ends) at the points: no connector there */
-  inner: string;
+  /** the route ends that start (or end) at the points: no connector there */
+  inner: string[];
+  /** the solver's split it is (sol.splits index; a three-way's first) */
+  src: number;
   moving: NetworkPart[];
 }
 
-/** Each split's points (see SplitParts). */
+/** Each split's points (see SplitParts). Two branches leaving a route at
+ * the same point, one each side, make one true three-way (its other splits,
+ * the branches' from each other, are part of it). */
 export function networkSplits(s: Scad, routes: Route[], sol: Solution, p: BaseParams, toeShift: (at: [number, number]) => number = () => 0,
   throwEdit: (at: [number, number]) => ThrowEdit | undefined = () => undefined, gridLevers = false) {
   const warnings: string[] = [];
   const place = (m: Man, P: Pose) => T(R(m, [0, 0, P[2]]), [P[0], P[1], 0]);
-  const splits = sol.splits.map((sp, n): SplitParts => {
-    const [i, j] = sp.routes;
+  // ---- which splits make a three-way ----
+  const toeOf = (sp: Solution['splits'][number]) => { const s0 = sp.merge ? sp.spans[0][1] : sp.spans[0][0], q = routePose(routes[sp.routes[0]], s0); return [q[0], q[1]] as [number, number]; };
+  const near = (a: [number, number], b: [number, number]) => Math.hypot(a[0] - b[0], a[1] - b[1]) < 1;
+  const groups: { main: number; kids: number[] }[] = [], taken = new Set<number>();
+  sol.splits.forEach((sp, k) => {
+    if (taken.has(k)) return;
+    const toe = toeOf(sp);
+    const mates = sol.splits.map((o, m) => m).filter((m) => m !== k && !taken.has(m) && sol.splits[m].routes[0] === sp.routes[0] && !!sol.splits[m].merge === !!sp.merge && near(toeOf(sol.splits[m]), toe));
+    if (mates.length !== 1) { groups.push({ main: k, kids: [] }); return; }
+    const trio = [sp.routes[0], sp.routes[1], sol.splits[mates[0]].routes[1]];
+    // (and the branches' split from each other, at the same point)
+    const inside = sol.splits.map((o, m) => m).filter((m) => m !== k && m !== mates[0] && !taken.has(m) && sol.splits[m].routes.every((r) => trio.includes(r)) && near(toeOf(sol.splits[m]), toe));
+    groups.push({ main: k, kids: [mates[0], ...inside] });
+    taken.add(k); taken.add(mates[0]); inside.forEach((m) => taken.add(m));
+  });
+  const built: SplitParts[] = [];
+  for (const gr of groups) {
+    const sp = sol.splits[gr.main], n = built.length;
+    const [i, j] = sp.routes, j2 = gr.kids.length ? sol.splits[gr.kids[0]].routes[1] : -1;
     // the points' frame: at the split, looking the way the routes part
-    const parentDir = sp.merge ? reversedRoute(routes[i]) : routes[i];
-    const childDir = sp.merge ? reversedRoute(routes[j]) : routes[j];
+    const dirOf = (r: number) => (sp.merge ? reversedRoute(routes[r]) : routes[r]);
     const sa = sp.merge ? routeLength(routes[i]) - sp.spans[0][1] : sp.spans[0][0];
-    const P = routePose(parentDir, sa);
+    const P = routePose(dirOf(i), sa);
     const frame = (rt: Route): Route => ({ ...rt, start: toFrame(P, rt.start) });
-    const A = frame(subRoute(parentDir, sa, Math.min(routeLength(parentDir), sa + LOCAL_LEN), 'A'));
-    const B = frame(subRoute(childDir, 0, Math.min(routeLength(childDir), LOCAL_LEN), 'B'));
-    const far = Math.min(routePose(A, routeLength(A))[1], routePose(B, routeLength(B))[1]);
+    const A = frame(subRoute(dirOf(i), sa, Math.min(routeLength(dirOf(i)), sa + LOCAL_LEN), 'A'));
+    const kidRt = (r: number, id: string) => frame(subRoute(dirOf(r), 0, Math.min(routeLength(dirOf(r)), LOCAL_LEN), id));
+    const B = kidRt(j, 'B'), C = j2 >= 0 ? kidRt(j2, 'C') : undefined;
+    const all = C ? [A, B, C] : [A, B];
+    const far = Math.min(...all.map((rt) => routePose(rt, routeLength(rt))[1]));
     const xAt = (rt: Route) => { let lo = 0, hi = routeLength(rt); for (let k = 0; k < 50; k++) { const m = (lo + hi) / 2; if (routePose(rt, m)[1] < far) lo = m; else hi = m; } return routePose(rt, lo)[0]; };
+    // right to left; a three-way only with the main route between its branches
+    const local = [...all].sort((a, b) => xAt(b) - xAt(a));
+    const three = !!C && local[1] === A;
+    if (C && !three) warnings.push('two branches leave one side of a route at the same point: not built as a three-way');
     const bRight = xAt(B) > xAt(A);
-    const local = bRight ? [B, A] : [A, B];
+    const pair = bRight ? [B, A] : [A, B];
+    const rts = three ? local : pair;
     // (the lever: as moved by hand, else the branch's own setting, else the options', else the main route's side)
     const ed = throwEdit([P[0], P[1]]);
     const ownR = ed?.side ?? routes[j].throwSide;
     const own = ownR && ownR !== 'auto' ? ownR : p.throwSide;
-    const tside = own === 'left' ? -1 : own === 'right' ? 1 : bRight ? -1 : 1;
+    const tside = own === 'left' ? -1 : own === 'right' ? 1 : three ? 1 : bRight ? -1 : 1;
     const over = { ...(ed?.leverOffset !== undefined && { leverOffset: ed.leverOffset }), ...(ed?.springLength !== undefined && { springLength: ed.springLength }) };
-    let plan = switchPlan(local, [[0, 1, 2 + toeShift([P[0], P[1]]), tside, undefined, over]], p);
+    const spec = (o: typeof over): SetSpec => (three ? [0, 2, 2 + toeShift([P[0], P[1]]), tside, 1, o] : [0, 1, 2 + toeShift([P[0], P[1]]), tside, undefined, o]);
+    let plan = switchPlan(rts, [spec(over)], p);
     // (the lever on a stud of the design's grid, unless moved by hand)
     if (gridLevers && !(ed?.leverOffset !== undefined && ed?.springLength !== undefined)) {
       const g2 = gridLever(P, plan.sets[0], ed ?? {});
-      if (g2.leverOffset !== undefined) plan = switchPlan(local, [[0, 1, 2 + toeShift([P[0], P[1]]), tside, undefined, g2]], p);
+      if (g2.leverOffset !== undefined) plan = switchPlan(rts, [spec(g2)], p);
     }
     warnings.push(...plan.warnings.filter((w) => !/print bed/.test(w)));
     const gm = switchGeometry(s, plan), mech = gm.mech(0);
     // which design route (and which way round) each frame route is
-    const worldOf = (rt: Route) => (rt === local[0] ? (bRight ? j : i) : bRight ? i : j);
+    const worldOf = (rt: Route) => (rt === A ? i : rt === B ? j : j2);
     const moving: NetworkPart[] = [];
-    const tag = sol.splits.length > 1 ? `points${n + 1}` : 'points';
-    const pp = gm.pointsParts(0);
-    pp.forEach((m, k) => moving.push({ name: `${tag}${pp.length > 1 ? (k === 0 ? '-a' : '-b') : ''}`, color: 0x4682b4, local: m, world: place(m, P) }));
+    const tag = `points${groups.length > 1 ? n + 1 : ''}`;
+    const pts = gm.pointsParts(0);
+    pts.forEach((m, k) => moving.push({ name: `${tag}${pts.length > 1 ? (k === 0 ? '-a' : '-b') : ''}`, color: 0x4682b4, local: m, world: place(m, P) }));
     const thr = gm.throwPart(0);
     moving.push({ name: `${tag}-throw`, color: 0xe8892b, local: gm.throwPrint(0), world: place(thr, P) });
     moving.push({ name: `${tag}-lever`, color: 0xd4af37, local: gm.leverPrint(), world: place(gm.leverPart(0), P) });
     if (p.throwModule) { const br = gm.bracketPart(0); moving.push({ name: `${tag}-bracket`, color: 0x8a8f99, local: br, world: place(br, P) }); }
-    return {
-      toe: [P[0], P[1]], frame: P, set: plan.sets[0],
+    const end = sp.merge ? 'end' : 'start';
+    built.push({
+      toe: [P[0], P[1]], frame: P, set: plan.sets[0], src: gr.main,
       adds: [place(mech.bed, P), place(mech.arm, P)], cuts: [place(mech.pockets, P), place(mech.channel, P)],
       stock: place(mech.stockCut, P),
       bladeCuts: mech.bladeRails.map(([rt, cut]) => [worldOf(rt), place(cut, P)] as [number, Man]),
-      inner: sp.merge ? `${j}:end` : `${j}:start`,
+      inner: [`${j}:${end}`, ...(j2 >= 0 ? [`${j2}:${end}`] : [])],
       moving,
-    };
-  });
-  return { splits, warnings };
+    });
+  }
+  return { splits: built, warnings };
 }
 
 /** The piece's body with the given splits' points built in (routes and splits by the same route indices). */
@@ -98,7 +127,7 @@ export function networkBody(s: Scad, routes: Route[], sol: Solution, copt: Cross
     adds.push(...sp.adds); cuts.push(...sp.cuts);
     for (let k = 0; k < routes.length; k++) addCut(k, sp.stock);
     for (const [i, cut] of sp.bladeCuts) addCut(i, cut);
-    innerEnds.add(sp.inner);
+    for (const e of sp.inner) innerEnds.add(e);
   }
   // (a broken solid would empty the whole piece it meets: leave any out)
   const ok = (m: Man) => m.status() === 'NoError';

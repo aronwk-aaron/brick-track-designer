@@ -159,7 +159,7 @@ export function pointsSet(routes: Route[], ps: PointsSet, p: SwitchParams, defau
     warnings.push('not enough room between the blades for the spring tines; lower point_throw or spring_preload');
   if (forkMouthHw > g.leverTipD / 2 - 0.25) warnings.push("the fork's mouth is too wide to hold the lever's tip");
   return {
-    ra, rb, sToe, sHeel, toeY, sBpiv, pivotPt, throwAng, tineLen, yS, tineTip, throwTravel, leverTravel, postX,
+    ra, rb, sToe, sHeel, toeY, sBpiv, pivotPt, throwAng, tineLen, yS, tineTip, throwTravel, leverTravel, postX, fdbTravel,
     swingRange, pointsEndY, tipGap, throwDir, throwY, throwStockRt, throwStockX, throwFaceX, leverAng, leverTipZ,
     throwEdgeX, leverMinD, leverX, forkX, forkLipZ, forkTop, forkMouthHw, stepYa, stepYb, stepXo, armRect,
     bladeMidAt, warnings,

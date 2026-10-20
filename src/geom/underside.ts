@@ -96,10 +96,12 @@ export function hollowGrid(s: Scad, t: Track, cav: CS, wd: (lx: number, ly: numb
   };
   const tubeCS = (q: [number, number]) => W.CrossSection.circle((TUBE_OD - ANTISTUD_FIT) / 2, 24).subtract(W.CrossSection.circle((TUBE_ID + ANTISTUD_FIT) / 2, 24)).translate(q);
   const socks: CS[] = [], shapes: CS[] = [], grips: [number, number][] = [];
+  // (square sockets, turned with the grid)
+  const o0 = wd(0, 0), o1 = wd(1, 0), gridTurn = (Math.atan2(o1[1] - o0[1], o1[0] - o0[0]) * 180) / Math.PI;
   const mod4 = (n: number) => ((n % 4) + 4) % 4;
   for (let i = i0; i <= i1; i++) for (let j = j0; j <= j1; j++) {
     const sp = wd(4 + i * STUD, 4 + j * STUD), cn = wd(8 + i * STUD, 8 + j * STUD);
-    if (grip === 'all' || !deep(i, j)) socks.push(W.CrossSection.circle(t.c.studSocketW / 2, 24).translate(sp));
+    if (grip === 'all' || !deep(i, j)) socks.push(getSocketShape() === 'round' ? W.CrossSection.circle(t.c.studSocketW / 2, 24).translate(sp) : W.CrossSection.square([t.c.studSocketW, t.c.studSocketW], true).rotate(gridTurn).translate(sp));
     if (grip === 'all') {
       const ring = tubeCS(cn);
       if (ring.intersect(cav).area() > 1) { shapes.push(ring); grips.push(cn); }
