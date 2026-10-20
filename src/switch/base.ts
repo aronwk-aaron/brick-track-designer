@@ -292,7 +292,9 @@ export function switchPlan(routes: Route[], specs: SetSpec[], p: BaseParams = BA
       notes.push("a three-way's points have three positions: Peco's over-centre spring has two, so it's left out (they click on the lever instead)");
     if (p.throwAction === 'overcentre' && p.throwStand)
       notes.push("a switch stand locks the points at each end, so a train can't push them over: Peco's over-centre spring is left out");
-    if (p.throwAction === 'springback' && !p.throwStand)
+    if (p.throwAction === 'springback' && sets.some((v) => 'three' in v))
+      notes.push("a three-way's blades go twice as far: spring-back tongues that gave that much wouldn't fit between them, so it has the ordinary tongues");
+    else if (p.throwAction === 'springback' && !p.throwStand)
       notes.push("spring-back points: the lever's detent won't hold the slider against the blades' springs, so a train trailing through may move it; the switch stand locks it");
     if (p.throwStand && sets.some((v) => 'three' in v))
       notes.push("a switch stand locks at its two ends: a three-way's middle (straight) position is with the handle upright, not locked");
@@ -767,7 +769,7 @@ export function switchGeometry(s: Scad, plan: SwitchPlan, extraCuts: Man[] = [])
       const rt = bRt(v, b), o = bO(b), side = bSide(b);
       const pivot = railPoint(rt, v.sHeel - 4, o + side * FDB.pivotIn), tip = railPoint(rt, v.sToe, o);
       const ang = (p.pointThrow / norm(sub(tip, pivot))) * (180 / Math.PI);
-      const post = railPoint(rt, routeSOf(rt, [0, v.throwY], 0, -1, 26), o + side * (plateW / 2 + HEAD_HW));
+      const post = railPoint(rt, routeSOf(rt, [0, v.throwY], 0, -1, 26), o + side * (plateW(v) / 2 + HEAD_HW));
       // (tip ahead of the pivot: turning + moves it to -x; open is inward, the other way from the stock rail)
       // (the toe is behind the pivot: turning - moves it to -x, inward for blade 1)
       // (a three-way's other blade is open twice as far: the middle has both open by the throw)
@@ -788,7 +790,11 @@ export function switchGeometry(s: Scad, plan: SwitchPlan, extraCuts: Man[] = [])
     const sPost = sOf(rt, fb.post), kFull = Math.max(1, Math.min(6, Math.floor(((sPost - 5 - s0) / (s1 - s0)) * n)));
     // (the plate under the whole of the blade's rail, so the rail stands on it as printed: out to the rail's
     // outer face, and with prototype blades on in under the stock rail's undercut head)
-    const outer = edge(protoOn ? -HEAD_HW - PROTO.cut - 0.5 : -HEAD_HW), inner = edge(HEAD_HW + plateW).map((q, k) => { const t = Math.min(1, k / kFull); const e = outer[k]; return [e[0] + (q[0] - e[0]) * (0.35 + 0.65 * t), e[1] + (q[1] - e[1]) * (0.35 + 0.65 * t)] as Vec2; });
+    // (spring-back tongues' wider plate only as far as the tongue's root and a little more: back to the usual
+    // width toward the heel, where the routes' rails close in)
+    const sRoot = sPost + SB.len + 4, wAt = (k: number) => { const sk = s0 + ((s1 - s0) * k) / n; return FDB.plateW + (plateW(v) - FDB.plateW) * Math.min(1, Math.max(0, 1 - (sk - sRoot) / 8)); };
+    const innerEdge = Array.from({ length: n + 1 }, (_, k) => railPoint(rt, s0 + ((s1 - s0) * k) / n, o + side * (HEAD_HW + wAt(k))) as Vec2);
+    const outer = edge(protoOn ? -HEAD_HW - PROTO.cut - 0.5 : -HEAD_HW), inner = innerEdge.map((q, k) => { const t = Math.min(1, k / kFull); const e = outer[k]; return [e[0] + (q[0] - e[0]) * (0.35 + 0.65 * t), e[1] + (q[1] - e[1]) * (0.35 + 0.65 * t)] as Vec2; });
     let plate = W.CrossSection.union([s.polygon([...outer, ...inner.reverse()]), circle(FDB.discR, 40, fb.pivot)]);
     // the tongue: a U-slot round the post's hole, the tongue running toward the heel
     const d = sub(fb.pivot, fb.post), u = mul(d, 1 / norm(d)), nn: Pt = [u[1], -u[0]];
@@ -813,8 +819,14 @@ export function switchGeometry(s: Scad, plan: SwitchPlan, extraCuts: Man[] = [])
   // still go over together: the trailing wheels push one open and the
   // other shut. (There's no dashpot to slow their return, as a prototype
   // spring switch has: they snap back between wheelsets.)
-  const springback = fdb && p.throwAction === 'springback';
-  const plateW = springback ? SB.plateW : FDB.plateW;
+  // (not on a three-way: its blades go twice as far, and tongues that gave that much wouldn't fit between them)
+  const springback = fdb && p.throwAction === 'springback' && !sets.some((v) => 'three' in v);
+  /** The plate's width: with spring-back tongues wide enough for the tongue to give its all and leave 1.2 each side (a three-way's open twice as far). */
+  const plateW = (v: SetV) => {
+    if (!springback) return FDB.plateW;
+    const pivY = railPoint(v.ra, v.sHeel - 4, -G)[1], give = p.pointThrow * Math.max(0, pivY - v.throwY) / Math.max(1, pivY - v.toeY) + p.springPreload + 0.3;
+    return Math.max(SB.plateW, 2 * (give + FDB.postD / 2 * Math.SQRT2 + c + SB.padWall + 0.4 + 1.2));
+  };
   /** How far a tongue's tip must give: the blade's throw where the post meets it, the preload, and a little more. */
   const sbGive = (v: SetV, b: number) => { const f = fdbBlades(v)[b]; return rad(f.ang * (v.three ? 2 : 1)) * norm(sub(f.post, f.pivot)) + p.springPreload + 0.3; };
   /** The tongue (its pad round the post and its beam to the root) in plan, closed, along u from the post. */
