@@ -9,7 +9,7 @@
 import { type CrossingOptions, crossingPiece } from '../geom/crossing';
 import { R, T, type Man, type Scad } from '../geom/scad';
 import type { Pose, Route } from '../route/route';
-import { routeLength, routePose } from '../route/route';
+import { railPoint, routeLat, routeLength, routePose, routeSOf } from '../route/route';
 import type { Solution } from '../route/solver';
 import { reversedRoute } from './reverse';
 import { type BaseParams, type SetSpec, switchGeometry, switchPlan, type SwitchPlan } from './base';
@@ -58,6 +58,32 @@ export function networkSplits(s: Scad, routes: Route[], sol: Solution, p: BasePa
     groups.push({ main: k, kids: [mates[0], ...inside] });
     taken.add(k); taken.add(mates[0]); inside.forEach((m) => taken.add(m));
   });
+  // (points with another track's rail between their stock rails, toe to heels: their blades would lie on it. Say so:
+  // a switch whose points start in another's frog, or a tandem's second points in the first's lead, as drawn, can't work)
+  const G = ((p.gaugeStuds + 1) * 8) / 2;
+  const through = (k: number, rt: Route) => {
+    const sp = sol.splits[k], A = routes[sp.routes[0]], [s0, s1] = sp.spans[0], lo = s0 + (sp.merge ? 0 : 4), hi = s1 - (sp.merge ? 4 : 0);
+    const a0 = routePose(A, lo), a1 = routePose(A, hi), box = [Math.min(a0[0], a1[0]) - 2 * G, Math.min(a0[1], a1[1]) - 2 * G, Math.max(a0[0], a1[0]) + 2 * G, Math.max(a0[1], a1[1]) + 2 * G];
+    return [-G, G].some((o) => {
+      const L = routeLength(rt);
+      for (let t = 0; t <= L; t += 2) {
+        const q = railPoint(rt, t, o);
+        if (q[0] < box[0] || q[0] > box[2] || q[1] < box[1] || q[1] > box[3]) continue;
+        const sa = routeSOf(A, q);
+        if (sa > lo && sa < hi && Math.abs(routeLat(A, q)) < G - 1.25) return true;
+      }
+      return false;
+    });
+  };
+  const studsAt = (k: number) => { const q = toeOf(sol.splits[k]); return `${(q[0] / 8).toFixed(0)}, ${(q[1] / 8).toFixed(0)} (studs)`; };
+  for (const gr of groups) {
+    const sp = sol.splits[gr.main], mine = new Set([gr.main, ...gr.kids].flatMap((k) => sol.splits[k].routes));
+    if (routes.some((rt, r) => !mine.has(r) && through(gr.main, rt)))
+      warnings.push(`the points at ${studsAt(gr.main)} have another track's rail between their stock rails (in another switch's frog or points?): their blades would hit it; move them along`);
+    // (and a route of theirs that ends (or joins the next) before the points are done with it: its end connector on the blades)
+    const left = sp.routes.map((r, n) => (sp.merge ? sp.spans[n][0] : routeLength(routes[r]) - sp.spans[n][1]));
+    if (Math.min(...left) < 24) warnings.push(`a track ends in the points at ${studsAt(gr.main)}: carry it on past the frog`);
+  }
   const built: SplitParts[] = [];
   for (const gr of groups) {
     const sp = sol.splits[gr.main], n = built.length;
