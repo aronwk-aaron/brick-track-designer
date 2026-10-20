@@ -202,7 +202,7 @@ scene.add(group);
 // What the 3D view shows (Track, Points, Throws, Levers buttons), remembered.
 const shown = new Set(['track', 'points', 'throw', 'lever']);
 try { const v = localStorage.getItem('btd-shown'); if (v) { shown.clear(); for (const k of JSON.parse(v) as string[]) shown.add(k); } } catch { /* fine */ }
-const kindOf = (name: string) => (/lever/.test(name) ? 'lever' : /throw/.test(name) ? 'throw' : /points/.test(name) ? 'points' : 'track');
+const kindOf = (name: string) => (/cassette/.test(name) ? 'cassette' : /lever/.test(name) ? 'lever' : /throw/.test(name) ? 'throw' : /points/.test(name) ? 'points' : 'track');
 let meshKinds: string[] = [];
 // Exploded view: each part pulled out from the middle (the moving parts lifted too), to see where they separate.
 let meshCentres: THREE.Vector3[] = [];
@@ -212,12 +212,12 @@ function applyExplode() {
   meshCentres.forEach((c) => all.add(c)); if (meshCentres.length) all.divideScalar(meshCentres.length);
   meshes.forEach((m, k) => {
     const c = meshCentres[k];
-    m.position.set((c.x - all.x) * e * 0.5, (c.y - all.y) * e * 0.5, meshKinds[k] === 'track' ? 0 : e * 40);
+    m.position.set((c.x - all.x) * e * 0.5, (c.y - all.y) * e * 0.5, meshKinds[k] === 'track' ? 0 : meshKinds[k] === 'cassette' ? e * 25 : e * 50);
   });
 }
 explodeEl.addEventListener('input', applyExplode);
 function applyShown() {
-  meshes.forEach((m, k) => { m.visible = shown.has(meshKinds[k]); });
+  meshes.forEach((m, k) => { m.visible = shown.has(meshKinds[k] === 'cassette' ? 'track' : meshKinds[k]); });
   document.querySelectorAll<HTMLButtonElement>('#views .show').forEach((b) => b.classList.toggle('on', shown.has(b.dataset.show!)));
 }
 document.querySelectorAll<HTMLButtonElement>('#views .show').forEach((b) => b.addEventListener('click', () => {
@@ -528,6 +528,7 @@ const OPTION_FORM: [string, [keyof PieceOptions, string, number?][]][] = [
   ['Guards (check rails)', [['checkRailLen', 'Check rail length, mm', 2], ['checkRailW', 'Check rail width, mm', 0.1], ['checkRailFlare', 'End flare, mm', 0.25],
     ['flangeway', 'Flangeway width, mm', 0.1], ['flangewayDepth', 'Flangeway depth, mm', 0.5]]],
   ['Print bed', [['printBedX', 'Bed width, mm', 1], ['printBedY', 'Bed depth, mm', 1], ['baseplate', 'Cut at baseplate edges'], ['baseplateX', 'Plate corner x, studs', 1], ['baseplateY', 'Plate corner y, studs', 1], ['joint', 'Parts join with']]],
+  ['Points (prototype)', [['pointsModule', 'Points built as']]],
 ];
 function renderOptions() {
   const body = $('options-body'); body.replaceChildren();
@@ -535,7 +536,16 @@ function renderOptions() {
   for (const [title, fields] of OPTION_FORM) {
     const h = document.createElement('h4'); h.textContent = title; body.append(h);
     for (const [key, label, step] of fields) {
-      if (key === 'joint') {
+      if (key === 'pointsModule') {
+        const sel = document.createElement('select');
+        for (const [v, tx, tip] of [['built-in', 'Part of the track piece', 'As now: the points built into the track, the moving parts in pockets'],
+          ['drop-in', 'Drop-in cassette (through the track)', 'The points a part of their own that drops in from the top through a hole in the track, sitting on the baseplate studs'],
+          ['shelf', 'Drop-in cassette (on a ledge)', 'The same, the hole with a ledge round it the cassette sits on, so it stays in without a baseplate']]) { const op = new Option(tx, v); op.title = tip; sel.append(op); }
+        sel.value = o.pointsModule ?? 'built-in';
+        sel.title = 'Prototype: how the points are built';
+        sel.addEventListener('change', () => { design.options = { ...design.options, pointsModule: sel.value as PieceOptions['pointsModule'] }; changed(true); });
+        body.append(field(label, sel));
+      } else if (key === 'joint') {
         const sel = document.createElement('select');
         for (const [v, tx, tip] of [['lego', 'Rail tongues + peg and clip (LEGO)', 'As LEGO track joins: interlocking rail-end tongues, and a peg and C-clip in the bed'],
           ['dovetail', 'Rail tongues + dovetails', 'Interlocking rail-end tongues, and dovetails through the bed: stronger, slides together from above'],
