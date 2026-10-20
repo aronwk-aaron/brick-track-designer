@@ -116,6 +116,7 @@ function render() {
 // a big layout never holds up the next change)
 const newWorker = () => { const w2 = new Worker(new URL('./worker.ts', import.meta.url), { type: 'module' }); w2.onmessage = onBuilt; return w2; };
 let worker: Worker;
+let fatalRetry = -1;
 let seq = 0, started = 0, pieces: Piece[] = [], timer: number | undefined, restartCheck: number | undefined;
 function requestBuild() {
   const id = ++seq;
@@ -159,8 +160,9 @@ function onBuilt(e: MessageEvent) {
   // (the trackwork, ahead of the pieces: the plan and the Trackwork panel can be worked on while they build)
   if (d.early) { errEl.textContent = ''; canvas.overlay = d.early; canvas.draw(); renderTrackwork(d.early.items ?? []); return; }
   if (d.progress) { $('build-what').textContent = `${d.progress}…`; $('build-bar').style.width = `${Math.round((d.frac ?? 0) * 100)}%`; return; }
+  if (d.fatal && fatalRetry !== d.id) { fatalRetry = d.id; worker.terminate(); worker = newWorker(); worker.postMessage({ id: d.id, design: structuredClone(design) }); return; }
   buildDone();
-  if (d.error) { errEl.textContent = d.error; infoEl.textContent = ''; canvas.overlay = undefined; canvas.draw(); return; }
+  if (d.error) { errEl.textContent = d.error; infoEl.textContent = ''; return; } // (the plan keeps the trackwork it was sent)
   errEl.textContent = '';
   canvas.overlay = d.overlay;
   gripLegend();

@@ -37,7 +37,7 @@ function cached<T>(key: string, f: () => T): T {
   if (memo.has(key)) { const v = memo.get(key) as T; memo.delete(key); memo.set(key, v); return v; }
   const v = f();
   memo.set(key, v);
-  if (memo.size > 400) memo.delete(memo.keys().next().value!);
+  if (memo.size > 120) memo.delete(memo.keys().next().value!);
   return v;
 }
 const stlOf = new WeakMap<Man, Uint8Array>();
@@ -266,6 +266,7 @@ export function buildDesign(w: Wasm, design: Design, report: (what: string, frac
         // (baked: the block's solids are all let go, a whole yard's would fill the kernel's memory)
         return { ms: got.filter((m) => m.numTri() > 0).map(bake), grips: grips.filter((q) => q[0] > R[0] && q[0] <= R[2] && q[1] > R[1] && q[1] <= R[3]) };
       }, () => [])); } catch (err) {
+        if (err instanceof WebAssembly.RuntimeError || typeof err === 'number') throw err; // (the kernel's broken now: no use carrying on)
         bedWarnings.add(`part ${ci + 1} of ${name} (x ${Math.max(R[0], b[0]).toFixed(0)} to ${Math.min(R[2], b[2]).toFixed(0)}, y ${Math.max(R[1], b[1]).toFixed(0)} to ${Math.min(R[3], b[3]).toFixed(0)}) failed to build: ${err instanceof Error ? err.message : `kernel error ${String(err)}`}`);
         return;
       }
