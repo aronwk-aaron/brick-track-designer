@@ -16,7 +16,7 @@ describe('designs into pieces', { timeout: 60000 }, () => {
   });
   for (const [name, n, sets] of [['Right switch (LEGO)', 1, 1], ['Wye switch', 1, 1], ['Three-way switch (tandem, two throws)', 1, 2], ['Three-way switch (one throw)', 1, 1]] as const)
     it(`${name}: ${n} switch, ${sets} throw${sets > 1 ? 's' : ''}`, async () => {
-      const b = buildDesign(await kernel(), { ...TEMPLATES[name], options: BIG_BED });
+      const b = buildDesign(await kernel(), { ...TEMPLATES[name], options: { ...TEMPLATES[name].options, ...BIG_BED } });
       expect(b.info.warnings).toEqual([]);
       expect(b.info.switches).toBe(n);
       expect(b.pieces.filter((p) => /throw/.test(p.name))).toHaveLength(sets);  // (a throw per points set)
