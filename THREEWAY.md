@@ -104,3 +104,21 @@ per switch" layout.
 - Not printed yet. To check on a print: the closed blade's tines bend about
   4.6mm when the other blade is open (0.9mm tines, about 33mm long, about
   0.5% strain).
+
+## Tandems with the plate-style points (2026-10-20)
+
+On a tandem the first branch's rail runs on between the second points'
+stock rails, where the plate-style blade plates lie. Each plate is now cut clear
+of any other route's rail there: the rail's width at the plate, the
+clearance, and the blade's whole swing (src/switch/base.ts, fdbLayout).
+The pin and the slider's post are then moved so there's still 2 mm of
+plate round the pin's hole and alongside the tongue's slot. The post moves
+first, toward the blade's rail. Then the pin moves toward the rail, as near
+as its snap lip clears the rail on the plate. Last, the pin moves along
+toward the toe, which shortens the plate. The tandem template is back on
+the plate-style points: its second points' left pin moved in from 7 to 4.25 mm.
+It's still a warning where the other rail crosses a blade between its toe
+and heel (points in another switch's frog; a tandem whose first branch
+crosses the second branch at the second heel, as the R56 tandem-net and
+tandem-opposite fixtures do), or where no place for the pin and post keeps
+both rims.

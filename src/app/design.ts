@@ -147,8 +147,8 @@ export const TEMPLATES: Record<string, Design> = {
     { name: 'Left', x: 0, y: 0, heading: 0, segs: [{ kind: 'curve', radius: 40, angle: 22.5 }, { kind: 'straight', studs: 14 }] },
     { name: 'Right', x: 0, y: 0, heading: 0, segs: [{ kind: 'curve', radius: 40, angle: -22.5 }, { kind: 'straight', studs: 14 }] },
   ] },
-  // (on tines: the plate-style blade plates can't take the first branch's rail running through the second points)
-  'Three-way switch (tandem, two throws)': { version: 1, gaugeStuds: 4, options: { mechStyle: 'tines' }, routes: [
+  // (the first branch's rail runs on through the second points: their blades' plates are cut clear of it, the pin moved in)
+  'Three-way switch (tandem, two throws)': { version: 1, gaugeStuds: 4, routes: [
     { name: 'Straight', x: 0, y: 0, heading: 0, segs: [{ kind: 'straight', studs: 36 }] },
     { name: 'Left', x: 0, y: 0, heading: 0, segs: [{ kind: 'curve', radius: 40, angle: 22.5 }, { kind: 'straight', studs: 23 }] },
     { name: 'Right', x: 0, y: 8, heading: 0, segs: [{ kind: 'curve', radius: 40, angle: -22.5 }, { kind: 'straight', studs: 14 }] },

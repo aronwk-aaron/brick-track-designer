@@ -14,6 +14,8 @@ const cases: [string, Design][] = [
   ['left switch, plate-style points', { ...TEMPLATES['Left switch (LEGO)'], options: { mechStyle: 'plates' } }],
   ['wye on ballast, plate-style points', { ...TEMPLATES['Wye switch'], options: { ballast: 'buddy', mechStyle: 'plates' } }],
   ['crossover, plate-style points', { ...crossover, options: { mechStyle: 'plates' } }],
+  // (the first branch's rail between the second points' stock rails: their plates cut clear of it, one pin moved in)
+  ['tandem three-way', TEMPLATES['Three-way switch (tandem, two throws)']],
   // (the throw's actions, the switch stand and the prototype blades)
   ['left switch, switch stand', { ...TEMPLATES['Left switch (LEGO)'], options: { throwStyle: 'stand' } }],
   ['left switch, over-centre spring', { ...TEMPLATES['Left switch (LEGO)'], options: { throwAction: 'overcentre' } }],

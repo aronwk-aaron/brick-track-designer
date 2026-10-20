@@ -1,0 +1,80 @@
+{
+ "version": 1,
+ "gaugeStuds": 4,
+ "name": "tandem-net-r40",
+ "routes": [
+  {
+   "name": "L",
+   "x": -16,
+   "y": 0,
+   "heading": 0,
+   "segs": [
+    {
+     "kind": "straight",
+     "studs": 96
+    }
+   ]
+  },
+  {
+   "name": "M",
+   "x": 0,
+   "y": 0,
+   "heading": 0,
+   "segs": [
+    {
+     "kind": "straight",
+     "studs": 96
+    }
+   ]
+  },
+  {
+   "name": "R",
+   "x": 16,
+   "y": 0,
+   "heading": 0,
+   "segs": [
+    {
+     "kind": "straight",
+     "studs": 96
+    }
+   ]
+  },
+  {
+   "name": "ML",
+   "x": 0,
+   "y": 8,
+   "heading": 0,
+   "segs": [
+    {
+     "kind": "curve",
+     "radius": 40,
+     "angle": 36.869898
+    },
+    {
+     "kind": "curve",
+     "radius": 40,
+     "angle": -36.869898
+    }
+   ]
+  },
+  {
+   "name": "MR",
+   "x": 0,
+   "y": 17,
+   "heading": 0,
+   "segs": [
+    {
+     "kind": "curve",
+     "radius": 40,
+     "angle": -36.869898
+    },
+    {
+     "kind": "curve",
+     "radius": 40,
+     "angle": 36.869898
+    }
+   ]
+  }
+ ],
+ "options": {}
+}
