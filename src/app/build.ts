@@ -175,7 +175,7 @@ export function buildDesign(w: Wasm, design: Design, report: (what: string, frac
   // (how far each side of a centre line the track's base reaches: its sleepers, or its widest ballast layer)
   const bandHalf = (o.ballast === 'buddy' ? track.c.sleeperLen + 32 : o.ballast === 'ballast' ? track.c.sleeperLen + 16 : track.c.sleeperLen) / 2;
   // (what the joints stick out past a cut, both ends of a part: rail tongues, and the peg or dovetail)
-  const jointRoom = (o.joint === 'dovetail' ? 14 : o.joint === 'butt' ? 2 : 8) - (o.cutRails === 'flat' && o.joint !== 'butt' ? 4 : 0);
+  const jointRoom = (o.joint === 'dovetail' ? 14 : o.joint === 'butt' || o.joint === 'axle' ? 4 : 8) - (o.cutRails === 'flat' && o.joint !== 'butt' ? 4 : 0);
   // (where no cut goes: the crossings, and every points set from before its toe to past its heels,
   // so a cut never runs through the blades' slots and leaves strips of track between them)
   // (a split along a path may go through a crossing, across its rails, as a cut down the middle of a crossover has to: only the points are kept clear)

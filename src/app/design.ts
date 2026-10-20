@@ -58,7 +58,7 @@ export interface PieceOptions {
   /** Where a baseplate's corner is, studs (the plate grid's offset). */
   baseplateX: number; baseplateY: number;
   /** How parts cut for the bed or the baseplates join: 'lego' rail-end tongues with a peg and C-clip (as LEGO track); 'dovetail' rail tongues with dovetails through the bed; 'butt' straight cuts, held only by the baseplate under them; 'ends' separate pieces joined by ordinary track ends, cut only where the tracks are clear of each other (the plate-style way). */
-  joint?: 'lego' | 'dovetail' | 'butt' | 'ends';
+  joint?: 'lego' | 'dovetail' | 'butt' | 'ends' | 'axle';
   /** (prototype) The points: built into the one piece, their pockets through to the bottom (switch.scad's); on a solid floor, the pockets stopping on it ('floor'); or the piece in layers stacked from the top (the lower layer with the moving parts' pockets, the deck with the bed and rails over it, held by studs; needs ballast). */
   pointsModule?: 'built-in' | 'layers';
   /** Breakaway print supports under the rail-end tongues at each end (off: the slicer supports them). */

@@ -586,6 +586,7 @@ function renderOptions() {
         for (const [v, tx, tip] of [['lego', 'Rail tongues + peg and clip (LEGO)', 'As LEGO track joins: interlocking rail-end tongues, and a peg and C-clip in the bed'],
           ['dovetail', 'Rail tongues + dovetails', 'Interlocking rail-end tongues, and dovetails through the bed: stronger, slides together from above'],
           ['butt', 'Straight cuts (held by the baseplate)', 'Plain straight cuts, nothing to join them: the baseplate under them holds them in line'],
+          ['axle', 'Rail tongues + LEGO axles', 'A LEGO cross-axle hole across each cut, two studs deep each side, to pin the parts together with a 4-stud axle (needs ballast: the track alone is too thin; there it falls back to peg and clip)'],
           ['ends', 'Separate pieces, ordinary track ends (plate-style)', 'Each track cut square to itself where it is clear of the others, with a standard end connector both sides: points, frogs and crossings stay whole, plain track in lengths that fit the bed']]) { const op = new Option(tx, v); op.title = tip; sel.append(op); }
         sel.value = o.joint ?? 'lego';
         sel.title = 'How the parts cut for the print bed or the baseplates join';

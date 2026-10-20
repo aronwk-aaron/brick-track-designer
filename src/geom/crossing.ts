@@ -5,7 +5,7 @@
 // supports at every route end, and square stud sockets on the grid of the
 // first route's start, so the piece sits on plates and baseplates.
 import type { Pose, Route } from '../route/route';
-import { railPoint, routeLat, routeLength, routePose } from '../route/route';
+import { railPoint, routeLat, routeLength, routePose, routeSOf } from '../route/route';
 import { solve, type Solution, type SolverOptions, SOLVER_DEFAULTS } from '../route/solver';
 import { Scad, T, R, type CS, type Man, type Vec2 } from './scad';
 import { sweepRoute } from './sweep';
@@ -113,7 +113,38 @@ export function crossingPiece(s: Scad, routes: Route[], o: CrossingOptions = CRO
       if (!inEnd) parts.push(atPose(s.union([t.endRailSupports(zs), t.supportFooting(zs, 0, +1)]), p1));
     }
   });
-  const body = s.union([...parts, ...(x.adds ?? [])]);
+  // Studs on the bed, as on LEGO track's sleepers: on the stud grid (of the
+  // grid pose), between and beside the rails, wherever they're clear of
+  // every rail (and its flangeway), of the end connectors (which have their
+  // own) and of the points (their parts lie on the bed).
+  const addBoxes = (x.adds ?? []).map((m) => m.boundingBox());
+  const studPts: [number, number][] = [];
+  {
+    const gp = x.gridPose ?? routePose(routes[0], 0), hd = (gp[2] * Math.PI) / 180, clearR = c.postD / 2 + HEAD_HW + 0.6;
+    const bb0 = parts.length ? s.union(parts).boundingBox() : { min: [0, 0, 0], max: [0, 0, 0] };
+    const reachS = Math.ceil((Math.hypot(bb0.max[0] - bb0.min[0], bb0.max[1] - bb0.min[1]) + Math.hypot(bb0.min[0] - gp[0], bb0.min[1] - gp[1])) / STUD) + 2;
+    const ends = routes.flatMap((rt, i) => [!x.innerEnds?.has(`${i}:start`) && routePose(rt, 0), !x.innerEnds?.has(`${i}:end`) && routePose(rt, routeLength(rt))]).filter((e): e is Pose => !!e);
+    for (let i = -reachS; i <= reachS; i++) for (let j = -reachS; j <= reachS; j++) {
+      const lx = 4 + i * STUD, ly = 4 + j * STUD, q: [number, number] = [gp[0] + lx * Math.cos(hd) - ly * Math.sin(hd), gp[1] + lx * Math.sin(hd) + ly * Math.cos(hd)];
+      if (q[0] < bb0.min[0] || q[0] > bb0.max[0] || q[1] < bb0.min[1] || q[1] > bb0.max[1]) continue;
+      // (on some route's bed, well inside it)
+      if (!routes.some((r2) => Math.abs(routeLat(r2, q)) <= c.sleeperLen / 2 - c.postD / 2 - 0.5)) continue;
+      // (clear of every rail and its flangeway)
+      if (!routes.every((r2) => Math.abs(Math.abs(routeLat(r2, q)) - g) >= clearR)) continue;
+      // (clear of the end connectors: 8 mm in from each end)
+      if (ends.some((e) => { const dx = q[0] - e[0], dy = q[1] - e[1]; return Math.hypot(dx, dy) < c.sleeperLen && Math.abs(-dx * Math.sin((e[2] * Math.PI) / 180) + dy * Math.cos((e[2] * Math.PI) / 180)) < 10; })) continue;
+      if (addBoxes.some((bb) => q[0] > bb.min[0] - 3 && q[0] < bb.max[0] + 3 && q[1] > bb.min[1] - 3 && q[1] < bb.max[1] + 3)) continue;
+      // (and of the check rails)
+      if (sol.checkRails.some((cr) => {
+        const rt = routes[cr.route], lat = routeLat(rt, q), mid = cr.offset + cr.width / 2;
+        if (Math.abs(lat - mid) > c.postD / 2 + cr.width / 2 + 0.6) return false;
+        const sq2 = routeSOf(rt, q); return sq2 >= cr.s0 - 3 && sq2 <= cr.s1 + 3;
+      })) continue;
+      studPts.push(q);
+    }
+  }
+  const bedStuds = studPts.length ? s.union(studPts.map(([px, py]) => T(t.stud(c.postD, c.postH), [px, py, PLATE_H - 0.2]))) : undefined;
+  const body = s.union([...parts, ...(x.adds ?? []), bedStuds]);
   if (onBallast) return ballastPiece();
 
   // The underside, on the stud grid of the first route's start (spots at
