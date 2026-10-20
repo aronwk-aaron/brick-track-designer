@@ -47,4 +47,8 @@ describe('designs into pieces', { timeout: 60000 }, () => {
       expect((w <= 200 && h <= 200) || (w <= 200 && h <= 200), `${p.name}: ${w.toFixed(0)} x ${h.toFixed(0)}`).toBe(true);
     }
   });
+  it('a plain track longer than the print bed comes in equal lengths that fit it', async () => {
+    const b = buildDesign(await kernel(), { version: 1, gaugeStuds: 4, routes: [{ name: 'S', x: 0, y: 0, heading: 0, segs: [{ kind: 'straight', studs: 80 }] }] });
+    expect(b.pieces.map((p) => p.name)).toEqual(['track1', 'track2', 'track3']);
+  });
 });

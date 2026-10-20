@@ -7,9 +7,9 @@ import { CROSSING_DEFAULTS, crossingPiece } from '../geom/crossing';
 import type { Wasm } from '../geom/kernel';
 import { stlBytes } from '../geom/stl';
 import { solve } from '../route/solver';
-import { railPoint, type Pose } from '../route/route';
+import { railPoint, routeLength, type Pose } from '../route/route';
 import { BASE_DEFAULTS, switchGeometry } from '../switch/base';
-import { planPieces } from '../switch/pieces';
+import { planPieces, subRoute } from '../switch/pieces';
 import { type Design, OPTION_DEFAULTS, toRoutes } from './design';
 
 /** A built piece: its mesh in the design (for the view) and its STL (in its own frame, to print). */
@@ -51,9 +51,25 @@ export function buildDesign(w: Wasm, design: Design) {
     volume += local.volume();
   };
   if (pc.rest.length) {
-    const restSol = solve(pc.rest, solverOpts);
-    const m = crossingPiece(scad, pc.rest, { ...CROSSING_DEFAULTS, gaugeStuds: design.gaugeStuds, grip: design.grip ?? 'edges', flangeway: o.flangeway, flangewayDepth: o.flangewayDepth, checkRailW: o.checkRailW }, restSol, overlay.grips);
-    add('track', 0x6f7780, m, m);
+    const copt = { ...CROSSING_DEFAULTS, gaugeStuds: design.gaugeStuds, grip: design.grip ?? 'edges', flangeway: o.flangeway, flangewayDepth: o.flangewayDepth, checkRailW: o.checkRailW };
+    // Does a piece fit the print bed (either way round)?
+    const fits = (m: Man) => {
+      const b = m.boundingBox(), w = b.max[0] - b.min[0], h = b.max[1] - b.min[1];
+      return (w <= o.printBedX && h <= o.printBedY) || (w <= o.printBedY && h <= o.printBedX);
+    };
+    const whole = crossingPiece(scad, pc.rest, copt, solve(pc.rest, solverOpts), overlay.grips);
+    if (fits(whole) || pc.rest.length > 1) {
+      if (!fits(whole)) pc.warnings.push(`the fixed trackwork doesn't fit the ${o.printBedX} x ${o.printBedY} print bed, and pieces with crossings aren't split yet`);
+      add('track', 0x6f7780, whole, whole);
+    } else {
+      // A plain track longer than the bed: in equal lengths, joined like
+      // LEGO track pieces (rail-end tongues, peg and clip), each fitting it.
+      const rt = pc.rest[0], L = routeLength(rt);
+      for (let n = 2; n <= 20; n++) {
+        const bits = Array.from({ length: n }, (_, k) => crossingPiece(scad, [subRoute(rt, (L * k) / n, (L * (k + 1)) / n)], copt));
+        if (bits.every(fits) || n === 20) { bits.forEach((m, k) => add(`track${k + 1}`, 0x6f7780, m, m)); break; }
+      }
+    }
   }
   pc.switches.forEach((sw, n) => {
     const gm = switchGeometry(scad, sw.plan), tag = pc.switches.length > 1 ? `switch${n + 1}` : 'switch';
