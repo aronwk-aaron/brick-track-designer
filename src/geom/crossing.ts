@@ -54,7 +54,14 @@ export interface CrossingExtras {
 }
 
 /** grips, if given, gets the centres of the gripping stud sockets on the bed (mm). */
-export function crossingPiece(s: Scad, routes: Route[], o: CrossingOptions = CROSSING_DEFAULTS, solution?: Solution, grips?: [number, number][], x: CrossingExtras = {}): Man {
+export function crossingPiece(s: Scad, routes: Route[], o: CrossingOptions = CROSSING_DEFAULTS, solution?: Solution, grips?: [number, number][], x0: CrossingExtras = {}): Man {
+  // (route ends that another route runs on from, end to end (a route drawn in two, the track into a wye's toe): inner
+  // ends too, the piece one through there, not two connectors laid over each other inside it)
+  const joined = new Set(x0.innerEnds);
+  const endsAll = routes.flatMap((rt, i) => { const a = routePose(rt, 0), b = routePose(rt, routeLength(rt)); return [{ k: `${i}:start`, p: a, leave: a[2] }, { k: `${i}:end`, p: b, leave: b[2] + 180 }]; });
+  for (const a of endsAll) for (const b of endsAll)
+    if (a !== b && Math.hypot(a.p[0] - b.p[0], a.p[1] - b.p[1]) < 0.01 && Math.abs(((((a.leave - b.leave) % 360) + 540) % 360) - 180) > 179.5) joined.add(a.k); // (leaving opposite ways: one runs on from the other; a loop's own ends too)
+  const x: CrossingExtras = { ...x0, innerEnds: joined };
   const t = new Track(s, o), c = t.c, g = c.railOffset;
   const sol = solution ?? solve(routes, { ...SOLVER_DEFAULTS, gauge: c.trackGauge, flangeway: o.flangeway, checkRailW: o.checkRailW } as SolverOptions);
   const rect = (x0: number, x1: number, z0: number, z1: number) => s.square([x1 - x0, z1 - z0]).translate([x0, z0]);
