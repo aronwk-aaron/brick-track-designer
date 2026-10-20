@@ -202,7 +202,7 @@ scene.add(group);
 // What the 3D view shows (Track, Points, Throws, Levers buttons), remembered.
 const shown = new Set(['track', 'points', 'throw', 'lever']);
 try { const v = localStorage.getItem('btd-shown'); if (v) { shown.clear(); for (const k of JSON.parse(v) as string[]) shown.add(k); } } catch { /* fine */ }
-const kindOf = (name: string) => (/lid/.test(name) ? 'cassette' : /lever/.test(name) ? 'lever' : /throw/.test(name) ? 'throw' : /points/.test(name) ? 'points' : 'track');
+const kindOf = (name: string) => (/lid/.test(name) ? 'cassette' : /lever|bracket/.test(name) ? 'lever' : /throw/.test(name) ? 'throw' : /points/.test(name) ? 'points' : 'track');
 let meshKinds: string[] = [];
 // Exploded view: each part pulled out from the middle (the moving parts lifted too), to see where they separate.
 let meshCentres: THREE.Vector3[] = [];
@@ -522,7 +522,7 @@ updateSelbar();
 // ---------- piece options (switch.scad's Customizer settings) ----------
 const OPTION_FORM: [string, [keyof PieceOptions, string, number?][]][] = [
   ['Ballast', [['ballast', 'Ballast'], ['bottomStyle', 'Underside']]],
-  ['Throw', [['throwSide', 'Lever side'], ['leverOffset', 'Lever past the edge, mm', 1]]],
+  ['Throw', [['throwStyle', 'Lever mounted'], ['throwSide', 'Lever side'], ['leverOffset', 'Lever past the edge, mm', 1]]],
   ['Points', [['pointThrow', 'Blade throw, mm', 0.25], ['pointClearance', 'Clearance, mm', 0.05],
     ['springPreload', 'Spring preload, mm', 0.25], ['springThickness', 'Spring thickness, mm', 0.05], ['springLength', 'Spring length, mm', 1]]],
   ['Guards (check rails)', [['checkRailLen', 'Check rail length, mm', 2], ['checkRailW', 'Check rail width, mm', 0.1], ['checkRailFlare', 'End flare, mm', 0.25],
@@ -536,7 +536,14 @@ function renderOptions() {
   for (const [title, fields] of OPTION_FORM) {
     const h = document.createElement('h4'); h.textContent = title; body.append(h);
     for (const [key, label, step] of fields) {
-      if (key === 'cutRails') {
+      if (key === 'throwStyle') {
+        const sel = document.createElement('select');
+        for (const [v, tx, tip] of [['bracket', 'On its own bracket (plate-style)', 'The lever on a separate 3 x 3 stud bracket that sits on studs on the arm, as plate-style throws are'],
+          ['built-in', 'Built into the arm', 'The lever\'s ears part of the track piece\'s arm']]) { const op = new Option(tx, v); op.title = tip; sel.append(op); }
+        sel.value = o.throwStyle ?? 'bracket';
+        sel.addEventListener('change', () => { design.options = { ...design.options, throwStyle: sel.value as PieceOptions['throwStyle'] }; changed(true); });
+        body.append(field(label, sel));
+      } else if (key === 'cutRails') {
         const sel = document.createElement('select');
         for (const [v, tx, tip] of [['tongues', 'Interlocking tongues (LEGO)', 'The rails at a cut get interlocking tongues, as LEGO track ends: they overhang, so they print with supports'],
           ['flat', 'Cut flat', 'The rails cut flat across: nothing overhangs, no supports to print; the bed joint and the baseplate hold the parts in line']]) { const op = new Option(tx, v); op.title = tip; sel.append(op); }

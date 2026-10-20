@@ -76,6 +76,7 @@ export function networkSplits(s: Scad, routes: Route[], sol: Solution, p: BasePa
     const thr = gm.throwPart(0);
     moving.push({ name: `${tag}-throw`, color: 0xe8892b, local: thr, world: place(thr, P) });
     moving.push({ name: `${tag}-lever`, color: 0xd4af37, local: gm.leverPrint(), world: place(gm.leverPart(0), P) });
+    if (p.throwModule) { const br = gm.bracketPart(0); moving.push({ name: `${tag}-bracket`, color: 0x8a8f99, local: br, world: place(br, P) }); }
     return {
       toe: [P[0], P[1]], frame: P, set: plan.sets[0],
       adds: [place(mech.bed, P), place(mech.arm, P)], cuts: [place(mech.pockets, P), place(mech.channel, P)],

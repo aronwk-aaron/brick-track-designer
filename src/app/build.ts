@@ -150,7 +150,8 @@ export function buildDesign(w: Wasm, design: Design, report: (what: string, frac
   const params = { ...BASE_DEFAULTS, ...o, gaugeStuds: design.gaugeStuds, studGrip: design.grip ?? 'edges', pointsPieces: design.pointsPieces ?? 1,
     generateBallast: o.ballast !== 'none', ballastBuddy: o.ballast === 'buddy', bottomStyle: o.bottomStyle,
     // (a floor under the moving parts only with the lid over them: otherwise they go in from below, through their pockets)
-    ...(o.pointsModule === 'layers' && o.ballast !== 'none' && { mechFloor: 1.2 }), endSupports: o.endSupports !== false };
+    ...(o.pointsModule === 'layers' && o.ballast !== 'none' && { mechFloor: 1.2 }), endSupports: o.endSupports !== false,
+    throwModule: (o.throwStyle ?? 'bracket') === 'bracket' };
 
   let pc = planPieces(routes, sol.splits, params, toeShift, throwEdit, true);
   steps = 2 + pc.switches.length + (pc.rest.length ? 1 : 0);
@@ -503,7 +504,7 @@ export function buildDesign(w: Wasm, design: Design, report: (what: string, frac
     const frameCuts = grooveCuts.map((m) => R(T(m, [-sw.pose[0], -sw.pose[1], 0]), [0, 0, -sw.pose[2]]));
     const gm = cached(`sw:${JSON.stringify({ routes: sw.routes, sets: sw.sets, params, cl, tw: tw.groove })}`, () => {
       const g = switchGeometry(scad, sw.plan, frameCuts);
-      return { bases: g.basePieces(), whole: g.base(), grips: g.grips, sets: sw.sets.map((_, k) => ({ thr: g.throwPart(k), pp: g.pointsParts(k), print: g.leverPrint(), lever: g.leverPart(k) })) };
+      return { bases: g.basePieces(), whole: g.base(), grips: g.grips, sets: sw.sets.map((_, k) => ({ thr: g.throwPart(k), pp: g.pointsParts(k), print: g.leverPrint(), lever: g.leverPart(k), bracket: params.throwModule ? g.bracketPart(k) : undefined })) };
     });
     const bases = gm.bases;
     // (its tubes, for the plan's grip marks, in the design's frame)
@@ -517,8 +518,9 @@ export function buildDesign(w: Wasm, design: Design, report: (what: string, frac
       add(`${tag}-lid`, 0x6f7780, ls.deck, ls.deck);
     } else if (bp) addTrack(`${tag}-base`, place(gm.whole, sw.pose), sw.covers.map(([ri, a, bb]) => subRoute(routes[ri], a, bb)));
     else bases.forEach((m, j) => add(bases.length > 1 ? `${tag}-base${j + 1}` : `${tag}-base`, 0x6f7780, m, place(m, sw.pose)));
-    gm.sets.forEach(({ thr, pp, print, lever }, k) => {
+    gm.sets.forEach(({ thr, pp, print, lever, bracket }, k) => {
       const sfx = sw.sets.length > 1 ? `${k + 1}` : '';
+      if (bracket) add(`${tag}-bracket${sfx}`, 0x8a8f99, bracket, place(bracket, sw.pose));
       pp.forEach((pts, j) => add(`${tag}-points${sfx}${pp.length > 1 ? (j === 0 ? '-a' : '-b') : ''}`, 0x4682b4, pts, place(pts, sw.pose)));
       add(`${tag}-throw${sfx}`, 0xe8892b, thr, place(thr, sw.pose));
       add(`${tag}-lever${sfx}`, 0xd4af37, print, place(lever, sw.pose));

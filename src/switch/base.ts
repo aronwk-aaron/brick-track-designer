@@ -591,16 +591,14 @@ export function switchGeometry(s: Scad, plan: SwitchPlan, extraCuts: Man[] = [])
   ]);
 
   // ---------- the throw ----------
-  const throwArm = (v: SetV) => {
-    // (the arm's end out to the next stud line, so it sits square on the studs)
-    const xIn = v.throwStockX, xEnd = v.leverX + v.throwDir * 10, parts: Man[] = [];
-    const xOut = scadParity() ? xEnd : v.throwDir * Math.ceil((v.throwDir * xEnd) / STUD - 1e-6) * STUD;
-    parts.push(cube([Math.abs(xOut - xIn), g.armW, bedTop - pieceBottomZ], [Math.min(xIn, xOut), v.throwY - g.armW / 2, pieceBottomZ]));
+  /** The lever's ears (one with its pivot hole and the detent dimples, the other with the snap dome), standing on z0. */
+  const ears = (v: SetV, z0: number) => {
+    const out: Man[] = [];
     const cylY = (d: number, h: number, fn: number, at: Vec3) => T(R(T(s.cylinder(h, d / 2, d / 2, fn), [0, 0, -h / 2]), [90, 0, 0]), at);
     for (const sg of [-1, 1]) {
       const ey = v.throwY + sg * (g.leverBossLen / 2 + c + g.leverEarT / 2);
       let ear = W.Manifold.hull([
-        cube([8, g.leverEarT, 0.01], [v.leverX - 4, ey - g.leverEarT / 2, PLATE_H - 0.01]),
+        cube([8, g.leverEarT, 0.01], [v.leverX - 4, ey - g.leverEarT / 2, z0 - 0.01]),
         cylY(7, g.leverEarT, 32, [v.leverX, ey, g.leverPz]),
         cylY(2 * g.leverBumpR * sind(v.leverAng) + 3.4, g.leverEarT, 32, [v.leverX, ey, g.leverPz + g.leverBumpR]),
       ]);
@@ -609,7 +607,7 @@ export function switchGeometry(s: Scad, plan: SwitchPlan, extraCuts: Man[] = [])
           cylY(2.4 + 2 * c, 10, 24, [v.leverX, ey, g.leverPz]),
           ...(v.three ? [-v.leverAng, 0, v.leverAng] : [-v.leverAng, v.leverAng]).map((a) => cylY(1.4, 10, 12, [v.leverX + g.leverBumpR * sind(a), ey, g.leverPz + g.leverBumpR * cosd(a)])),
         ]);
-      parts.push(ear);
+      out.push(ear);
       if (sg < 0) {
         // snap dome: OpenSCAD's sphere(d = 2.4, $fn = 24), squashed to 0.7, turned to point +y
         const pts: Vec3[] = [], rings = 12, r = 1.2;
@@ -624,10 +622,29 @@ export function switchGeometry(s: Scad, plan: SwitchPlan, extraCuts: Man[] = [])
         }
         const base = [[0, 0, 0], [1.2, 0, 0], [0, g.leverEarT / 2, 0], [1.2, g.leverEarT / 2, 0], [0, 0, 0.01], [1.2, 0, 0.01], [0, g.leverEarT / 2, 0.01], [1.2, g.leverEarT / 2, 0.01]]
           .map(([x, y, z]) => [v.leverX - 0.6 + x, ey + y, g.leverPz - 1.2 - 0.84 - 0.5 + z] as Vec3);
-        parts.push(W.Manifold.hull([...pts, ...base]));
+        out.push(W.Manifold.hull([...pts, ...base]));
       }
     }
+    return out;
+  };
+  /** (the plate-style throw) the studs on the arm the bracket sits on: two rows of three round the lever, clear of its slot. */
+  const bracketStuds = (v: SetV) => [-1, 0, 1].flatMap((i) => [-1, 1].map((j): [number, number] => [v.leverX + i * STUD, v.throwY + j * STUD]));
+  const throwArm = (v: SetV) => {
+    // (the arm's end out to the next stud line, so it sits square on the studs)
+    const xIn = v.throwStockX, xEnd = v.leverX + v.throwDir * 10, parts: Man[] = [];
+    const xOut = scadParity() ? xEnd : v.throwDir * Math.ceil((v.throwDir * xEnd) / STUD - 1e-6) * STUD;
+    parts.push(cube([Math.abs(xOut - xIn), g.armW, bedTop - pieceBottomZ], [Math.min(xIn, xOut), v.throwY - g.armW / 2, pieceBottomZ]));
+    if (p.throwModule) parts.push(...bracketStuds(v).map(([x, y]) => T(t.stud(), [x, y, bedTop - 0.01])));
+    else parts.push(...ears(v, PLATE_H));
     return s.union(parts);
+  };
+  /** (the plate-style throw) the bracket: a 3 x 3 stud plate on the arm's studs, slotted for the lever, with the ears on it. */
+  const bracketPart = (v: SetV) => {
+    const z0 = bedTop, plate = cube([3 * STUD - 0.2, 3 * STUD - 0.2, PLATE_H], [v.leverX - 1.5 * STUD + 0.1, v.throwY - 1.5 * STUD + 0.1, z0]);
+    const socks = bracketStuds(v).map(([x, y]) => T(s.cylinder(t.o.studH + 0.2, tc.studSocketW / 2, tc.studSocketW / 2, 24), [x, y, z0 - 0.01]));
+    const wf = g.leverBossLen + 2 * c, f0 = Math.min(v.forkX - forkHw, v.forkX + v.leverTravel + forkHw) - c - 1, f1 = Math.max(v.forkX - forkHw, v.forkX + v.leverTravel + forkHw) + c + 1;
+    const slot = cube([f1 - f0, wf, 30], [f0, v.throwY - wf / 2, z0 - 1]);
+    return s.union([s.difference(plate, [...socks, slot]), ...ears(v, z0 + PLATE_H)]);
   };
   const forkHw = g.leverTipD / 2 + c + g.forkWall;
   const throwChannel = (v: SetV) => {
@@ -1002,6 +1019,8 @@ export function switchGeometry(s: Scad, plan: SwitchPlan, extraCuts: Man[] = [])
     pointsUnits: (k = 0) => units(sets[k]).map((u) => ({ pivot: u.pivot, swing: u.swing })),
     throwPart: (k = 0) => throwPart(sets[k]),
     leverPart: (k = 0) => leverPart(sets[k]),
+    /** (throwModule) the lever's bracket, on the arm's studs. */
+    bracketPart: (k = 0) => bracketPart(sets[k]),
     leverShape, leverPrint,
     grips,
   };

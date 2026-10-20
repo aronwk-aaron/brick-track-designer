@@ -65,6 +65,8 @@ export interface PieceOptions {
   endSupports?: boolean;
   /** Where a part is cut: the rails with interlocking tongues (as LEGO track), or cut flat across (no overhangs, no supports to print). */
   cutRails?: 'tongues' | 'flat';
+  /** The throw: 'bracket' (the plate-style: the lever on its own 3 x 3 stud bracket, on studs on the arm) or 'built-in' (the ears part of the arm). */
+  throwStyle?: 'bracket' | 'built-in';
   /** Ballast under the track: none, ballast, or ballast with the wider buddy layer under it. */
   ballast: 'none' | 'ballast' | 'buddy';
   /** With ballast: the underside, anti-stud (hollow with tubes) or flat. */
@@ -72,7 +74,7 @@ export interface PieceOptions {
 }
 export const OPTION_DEFAULTS: PieceOptions = {
   throwSide: 'auto', leverOffset: 8, pointThrow: 3, pointClearance: 0.3, springPreload: 1, springThickness: 0.9, springLength: 40,
-  flangeway: 3, flangewayDepth: 3, checkRailLen: 30, checkRailW: 1, checkRailFlare: 1.5, printBedX: 256, printBedY: 256, baseplate: 0, baseplateX: 0, baseplateY: 0, ballast: 'none', bottomStyle: 'antistud', joint: 'lego', pointsModule: 'built-in', endSupports: true, cutRails: 'tongues',
+  flangeway: 3, flangewayDepth: 3, checkRailLen: 30, checkRailW: 1, checkRailFlare: 1.5, printBedX: 256, printBedY: 256, baseplate: 0, baseplateX: 0, baseplateY: 0, ballast: 'none', bottomStyle: 'antistud', joint: 'lego', pointsModule: 'built-in', endSupports: true, cutRails: 'tongues', throwStyle: 'bracket',
 };
 
 export function toRoutes(d: Design): Route[] {
