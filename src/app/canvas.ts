@@ -106,14 +106,16 @@ export class TrackCanvas {
    * there along it, either way, merging in (trailing points), if it can.
    */
   private mergeOnto(p: [number, number], from: Pose, skip: number | undefined): DSeg[] | undefined {
-    const hit = this.nearTrack(p, 1.2, skip);
+    const hit = this.nearTrack(p, this.reach(), skip);
     if (!hit || hit.end) return undefined;
     const r = this.host.radius() > 0 ? this.host.radius() : 24;
     const plans = [hit.pose.heading, norm180(hit.pose.heading + 180)].map((h) => planToPose(from, { ...hit.pose, heading: h }, r)).filter((x): x is DSeg[] => !!x);
     // (the gentler one)
     return plans.sort((a, b) => a.reduce((t, sg) => t + (sg.kind === 'curve' ? Math.abs(sg.angle) : 0), 0) - b.reduce((t, sg) => t + (sg.kind === 'curve' ? Math.abs(sg.angle) : 0), 0))[0];
   }
-  private nearTrack(p: [number, number], reach = 1.2, skip?: number): { route: number; pose: Pose; end: 'start' | 'end' | undefined } | undefined {
+  /** How near (studs) the mouse must be to catch a track or an end: about 14 pixels at any zoom (at most 1.2 studs). */
+  private reach(px = 14) { return Math.min(1.2, Math.max(0.1, px / this.scale)); }
+  private nearTrack(p: [number, number], reach = this.reach(), skip?: number): { route: number; pose: Pose; end: 'start' | 'end' | undefined } | undefined {
     let best: { route: number; pose: Pose; end: 'start' | 'end' | undefined; d: number } | undefined;
     this.host.design().routes.forEach((r, i) => {
       if (i === skip) return;
@@ -133,7 +135,7 @@ export class TrackCanvas {
           if (t > 0 && t < sg.studs) {
             const pt = follow(q, [{ kind: 'straight', studs: t }]);
             const d = Math.hypot(pt.x - p[0], pt.y - p[1]);
-            if (d < reach + 0.5 && (!best || d < best.d - 0.05)) best = { route: i, pose: pt, end: undefined, d };
+            if (d < reach * 1.4 && (!best || d < best.d - 0.05)) best = { route: i, pose: pt, end: undefined, d };
           }
           q = follow(q, [sg]);
           continue;
@@ -177,7 +179,7 @@ export class TrackCanvas {
       }
     }
     if (this.mode === 'select') {
-      const hit = this.nearTrack(w, 1.5);
+      const hit = this.nearTrack(w, this.reach(18));
       if (e.shiftKey && hit) {
         // add to the selection, or take it out
         if (this.selected === undefined) this.selected = hit.route;
@@ -339,7 +341,7 @@ export class TrackCanvas {
       const e = follow(r, r.segs);
       for (const [end, pose] of [['start', { x: r.x, y: r.y, heading: r.heading }], ['end', { ...e, heading: e.heading + 180 }]] as const) {
         const d = Math.hypot(pose.x - p[0], pose.y - p[1]);
-        if (d < 1.5 && (!best || d < best.d)) best = { route: i, end, pose: { ...pose, heading: ((pose.heading % 360) + 540) % 360 - 180 }, d };
+        if (d < this.reach(18) && (!best || d < best.d)) best = { route: i, end, pose: { ...pose, heading: ((pose.heading % 360) + 540) % 360 - 180 }, d };
       }
     });
     return best && { route: best.route, end: best.end, pose: best.pose };
