@@ -199,8 +199,12 @@ export function buildDesign(w: Wasm, design: Design, report: (what: string, frac
     const bodies = (m: Man): Man[] => {
       const all2 = m.decompose(), big2 = all2.filter((b2) => b2.volume() > 1000), small = all2.filter((b2) => b2.volume() <= 1000);
       if (big2.length <= 1) return [m];
-      big2.sort((p2, q2) => q2.volume() - p2.volume());
-      return [scad.union([big2[0], ...small]), ...big2.slice(1)];
+      // (each small bit with the piece nearest it: the one it supports)
+      const boxes = big2.map((b2) => b2.boundingBox()), groups: Man[][] = big2.map((b2) => [b2]);
+      const gap = (a: { min: number[]; max: number[] }, b: { min: number[]; max: number[] }) =>
+        Math.hypot(Math.max(0, a.min[0] - b.max[0], b.min[0] - a.max[0]), Math.max(0, a.min[1] - b.max[1], b.min[1] - a.max[1]));
+      for (const sm of small) { const sb = sm.boundingBox(); let best = 0; boxes.forEach((bx, k) => { if (gap(sb, bx) < gap(sb, boxes[best])) best = k; }); groups[best].push(sm); }
+      return groups.map((g2) => (g2.length > 1 ? scad.union(g2) : g2[0]));
     };
     const fitAll = (m: Man, depth = 0): Man[] => {
       if (depth === 0 || depth > 0) { const bs = bodies(m); if (bs.length > 1) return bs.flatMap((b2) => fitAll(b2, depth + 1)); }
