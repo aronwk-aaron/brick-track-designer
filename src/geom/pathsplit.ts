@@ -4,7 +4,8 @@
 // The path's edges each go where a cut can be made: not down a rail (no
 // rail running within 12 mm along the edge), not through points or
 // crossings; across a rail is fine. Found as the cheapest path from one
-// side of the part to the other near where an even split would be.
+// side of the part to the other near where an even split would be, with as
+// few turns as it can.
 import { T, type Man, type Scad } from './scad';
 import type { Route } from '../route/route';
 import { routeLength, routePose } from '../route/route';
@@ -67,14 +68,21 @@ export function pathSplit(s: Scad, m: Man, routes: Route[], railG: number, avoid
     // (and a little dearer the further from where an even split would be)
     return 1 + bias;
   };
-  // Dijkstra over the grid nodes, from the bottom (or left) edge to the top (or right)
+  // Dijkstra over the grid nodes and the way the path last went (a turn costs
+  // more: a cut with as few steps as it can, not a staircase of little
+  // tabs), from the bottom (or left) edge to the top (or right)
+  const TURN = 6;
   const id = (i: number, j: number) => j * nx + i, pos = (i: number, j: number): [number, number] => [x0 + i * STEP, y0 + j * STEP];
-  const dist = new Float64Array(nx * ny).fill(Infinity), prev = new Int32Array(nx * ny).fill(-1), done = new Uint8Array(nx * ny);
+  const dirs: [number, number][] = [[1, 0], [-1, 0], [0, 1], [0, -1]];
+  const N = nx * ny * 4, st = (k: number, d: number) => k * 4 + d;
+  const dist = new Float64Array(N).fill(Infinity), prev = new Int32Array(N).fill(-1), done = new Uint8Array(N);
   const heap: [number, number][] = [];
   const push = (d: number, k: number) => { heap.push([d, k]); let c = heap.length - 1; while (c > 0) { const p = (c - 1) >> 1; if (heap[p][0] <= heap[c][0]) break; [heap[p], heap[c]] = [heap[c], heap[p]]; c = p; } };
   const pop = () => { const top = heap[0], last = heap.pop()!; if (heap.length) { heap[0] = last; let c = 0; for (;;) { const l = 2 * c + 1, r = l + 1; let m2 = c; if (l < heap.length && heap[l][0] < heap[m2][0]) m2 = l; if (r < heap.length && heap[r][0] < heap[m2][0]) m2 = r; if (m2 === c) break; [heap[m2], heap[c]] = [heap[c], heap[m2]]; c = m2; } } return top; };
-  if (axis === 0) for (let i = 0; i < nx; i++) { dist[id(i, 0)] = 0; push(0, id(i, 0)); }
-  else for (let j = 0; j < ny; j++) { dist[id(0, j)] = 0; push(0, id(0, j)); }
+  // (starting off heading across, the way the cut runs)
+  const along = axis === 0 ? 2 : 0;
+  if (axis === 0) for (let i = 0; i < nx; i++) { dist[st(id(i, 0), along)] = 0; push(0, st(id(i, 0), along)); }
+  else for (let j = 0; j < ny; j++) { dist[st(id(0, j), along)] = 0; push(0, st(id(0, j), along)); }
   const costs = new Map<string, number>();
   const cost = (a: number, b: number) => {
     const key = a < b ? `${a},${b}` : `${b},${a}`;
@@ -84,22 +92,24 @@ export function pathSplit(s: Scad, m: Man, routes: Route[], railG: number, avoid
   };
   let goal = -1;
   while (heap.length) {
-    const [d, k] = pop();
-    if (done[k]) continue;
-    done[k] = 1;
-    const i = k % nx, j = Math.floor(k / nx);
-    if ((axis === 0 && j === ny - 1) || (axis === 1 && i === nx - 1)) { goal = k; break; }
-    for (const [di, dj] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+    const [d, sk] = pop();
+    if (done[sk]) continue;
+    done[sk] = 1;
+    const k = sk >> 2, dk = sk & 3, i = k % nx, j = Math.floor(k / nx);
+    if ((axis === 0 && j === ny - 1) || (axis === 1 && i === nx - 1)) { goal = sk; break; }
+    dirs.forEach(([di, dj], nd) => {
       const i2 = i + di, j2 = j + dj;
-      if (i2 < 0 || j2 < 0 || i2 >= nx || j2 >= ny) continue;
-      const k2 = id(i2, j2), c = cost(k, k2);
-      if (!Number.isFinite(c) || done[k2]) continue;
-      if (d + c < dist[k2]) { dist[k2] = d + c; prev[k2] = k; push(d + c, k2); }
-    }
+      if (i2 < 0 || j2 < 0 || i2 >= nx || j2 >= ny) return;
+      const k2 = id(i2, j2), s2 = st(k2, nd), c = cost(k, k2);
+      if (!Number.isFinite(c) || done[s2]) return;
+      // (a turn only counts where the cut goes through the part: outside it, anywhere will do)
+      const dc = d + c + (nd !== dk && c >= 1 ? TURN : 0);
+      if (dc < dist[s2]) { dist[s2] = dc; prev[s2] = sk; push(dc, s2); }
+    });
   }
   if (goal < 0) return undefined;
   const path: [number, number][] = [];
-  for (let k = goal; k >= 0; k = prev[k]) path.push(pos(k % nx, Math.floor(k / nx)));
+  for (let sk = goal; sk >= 0; sk = prev[sk]) { const k = sk >> 2; path.push(pos(k % nx, Math.floor(k / nx))); }
   path.reverse();
   // the region on one side: the path closed round by the far side of the box
   const big = 4000;
