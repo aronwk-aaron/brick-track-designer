@@ -8,7 +8,7 @@
 // Units: mm and degrees, switch.scad's frame (the routes start at the origin
 // heading +y). Routes are right to left, as switch.scad's `routes`.
 import type { Pose, Pt, Route } from '../route/route';
-import { railPoint, routeLat, routeLength, routePose, routeSOf } from '../route/route';
+import { railPoint, routeLat, routeLength, routePose, routeSOf, segStarts } from '../route/route';
 import { M, R, T, type CS, type Man, type Scad, type Vec2, type Vec3 } from '../geom/scad';
 import { sweepRoute } from '../geom/sweep';
 import { type Spot, studSpots } from '../geom/underside';
@@ -192,7 +192,7 @@ export function switchPlan(routes: Route[], specs: SetSpec[], p: BaseParams = BA
   const setData = sets.map((v) => ({
     leverX: v.leverX, throwY: v.throwY, leverTravel: v.leverTravel, toeY: v.toeY, pointsEndY: v.pointsEndY,
     armX0: Math.min(v.throwStockX, v.leverX + v.throwDir * 10), armX1: Math.max(v.throwStockX, v.leverX + v.throwDir * 10),
-    throwDir: v.throwDir, throwStockX: v.throwStockX,
+    throwDir: v.throwDir, throwStockX: v.throwStockX, throwStockRt: v.throwStockRt,
   }));
   const swTiePitch = sleeperW + 2 * STUD;
   const tieYs = (): number[] => {
@@ -739,6 +739,129 @@ export function switchGeometry(s: Scad, plan: SwitchPlan, extraCuts: Man[] = [])
   /** The lever lying on its -y face, ready to print (part = "lever"). */
   const leverPrint = () => T(R(leverShape(), [90, 0, 0]), [0, 0, g.leverBossLen / 2]);
 
+  // ---------- ballast (switch.scad's switch_ballast, with generate_ballast) ----------
+  const studD = TRACK_DEFAULTS.studD;
+  const routeBallast = (rt: Route) => sweep(W.CrossSection.union([
+    sq([g.ballastTopW, g.ballastThickness], [-g.ballastTopW / 2, g.ballastOffsetZ]),
+    sq([g.ballastMidW, g.ballastThickness / 2], [-g.ballastMidW / 2, g.ballastOffsetZ]),
+  ]), rt);
+  const routeBuddy = (rt: Route) => sweep(sq([g.ballastBottomW, g.buddyT], [-g.ballastBottomW / 2, g.ballastOffsetZ - g.buddyT]), rt);
+  /** route_row_pts: stud spots along route i at offset o, about 8 mm apart, none under another route's higher layer (half-width hwUp). */
+  const routeRowPts = (i: number, o: number, hwUp: number): Pt[] => {
+    const rt = routes[i], st = segStarts(rt), out: Pt[] = [];
+    rt.segments.forEach((sg, si) => {
+      const l = sg.kind === 'straight' ? sg.length : (Math.abs(sg.angle) * Math.PI * sg.radius) / 180;
+      const rowL = sg.kind === 'straight' ? l : (l * (sg.radius + Math.sign(sg.angle) * o)) / sg.radius;
+      const n = Math.max(1, roundScad(rowL / STUD)), first = si === 0 ? 4 : 0, last = si === rt.segments.length - 1 ? l - 4 : l;
+      for (let k = 0; k <= n; k++) {
+        const q = railPoint(rt, st[si] + first + (k * (last - first)) / n, o);
+        if ((si === 0 || k > 0) && plan.latOthers(i, q) > hwUp + studD / 2 + 0.5) out.push(q);
+      }
+    });
+    return out;
+  };
+  const stepStuds = (o: number, z: number, hwUp: number) => {
+    const last = nRoutes - 1;
+    const pts = dedupe([...routeRowPts(0, +o, hwUp), ...routeRowPts(last, -o, hwUp),
+      ...routes.flatMap((_, i) => (i === 0 ? [-1] : i === last ? [+1] : [-1, +1]).flatMap((sd) => routeRowPts(i, sd * o, hwUp)))]);
+    return s.union(pts.map((q) => T(t.stud(), [q[0], q[1], z - 0.01])));
+  };
+  // top-layer studs: on every free spot of the top layer (switch.scad's top_stud_pts)
+  const topStudPts = (): Pt[] => {
+    const r0 = studD / 2 + 0.3, set0 = sets[0];
+    const curved = routes.map((rt) => rt.segments.some((sg) => sg.kind === 'arc'));
+    const tiePoses = routes.flatMap((rt, i) => plan.routeTieList[i].map((st) => routePose(rt, st)));
+    const longSpans = plan.longTieYs.map((y) => { const sp = plan.longTieSpan(y); return sp && [y, sp[0], sp[1]] as const; }).filter((x): x is readonly [number, number, number] => !!x);
+    const routeZoneS = (i: number) => (plan.routeTieList[i].length ? Math.min(...plan.routeTieList[i]) - sleeperW / 2 - 2 * STUD : 1e9);
+    const zonePoses = routes.map((rt, i) => (routeZoneS(i) < 1e8 ? routePose(rt, routeZoneS(i)) : undefined));
+    const local = (pose: Pose, q: Pt): Pt => { const dx = q[0] - pose[0], dy = q[1] - pose[1]; return [dx * cosd(pose[2]) + dy * sind(pose[2]), -dx * sind(pose[2]) + dy * cosd(pose[2])]; };
+    const inOuterStrip = (q: Pt) => routes.some((rt, i) => {
+      const out = (i === 0 ? 1 : -1) * routeLat(rt, q);
+      return curved[i] && (i === 0 || i === nRoutes - 1) && out > G + 3.9 && plan.latOthers(i, q) > g.ballastTopW / 2;
+    });
+    const inRouteZone = (q: Pt, m = 0, only = -1) => {
+      for (let i = 0; i < nRoutes; i++) {
+        const zp = zonePoses[i];
+        if ((only < 0 || only === i) && zp && local(zp, q)[1] >= -m && Math.abs(routeLat(routes[i], q)) <= g.ballastTopW / 2 + m) return i;
+      }
+      return -1;
+    };
+    const nearLever = (q: Pt, r: number) => {
+      const earHw = g.leverBossLen / 2 + c + g.leverEarT, wf = g.leverBossLen / 2 + c;
+      return plan.setData.some((d) => (Math.abs(q[0] - d.leverX) < 4 + r && Math.abs(q[1] - d.throwY) < earHw + r)
+        || (Math.abs(q[0] - d.leverX) < d.leverTravel / 2 + forkHw + 1.5 + r && Math.abs(q[1] - d.throwY) < wf + r));
+    };
+    const spotFree = (q: Pt) => {
+      const r = r0;
+      if (q[1] <= 8 + r || nearLever(q, r)) return false;
+      const lats = routes.map((rt) => routeLat(rt, q)), latR = lats[0], latL = lats[nRoutes - 1];
+      const outside = latL < -G - 3.9 - r || latR > G + 3.9 + r;
+      if (q[1] <= set0.pointsEndY + r && !outside) return false;
+      if (plan.setData.slice(1).some((d) => q[1] >= d.toeY - 2 - r && q[1] <= d.pointsEndY + r && !outside)) return false;
+      if (Math.min(...lats.map(Math.abs)) > g.ballastTopW / 2 - r) return false;
+      if (Math.min(...lats.flatMap((l) => [-G, G].map((o) => Math.abs(l - o)))) < 3.9 + r) return false;
+      if (plan.nearCheckRail(q, lats, r)) return false;
+      if (longSpans.some((tt) => Math.abs(q[1] - tt[0]) < sleeperW / 2 + r && q[0] > tt[1] - r && q[0] < tt[2] + r) && !plan.inEndKeepout(q)) return false;
+      if (tiePoses.some((tp) => { const l = local(tp, q); return Math.abs(l[1]) < sleeperW / 2 + r && Math.abs(l[0]) < sleeperLen / 2 + r; })) return false;
+      return !plan.endPoses.some((e) => { const l = local(e, q); return l[1] > -8 - r && Math.abs(l[0]) < sleeperLen / 2 + r; });
+    };
+    const offsAll = [-1, 1].map((k) => k * (sleeperLen / 2 - 4)).concat(tc.betweenRailsRaw);
+    const zonePts: Pt[] = [];
+    routes.forEach((rt, i) => {
+      const sz = routeZoneS(i);
+      if (sz >= 1e8) return;
+      for (let sk = routeLength(rt) - 8 - STUD / 2; sk >= sz - studD - 0.5 - STUD - 1e-9; sk -= STUD)
+        for (const o of offsAll) { const q = railPoint(rt, sk, o); if (spotFree(q) && inRouteZone(q, studD + 0.5, 1 - i) < 0) zonePts.push(q); }
+    });
+    const xr = plan.baseXRange(plan.baseY0, plan.baseY1), rows: number[] = [];
+    for (let y = 12; y <= plan.baseY1 + 1e-9; y += STUD) rows.push(y);
+    const sqPts: Pt[] = [];
+    for (const y of rows) for (let x = Math.floor(xr[0] / 8) * 8 + 4; x <= xr[1] + 1e-9; x += STUD) {
+      const q: Pt = [x, y]; if (inRouteZone(q, studD + 0.5) < 0 && !inOuterStrip(q) && spotFree(q)) sqPts.push(q);
+    }
+    const fill: Pt[] = [];
+    for (const rt of routes) for (const o of offsAll) for (const y of rows) {
+      const q: Pt = [plan.railCross(rt, o, y)[0], y]; if (inRouteZone(q, studD + 0.5) < 0 && spotFree(q)) fill.push(q);
+    }
+    const main = dedupe([...sqPts, ...fill], dedupe(zonePts));
+    const armPts: Pt[] = [];
+    for (const d of plan.setData) for (let x = Math.floor(d.armX0 / 8) * 8 + 4; x <= d.armX1 + 1e-9; x += STUD) for (let y = 12; y <= d.throwY + g.armW / 2 + 1e-9; y += STUD) {
+      const r = r0, q: Pt = [x, y];
+      if (x - r > d.armX0 && x + r < d.armX1 && Math.abs(y - d.throwY) + r < g.armW / 2 && !nearLever(q, r)
+        && Math.abs(routeLat(d.throwStockRt, q) - d.throwDir * G) >= 3.9 + r) armPts.push(q);
+    }
+    return dedupe(armPts, main);
+  };
+  const switchBallast = () => {
+    const ballast = s.difference(s.union(routes.map(routeBallast)), [
+      cube([sleeperLen + STUD, 12, PLATE_H + 1], [-(sleeperLen + STUD) / 2, -4, 0]),
+      ...plan.endPoses.map((e) => atPose(cube([sleeperLen + STUD, 12, PLATE_H + 1], [-(sleeperLen + STUD) / 2, -8, 0]), e)),
+    ]);
+    return s.union([
+      ballast,
+      s.union(topStudPts().map((q) => T(t.stud(), [q[0], q[1], PLATE_H - 0.01]))),
+      stepStuds(g.ballastMidW / 2 - 4, 0, g.ballastTopW / 2),
+      ...(g.buddy ? [...routes.map(routeBuddy), stepStuds(g.ballastBottomW / 2 - 4, g.ballastOffsetZ, g.ballastMidW / 2)] : []),
+    ]);
+  };
+  // anti-stud bottom (bottom_style antistud): the bottom layer's outline hollowed inside a rim, LEGO tubes on the grid
+  const antistudParts = () => {
+    const outline = W.CrossSection.union([
+      ...routes.map((rt) => (g.buddy ? routeBuddy(rt) : sweep(sq([g.ballastMidW, 0.1], [-g.ballastMidW / 2, g.ballastOffsetZ]), rt)).project()),
+      ...sets.map((v) => throwArm(v).project()),
+    ]);
+    let cav = outline.offset(-1.39, 'Miter', 1000);
+    for (const yc of plan.baseCuts) cav = cav.subtract(sq([2000, 2 * 1.39 + 8], [-1000, yc - 1.39 - 4]));
+    const xr = plan.baseXRange(plan.baseY0, plan.baseY1), socks: CS[] = [];
+    for (let x = Math.floor(xr[0] / 8) * 8 + 4; x <= xr[1] + 1e-9; x += 8) for (let y = 4; y <= plan.baseY1 + 1e-9; y += 8) socks.push(W.CrossSection.square([tc.studSocketW, tc.studSocketW], true).translate([x, y]));
+    const under = T(s.extrude(W.CrossSection.union([cav, ...socks]), g.bottomCavity + 0.01), [0, 0, pieceBottomZ - 0.01]);
+    const rings: CS[] = [];
+    for (let x = Math.floor(xr[0] / 8) * 8; x <= xr[1] + 1e-9; x += 8) for (let y = 0; y <= plan.baseY1 + 1e-9; y += 8)
+      rings.push(circle((6.51 - 0.06) / 2, 32, [x, y]).subtract(circle((4.8 + 0.06) / 2, 32, [x, y])));
+    const tubes = T(s.extrude(W.CrossSection.union(rings).intersect(cav), g.bottomCavity), [0, 0, pieceBottomZ]);
+    return { under, tubes };
+  };
+
   /** Where the base's anti-stud tubes grip (filled in by base()). */
   const grips: [number, number][] = [];
   // ---------- the base ----------
@@ -751,6 +874,19 @@ export function switchGeometry(s: Scad, plan: SwitchPlan, extraCuts: Man[] = [])
       turnoutTies: turnoutTies(), routeTies: routeTies(), leadTies: leadTies(), connectors: connectors(),
   };
   if (parts) Object.assign(parts, named, { throwArms: s.union(sets.map(throwArm)), throwChannels: s.union(sets.map(throwChannel)) });
+  if (g.ballast) {
+    // on ballast: the ballast (less the points' pockets) under the track, the anti-stud bottom or a flat one
+    const bal = s.difference(switchBallast(), sets.map(pointsPockets));
+    const ast = g.antistud ? antistudParts() : undefined;
+    const bodyB = s.difference(s.union([bal, ...Object.values(named), ...sets.map(throwArm)]), [...sets.map(throwChannel), ...(ast ? [ast.under] : [])]);
+    const supportZ = pieceBottomZ - 0.02;
+    return s.union([
+      bodyB,
+      ast && s.difference(ast.tubes, [...sets.map(pointsPockets), ...sets.map(throwChannel)]),
+      t.startRailSupports(supportZ), t.supportFooting(supportZ, 0, -1),
+      ...plan.endPoses.map((e) => atPose(s.union([t.endRailSupports(supportZ), t.supportFooting(supportZ, 0, +1)]), e)),
+    ]);
+  }
   const track = s.union(Object.values(named));
   const us = underside();
   grips.push(...us.grips);

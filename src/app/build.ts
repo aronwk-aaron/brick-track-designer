@@ -92,7 +92,8 @@ export function buildDesign(w: Wasm, design: Design) {
   };
   // Pieces: a switch wherever routes split, the rest as fixed trackwork.
   const scad = new Scad(w), pieces: Piece[] = [];
-  const params = { ...BASE_DEFAULTS, ...o, gaugeStuds: design.gaugeStuds, studGrip: design.grip ?? 'edges', pointsPieces: design.pointsPieces ?? 1 };
+  const params = { ...BASE_DEFAULTS, ...o, gaugeStuds: design.gaugeStuds, studGrip: design.grip ?? 'edges', pointsPieces: design.pointsPieces ?? 1,
+    generateBallast: o.ballast !== 'none', ballastBuddy: o.ballast === 'buddy', bottomStyle: o.bottomStyle };
 
   let pc = planPieces(routes, sol.splits, params, toeShift);
   // Switches that merge back in, cross other track, or can't stand on their
@@ -151,13 +152,15 @@ export function buildDesign(w: Wasm, design: Design) {
   if (network) {
     const copt = { ...CROSSING_DEFAULTS, gaugeStuds: design.gaugeStuds, grip: design.grip ?? 'edges', flangeway: o.flangeway, flangewayDepth: o.flangewayDepth, checkRailW: o.checkRailW };
     editChecks(routes, sol.checkRails);
-    const net = cached(`net:${JSON.stringify({ routes, params, copt, tw })}`, () => { const grips: [number, number][] = []; return { ...networkPiece(scad, routes, sol, params, copt, grips, toeShift, grooveCuts), grips }; });
+    const tp = { ...params, generateBallast: false }; // (network pieces are track only so far)
+    const net = cached(`net:${JSON.stringify({ routes, tp, copt, tw })}`, () => { const grips: [number, number][] = []; return { ...networkPiece(scad, routes, sol, tp, copt, grips, toeShift, grooveCuts), grips }; });
     overlay.grips.push(...net.grips);
     addTrack('track', net.body, routes);
     for (const m of net.moving) add(m.name, m.color, m.local, m.world);
     pc = { switches: [], rest: [], warnings: [...net.warnings] };
 
   }
+  if (params.generateBallast && (network || pc.rest.length)) pc.warnings.push('ballast is on switches only so far: crossings and plain track come out track only');
   if (pc.rest.length) {
     const copt = { ...CROSSING_DEFAULTS, gaugeStuds: design.gaugeStuds, grip: design.grip ?? 'edges', flangeway: o.flangeway, flangewayDepth: o.flangewayDepth, checkRailW: o.checkRailW };
     // Does a piece fit the print bed (either way round)?

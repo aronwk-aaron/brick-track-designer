@@ -55,7 +55,9 @@ export interface Pieces { switches: SwitchPiece[]; rest: Route[]; warnings: stri
 /** toeShift: how far (mm) to move the points from where the branch leaves, by that point in the design (hand edits). */
 export function planPieces(routes: Route[], splits: Split[], p: BaseParams = BASE_DEFAULTS, toeShift: (at: [number, number]) => number = () => 0): Pieces {
   const warnings: string[] = [];
-  const sleeperLen = (p.gaugeStuds + 1) * 8 + 24, endHw = sleeperLen / 2;
+  // (the ends must clear each other's base: the sleepers, or with ballast its widest layer)
+  const sleeperLen = (p.gaugeStuds + 1) * 8 + 24;
+  const endHw = p.generateBallast ? (sleeperLen + ((p.ballastBuddy ?? true) ? 32 : 16)) / 2 : sleeperLen / 2;
   // Splits by parent route, along it; those close together make one switch (a three-way).
   const byParent = new Map<number, { child: number; sa: number }[]>();
   for (const sp of splits) {
