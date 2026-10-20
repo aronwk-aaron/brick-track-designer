@@ -152,7 +152,7 @@ export function buildDesign(w: Wasm, design: Design, report: (what: string, frac
     generateBallast: o.ballast !== 'none', ballastBuddy: o.ballast === 'buddy', bottomStyle: o.bottomStyle,
     // (a floor under the moving parts only with the lid over them: otherwise they go in from below, through their pockets)
     ...(o.pointsModule === 'layers' && o.ballast !== 'none' && { mechFloor: 1.2 }), endSupports: o.endSupports !== false,
-    throwModule: o.throwStyle === 'bracket' };
+    throwModule: o.throwStyle === 'bracket', mechStyle: o.mechStyle ?? '4dbrix' };
 
   let pc = planPieces(routes, sol.splits, params, toeShift, throwEdit, true);
   steps = 2 + pc.switches.length + (pc.rest.length ? 1 : 0);

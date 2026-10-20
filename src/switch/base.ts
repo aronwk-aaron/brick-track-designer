@@ -358,7 +358,8 @@ export function switchGeometry(s: Scad, plan: SwitchPlan, extraCuts: Man[] = [])
   const bO = (b: number) => (b === 0 ? -G : +G);
   const bSide = (b: number) => (b === 0 ? +1 : -1);
   const bHeel = (v: SetV, b: number): Pt => (b === 0 ? railPoint(v.ra, v.sBpiv, -G) : rotAbout(railPoint(v.rb, v.sBpiv, +G), v.pivotPt, -v.throwAng));
-  const stockFootCut = (v: SetV) => s.union([0, 1].map((b) => {
+  const fdb = p.mechStyle === '4dbrix';
+  const stockFootCut = (v: SetV) => fdb ? s.union([]) : s.union([0, 1].map((b) => {
     const side = bSide(b), face = bO(b) + side * HEAD_HW;
     return sweep(sq([10, bedTop + 3 - floorZ], [side > 0 ? face : face - 10, floorZ]), bOther(v, b), v.sToe - 2, v.sHeel + g.discR);
   }));
@@ -441,7 +442,7 @@ export function switchGeometry(s: Scad, plan: SwitchPlan, extraCuts: Man[] = [])
   const bladePlan = (v: SetV, b: number, at: number, pivot: Pt): CS => (b === 0
     ? rot3(bladeStem(v, bRt(v, 0), -G, bOther(v, 0), -G), pivot, at)
     : rot3(bladeStem(v, bRt(v, 1), +G, bOther(v, 1), +G), pivot, at)).project();
-  const pointsSweep2d = (v: SetV, m: number) => W.CrossSection.union(units(v).flatMap((u) => {
+  const pointsSweep2d = (v: SetV, m: number) => fdb ? fdbSlot2d(v, m) : W.CrossSection.union(units(v).flatMap((u) => {
     const rng = [0, u.swing];
     return [
       ...(u.heelBar ? [W.CrossSection.hull(rng.map((a) => rot2(offR(heelBar2d(v), m), u.pivot, a)))] : []),
@@ -451,6 +452,7 @@ export function switchGeometry(s: Scad, plan: SwitchPlan, extraCuts: Man[] = [])
     ];
   }));
   const bladeSlots2d = (v: SetV, m: number) => {
+    if (fdb) return W.CrossSection.union([]);
     const n = 8, parts: CS[] = [];
     for (const u of units(v))
       for (const [b, at] of u.blades) {
@@ -460,6 +462,7 @@ export function switchGeometry(s: Scad, plan: SwitchPlan, extraCuts: Man[] = [])
     return W.CrossSection.union(parts);
   };
   const pointsPockets = (v: SetV) => {
+    if (fdb) return fdbPockets(v);
     const slots = bladeSlots2d(v, c);
     return s.union([
       T(s.extrude(W.CrossSection.union([pointsSweep2d(v, c), slots]), g.cavityTop - floorZ), [0, 0, floorZ]),
@@ -650,6 +653,7 @@ export function switchGeometry(s: Scad, plan: SwitchPlan, extraCuts: Man[] = [])
   };
   const forkHw = g.leverTipD / 2 + c + g.forkWall;
   const throwChannel = (v: SetV) => {
+    if (fdb) return fdbChannel(v);
     const w = g.throwRodW + 1 + 2 * c;
     const ends = [...units(v).map((u) => u.postX).flatMap((x) => [x - 1.5, x + v.leverTravel + 1.5]), v.forkX - forkHw, v.forkX + v.leverTravel + forkHw];
     const x0 = Math.min(...ends) - c - 1, x1 = Math.max(...ends) + c + 1;
@@ -688,6 +692,105 @@ export function switchGeometry(s: Scad, plan: SwitchPlan, extraCuts: Man[] = [])
       : ty.length === 0 || y <= ty[0] - sleeperW / 2 - (TRACK_DEFAULTS.studD + 1) / 2 || ty.some((tt) => Math.abs(y - tt) <= half));
     return studSpots(s, t, spots, bed, [1, 0], [0, 1], p.studH + 0.21, 0, solid, p.studGrip);
   };
+
+  // ---------- 4DBrix's points (mechStyle '4dbrix') ----------
+  // Each blade on its own plate lying on top of the bed, turning on a pin
+  // at its heel; a spring tongue cut in the plate (4DBrix's flexure) holds
+  // the post of the slider, a bar in a slot through the bed under the
+  // plates, that the lever drives; the closed blade's tongue takes the
+  // preload. Everything goes in from above but the slider, from below.
+  // Fitted to the routes as drawn: each blade is its route's rail.
+  const FDB = { plateT: 1.6, plateW: 10, pivotIn: 7, pinD: 3, discR: 5, tongueW: 3.6, tongueL: 9, slotW: 0.7, postD: 2.2, rodW: 4 };
+  const fdbCache = new Map<SetV, { pivot: Pt; tip: Pt; ang: number; post: Pt; open: number }[]>();
+  /** Each blade's pivot, toe, the angle it swings, where the slider's post meets it, and its angle as modelled (for the right-hand route). */
+  const fdbBlades = (v: SetV) => {
+    let out = fdbCache.get(v);
+    if (out) return out;
+    out = [0, 1].map((b) => {
+      const rt = bRt(v, b), o = bO(b), side = bSide(b);
+      const pivot = railPoint(rt, v.sHeel - 4, o + side * FDB.pivotIn), tip = railPoint(rt, v.sToe, o);
+      const ang = (p.pointThrow / norm(sub(tip, pivot))) * (180 / Math.PI);
+      const post = railPoint(rt, routeSOf(rt, [0, v.throwY], 0, -1, 26), o + side * (FDB.plateW / 2 + HEAD_HW));
+      // (tip ahead of the pivot: turning + moves it to -x; open is inward, the other way from the stock rail)
+      // (the toe is behind the pivot: turning - moves it to -x, inward for blade 1)
+      const open = b === 0 ? 0 : -ang;
+      return { pivot, tip, ang, post, open };
+    });
+    fdbCache.set(v, out);
+    return out;
+  };
+  /** A blade's plate in plan, closed: from the toe to the heel along its rail, inward of it, round the pivot; with the tongue's slot. */
+  const fdbPlate2d = (v: SetV, b: number) => {
+    const rt = bRt(v, b), o = bO(b), side = bSide(b), fb = fdbBlades(v)[b];
+    const n = 24, s0 = v.sToe + 2, s1 = v.sHeel - 4;
+    const edge = (off: number) => Array.from({ length: n + 1 }, (_, k) => railPoint(rt, s0 + ((s1 - s0) * k) / n, o + side * off) as Vec2);
+    // (from the blade bar's inner face inward; tapering to the toe)
+    const outer = edge(HEAD_HW - 0.2), inner = edge(HEAD_HW + FDB.plateW).map((q, k) => { const t = Math.min(1, k / 6); const e = outer[k]; return [e[0] + (q[0] - e[0]) * (0.35 + 0.65 * t), e[1] + (q[1] - e[1]) * (0.35 + 0.65 * t)] as Vec2; });
+    let plate = W.CrossSection.union([s.polygon([...outer, ...inner.reverse()]), circle(FDB.discR, 40, fb.pivot)]);
+    // the tongue: a U-slot round the post's hole, the tongue running toward the heel
+    const d = sub(fb.pivot, fb.post), u = mul(d, 1 / norm(d)), nn: Pt = [u[1], -u[0]];
+    const tw = FDB.tongueW / 2, sw = FDB.slotW, L = FDB.tongueL;
+    const at = (a: number, c2: number): Vec2 => add(add(fb.post, mul(u, a)), mul(nn, c2)) as Vec2;
+    const slot = W.CrossSection.union([
+      s.polygon([at(-tw - sw, -tw - sw), at(L, -tw - sw), at(L, -tw), at(-tw, -tw), at(-tw, tw), at(L, tw), at(L, tw + sw), at(-tw - sw, tw + sw)]),
+      circle((FDB.postD + 2 * c) / 2, 24, fb.post),
+    ]);
+    plate = plate.subtract(slot).subtract(circle((FDB.pinD + 2 * c) / 2, 24, fb.pivot));
+    return plate;
+  };
+  /** A blade part, as assembled for the right-hand route: its plate on the bed, its rail on the plate. */
+  const fdbBladePart = (v: SetV, b: number) => {
+    const fb = fdbBlades(v)[b], z0 = bedTop + c, z1 = z0 + FDB.plateT;
+    const rt = bRt(v, b), o = bO(b), oStock = bO(b), sideS = oStock < 0 ? 1 : -1, face = oStock + sideS * (HEAD_HW + c);
+    // (both the rail and its plate kept off the stock rail it closes on, and clear of the end connector)
+    const offStock = sweep(sq([30, 40], [sideS > 0 ? face : face - 30, z0 - 1]), bOther(v, b), 0, v.sHeel + 5);
+    const bar = s.intersection(sweep(sq([2 * HEAD_HW, railTop - z1 + 0.01], [o - HEAD_HW, z1 - 0.01]), rt, v.sToe, v.sHeel - c), offStock);
+    const y0 = Math.max(v.toeY - 1, 8 + c);
+    // (the plate a little further off the stock rail than the rail is: clear of its foot's flare)
+    const plateOff = sweep(sq([30, 40], [sideS > 0 ? face + 1 : face - 31, z0 - 1]), bOther(v, b), 0, v.sHeel + 5);
+    // (and clear of the stock rail's actual shape, foot and all)
+    const stock = sweep(rail2d(oStock).offset(c, 'Miter', 1000), bOther(v, b), 0, v.sHeel + 10);
+    const plate = s.difference(s.intersection(s.intersection(T(s.extrude(fdbPlate2d(v, b), FDB.plateT), [0, 0, z0]), plateOff), cube([400, 400, 50], [-200, y0, z0 - 10])), [stock]);
+    return rot3(s.union([plate, bar]), fb.pivot, fb.open);
+  };
+  /** The slider's footprint, with its posts' travel (for the floor tests). */
+  const fdbSlot2d = (v: SetV, m: number) => {
+    const fbs = fdbBlades(v), xs = [...fbs.map((f) => f.post[0]), v.forkX];
+    const x0 = Math.min(...xs) - v.leverTravel - 4, x1 = Math.max(...xs) + v.leverTravel + 4;
+    return sq([x1 - x0, FDB.rodW + 2 * (c + m)], [x0, v.throwY - FDB.rodW / 2 - c - m]);
+  };
+  /** Cut from the bed: the slider's slot (open underneath) and its posts' slots up through to the plates. */
+  const fdbPockets = (v: SetV) => {
+    const fbs = fdbBlades(v), T2 = v.leverTravel + 1;
+    return s.union([
+      T(s.extrude(fdbSlot2d(v, 0), g.layerTop + c - (pieceBottomZ - 1)), [0, 0, pieceBottomZ - 1]),
+      ...fbs.map((f) => T(s.extrude(W.CrossSection.hull([circle(FDB.postD / 2 + c, 20, [f.post[0] - T2, f.post[1]]), circle(FDB.postD / 2 + c, 20, [f.post[0] + T2, f.post[1]])]), bedTop - g.layerTop + 0.02), [0, 0, g.layerTop - 0.01])),
+    ]);
+  };
+  /** The slider bar: posts up into the blades' tongues, the fork for the lever's tip at its end. */
+  const fdbSlider = (v: SetV) => {
+    const z0 = g.layerZ0, z1 = g.layerTop, rodW = FDB.rodW, fbs = fdbBlades(v);
+    const xs = [...fbs.map((f) => f.post[0]), v.forkX], x0 = Math.min(...xs) - 3, x1 = Math.max(...xs) + forkHw;
+    const slotW = g.leverTipD + 2 * c, m = v.forkMouthHw;
+    // (posts where the blades' tongues are as modelled: blade 0 closed, pressed by the preload)
+    const posts = fbs.map((f, b) => { const q = rotAbout(f.post, f.pivot, f.open); return T(s.cylinder(bedTop + c + FDB.plateT - 0.2 - z1, FDB.postD / 2, FDB.postD / 2, 20), [q[0] - (b === 0 ? p.springPreload : 0), q[1], z1 - 0.01]); });
+    const body = s.union([cube([x1 - x0, rodW, z1 - z0], [x0, v.throwY - rodW / 2, z0]), ...posts,
+      cube([2 * forkHw, rodW, v.forkTop - z0], [v.forkX - forkHw, v.throwY - rodW / 2, z0])]);
+    const slot2d = W.CrossSection.union([
+      sq([slotW, Math.max(0.1, v.leverTipZ - z0 - 0.6)], [-slotW / 2, z0 + 0.6]),
+      W.CrossSection.hull([circle(slotW / 2, 32, [0, v.leverTipZ]), circle(slotW / 2, 32, [0, g.leverTipLow])]),
+      sq([2 * m, v.forkTop - v.leverTipZ + 0.01], [-m, v.leverTipZ]),
+    ]);
+    return s.difference(body, [T(R(T(s.extrude(slot2d, 2 * rodW), [0, 0, -rodW]), [90, 0, 0]), [v.forkX, v.throwY, 0])]);
+  };
+  /** The channel through the arm for the slider's fork and the lever. */
+  const fdbChannel = (v: SetV) => {
+    const wf = Math.max(g.leverBossLen, g.leverTipD) + 2 * c;
+    const f0 = Math.min(v.forkX - forkHw, v.forkX + v.leverTravel + forkHw) - c - 1, f1 = Math.max(v.forkX - forkHw, v.forkX + v.leverTravel + forkHw) + c + 1;
+    return s.union([T(s.extrude(fdbSlot2d(v, 0), g.layerTop + c - (pieceBottomZ - 1)), [0, 0, pieceBottomZ - 1]), cube([f1 - f0, wf, 30], [f0, v.throwY - wf / 2, pieceBottomZ - 1])]);
+  };
+  /** The pins the blades turn on, standing on the bed. */
+  const fdbPins = (v: SetV) => s.union(fdbBlades(v).map((f) => T(s.cylinder(c + FDB.plateT + 0.8, FDB.pinD / 2, FDB.pinD / 2, 24), [f.pivot[0], f.pivot[1], bedTop - 0.01])));
 
   // ---------- the moving parts (points, throw, lever) ----------
   const tineFloorT = 0.45, postW = 1.2, postL = 3;
@@ -732,6 +835,7 @@ export function switchGeometry(s: Scad, plan: SwitchPlan, extraCuts: Man[] = [])
   const pointsPart = (v: SetV) => unitPart(v, units(v)[0]);
   /** The throw (slider), as assembled for the right-hand route (throw_part). */
   const throwPart = (v: SetV) => {
+    if (fdb) return fdbSlider(v);
     const z0 = g.layerZ0, z1 = g.layerTop, rodW = g.throwRodW;
     const posts = units(v).map((u) => u.postX), xs = [...posts, v.forkX], x0 = Math.min(...xs) - 1.5, x1 = Math.max(...xs) + 1.5;
     const slotW = g.leverTipD + 2 * c, m = v.forkMouthHw;
@@ -910,7 +1014,7 @@ export function switchGeometry(s: Scad, plan: SwitchPlan, extraCuts: Man[] = [])
       stockRails: stockRails(), crossingRails: crossingRails(), checkRails: checkRails(),
       // (each set's bed less every set's pockets: on a three-way the sets can
       // overlap, and switch.scad cuts each bed by its own pockets only)
-      pointsBeds: s.difference(s.union(sets.map(pointsBed)), sets.map(pointsPockets)),
+      pointsBeds: s.union([s.difference(s.union(sets.map(pointsBed)), sets.map(pointsPockets)), ...(fdb ? sets.map(fdbPins) : [])]),
       turnoutTies: turnoutTies(), routeTies: routeTies(), leadTies: leadTies(), connectors: connectors(),
   };
   if (parts) Object.assign(parts, named, { throwArms: s.union(sets.map(throwArm)), throwChannels: s.union(sets.map(throwChannel)) });
@@ -1018,7 +1122,7 @@ export function switchGeometry(s: Scad, plan: SwitchPlan, extraCuts: Man[] = [])
     base, basePieces, mech,
     pointsPart: (k = 0) => pointsPart(sets[k]),
     /** The points' parts: one, or one per blade (pointsPieces 2). */
-    pointsParts: (k = 0) => units(sets[k]).map((u) => unitPart(sets[k], u)),
+    pointsParts: (k = 0) => (fdb ? [0, 1].map((b) => fdbBladePart(sets[k], b)) : units(sets[k]).map((u) => unitPart(sets[k], u))),
     /** Each points part's pivot and swing (to turn it to the left-hand route). */
     pointsUnits: (k = 0) => units(sets[k]).map((u) => ({ pivot: u.pivot, swing: u.swing })),
     throwPart: (k = 0) => throwPart(sets[k]),

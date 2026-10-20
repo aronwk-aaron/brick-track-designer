@@ -539,7 +539,7 @@ const OPTION_FORM: [string, [keyof PieceOptions, string, number?][]][] = [
   ['Guards (check rails)', [['checkRailLen', 'Check rail length, mm', 2], ['checkRailW', 'Check rail width, mm', 0.1], ['checkRailFlare', 'End flare, mm', 0.25],
     ['flangeway', 'Flangeway width, mm', 0.1], ['flangewayDepth', 'Flangeway depth, mm', 0.5]]],
   ['Print bed', [['printBedX', 'Bed width, mm', 1], ['printBedY', 'Bed depth, mm', 1], ['baseplate', 'Cut at baseplate edges'], ['baseplateX', 'Plate corner x, studs', 1], ['baseplateY', 'Plate corner y, studs', 1], ['joint', 'Parts join with'], ['cutRails', 'Rails where parts are cut'], ['endSupports', 'Supports under the rail ends']]],
-  ['Points (prototype)', [['pointsModule', 'Points built as']]],
+  ['Points (prototype)', [['mechStyle', 'Mechanism'], ['pointsModule', 'Points built as']]],
 ];
 function renderOptions() {
   const body = $('options-body'); body.replaceChildren();
@@ -547,7 +547,14 @@ function renderOptions() {
   for (const [title, fields] of OPTION_FORM) {
     const h = document.createElement('h4'); h.textContent = title; body.append(h);
     for (const [key, label, step] of fields) {
-      if (key === 'throwStyle') {
+      if (key === 'mechStyle') {
+        const sel = document.createElement('select');
+        for (const [v, tx, tip] of [['tines', 'Under the bed, on spring tines (switch.scad)', 'The points under the bed in pockets, on springy tines; they go in from below'],
+          ['4dbrix', 'Blades on top, on pins (4DBrix)', 'Each blade on its own plate on top of the bed, turning on a pin, with a spring tongue the slider bar\'s post sits in; the blades go in from above, the slider from below']]) { const op = new Option(tx, v); op.title = tip; sel.append(op); }
+        sel.value = o.mechStyle ?? '4dbrix';
+        sel.addEventListener('change', () => { design.options = { ...design.options, mechStyle: sel.value as PieceOptions['mechStyle'] }; changed(true); });
+        body.append(field(label, sel));
+      } else if (key === 'throwStyle') {
         const sel = document.createElement('select');
         for (const [v, tx, tip] of [['bracket', 'On its own bracket (4DBrix)', 'The lever on a separate 3 x 3 stud bracket that sits on studs on the arm, as 4DBrix throws are'],
           ['built-in', 'Built into the arm', 'The lever\'s ears part of the track piece\'s arm']]) { const op = new Option(tx, v); op.title = tip; sel.append(op); }
