@@ -169,6 +169,17 @@ for (const R of [56, 104]) {
     ]));
     void L;
   }
+  // the same at R40, the second branch 9 studs on: the first branch's rail runs on between the second points' stock
+  // rails, crossing the second branch past their heel; the blades' plates are cut clear of it (4DBrix's points: one
+  // pin moved in toward its rail and along toward the toe); half a stud sooner, the other blade's tongue nearer its rail too
+  {
+    const R = 40, a = sAng(R), net = (name: string, y: number) => save(design(name, [
+      rt('L', -16, 0, 0, [st(96)]), rt('M', 0, 0, 0, [st(96)]), rt('R', 16, 0, 0, [st(96)]),
+      rt('ML', 0, 8, 0, [cv(R, a), cv(R, -a)]), rt('MR', 0, y, 0, [cv(R, -a), cv(R, a)]),
+    ]));
+    net('tandem-net-r40', 17);
+    net('tandem-net-r40-tight', 16.5);
+  }
 }
 
 // ---- crossovers between two parallel tracks, one each way (a "universal" crossover), on baseplates ----

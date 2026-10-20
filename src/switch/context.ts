@@ -107,6 +107,21 @@ export function switchGlobals(p: SwitchParams) {
 }
 export type SwitchGlobals = ReturnType<typeof switchGlobals>;
 
+/**
+ * (4DBrix's points) One blade's layout, worked out with the rest of the plan
+ * (switch/base.ts, fdbLayout): its pin, toe, the angle it swings, where the
+ * slider's post meets it, its angle as modelled (for the right-hand route);
+ * how far in from its rail the pin and the post are, and how far the pin was
+ * moved along toward the toe (to keep plate round them clear of another
+ * route's rail); the other routes' rails it keeps clear of, as polylines, and
+ * their half-width at the plate; and why it can't, if it can't.
+ */
+export interface FdbBladeLayout {
+  pivot: Pt; tip: Pt; ang: number; post: Pt; open: number;
+  pivotIn: number; postIn: number; shift: number;
+  keep: Pt[][]; hw: number; stockKeep?: Pt[]; stockHw?: number; blocked?: string;
+}
+
 /** One points set: right-hand route, left-hand route, toe (arc length), throw side (or undefined: the default). */
 export interface PointsSet { ra: number; rb: number; sToe: number; tside?: number }
 
@@ -201,6 +216,8 @@ export function pointsSet(routes: Route[], ps: PointsSet, p: SwitchParams, defau
     swingRange, pointsEndY, tipGap, throwDir, throwY, throwStockRt, throwStockX, throwFaceX, leverAng, leverTipZ,
     throwEdgeX, leverMinD, leverX, forkX, forkLipZ, forkTop, forkMouthHw, stepYa, stepYb, stepXo, armRect, stand, standE, standZ,
     bladeMidAt, warnings,
+    /** (4DBrix's points) each blade's layout: filled in by switchPlan */
+    fdb: undefined as FdbBladeLayout[] | undefined,
   };
 }
 export type PointsSetValues = ReturnType<typeof pointsSet>;

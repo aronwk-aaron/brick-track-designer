@@ -215,7 +215,7 @@ export function buildDesign(w: Wasm, design: Design, report: (what: string, frac
   const throwEdit = (q: [number, number]) => tw.throw?.[keyOf(q)];
   /** A points set's lever on the plan (it can be dragged there). */
   const leverItem = (key: string, P: Pose, v: { throwDir: number; leverX: number; throwY: number; throwStockX: number; throwEdgeX: number; leverMinD: number; tineLen: number; pivotPt: [number, number];
-    ra: Route; rb: Route; sHeel: number; three?: { S: Route } }) => {
+    ra: Route; rb: Route; sHeel: number; three?: { S: Route }; fdb?: { pivot: [number, number] }[] }) => {
     const ca = Math.cos((P[2] * Math.PI) / 180), sa = Math.sin((P[2] * Math.PI) / 180);
     const wd = (x: number, y: number): [number, number] => [P[0] + x * ca - y * sa, P[1] + x * sa + y * ca];
     const ed = tw.throw?.[key];
@@ -228,7 +228,8 @@ export function buildDesign(w: Wasm, design: Design, report: (what: string, frac
       const G = track.c.railOffset, keep = (q: [number, number], r: number): Keep => [q[0], q[1], r, r];
       for (let x = v.throwStockX - v.throwDir * (2 * G + 16); v.throwDir * (x - v.throwStockX) < 0; x += v.throwDir * 4) pointsAvoid.push(keep(wd(x, v.throwY), 6.5));
       for (let x = v.throwStockX; v.throwDir * x <= v.throwDir * xOut + 1e-9; x += v.throwDir * 4) pointsAvoid.push(keep(wd(x, v.throwY), hw + 1));
-      for (const b of [0, 1]) { const q = railPoint(v.three ? v.three.S : b === 0 ? v.ra : v.rb, v.sHeel - 4, (b === 0 ? 1 : -1) * (7 - G)); pointsAvoid.push(keep(wd(q[0], q[1]), 6)); }
+      // (where the plan put them: moved, clear of other track running past)
+      for (const b of [0, 1]) { const q = v.fdb?.[b].pivot ?? railPoint(v.three ? v.three.S : b === 0 ? v.ra : v.rb, v.sHeel - 4, (b === 0 ? 1 : -1) * (7 - G)); pointsAvoid.push(keep(wd(q[0], q[1]), 6)); }
     }
     items.push({ kind: 'throw', key, at: wd(v.leverX, v.throwY), pts: [wd(v.throwStockX, v.throwY - hw), wd(xOut, v.throwY - hw), wd(xOut, v.throwY + hw), wd(v.throwStockX, v.throwY + hw)],
       lever: { frame: P, side: v.throwDir, stockX: Math.abs(v.throwStockX), edge: Math.abs(v.throwEdgeX), minD: Math.abs(v.leverMinD), pivotY: v.pivotPt[1], maxTine: v.pivotPt[1] - 12.5,
