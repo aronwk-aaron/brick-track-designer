@@ -15,7 +15,7 @@ import { reversedRoute } from './reverse';
 import { type BaseParams, type SetSpec, switchGeometry, switchPlan, type SwitchPlan } from './base';
 import { gridLever, subRoute, type ThrowEdit, toFrame } from './pieces';
 
-export interface NetworkPart { name: string; color: number; local: Man; world: Man; turn?: { at: [number, number]; by: number } }
+export interface NetworkPart { name: string; color: number; local: Man; world: Man; turn?: { at: [number, number]; by: number; swing?: number } }
 
 const LOCAL_LEN = 400; // (how much of each route the points' frame looks at)
 
@@ -93,7 +93,7 @@ export function networkSplits(s: Scad, routes: Route[], sol: Solution, p: BasePa
       const g2 = gridLever(P, plan.sets[0], ed ?? {});
       if (g2.leverOffset !== undefined) plan = switchPlan(rts, [spec(g2)], p);
     }
-    warnings.push(...plan.warnings.filter((w) => !/print bed/.test(w)));
+    warnings.push(...plan.warnings.filter((w) => !/print bed/.test(w)), ...plan.notes.filter((w) => !warnings.includes(w)));
     const gm = switchGeometry(s, plan), mech = gm.mech(0);
     // which design route (and which way round) each frame route is
     const worldOf = (rt: Route) => (rt === A ? i : rt === B ? j : j2);
@@ -102,7 +102,7 @@ export function networkSplits(s: Scad, routes: Route[], sol: Solution, p: BasePa
     const pts = gm.pointsParts(0);
     const turns = gm.pointsTurns(0), cz = Math.cos((P[2] * Math.PI) / 180), sz = Math.sin((P[2] * Math.PI) / 180);
     pts.forEach((m, k) => moving.push({ name: `${tag}${pts.length > 1 ? (k === 0 ? '-a' : '-b') : ''}`, color: 0x4682b4, local: m, world: place(m, P),
-      ...(turns?.[k] && { turn: { at: [P[0] + turns[k].at[0] * cz - turns[k].at[1] * sz, P[1] + turns[k].at[0] * sz + turns[k].at[1] * cz] as [number, number], by: turns[k].by } }) }));
+      ...(turns?.[k] && { turn: { at: [P[0] + turns[k].at[0] * cz - turns[k].at[1] * sz, P[1] + turns[k].at[0] * sz + turns[k].at[1] * cz] as [number, number], by: turns[k].by, swing: turns[k].swing } }) }));
     // (Peco's spring: printed flat and straight, as assembled squeezed between its pins)
     const spr = gm.springPart(0), sprP = gm.springPrint(0);
     if (spr && sprP) moving.push({ name: `${tag}-spring`, color: 0xc0392b, local: sprP, world: place(spr, P) });

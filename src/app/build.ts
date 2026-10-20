@@ -37,7 +37,7 @@ export interface TrackworkItem {
 export interface Piece {
   name: string; color: number; positions: Float32Array; stl: Uint8Array;
   /** (4DBrix's blades) the pin it turns on, as assembled, and how far to turn it there to open it (degrees): it goes on open */
-  turn?: { at: [number, number]; by: number };
+  turn?: { at: [number, number]; by: number; swing?: number };
 }
 
 // Pieces built before, by what they were built from: an edit rebuilds only
@@ -597,6 +597,7 @@ export function buildDesign(w: Wasm, design: Design, report: (what: string, frac
   }
   pc.switches.forEach((sw, n) => {
     progress(`Building switch ${n + 1} of ${pc.switches.length}`);
+    for (const note of sw.plan.notes) bedWarnings.add(note);
     const tag = pc.switches.length > 1 ? `switch${n + 1}` : 'switch';
     const cl = sw.plan.checkList;
     const frameCuts = grooveCuts.map((m) => R(T(m, [-sw.pose[0], -sw.pose[1], 0]), [0, 0, -sw.pose[2]]));
@@ -621,7 +622,7 @@ export function buildDesign(w: Wasm, design: Design, report: (what: string, frac
       const sfx = sw.sets.length > 1 ? `${k + 1}` : '';
       if (bracket) add(`${tag}-bracket${sfx}`, 0x8a8f99, bracket, place(bracket, sw.pose));
       const cz2 = Math.cos((sw.pose[2] * Math.PI) / 180), sz2 = Math.sin((sw.pose[2] * Math.PI) / 180);
-      const turnOf = (j: number): Piece['turn'] => { const t2 = turns?.[j]; return t2 && { at: [sw.pose[0] + t2.at[0] * cz2 - t2.at[1] * sz2, sw.pose[1] + t2.at[0] * sz2 + t2.at[1] * cz2], by: t2.by }; };
+      const turnOf = (j: number): Piece['turn'] => { const t2 = turns?.[j]; return t2 && { at: [sw.pose[0] + t2.at[0] * cz2 - t2.at[1] * sz2, sw.pose[1] + t2.at[0] * sz2 + t2.at[1] * cz2], by: t2.by, swing: t2.swing }; };
       pp.forEach((pts, j) => add(`${tag}-points${sfx}${pp.length > 1 ? (j === 0 ? '-a' : '-b') : ''}`, 0x4682b4, pts, place(pts, sw.pose), turnOf(j)));
       // (Peco's spring: printed flat and straight, as assembled squeezed between its pins)
       if (spring && springPrint) add(`${tag}-points${sfx}-spring`, 0xc0392b, springPrint, place(spring, sw.pose));
