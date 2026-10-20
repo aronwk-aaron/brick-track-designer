@@ -3,6 +3,8 @@
 // the pieces: a switch wherever routes split (base and moving parts), the
 // rest as fixed trackwork. Runs in the worker (and in tests).
 import { Scad, R, T, type Man } from '../geom/scad';
+import { sweepRoute } from '../geom/sweep';
+import { PLATE_H } from '../geom/track';
 import { CROSSING_DEFAULTS, crossingPiece } from '../geom/crossing';
 import type { Wasm } from '../geom/kernel';
 import { stlBytes } from '../geom/stl';
@@ -12,6 +14,9 @@ import { BASE_DEFAULTS, switchGeometry } from '../switch/base';
 import { planPieces, subRoute } from '../switch/pieces';
 import { networkPiece } from '../switch/network';
 import { type Design, OPTION_DEFAULTS, toRoutes } from './design';
+
+/** An item of trackwork the hand edits apply to: a check rail, a flangeway cut, a points set. */
+export interface TrackworkItem { kind: 'check' | 'groove' | 'points'; key: string; at: [number, number]; pts: [number, number][]; off?: boolean; len?: number; toe?: number }
 
 /** A built piece: its mesh in the design (for the view) and its STL (in its own frame, to print). */
 export interface Piece { name: string; color: number; positions: Float32Array; stl: Uint8Array }
@@ -43,18 +48,52 @@ export function buildDesign(w: Wasm, design: Design) {
     const n = Math.max(2, Math.ceil(s1 - s0));
     return Array.from({ length: n + 1 }, (_, k) => railPoint(routes[i], s0 + ((s1 - s0) * k) / n, off));
   };
+  // Hand edits (design.trackwork), by where each item is.
+  const tw = design.trackwork ?? {};
+  const keyOf = (q: [number, number]) => `${Math.round(q[0])},${Math.round(q[1])}`;
+  const items: TrackworkItem[] = [];
+  /** Apply the check rail edits to a solution's check rails (in place), noting each for the Trackwork panel. */
+  const editChecks = (rs: typeof routes, checks: typeof sol.checkRails) => {
+    const out = checks.flatMap((cr) => {
+      const mid = railPoint(rs[cr.route], (cr.s0 + cr.s1) / 2, cr.offset + cr.width / 2), key = keyOf(mid), e = tw.check?.[key] ?? {};
+      if (e.off) { items.push({ kind: 'check', key, at: mid, pts: [], off: true, len: cr.s1 - cr.s0 }); return []; }
+      const m = { ...cr, s0: cr.s0 - (e.d0 ?? 0), s1: cr.s1 + (e.d1 ?? 0), offset: cr.offset - cr.side * (e.shift ?? 0) };
+      const n = Math.max(2, Math.ceil(m.s1 - m.s0));
+      items.push({ kind: 'check', key, at: mid, len: m.s1 - m.s0, pts: Array.from({ length: n + 1 }, (_, k) => railPoint(rs[m.route], m.s0 + ((m.s1 - m.s0) * k) / n, m.offset + m.width / 2)) });
+      return [m];
+    });
+    checks.splice(0, checks.length, ...out);
+  };
+  // Flangeway cuts lengthened by hand: the rail head cut down to the
+  // flangeway's depth on along each end.
+  const grooveCuts: Man[] = [];
+  const scad0 = new Scad(w);
+  for (const gr of sol.grooves) {
+    const mid = railPoint(routes[gr.route], (gr.s0 + gr.s1) / 2, gr.side * g), key = keyOf(mid), e = tw.groove?.[key] ?? {};
+    const d0 = Math.max(0, e.d0 ?? 0), d1 = Math.max(0, e.d1 ?? 0);
+    const a0 = Math.max(0, gr.s0 - d0), a1 = Math.min(routeLength(routes[gr.route]), gr.s1 + d1);
+    items.push({ kind: 'groove', key, at: mid, len: a1 - a0, pts: along(gr.route, gr.side * g, a0, a1) });
+    const head = scad0.square([3.6, o.flangewayDepth + 1]).translate([gr.side * g - 1.8, PLATE_H + 6.4 - o.flangewayDepth]);
+    if (d0 > 0) grooveCuts.push(sweepRoute(scad0, head, routes[gr.route], a0, gr.s0));
+    if (d1 > 0) grooveCuts.push(sweepRoute(scad0, head, routes[gr.route], gr.s1, a1));
+  }
+  // Points moved along by hand.
+  const splitAt = (sp: typeof sol.splits[number]) => railPoint(routes[sp.routes[0]], sp.merge ? sp.spans[0][1] : sp.spans[0][0], 0);
+  for (const sp of sol.splits) { const at = splitAt(sp), key = keyOf(at); items.push({ kind: 'points', key, at, pts: [at], toe: tw.points?.[key]?.toe ?? 0 }); }
+  const toeShift = (q: [number, number]) => tw.points?.[keyOf(q)]?.toe ?? 0;
   const overlay = {
-    grooves: sol.grooves.map((gr) => along(gr.route, gr.side * g, gr.s0, gr.s1)),
-    checkRails: sol.checkRails.map((c) => along(c.route, c.offset + c.width / 2, c.s0, c.s1)),
+    grooves: [] as [number, number][][],
+    checkRails: [] as [number, number][][],
     crossings: sol.crossings.map((c) => c.point),
-    splits: sol.splits.map((sp) => railPoint(routes[sp.routes[0]], sp.spans[0][0], 0)),
+    splits: sol.splits.map(splitAt),
     grips: [] as [number, number][],
+    items,
   };
   // Pieces: a switch wherever routes split, the rest as fixed trackwork.
   const scad = new Scad(w), pieces: Piece[] = [];
   const params = { ...BASE_DEFAULTS, ...o, gaugeStuds: design.gaugeStuds, studGrip: design.grip ?? 'edges', pointsPieces: design.pointsPieces ?? 1 };
 
-  let pc = planPieces(routes, sol.splits, params);
+  let pc = planPieces(routes, sol.splits, params, toeShift);
   // Switches that merge back in, cross other track, or can't stand on their
   // own (a crossover, a switch on a crossing): the whole design as one
   // network piece with the points built in.
@@ -77,7 +116,8 @@ export function buildDesign(w: Wasm, design: Design) {
   };
   if (network) {
     const copt = { ...CROSSING_DEFAULTS, gaugeStuds: design.gaugeStuds, grip: design.grip ?? 'edges', flangeway: o.flangeway, flangewayDepth: o.flangewayDepth, checkRailW: o.checkRailW };
-    const net = cached(`net:${JSON.stringify({ routes, params, copt })}`, () => { const grips: [number, number][] = []; return { ...networkPiece(scad, routes, sol, params, copt, grips), grips }; });
+    editChecks(routes, sol.checkRails);
+    const net = cached(`net:${JSON.stringify({ routes, params, copt, tw })}`, () => { const grips: [number, number][] = []; return { ...networkPiece(scad, routes, sol, params, copt, grips, toeShift, grooveCuts), grips }; });
     overlay.grips.push(...net.grips);
     add('track', 0x6f7780, net.body, net.body);
     for (const m of net.moving) add(m.name, m.color, m.local, m.world);
@@ -92,7 +132,9 @@ export function buildDesign(w: Wasm, design: Design) {
       return (w <= o.printBedX && h <= o.printBedY) || (w <= o.printBedY && h <= o.printBedX);
     };
     const rest = pc.rest;
-    const built = cached(`cx:${JSON.stringify({ rest, copt, solverOpts })}`, () => { const grips: [number, number][] = []; return { m: crossingPiece(scad, rest, copt, solve(rest, solverOpts), grips), grips }; });
+    const restSol = solve(rest, solverOpts);
+    editChecks(rest, restSol.checkRails);
+    const built = cached(`cx:${JSON.stringify({ rest, copt, solverOpts, tw })}`, () => { const grips: [number, number][] = []; return { m: crossingPiece(scad, rest, copt, restSol, grips, { cuts: grooveCuts }), grips }; });
     const whole = built.m;
     overlay.grips.push(...built.grips);
     if (fits(whole) || pc.rest.length > 1) {
@@ -110,8 +152,23 @@ export function buildDesign(w: Wasm, design: Design) {
   }
   pc.switches.forEach((sw, n) => {
     const tag = pc.switches.length > 1 ? `switch${n + 1}` : 'switch';
-    const gm = cached(`sw:${JSON.stringify({ routes: sw.routes, sets: sw.sets, params })}`, () => {
-      const g = switchGeometry(scad, sw.plan);
+    // its check rails, with the hand edits (keyed where they are in the design)
+    const ca = Math.cos((sw.pose[2] * Math.PI) / 180), sa = Math.sin((sw.pose[2] * Math.PI) / 180);
+    const toWorld = (q: [number, number]): [number, number] => [sw.pose[0] + q[0] * ca - q[1] * sa, sw.pose[1] + q[0] * sa + q[1] * ca];
+    const cl = sw.plan.checkList, kept: typeof cl = [];
+    for (const cr of cl) {
+      const rt = sw.plan.routes[cr[0]], w2 = o.checkRailW / 2;
+      const mid = toWorld(railPoint(rt, (cr[5] + cr[6]) / 2, cr[2] + w2)), key = keyOf(mid), e = tw.check?.[key] ?? {};
+      if (e.off) { items.push({ kind: 'check', key, at: mid, pts: [], off: true, len: cr[6] - cr[5] }); continue; }
+      const m: typeof cr = [cr[0], cr[1], cr[2] + cr[3] * (e.shift ?? 0), cr[3], cr[4], cr[5] - (e.d0 ?? 0), cr[6] + (e.d1 ?? 0)];
+      const n2 = Math.max(2, Math.ceil(m[6] - m[5]));
+      items.push({ kind: 'check', key, at: mid, len: m[6] - m[5], pts: Array.from({ length: n2 + 1 }, (_, k) => toWorld(railPoint(rt, m[5] + ((m[6] - m[5]) * k) / n2, m[2] + w2))) });
+      kept.push(m);
+    }
+    cl.splice(0, cl.length, ...kept);
+    const frameCuts = grooveCuts.map((m) => R(T(m, [-sw.pose[0], -sw.pose[1], 0]), [0, 0, -sw.pose[2]]));
+    const gm = cached(`sw:${JSON.stringify({ routes: sw.routes, sets: sw.sets, params, cl, tw: tw.groove })}`, () => {
+      const g = switchGeometry(scad, sw.plan, frameCuts);
       return { bases: g.basePieces(), grips: g.grips, sets: sw.sets.map((_, k) => ({ thr: g.throwPart(k), pp: g.pointsParts(k), print: g.leverPrint(), lever: g.leverPart(k) })) };
     });
     const bases = gm.bases;
@@ -126,6 +183,8 @@ export function buildDesign(w: Wasm, design: Design) {
       add(`${tag}-lever${sfx}`, 0xd4af37, print, place(lever, sw.pose));
     });
   });
+  overlay.checkRails = items.filter((it) => it.kind === 'check' && !it.off).map((it) => it.pts);
+  overlay.grooves = items.filter((it) => it.kind === 'groove').map((it) => it.pts);
   const all = pieces.flatMap((p) => [p.positions]);
   let mn = [Infinity, Infinity, Infinity], mx = [-Infinity, -Infinity, -Infinity];
   for (const ps of all) for (let i = 0; i < ps.length; i += 3) for (let k = 0; k < 3; k++) { mn[k] = Math.min(mn[k], ps[i + k]); mx[k] = Math.max(mx[k], ps[i + k]); }

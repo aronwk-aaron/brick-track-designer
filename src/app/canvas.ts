@@ -9,7 +9,7 @@
 import type { Design, DRoute, DSeg } from './design';
 import { describe, follow, plan, planAnyway, planAuto, planFreeTurning, planToPose, reversed, trace, type Pose } from './planner';
 
-export interface Overlay { grooves: [number, number][][]; checkRails: [number, number][][]; crossings: [number, number][]; splits: [number, number][]; grips?: [number, number][] }
+export interface Overlay { grooves: [number, number][][]; checkRails: [number, number][][]; crossings: [number, number][]; splits: [number, number][]; grips?: [number, number][]; items?: { kind: string; key: string; at: [number, number]; pts: [number, number][] }[] }
 
 export interface CanvasHost {
   design(): Design;
@@ -57,6 +57,8 @@ export class TrackCanvas {
   /** The snapped grid point under the mouse (studs), if over the plan. */
   mouseStuds(): [number, number] | undefined { return this.mouse ? this.snap(this.mouse) : undefined; }
   overlay: Overlay | undefined;
+  /** A trackwork item to pick out (hovered in the Trackwork panel). */
+  highlight: string | undefined;
   /** Show where the underside grips (only when not gripping everywhere). */
   showGrips = true;
   /** Dragging a track's end: which route and end, where the press was, and the route as it was. */
@@ -545,6 +547,13 @@ export class TrackCanvas {
         c.strokeStyle = '#2b9e4a'; c.lineWidth = 1.5;
         const r = Math.max(2, (3.2 / MM) * this.scale);
         for (const p of this.overlay.grips ?? []) { const [sx, sy] = this.toScreen(p[0] / MM, p[1] / MM); c.beginPath(); c.arc(sx, sy, r, 0, 2 * Math.PI); c.stroke(); }
+      }
+      // the trackwork item picked out in the Trackwork panel
+      const hi = this.overlay.items?.find((it) => it.key === this.highlight);
+      if (hi) {
+        if (hi.pts.length > 1) line(w(hi.pts), 'rgba(240,180,0,0.9)', Math.max(4, railW * 2.5));
+        const [hx, hy] = this.toScreen(hi.at[0] / MM, hi.at[1] / MM);
+        c.strokeStyle = '#f0b400'; c.lineWidth = 2.5; c.beginPath(); c.arc(hx, hy, 12, 0, 2 * Math.PI); c.stroke();
       }
       for (const p of this.overlay.splits) { const [sx, sy] = this.toScreen(p[0] / MM, p[1] / MM); c.fillStyle = '#f0b400'; c.fillRect(sx - 5, sy - 5, 10, 10); }
     }

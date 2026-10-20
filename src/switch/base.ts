@@ -314,7 +314,8 @@ function sphereScad(s: Scad, r: number, fn: number, scaleZ = 1): Man {
 }
 
 /** Everything switch.scad builds for a switch: the base and each set's moving parts. */
-export function switchGeometry(s: Scad, plan: SwitchPlan) {
+/** extraCuts: cut from the base too (in its frame: hand-widened flangeways). */
+export function switchGeometry(s: Scad, plan: SwitchPlan, extraCuts: Man[] = []) {
   const { p, g, G, routes, nRoutes, sets, sleeperW, sleeperLen } = plan;
   const t = new Track(s, { ...TRACK_DEFAULTS, gaugeStuds: p.gaugeStuds, studH: p.studH });
   const tc = t.c, c = p.pointClearance;
@@ -496,7 +497,7 @@ export function switchGeometry(s: Scad, plan: SwitchPlan) {
     const check2d = (x0: number) => sq([p.checkRailW, railTop - 0.4], [x0, 0]);
     return s.union(plan.checkList.map((cr) => {
       const rt = routes[cr[0]], x0 = cr[2], away = cr[3];
-      const s0 = nRoutes === 2 ? cr[1] - p.checkRailLen / 2 : cr[5], s1 = nRoutes === 2 ? cr[1] + p.checkRailLen / 2 : cr[6];
+      const s0 = cr[5], s1 = cr[6]; // (cr[1] -/+ half the length with two routes; set by hand edits too)
       const fl = 4, stock = -away * G;
       return s.union([
         sweep(check2d(x0), rt, s0 + fl, s1 - fl),
@@ -753,7 +754,7 @@ export function switchGeometry(s: Scad, plan: SwitchPlan) {
   const track = s.union(Object.values(named));
   const us = underside();
   grips.push(...us.grips);
-  const body = s.difference(s.union([track, ...sets.map(throwArm)]), [...sets.map(throwChannel), us.cut]);
+  const body = s.difference(s.union([track, ...sets.map(throwArm)]), [...sets.map(throwChannel), us.cut, ...extraCuts]);
   const supportZ = pieceBottomZ - 0.02;
   // The tubes, less the pockets, and only those that hold on to something
   // above them (a tube under a gap between ties, or a pocket, would print
