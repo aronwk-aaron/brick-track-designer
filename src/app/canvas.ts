@@ -446,6 +446,7 @@ export class TrackCanvas {
       return this.drawSoon();
     }
     if (this.panning) {
+      this.el.style.cursor = 'grabbing';
       this.ox = this.panning.ox + e.clientX - this.panning.x; this.oy = this.panning.oy + e.clientY - this.panning.y;
       if (Math.hypot(e.clientX - this.panning.x, e.clientY - this.panning.y) >= 4) this.panning.moved = true;
       // (the track being drawn still follows the mouse)
@@ -462,11 +463,26 @@ export class TrackCanvas {
     if (e.target !== this.el) return;
     this.mouse = this.evWorld(e);
     this.aimEither();
+    this.cursor();
     this.drawSoon();
+  }
+  /** The mouse pointer says what a press would do: grab a lever, points or an end, pick a track, or lay track. */
+  private cursor() {
+    const w = this.mouse;
+    let c = this.mode === 'draw' ? 'crosshair' : 'default';
+    if (this.space) c = 'grab';
+    else if (w && !this.active) {
+      const grab = !!(this.leverAt(w) || this.itemAt(w)), hit = grab ? undefined : this.nearTrack(w, this.reach(18));
+      if (grab) c = 'grab';
+      else if (hit?.end) c = 'move';
+      else if (hit && this.mode === 'select') c = 'pointer';
+    }
+    if (this.el.style.cursor !== c) this.el.style.cursor = c;
   }
   private up(e: MouseEvent) {
     const pan = this.panning;
     this.panning = undefined;
+    if (pan) this.cursor();
     if (pan) { if (pan.right && !pan.moved && this.active) this.stopDrawing(); return; }
     if (this.itemDrag) {
       const id = this.itemDrag, moved = !!id.at; this.itemDrag = undefined;
