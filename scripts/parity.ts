@@ -11,6 +11,8 @@ import { kernel, type Wasm } from '../src/geom/kernel';
 import { railSection, sweepArc, sweepStraight } from '../src/geom/rail';
 import { stlBytes } from '../src/geom/stl';
 import { compare } from './colcmp';
+import { setArcMode } from '../src/geom/sweep';
+setArcMode('scad'); // (OpenSCAD's arc pieces, to compare mesh for mesh)
 import { Scad } from '../src/geom/scad';
 import { Track } from '../src/geom/track';
 import { STRAIGHT_DEFAULTS, straightTrackOnly } from '../src/geom/straight';

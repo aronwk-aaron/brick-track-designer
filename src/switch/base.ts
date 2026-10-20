@@ -759,10 +759,15 @@ export function switchGeometry(s: Scad, plan: SwitchPlan) {
   // above them (a tube under a gap between ties, or a pocket, would print
   // as a loose ring).
   let tubes: Man | undefined;
-  if (us.tubes) {
-    const cut = s.difference(us.tubes, [...sets.map(pointsPockets), ...sets.map(throwChannel)]);
-    const keep = cut.decompose().filter((tb) => tb.intersect(body).volume() > 1);
-    tubes = keep.length ? s.union(keep) : undefined;
+  if (us.shapes?.length) {
+    // in plan: the floor over the hollow (ties, sleepers, the points' bed,
+    // the connectors) less the pockets and the channel; a tube or post
+    // stays only where it meets some of it
+    const floor = s.union([named.turnoutTies, named.routeTies, named.leadTies, named.pointsBeds, named.connectors]).project()
+      .subtract(W.CrossSection.union([...sets.flatMap((v) => [pointsSweep2d(v, c), bladeSlots2d(v, c)]), ...sets.map((v) => throwChannel(v).project())]));
+    const keep = us.shapes.filter((q) => q.cs.intersect(floor).area() > 1);
+    grips.length = 0; grips.push(...keep.filter((q) => q.tube).map((q) => q.c));
+    tubes = keep.length ? s.difference(s.extrude(W.CrossSection.union(keep.map((q) => q.cs)), PLATE_H), [...sets.map(pointsPockets), ...sets.map(throwChannel)]) : undefined;
   }
   if (parts) { parts.body = body; if (tubes) parts.tubes = tubes; }
   return s.union([

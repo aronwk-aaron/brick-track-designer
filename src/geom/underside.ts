@@ -18,6 +18,8 @@ export interface Underside {
   tubes?: Man;
   /** Where the gripping tubes are. */
   grips: [number, number][];
+  /** Each tube's and post's plan, with its centre and whether it's a gripping tube (to drop any that hold on to nothing). */
+  shapes?: { c: [number, number]; tube: boolean; cs: CS }[];
 }
 
 /**
@@ -30,9 +32,13 @@ export function studSpots(s: Scad, t: Track, spots: Spot[], bed: (x: number, y: 
   u: [number, number], v: [number, number], h: number, turn = 0, solid: (x: number, y: number) => boolean = () => true,
   grip: 'edges' | 'all' = 'edges'): Underside {
   const W = s.w, recessW = t.o.studD + 1.0;
-  const socket = (x: number, y: number) => T(R(t.studSocket(h), [0, 0, turn]), [x, y, -0.01]);
-  const recess = (x: number, y: number) => T(R(T(s.cube([recessW, recessW, h]), [-recessW / 2, -recessW / 2, 0]), [0, 0, turn]), [x, y, -0.01]);
-  if (grip === 'all') return { cut: s.union(spots.map(([x, y]) => socket(x, y))), grips: [] };
+  // (everything cut is the same height: drawn in plan, unioned there and
+  // extruded once, much faster than hundreds of solids)
+  const sq2 = (w: number, x: number, y: number) => W.CrossSection.square([w, w], true).rotate(turn).translate([x, y]);
+  const socket = (x: number, y: number) => sq2(t.c.studSocketW, x, y);
+  const recess = (x: number, y: number) => sq2(recessW, x, y);
+  const extrudeCut = (cs: CS[]) => T(s.extrude(W.CrossSection.union(cs), h), [0, 0, -0.01]);
+  if (grip === 'all') return { cut: extrudeCut(spots.map(([x, y]) => socket(x, y))), grips: [] };
   const at = (q: Spot | [number, number], a: number, b: number): [number, number] =>
     [q[0] + STUD * (a * u[0] + b * v[0]), q[1] + STUD * (a * u[1] + b * v[1])];
   const k4 = 4 - BOTTOM_WALL;
@@ -55,15 +61,15 @@ export function studSpots(s: Scad, t: Track, spots: Spot[], bed: (x: number, y: 
   const shape = (q: { c: [number, number]; tube: boolean }): CS => (q.tube
     ? W.CrossSection.circle((TUBE_OD - ANTISTUD_FIT) / 2, 48).subtract(W.CrossSection.circle(TUBE_ID / 2, 48))
     : W.CrossSection.circle(POST_D / 2, 24)).translate(q.c);
-  const tubes = corners.length ? s.union(corners.map((q) => s.extrude(shape(q), PLATE_H))) : undefined;
+  const tubes = corners.length ? s.extrude(W.CrossSection.union(corners.map(shape)), PLATE_H) : undefined;
   const squares = spots.filter((_, k) => hol[k])
     .map(([x, y]) => W.CrossSection.square([STUD + 0.002, STUD + 0.002], true).rotate(turn).translate([x, y]));
-  const cuts: Man[] = [];
+  const plan: CS[] = [];
   if (squares.length) {
     let hollow = W.CrossSection.union(squares).offset(-BOTTOM_WALL, 'Miter', 1000);
     if (corners.length) hollow = hollow.subtract(W.CrossSection.union(corners.map(shape)));
-    cuts.push(T(s.extrude(hollow, h), [0, 0, -0.01]));
+    plan.push(hollow);
   }
-  spots.forEach((p, k) => { if (!hol[k]) cuts.push(under([p[0], p[1]]) ? recess(p[0], p[1]) : socket(p[0], p[1])); });
-  return { cut: s.union(cuts), tubes, grips: corners.filter((q) => q.tube).map((q) => q.c) };
+  spots.forEach((p, k) => { if (!hol[k]) plan.push(under([p[0], p[1]]) ? recess(p[0], p[1]) : socket(p[0], p[1])); });
+  return { cut: extrudeCut(plan), tubes, shapes: corners.map((q) => ({ ...q, cs: shape(q) })), grips: corners.filter((q) => q.tube).map((q) => q.c) };
 }
