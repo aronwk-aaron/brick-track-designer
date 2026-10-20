@@ -53,6 +53,14 @@ export function constants(o: TrackOptions) {
 let socketShape: 'round' | 'square' = 'round';
 export const setSocketShape = (m: 'round' | 'square') => { socketShape = m; };
 export const getSocketShape = () => socketShape;
+/**
+ * Parity with the OpenSCAD files, for the checks against their renders:
+ * square sockets, and the throw arm's end where switch.scad puts it (not out
+ * to the next stud line).
+ */
+let parity = false;
+export const setScadParity = (on: boolean) => { parity = on; socketShape = on ? 'square' : 'round'; };
+export const scadParity = () => parity;
 
 export class Track {
   readonly c: ReturnType<typeof constants>;

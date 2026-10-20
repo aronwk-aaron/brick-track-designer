@@ -23,7 +23,7 @@ import { type Design, OPTION_DEFAULTS, toRoutes } from './design';
 export interface TrackworkItem {
   kind: 'check' | 'groove' | 'points' | 'throw'; key: string; at: [number, number]; pts: [number, number][]; off?: boolean; len?: number; toe?: number; dir?: [number, number];
   /** a lever ('throw'): its points' frame (mm, degrees), side (+1 right), the track's edge beside it and the pivot's y (in the frame), the longest tines, and its settings now */
-  lever?: { frame: Pose; side: number; edge: number; pivotY: number; maxTine: number; leverOffset: number; springLength: number; edited: boolean };
+  lever?: { frame: Pose; side: number; edge: number; minD: number; pivotY: number; maxTine: number; leverOffset: number; springLength: number; edited: boolean };
 }
 
 /** A built piece: its mesh in the design (for the view) and its STL (in its own frame, to print). */
@@ -100,13 +100,13 @@ export function buildDesign(w: Wasm, design: Design, report: (what: string, frac
   const toeShift = (q: [number, number]) => tw.points?.[keyOf(q)]?.toe ?? 0;
   const throwEdit = (q: [number, number]) => tw.throw?.[keyOf(q)];
   /** A points set's lever on the plan (it can be dragged there). */
-  const leverItem = (key: string, P: Pose, v: { throwDir: number; leverX: number; throwY: number; throwStockX: number; throwEdgeX: number; pivotPt: [number, number] }) => {
+  const leverItem = (key: string, P: Pose, v: { throwDir: number; leverX: number; throwY: number; throwStockX: number; throwEdgeX: number; leverMinD: number; tineLen: number; pivotPt: [number, number] }) => {
     const ca = Math.cos((P[2] * Math.PI) / 180), sa = Math.sin((P[2] * Math.PI) / 180);
     const wd = (x: number, y: number): [number, number] => [P[0] + x * ca - y * sa, P[1] + x * sa + y * ca];
     const ed = tw.throw?.[key];
     items.push({ kind: 'throw', key, at: wd(v.leverX, v.throwY), pts: [wd(v.throwStockX, v.throwY), wd(v.leverX, v.throwY)],
-      lever: { frame: P, side: v.throwDir, edge: Math.abs(v.throwEdgeX), pivotY: v.pivotPt[1], maxTine: v.pivotPt[1] - 12.5,
-        leverOffset: ed?.leverOffset ?? o.leverOffset, springLength: Math.min(ed?.springLength ?? o.springLength, v.pivotPt[1] - 12.5), edited: !!ed } });
+      lever: { frame: P, side: v.throwDir, edge: Math.abs(v.throwEdgeX), minD: Math.abs(v.leverMinD), pivotY: v.pivotPt[1], maxTine: v.pivotPt[1] - 12.5,
+        leverOffset: Math.round((Math.abs(v.leverX) - Math.abs(v.throwEdgeX)) * 100) / 100, springLength: Math.round(v.tineLen * 100) / 100, edited: !!ed } });
   };
   const overlay = {
     grooves: [] as [number, number][][],
@@ -121,7 +121,7 @@ export function buildDesign(w: Wasm, design: Design, report: (what: string, frac
   const params = { ...BASE_DEFAULTS, ...o, gaugeStuds: design.gaugeStuds, studGrip: design.grip ?? 'edges', pointsPieces: design.pointsPieces ?? 1,
     generateBallast: o.ballast !== 'none', ballastBuddy: o.ballast === 'buddy', bottomStyle: o.bottomStyle };
 
-  let pc = planPieces(routes, sol.splits, params, toeShift, throwEdit);
+  let pc = planPieces(routes, sol.splits, params, toeShift, throwEdit, true);
   steps = 2 + pc.switches.length + (pc.rest.length ? 1 : 0);
   // Switches that merge back in, cross other track, or can't stand on their
   // own (a crossover, a switch on a crossing): the whole design as one
@@ -176,6 +176,12 @@ export function buildDesign(w: Wasm, design: Design, report: (what: string, frac
     cells.forEach((m, k) => add(cells.length > 1 ? `${name}-plate${k + 1}` : name, 0x6f7780, m, m));
     if (cells.some((m) => !fitsBed(m))) bedWarnings.add(`a baseplate's worth of track doesn't fit the ${o.printBedX} x ${o.printBedY} print bed: pick a smaller print bed cut or smaller baseplates`);
   };
+  /** A part as plain data (its mesh for the view, its STL, its volume, whether it fits the bed), so its solid can be let go. */
+  const bake = (m: Man) => {
+    const wm = m.getMesh(), positions = new Float32Array(wm.triVerts.length * 3);
+    wm.triVerts.forEach((v, i) => positions.set(wm.vertProperties.subarray(v * wm.numProp, v * wm.numProp + 3), i * 3));
+    return { positions, stl: stlBytes(wm), volume: m.volume(), fits: fitsBed(m) };
+  };
   const add = (name: string, color: number, local: Man, world: Man) => {
     const wm = world.getMesh(), positions = new Float32Array(wm.triVerts.length * 3);
     wm.triVerts.forEach((v, i) => positions.set(wm.vertProperties.subarray(v * wm.numProp, v * wm.numProp + 3), i * 3));
@@ -188,7 +194,7 @@ export function buildDesign(w: Wasm, design: Design, report: (what: string, frac
   // from the track near it only, cut to the cell with its joints. false: it
   // needs no cutting (build it whole).
   const MARGIN = 72; // (past a cropped end's effects on the bed and underside)
-  const BLOCK = 600; // (built together: about as much as builds quickly)
+  const BLOCK = 450; // (built together: about as much as builds quickly)
   const TILE_OVER = 8000; // mm of track: more, and it's built in tiles
   const tiled = (name: string, all: Route[], checks: CheckRail[], splits: SplitParts[], copt: typeof CROSSING_DEFAULTS, key: string) => {
     let b = routesBox(all, track.c.sleeperLen / 2 + 16);
@@ -203,7 +209,7 @@ export function buildDesign(w: Wasm, design: Design, report: (what: string, frac
     const splitBoxes = splits.map((sp) => [...sp.adds, ...sp.cuts, sp.stock].map((m) => m.boundingBox()));
     steps += cs.length;
     let n = 0;
-    const out: Man[] = [];
+    const out: ReturnType<typeof bake>[] = [];
     cs.forEach((R, ci) => {
       progress(`Building ${name}: part ${ci + 1} of ${cs.length}`);
       const cr = cropRoutes(all, R, MARGIN, checks);
@@ -223,7 +229,7 @@ export function buildDesign(w: Wasm, design: Design, report: (what: string, frac
       });
       const tileCuts = grooveCuts.filter((m) => nearCell(m.boundingBox(), R, MARGIN));
       const tk = `tile:${key}:${JSON.stringify({ r: cr.routes, c: cr.checks, i: [...cr.inner], R, lines, near: near.map((x) => x.k), copt, g: grooveCuts.length ? tw.groove : 0 })}`;
-      let part: { ms: Man[]; grips: [number, number][] };
+      let part: { ms: ReturnType<typeof bake>[]; grips: [number, number][] };
       try { part = cached(tk, () => arena(w, () => {
         const grips: [number, number][] = [];
         const body = networkBody(scad, cr.routes, { crossings: [], grooves: [], splits: [], checkRails: cr.checks }, copt, tileSplits, grips, { cuts: tileCuts, innerEnds: cr.inner, gridPose });
@@ -231,16 +237,17 @@ export function buildDesign(w: Wasm, design: Design, report: (what: string, frac
           const bb = m.boundingBox(), cx = (bb.min[0] + bb.max[0]) / 2, cy = (bb.min[1] + bb.max[1]) / 2;
           return cx > R[0] && cx < R[2] && cy > R[1] && cy < R[3];
         });
-        return { ms: got, grips: grips.filter((q) => q[0] > R[0] && q[0] <= R[2] && q[1] > R[1] && q[1] <= R[3]) };
-      }, (r) => r.ms)); } catch (err) {
+        // (baked: the block's solids are all let go, a whole yard's would fill the kernel's memory)
+        return { ms: got.filter((m) => m.numTri() > 0).map(bake), grips: grips.filter((q) => q[0] > R[0] && q[0] <= R[2] && q[1] > R[1] && q[1] <= R[3]) };
+      }, () => [])); } catch (err) {
         bedWarnings.add(`part ${ci + 1} of ${name} (x ${Math.max(R[0], b[0]).toFixed(0)} to ${Math.min(R[2], b[2]).toFixed(0)}, y ${Math.max(R[1], b[1]).toFixed(0)} to ${Math.min(R[3], b[3]).toFixed(0)}) failed to build: ${err instanceof Error ? err.message : `kernel error ${String(err)}`}`);
         return;
       }
       overlay.grips.push(...part.grips);
-      out.push(...part.ms.filter((m) => m.numTri() > 0));
+      out.push(...part.ms);
     });
-    out.forEach((m) => add(out.length > 1 ? `${name}${++n}` : name, 0x6f7780, m, m));
-    if (out.some((m) => !fitsBed(m))) bedWarnings.add(plan.why === 'bed' ? `some parts still don't fit the ${o.printBedX} x ${o.printBedY} print bed`
+    for (const b2 of out) { pieces.push({ name: out.length > 1 ? `${name}${++n}` : name, color: 0x6f7780, positions: b2.positions.slice(), stl: b2.stl.slice() }); volume += b2.volume; }
+    if (out.some((b2) => !b2.fits)) bedWarnings.add(plan.why === 'bed' ? `some parts still don't fit the ${o.printBedX} x ${o.printBedY} print bed`
       : `a baseplate's worth of track doesn't fit the ${o.printBedX} x ${o.printBedY} print bed: pick a smaller print bed cut or smaller baseplates`);
     return true;
   };
@@ -252,7 +259,7 @@ export function buildDesign(w: Wasm, design: Design, report: (what: string, frac
   let net: ReturnType<typeof networkSplits> | undefined;
   if (network) {
     editChecks(routes, sol.checkRails);
-    net = cached(`netsplits:${netKey}`, () => networkSplits(scad, routes, sol, tp, toeShift, throwEdit));
+    net = cached(`netsplits:${netKey}`, () => networkSplits(scad, routes, sol, tp, toeShift, throwEdit, true));
     for (const sp of net.splits) leverItem(keyOf(sp.toe), sp.frame, sp.set);
   }
   const rest = network ? [] : pc.rest;

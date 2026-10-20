@@ -12,7 +12,7 @@ import { railPoint, routeLat, routeLength, routePose, routeSOf, segStarts } from
 import { M, R, T, type CS, type Man, type Scad, type Vec2, type Vec3 } from '../geom/scad';
 import { sweepRoute } from '../geom/sweep';
 import { type Spot, studSpots } from '../geom/underside';
-import { DEFAULTS as TRACK_DEFAULTS, getSocketShape, PLATE_H, RAIL_PROFILE, STUD, Track } from '../geom/track';
+import { DEFAULTS as TRACK_DEFAULTS, getSocketShape, scadParity, PLATE_H, RAIL_PROFILE, STUD, Track } from '../geom/track';
 import { HEAD_HW, pointsSet, type PointsSetValues, type SwitchParams, switchGlobals } from './context';
 
 export interface BaseParams extends SwitchParams {
@@ -590,7 +590,9 @@ export function switchGeometry(s: Scad, plan: SwitchPlan, extraCuts: Man[] = [])
 
   // ---------- the throw ----------
   const throwArm = (v: SetV) => {
-    const xIn = v.throwStockX, xOut = v.leverX + v.throwDir * 10, parts: Man[] = [];
+    // (the arm's end out to the next stud line, so it sits square on the studs)
+    const xIn = v.throwStockX, xEnd = v.leverX + v.throwDir * 10, parts: Man[] = [];
+    const xOut = scadParity() ? xEnd : v.throwDir * Math.ceil((v.throwDir * xEnd) / STUD - 1e-6) * STUD;
     parts.push(cube([Math.abs(xOut - xIn), g.armW, bedTop - pieceBottomZ], [Math.min(xIn, xOut), v.throwY - g.armW / 2, pieceBottomZ]));
     const cylY = (d: number, h: number, fn: number, at: Vec3) => T(R(T(s.cylinder(h, d / 2, d / 2, fn), [0, 0, -h / 2]), [90, 0, 0]), at);
     for (const sg of [-1, 1]) {
@@ -644,8 +646,13 @@ export function switchGeometry(s: Scad, plan: SwitchPlan, extraCuts: Man[] = [])
     const xr = plan.baseXRange(plan.baseY0, plan.baseY1), spots: Spot[] = [];
     for (let x = Math.floor(xr[0] / 8) * 8 - 4; x <= xr[1] + 4 + 1e-9; x += 8)
       for (let y = 4; y <= plan.baseY1 + 1e-9; y += 8) spots.push([x, y, roundScad(x / 8), roundScad(y / 8)]);
-    const bed = (x: number, y: number, m: number) => y >= 8 + m
-      && Math.min(...routes.map((rt) => Math.abs(routeLat(rt, [x, y])))) <= sleeperLen / 2 - m
+    // (the throw arms too: hollow with tubes underneath, like the rest)
+    const onArm = (x: number, y: number, m: number) => !scadParity() && sets.some((v) => {
+      const xEnd = v.leverX + v.throwDir * 10, xOut = v.throwDir * Math.ceil((v.throwDir * xEnd) / STUD - 1e-6) * STUD;
+      return x >= Math.min(v.throwStockX, xOut) + m && x <= Math.max(v.throwStockX, xOut) - m && Math.abs(y - v.throwY) <= g.armW / 2 - m;
+    });
+    const bed = (x: number, y: number, m: number) => (y >= 8 + m
+      && Math.min(...routes.map((rt) => Math.abs(routeLat(rt, [x, y])))) <= sleeperLen / 2 - m || onArm(x, y, m))
       // clear of every end connector's base (measured in that end's frame)
       && !plan.endPoses.some((e) => { const dx = x - e[0], dy = y - e[1]; return Math.hypot(dx, dy) < sleeperLen + 16 && dx * sind(e[2]) - dy * cosd(e[2]) < 8 + m; });
     const ty = plan.tieYs(), half = sleeperW / 2 - (TRACK_DEFAULTS.studD + 1) / 2;
@@ -654,7 +661,7 @@ export function switchGeometry(s: Scad, plan: SwitchPlan, extraCuts: Man[] = [])
     // before it, on a lead-in, only the lead ties are solid)
     const bedY0 = Math.min(...sets.map((v) => (v.toeY > 20 ? v.toeY - 2 : Math.min(v.toeY - 2, 7.9))));
     const leads = leadTiePoses();
-    const solid = (x: number, y: number) => (y < bedY0
+    const solid = (x: number, y: number) => onArm(x, y, 0) || (y < bedY0
       ? leads.some((e) => { const l = localOf(e, [x, y]); return Math.abs(l[1]) <= half && Math.abs(l[0]) <= sleeperLen / 2; })
       : ty.length === 0 || y <= ty[0] - sleeperW / 2 - (TRACK_DEFAULTS.studD + 1) / 2 || ty.some((tt) => Math.abs(y - tt) <= half));
     return studSpots(s, t, spots, bed, [1, 0], [0, 1], p.studH + 0.21, 0, solid, p.studGrip);
@@ -904,7 +911,7 @@ export function switchGeometry(s: Scad, plan: SwitchPlan, extraCuts: Man[] = [])
     // in plan: the floor over the hollow (ties, sleepers, the points' bed,
     // the connectors) less the pockets and the channel; a tube or post
     // stays only where it meets some of it
-    const floor = s.union([named.turnoutTies, named.routeTies, named.leadTies, named.pointsBeds, named.connectors]).project()
+    const floor = s.union([named.turnoutTies, named.routeTies, named.leadTies, named.pointsBeds, named.connectors, ...(scadParity() ? [] : sets.map(throwArm))]).project()
       .subtract(W.CrossSection.union([...sets.flatMap((v) => [pointsSweep2d(v, c), bladeSlots2d(v, c)]), ...sets.map((v) => throwChannel(v).project())]));
     const keep = us.shapes.filter((q) => q.cs.intersect(floor).area() > 1);
     grips.length = 0; grips.push(...keep.filter((q) => q.tube).map((q) => q.c));
