@@ -143,6 +143,26 @@ const cases: Case[] = [
           },
         });
       }
+    // on ballast (anti-stud bottom with the buddy; and float without it), with
+    // switch.scad's routes for ballast (longer: the ends clear the ballast)
+    const bcfg = (() => {
+      const ls = readFileSync('test/fixtures/switch-sets-ballast.txt', 'utf8').split('\n'), i = ls.findIndex((l) => l.startsWith(`CFG ${cfg.name} `));
+      if (i < 0) return undefined;
+      return { routes: (JSON.parse(ls[i + 1].slice(7)) as Seg[][]).map((segs, k): Route => ({ id: String(k), start: [0, 0, 0],
+        segments: segs.map((sg): Segment => (sg[0] === 'S' ? { kind: 'straight', length: sg[1] } : { kind: 'arc', radius: sg[1], angle: sg[2] })) })), sets: JSON.parse(ls[i + 2].slice(5)) as SetSpec[] };
+    })();
+    // (the float, no-buddy ones only where the routes don't depend on the
+    // ballast's width: elsewhere switch.scad makes them shorter than these)
+    if (bcfg && ['left-R40-s_curve', 'right-R24-arc', 'wye-R40-arc', 'threeway-R40-arc'].includes(cfg.name))
+      for (const [tag, defs, bp] of [['ballast', {}, {}], ['ballast-float-nobuddy', { bottom_style: '"float"', generate_ballast_buddy: 'false' }, { bottomStyle: 'float', ballastBuddy: false }]] as const) {
+        if (tag !== 'ballast' && !['left-R40-s_curve', 'wye-R40-arc'].includes(cfg.name)) continue;
+        cases.push({
+          name: `switch-${tag}-${cfg.name}`,
+          scad: 'include <switch.scad>\nswitch_base();\n',
+          defines: { part: '"none"', generate_ballast: 'true', switch_type: `"${type}"`, diverge_radius: Number(r.slice(1)), diverge_shape: `"${shape}"`, label_name: 'false', label_switch: 'false', ...defs },
+          build: (w: Wasm) => switchBase(new Scad(w), switchPlan(bcfg.routes, bcfg.sets, { ...BASE_DEFAULTS, generateBallast: true, ...bp } as typeof BASE_DEFAULTS, type === 'right' ? -1 : 1)),
+        });
+      }
     // the base cut for the print bed, piece by piece
     if (['left-R40-s_curve', 'right-R24-arc', 'wye-R40-arc'].includes(cfg.name))
       for (let k = 0; k < 3; k++)
@@ -227,7 +247,9 @@ for (const c of cases.filter((c) => process.argv.length <= 2 || process.argv.sli
   const a = rawStats(ourPath), b = rawStats(refPath);
   // (by vertical columns on a 0.1mm grid, from the raw triangles: OpenSCAD's
   // own differences of imported meshes leave artifacts on thin parts)
-  const cc = compare(ourPath, refPath, 0.1);
+  // (a coarser grid on big pieces, to keep the columns in memory)
+  const area = (a.max[0] - a.min[0]) * (a.max[1] - a.min[1]);
+  const cc = compare(ourPath, refPath, Math.max(0.1, Math.sqrt(area / 4e6)));
   const extra = cc.extra, missing = cc.missing;
   const bbox = Math.max(...[0, 1, 2].flatMap((k) => [Math.abs(a.min[k] - b.min[k]), Math.abs(a.max[k] - b.max[k])]));
   rows.push([
