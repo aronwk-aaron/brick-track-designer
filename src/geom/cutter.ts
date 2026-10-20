@@ -9,7 +9,7 @@ import type { Route } from '../route/route';
 import { railPoint, routeLat, routeLength, routePose } from '../route/route';
 
 /** A cut: through point p, along unit direction d; span: only the stretch from p + span[0] d to p + span[1] d gets couplers (a tile's edge, so the tiles either side agree). */
-export interface CutLine { p: [number, number]; d: [number, number]; span?: [number, number] }
+export interface CutLine { p: [number, number]; d: [number, number]; span?: [number, number]; /** this cut's own joint (baseplate edges: always 'lego') */ joint?: 'lego' | 'dovetail' | 'butt' }
 
 const deg = (r: number) => (r * 180) / Math.PI;
 
@@ -95,10 +95,11 @@ export function cutPiece(s: Scad, t: Track, body: Man, routes: Route[], lines: C
     return { L, n, phi, toLocal, place, rails, couplers };
   });
 
+  const jointOf = (f: { L: CutLine }) => f.L.joint ?? joint;
   // material removed at every cut: the rails round each joint, the notches and sockets on the far side
   const removals = s.union(frames.flatMap((f) => [
-    ...(joint === 'butt' ? [] : f.rails.map((r) => f.place(R(cube([8, 8, 30], [-4, -4, -1]), [0, 0, r[1]]), r[0]))),
-    ...f.couplers.flatMap((u) => (joint === 'lego' ? [f.place(couplerNotch(), u), f.place(couplerSocket(), u)] : joint === 'dovetail' ? [f.place(tail(0.15), u)] : [])),
+    ...(jointOf(f) === 'butt' ? [] : f.rails.map((r) => f.place(R(cube([8, 8, 30], [-4, -4, -1]), [0, 0, r[1]]), r[0]))),
+    ...f.couplers.flatMap((u) => (jointOf(f) === 'lego' ? [f.place(couplerNotch(), u), f.place(couplerSocket(), u)] : jointOf(f) === 'dovetail' ? [f.place(tail(0.15), u)] : [])),
   ]));
   const cutBody = s.difference(body, [removals]);
 
@@ -122,15 +123,15 @@ export function cutPiece(s: Scad, t: Track, body: Man, routes: Route[], lines: C
     const joints: Man[] = [];
     frames.forEach((f, k) => {
       const side = sides[k];
-      if (joint !== 'butt') for (const r of f.rails) {
+      if (jointOf(f) !== 'butt') for (const r of f.rails) {
         const q: [number, number] = [f.L.p[0] + r[0] * f.L.d[0], f.L.p[1] + r[0] * f.L.d[1]];
         if (inCell(q)) joints.push(f.place(R(cutTongue(side > 0 ? r[2] : -r[2], -0.02), [0, 0, r[1] + (side < 0 ? 180 : 0)]), r[0]));
       }
       for (const u of f.couplers) {
         const q: [number, number] = [f.L.p[0] + u * f.L.d[0], f.L.p[1] + u * f.L.d[1]];
         if (!inCell(q)) continue;
-        if (joint === 'lego') joints.push(side > 0 ? f.place(couplerPeg(), u) : f.place(R(couplerTab(), [0, 0, 180]), u));
-        else if (joint === 'dovetail' && side > 0) joints.push(f.place(tail(0), u));
+        if (jointOf(f) === 'lego') joints.push(side > 0 ? f.place(couplerPeg(), u) : f.place(R(couplerTab(), [0, 0, 180]), u));
+        else if (jointOf(f) === 'dovetail' && side > 0) joints.push(f.place(tail(0), u));
       }
     });
     // (and nothing loose: bits under a few mm3 a cut left over)

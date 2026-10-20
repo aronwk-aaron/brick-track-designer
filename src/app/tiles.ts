@@ -23,7 +23,7 @@ export function routesBox(routes: Route[], pad: number): Rect {
   return [b[0] - pad, b[1] - pad, b[2] + pad, b[3] + pad];
 }
 
-export interface CutPlan { xs: number[]; ys: number[]; why: 'bed' | 'baseplate' }
+export interface CutPlan { xs: number[]; ys: number[]; why: 'bed' | 'baseplate'; /** which of them are baseplate edges (always joined with peg and clip) */ edges?: Set<number> }
 
 /** The shortest part a cut may leave (mm): no slivers of track. */
 const MIN_PART = 40;
@@ -107,7 +107,7 @@ export function planCuts(b: Rect, bedX: number, bedY: number, bp: number, ox: nu
   };
   for (let x = ox + Math.floor((b[0] - ox) / bp) * bp; x < b[2] - 1; x += bp) for (const dx of sub) add(xs, x + dx, 0, dx === 0, b[0], b[2]);
   for (let y = oy + Math.floor((b[1] - oy) / bp) * bp; y < b[3] - 1; y += bp) for (const dy of sub) add(ys, y + dy, 1, dy === 0, b[1], b[3]);
-  return { xs: spaced(xs, b[0], b[2], edges), ys: spaced(ys, b[1], b[3], edges), why: 'baseplate' };
+  return { xs: spaced(xs, b[0], b[2], edges), ys: spaced(ys, b[1], b[3], edges), why: 'baseplate', edges };
 }
 
 /**

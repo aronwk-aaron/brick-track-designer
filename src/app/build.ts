@@ -177,7 +177,9 @@ export function buildDesign(w: Wasm, design: Design, report: (what: string, frac
     // too big for the print bed (or at the baseplate edges): cut across the
     // track (tiles.ts planCuts), each part joined to the next like LEGO track
     const plan = planCuts(b, o.printBedX, o.printBedY, bp, (o.baseplateX ?? 0) * 8, (o.baseplateY ?? 0) * 8, [...overlay.splits, ...overlay.crossings, ...cassetteAvoid], pieceRoutes, bandHalf, jointRoom);
-    const lines: CutLine[] = [...plan.xs.map((x): CutLine => ({ p: [x, 0], d: [0, 1] })), ...plan.ys.map((y): CutLine => ({ p: [0, y], d: [1, 0] }))];
+    // (baseplate edges always peg and clip; the cuts to fit the bed as chosen)
+    const lj = (v: number) => (plan.edges?.has(v) ? { joint: 'lego' as const } : {});
+    const lines: CutLine[] = [...plan.xs.map((x): CutLine => ({ p: [x, 0], d: [0, 1], ...lj(x) })), ...plan.ys.map((y): CutLine => ({ p: [0, y], d: [1, 0], ...lj(y) }))];
     steps++; progress(plan.why === 'bed' ? `Cutting ${name} to fit the print bed` : `Cutting ${name} at the baseplate edges`);
     const cells = cached(`cut:${bp}:${o.joint}:${JSON.stringify(lines)}:${JSON.stringify(pieceRoutes)}:${world.volume().toFixed(3)}`, () => cutPiece(scad, track, world, pieceRoutes, lines, o.joint === 'ends' ? 'lego' : o.joint ?? 'lego'));
     cells.forEach((m, k) => add(cells.length > 1 ? `${name}${plan.why === 'baseplate' ? '-plate' : ''}${k + 1}` : name, 0x6f7780, m, m));
@@ -266,7 +268,16 @@ export function buildDesign(w: Wasm, design: Design, report: (what: string, frac
         const grips: [number, number][] = [];
         const cuts = grooveCuts.filter((m) => { const bb = m.boundingBox(); return rts.some((rt) => { const b2 = routesBox([rt], bandHalf + 8); return bb.max[0] >= b2[0] && bb.min[0] <= b2[2] && bb.max[1] >= b2[1] && bb.min[1] <= b2[3]; }); });
         const body = networkBody(scad, rts, { crossings: [], grooves: [], splits: [], checkRails: cChecks }, copt, mine, grips, { cuts, gridPose });
-        return { ms: body.numTri() > 0 ? [bake(body)] : [], grips };
+        if (body.numTri() === 0) return { ms: [], grips };
+        // (and where it crosses a baseplate edge, cut there with peg and clip)
+        let parts2 = [body];
+        if (bp) {
+          const bb = body.boundingBox(), ox = (o.baseplateX ?? 0) * 8, oy = (o.baseplateY ?? 0) * 8, lines: CutLine[] = [];
+          for (let x = ox + Math.ceil((bb.min[0] + 1 - ox) / bp) * bp; x < bb.max[0] - 1; x += bp) lines.push({ p: [x, 0], d: [0, 1], joint: 'lego' });
+          for (let y = oy + Math.ceil((bb.min[1] + 1 - oy) / bp) * bp; y < bb.max[1] - 1; y += bp) lines.push({ p: [0, y], d: [1, 0], joint: 'lego' });
+          if (lines.length) parts2 = cutPiece(scad, track, body, rts, lines, 'lego');
+        }
+        return { ms: parts2.filter((m) => m.numTri() > 0).map(bake), grips };
       }, () => [])); } catch (err) {
         if (err instanceof WebAssembly.RuntimeError || typeof err === 'number') throw err;
         bedWarnings.add(`section ${si + 1} of ${name} failed to build: ${err instanceof Error ? err.message : String(err)}`);
@@ -300,8 +311,8 @@ export function buildDesign(w: Wasm, design: Design, report: (what: string, frac
       // its cuts: those on and in the block, couplers along the block only
       // (so the blocks either side of an edge agree)
       const lines: CutLine[] = [
-        ...plan.xs.filter((x) => x >= R[0] && x <= R[2]).map((x): CutLine => ({ p: [x, 0], d: [0, 1], span: [R[1], R[3]] })),
-        ...plan.ys.filter((y) => y >= R[1] && y <= R[3]).map((y): CutLine => ({ p: [0, y], d: [1, 0], span: [R[0], R[2]] })),
+        ...plan.xs.filter((x) => x >= R[0] && x <= R[2]).map((x): CutLine => ({ p: [x, 0], d: [0, 1], span: [R[1], R[3]], ...(plan.edges?.has(x) ? { joint: 'lego' as const } : {}) })),
+        ...plan.ys.filter((y) => y >= R[1] && y <= R[3]).map((y): CutLine => ({ p: [0, y], d: [1, 0], span: [R[0], R[2]], ...(plan.edges?.has(y) ? { joint: 'lego' as const } : {}) })),
       ];
       // the points near it, on the cropped routes
       const near = splits.flatMap((sp, k) => (splitBoxes[k].some((bb) => nearCell(bb, R, MARGIN)) ? [{ sp, k }] : []));
