@@ -79,5 +79,8 @@ export function arena<T>(w: Wasm, f: () => T, keep: (r: T) => unknown[]): T {
 export function flat<M>(w: Wasm, m: M): M {
   const g = (m as unknown as { getMesh(): { numProp: number; vertProperties: Float32Array; triVerts: Uint32Array; mergeFromVert: Uint32Array; mergeToVert: Uint32Array } }).getMesh();
   const mesh = new w.Mesh({ numProp: g.numProp, vertProperties: g.vertProperties, triVerts: g.triVerts, mergeFromVert: g.mergeFromVert, mergeToVert: g.mergeToVert });
-  return new w.Manifold(mesh) as unknown as M;
+  const r = new w.Manifold(mesh);
+  // (made with new, which arena() doesn't see: noted here as its methods' results are)
+  if (recording) recording.add(r as unknown as Handle); else outside.add(r);
+  return r as unknown as M;
 }
