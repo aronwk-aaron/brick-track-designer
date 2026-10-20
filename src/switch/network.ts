@@ -78,8 +78,13 @@ export function networkSplits(s: Scad, routes: Route[], sol: Solution, p: BasePa
   const studsAt = (k: number) => { const q = toeOf(sol.splits[k]); return `${(q[0] / 8).toFixed(0)}, ${(q[1] / 8).toFixed(0)} (studs)`; };
   for (const gr of groups) {
     const sp = sol.splits[gr.main], mine = new Set([gr.main, ...gr.kids].flatMap((k) => sol.splits[k].routes));
-    if (routes.some((rt, r) => !mine.has(r) && through(gr.main, rt)))
+    const hits = routes.flatMap((rt, r) => (!mine.has(r) && through(gr.main, rt) ? [r] : []));
+    // (a branch taken out of these very points (trackwork drop), its rails run through as fixed track: said as that)
+    const toe = toeOf(sp), takenOut = (r: number) => (sol.dropped ?? []).some((dp) => dp.routes.includes(r) && near(toeOf(dp), toe));
+    if (hits.some((r) => !takenOut(r)))
       warnings.push(`the points at ${studsAt(gr.main)} have another track's rail between their stock rails (in another switch's frog or points?): their blades would hit it; move them along`);
+    if (hits.some(takenOut))
+      warnings.push(`the points at ${studsAt(gr.main)} have a branch taken out of them whose rails still run through them: their blades would hit those rails; take the branch out of the drawing, or put the points back`);
     // (and a route of theirs that ends (or joins the next) before the points are done with it: its end connector on the blades)
     const left = sp.routes.map((r, n) => (sp.merge ? sp.spans[n][0] : routeLength(routes[r]) - sp.spans[n][1]));
     if (Math.min(...left) < 24) warnings.push(`a track ends in the points at ${studsAt(gr.main)}: carry it on past the frog`);
