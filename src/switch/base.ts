@@ -818,7 +818,8 @@ export function switchGeometry(s: Scad, plan: SwitchPlan, extraCuts: Man[] = [])
     };
     const nearLever = (q: Pt, r: number) => {
       const earHw = g.leverBossLen / 2 + c + g.leverEarT, wf = g.leverBossLen / 2 + c;
-      return plan.setData.some((d) => (Math.abs(q[0] - d.leverX) < 4 + r && Math.abs(q[1] - d.throwY) < earHw + r)
+      return plan.setData.some((d) => (p.throwModule && Math.abs(q[0] - d.leverX) < 1.5 * STUD + r && Math.abs(q[1] - d.throwY) < 1.5 * STUD + r) // (under the bracket)
+        || (Math.abs(q[0] - d.leverX) < 4 + r && Math.abs(q[1] - d.throwY) < earHw + r)
         || (Math.abs(q[0] - d.leverX) < d.leverTravel / 2 + forkHw + 1.5 + r && Math.abs(q[1] - d.throwY) < wf + r));
     };
     const spotFree = (q: Pt) => {

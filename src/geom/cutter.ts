@@ -20,7 +20,7 @@ const deg = (r: number) => (r * 180) / Math.PI;
  * neighbouring lines), joints added. routes: the piece's routes (for the
  * rails and the bed), in the same frame as body.
  */
-/** flatRails: the rails cut flat across, no interlocking tongues (nothing overhangs, no supports to print). */
+/** flatRails: cut flat: the rails straight across with no tongues, and no peg and clip (nothing sticks out, nothing to support). */
 export function cutPiece(s: Scad, t: Track, body: Man, routes: Route[], lines: CutLine[], joint: 'lego' | 'dovetail' | 'butt' = 'lego', flatRails = false): Man[] {
   if (!lines.length) return [body];
   const G = t.c.railOffset, half = t.c.sleeperLen / 2;
@@ -92,7 +92,8 @@ export function cutPiece(s: Scad, t: Track, body: Man, routes: Route[], lines: C
         if (got.length < 3 && got.every((g2) => Math.abs(g2 - u) >= 16)) got.push(u);
       couplers.push(...got); run = [];
     };
-    if (!L.comb) for (let u = lo; u <= hi; u += 0.5) {
+    // (no couplers on a comb, nor where the rails are cut flat: a flat cut is flat, nothing sticking out)
+    if (!L.comb && !flatRails) for (let u = lo; u <= hi; u += 0.5) {
       if (onBed(u) && us.every((r) => Math.abs(u - r) >= 9)) run.push(u); else flush();
     }
     flush();
