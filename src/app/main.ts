@@ -134,6 +134,7 @@ function changed(rerender = false, record = true) {
   const json = JSON.stringify(design);
   if (record && json !== history[history.length - 1]) { history.push(json); future.length = 0; if (history.length > 200) history.shift(); }
   save();
+  gripLegend();
   if (rerender) render();
   canvas?.draw();
   updateHistoryButtons();
@@ -262,7 +263,12 @@ grip.addEventListener('change', () => { design.grip = grip.value as Design['grip
 const pointsSel = $<HTMLSelectElement>('points');
 pointsSel.value = String(design.pointsPieces ?? 1);
 pointsSel.addEventListener('change', () => { design.pointsPieces = Number(pointsSel.value) as 1 | 2; changed(true); });
-const gripLegend = () => { const on = grip.value === 'edges'; $('legend-grip').hidden = !on; if (canvas) canvas.showGrips = on; };
+function gripLegend() {
+  $('legend-ballast').hidden = (design.options?.ballast ?? 'none') === 'none';
+  let on: boolean; try { on = grip.value === 'edges'; } catch { return; } // (before the toolbar is set up)
+  $('legend-grip').hidden = !on;
+  if (canvas) canvas.showGrips = on;
+}
 const gauge = $<HTMLInputElement>('gauge');
 gauge.value = String(design.gaugeStuds);
 gauge.addEventListener('change', () => { design.gaugeStuds = Number(gauge.value); changed(); });

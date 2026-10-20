@@ -600,7 +600,7 @@ export class TrackCanvas {
     const css = getComputedStyle(this.el);
     const v = (name: string, fallback: string) => css.getPropertyValue(name).trim() || fallback;
     const ink = { rail: v('--c-rail', '#4a5560'), centre: v('--c-centre', '#b8b8b0'), label: v('--c-label', '#5c5c55'), mark: v('--c-mark', '#111'),
-      tagBg: v('--c-tag-bg', 'rgba(255,255,255,0.92)'), band: v('--c-band', 'rgba(120,110,95,0.16)'), sel: v('--c-sel', '#2b5fb8'), selInk: v('--c-sel-ink', '#1d4fae') };
+      tagBg: v('--c-tag-bg', 'rgba(255,255,255,0.92)'), band: v('--c-band', 'rgba(120,110,95,0.16)'), ballast: v('--c-ballast', 'rgba(150,128,96,0.30)'), ballastLow: v('--c-ballast-low', 'rgba(150,128,96,0.16)'), sel: v('--c-sel', '#2b5fb8'), selInk: v('--c-sel-ink', '#1d4fae') };
     c.fillStyle = v('--canvas-bg', '#fbfbf8'); c.fillRect(0, 0, W, H);
     // grid: a line every stud (when not too dense), stronger every 8
     const [wx0, wy1] = this.toWorld(0, 0), [wx1, wy0] = this.toWorld(W, H);
@@ -660,6 +660,15 @@ export class TrackCanvas {
         q = follow(q, [sg]);
       });
     };
+    // ballast (Piece options), under all the track: the layer a stud wider
+    // each side than the sleepers, and with the bottom ("buddy") layer
+    // another stud wider each side
+    const ballast = d.options?.ballast ?? 'none';
+    if (ballast !== 'none') {
+      const wide = (2 * g + 3 + (ballast === 'buddy' ? 4 : 2)) * this.scale;
+      for (const r of d.routes) line(trace(r, r.segs, 0.5), ink.ballastLow, wide);
+      if (ballast === 'buddy') for (const r of d.routes) line(trace(r, r.segs, 0.5), ink.ballast, (2 * g + 5) * this.scale);
+    }
     // labels: gathered, then drawn without overlapping (the selection's first)
     const labels: { x: number; y: number; txt: string; sel: boolean }[] = [];
     d.routes.forEach((r, i) => {
