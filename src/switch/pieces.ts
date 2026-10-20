@@ -4,6 +4,7 @@
 // their ends are clear of each other); what's left of the routes is the
 // fixed trackwork piece (crossings and plain track).
 import type { Pose, Pt, Route, Segment } from '../route/route';
+import type { SetOver } from './base';
 import { routeLat, routeLength, routePose, segLength, segStarts } from '../route/route';
 import type { Split } from '../route/solver';
 import { type BaseParams, BASE_DEFAULTS, type SetSpec, switchPlan, type SwitchPlan } from './base';
@@ -51,6 +52,32 @@ export interface SwitchPiece {
   /** Where each set's points are in the design (where its branch leaves): the key its hand edits go by. */
   setAts: [number, number][];
 }
+/**
+ * A points set's lever on a stud of the design's grid (studs at 4 + 8k mm:
+ * the track's centre lines run between them), so its arm sits square on the
+ * studs: the lever offset and tine length that put it there, nearest where
+ * it would be, in frame P. keep: the settings already chosen by hand.
+ */
+export function gridLever(P: Pose, v: { leverX: number; throwY: number; throwEdgeX: number; leverMinD: number; throwDir: number; pivotPt: [number, number] }, keep: ThrowEdit = {}): SetOver {
+  const ca = cosd(P[2]), sa = Math.sin((P[2] * Math.PI) / 180);
+  const toW = (x: number, y: number): [number, number] => [P[0] + x * ca - y * sa, P[1] + x * sa + y * ca];
+  const toL = (q: [number, number]): [number, number] => { const dx = q[0] - P[0], dy = q[1] - P[1]; return [dx * ca + dy * sa, -dx * sa + dy * ca]; };
+  const snap = (q: [number, number]): [number, number] => [Math.round((q[0] - 4) / 8) * 8 + 4, Math.round((q[1] - 4) / 8) * 8 + 4];
+  const edge = Math.abs(v.throwEdgeX), minD = Math.abs(v.leverMinD), maxTine = v.pivotPt[1] - 12.5;
+  let best: SetOver | undefined, bestD = Infinity;
+  for (let i = -2; i <= 3; i++) for (let j = -2; j <= 2; j++) {
+    // (candidates round where it is: out from the least it may go, along within the tines' reach)
+    const w = snap(toW(v.leverX + v.throwDir * 8 * i, v.throwY + 8 * j)), [lx, ly] = toL(w);
+    if (Math.sign(lx) !== v.throwDir || Math.abs(lx) < Math.max(edge, minD) - 0.01) continue;
+    const tine = v.pivotPt[1] - 2 - ly;
+    if (tine < 16 || tine > maxTine + 0.01) continue;
+    const d = Math.hypot(lx - v.leverX, ly - v.throwY);
+    if (d < bestD) { bestD = d; best = { leverOffset: Math.round((Math.abs(lx) - edge) * 100) / 100, springLength: Math.round(tine * 100) / 100 }; }
+  }
+  if (!best) return {};
+  return { ...best, ...(keep.leverOffset !== undefined && { leverOffset: keep.leverOffset }), ...(keep.springLength !== undefined && { springLength: keep.springLength }) };
+}
+
 /** A points set's lever, as moved by hand: which side, how far out, and (by its tines' length) how far along. */
 export interface ThrowEdit { side?: 'left' | 'right'; leverOffset?: number; springLength?: number }
 export interface Pieces { switches: SwitchPiece[]; rest: Route[]; warnings: string[] }
@@ -58,7 +85,7 @@ export interface Pieces { switches: SwitchPiece[]; rest: Route[]; warnings: stri
 /** Work out the switch pieces of a design and what's left over. */
 /** toeShift: how far (mm) to move the points from where the branch leaves, by that point in the design (hand edits). */
 export function planPieces(routes: Route[], splits: Split[], p: BaseParams = BASE_DEFAULTS, toeShift: (at: [number, number]) => number = () => 0,
-  throwEdit: (at: [number, number]) => ThrowEdit | undefined = () => undefined): Pieces {
+  throwEdit: (at: [number, number]) => ThrowEdit | undefined = () => undefined, gridLevers = false): Pieces {
   const warnings: string[] = [];
   // (the ends must clear each other's base: the sleepers, or with ballast its widest layer)
   const sleeperLen = (p.gaugeStuds + 1) * 8 + 24;
@@ -146,6 +173,17 @@ export function planPieces(routes: Route[], splits: Split[], p: BaseParams = BAS
       // piece (it's split for the print bed only where it has to be).
       const whole = true;
       if (whole) built = { L: Math.max(...sorted.map((rt) => routePose(rt, routeLength(rt))[1])), rts: sorted, plan: switchPlan(sorted, sets, p) };
+      // (each lever on a stud of the design's grid, unless moved by hand)
+      if (gridLevers) {
+        let moved = false;
+        sets.forEach((st, n) => {
+          const ed = throwEdit(setAts[n]) ?? {};
+          if (ed.leverOffset !== undefined && ed.springLength !== undefined) return;
+          const g2 = gridLever(P, built!.plan.sets[n], ed);
+          if (g2.leverOffset !== undefined) { st[5] = g2; moved = true; }
+        });
+        if (moved) built = { ...built, plan: switchPlan(sorted, sets, p) };
+      }
       warnings.push(...built.plan.warnings);
       for (const k of kids) used.add(k.child);
       const cutAt = (rt: Route) => (whole ? routeLength(rt) : sAtY(rt, built!.L));

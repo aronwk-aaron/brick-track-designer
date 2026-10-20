@@ -13,7 +13,7 @@ import { routeLength, routePose } from '../route/route';
 import type { Solution } from '../route/solver';
 import { reversedRoute } from './reverse';
 import { type BaseParams, switchGeometry, switchPlan, type SwitchPlan } from './base';
-import { subRoute, type ThrowEdit, toFrame } from './pieces';
+import { gridLever, subRoute, type ThrowEdit, toFrame } from './pieces';
 
 export interface NetworkPart { name: string; color: number; local: Man; world: Man }
 
@@ -36,7 +36,7 @@ export interface SplitParts {
 
 /** Each split's points (see SplitParts). */
 export function networkSplits(s: Scad, routes: Route[], sol: Solution, p: BaseParams, toeShift: (at: [number, number]) => number = () => 0,
-  throwEdit: (at: [number, number]) => ThrowEdit | undefined = () => undefined) {
+  throwEdit: (at: [number, number]) => ThrowEdit | undefined = () => undefined, gridLevers = false) {
   const warnings: string[] = [];
   const place = (m: Man, P: Pose) => T(R(m, [0, 0, P[2]]), [P[0], P[1], 0]);
   const splits = sol.splits.map((sp, n): SplitParts => {
@@ -59,7 +59,12 @@ export function networkSplits(s: Scad, routes: Route[], sol: Solution, p: BasePa
     const own = ownR && ownR !== 'auto' ? ownR : p.throwSide;
     const tside = own === 'left' ? -1 : own === 'right' ? 1 : bRight ? -1 : 1;
     const over = { ...(ed?.leverOffset !== undefined && { leverOffset: ed.leverOffset }), ...(ed?.springLength !== undefined && { springLength: ed.springLength }) };
-    const plan = switchPlan(local, [[0, 1, 2 + toeShift([P[0], P[1]]), tside, undefined, over]], p);
+    let plan = switchPlan(local, [[0, 1, 2 + toeShift([P[0], P[1]]), tside, undefined, over]], p);
+    // (the lever on a stud of the design's grid, unless moved by hand)
+    if (gridLevers && !(ed?.leverOffset !== undefined && ed?.springLength !== undefined)) {
+      const g2 = gridLever(P, plan.sets[0], ed ?? {});
+      if (g2.leverOffset !== undefined) plan = switchPlan(local, [[0, 1, 2 + toeShift([P[0], P[1]]), tside, undefined, g2]], p);
+    }
     warnings.push(...plan.warnings.filter((w) => !/print bed/.test(w)));
     const gm = switchGeometry(s, plan), mech = gm.mech(0);
     // which design route (and which way round) each frame route is

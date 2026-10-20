@@ -3,7 +3,7 @@
 // difference). Usage: pnpm parity  (OPENSCAD_REPO defaults to
 // ~/Documents/openscad; renders go through ~/.claude/scripts/safe-run.sh
 // when it exists).
-import { setSocketShape } from '../src/geom/track';
+import { setScadParity } from '../src/geom/track';
 import { execFileSync } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
@@ -14,7 +14,7 @@ import { stlBytes } from '../src/geom/stl';
 import { compare } from './colcmp';
 import { setArcMode } from '../src/geom/sweep';
 setArcMode('scad'); // (OpenSCAD's arc pieces, to compare mesh for mesh)
-setSocketShape('square'); // (and its square stud sockets)
+setScadParity(true); // (and its square stud sockets, and the arm's end as switch.scad's)
 import { Scad } from '../src/geom/scad';
 import { Track } from '../src/geom/track';
 import { STRAIGHT_DEFAULTS, straightTrackOnly } from '../src/geom/straight';

@@ -11,7 +11,7 @@ import { describe, follow, plan, planAnyway, planAuto, planFreeTurning, planToPo
 
 export interface Overlay { grooves: [number, number][][]; checkRails: [number, number][][]; crossings: [number, number][]; splits: [number, number][]; grips?: [number, number][]; items?: OverlayItem[] }
 /** A trackwork item on the plan (mm); a lever ('throw') has its points' frame and settings, to drag it. */
-export interface OverlayItem { kind: string; key: string; at: [number, number]; pts: [number, number][]; dir?: [number, number]; lever?: { frame: [number, number, number]; side: number; edge: number; pivotY: number; maxTine: number; leverOffset: number; springLength: number } }
+export interface OverlayItem { kind: string; key: string; at: [number, number]; pts: [number, number][]; dir?: [number, number]; lever?: { frame: [number, number, number]; side: number; edge: number; minD: number; pivotY: number; maxTine: number; leverOffset: number; springLength: number } }
 
 export interface CanvasHost {
   design(): Design;
@@ -102,11 +102,21 @@ export class TrackCanvas {
     // (snapped to a stud of the design's grid, so the arm sits square on the
     // studs: the track's centre lines run between studs, so studs are at
     // 4 + 8k mm; then held to where the switch lets the lever go)
-    const sx = Math.round((w[0] * MM - 4) / MM) * MM + 4, sy = Math.round((w[1] * MM - 4) / MM) * MM + 4;
-    const dx = sx - fx, dy = sy - fy;
-    const lx = dx * Math.cos(h) + dy * Math.sin(h), ly = -dx * Math.sin(h) + dy * Math.cos(h);
+    const snapL = (q: [number, number]): [number, number] => {
+      const sx = Math.round((q[0] - 4) / MM) * MM + 4, sy = Math.round((q[1] - 4) / MM) * MM + 4, dx = sx - fx, dy = sy - fy;
+      return [dx * Math.cos(h) + dy * Math.sin(h), -dx * Math.sin(h) + dy * Math.cos(h)];
+    };
+    let [lx, ly] = snapL([w[0] * MM, w[1] * MM]);
     const side = lx >= 0 ? 1 : -1;
+    // (no nearer the track than the lever can go: out a stud at a time till it's clear)
+    for (let k = 0; k < 12 && Math.abs(lx) < Math.max(lv.edge, lv.minD) - 0.01; k++) {
+      const wx = fx + (lx + side * MM) * Math.cos(h) - ly * Math.sin(h), wy = fy + (lx + side * MM) * Math.sin(h) + ly * Math.cos(h);
+      [lx, ly] = snapL([wx, wy]);
+    }
     const leverOffset = Math.max(0, Math.min(80, Math.round((Math.abs(lx) - lv.edge) * 100) / 100));
+    // (along: a stud at a time back into the tines' reach)
+    for (let k = 0; k < 12 && lv.pivotY - 2 - ly > lv.maxTine + 0.01; k++) ly += MM;
+    for (let k = 0; k < 12 && lv.pivotY - 2 - ly < 16; k++) ly -= MM;
     const springLength = Math.max(16, Math.min(Math.floor(lv.maxTine), Math.round((lv.pivotY - 2 - ly) * 100) / 100));
     const d = this.host.design(), tw = (d.trackwork ??= {}), group = (tw.throw ??= {});
     const was = JSON.stringify(group[ld.it.key] ?? {});
