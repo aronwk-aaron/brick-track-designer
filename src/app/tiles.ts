@@ -64,7 +64,7 @@ export function planCuts(b: Rect, bedX: number, bedY: number, bp: number, ox: nu
     }
     return mm;
   };
-  const ok = (v: number, axis: 0 | 1) => along(v, axis) <= 8 && avoid.every((q) => Math.abs(q[axis] - v) > 45);
+  const ok = (v: number, axis: 0 | 1) => along(v, axis) <= 8 && avoid.every((q) => Math.abs(q[axis] - v) > 32);
   /** Can a finger cut go along the track at v: no rail running along within 12 mm of it, clear of points and crossings? */
   /** How close (mm) the nearest rail running along comes to a finger cut at v (and whether it's clear of points and crossings). */
   const railClear = (v: number, axis: 0 | 1) => {
@@ -75,7 +75,7 @@ export function planCuts(b: Rect, bedX: number, bedY: number, bp: number, ox: nu
       const c = axis === 0 ? Math.cos((p[2] * Math.PI) / 180) : Math.sin((p[2] * Math.PI) / 180);
       for (const sd of [-1, 1]) near = Math.min(near, Math.abs(p[axis] + sd * railG * Math.abs(c) - v));
     }
-    return avoid.every((q) => Math.abs(q[axis] - v) > 45) ? near : -1;
+    return avoid.every((q) => Math.abs(q[axis] - v) > 32) ? near : -1;
   };
   const combOk = (v: number, axis: 0 | 1) => railClear(v, axis) >= 12;
   const combs = new Set<number>();
@@ -111,6 +111,8 @@ export function planCuts(b: Rect, bedX: number, bedY: number, bp: number, ox: nu
           }
           if (got !== undefined) combs.add(got);
         }
+        // (nowhere within the bed's length: the nearest place past it, the part a little long, split again later if it can be)
+        if (got === undefined) for (let v = Math.ceil((p + len) / 8) * 8; v <= hi - MIN_PART && got === undefined; v += 8) if (ok(v, axis)) got = v;
         if (got === undefined) break; // (no way at all: warned about once it's built)
         out.push(got); p = got;
       }
