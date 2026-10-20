@@ -15,7 +15,8 @@ import { BASE_DEFAULTS, switchGeometry } from '../switch/base';
 import { planPieces, subRoute, toFrame } from '../switch/pieces';
 import { networkBody, networkSplits, type SplitParts } from '../switch/network';
 import { blocks as tileBlocks, cropRoutes, nearCell, planCuts, routesBox, type Rect } from './tiles';
-import type { CheckRail } from '../route/solver';
+import type { CheckRail, Split } from '../route/solver';
+import { planSections } from './sections';
 import type { Route } from '../route/route';
 import { cutPiece, type CutLine } from '../geom/cutter';
 import { type Design, OPTION_DEFAULTS, toRoutes } from './design';
@@ -178,7 +179,7 @@ export function buildDesign(w: Wasm, design: Design, report: (what: string, frac
     const plan = planCuts(b, o.printBedX, o.printBedY, bp, (o.baseplateX ?? 0) * 8, (o.baseplateY ?? 0) * 8, [...overlay.splits, ...overlay.crossings, ...cassetteAvoid], pieceRoutes, bandHalf, jointRoom);
     const lines: CutLine[] = [...plan.xs.map((x): CutLine => ({ p: [x, 0], d: [0, 1] })), ...plan.ys.map((y): CutLine => ({ p: [0, y], d: [1, 0] }))];
     steps++; progress(plan.why === 'bed' ? `Cutting ${name} to fit the print bed` : `Cutting ${name} at the baseplate edges`);
-    const cells = cached(`cut:${bp}:${o.joint}:${JSON.stringify(lines)}:${JSON.stringify(pieceRoutes)}:${world.volume().toFixed(3)}`, () => cutPiece(scad, track, world, pieceRoutes, lines, o.joint ?? 'lego'));
+    const cells = cached(`cut:${bp}:${o.joint}:${JSON.stringify(lines)}:${JSON.stringify(pieceRoutes)}:${world.volume().toFixed(3)}`, () => cutPiece(scad, track, world, pieceRoutes, lines, o.joint === 'ends' ? 'lego' : o.joint ?? 'lego'));
     cells.forEach((m, k) => add(cells.length > 1 ? `${name}${plan.why === 'baseplate' ? '-plate' : ''}${k + 1}` : name, 0x6f7780, m, m));
     if (cells.some((m) => !fitsBed(m))) bedWarnings.add(plan.why === 'bed'
       ? `some parts don't fit the ${o.printBedX} x ${o.printBedY} print bed without cutting along the track (it isn't)`
@@ -231,6 +232,53 @@ export function buildDesign(w: Wasm, design: Design, report: (what: string, frac
   const MARGIN = 72; // (past a cropped end's effects on the bed and underside)
   const BLOCK = 450; // (built together: about as much as builds quickly)
   const TILE_OVER = 8000; // mm of track: more, and it's built in tiles
+  // In separate pieces with ordinary track ends, the 4DBrix way (sections.ts):
+  // each section built from its own pieces of track, its cut ends given
+  // standard end connectors.
+  const sectioned = (name: string, all: Route[], checks: CheckRail[], splits: SplitParts[], solSplits: Split[], copt: typeof CROSSING_DEFAULTS, key: string) => {
+    const room = Math.max(o.printBedX, o.printBedY) - 4;
+    const plan = cached(`secplan:${key}:${room}:${bandHalf}`, () => planSections(all, solSplits, bandHalf, room));
+    const gridPose = routePose(all[0], 0);
+    steps += plan.sections.length;
+    let n = 0;
+    plan.sections.forEach((sec, si) => {
+      progress(`Building ${name}: section ${si + 1} of ${plan.sections.length}`);
+      const ps = sec.map((k) => plan.pieces[k]);
+      const rts = ps.map(([i, a, b]) => (a === 0 && b === routeLength(all[i]) ? all[i] : { ...subRoute(all[i], a, b), throwSide: all[i].throwSide }));
+      const pieceOf = (i: number, s: number) => ps.findIndex(([pi, a, b]) => pi === i && s >= a - 1e-6 && s <= b + 1e-6);
+      const firstOf = (i: number) => ps.findIndex(([pi]) => pi === i);
+      const cChecks = checks.flatMap((cr) => ps.flatMap(([pi, a, b], k) => {
+        if (pi !== cr.route) return [];
+        const s0 = Math.max(cr.s0, a), s1 = Math.min(cr.s1, b);
+        return s1 > s0 ? [{ ...cr, route: k, s0: s0 - a, s1: s1 - a }] : [];
+      }));
+      // its points: those whose toe is on one of its pieces
+      const mine = splits.flatMap((sp, k) => {
+        const ss = solSplits[k], toeS = ss.merge ? ss.spans[0][1] : ss.spans[0][0];
+        if (pieceOf(ss.routes[0], toeS) < 0) return [];
+        const [j, end] = sp.inner.split(':'), jj = Number(j);
+        const pj = end === 'start' ? pieceOf(jj, 0) : pieceOf(jj, routeLength(all[jj]));
+        return [{ ...sp, inner: pj >= 0 ? `${pj}:${end}` : '-', bladeCuts: sp.bladeCuts.filter(([i]) => firstOf(i) >= 0).map(([i, m]) => [firstOf(i), m] as [number, Man]) }];
+      });
+      const sk = `sec:${key}:${JSON.stringify({ rts, cChecks, m: mine.map((x) => x.toe), copt, g: grooveCuts.length ? tw.groove : 0 })}`;
+      let part: { ms: ReturnType<typeof bake>[]; grips: [number, number][] };
+      try { part = cached(sk, () => arena(w, () => {
+        const grips: [number, number][] = [];
+        const cuts = grooveCuts.filter((m) => { const bb = m.boundingBox(); return rts.some((rt) => { const b2 = routesBox([rt], bandHalf + 8); return bb.max[0] >= b2[0] && bb.min[0] <= b2[2] && bb.max[1] >= b2[1] && bb.min[1] <= b2[3]; }); });
+        const body = networkBody(scad, rts, { crossings: [], grooves: [], splits: [], checkRails: cChecks }, copt, mine, grips, { cuts, gridPose });
+        return { ms: body.numTri() > 0 ? [bake(body)] : [], grips };
+      }, () => [])); } catch (err) {
+        if (err instanceof WebAssembly.RuntimeError || typeof err === 'number') throw err;
+        bedWarnings.add(`section ${si + 1} of ${name} failed to build: ${err instanceof Error ? err.message : String(err)}`);
+        return;
+      }
+      overlay.grips.push(...part.grips);
+      for (const b2 of part.ms) {
+        pieces.push({ name: `${name}${++n}`, color: 0x6f7780, positions: b2.positions.slice(), stl: b2.stl.slice() }); volume += b2.volume;
+        if (!b2.fits) bedWarnings.add(`some sections don't fit the ${o.printBedX} x ${o.printBedY} print bed: there's nowhere to cut them with ordinary track ends (points, frogs and crossings stay whole)`);
+      }
+    });
+  };
   const tiled = (name: string, all: Route[], checks: CheckRail[], splits: SplitParts[], copt: typeof CROSSING_DEFAULTS, key: string) => {
     let b = routesBox(all, track.c.sleeperLen / 2 + 24);
     for (const sp of splits) for (const m of sp.adds) { const bb = m.boundingBox(); b = [Math.min(b[0], bb.min[0]), Math.min(b[1], bb.min[1]), Math.max(b[2], bb.max[0]), Math.max(b[3], bb.max[1])]; }
@@ -268,7 +316,7 @@ export function buildDesign(w: Wasm, design: Design, report: (what: string, frac
       try { part = cached(tk, () => arena(w, () => {
         const grips: [number, number][] = [];
         const body = networkBody(scad, cr.routes, { crossings: [], grooves: [], splits: [], checkRails: cr.checks }, copt, tileSplits, grips, { cuts: tileCuts, innerEnds: cr.inner, gridPose });
-        const got = cutPiece(scad, track, body, cr.routes, lines, o.joint ?? 'lego').filter((m) => {
+        const got = cutPiece(scad, track, body, cr.routes, lines, o.joint === 'ends' ? 'lego' : o.joint ?? 'lego').filter((m) => {
           const bb = m.boundingBox(), cx = (bb.min[0] + bb.max[0]) / 2, cy = (bb.min[1] + bb.max[1]) / 2;
           return cx > R[0] && cx < R[2] && cy > R[1] && cy < R[3];
         });
@@ -327,7 +375,8 @@ export function buildDesign(w: Wasm, design: Design, report: (what: string, frac
   if (net) {
     steps = 3;
     progress(`Building the piece with its ${sol.splits.length} points`);
-    if (!tiled('track', routes, sol.checkRails, net.splits, copt, netKey)) {
+    if (o.joint === 'ends') sectioned('track', routes, sol.checkRails, net.splits, sol.splits, copt, netKey);
+    else if (!tiled('track', routes, sol.checkRails, net.splits, copt, netKey)) {
       const whole = cached(`net:${netKey}`, () => { const grips: [number, number][] = []; return { body: networkBody(scad, routes, sol, copt, net.splits, grips, { cuts: grooveCuts }), grips }; });
       overlay.grips.push(...whole.grips);
       if ((o.pointsModule ?? 'built-in') !== 'built-in') {
@@ -358,7 +407,8 @@ export function buildDesign(w: Wasm, design: Design, report: (what: string, frac
     };
     const restKey = JSON.stringify({ rest, copt, solverOpts, tw });
     const whole = () => cached(`cx:${restKey}`, () => { const grips: [number, number][] = []; return { m: crossingPiece(scad, rest, copt, restSol, grips, { cuts: grooveCuts }), grips }; });
-    if (pc.rest.length > 1 && tiled('track', rest, restSol.checkRails, [], copt, restKey)) { /* built in tiles */ }
+    if (o.joint === 'ends') sectioned('track', rest, restSol.checkRails, [], [], copt, restKey);
+    else if (pc.rest.length > 1 && tiled('track', rest, restSol.checkRails, [], copt, restKey)) { /* built in tiles */ }
     else if (pc.rest.length > 1 || fits(whole().m)) {
       overlay.grips.push(...whole().grips);
       addTrack('track', whole().m, rest);

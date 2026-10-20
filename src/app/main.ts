@@ -549,7 +549,8 @@ function renderOptions() {
         const sel = document.createElement('select');
         for (const [v, tx, tip] of [['lego', 'Rail tongues + peg and clip (LEGO)', 'As LEGO track joins: interlocking rail-end tongues, and a peg and C-clip in the bed'],
           ['dovetail', 'Rail tongues + dovetails', 'Interlocking rail-end tongues, and dovetails through the bed: stronger, slides together from above'],
-          ['butt', 'Straight cuts (held by the baseplate)', 'Plain straight cuts, nothing to join them: the baseplate under them holds them in line']]) { const op = new Option(tx, v); op.title = tip; sel.append(op); }
+          ['butt', 'Straight cuts (held by the baseplate)', 'Plain straight cuts, nothing to join them: the baseplate under them holds them in line'],
+          ['ends', 'Separate pieces, ordinary track ends (4DBrix)', 'Each track cut square to itself where it is clear of the others, with a standard end connector both sides: points, frogs and crossings stay whole, plain track in lengths that fit the bed']]) { const op = new Option(tx, v); op.title = tip; sel.append(op); }
         sel.value = o.joint ?? 'lego';
         sel.title = 'How the parts cut for the print bed or the baseplates join';
         sel.addEventListener('change', () => { design.options = { ...design.options, joint: sel.value as PieceOptions['joint'] }; changed(true); });
