@@ -1172,7 +1172,8 @@ export function switchGeometry(s: Scad, plan: SwitchPlan, extraCuts: Man[] = [])
   const mech = (k = 0) => {
     const v: SetV = sets[k];
     return {
-      bed: pointsBed(v), pockets: pointsPockets(v), stockCut: stockFootCut(v), arm: throwArm(v), channel: throwChannel(v),
+      // (the plate-style blades' pins on it too: a network's piece left them out)
+      bed: fdb ? s.union([pointsBed(v), fdbPins(v)]) : pointsBed(v), pockets: pointsPockets(v), stockCut: stockFootCut(v), arm: throwArm(v), channel: throwChannel(v),
       bladeRails: [
         ...[0, 1].map((b) => [bRt(v, b), sweep(sq([9, 30], [bO(b) - 4.5, -5]), bRt(v, b), 0, v.sHeel + c)] as [Route, Man]),
         // (a three-way's branches' inner rails too: they start at the heels, the blades in their place before)
