@@ -549,7 +549,8 @@ export function switchGeometry(s: Scad, plan: SwitchPlan, extraCuts: Man[] = [])
         const q: Pt = [plan.railCross(rt, o, y + dy)[0], y + dy];
         if (postOk(q)) fill.push(q);
       }
-      const spots = dedupe(fill, grid);
+      // (on the stud grid only: switch.scad adds studs by each route's rails too, off the grid, a jumble on the long sleepers)
+      const spots = scadParity() ? dedupe(fill, grid) : grid;
       // (with ballast, kept within its top layer: the ends don't stick out over the step below)
       const tie = cube([xr - xl, sleeperW, PLATE_H], [xl, y - sleeperW / 2, 0]);
       out.push(s.difference(g.ballast ? s.intersection(tie, s.union(routes.map((rt) => sweep(sq([g.ballastTopW, PLATE_H + 2], [-g.ballastTopW / 2, -1]), rt)))) : tie,

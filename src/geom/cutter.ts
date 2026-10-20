@@ -104,15 +104,16 @@ export function cutPiece(s: Scad, t: Track, body: Man, routes: Route[], lines: C
         if (got.length < 3 && got.every((g2) => Math.abs(g2 - u) >= 16)) got.push(u);
       couplers.push(...got); run = [];
     };
-    // (no couplers on a comb, nor where the rails are cut flat: a flat cut is flat, nothing sticking out)
-    if (!L.comb && !flatRails) for (let u = lo; u <= hi; u += 0.5) {
+    // (no couplers on a comb; a flat cut's are axle holes, nothing sticking out, where the bed's thick enough for one)
+    if (!L.comb && !(flatRails && !axleFits)) for (let u = lo; u <= hi; u += 0.5) {
       if (onBed(u) && us.every((r) => Math.abs(u - r) >= 9)) run.push(u); else flush();
     }
     flush();
     return { L, n, phi, toLocal, place, rails, couplers };
   });
 
-  const jointOf = (f: { L: CutLine }) => f.L.joint ?? joint;
+  // (cut flat: pinned with axles, where they fit, or nothing; never a peg and clip)
+  const jointOf = (f: { L: CutLine }) => (flatRails ? (axleFits ? 'axle' : 'butt') : f.L.joint ?? joint);
   // material removed at every cut: the rails round each joint, the notches and sockets on the far side
   const removals = s.union(frames.flatMap((f) => [
     ...(jointOf(f) === 'butt' || flatRails ? [] : f.rails.map((r) => f.place(R(cube([8, 8, 30], [-4, -4, -1]), [0, 0, r[1]]), r[0]))),
