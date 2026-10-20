@@ -20,7 +20,8 @@ const deg = (r: number) => (r * 180) / Math.PI;
  * neighbouring lines), joints added. routes: the piece's routes (for the
  * rails and the bed), in the same frame as body.
  */
-export function cutPiece(s: Scad, t: Track, body: Man, routes: Route[], lines: CutLine[], joint: 'lego' | 'dovetail' | 'butt' = 'lego'): Man[] {
+/** flatRails: the rails cut flat across, no interlocking tongues (nothing overhangs, no supports to print). */
+export function cutPiece(s: Scad, t: Track, body: Man, routes: Route[], lines: CutLine[], joint: 'lego' | 'dovetail' | 'butt' = 'lego', flatRails = false): Man[] {
   if (!lines.length) return [body];
   const G = t.c.railOffset, half = t.c.sleeperLen / 2;
   const cz0 = 0, ch = PLATE_H - cz0;
@@ -101,7 +102,7 @@ export function cutPiece(s: Scad, t: Track, body: Man, routes: Route[], lines: C
   const jointOf = (f: { L: CutLine }) => f.L.joint ?? joint;
   // material removed at every cut: the rails round each joint, the notches and sockets on the far side
   const removals = s.union(frames.flatMap((f) => [
-    ...(jointOf(f) === 'butt' ? [] : f.rails.map((r) => f.place(R(cube([8, 8, 30], [-4, -4, -1]), [0, 0, r[1]]), r[0]))),
+    ...(jointOf(f) === 'butt' || flatRails ? [] : f.rails.map((r) => f.place(R(cube([8, 8, 30], [-4, -4, -1]), [0, 0, r[1]]), r[0]))),
     ...f.couplers.flatMap((u) => (jointOf(f) === 'lego' ? [f.place(couplerNotch(), u), f.place(couplerSocket(), u)] : jointOf(f) === 'dovetail' ? [f.place(tail(0.15), u)] : [])),
   ]));
   const cutBody = s.difference(body, [removals]);
@@ -139,7 +140,7 @@ export function cutPiece(s: Scad, t: Track, body: Man, routes: Route[], lines: C
     const joints: Man[] = [];
     frames.forEach((f, k) => {
       const side = sides[k];
-      if (jointOf(f) !== 'butt') for (const r of f.rails) {
+      if (jointOf(f) !== 'butt' && !flatRails) for (const r of f.rails) {
         const q: [number, number] = [f.L.p[0] + r[0] * f.L.d[0], f.L.p[1] + r[0] * f.L.d[1]];
         if (inCell(q)) joints.push(f.place(R(cutTongue(side > 0 ? r[2] : -r[2], -0.02), [0, 0, r[1] + (side < 0 ? 180 : 0)]), r[0]));
       }

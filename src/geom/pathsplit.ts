@@ -28,7 +28,8 @@ export function pathSplit(s: Scad, m: Man, routes: Route[], railG: number, avoid
       for (const sd of [-1, 1]) rails.push({ p: [p[0] + sd * railG * Math.cos(h), p[1] + sd * railG * Math.sin(h)], d });
     }
   }
-  const floor = m.slice(Math.min(1, (bb.min[2] + bb.max[2]) / 2));
+  // (through the bed, above any hollow underneath)
+  const floor = m.slice(2.7);
   const x0 = Math.floor(bb.min[0] / STEP) * STEP - STEP, x1 = Math.ceil(bb.max[0] / STEP) * STEP + STEP;
   const y0 = Math.floor(bb.min[1] / STEP) * STEP - STEP, y1 = Math.ceil(bb.max[1] / STEP) * STEP + STEP;
   const nx = Math.round((x1 - x0) / STEP) + 1, ny = Math.round((y1 - y0) / STEP) + 1;
@@ -52,17 +53,19 @@ export function pathSplit(s: Scad, m: Man, routes: Route[], railG: number, avoid
     if (Math.abs(across - at) > half3) return Infinity;
     // (the cells either side of the edge: nothing there, nothing to cut)
     const nrm: [number, number] = [-ed[1] * 4, ed[0] * 4];
-    if (!cellAt([mid[0] + nrm[0], mid[1] + nrm[1]]) && !cellAt([mid[0] - nrm[0], mid[1] - nrm[1]])) return 0.05;
+    const bias = Math.abs(across - at) / 4; // (as straight down the middle as it can go)
+    if (!cellAt([mid[0] + nrm[0], mid[1] + nrm[1]]) && !cellAt([mid[0] - nrm[0], mid[1] - nrm[1]])) return 0.05 + bias;
     if (avoid.some((q) => Math.hypot(q[0] - mid[0], q[1] - mid[1]) < 22)) return Infinity;
     for (const r of rails) {
       if (Math.abs(r.p[0] - mid[0]) > 14 || Math.abs(r.p[1] - mid[1]) > 14) continue;
       // (a rail running along the edge, near it: no)
-      const along = Math.abs(r.d[0] * ed[0] + r.d[1] * ed[1]) > Math.cos(Math.PI / 4);
+      // (running along it: within 10 degrees; a rail crossing at a shallower slant than that is cut across, as a crossover's middle has to be)
+      const along = Math.abs(r.d[0] * ed[0] + r.d[1] * ed[1]) > Math.cos(Math.PI / 18);
       const off = Math.abs((r.p[0] - mid[0]) * -ed[1] + (r.p[1] - mid[1]) * ed[0]);
       if (along && off < 12) return Infinity;
     }
     // (and a little dearer the further from where an even split would be)
-    return 1 + Math.abs((axis === 0 ? mid[0] : mid[1]) - at) / 4; // (as straight down the middle as it can go)
+    return 1 + bias;
   };
   // Dijkstra over the grid nodes, from the bottom (or left) edge to the top (or right)
   const id = (i: number, j: number) => j * nx + i, pos = (i: number, j: number): [number, number] => [x0 + i * STEP, y0 + j * STEP];
