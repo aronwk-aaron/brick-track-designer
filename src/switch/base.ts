@@ -902,8 +902,8 @@ export function switchGeometry(s: Scad, plan: SwitchPlan, extraCuts: Man[] = [])
     return s.union([
       bodyB,
       ast && s.difference(ast.tubes, [...sets.map(pointsPockets), ...sets.map(throwChannel)]),
-      t.startRailSupports(supportZ), t.supportFooting(supportZ, 0, -1),
-      ...plan.endPoses.map((e) => atPose(s.union([t.endRailSupports(supportZ), t.supportFooting(supportZ, 0, +1)]), e)),
+      ...(p.endSupports === false ? [] : [t.startRailSupports(supportZ), t.supportFooting(supportZ, 0, -1),
+        ...plan.endPoses.map((e) => atPose(s.union([t.endRailSupports(supportZ), t.supportFooting(supportZ, 0, +1)]), e))]),
     ]);
   }
   const track = s.union(Object.values(named));
@@ -929,8 +929,8 @@ export function switchGeometry(s: Scad, plan: SwitchPlan, extraCuts: Man[] = [])
   return s.union([
     body,
     tubes,
-    t.startRailSupports(supportZ), t.supportFooting(supportZ, 0, -1),
-    ...plan.endPoses.map((e) => atPose(s.union([t.endRailSupports(supportZ), t.supportFooting(supportZ, 0, +1)]), e)),
+    ...(p.endSupports === false ? [] : [t.startRailSupports(supportZ), t.supportFooting(supportZ, 0, -1),
+      ...plan.endPoses.map((e) => atPose(s.union([t.endRailSupports(supportZ), t.supportFooting(supportZ, 0, +1)]), e))]),
   ]);
   };
   // ---------- splitting the base for the print bed (switch_base_split) ----------

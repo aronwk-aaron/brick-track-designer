@@ -148,7 +148,7 @@ export function buildDesign(w: Wasm, design: Design, report: (what: string, frac
   const scad = new Scad(w), pieces: Piece[] = [];
   const params = { ...BASE_DEFAULTS, ...o, gaugeStuds: design.gaugeStuds, studGrip: design.grip ?? 'edges', pointsPieces: design.pointsPieces ?? 1,
     generateBallast: o.ballast !== 'none', ballastBuddy: o.ballast === 'buddy', bottomStyle: o.bottomStyle,
-    ...((o.pointsModule ?? 'built-in') !== 'built-in' && { mechFloor: 1.2 }) };
+    ...((o.pointsModule ?? 'built-in') !== 'built-in' && { mechFloor: 1.2 }), endSupports: o.endSupports !== false };
 
   let pc = planPieces(routes, sol.splits, params, toeShift, throwEdit, true);
   steps = 2 + pc.switches.length + (pc.rest.length ? 1 : 0);
@@ -388,7 +388,7 @@ export function buildDesign(w: Wasm, design: Design, report: (what: string, frac
   // ---- the trackwork first (what the plan shows and the hand edits work
   // on), sent on ahead of the pieces, which take longer ----
   const copt = { ...CROSSING_DEFAULTS, gaugeStuds: design.gaugeStuds, grip: design.grip ?? 'edges', flangeway: o.flangeway, flangewayDepth: o.flangewayDepth, checkRailW: o.checkRailW,
-    ballast: o.ballast, bottomStyle: o.bottomStyle };
+    ballast: o.ballast, bottomStyle: o.bottomStyle, supports: o.endSupports !== false };
   const tp = params;
   const netKey = JSON.stringify({ routes, tp, copt, tw });
   let net: ReturnType<typeof networkSplits> | undefined;

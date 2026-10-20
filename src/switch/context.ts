@@ -26,6 +26,8 @@ export interface SwitchParams {
   leverReach?: number;
   /** A solid floor this thick (mm) under the moving parts, over the underside's hollow: the pockets stop on it instead of going through to the bottom (unset: switch.scad's, through). */
   mechFloor?: number;
+  /** Breakaway print supports under the rail-end tongues at each end (default on; off: leave them to the slicer). */
+  endSupports?: boolean;
 }
 
 export const SWITCH_DEFAULTS: SwitchParams = {
