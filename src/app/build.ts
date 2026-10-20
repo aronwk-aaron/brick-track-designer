@@ -147,7 +147,8 @@ export function buildDesign(w: Wasm, design: Design, report: (what: string, frac
   // Pieces: a switch wherever routes split, the rest as fixed trackwork.
   const scad = new Scad(w), pieces: Piece[] = [];
   const params = { ...BASE_DEFAULTS, ...o, gaugeStuds: design.gaugeStuds, studGrip: design.grip ?? 'edges', pointsPieces: design.pointsPieces ?? 1,
-    generateBallast: o.ballast !== 'none', ballastBuddy: o.ballast === 'buddy', bottomStyle: o.bottomStyle };
+    generateBallast: o.ballast !== 'none', ballastBuddy: o.ballast === 'buddy', bottomStyle: o.bottomStyle,
+    ...((o.pointsModule ?? 'built-in') !== 'built-in' && { mechFloor: 1.2 }) };
 
   let pc = planPieces(routes, sol.splits, params, toeShift, throwEdit, true);
   steps = 2 + pc.switches.length + (pc.rest.length ? 1 : 0);

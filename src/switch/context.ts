@@ -24,6 +24,8 @@ export interface SwitchParams {
   bottomStyle?: 'antistud' | 'float';
   /** The lever's driver length beyond its least (10): longer swings it less for the same travel (a three-way's). */
   leverReach?: number;
+  /** A solid floor this thick (mm) under the moving parts, over the underside's hollow: the pockets stop on it instead of going through to the bottom (unset: switch.scad's, through). */
+  mechFloor?: number;
 }
 
 export const SWITCH_DEFAULTS: SwitchParams = {
@@ -49,7 +51,7 @@ export function switchGlobals(p: SwitchParams) {
   const pieceBottomZ = ballast ? (buddy ? ballastOffsetZ - buddyT : ballastOffsetZ) : 0;
   const bottomCavity = p.studH + 0.2;
   // (with an anti-stud underside, or none at all, the parts sit above a baseplate's studs)
-  const layerZ0 = pieceBottomZ + (antistud || !ballast ? bottomCavity : 0) + 0.2;
+  const layerZ0 = pieceBottomZ + (antistud || !ballast ? bottomCavity : 0) + (p.mechFloor ?? 0.2);
   const layerTop = layerZ0 + 1.4;
   const cavityTop = layerTop + p.pointClearance;
   const bedTop = ballast ? PLATE_H : Math.max(PLATE_H, cavityTop + 0.8);

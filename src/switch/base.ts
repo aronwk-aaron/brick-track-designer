@@ -325,6 +325,8 @@ export function switchGeometry(s: Scad, plan: SwitchPlan, extraCuts: Man[] = [])
   const tc = t.c, c = p.pointClearance;
   const railTop = PLATE_H + 6.4, endTrim = 4, stemHw = 2.5;
   const pieceBottomZ = g.pieceBottomZ, bedTop = g.bedTop, partZ0 = g.layerZ0;
+  // (where the pockets stop: on the floor under the moving parts, or through to the bottom as switch.scad's)
+  const floorZ = p.mechFloor !== undefined ? g.layerZ0 - p.pointClearance : pieceBottomZ - 1;
   const W = s.w;
   const sq = (size: Vec2, at: Vec2 = [0, 0]) => s.square(size).translate(at);
   const sweep = (cs: CS, rt: Route, s0 = 0, s1 = Infinity) => sweepRoute(s, cs, rt, s0, s1);
@@ -356,7 +358,7 @@ export function switchGeometry(s: Scad, plan: SwitchPlan, extraCuts: Man[] = [])
   const bHeel = (v: SetV, b: number): Pt => (b === 0 ? railPoint(v.ra, v.sBpiv, -G) : rotAbout(railPoint(v.rb, v.sBpiv, +G), v.pivotPt, -v.throwAng));
   const stockFootCut = (v: SetV) => s.union([0, 1].map((b) => {
     const side = bSide(b), face = bO(b) + side * HEAD_HW;
-    return sweep(sq([10, bedTop + 3 - pieceBottomZ], [side > 0 ? face : face - 10, pieceBottomZ - 1]), bOther(v, b), v.sToe - 2, v.sHeel + g.discR);
+    return sweep(sq([10, bedTop + 3 - floorZ], [side > 0 ? face : face - 10, floorZ]), bOther(v, b), v.sToe - 2, v.sHeel + g.discR);
   }));
   const bladeStem = (v: SetV, rt: Route, o: number, other: Route, oStock: number) => {
     const side = oStock < 0 ? 1 : -1, face = oStock + side * (HEAD_HW + c);
@@ -458,8 +460,8 @@ export function switchGeometry(s: Scad, plan: SwitchPlan, extraCuts: Man[] = [])
   const pointsPockets = (v: SetV) => {
     const slots = bladeSlots2d(v, c);
     return s.union([
-      T(s.extrude(W.CrossSection.union([pointsSweep2d(v, c), slots]), g.cavityTop - pieceBottomZ + 1), [0, 0, pieceBottomZ - 1]),
-      T(s.extrude(slots, bedTop + 2 - pieceBottomZ), [0, 0, pieceBottomZ - 1]),
+      T(s.extrude(W.CrossSection.union([pointsSweep2d(v, c), slots]), g.cavityTop - floorZ), [0, 0, floorZ]),
+      T(s.extrude(slots, bedTop + 2 - floorZ), [0, 0, floorZ]),
       ...units(v).map((u) => T(s.cylinder(g.pivotPinUp + c + 0.01, (g.pivotPinD + 2 * c) / 2, (g.pivotPinD + 2 * c) / 2, 32), [u.pivot[0], u.pivot[1], g.cavityTop - 0.01])),
     ]);
   };
@@ -635,8 +637,8 @@ export function switchGeometry(s: Scad, plan: SwitchPlan, extraCuts: Man[] = [])
     const wf = g.leverBossLen + 2 * c;
     const f0 = Math.min(v.forkX - forkHw, v.forkX + v.leverTravel + forkHw) - c - 1, f1 = Math.max(v.forkX - forkHw, v.forkX + v.leverTravel + forkHw) + c + 1;
     return s.union([
-      cube([x1 - x0, w, g.layerTop + c - pieceBottomZ + 1], [x0, v.throwY - w / 2, pieceBottomZ - 1]),
-      cube([f1 - f0, wf, 30], [f0, v.throwY - wf / 2, pieceBottomZ - 1]),
+      cube([x1 - x0, w, g.layerTop + c - floorZ], [x0, v.throwY - w / 2, floorZ]),
+      cube([f1 - f0, wf, 30], [f0, v.throwY - wf / 2, floorZ]),
     ]);
   };
 
