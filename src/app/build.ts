@@ -53,30 +53,66 @@ function cached<T>(key: string, f: () => T): T {
 const stlOf = new WeakMap<Man, Uint8Array>();
 
 /**
- * Routes drawn the wrong way round for points: one that starts on another
- * track heading back along it (it's a branch that merges, drawn from the
- * merge), or ends on one heading back along it (a branch drawn from its far
- * end), is turned round, so the solver sees the points either way it was
- * drawn. (Everything else goes by where things are, not which way a route
- * runs.)
+ * Routes drawn the wrong way round for points: the solver finds points where
+ * a route starts on another heading the same way (a split) or ends on one
+ * arriving the way it runs (a merge), and where two routes start (or end)
+ * together heading the same way (a wye). Each place a route's end meets
+ * another track along it, or another route's end with both leaving the same
+ * way, says whether the two run the same way round or not; the routes are
+ * turned round to agree everywhere (a crossover between two tracks drawn
+ * opposite ways turns one of the tracks, not just the crossover), turning as
+ * few as can be and the tracks others branch off least of all, and making
+ * splits rather than merges where it's all the same. (Everything else goes
+ * by where things are, not which way a route runs.)
  */
 export function orient(routes: Route[]): Route[] {
-  const out = [...routes];
-  // (along the other track, not at one of its ends: two branches meeting end to end, one drawn each way, say
-  // nothing about which is backwards, and taking that for a merge turned a branch drawn the right way round)
-  const onOpposite = (q: Pose, k: number) => out.some((a, i) => {
-    if (i === k || Math.abs(routeLat(a, [q[0], q[1]])) > 0.01) return false;
-    const sa = routeSOf(a, [q[0], q[1]]);
-    if (sa < 1 || sa > routeLength(a) - 1) return false;
-    const pa = routePose(a, sa);
-    const dh = Math.abs((((pa[2] - q[2]) % 360) + 540) % 360 - 180);
-    return Math.hypot(pa[0] - q[0], pa[1] - q[1]) < 0.01 && dh > 179.5;
-  });
-  out.forEach((rt, k) => {
-    const st = rt.start, e = routePose(rt, routeLength(rt));
-    if (onOpposite(st, k) || onOpposite(e, k)) out[k] = reversedRoute(rt);
-  });
-  return out;
+  const n = routes.length, ends = routes.map((rt) => [rt.start, routePose(rt, routeLength(rt))] as [Pose, Pose]);
+  const dAng = (a: number, b: number) => Math.abs(((((a - b) % 360) + 540) % 360) - 180);
+  // (each contact: routes i and j, whether one must be turned for them to agree, and the end of j it's at)
+  const links: { i: number; j: number; flip: boolean }[] = [], host = new Array(n).fill(0), endsAt: { j: number; e: number; i: number; kind: 'along' | 'ends' }[] = [];
+  for (let j = 0; j < n; j++) for (const e of [0, 1]) {
+    const q = ends[j][e], leave = e === 0 ? q[2] : q[2] + 180; // (the way the route leaves the contact)
+    for (let i = 0; i < n; i++) {
+      if (i === j || Math.abs(routeLat(routes[i], [q[0], q[1]])) > 0.01) continue;
+      const sa = routeSOf(routes[i], [q[0], q[1]]), pa = routePose(routes[i], sa), L = routeLength(routes[i]);
+      if (Math.hypot(pa[0] - q[0], pa[1] - q[1]) > 0.01) continue;
+      if (sa >= 1 && sa <= L - 1) {
+        // (along i: points when j starts heading i's way, or ends arriving its way: either way, heading i's way)
+        const d = dAng(pa[2], q[2]);
+        if (d > 0.5 && d < 179.5) continue; // (a crossing)
+        links.push({ i, j, flip: d > 0.5 }); host[i]++; endsAt.push({ j, e, i, kind: 'along' });
+      } else if (i < j && (sa < 1e-3 || sa > L - 1e-3)) {
+        // (end to end: a wye when both leave the same way (both starts, or both ends); else a join, which says nothing)
+        const ei = sa < 1e-3 ? 0 : 1, li = ei === 0 ? pa[2] : pa[2] + 180;
+        if (dAng(li, leave) > 0.5) continue;
+        links.push({ i, j, flip: ei !== e }); endsAt.push({ j, e, i, kind: 'ends' });
+      }
+    }
+  }
+  // two-colour each group of linked routes (turned or not), the cheaper way round
+  const turn = new Array<boolean | undefined>(n).fill(undefined);
+  for (let r0 = 0; r0 < n; r0++) {
+    if (turn[r0] !== undefined) continue;
+    const comp: number[] = [r0], col = new Map<number, boolean>([[r0, false]]);
+    for (let k = 0; k < comp.length; k++) {
+      const r = comp[k];
+      for (const l of links) {
+        const o = l.i === r ? l.j : l.j === r ? l.i : -1;
+        if (o < 0 || col.has(o)) continue;
+        col.set(o, col.get(r)! !== l.flip); comp.push(o);
+      }
+    }
+    // (cost: each route turned, the tracks others branch off dearly; merges a little, for splits where it's all the same)
+    const cost = (inv: boolean) => {
+      const t = (r: number) => col.get(r)! !== inv;
+      let c = comp.reduce((a, r) => a + (t(r) ? 1 + 10 * host[r] : 0), 0);
+      for (const x of endsAt) if (col.has(x.j) && (x.e === 1) !== t(x.j)) c += 0.5;
+      return c;
+    };
+    const inv = cost(true) < cost(false);
+    for (const r of comp) turn[r] = col.get(r)! !== inv;
+  }
+  return routes.map((rt, k) => (turn[k] ? reversedRoute(rt) : rt));
 }
 
 /**
