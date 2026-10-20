@@ -19,7 +19,8 @@ export interface NetworkPart { name: string; color: number; local: Man; world: M
 
 const LOCAL_LEN = 400; // (how much of each route the points' frame looks at)
 
-export function networkPiece(s: Scad, routes: Route[], sol: Solution, p: BaseParams, copt: CrossingOptions, grips?: [number, number][]) {
+export function networkPiece(s: Scad, routes: Route[], sol: Solution, p: BaseParams, copt: CrossingOptions, grips?: [number, number][],
+  toeShift: (at: [number, number]) => number = () => 0, extraCuts: Man[] = []) {
   const warnings: string[] = [];
   const railCuts = new Map<number, Man[]>(), innerEnds = new Set<string>(), adds: Man[] = [], cuts: Man[] = [];
   const moving: NetworkPart[] = [];
@@ -42,7 +43,7 @@ export function networkPiece(s: Scad, routes: Route[], sol: Solution, p: BasePar
     // (the lever: the branch's own setting, else the options', else the main route's side)
     const own = routes[j].throwSide && routes[j].throwSide !== 'auto' ? routes[j].throwSide : p.throwSide;
     const tside = own === 'left' ? -1 : own === 'right' ? 1 : bRight ? -1 : 1;
-    const plan = switchPlan(local, [[0, 1, 2, tside]], p);
+    const plan = switchPlan(local, [[0, 1, 2 + toeShift([P[0], P[1]]), tside]], p);
     warnings.push(...plan.warnings.filter((w) => !/print bed/.test(w)));
     const gm = switchGeometry(s, plan), mech = gm.mech(0);
     // which design route (and which way round) each frame route is
@@ -60,6 +61,6 @@ export function networkPiece(s: Scad, routes: Route[], sol: Solution, p: BasePar
     moving.push({ name: `${tag}-throw`, color: 0xe8892b, local: thr, world: place(thr, P) });
     moving.push({ name: `${tag}-lever`, color: 0xd4af37, local: gm.leverPrint(), world: place(gm.leverPart(0), P) });
   });
-  const body = crossingPiece(s, routes, copt, sol, grips, { railCuts, innerEnds, adds, cuts });
+  const body = crossingPiece(s, routes, copt, sol, grips, { railCuts, innerEnds, adds, cuts: [...cuts, ...extraCuts] });
   return { body, moving, warnings };
 }

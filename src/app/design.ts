@@ -24,6 +24,15 @@ export interface Design {
   pointsPieces?: 1 | 2;
   /** The rest of the piece options (switch.scad's), each left out = its default. */
   options?: Partial<PieceOptions>;
+  /** Hand edits to the trackwork the app works out, by where each item is (its middle, mm, "x,y"). */
+  trackwork?: Trackwork;
+}
+
+/** Hand edits: check rails lengthened (+) or shortened (-) at each end, moved, or taken out; flangeway cuts lengthened; points moved along. */
+export interface Trackwork {
+  check?: Record<string, { d0?: number; d1?: number; shift?: number; off?: boolean }>;
+  groove?: Record<string, { d0?: number; d1?: number }>;
+  points?: Record<string, { toe?: number }>;
 }
 
 /** Piece options the editor's Options panel sets (switch.scad's Customizer settings). */

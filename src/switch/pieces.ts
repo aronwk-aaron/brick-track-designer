@@ -52,7 +52,8 @@ export interface SwitchPiece {
 export interface Pieces { switches: SwitchPiece[]; rest: Route[]; warnings: string[] }
 
 /** Work out the switch pieces of a design and what's left over. */
-export function planPieces(routes: Route[], splits: Split[], p: BaseParams = BASE_DEFAULTS): Pieces {
+/** toeShift: how far (mm) to move the points from where the branch leaves, by that point in the design (hand edits). */
+export function planPieces(routes: Route[], splits: Split[], p: BaseParams = BASE_DEFAULTS, toeShift: (at: [number, number]) => number = () => 0): Pieces {
   const warnings: string[] = [];
   const sleeperLen = (p.gaugeStuds + 1) * 8 + 24, endHw = sleeperLen / 2;
   // Splits by parent route, along it; those close together make one switch (a three-way).
@@ -95,12 +96,14 @@ export function planPieces(routes: Route[], splits: Split[], p: BaseParams = BAS
       // slider, three positions); otherwise a set per branch (a tandem
       // three-way when the second leaves further on).
       const together = kids.length === 2 && Math.abs(kids[0].lead - kids[1].lead) < 1 && pos(0) === 1;
-      if (together) sets.push([0, 2, kids[0].lead + 12, undefined, 1]);
+      const shift = (sa: number) => { const q = routePose(routes[parent], sa); return toeShift([q[0], q[1]]); };
+      if (together) sets.push([0, 2, kids[0].lead + 12 + shift(kids[0].sa), undefined, 1]);
       else kids.forEach((kd, n) => {
         const ci = pos(n + 1), mi = pos(0);
         if (Math.abs(ci - mi) !== 1) { ok = false; return; }
         // (the throw on the main route's side, as switch.scad's)
-        sets.push(ci < mi ? [ci, mi, kd.lead + 12, -1] : [mi, ci, kd.lead + 12, +1]);
+        const toe = kd.lead + 12 + shift(kd.sa);
+        sets.push(ci < mi ? [ci, mi, toe, -1] : [mi, ci, toe, +1]);
       });
       if (!ok) { warnings.push('two branches on the same side of one switch: not built as a switch'); continue; }
       // (the lever's side: the branch's own setting, else the options')

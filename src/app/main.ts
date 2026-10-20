@@ -2,7 +2,7 @@
 // 3D piece on the right, rebuilt in a worker as you edit.
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
-import { type Design, type DRoute, type DSeg, OPTION_DEFAULTS, type PieceOptions, TEMPLATES, endOf } from './design';
+import { type Design, type DRoute, type DSeg, OPTION_DEFAULTS, type PieceOptions, TEMPLATES, type Trackwork, endOf } from './design';
 import { TrackCanvas } from './canvas';
 import { describe } from './planner';
 import type { Piece } from './build';
@@ -136,6 +136,7 @@ worker.onmessage = (e) => {
   canvas.draw();
   pieces = d.pieces;
   showPieces(pieces);
+  renderTrackwork(d.overlay.items ?? []);
   const i = d.info;
   infoEl.textContent = `${i.switches ? `${i.switches} switch${i.switches > 1 ? 'es' : ''}, ` : ''}${i.crossings} rail crossings, ${i.checkRails} check rails · `
     + `${i.pieces} part${i.pieces > 1 ? 's' : ''} · ${i.size.map((v: number) => v.toFixed(0)).join(' × ')} mm · ${(i.volume / 1000).toFixed(1)} cm³ · built in ${i.ms.toFixed(0)} ms`;
@@ -465,3 +466,47 @@ function renderOptions() {
   body.lastElementChild!.classList.add('reset');
 }
 renderOptions();
+
+
+// ---------- trackwork: hand edits to the check rails, flangeway cuts and points ----------
+type TwItem = { kind: 'check' | 'groove' | 'points'; key: string; at: [number, number]; off?: boolean; len?: number; toe?: number };
+let twSig = '';
+function renderTrackwork(list: TwItem[]) {
+  const sig = JSON.stringify(list.map((it) => [it.kind, it.key, it.off, Math.round((it.len ?? 0) * 10), it.toe]));
+  if (sig === twSig) return; // (don't rebuild the form under the user's fingers)
+  twSig = sig;
+  const body = $('trackwork-body'); body.replaceChildren();
+  if (!list.length) { const n = document.createElement('div'); n.className = 'none'; n.textContent = 'No check rails, flangeway cuts or points in this design.'; body.append(n); return; }
+  const edit = <K extends keyof Trackwork>(kind: K, key: string, patch: Record<string, unknown>) => {
+    const tw = (design.trackwork ??= {}), group = ((tw[kind] ??= {}) as Record<string, Record<string, unknown>>);
+    group[key] = { ...group[key], ...patch };
+    changed(true);
+  };
+  const names = { check: 'Check rail', groove: 'Flangeway cut', points: 'Points' } as const;
+  for (const kind of ['points', 'check', 'groove'] as const) {
+    list.filter((it) => it.kind === kind).forEach((it, n) => {
+      const row = document.createElement('div'); row.className = 'tw';
+      row.addEventListener('mouseenter', () => { canvas.highlight = it.key; canvas.draw(); });
+      row.addEventListener('mouseleave', () => { canvas.highlight = undefined; canvas.draw(); });
+      const t = document.createElement('b');
+      t.textContent = `${names[kind]} ${n + 1}${it.len ? ` · ${it.len.toFixed(1)} mm` : ''}${it.off ? ' · taken out' : ''}`;
+      row.append(t);
+      const cur = ((design.trackwork?.[kind] ?? {}) as Record<string, Record<string, number | boolean>>)[it.key] ?? {};
+      const numField = (label: string, prop: string, step: number, min?: number) => {
+        const i = num((cur[prop] as number) ?? 0, (v) => edit(kind, it.key, { [prop]: min === undefined ? v : Math.max(min, v) }), step);
+        if (min !== undefined) i.min = String(min);
+        row.append(field(label, i));
+      };
+      if (kind === 'check') {
+        numField('Longer at the start, mm', 'd0', 1); numField('Longer at the end, mm', 'd1', 1); numField('Moved in from the rail, mm', 'shift', 0.1);
+        const off = document.createElement('input'); off.type = 'checkbox'; off.checked = !!cur.off;
+        off.addEventListener('change', () => edit(kind, it.key, { off: off.checked }));
+        row.append(field('Take it out', off));
+      } else if (kind === 'groove') {
+        numField('Longer at the start, mm', 'd0', 1, 0); numField('Longer at the end, mm', 'd1', 1, 0);
+      } else numField('Points moved along, mm', 'toe', 1);
+      body.append(row);
+    });
+  }
+  body.append(btn('Undo every hand edit', () => { design.trackwork = {}; twSig = ''; }, 'Put the check rails, flangeway cuts and points back to what the app works out'));
+}
