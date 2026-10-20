@@ -560,6 +560,8 @@ export class TrackCanvas {
         q = follow(q, [sg]);
       });
     };
+    // labels: gathered, then drawn without overlapping (the selection's first)
+    const labels: { x: number; y: number; txt: string; sel: boolean }[] = [];
     d.routes.forEach((r, i) => {
       const sel = i === this.selected || this.extra.has(i);
       const dragging = this.drag?.moved && this.drag.route === i && this.dragBad;
@@ -576,8 +578,8 @@ export class TrackCanvas {
           const mid = follow(q, [sg.kind === 'straight' ? { kind: 'straight', studs: sg.studs / 2 } : { ...sg, angle: sg.angle / 2 }]);
           const off = (g + 2.2) * (sg.kind === 'curve' ? -Math.sign(sg.angle) : 1);  // outside the curve
           const [sx, sy] = this.toScreen(mid.x + off * Math.cos((mid.heading * Math.PI) / 180), mid.y + off * Math.sin((mid.heading * Math.PI) / 180));
-          const txt = sg.kind === 'curve' ? `R${Math.round(sg.radius * 100) / 100} ${Math.round(Math.abs(sg.angle) * 100) / 100}°` : `${Math.round(sg.studs * 100) / 100}`;
-          c.fillStyle = sel ? ink.selInk : ink.label; c.fillText(txt, sx, sy + 4);
+          const txt = sg.kind === 'curve' ? `R${Math.round(sg.radius * 10) / 10} ${Math.round(Math.abs(sg.angle) * 10) / 10}°` : `${Math.round(sg.studs * 10) / 10}`;
+          labels.push({ x: sx, y: sy, txt, sel });
         }
         q = follow(q, [sg]);
       }
@@ -588,6 +590,19 @@ export class TrackCanvas {
         c.fillStyle = ink.rail; c.beginPath(); c.arc(sx, sy, 3, 0, 2 * Math.PI); c.fill();
       }
     });
+    {
+      c.font = '11px system-ui, sans-serif'; c.textAlign = 'center';
+      const taken: [number, number, number, number][] = [];
+      for (const l of [...labels.filter((q) => q.sel), ...labels.filter((q) => !q.sel)]) {
+        const w2 = c.measureText(l.txt).width / 2 + 3, box: [number, number, number, number] = [l.x - w2, l.y - 7, l.x + w2, l.y + 8];
+        if (box[2] < 0 || box[0] > W || box[3] < 0 || box[1] > H) continue;
+        if (taken.some((t) => t[0] < box[2] && t[2] > box[0] && t[1] < box[3] && t[3] > box[1])) continue; // (would overlap one already there)
+        taken.push(box);
+        c.fillStyle = ink.tagBg; c.fillRect(box[0], box[1], box[2] - box[0], box[3] - box[1]);
+        c.fillStyle = l.sel ? ink.selInk : ink.label; c.fillText(l.txt, l.x, l.y + 4);
+      }
+      c.textAlign = 'start';
+    }
     // the selection box being dragged out
     if (this.box) {
       const [ax, ay] = this.toScreen(this.box.x0, this.box.y0), [bx, by] = this.toScreen(this.box.x1, this.box.y1);
