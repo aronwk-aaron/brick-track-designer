@@ -6,13 +6,13 @@ import { TEMPLATES, toRoutes } from '../src/app/design';
 import { T } from '../src/geom/scad';
 import { routePose } from '../src/route/route';
 
-// Count the underside's stud sockets (round, 5.0 across: a 24-gon) by size, in a slice just above the bottom.
+// Count the underside's stud sockets (square, 5.0 across: never round, they grip too hard) by size, in a slice just above the bottom.
 const area = (p: number[][]) => Math.abs(p.reduce((a, [x, y], k) => { const [u, v] = p[(k + 1) % p.length]; return a + x * v - u * y; }, 0) / 2);
 async function build(name: string, grip: 'edges' | 'all') {
   const tubes: [number, number][] = [];
   const m = crossingPiece(new Scad(await kernel()), toRoutes(TEMPLATES[name]), { ...CROSSING_DEFAULTS, grip }, undefined, tubes);
   const polys = m.slice(0.5).toPolygons() as number[][][];
-  return { m, tubes, sockets: polys.filter((p) => Math.abs(area(p) - 12 * 2.5 ** 2 * Math.sin(Math.PI / 12)) < 0.5).length };
+  return { m, tubes, sockets: polys.filter((p) => p.length < 16 && Math.abs(area(p) - 5 * 5) < 0.5).length };
 }
 
 describe('underside grip', () => {
@@ -20,6 +20,8 @@ describe('underside grip', () => {
     const b = await build('90° crossing', 'all');
     expect(b.sockets).toBeGreaterThan(150);
     expect(b.tubes).toHaveLength(0);
+    // (and not one round)
+    expect((b.m.slice(0.5).toPolygons() as number[][][]).filter((p) => p.length >= 16 && Math.abs(area(p) - 12 * 2.5 ** 2 * Math.sin(Math.PI / 12)) < 0.5)).toHaveLength(0);
   });
   it("'edges' is hollow like a plate, with anti-stud tubes along the edges and every 4 studs", async () => {
     const b = await build('90° crossing', 'edges'), all = await build('90° crossing', 'all');

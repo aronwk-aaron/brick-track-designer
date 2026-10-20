@@ -46,11 +46,10 @@ export function constants(o: TrackOptions) {
 }
 
 /**
- * Stud sockets: 'round' anti-stud holes; 'square' as the OpenSCAD library
- * cut them, for the parity checks. (Round holes the same size as the
- * square's flats: the same grip, with a vertex where the studs touch.)
+ * Stud sockets: square, as the OpenSCAD library cuts them (Aaron: never
+ * round ones, they grip too hard). 'round' is kept only to compare against.
  */
-let socketShape: 'round' | 'square' = 'round';
+let socketShape: 'round' | 'square' = 'square';
 export const setSocketShape = (m: 'round' | 'square') => { socketShape = m; };
 export const getSocketShape = () => socketShape;
 /**
@@ -59,7 +58,7 @@ export const getSocketShape = () => socketShape;
  * to the next stud line).
  */
 let parity = false;
-export const setScadParity = (on: boolean) => { parity = on; socketShape = on ? 'square' : 'round'; };
+export const setScadParity = (on: boolean) => { parity = on; };
 export const scadParity = () => parity;
 
 export class Track {
@@ -73,7 +72,7 @@ export class Track {
     return this.s.cylinder(h, d / 2, d / 2, this.c.studFn);
   }
 
-  /** A socket a stud grips in: round (an anti-stud hole); 'square' (stud_socket(h, corner), a corner cut off if given) for the parity checks against OpenSCAD. */
+  /** A socket a stud grips in: square (stud_socket(h, corner), a corner cut off if given). */
   studSocket(h: number, corner?: Vec2): Man {
     const s = this.s, w = this.c.studSocketW / 2, cc = 1.2;
     if (socketShape === 'round') return s.cylinder(h, w, w, 24);
@@ -89,7 +88,7 @@ export class Track {
     return T(this.s.cube([w, w, h]), [-w / 2, -w / 2, 0]);
   }
 
-  /** A 5mm stud hole centred at (x, y), from z: round, or square for the parity checks. */
+  /** A 5mm stud hole centred at (x, y), from z: square. */
   hole5(x: number, y: number, z: number, h: number): Man {
     return socketShape === 'round' ? T(this.s.cylinder(h, 2.5, 2.5, 24), [x, y, z]) : T(this.s.cube([5, 5, h]), [x - 2.5, y - 2.5, z]);
   }

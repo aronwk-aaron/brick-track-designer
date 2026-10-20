@@ -118,8 +118,10 @@ export function threeWaySet(routes: Route[], ps: SetSpec, p: BaseParams, default
     const arm = norm(sub(tip, pv)) - 3 / 2;
     return p.springPreload + arm * ((p.pointThrow / (pv[1] - toeY))) + 0.3;
   }));
-  const v = pointsSet(routes, base, p, defaultThrowDir, { sHeel, leverTravel: 2 * half });
-  return { ...v, three: { S, L, R, half } };
+  // (the plate-style blade plates: the slider opens each blade by the throw from the middle, so twice that end to end, plus the preload)
+  const travel = p.mechStyle === 'plates' ? 2 * (v0.fdbTravel - p.springPreload) + p.springPreload : 2 * half;
+  const v = pointsSet(routes, base, p, defaultThrowDir, { sHeel, leverTravel: travel });
+  return { ...v, three: { S, L, R, half: p.mechStyle === 'plates' ? travel / 2 : half } };
 }
 
 /** Everything switch.scad works out before building: routes, sets, frogs, check rails, ties, cuts. */
@@ -646,7 +648,7 @@ export function switchGeometry(s: Scad, plan: SwitchPlan, extraCuts: Man[] = [])
   /** (the plate-style throw) the bracket: a 3 x 3 stud plate on the arm's studs, slotted for the lever, with the ears on it. */
   const bracketPart = (v: SetV) => {
     const z0 = bedTop, plate = cube([3 * STUD - 0.2, 3 * STUD - 0.2, PLATE_H], [v.leverX - 1.5 * STUD + 0.1, v.throwY - 1.5 * STUD + 0.1, z0]);
-    const socks = bracketStuds(v).map(([x, y]) => T(s.cylinder(t.o.studH + 0.2, tc.studSocketW / 2, tc.studSocketW / 2, 24), [x, y, z0 - 0.01]));
+    const socks = bracketStuds(v).map(([x, y]) => T(t.studSocket(t.o.studH + 0.2), [x, y, z0 - 0.01]));
     const wf = (scadParity() ? g.leverBossLen : Math.max(g.leverBossLen, g.leverTipD)) + 2 * c, f0 = Math.min(v.forkX - forkHw, v.forkX + v.leverTravel + forkHw) - c - 1, f1 = Math.max(v.forkX - forkHw, v.forkX + v.leverTravel + forkHw) + c + 1;
     const slot = cube([f1 - f0, wf, 30], [f0, v.throwY - wf / 2, z0 - 1]);
     return s.union([s.difference(plate, [...socks, slot]), ...ears(v, z0 + PLATE_H)]);
@@ -713,7 +715,8 @@ export function switchGeometry(s: Scad, plan: SwitchPlan, extraCuts: Man[] = [])
       const post = railPoint(rt, routeSOf(rt, [0, v.throwY], 0, -1, 26), o + side * (FDB.plateW / 2 + HEAD_HW));
       // (tip ahead of the pivot: turning + moves it to -x; open is inward, the other way from the stock rail)
       // (the toe is behind the pivot: turning - moves it to -x, inward for blade 1)
-      const open = b === 0 ? 0 : -ang;
+      // (a three-way's other blade is open twice as far: the middle has both open by the throw)
+      const open = b === 0 ? 0 : -(v.three ? 2 : 1) * ang;
       return { pivot, tip, ang, post, open };
     });
     fdbCache.set(v, out);
@@ -1166,10 +1169,14 @@ export function switchGeometry(s: Scad, plan: SwitchPlan, extraCuts: Man[] = [])
    * routes' rails the blades replace ([route, cut] in this frame).
    */
   const mech = (k = 0) => {
-    const v = sets[k];
+    const v: SetV = sets[k];
     return {
       bed: pointsBed(v), pockets: pointsPockets(v), stockCut: stockFootCut(v), arm: throwArm(v), channel: throwChannel(v),
-      bladeRails: [0, 1].map((b) => [b === 0 ? v.ra : v.rb, sweep(sq([9, 30], [bO(b) - 4.5, -5]), bRt(v, b), 0, v.sHeel + c)] as [Route, Man]),
+      bladeRails: [
+        ...[0, 1].map((b) => [bRt(v, b), sweep(sq([9, 30], [bO(b) - 4.5, -5]), bRt(v, b), 0, v.sHeel + c)] as [Route, Man]),
+        // (a three-way's branches' inner rails too: they start at the heels, the blades in their place before)
+        ...(v.three ? [[v.three.L, +G], [v.three.R, -G]].map(([rt, o]) => [rt, sweep(sq([9, 30], [(o as number) - 4.5, -5]), rt as Route, 0, v.sHeel + c)] as [Route, Man]) : []),
+      ],
     };
   };
   return {

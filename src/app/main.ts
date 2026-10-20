@@ -319,7 +319,7 @@ pointsSel.value = String(design.pointsPieces ?? 1);
 pointsSel.addEventListener('change', () => { design.pointsPieces = Number(pointsSel.value) as 1 | 2; changed(true); });
 function gripLegend() {
   // (one or two points parts only means anything for points on tines: the plate-style are always a blade each)
-  $('points').parentElement!.hidden = (design.options?.mechStyle ?? 'plates') === 'plates';
+  $('points').parentElement!.style.display = (design.options?.mechStyle ?? 'plates') === 'plates' ? 'none' : ''; // (its class shows it whatever hidden says)
   $('legend-ballast').hidden = (design.options?.ballast ?? 'none') === 'none';
   let on: boolean; try { on = grip.value === 'edges'; } catch { return; } // (before the toolbar is set up)
   $('legend-grip').hidden = !on;

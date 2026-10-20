@@ -54,11 +54,15 @@ const stlOf = new WeakMap<Man, Uint8Array>();
  * drawn. (Everything else goes by where things are, not which way a route
  * runs.)
  */
-function orient(routes: Route[]): Route[] {
+export function orient(routes: Route[]): Route[] {
   const out = [...routes];
+  // (along the other track, not at one of its ends: two branches meeting end to end, one drawn each way, say
+  // nothing about which is backwards, and taking that for a merge turned a branch drawn the right way round)
   const onOpposite = (q: Pose, k: number) => out.some((a, i) => {
     if (i === k || Math.abs(routeLat(a, [q[0], q[1]])) > 0.01) return false;
-    const pa = routePose(a, routeSOf(a, [q[0], q[1]]));
+    const sa = routeSOf(a, [q[0], q[1]]);
+    if (sa < 1 || sa > routeLength(a) - 1) return false;
+    const pa = routePose(a, sa);
     const dh = Math.abs((((pa[2] - q[2]) % 360) + 540) % 360 - 180);
     return Math.hypot(pa[0] - q[0], pa[1] - q[1]) < 0.01 && dh > 179.5;
   });
@@ -339,12 +343,15 @@ export function buildDesign(w: Wasm, design: Design, report: (what: string, frac
         return s1 > s0 ? [{ ...cr, route: k, s0: s0 - a, s1: s1 - a }] : [];
       }));
       // its points: those whose toe is on one of its pieces
-      const mine = splits.flatMap((sp, k) => {
-        const ss = solSplits[k], toeS = ss.merge ? ss.spans[0][1] : ss.spans[0][0];
+      const mine = splits.flatMap((sp) => {
+        const ss = solSplits[sp.src], toeS = ss.merge ? ss.spans[0][1] : ss.spans[0][0];
         if (pieceOf(ss.routes[0], toeS) < 0) return [];
-        const [j, end] = sp.inner.split(':'), jj = Number(j);
-        const pj = end === 'start' ? pieceOf(jj, 0) : pieceOf(jj, routeLength(all[jj]));
-        return [{ ...sp, inner: pj >= 0 ? `${pj}:${end}` : '-', bladeCuts: sp.bladeCuts.filter(([i]) => firstOf(i) >= 0).map(([i, m]) => [firstOf(i), m] as [number, Man]) }];
+        const inner = sp.inner.map((e) => {
+          const [j, end] = e.split(':'), jj = Number(j);
+          const pj = end === 'start' ? pieceOf(jj, 0) : pieceOf(jj, routeLength(all[jj]));
+          return pj >= 0 ? `${pj}:${end}` : '-';
+        });
+        return [{ ...sp, inner, bladeCuts: sp.bladeCuts.filter(([i]) => firstOf(i) >= 0).map(([i, m]) => [firstOf(i), m] as [number, Man]) }];
       });
       const sk = `sec:${key}:${JSON.stringify({ rts, cChecks, m: mine.map((x) => x.toe), copt, g: grooveCuts.length ? tw.groove : 0 })}`;
       let part: { ms: ReturnType<typeof bake>[]; grips: [number, number][] };
@@ -401,9 +408,12 @@ export function buildDesign(w: Wasm, design: Design, report: (what: string, frac
       // the points near it, on the cropped routes
       const near = splits.flatMap((sp, k) => (splitBoxes[k].some((bb) => nearCell(bb, R, MARGIN)) ? [{ sp, k }] : []));
       const tileSplits = near.map(({ sp }): SplitParts => {
-        const [j, end] = sp.inner.split(':'), kj = cr.map[Number(j)];
-        const whole = kj >= 0 && (end === 'start' ? cr.ranges[kj][0] === 0 : cr.ranges[kj][1] === routeLength(all[Number(j)]));
-        return { ...sp, inner: whole ? `${kj}:${end}` : '-', bladeCuts: sp.bladeCuts.filter(([i]) => cr.map[i] >= 0).map(([i, m]) => [cr.map[i], m] as [number, Man]) };
+        const inner = sp.inner.map((e) => {
+          const [j, end] = e.split(':'), kj = cr.map[Number(j)];
+          const whole = kj >= 0 && (end === 'start' ? cr.ranges[kj][0] === 0 : cr.ranges[kj][1] === routeLength(all[Number(j)]));
+          return whole ? `${kj}:${end}` : '-';
+        });
+        return { ...sp, inner, bladeCuts: sp.bladeCuts.filter(([i]) => cr.map[i] >= 0).map(([i, m]) => [cr.map[i], m] as [number, Man]) };
       });
       const tileCuts = grooveCuts.filter((m) => nearCell(m.boundingBox(), R, MARGIN));
       const tk = `tile:${key}:${JSON.stringify({ r: cr.routes, c: cr.checks, i: [...cr.inner], R, lines, near: near.map((x) => x.k), copt, joint: o.joint, cutRails: o.cutRails, g: grooveCuts.length ? tw.groove : 0 })}`;
