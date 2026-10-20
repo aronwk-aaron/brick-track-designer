@@ -264,6 +264,7 @@ const canvas = new TrackCanvas($<HTMLCanvasElement>('track'), {
   },
 });
 canvas.draw();
+(window as unknown as { btdCanvas: unknown }).btdCanvas = canvas; // (for the browser checks)
 const setMode = (m: 'draw' | 'select') => {
   canvas.mode = m; canvas.stopDrawing();
   $('mode-draw').classList.toggle('on', m === 'draw'); $('mode-select').classList.toggle('on', m === 'select');

@@ -34,7 +34,16 @@ export class TrackCanvas {
   private space = false;
   mode: 'draw' | 'select' = 'draw';
   /** While drawing: the route being extended (or a new one not yet added), and where it ends. */
-  private active: { route: number | undefined; start?: Pose; end?: Pose; newRoute?: DRoute } | undefined;
+  private active: { route: number | undefined; start?: Pose; end?: Pose; newRoute?: DRoute; either?: number } | undefined;
+  /** Starting on a track (its start, or along it): lay the new track whichever way the mouse is, along it or back out of it. */
+  private aimEither() {
+    const a = this.active;
+    if (!a || a.either === undefined || a.route !== undefined || !a.start || !this.mouse || a.newRoute) return;
+    const h = a.either, dx = this.mouse[0] - a.start.x, dy = this.mouse[1] - a.start.y;
+    const ahead = -dx * Math.sin((h * Math.PI) / 180) + dy * Math.cos((h * Math.PI) / 180) >= 0;
+    const heading = ahead ? h : ((h + 360) % 360) - 180;
+    a.start = { ...a.start, heading }; a.end = a.start;
+  }
   selected: number | undefined;
   /** More selected routes (Shift+click in Select mode), besides selected. */
   extra = new Set<number>();
@@ -173,10 +182,13 @@ export class TrackCanvas {
       // (branch off it), or from an empty grid point.
       const hit = this.nearTrack(w);
       if (hit?.end === 'end') this.active = { route: hit.route, end: hit.pose };
-      else if (hit?.end === 'start') {
-        // drawing away from a track's start: a new route starting there, heading out
-        this.active = { route: undefined, start: hit.pose, end: hit.pose };
-      } else if (hit) this.active = { route: undefined, start: hit.pose, end: hit.pose };
+      else if (hit) {
+        // from a track's start, or along it: a new track starting there,
+        // along it (a branch: a switch) or back out of it, whichever way the
+        // mouse goes
+        this.active = { route: undefined, start: hit.pose, end: hit.pose, either: hit.pose.heading };
+        this.aimEither();
+      }
       else { const g = this.snap(w); this.active = { route: undefined, start: { x: g[0], y: g[1], heading: NaN } }; }
       this.draw();
       return;
@@ -221,6 +233,7 @@ export class TrackCanvas {
     }
     if (e.target !== this.el) return;
     this.mouse = this.evWorld(e);
+    this.aimEither();
     this.draw();
   }
   private up(e: MouseEvent) {
@@ -244,7 +257,7 @@ export class TrackCanvas {
     if (this.mode === 'draw' && e.button === 0) {
       const r = this.host.design().routes[dr.route];
       if (dr.end === 'end') this.active = { route: dr.route, end: follow(r, r.segs) };
-      else { const p = { x: r.x, y: r.y, heading: ((r.heading + 360) % 360) - 180 }; this.active = { route: undefined, start: p, end: p }; }
+      else { const p = { x: r.x, y: r.y, heading: r.heading }; this.active = { route: undefined, start: p, end: p, either: r.heading }; this.aimEither(); }
     }
     this.draw();
   }
@@ -401,7 +414,7 @@ export class TrackCanvas {
       return 'Click a track to select it · drag an end to reshape it';
     }
     if (hit?.end === 'end') return 'Click to carry the track on · drag to reshape it';
-    if (hit?.end === 'start') return 'Click to lay a new track out of this end · drag to reshape it';
+    if (hit?.end === 'start') return 'Click to lay a new track from this end (back out of it, or along it as a branch) · drag to reshape it';
     if (hit) return 'Click to branch off this track';
     return 'Click a grid point to start a track';
   }
