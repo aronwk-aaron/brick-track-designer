@@ -16,6 +16,18 @@ import { type Design, OPTION_DEFAULTS, toRoutes } from './design';
 /** A built piece: its mesh in the design (for the view) and its STL (in its own frame, to print). */
 export interface Piece { name: string; color: number; positions: Float32Array; stl: Uint8Array }
 
+// Pieces built before, by what they were built from: an edit rebuilds only
+// the pieces it changes (the worker keeps this between builds).
+const memo = new Map<string, unknown>();
+function cached<T>(key: string, f: () => T): T {
+  if (memo.has(key)) { const v = memo.get(key) as T; memo.delete(key); memo.set(key, v); return v; }
+  const v = f();
+  memo.set(key, v);
+  if (memo.size > 48) memo.delete(memo.keys().next().value!);
+  return v;
+}
+const stlOf = new WeakMap<Man, Uint8Array>();
+
 export function buildDesign(w: Wasm, design: Design) {
   const routes = toRoutes(design).filter((r) => r.segments.length > 0);
   if (routes.length === 0) throw new Error('Draw some track: click a grid point to start, then click where it should go.');
@@ -58,15 +70,18 @@ export function buildDesign(w: Wasm, design: Design) {
   const add = (name: string, color: number, local: Man, world: Man) => {
     const wm = world.getMesh(), positions = new Float32Array(wm.triVerts.length * 3);
     wm.triVerts.forEach((v, i) => positions.set(wm.vertProperties.subarray(v * wm.numProp, v * wm.numProp + 3), i * 3));
-    pieces.push({ name, color, positions, stl: stlBytes(local.getMesh()) });
+    let stl = stlOf.get(local);
+    if (!stl) { stl = stlBytes(local.getMesh()); stlOf.set(local, stl); }
+    pieces.push({ name, color, positions, stl: stl.slice() });
     volume += local.volume();
   };
   if (network) {
     const copt = { ...CROSSING_DEFAULTS, gaugeStuds: design.gaugeStuds, grip: design.grip ?? 'edges', flangeway: o.flangeway, flangewayDepth: o.flangewayDepth, checkRailW: o.checkRailW };
-    const net = networkPiece(scad, routes, sol, params, copt, overlay.grips);
+    const net = cached(`net:${JSON.stringify({ routes, params, copt })}`, () => { const grips: [number, number][] = []; return { ...networkPiece(scad, routes, sol, params, copt, grips), grips }; });
+    overlay.grips.push(...net.grips);
     add('track', 0x6f7780, net.body, net.body);
     for (const m of net.moving) add(m.name, m.color, m.local, m.world);
-    pc = { switches: [], rest: [], warnings: net.warnings };
+    pc = { switches: [], rest: [], warnings: [...net.warnings] };
     pc.warnings.push(...(fitsBed(net.body) ? [] : [`the piece doesn't fit the ${o.printBedX} x ${o.printBedY} print bed (cutting a piece with built-in points comes later)`]));
   }
   if (pc.rest.length) {
@@ -76,7 +91,10 @@ export function buildDesign(w: Wasm, design: Design) {
       const b = m.boundingBox(), w = b.max[0] - b.min[0], h = b.max[1] - b.min[1];
       return (w <= o.printBedX && h <= o.printBedY) || (w <= o.printBedY && h <= o.printBedX);
     };
-    const whole = crossingPiece(scad, pc.rest, copt, solve(pc.rest, solverOpts), overlay.grips);
+    const rest = pc.rest;
+    const built = cached(`cx:${JSON.stringify({ rest, copt, solverOpts })}`, () => { const grips: [number, number][] = []; return { m: crossingPiece(scad, rest, copt, solve(rest, solverOpts), grips), grips }; });
+    const whole = built.m;
+    overlay.grips.push(...built.grips);
     if (fits(whole) || pc.rest.length > 1) {
       if (!fits(whole)) pc.warnings.push(`the fixed trackwork doesn't fit the ${o.printBedX} x ${o.printBedY} print bed, and pieces with crossings aren't split yet`);
       add('track', 0x6f7780, whole, whole);
@@ -85,24 +103,27 @@ export function buildDesign(w: Wasm, design: Design) {
       // LEGO track pieces (rail-end tongues, peg and clip), each fitting it.
       const rt = pc.rest[0], L = routeLength(rt);
       for (let n = 2; n <= 20; n++) {
-        const bits = Array.from({ length: n }, (_, k) => crossingPiece(scad, [subRoute(rt, (L * k) / n, (L * (k + 1)) / n)], copt));
+        const bits = Array.from({ length: n }, (_, k) => { const sub = subRoute(rt, (L * k) / n, (L * (k + 1)) / n); return cached(`cx1:${JSON.stringify({ sub, copt })}`, () => crossingPiece(scad, [sub], copt)); });
         if (bits.every(fits) || n === 20) { bits.forEach((m, k) => add(`track${k + 1}`, 0x6f7780, m, m)); break; }
       }
     }
   }
   pc.switches.forEach((sw, n) => {
-    const gm = switchGeometry(scad, sw.plan), tag = pc.switches.length > 1 ? `switch${n + 1}` : 'switch';
-    const bases = gm.basePieces();
+    const tag = pc.switches.length > 1 ? `switch${n + 1}` : 'switch';
+    const gm = cached(`sw:${JSON.stringify({ routes: sw.routes, sets: sw.sets, params })}`, () => {
+      const g = switchGeometry(scad, sw.plan);
+      return { bases: g.basePieces(), grips: g.grips, sets: sw.sets.map((_, k) => ({ thr: g.throwPart(k), pp: g.pointsParts(k), print: g.leverPrint(), lever: g.leverPart(k) })) };
+    });
+    const bases = gm.bases;
     // (its tubes, for the plan's grip marks, in the design's frame)
     const cz = Math.cos((sw.pose[2] * Math.PI) / 180), sz = Math.sin((sw.pose[2] * Math.PI) / 180);
     for (const [x, y] of gm.grips) overlay.grips.push([sw.pose[0] + x * cz - y * sz, sw.pose[1] + x * sz + y * cz]);
     bases.forEach((m, j) => add(bases.length > 1 ? `${tag}-base${j + 1}` : `${tag}-base`, 0x6f7780, m, place(m, sw.pose)));
-    sw.sets.forEach((_, k) => {
+    gm.sets.forEach(({ thr, pp, print, lever }, k) => {
       const sfx = sw.sets.length > 1 ? `${k + 1}` : '';
-      const thr = gm.throwPart(k), pp = gm.pointsParts(k);
       pp.forEach((pts, j) => add(`${tag}-points${sfx}${pp.length > 1 ? (j === 0 ? '-a' : '-b') : ''}`, 0x4682b4, pts, place(pts, sw.pose)));
       add(`${tag}-throw${sfx}`, 0xe8892b, thr, place(thr, sw.pose));
-      add(`${tag}-lever${sfx}`, 0xd4af37, gm.leverPrint(), place(gm.leverPart(k), sw.pose));
+      add(`${tag}-lever${sfx}`, 0xd4af37, print, place(lever, sw.pose));
     });
   });
   const all = pieces.flatMap((p) => [p.positions]);
