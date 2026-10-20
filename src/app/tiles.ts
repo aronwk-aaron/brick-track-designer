@@ -23,7 +23,7 @@ export function routesBox(routes: Route[], pad: number): Rect {
   return [b[0] - pad, b[1] - pad, b[2] + pad, b[3] + pad];
 }
 
-export interface CutPlan { xs: number[]; ys: number[]; why: 'bed' | 'baseplate'; /** which of them are baseplate edges (always joined with peg and clip) */ edges?: Set<number> }
+export interface CutPlan { xs: number[]; ys: number[]; why: 'bed' | 'baseplate'; /** which of them are baseplate edges (always joined with peg and clip) */ edges?: Set<number>; /** which run along the track: interlocking fingers (4DBrix's) */ combs?: Set<number> }
 
 /** The shortest part a cut may leave (mm): no slivers of track. */
 const MIN_PART = 40;
@@ -46,7 +46,7 @@ function spaced(cuts: number[], lo: number, hi: number, keep: Set<number> = new 
  * across any baseplate bigger than the bed, on the stud grid.
  */
 export function planCuts(b: Rect, bedX: number, bedY: number, bp: number, ox: number, oy: number, avoid: [number, number][],
-  routes: Route[] = [], half = 40, joints = 8): CutPlan {
+  routes: Route[] = [], half = 40, joints = 8, railG = 20): CutPlan {
   const xs: number[] = [], ys: number[] = [];
   // How much of the track a cut would run along, not across (mm): a cut
   // must go across the track, never down it (that splits the rails and the
@@ -65,6 +65,20 @@ export function planCuts(b: Rect, bedX: number, bedY: number, bp: number, ox: nu
     return mm;
   };
   const ok = (v: number, axis: 0 | 1) => along(v, axis) <= 8 && avoid.every((q) => Math.abs(q[axis] - v) > 45);
+  /** Can a finger cut go along the track at v: no rail running along within 12 mm of it, clear of points and crossings? */
+  /** How close (mm) the nearest rail running along comes to a finger cut at v (and whether it's clear of points and crossings). */
+  const railClear = (v: number, axis: 0 | 1) => {
+    let near = Infinity;
+    for (const p of samples) {
+      const h = ((p[2] % 180) + 180) % 180, alongY = h < 45 || h > 135;
+      if (axis === 0 ? !alongY : alongY) continue;
+      const c = axis === 0 ? Math.cos((p[2] * Math.PI) / 180) : Math.sin((p[2] * Math.PI) / 180);
+      for (const sd of [-1, 1]) near = Math.min(near, Math.abs(p[axis] + sd * railG * Math.abs(c) - v));
+    }
+    return avoid.every((q) => Math.abs(q[axis] - v) > 45) ? near : -1;
+  };
+  const combOk = (v: number, axis: 0 | 1) => railClear(v, axis) >= 12;
+  const combs = new Set<number>();
   /** The nearest place to v (within reach, on the 8 mm grid from v) a cut can go; undefined: nowhere near. */
   const place = (v: number, axis: 0 | 1, reach: number) => {
     for (let dv = 0; dv <= reach; dv += 8) for (const sg of dv ? [1, -1] : [1]) if (ok(v + sg * dv, axis)) return v + sg * dv;
@@ -87,14 +101,24 @@ export function planCuts(b: Rect, bedX: number, bedY: number, bp: number, ox: nu
           for (let v = Math.floor(Math.min(v0, p + len) / 8) * 8; v >= p + MIN_PART && got === undefined; v -= 8) if (ok(v, axis)) got = v;
           if (got !== undefined) break;
         }
-        if (got === undefined) break; // (no way across: warned about once it's built)
+        // (no way across the track there: along it, with fingers, as 4DBrix's wide pieces are split)
+        // (where the rails are furthest off, between tracks if it can, else nearest an even split)
+        if (got === undefined) {
+          let best = -1;
+          for (let v = Math.floor((p + len) / 8) * 8; v >= p + MIN_PART; v -= 8) {
+            const cl = railClear(v, axis);
+            if (cl >= 12 && (cl > best + 0.5 || (Math.abs(cl - best) <= 0.5 && got !== undefined && Math.abs(v - even) < Math.abs(got - even)))) { best = cl; got = v; }
+          }
+          if (got !== undefined) combs.add(got);
+        }
+        if (got === undefined) break; // (no way at all: warned about once it's built)
         out.push(got); p = got;
       }
       return out;
     };
     xs.push(...greedy(b[0], b[2], H > W ? small : room, 0, nx));
     ys.push(...greedy(b[1], b[3], H > W ? room : small, 1, ny));
-    return { xs: spaced(xs, b[0], b[2]), ys: spaced(ys, b[1], b[3]), why: 'bed' };
+    return { xs: spaced(xs, b[0], b[2]), ys: spaced(ys, b[1], b[3]), why: 'bed', combs };
   }
   // (the baseplate edges are where they are; the cuts across a baseplate too
   // big for the bed move to go across the track, or are left out)

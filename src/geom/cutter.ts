@@ -9,7 +9,9 @@ import type { Route } from '../route/route';
 import { railPoint, routeLat, routeLength, routePose } from '../route/route';
 
 /** A cut: through point p, along unit direction d; span: only the stretch from p + span[0] d to p + span[1] d gets couplers (a tile's edge, so the tiles either side agree). */
-export interface CutLine { p: [number, number]; d: [number, number]; span?: [number, number]; /** this cut's own joint (baseplate edges: always 'lego') */ joint?: 'lego' | 'dovetail' | 'butt' }
+export interface CutLine { p: [number, number]; d: [number, number]; span?: [number, number]; /** this cut's own joint (baseplate edges: always 'lego') */ joint?: 'lego' | 'dovetail' | 'butt';
+  /** a cut along the track (4DBrix's way): interlocking fingers two studs wide and two deep, on the stud grid, instead of a straight cut */
+  comb?: boolean }
 
 const deg = (r: number) => (r * 180) / Math.PI;
 
@@ -51,6 +53,7 @@ export function cutPiece(s: Scad, t: Track, body: Man, routes: Route[], lines: C
     // rails crossing the line: [u, heading in the cut's frame, rail type (-1 left, +1 right, as seen crossing to +y)]
     const rails: [number, number, number][] = [];
     routes.forEach((rt) => {
+      if (L.comb) return; // (a comb cut has no rail joints: the rails run along it, or are cut plain where one crosses)
       const len = routeLength(rt), step = 0.5;
       for (const o of [-G, G]) {
         let prev = toLocal(railPoint(rt, 0, o))[1];
@@ -88,7 +91,7 @@ export function cutPiece(s: Scad, t: Track, body: Man, routes: Route[], lines: C
         if (got.length < 3 && got.every((g2) => Math.abs(g2 - u) >= 16)) got.push(u);
       couplers.push(...got); run = [];
     };
-    for (let u = lo; u <= hi; u += 0.5) {
+    if (!L.comb) for (let u = lo; u <= hi; u += 0.5) {
       if (onBed(u) && us.every((r) => Math.abs(u - r) >= 9)) run.push(u); else flush();
     }
     flush();
@@ -107,13 +110,26 @@ export function cutPiece(s: Scad, t: Track, body: Man, routes: Route[], lines: C
   // cut the piece by each line in turn, keeping the parts that hold any of it
   let parts: Man[] = [cutBody];
   for (const f of frames)
-    parts = parts.flatMap((m) => m.splitByPlane([f.n[0], f.n[1], 0], f.n[0] * f.L.p[0] + f.n[1] * f.L.p[1]).filter((c) => c.volume() > 300)); // (not a sliver of print supports)
+    parts = parts.flatMap((m) => (f.L.comb ? combSplit(f, m) : m.splitByPlane([f.n[0], f.n[1], 0], f.n[0] * f.L.p[0] + f.n[1] * f.L.p[1])).filter((c) => c.volume() > 300)); // (not a sliver of print supports)
+  // (rather than a plane: the far side's fingers, 16 mm wide and reaching
+  // 8 mm either side of the line, their faces on the stud grid; 0.1 mm clear)
+  function combSplit(f: typeof frames[number], m: Man): Man[] {
+    const bb = m.boundingBox(), reachU = Math.hypot(bb.max[0] - bb.min[0], bb.max[1] - bb.min[1]) + Math.hypot(bb.min[0] - f.L.p[0], bb.min[1] - f.L.p[1]) + 32;
+    // (the finger edges at multiples of 16 along the line from the grid's origin: the line's point is on the grid)
+    const u0 = -Math.ceil(reachU / 16) * 16, pts: [number, number][] = [[u0, 2000]];
+    for (let u = u0, k = Math.round(u0 / 16); u < -u0; u += 16, k++) { const y = ((k % 2) + 2) % 2 === 0 ? 8 : -8; pts.push([u, y], [u + 16, y]); }
+    pts.push([-u0, 2000]);
+    const far2d = (grow: number) => s.polygon(pts).offset(grow, 'Miter', 10);
+    const prism = (grow: number) => f.place(T(s.extrude(far2d(grow), 400), [0, 0, -200]), 0);
+    return [s.intersection(m, prism(0)), s.difference(m, [prism(0.1)])];
+  }
   const cells: Man[] = [];
   for (const cell of parts) {
     // which side of each line the cell is on (from a point of it off the line), and its joints on the lines it meets
     const mesh = cell.getMesh(), vp = mesh.vertProperties, np = mesh.numProp;
     const sideOf = (f: typeof frames[number]) => {
-      for (let k = 0; k < vp.length; k += np) { const v = f.toLocal([vp[k], vp[k + 1]])[1]; if (Math.abs(v) > 0.05) return v > 0 ? 1 : -1; }
+      const far = f.L.comb ? 9 : 0.05; // (past a comb's fingers)
+      for (let k = 0; k < vp.length; k += np) { const v = f.toLocal([vp[k], vp[k + 1]])[1]; if (Math.abs(v) > far) return v > 0 ? 1 : -1; }
       return 1;
     };
     const sides = frames.map(sideOf);
