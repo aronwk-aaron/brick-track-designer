@@ -12,7 +12,7 @@ import { solve } from '../route/solver';
 import { railPoint, routeLat, routeLength, routePose, routeSOf, type Pose } from '../route/route';
 import { reversedRoute } from '../switch/reverse';
 import { BASE_DEFAULTS, switchGeometry } from '../switch/base';
-import { planPieces, subRoute } from '../switch/pieces';
+import { planPieces, subRoute, toFrame } from '../switch/pieces';
 import { networkBody, networkSplits, type SplitParts } from '../switch/network';
 import { blocks as tileBlocks, cropRoutes, nearCell, planCuts, routesBox, type Rect } from './tiles';
 import type { CheckRail } from '../route/solver';
@@ -169,12 +169,13 @@ export function buildDesign(w: Wasm, design: Design, report: (what: string, frac
   const bandHalf = (o.ballast === 'buddy' ? track.c.sleeperLen + 32 : o.ballast === 'ballast' ? track.c.sleeperLen + 16 : track.c.sleeperLen) / 2;
   // (what the joints stick out past a cut, both ends of a part: rail tongues, and the peg or dovetail)
   const jointRoom = o.joint === 'dovetail' ? 14 : o.joint === 'butt' ? 2 : 8;
+  const cassetteAvoid: [number, number][] = []; // (along each cassette: cuts keep clear of it)
   const addTrack = (name: string, world: Man, pieceRoutes: typeof routes) => {
     const bb = world.boundingBox(), b: Rect = [bb.min[0], bb.min[1], bb.max[0], bb.max[1]];
     if (!bp && fitsBed(world)) return add(name, 0x6f7780, world, world);
     // too big for the print bed (or at the baseplate edges): cut across the
     // track (tiles.ts planCuts), each part joined to the next like LEGO track
-    const plan = planCuts(b, o.printBedX, o.printBedY, bp, (o.baseplateX ?? 0) * 8, (o.baseplateY ?? 0) * 8, [...overlay.splits, ...overlay.crossings], pieceRoutes, bandHalf, jointRoom);
+    const plan = planCuts(b, o.printBedX, o.printBedY, bp, (o.baseplateX ?? 0) * 8, (o.baseplateY ?? 0) * 8, [...overlay.splits, ...overlay.crossings, ...cassetteAvoid], pieceRoutes, bandHalf, jointRoom);
     const lines: CutLine[] = [...plan.xs.map((x): CutLine => ({ p: [x, 0], d: [0, 1] })), ...plan.ys.map((y): CutLine => ({ p: [0, y], d: [1, 0] }))];
     steps++; progress(plan.why === 'bed' ? `Cutting ${name} to fit the print bed` : `Cutting ${name} at the baseplate edges`);
     const cells = cached(`cut:${bp}:${o.joint}:${JSON.stringify(lines)}:${JSON.stringify(pieceRoutes)}:${world.volume().toFixed(3)}`, () => cutPiece(scad, track, world, pieceRoutes, lines, o.joint ?? 'lego'));
@@ -188,6 +189,33 @@ export function buildDesign(w: Wasm, design: Design, report: (what: string, frac
     const wm = m.getMesh(), positions = new Float32Array(wm.triVerts.length * 3);
     wm.triVerts.forEach((v, i) => positions.set(wm.vertProperties.subarray(v * wm.numProp, v * wm.numProp + 3), i * 3));
     return { positions, stl: stlBytes(wm), volume: m.volume(), fits: fitsBed(m) };
+  };
+  // ---- (prototype) the points as a drop-in cassette: its own part, from the top ----
+  /** The cassette's outline in a points frame: the bed across all its routes from before the toe to past the heels, out to whole studs. */
+  const cassetteRect = (frameRoutes: Route[], sets: { toeY: number; pointsEndY: number }[]): [number, number, number, number] => {
+    const y0 = Math.floor((Math.min(...sets.map((v) => v.toeY)) - 6) / 8) * 8, y1 = Math.ceil((Math.max(...sets.map((v) => v.pointsEndY)) + 4) / 8) * 8;
+    let x0 = Infinity, x1 = -Infinity;
+    for (const rt of frameRoutes) {
+      const L = routeLength(rt), n = Math.max(1, Math.ceil(L / 2));
+      for (let k = 0; k <= n; k++) for (const off of [-track.c.sleeperLen / 2, track.c.sleeperLen / 2]) {
+        const q = railPoint(rt, (L * k) / n, off);
+        if (q[1] >= y0 && q[1] <= y1) { x0 = Math.min(x0, q[0]); x1 = Math.max(x1, q[0]); }
+      }
+    }
+    return [Math.floor(x0 / 8) * 8, Math.ceil(x1 / 8) * 8, Math.max(8, y0), y1];
+  };
+  /** Split a piece (in frame P) into the track round the cassette and the cassette. */
+  const cassetteSplit = (whole: Man, r: [number, number, number, number], P: Pose) => {
+    const prism = (g2: number, z0 = -60, z1 = 60) => place(T(scad.cube([r[1] - r[0] + 2 * g2, r[3] - r[2] + 2 * g2, z1 - z0]), [r[0] - g2, r[2] - g2, z0]), P);
+    const c = 0.15, ledge = 2.4;
+    if (o.pointsModule === 'shelf') {
+      // a ledge round the hole, the cassette stepped to sit on it (ballast: at the sleepers' foot; track only: the hollow's roof)
+      const zl = o.ballast !== 'none' ? 0 : (BASE_DEFAULTS.studH ?? 1.8) + 0.2 + 0.6;
+      const base = scad.difference(whole, [prism(0, zl, 60), prism(-ledge)]);
+      const cas = scad.union([scad.intersection(whole, prism(-c, zl + 0.1, 60)), scad.intersection(whole, prism(-ledge - c))]);
+      return { base, cas };
+    }
+    return { base: scad.difference(whole, [prism(0)]), cas: scad.intersection(whole, prism(-c)) };
   };
   const add = (name: string, color: number, local: Man, world: Man) => {
     const wm = world.getMesh(), positions = new Float32Array(wm.triVerts.length * 3);
@@ -302,7 +330,20 @@ export function buildDesign(w: Wasm, design: Design, report: (what: string, frac
     if (!tiled('track', routes, sol.checkRails, net.splits, copt, netKey)) {
       const whole = cached(`net:${netKey}`, () => { const grips: [number, number][] = []; return { body: networkBody(scad, routes, sol, copt, net.splits, grips, { cuts: grooveCuts }), grips }; });
       overlay.grips.push(...whole.grips);
-      addTrack('track', whole.body, routes);
+      if ((o.pointsModule ?? 'built-in') !== 'built-in') {
+        // (prototype) each points set a cassette of its own, the rest cut like any track, clear of them
+        let body = whole.body;
+        net.splits.forEach((sp, n) => {
+          const P = sp.frame, frameRoutes = sol.splits[n].routes.map((ri) => ({ ...routes[ri], start: toFrame(P, routes[ri].start) }));
+          const r = cassetteRect(frameRoutes, [sp.set]);
+          const cs2 = cassetteSplit(body, r, P);
+          body = cs2.base;
+          add(`points${net!.splits.length > 1 ? n + 1 : ''}-cassette`, 0x5a8f6a, cs2.cas, cs2.cas);
+          const ca = Math.cos((P[2] * Math.PI) / 180), sa2 = Math.sin((P[2] * Math.PI) / 180);
+          for (let k = 0; k <= Math.ceil((r[3] - r[2]) / 30); k++) { const y = Math.min(r[3], r[2] + 30 * k), x = (r[0] + r[1]) / 2; cassetteAvoid.push([P[0] + x * ca - y * sa2, P[1] + x * sa2 + y * ca]); }
+        });
+        addTrack('track', body, routes);
+      } else addTrack('track', whole.body, routes);
     }
     for (const sp of net.splits) for (const m of sp.moving) add(m.name, m.color, m.local, m.world);
     pc = { switches: [], rest: [], warnings: [...net.warnings] };
@@ -344,7 +385,15 @@ export function buildDesign(w: Wasm, design: Design, report: (what: string, frac
     // (its tubes, for the plan's grip marks, in the design's frame)
     const cz = Math.cos((sw.pose[2] * Math.PI) / 180), sz = Math.sin((sw.pose[2] * Math.PI) / 180);
     for (const [x, y] of gm.grips) overlay.grips.push([sw.pose[0] + x * cz - y * sz, sw.pose[1] + x * sz + y * cz]);
-    if (bp) addTrack(`${tag}-base`, place(gm.whole, sw.pose), sw.covers.map(([ri, a, bb]) => subRoute(routes[ri], a, bb)));
+    if ((o.pointsModule ?? 'built-in') !== 'built-in') {
+      // (prototype) the points a cassette of their own; the rest cut like any track, clear of it
+      const r = cassetteRect(sw.plan.routes, sw.plan.sets);
+      const cs2 = cached(`cas:${o.pointsModule}:${JSON.stringify({ r, routes: sw.routes, sets: sw.sets, params, cl, tw: tw.groove })}`, () => cassetteSplit(place(gm.whole, sw.pose), r, sw.pose));
+      const ca = Math.cos((sw.pose[2] * Math.PI) / 180), sa2 = Math.sin((sw.pose[2] * Math.PI) / 180);
+      cassetteAvoid.push(...Array.from({ length: Math.ceil((r[3] - r[2]) / 30) + 1 }, (_, k) => { const y = Math.min(r[3], r[2] + 30 * k), x = (r[0] + r[1]) / 2; return [sw.pose[0] + x * ca - y * sa2, sw.pose[1] + x * sa2 + y * ca] as [number, number]; }));
+      addTrack(`${tag}-base`, cs2.base, sw.covers.map(([ri, a, bb]) => subRoute(routes[ri], a, bb)));
+      add(`${tag}-cassette`, 0x5a8f6a, cs2.cas, cs2.cas);
+    } else if (bp) addTrack(`${tag}-base`, place(gm.whole, sw.pose), sw.covers.map(([ri, a, bb]) => subRoute(routes[ri], a, bb)));
     else bases.forEach((m, j) => add(bases.length > 1 ? `${tag}-base${j + 1}` : `${tag}-base`, 0x6f7780, m, place(m, sw.pose)));
     gm.sets.forEach(({ thr, pp, print, lever }, k) => {
       const sfx = sw.sets.length > 1 ? `${k + 1}` : '';

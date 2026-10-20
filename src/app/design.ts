@@ -59,6 +59,8 @@ export interface PieceOptions {
   baseplateX: number; baseplateY: number;
   /** How parts cut for the bed or the baseplates join: 'lego' rail-end tongues with a peg and C-clip (as LEGO track); 'dovetail' rail tongues with dovetails through the bed; 'butt' straight cuts, held only by the baseplate under them. */
   joint?: 'lego' | 'dovetail' | 'butt';
+  /** (prototype) The points: built into the track piece, or a drop-in cassette (its own part, from the top) through the track ('drop-in', it sits on the baseplate's studs) or on a ledge round the hole ('shelf'). */
+  pointsModule?: 'built-in' | 'drop-in' | 'shelf';
   /** Ballast under the track: none, ballast, or ballast with the wider buddy layer under it. */
   ballast: 'none' | 'ballast' | 'buddy';
   /** With ballast: the underside, anti-stud (hollow with tubes) or flat. */
@@ -66,7 +68,7 @@ export interface PieceOptions {
 }
 export const OPTION_DEFAULTS: PieceOptions = {
   throwSide: 'auto', leverOffset: 8, pointThrow: 3, pointClearance: 0.3, springPreload: 1, springThickness: 0.9, springLength: 40,
-  flangeway: 3, flangewayDepth: 3, checkRailLen: 30, checkRailW: 1, checkRailFlare: 1.5, printBedX: 256, printBedY: 256, baseplate: 0, baseplateX: 0, baseplateY: 0, ballast: 'none', bottomStyle: 'antistud', joint: 'lego',
+  flangeway: 3, flangewayDepth: 3, checkRailLen: 30, checkRailW: 1, checkRailFlare: 1.5, printBedX: 256, printBedY: 256, baseplate: 0, baseplateX: 0, baseplateY: 0, ballast: 'none', bottomStyle: 'antistud', joint: 'lego', pointsModule: 'built-in',
 };
 
 export function toRoutes(d: Design): Route[] {
