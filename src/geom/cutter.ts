@@ -95,7 +95,9 @@ export function railCrossings(s: Scad, routes: Route[], G: number, f: CutFrame, 
           const q = railPoint(rt, a, o), h = routePose(rt, a)[2] - f.phi, hn = ((h + 540) % 360) - 180, u = f.toLocal(q)[0];
           // (a route crossing to -y: seen from the far side its rails swap)
           const fwd = Math.abs(hn) <= 90;
-          if (u >= lo && u <= hi && s.w.CrossSection.square([1.2, 1.2], true).translate(q).intersect(railStrip).area() > 0.4) rails.push([u, fwd ? hn : hn + 180, fwd ? Math.sign(o) : -Math.sign(o)]);
+          // (rail all along where its tongues go, 4 mm each side: not by a loose blade's heel either, a baseplate edge just past it, say)
+          const hr = (routePose(rt, a)[2] * Math.PI) / 180, along = (d: number): [number, number] => [q[0] - d * Math.sin(hr), q[1] + d * Math.cos(hr)];
+          if (u >= lo && u <= hi && [0, -4.5, 4.5].every((d) => s.w.CrossSection.square([1.2, 1.2], true).translate(along(d)).intersect(railStrip).area() > 0.4)) rails.push([u, fwd ? hn : hn + 180, fwd ? Math.sign(o) : -Math.sign(o)]);
         }
         prev = v;
       }
