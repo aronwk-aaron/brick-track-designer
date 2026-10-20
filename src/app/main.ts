@@ -2,8 +2,8 @@
 // 3D piece on the right, rebuilt in a worker as you edit.
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
-import { type Design, type DRoute, type DSeg, OPTION_DEFAULTS, type PieceOptions, TEMPLATES, type Trackwork, endOf } from './design';
-import { TrackCanvas } from './canvas';
+import { type Design, type DRoute, type DSeg, OPTION_DEFAULTS, type PieceOptions, TEMPLATES, type Trackwork, endOf, freeName } from './design';
+import { TrackCanvas, type OverlayItem, leverSide, leverSlides, typingIn } from './canvas';
 import { describe } from './planner';
 import type { Piece } from './build';
 import { zip } from '../geom/zip';
@@ -26,7 +26,7 @@ function save() { try { localStorage.setItem(STORE, JSON.stringify(design)); } c
 // ---------- the form ----------
 const num = (v: number, set: (n: number) => void, step = 1, label = '') => {
   const i = document.createElement('input');
-  i.type = 'number'; i.step = String(step); i.value = String(v); i.title = label;
+  i.type = 'number'; i.step = String(step); i.value = String(Math.round(v * 1000) / 1000); i.title = label; // (shown to 3 places: the full value's kept till it's changed)
   i.addEventListener('change', () => { const n = Number(i.value); if (Number.isFinite(n)) { set(n); changed(); } });
   return i;
 };
@@ -78,20 +78,34 @@ function render() {
     });
     const body = document.createElement('div'); body.className = 'body';
     const name = document.createElement('input'); name.value = r.name; name.type = 'text';
-    name.addEventListener('change', () => { r.name = name.value; changed(true); });
+    // (routes are known by their names, in the trackwork and the switches: no two the same)
+    name.addEventListener('change', () => {
+      const v = name.value.trim();
+      if (!v || design.routes.some((q, j) => j !== i && q.name === v)) { name.value = r.name; setStatus(infoEl.textContent ?? '', v ? `There's already a route called ${v}: names must differ` : 'A route needs a name', false, true); return; }
+      r.name = v; changed(true);
+    });
     body.append(field('Name', name),
       field('Start x, studs', num(r.x, (n) => { r.x = n; }, 1)),
       field('Start y, studs', num(r.y, (n) => { r.y = n; }, 1)),
       field('Heading ° (0 = up, + = left)', num(r.heading, (n) => { r.heading = n; }, 22.5)));
     r.segs.forEach((_, k) => body.append(segRow(r, k)));
-    // (a branch, i.e. a switch: its lever's side)
-    if (r.segs.length && design.routes.length > 1) {
+    // (a branch, i.e. a switch's: its lever's side, where it branches; shown once the plan knows it's one)
+    const id = r.name || String(i), items = canvas?.overlay?.items ?? [];
+    const keys = new Set(items.filter((it) => it.kind === 'points' && !it.cand && (it.routes ?? []).slice(1).includes(id)).map((it) => it.key));
+    if (keys.size || (r.throwSide && r.throwSide !== 'auto')) {
       const sel = document.createElement('select');
-      for (const [v, t] of [['auto', 'Auto'], ['left', 'Left'], ['right', 'Right']]) sel.append(new Option(t, v));
+      const opt = design.options?.throwSide ?? 'auto';
+      for (const [v, t] of [['auto', opt === 'auto' ? 'Auto: away from this branch' : `As the Piece options say (${opt})`], ['left', 'Left'], ['right', 'Right']]) sel.append(new Option(t, v));
       sel.value = r.throwSide ?? 'auto';
-      sel.title = 'If this track branches off another (a switch), which side its lever goes';
-      sel.addEventListener('change', () => { r.throwSide = sel.value as DRoute['throwSide']; changed(); });
-      body.append(field('Switch lever side (if a branch)', sel));
+      sel.title = 'Which side the lever goes at the points where this track branches off another, as you face along them from their toe';
+      sel.addEventListener('change', () => { r.throwSide = sel.value as DRoute['throwSide']; changed(true); });
+      const f = field('Lever side where it branches', sel); f.classList.add('stack'); body.append(f);
+      const hand = [...keys].filter((k) => design.trackwork?.throw?.[k]?.side);
+      if (hand.length) {
+        const n = document.createElement('small'); n.className = 'desc';
+        n.textContent = `The lever${keys.size > 1 ? 's' : ''} here ${hand.length > 1 ? 'were' : 'was'} dragged across by hand, which wins: set its Side back to Auto in the Trackwork panel for this to apply.`;
+        body.append(n);
+      }
     }
     const add = document.createElement('div'); add.className = 'row';
     add.append(
@@ -101,7 +115,7 @@ function render() {
     );
     const more = document.createElement('div'); more.className = 'row';
     more.append(
-      btn('New route from its end', () => { const e = endOf(design, i); design.routes.push({ name: `R${design.routes.length + 1}`, ...e, segs: [{ kind: 'straight', studs: 16 }] }); }),
+      btn('New route from its end', () => { const e = endOf(design, i); design.routes.push({ name: freeName(design, 'R'), ...e, segs: [{ kind: 'straight', studs: 16 }] }); }),
       btn('Delete', () => { design.routes.splice(i, 1); if (canvas.selected === i) canvas.selected = undefined; openCards.clear(); }),
     );
     more.lastElementChild!.className = 'danger';
@@ -119,8 +133,20 @@ const newWorker = () => { const w2 = new Worker(new URL('./worker.ts', import.me
 let worker: Worker;
 let fatalRetry = -1;
 let seq = 0, started = 0, pieces: Piece[] = [], timer: number | undefined, restartCheck: number | undefined;
+/** The 3D view and the downloads: building (a newer design than the pieces), out of date (stopped, or the last build failed), or up to date. */
+let building = false, stale = false;
+/** The first build of the design as last let go of (a lever dropped is held where it was put on the plan till then). */
+let settleFrom = 0;
+const hasTrack = () => design.routes.some((r) => r.segs.length > 0);
 function requestBuild() {
+  clearTimeout(timer);
   const id = ++seq;
+  // (nothing to build: no need to ask the worker, which would only say so)
+  if (!hasTrack()) {
+    buildDone(); stale = false; pieces = []; showPieces(pieces); canvas.overlay = undefined; updateLegend(); canvas.draw(); renderTrackwork([]); refreshOptions();
+    setStatus('Nothing to build yet: draw some track, or pick a template.');
+    return;
+  }
   worker.postMessage({ id, design: structuredClone(design) });
   buildStarted();
   clearTimeout(restartCheck);
@@ -130,53 +156,82 @@ function requestBuild() {
     worker.postMessage({ id, design: structuredClone(design) });
   }, 1000);
 }
+/** Stop the build that's going (a big layout taking its time): the 3D view stays as it was, out of date, till Rebuild. */
+function stopBuild() {
+  clearTimeout(timer); clearTimeout(restartCheck);
+  seq++; worker.terminate(); worker = newWorker();
+  buildDone(); stale = true;
+  setStatus('Build stopped: the 3D view and the downloads are of the design before your last changes.', '', true);
+}
+
+/** The status line under the 3D view: what was built (info), what's wrong or worth knowing (problem), and Rebuild when it's out of date. */
+function setStatus(info: string, problem = '', rebuild = false, warn = false) {
+  infoEl.textContent = info; errEl.textContent = problem; errEl.classList.toggle('warn', warn);
+  $('rebuild').hidden = !rebuild;
+  $('view3d').classList.toggle('stale', stale);
+  updateExports();
+}
+/** The downloads: only of an up-to-date build. */
+function updateExports() {
+  const why = building ? 'Wait for the build to finish' : !pieces.length ? 'Nothing built yet' : stale ? 'The 3D view is out of date: rebuild first' : '';
+  for (const id of ['export-stl', 'export-3mf']) {
+    const b = $<HTMLButtonElement>(id); b.disabled = !!why;
+    b.title = why ? `${why}` : id === 'export-stl' ? 'Download the parts for printing as STL (a zip when there are several)' : 'Download every part in one 3MF, laid out on the print bed, for Orca Slicer';
+  }
+}
 
 /** The design changed: save it and rebuild. record: an undo step (not while a drag or a draw is still going on). */
 function changed(rerender = false, record = true) {
   const json = JSON.stringify(design);
   if (record && json !== history[history.length - 1]) { history.push(json); future.length = 0; if (history.length > 200) history.shift(); }
+  if (record) settleFrom = seq + 1; // (the next build is of the design as let go of)
   save();
-  gripLegend();
+  updateLegend();
   if (rerender) render();
   canvas?.draw();
   updateHistoryButtons();
   clearTimeout(timer);
   timer = window.setTimeout(requestBuild, 150);
-  infoEl.textContent = 'Building…';
+  building = true; updateExports();
 }
 
-// The 3D view's build status: what the worker is doing, and for how long.
+// The build status, in the status line while it builds: what the worker is doing, and for how long.
 let buildT0 = 0, buildTick: number | undefined;
 function buildStarted() {
-  buildT0 = performance.now();
+  buildT0 = performance.now(); building = true; updateExports();
   $('buildstatus').hidden = false; $('build-what').textContent = 'Building…'; $('build-time').textContent = ''; $('build-bar').style.width = '0%';
   clearInterval(buildTick);
   buildTick = window.setInterval(() => { $('build-time').textContent = `${((performance.now() - buildT0) / 1000).toFixed(1)} s`; }, 100);
 }
-function buildDone() { clearInterval(buildTick); $('buildstatus').hidden = true; }
+function buildDone() { clearInterval(buildTick); $('buildstatus').hidden = true; building = false; updateExports(); }
+const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
 function onBuilt(e: MessageEvent) {
   const d = e.data;
   started = Math.max(started, d.id);
   if (d.id !== seq) return;          // an older build
   // (the trackwork, ahead of the pieces: the plan and the Trackwork panel can be worked on while they build)
-  if (d.early) { errEl.textContent = ''; canvas.overlay = d.early; canvas.draw(); renderTrackwork(d.early.items ?? []); return; }
+  if (d.early) { canvas.overlay = d.early; if (d.id >= settleFrom) canvas.settled(); updateLegend(); canvas.draw(); renderTrackwork(d.early.items ?? []); refreshOptions(); refreshRoutes(); return; }
   if (d.progress) { $('build-what').textContent = `${d.progress}…`; $('build-bar').style.width = `${Math.round((d.frac ?? 0) * 100)}%`; return; }
   if (d.fatal && fatalRetry !== d.id) { fatalRetry = d.id; worker.terminate(); worker = newWorker(); worker.postMessage({ id: d.id, design: structuredClone(design) }); return; }
   buildDone();
-  if (d.error) { errEl.textContent = d.error; infoEl.textContent = ''; return; } // (the plan keeps the trackwork it was sent)
-  errEl.textContent = '';
-  canvas.overlay = d.overlay;
-  gripLegend();
+  // (the plan keeps the trackwork it was sent; the 3D view the last pieces that built, greyed)
+  if (d.error) { stale = pieces.length > 0; setStatus('', `Can't build this: ${d.error}${stale ? ' (the 3D view shows the last design that built)' : ''}`); return; }
+  stale = false;
+  canvas.overlay = d.overlay; if (d.id >= settleFrom) canvas.settled();
+  updateLegend();
   canvas.draw();
   pieces = d.pieces;
   showPieces(pieces);
   renderTrackwork(d.overlay.items ?? []);
+  refreshOptions(); refreshRoutes();
   const i = d.info;
-  infoEl.textContent = `${i.switches ? `${i.switches} switch${i.switches > 1 ? 'es' : ''}, ` : ''}${i.crossings} rail crossings, ${i.checkRails} check rails · `
-    + `${i.pieces} part${i.pieces > 1 ? 's' : ''} · ${i.size.map((v: number) => v.toFixed(0)).join(' × ')} mm · ${(i.volume / 1000).toFixed(1)} cm³ · built in ${i.ms.toFixed(0)} ms`;
-  errEl.textContent = (i.warnings as string[]).join('; ');
+  const trackwork = [i.switches && plural(i.switches, 'switch', 'switches'), i.crossings && plural(i.crossings, 'rail crossing'), i.checkRails && plural(i.checkRails, 'check rail')].filter(Boolean).join(', ');
+  setStatus(`${trackwork ? `${trackwork} · ` : ''}${plural(i.pieces, 'part')} · ${i.size.map((v: number) => v.toFixed(0)).join(' × ')} mm · ${(i.volume / 1000).toFixed(1)} cm³ · built in ${(i.ms / 1000).toFixed(1)} s`,
+    (i.warnings as string[]).join('; '), false, true);
 }
 worker = newWorker();
+$('build-stop').addEventListener('click', stopBuild);
+$('rebuild').addEventListener('click', () => { stale = false; setStatus(''); requestBuild(); });
 
 // ---------- 3D view ----------
 const view = $('view3d');
@@ -238,16 +293,23 @@ function applyExplode() {
   });
 }
 explodeEl.addEventListener('input', applyExplode);
+const showKind = (k: string) => (k === 'cassette' ? 'track' : k === 'bracket' ? 'lever' : k);
 function applyShown() {
   redraw3d();
-  meshes.forEach((m, k) => { m.visible = shown.has(meshKinds[k] === 'cassette' ? 'track' : meshKinds[k] === 'bracket' ? 'lever' : meshKinds[k]); });
-  document.querySelectorAll<HTMLButtonElement>('#views .show').forEach((b) => b.classList.toggle('on', shown.has(b.dataset.show!)));
+  meshes.forEach((m, k) => { m.visible = shown.has(showKind(meshKinds[k])); });
+  // (only the buttons for parts there are; Explode only with parts to pull apart)
+  const kinds = new Set(meshKinds.map(showKind));
+  document.querySelectorAll<HTMLButtonElement>('#views .show').forEach((b) => { b.classList.toggle('on', shown.has(b.dataset.show!)); b.hidden = !kinds.has(b.dataset.show!) || kinds.size < 2; });
+  $('views-sep2').hidden = kinds.size < 2;
+  explodeEl.disabled = meshes.length < 2; explodeEl.parentElement!.title = meshes.length < 2 ? 'One part: nothing to pull apart' : 'Pull the parts apart to see where they separate';
+  for (const id of ['view-top', 'view-under', 'view-frame']) $<HTMLButtonElement>(id).disabled = !meshes.length;
 }
 document.querySelectorAll<HTMLButtonElement>('#views .show').forEach((b) => b.addEventListener('click', () => {
   const k = b.dataset.show!; if (shown.has(k)) shown.delete(k); else shown.add(k);
   try { localStorage.setItem('btd-shown', JSON.stringify([...shown])); } catch { /* fine */ }
   applyShown();
 }));
+applyShown();
 function showPieces(list: Piece[]) {
   for (const m of meshes) { group.remove(m); m.geometry.dispose(); (m.material as THREE.Material).dispose(); }
   meshes = list.map((p) => {
@@ -261,6 +323,7 @@ function showPieces(list: Piece[]) {
   meshKinds = list.map((p) => kindOf(p.name));
   meshCentres = meshes.map((m) => { m.geometry.computeBoundingBox(); return m.geometry.boundingBox!.getCenter(new THREE.Vector3()); });
   applyShown(); applyExplode();
+  if (!list.length) { framed = false; lastNames = ''; lastSphere = undefined; return; } // (nothing to frame: frame the next pieces afresh)
   const bs = sphereOf();
   // (a different set of pieces, e.g. a switch appearing: frame again)
   const names = list.map((p) => p.name).join();
@@ -305,29 +368,41 @@ const tpl = $<HTMLSelectElement>('template');
 for (const name of Object.keys(TEMPLATES)) tpl.append(new Option(name, name));
 tpl.addEventListener('change', () => {
   if (!tpl.value) return;
-  design = structuredClone(TEMPLATES[tpl.value]); tpl.value = ''; gauge.value = String(design.gaugeStuds); grip.value = 'edges'; renderOptions(); framed = false; changed(true); canvas.fit();
+  design = structuredClone(TEMPLATES[tpl.value]); tpl.value = ''; replaced(); framed = false; changed(true); canvas.fit();
 });
 $('add-route').addEventListener('click', () => {
-  design.routes.push({ name: `R${design.routes.length + 1}`, x: 0, y: 0, heading: 0, segs: [{ kind: 'straight', studs: 16 }] });
+  design.routes.push({ name: nextName(), x: 0, y: 0, heading: 0, segs: [{ kind: 'straight', studs: 16 }] });
+  canvas.setSelection([design.routes.length - 1]); // (its card open, to type its numbers)
   changed(true);
 });
-const grip = $<HTMLSelectElement>('grip');
-grip.value = design.grip ?? 'edges';
-grip.addEventListener('change', () => { design.grip = grip.value as Design['grip']; changed(true); });
-const pointsSel = $<HTMLSelectElement>('points');
-pointsSel.value = String(design.pointsPieces ?? 1);
-pointsSel.addEventListener('change', () => { design.pointsPieces = Number(pointsSel.value) as 1 | 2; changed(true); });
-function gripLegend() {
-  // (one or two points parts only means anything for points on tines: the plate-style are always a blade each)
-  $('points').parentElement!.style.display = (design.options?.mechStyle ?? 'plates') === 'plates' ? 'none' : ''; // (its class shows it whatever hidden says)
-  $('legend-ballast').hidden = (design.options?.ballast ?? 'none') === 'none';
-  let on: boolean; try { on = grip.value === 'edges'; } catch { return; } // (before the toolbar is set up)
-  $('legend-grip').hidden = !on;
-  if (canvas) canvas.showGrips = on;
+/** The legend: only what's on the plan now. */
+function updateLegend() {
+  const o = canvas?.overlay, its = o?.items ?? [];
+  const has = (k: string) => its.some((it) => it.kind === k);
+  const show = (id: string, on: boolean) => { const el = document.getElementById(id); if (el) el.hidden = !on; };
+  show('legend-ballast', (design.options?.ballast ?? 'none') !== 'none');
+  show('legend-baseplate', (design.options?.baseplate ?? 0) > 0);
+  show('legend-grooves', !!o?.grooves.length); show('legend-checks', !!o?.checkRails.length); show('legend-crossings', !!o?.crossings.length);
+  show('legend-points', its.some((it) => it.kind === 'points' && !it.off && !it.cand));
+  show('legend-points-off', its.some((it) => it.kind === 'points' && it.off));
+  show('legend-points-cand', its.some((it) => it.kind === 'points' && it.cand));
+  show('legend-levers', has('throw'));
+  show('legend-grip', !!o?.grips?.length);
+  show('legend-hint', [...document.querySelectorAll<HTMLElement>('#legend-rows [data-layer]')].some((el) => !el.hidden));
 }
 const gauge = $<HTMLInputElement>('gauge');
 gauge.value = String(design.gaugeStuds);
-gauge.addEventListener('change', () => { design.gaugeStuds = Number(gauge.value); changed(); });
+// (a whole number of studs, 2 to 10: anything else put back to what it was)
+gauge.addEventListener('change', () => {
+  const n = Math.round(Number(gauge.value));
+  if (gauge.value.trim() === '' || !Number.isFinite(n)) { gauge.value = String(design.gaugeStuds); return; }
+  design.gaugeStuds = Math.min(10, Math.max(2, n)); gauge.value = String(design.gaugeStuds); changed();
+});
+/** A different design (a template, a file, undo or redo): the toolbar and the forms show it, nothing selected. */
+function replaced() {
+  gauge.value = String(design.gaugeStuds);
+  canvas.setSelection([]); openCards.clear(); twSig = ''; renderOptions();
+}
 
 const download = (blob: Blob, name: string) => {
   const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = name; a.click();
@@ -335,14 +410,14 @@ const download = (blob: Blob, name: string) => {
 };
 // One piece: its STL; several (a switch and its moving parts): a zip of them.
 $('export-stl').addEventListener('click', () => {
-  if (!pieces.length) return;
+  if (!pieces.length || building || stale) return;
   const base = fileBase();
   if (pieces.length === 1) download(new Blob([pieces[0].stl as BlobPart], { type: 'model/stl' }), `${base}.stl`);
   else download(new Blob([zip(pieces.map((p) => ({ name: `${base}-${p.name}.stl`, data: p.stl }))) as BlobPart], { type: 'application/zip' }), `${base}.zip`);
 });
 // All the pieces in one 3MF, each its own object laid out on the print bed, for Orca Slicer (or any slicer).
 $('export-3mf').addEventListener('click', () => {
-  if (!pieces.length) return;
+  if (!pieces.length || building || stale) return;
   const o = design.options ?? {};
   download(new Blob([threeMF(pieces.map((p) => ({ name: p.name, stl: p.stl })), o.printBedX ?? 256, o.printBedY ?? 256) as BlobPart], { type: 'model/3mf' }), `${fileBase()}.3mf`);
 });
@@ -351,16 +426,20 @@ const fileBase = () => (design.name || 'track-piece').replace(/[\\/:*?"<>|]+/g, 
 $('save').addEventListener('click', () => {
   const name = prompt('Save the design as:', design.name || 'track-piece');
   if (name === null) return;
-  design.name = name.trim() || undefined; changed();
+  // (the name isn't the track: kept, without a rebuild or an undo step)
+  design.name = name.trim() || undefined; history[history.length - 1] = JSON.stringify(design); save();
   download(new Blob([JSON.stringify(design, null, 2)], { type: 'application/json' }), `${fileBase()}.btd.json`);
 });
 const loadInput = $<HTMLInputElement>('load-file');
 $('load').addEventListener('click', () => loadInput.click());
 loadInput.addEventListener('change', async () => {
   const f = loadInput.files?.[0]; if (!f) return;
-  try { const d = JSON.parse(await f.text()) as Design; if (!Array.isArray(d.routes)) throw new Error('not a design');
-    design = d; gauge.value = String(d.gaugeStuds); grip.value = d.grip ?? 'edges'; pointsSel.value = String(d.pointsPieces ?? 1); renderOptions(); framed = false; changed(true); canvas.fit();
-  } catch (err) { errEl.textContent = `Couldn't load that file: ${err}`; }
+  try {
+    const d = JSON.parse(await f.text()) as Design;
+    if (!d || !Array.isArray(d.routes)) throw new Error("it isn't a track design (.btd.json)");
+    d.version = 1; if (!Number.isFinite(d.gaugeStuds)) d.gaugeStuds = 4;
+    design = d; replaced(); framed = false; changed(true); canvas.fit();
+  } catch (err) { setStatus('', `Couldn't open ${f.name}: ${err instanceof Error ? err.message : err}`); }
   loadInput.value = '';
 });
 
@@ -368,8 +447,11 @@ loadInput.addEventListener('change', async () => {
 const hintEl = $('hint'), coordsEl = $('coords');
 const radiusSel = $<HTMLSelectElement>('radius');
 radiusSel.append(new Option('Curves: free', '-1', true, true));
-radiusSel.append(new Option('Auto (LEGO radii)', '0'));
-for (const r of [24, 32, 40, 48, 56, 64, 72, 88, 104, 120]) radiusSel.append(new Option(`R${r}`, String(r)));
+radiusSel.append(new Option('Curves: LEGO radii', '0'));
+for (const r of [24, 32, 40, 48, 56, 64, 72, 88, 104, 120]) radiusSel.append(new Option(`Curves: R${r}`, String(r)));
+// (remembered: it's how you like to draw, not part of the design)
+try { const v = localStorage.getItem('btd-radius'); if (v && [...radiusSel.options].some((op) => op.value === v)) radiusSel.value = v; } catch { /* fine */ }
+radiusSel.addEventListener('change', () => { try { localStorage.setItem('btd-radius', radiusSel.value); } catch { /* fine */ } });
 const canvas = new TrackCanvas($<HTMLCanvasElement>('track'), {
   design: () => design,
   changed: (commit) => changed(commit, commit), // (one undo step per finished action, none for each mouse move)
@@ -394,6 +476,11 @@ document.querySelectorAll<HTMLElement>('#legend [data-layer]').forEach((el) => {
     canvas.draw();
   });
 });
+// (the legend folded away, remembered)
+const legendEl = $('legend');
+const foldLegend = (on: boolean) => { legendEl.classList.toggle('folded', on); $('legend-fold').textContent = on ? '+' : '–'; try { localStorage.setItem('btd-legend', on ? '0' : '1'); } catch { /* fine */ } };
+try { foldLegend(localStorage.getItem('btd-legend') === '0'); } catch { /* fine */ }
+$('legend-fold').addEventListener('click', () => foldLegend(!legendEl.classList.contains('folded')));
 canvas.draw();
 (window as unknown as { btdCanvas: unknown }).btdCanvas = canvas; // (for the browser checks)
 const setMode = (m: 'draw' | 'select') => {
@@ -407,6 +494,8 @@ $('fit').addEventListener('click', () => canvas.fit());
 const mainEl = document.querySelector('main')!;
 const set3d = (on: boolean) => {
   mainEl.classList.toggle('no3d', !on);
+  // (the status line, with the build's progress, goes with the plan while the 3D view is hidden)
+  (on ? $('view3d') : $('plan')).append($('buildstatus'), $('status'));
   $('toggle-3d').classList.toggle('on', on);
   try { localStorage.setItem('btd-3d', on ? '1' : '0'); } catch { /* fine */ }
 };
@@ -414,7 +503,7 @@ let show3d = true;
 try { show3d = localStorage.getItem('btd-3d') !== '0'; } catch { /* fine */ }
 set3d(show3d);
 $('toggle-3d').addEventListener('click', () => { show3d = !show3d; set3d(show3d); });
-const restore = (json: string) => { design = JSON.parse(json); gauge.value = String(design.gaugeStuds); grip.value = design.grip ?? 'edges'; pointsSel.value = String(design.pointsPieces ?? 1); canvas.selected = undefined; save(); render(); renderOptions(); canvas.draw(); updateHistoryButtons(); requestBuild(); };
+const restore = (json: string) => { design = JSON.parse(json); replaced(); save(); render(); canvas.draw(); updateHistoryButtons(); requestBuild(); };
 const undo = () => { if (history.length > 1) { future.push(history.pop()!); restore(history[history.length - 1]); } };
 const redo = () => { if (future.length) { const j = future.pop()!; history.push(j); restore(j); } };
 function updateHistoryButtons() {
@@ -424,7 +513,7 @@ function updateHistoryButtons() {
 $('undo').addEventListener('click', undo);
 $('redo').addEventListener('click', redo);
 addEventListener('keydown', (e) => {
-  if ((e.target as HTMLElement)?.tagName === 'INPUT') return;
+  if (typingIn(e)) return;
   if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') { e.preventDefault(); (e.shiftKey ? redo : undo)(); }
   if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'y') { e.preventDefault(); redo(); }
   if (e.ctrlKey || e.metaKey || e.altKey) return;
@@ -471,7 +560,9 @@ splitter.addEventListener('pointerdown', (e) => {
   splitter.addEventListener('pointerup', () => { splitter.removeEventListener('pointermove', mv); splitter.classList.remove('dragging'); }, { once: true });
 });
 splitter.addEventListener('dblclick', () => { mainEl.style.removeProperty('--plan'); mainEl.style.removeProperty('--view'); try { localStorage.removeItem('btd-split'); } catch { /* fine */ } });
-$('clear').addEventListener('click', () => { design.routes = []; canvas.selected = undefined; changed(true); });
+// (an empty plan: straight on to drawing)
+$('clear').addEventListener('click', () => { if (!design.routes.length) return; design.routes = []; canvas.setSelection([]); changed(true); setMode('draw'); });
+if (!design.routes.length) setMode('draw');
 
 render();
 changed();
@@ -480,7 +571,7 @@ changed();
 // ---------- selection: copy, cut, paste, duplicate, mirror, turn ----------
 let clipboard: DRoute[] = [];
 const selected = () => canvas.selection().filter((i) => i < design.routes.length);
-const nextName = () => { let n = design.routes.length + 1; while (design.routes.some((r) => r.name === `R${n}`)) n++; return `R${n}`; };
+const nextName = () => freeName(design, 'R');
 const r3 = (v: number) => Math.round(v * 1000) / 1000;
 /** Add routes (copies), moved by (dx, dy) studs, and select them. */
 function addRoutes(list: DRoute[], dx: number, dy: number) {
@@ -535,7 +626,7 @@ $('sel-rotl').addEventListener('click', () => turnSel(90));
 $('sel-rotr').addEventListener('click', () => turnSel(-90));
 $('sel-del').addEventListener('click', () => { deleteSel(); updateSelbar(); });
 addEventListener('keydown', (e) => {
-  if ((e.target as HTMLElement)?.tagName === 'INPUT' || (e.target as HTMLElement)?.tagName === 'SELECT') return;
+  if (typingIn(e)) return;
   const k = e.key.toLowerCase(), mod = e.ctrlKey || e.metaKey;
   if (mod && k === 'c') { e.preventDefault(); copySel(); }
   else if (mod && k === 'x') { e.preventDefault(); copySel(); deleteSel(); }
@@ -550,113 +641,163 @@ addEventListener('keydown', (e) => {
 updateSelbar();
 
 
-// ---------- piece options (switch.scad's Customizer settings) ----------
-const OPTION_FORM: [string, [keyof PieceOptions, string, number?][]][] = [
-  ['Ballast', [['ballast', 'Ballast'], ['bottomStyle', 'Underside']]],
-  ['Throw', [['throwStyle', 'Lever or stand'], ['throwAction', 'Points held by'], ['throwSide', 'Lever side'], ['leverOffset', 'Lever past the edge, mm', 1]]],
-  ['Points', [['pointThrow', 'Blade throw, mm', 0.25], ['pointClearance', 'Clearance, mm', 0.05],
-    ['springPreload', 'Spring preload, mm', 0.25], ['springThickness', 'Spring thickness, mm', 0.05], ['springLength', 'Spring length, mm', 1]]],
-  ['Guards (check rails)', [['checkRailLen', 'Check rail length, mm', 2], ['checkRailW', 'Check rail width, mm', 0.1], ['checkRailFlare', 'End flare, mm', 0.25],
-    ['flangeway', 'Flangeway width, mm', 0.1], ['flangewayDepth', 'Flangeway depth, mm', 0.5]]],
-  ['Print bed', [['printBedX', 'Bed width, mm', 1], ['printBedY', 'Bed depth, mm', 1], ['baseplate', 'Cut at baseplate edges'], ['baseplateX', 'Plate corner x, studs', 1], ['baseplateY', 'Plate corner y, studs', 1], ['joint', 'Parts join with'], ['cutRails', 'Rails where parts are cut'], ['endSupports', 'Supports under the rail ends']]],
-  ['Points (prototype)', [['mechStyle', 'Mechanism'], ['bladeStyle', 'Blades'], ['pointsModule', 'Points built as']]],
+// ---------- piece options (switch.scad's Customizer settings, and the underside) ----------
+/** What the options panel needs to know to show only what applies. */
+interface OptCtx { o: PieceOptions; ballast: boolean; fdb: boolean; switches: boolean | undefined }
+interface OptChoice { v: string; t: string; tip?: string; no?: (c: OptCtx) => string | undefined }
+interface OptField {
+  key: string; label: string; help?: string; step?: number; min?: number;
+  choices?: OptChoice[]; check?: boolean;
+  /** shown only when this says so */
+  when?: (c: OptCtx) => boolean;
+  get?: () => string | number | boolean; set?: (v: string | number | boolean) => void;
+}
+interface OptSection { title: string; switches?: boolean; fields: OptField[] }
+const OPTION_FORM: OptSection[] = [
+  { title: 'Underside and ballast', fields: [
+    { key: 'ballast', label: 'Ballast', choices: [
+      { v: 'none', t: 'None: track only', tip: 'The sleepers and rails on a thin bed, as LEGO track' },
+      { v: 'ballast', t: 'Ballast', tip: 'The track on a ballast shoulder, as the OpenSCAD switches have it' },
+      { v: 'buddy', t: 'Ballast + buddy layer', tip: 'Ballast with a wider bottom layer under it' }] },
+    { key: 'bottomStyle', label: 'Underside', when: (c) => c.ballast, choices: [
+      { v: 'antistud', t: 'Anti-stud: grips the plate', tip: 'Hollow underneath with LEGO tubes, so it sits on the baseplate\'s studs' },
+      { v: 'float', t: 'Flat', tip: 'Flat underneath: it sits on the studs, not held' }] },
+    { key: 'grip', label: 'Grip on the baseplate', when: (c) => !c.ballast || c.o.bottomStyle === 'antistud',
+      get: () => design.grip ?? 'edges', set: (v) => { design.grip = v as Design['grip']; }, choices: [
+        { v: 'edges', t: 'Along the edges', tip: 'Hollow like a LEGO plate: anti-stud tubes grip along the edges and every 4 studs (green circles on the plan), thin posts elsewhere. Holds firmly and comes off again' },
+        { v: 'all', t: 'Every stud', tip: 'A gripping square socket at every stud: holds hard, and can be hard to pull off' }] },
+  ] },
+  { title: 'Switches: points', switches: true, fields: [
+    { key: 'mechStyle', label: 'Mechanism', choices: [
+      { v: 'plates', t: 'Blades on top, on pins (plate-style)', tip: 'Each blade on its own plate on top of the bed, turning on a pin, with a spring tongue the slider bar\'s post sits in; the blades go in from above, the slider from below' },
+      { v: 'tines', t: 'Under the bed, on spring tines (switch.scad)', tip: 'The points under the bed in pockets, on springy tines; they go in from below' }] },
+    { key: 'pointsPieces', label: 'Points printed as', when: (c) => !c.fdb,
+      get: () => String(design.pointsPieces ?? 1), set: (v) => { design.pointsPieces = Number(v) as 1 | 2; }, choices: [
+        { v: '1', t: 'One part', tip: 'Both blades on one pivot' },
+        { v: '2', t: 'Two parts, a blade each', tip: 'Each blade on its own pivot and spring' }] },
+    { key: 'bladeStyle', label: 'Blades', when: (c) => c.fdb, choices: [
+      { v: 'simple', t: 'Simple', tip: 'Each blade is its route\'s rail, cut off along the stock rail it closes on' },
+      { v: 'prototype', t: 'Like the real thing: planed, under the stock rail', tip: 'Each blade planed to a blunt point (as thin as prints well), tight against the stock rail and tucked in under its undercut head, so a wheel\'s flange can\'t catch it and the head holds it down; the tie bar (the slider) moved up to the points. Drawbacks: the blades go on swung open, then shut; the stock rail\'s head is thinner low down along the points; with the over-centre spring the tie bar stays further back' }] },
+    { key: 'pointsModule', label: 'Points go in', choices: [
+      { v: 'built-in', t: 'From below: one piece', tip: 'The points built into the track, their pockets open through to the bottom: the points and the throw go in from underneath before it goes on the baseplate' },
+      { v: 'layers', t: 'From the top, under a lid (layers)', tip: 'The lower layer (with the pockets the moving parts sit in), the moving parts dropped in, then the deck (bed, rails, frogs) laid over, held by studs like LEGO plates',
+        no: (c) => (c.ballast ? undefined : 'needs ballast') }] },
+    { key: 'pointThrow', label: 'Blade throw, mm', step: 0.25, help: 'How far the blade tips move' },
+    { key: 'pointClearance', label: 'Clearance, mm', step: 0.05, help: 'The gap round the moving parts' },
+    { key: 'springPreload', label: 'Spring preload, mm', step: 0.25, help: 'How far past closed the springs push the blades, to hold them shut' },
+    { key: 'springThickness', label: 'Spring thickness, mm', step: 0.05, when: (c) => !c.fdb, help: 'The spring tines\' thickness' },
+    { key: 'springLength', label: 'Spring tine length, mm', step: 1, when: (c) => !c.fdb, help: 'The spring tines\' length (each lever\'s own: drag it along on the plan)' },
+  ] },
+  { title: 'Switches: throw', switches: true, fields: [
+    { key: 'throwStyle', label: 'Throw', choices: [
+      { v: 'built-in', t: 'Lever built into the arm', tip: 'The lever\'s ears part of the track piece\'s arm' },
+      { v: 'bracket', t: 'Lever on its own bracket (plate-style)', tip: 'The lever on a separate 3 x 3 stud bracket that sits on studs on the arm, as plate-style throws are' },
+      { v: 'stand', t: 'Switch stand (ground throw)', tip: 'A handle beside the track on an eccentric, as Caboose Industries\' ground throws: swing it over to throw the points; at each end it rests on the arm just past dead centre, so the points can\'t push it back (locked). Drawbacks: a train trailing through against it is stopped (and derails) unless the points spring back; a three-way\'s middle position isn\'t locked',
+        no: (c) => (c.fdb ? undefined : 'plate-style points only') }] },
+    { key: 'throwAction', label: 'Points held by', when: (c) => c.fdb, choices: [
+      { v: 'detent', t: 'The lever\'s click', tip: 'The lever clicks into a dimple in its ear at each end. A train trailing through the wrong way pushes the points part way over and can derail' },
+      { v: 'overcentre', t: 'Over-centre spring (Peco)', tip: 'A printed spring between the bed and the slider pushes the points to whichever side they\'re past, as Peco\'s V spring does: a train trailing through pushes them over and they stay, the lever with them. Drawbacks: a PLA spring is light (about 0.3 N at the ends) and its force depends on how accurately it prints; not on three-ways or with a switch stand' },
+      { v: 'springback', t: 'Spring-back (spring switch)', tip: 'Each blade\'s tongue is a long spring: a train trailing through pushes the blades over and they spring back after it, the throw staying where it\'s set. Use the switch stand, which locks the throw (the lever\'s click won\'t hold it). Drawbacks: wider blade plates; the blades snap back between wheelsets (no dashpot, as the real thing has); a lighter hold on the closed blade' }] },
+    { key: 'throwSide', label: 'Lever side', help: 'For every switch, unless its branch route says otherwise (on the route\'s card) or you\'ve dragged its lever across on the plan', choices: [
+      { v: 'auto', t: 'Auto: away from the branch', tip: 'On the side of the route the branch leaves (a three-way: the right)' },
+      { v: 'left', t: 'Left', tip: 'On the left, as you face along the points from their toe' },
+      { v: 'right', t: 'Right', tip: 'On the right, as you face along the points from their toe' }] },
+    { key: 'leverOffset', label: 'Lever out past the track, mm', step: 1, help: 'How far past the sleepers\' ends the lever is (each lever\'s own: drag it on the plan)' },
+  ] },
+  { title: 'Check rails and flangeways', fields: [
+    { key: 'checkRailLen', label: 'Check rail length, mm', step: 2 },
+    { key: 'checkRailW', label: 'Check rail width, mm', step: 0.1 },
+    { key: 'checkRailFlare', label: 'Check rail end flare, mm', step: 0.25, help: 'How far a switch\'s check rails\' ends flare out, to lead the flanges in' },
+    { key: 'flangeway', label: 'Flangeway width, mm', step: 0.1 },
+    { key: 'flangewayDepth', label: 'Flangeway depth, mm', step: 0.5 },
+  ] },
+  { title: 'Print bed and joints', fields: [
+    { key: 'printBedX', label: 'Bed width, mm', step: 1, min: 50 },
+    { key: 'printBedY', label: 'Bed depth, mm', step: 1, min: 50 },
+    { key: 'baseplate', label: 'Cut at baseplate edges', help: 'Cut the track where baseplates of this size meet (the dashed orange lines on the plan), so every part sits on one plate', choices: [
+      { v: '0', t: 'No' }, { v: '16', t: '16 x 16 studs' }, { v: '32', t: '32 x 32 studs' }, { v: '48', t: '48 x 48 studs' }, { v: '64', t: '64 x 64 studs' }, { v: '96', t: '96 x 96 studs' }] },
+    { key: 'baseplateX', label: 'Plate corner x, studs', step: 1, when: (c) => (c.o.baseplate ?? 0) > 0, help: 'Where a baseplate\'s corner is on the grid' },
+    { key: 'baseplateY', label: 'Plate corner y, studs', step: 1, when: (c) => (c.o.baseplate ?? 0) > 0, help: 'Where a baseplate\'s corner is on the grid' },
+    { key: 'joint', label: 'Parts join with', help: 'How the parts cut for the print bed or the baseplates join', choices: [
+      { v: 'lego', t: 'Rail tongues + peg and clip (LEGO)', tip: 'As LEGO track joins: interlocking rail-end tongues, and a peg and C-clip in the bed' },
+      { v: 'dovetail', t: 'Rail tongues + dovetails', tip: 'Interlocking rail-end tongues, and dovetails through the bed: stronger, slides together from above' },
+      { v: 'butt', t: 'Straight cuts (held by the baseplate)', tip: 'Plain straight cuts, nothing to join them: the baseplate under them holds them in line' },
+      { v: 'axle', t: 'Rail tongues + LEGO axles', tip: 'A LEGO cross-axle hole across each cut, two studs deep each side, to pin the parts together with a 4-stud axle. Without ballast the track is too thin: there it falls back to peg and clip', no: (c) => (c.ballast ? undefined : 'needs ballast') },
+      { v: 'ends', t: 'Separate pieces, ordinary track ends (plate-style)', tip: 'Each track cut square to itself where it is clear of the others, with a standard end connector both sides: points, frogs and crossings stay whole, plain track in lengths that fit the bed' }] },
+    { key: 'cutRails', label: 'Rails where parts are cut', when: (c) => c.o.joint !== 'butt', choices: [
+      { v: 'tongues', t: 'Interlocking tongues (LEGO)', tip: 'The rails at a cut get interlocking tongues, as LEGO track ends: they overhang, so they print with supports' },
+      { v: 'flat', t: 'Cut flat', tip: 'The rails cut flat across: nothing overhangs, no supports to print; the bed joint and the baseplate hold the parts in line' }] },
+    { key: 'endSupports', label: 'Supports under the rail ends', check: true, help: 'Breakaway print supports under the rail-end tongues at each end; off: let the slicer support them' },
+  ] },
 ];
+let optSig = '';
+/** After a build: the options panel again if what applies has changed (switches appearing or going). */
+/** After a build: the route cards again if which routes branch has changed (a branch's card has its lever's side). */
+let branchSig = '';
+function refreshRoutes() {
+  const sig = JSON.stringify((canvas.overlay?.items ?? []).filter((it) => it.kind === 'points' && !it.cand).map((it) => [it.key, it.routes]));
+  if (sig !== branchSig) { branchSig = sig; render(); }
+}
+function refreshOptions() {
+  if (JSON.stringify([design.options, design.grip, design.pointsPieces, switchesNow()]) !== optSig) renderOptions();
+}
+/** Switches in the design, as last built (undefined: not built yet). */
+function switchesNow() {
+  if (!hasTrack()) return false;
+  const items = canvas?.overlay?.items;
+  return items && items.some((it) => it.kind === 'points' && !it.off && !it.cand);
+}
 function renderOptions() {
-  const body = $('options-body'); body.replaceChildren();
-  const o = { ...OPTION_DEFAULTS, ...design.options };
-  for (const [title, fields] of OPTION_FORM) {
-    const h = document.createElement('h4'); h.textContent = title; body.append(h);
-    for (const [key, label, step] of fields) {
-      if (key === 'mechStyle') {
-        const sel = document.createElement('select');
-        for (const [v, tx, tip] of [['tines', 'Under the bed, on spring tines (switch.scad)', 'The points under the bed in pockets, on springy tines; they go in from below'],
-          ['plates', 'Blades on top, on pins (plate-style)', 'Each blade on its own plate on top of the bed, turning on a pin, with a spring tongue the slider bar\'s post sits in; the blades go in from above, the slider from below']]) { const op = new Option(tx, v); op.title = tip; sel.append(op); }
-        sel.value = o.mechStyle ?? 'plates';
-        sel.addEventListener('change', () => { design.options = { ...design.options, mechStyle: sel.value as PieceOptions['mechStyle'] }; changed(true); });
-        body.append(field(label, sel));
-      } else if (key === 'throwStyle') {
-        const sel = document.createElement('select');
-        for (const [v, tx, tip] of [['bracket', 'On its own bracket (plate-style)', 'The lever on a separate 3 x 3 stud bracket that sits on studs on the arm, as plate-style throws are'],
-          ['built-in', 'Built into the arm', 'The lever\'s ears part of the track piece\'s arm'],
-          ['stand', 'Switch stand (ground throw)', 'A handle beside the track on an eccentric, as Caboose Industries\' ground throws: swing it over to throw the points; at each end it rests on the arm just past dead centre, so the points can\'t push it back (locked). Drawbacks: plate-style points only; a train trailing through against it is stopped (and derails) unless the points spring back; a three-way\'s middle position isn\'t locked']]) { const op = new Option(tx, v); op.title = tip; sel.append(op); }
-        sel.value = o.throwStyle ?? 'built-in';
-        sel.addEventListener('change', () => { design.options = { ...design.options, throwStyle: sel.value as PieceOptions['throwStyle'] }; changed(true); });
-        body.append(field(label, sel));
-      } else if (key === 'throwAction') {
-        const sel = document.createElement('select');
-        for (const [v, tx, tip] of [['detent', 'The lever\'s click (as before)', 'The lever clicks into a dimple in its ear at each end. A train trailing through the wrong way pushes the points part way over and can derail'],
-          ['overcentre', 'Over-centre spring (Peco)', 'A printed spring between the bed and the slider pushes the points to whichever side they\'re past, as Peco\'s V spring does: a train trailing through pushes them over and they stay, the lever with them. Drawbacks: a PLA spring is light (about 0.3 N at the ends) and its force depends on how accurately it prints; not on three-ways or with a switch stand; plate-style points only'],
-          ['springback', 'Spring-back (spring switch)', 'Each blade\'s tongue is a long spring: a train trailing through pushes the blades over and they spring back after it, the throw staying where it\'s set. Use the switch stand, which locks the throw (the lever\'s click won\'t hold it). Drawbacks: wider blade plates; the blades snap back between wheelsets (no dashpot, as the prototype has); a lighter hold on the closed blade; plate-style points only']]) { const op = new Option(tx, v); op.title = tip; sel.append(op); }
-        sel.value = o.throwAction ?? 'detent';
-        sel.title = 'What holds the points over, and what a train trailing through them the wrong way does';
-        sel.addEventListener('change', () => { design.options = { ...design.options, throwAction: sel.value as PieceOptions['throwAction'] }; changed(true); });
-        body.append(field(label, sel));
-      } else if (key === 'bladeStyle') {
-        const sel = document.createElement('select');
-        for (const [v, tx, tip] of [['simple', 'Simple (as before)', 'Each blade is its route\'s rail, cut off along the stock rail it closes on'],
-          ['prototype', 'Prototype: planed, tucked under the stock rail', 'Each blade planed to a blunt point (as thin as prints well), tight against the stock rail and tucked in under its undercut head, so a wheel\'s flange can\'t catch it and the head holds it down; the tie bar (the slider) moved up to the points. Drawbacks: the blades go on swung open, then shut; the stock rail\'s head is thinner low down along the points; with the over-centre spring the tie bar stays further back; plate-style points only']]) { const op = new Option(tx, v); op.title = tip; sel.append(op); }
-        sel.value = o.bladeStyle ?? 'simple';
-        sel.title = 'How the blades (switch rails) are shaped';
-        sel.addEventListener('change', () => { design.options = { ...design.options, bladeStyle: sel.value as PieceOptions['bladeStyle'] }; changed(true); });
-        body.append(field(label, sel));
-      } else if (key === 'cutRails') {
-        const sel = document.createElement('select');
-        for (const [v, tx, tip] of [['tongues', 'Interlocking tongues (LEGO)', 'The rails at a cut get interlocking tongues, as LEGO track ends: they overhang, so they print with supports'],
-          ['flat', 'Cut flat', 'The rails cut flat across: nothing overhangs, no supports to print; the bed joint and the baseplate hold the parts in line']]) { const op = new Option(tx, v); op.title = tip; sel.append(op); }
-        sel.value = o.cutRails ?? 'tongues';
-        sel.addEventListener('change', () => { design.options = { ...design.options, cutRails: sel.value as PieceOptions['cutRails'] }; changed(true); });
-        body.append(field(label, sel));
-      } else if (key === 'endSupports') {
-        const cb = document.createElement('input'); cb.type = 'checkbox'; cb.checked = o.endSupports !== false;
-        cb.title = 'Breakaway print supports under the rail-end tongues at each end; off: let the slicer support them';
-        cb.addEventListener('change', () => { design.options = { ...design.options, endSupports: cb.checked }; changed(true); });
-        body.append(field(label, cb));
-      } else if (key === 'pointsModule') {
-        const sel = document.createElement('select');
-        for (const [v, tx, tip] of [['built-in', 'One piece: points and throw go in from below', 'The points built into the track, their pockets open through to the bottom: the points and the throw go in from underneath before it goes on the baseplate'],
-          ['layers', 'Layers: points and throw go in from the top, then a lid', 'The lower layer (with the pockets the moving parts sit in), the moving parts dropped in, then the deck (bed, rails, frogs) laid over, held by studs like LEGO plates. Needs ballast.']]) { const op = new Option(tx, v); op.title = tip; sel.append(op); }
-        sel.value = o.pointsModule ?? 'built-in';
-        sel.title = 'Prototype: how the points are built';
-        sel.addEventListener('change', () => { design.options = { ...design.options, pointsModule: sel.value as PieceOptions['pointsModule'] }; changed(true); });
-        body.append(field(label, sel));
-      } else if (key === 'joint') {
-        const sel = document.createElement('select');
-        for (const [v, tx, tip] of [['lego', 'Rail tongues + peg and clip (LEGO)', 'As LEGO track joins: interlocking rail-end tongues, and a peg and C-clip in the bed'],
-          ['dovetail', 'Rail tongues + dovetails', 'Interlocking rail-end tongues, and dovetails through the bed: stronger, slides together from above'],
-          ['butt', 'Straight cuts (held by the baseplate)', 'Plain straight cuts, nothing to join them: the baseplate under them holds them in line'],
-          ['axle', 'Rail tongues + LEGO axles', 'A LEGO cross-axle hole across each cut, two studs deep each side, to pin the parts together with a 4-stud axle (needs ballast: the track alone is too thin; there it falls back to peg and clip)'],
-          ['ends', 'Separate pieces, ordinary track ends (plate-style)', 'Each track cut square to itself where it is clear of the others, with a standard end connector both sides: points, frogs and crossings stay whole, plain track in lengths that fit the bed']]) { const op = new Option(tx, v); op.title = tip; sel.append(op); }
-        sel.value = o.joint ?? 'lego';
-        sel.title = 'How the parts cut for the print bed or the baseplates join';
-        sel.addEventListener('change', () => { design.options = { ...design.options, joint: sel.value as PieceOptions['joint'] }; changed(true); });
-        body.append(field(label, sel));
-      } else if (key === 'ballast' || key === 'bottomStyle') {
-        const sel = document.createElement('select');
-        const opts = key === 'ballast' ? [['none', 'None (track only)'], ['ballast', 'Ballast'], ['buddy', 'Ballast + buddy layer']] : [['antistud', 'Anti-stud (grips plates)'], ['float', 'Flat']];
-        for (const [v, tx] of opts) sel.append(new Option(tx, v));
-        sel.value = String(o[key]);
-        sel.title = key === 'ballast' ? 'Ballast under the track, as the OpenSCAD switches have it' : 'With ballast: the underside';
-        sel.addEventListener('change', () => { design.options = { ...design.options, [key]: sel.value }; changed(true); });
-        body.append(field(label, sel));
-      } else       if (key === 'baseplate') {
-        const sel = document.createElement('select');
-        for (const [v, t] of [['0', "Don't"], ['16', '16 x 16 studs'], ['32', '32 x 32 studs'], ['48', '48 x 48 studs'], ['64', '64 x 64 studs'], ['96', '96 x 96 studs']]) sel.append(new Option(t, v));
-        sel.value = String(o.baseplate ?? 0);
-        sel.title = 'Cut the track where baseplates of this size meet, on the design\'s stud grid, so every part sits on one plate';
-        sel.addEventListener('change', () => { design.options = { ...design.options, baseplate: Number(sel.value) }; changed(true); });
-        body.append(field(label, sel));
-      } else if (key === 'throwSide') {
-        const sel = document.createElement('select');
-        for (const [v, t] of [['auto', 'Auto (main route side)'], ['left', 'Left'], ['right', 'Right']]) sel.append(new Option(t, v));
-        sel.value = o.throwSide;
-        sel.addEventListener('change', () => { design.options = { ...design.options, throwSide: sel.value as PieceOptions['throwSide'] }; changed(true); });
-        body.append(field(label, sel));
-      } else
-        body.append(field(label, num(o[key] as number, (n) => { design.options = { ...design.options, [key]: n }; }, step)));
+  const body = $('options-body'), scroll = $('options').scrollTop;
+  const o = { ...OPTION_DEFAULTS, ...design.options } as PieceOptions;
+  const c: OptCtx = { o, ballast: o.ballast !== 'none', fdb: (o.mechStyle ?? 'plates') === 'plates', switches: switchesNow() };
+  optSig = JSON.stringify([design.options, design.grip, design.pointsPieces, c.switches]);
+  body.replaceChildren();
+  const setOpt = (f: OptField, v: string | number | boolean) => {
+    if (f.set) f.set(v); else design.options = { ...design.options, [f.key]: v };
+  };
+  for (const sec of OPTION_FORM) {
+    const h = document.createElement('h4'); h.textContent = sec.title; body.append(h);
+    const box = document.createElement('div'); box.className = 'sec';
+    if (sec.switches && c.switches === false) {
+      box.classList.add('idle');
+      const n = document.createElement('div'); n.className = 'note'; n.textContent = 'No switches in this design yet: these apply where a track branches off another.';
+      box.append(n);
     }
+    for (const f of sec.fields) {
+      if (f.when && !f.when(c)) continue;
+      const cur = f.get ? f.get() : (o as unknown as Record<string, string | number | boolean>)[f.key];
+      if (f.choices) {
+        const sel = document.createElement('select');
+        for (const ch of f.choices) {
+          const why = ch.no?.(c), op = new Option(why ? `${ch.t} (${why})` : ch.t, ch.v);
+          op.disabled = !!why && String(cur) !== ch.v; if (ch.tip) op.title = ch.tip;
+          sel.append(op);
+        }
+        sel.value = String(cur);
+        const lab = field(f.label, sel); lab.classList.add('stack');
+        const chosen = f.choices.find((ch) => ch.v === String(cur)), why = chosen?.no?.(c);
+        const d = document.createElement('small'); d.className = 'desc';
+        d.textContent = [why && `This ${why}: it isn't built as chosen.`, chosen?.tip, f.help].filter(Boolean).join(' · ');
+        if (why) d.classList.add('bad');
+        sel.title = f.help ?? '';
+        sel.addEventListener('change', () => { setOpt(f, f.key === 'baseplate' ? Number(sel.value) : sel.value); changed(true); renderOptions(); });
+        box.append(lab); if (d.textContent) box.append(d);
+      } else if (f.check) {
+        const cb = document.createElement('input'); cb.type = 'checkbox'; cb.checked = cur !== false; cb.title = f.help ?? '';
+        cb.addEventListener('change', () => { setOpt(f, cb.checked); changed(true); });
+        box.append(field(f.label, cb));
+      } else {
+        const i = num(Number(cur), (n) => setOpt(f, f.min !== undefined ? Math.max(f.min, n) : n), f.step ?? 1, f.help ?? '');
+        if (f.min !== undefined) i.min = String(f.min);
+        box.append(field(f.label, i));
+      }
+    }
+    body.append(box);
   }
-  body.append(btn('Reset to defaults', () => { design.options = {}; renderOptions(); }, 'Every option back to its default'));
-  body.lastElementChild!.classList.add('reset');
+  const reset = btn('Reset to defaults', () => { design.options = {}; delete design.grip; delete design.pointsPieces; renderOptions(); }, 'Every piece option back to its default (Undo brings them back)');
+  reset.classList.add('reset'); body.append(reset);
+  $('options').scrollTop = scroll;
 }
 renderOptions();
 
@@ -665,11 +806,12 @@ renderOptions();
 type TwItem = { kind: 'check' | 'groove' | 'points' | 'throw'; key: string; at: [number, number]; off?: boolean; len?: number; toe?: number; routes?: string[]; forced?: boolean; cand?: { ok: boolean; why: string }; lever?: { side: number; leverOffset: number; springLength: number; maxTine: number; edited: boolean } };
 let twSig = '';
 function renderTrackwork(list: TwItem[]) {
-  const sig = JSON.stringify(list.map((it) => [it.kind, it.key, it.off, Math.round((it.len ?? 0) * 10), it.toe, it.routes, it.forced, it.cand, it.lever && [it.lever.side, it.lever.leverOffset, it.lever.springLength]]));
+  const sig = JSON.stringify([list.map((it) => [it.kind, it.key, it.off, Math.round((it.len ?? 0) * 10), it.toe, it.routes, it.forced, it.cand, it.lever && [it.lever.side, it.lever.leverOffset, it.lever.springLength]]),
+    design.trackwork, design.options?.throwSide, design.options?.mechStyle, design.routes.map((r) => [r.name, r.throwSide])]);
   if (sig === twSig) return; // (don't rebuild the form under the user's fingers)
   twSig = sig;
   const body = $('trackwork-body'); body.replaceChildren();
-  if (!list.length) { const n = document.createElement('div'); n.className = 'none'; n.textContent = 'No check rails, flangeway cuts or points in this design.'; body.append(n); return; }
+  if (!list.length) { const n = document.createElement('div'); n.className = 'none'; n.textContent = 'No check rails, flangeway cuts or points in this design.'; body.append(n); $('trackwork-count').textContent = ''; return; }
   const edit = <K extends keyof Trackwork>(kind: K, key: string, patch: Record<string, unknown>) => {
     const tw = (design.trackwork ??= {}), group = ((tw[kind] ??= {}) as Record<string, Record<string, unknown>>);
     group[key] = { ...group[key], ...patch };
@@ -699,11 +841,11 @@ function renderTrackwork(list: TwItem[]) {
         row.append(why);
         box('Force points here', st.forced, () => canvas.togglePoints(key), 'Make points here though the track end is a hair off the other track');
       } else {
-        t.textContent = `Points ${++n}${st.state === 'off' ? ' · taken out' : st.forced ? ' · forced' : ''}`;
+        const ids = [...new Set(its.flatMap((it) => it.routes ?? []))];
+        t.textContent = `Points ${++n}${ids.length ? ` · ${ids.join(' / ')}` : ''}${st.state === 'off' ? ' · taken out' : st.forced ? ' · forced' : ''}`;
         row.append(t);
         box('Built (off: both tracks\' rails run through as plain track)', st.state === 'built', () => canvas.togglePoints(key));
         // (a three-way: each route in it or not; one taken out leaves a two-way for the others)
-        const ids = [...new Set(its.flatMap((it) => it.routes ?? []))];
         if (ids.length > 2 && !cur.off) for (const id of ids) box(`${id} in the points`, !cur.drop?.includes(id), (v) => {
           const drop = (cur.drop ?? []).filter((d) => d !== id).concat(v ? [] : [id]);
           edit('points', key, { drop: drop.length ? drop : undefined });
@@ -735,20 +877,32 @@ function renderTrackwork(list: TwItem[]) {
       } else if (kind === 'groove') {
         numField('Longer at the start, mm', 'd0', 1, 0); numField('Longer at the end, mm', 'd1', 1, 0);
       } else if (kind === 'throw' && it.lever) {
-        // (drag the lever on the plan, or set it here)
-        const lv = it.lever;
+        // (drag the lever on the plan, or set it here; Auto: as the route or the options say)
+        const lv = it.lever, ls = leverSide(design, it as unknown as OverlayItem, (canvas.overlay?.items ?? []));
         const side = document.createElement('select');
-        for (const [v, l] of [['left', 'Left'], ['right', 'Right']]) { const op = document.createElement('option'); op.value = v; op.textContent = l; side.append(op); }
-        side.value = lv.side > 0 ? 'right' : 'left';
-        side.addEventListener('change', () => edit('throw', it.key, { side: side.value }));
-        row.append(field('Side (as you face along the points)', side));
+        const auto = ls.by === 'hand' ? 'Auto (as the route or the options say)' : `Auto: ${ls.side} (${ls.why})`;
+        for (const [v, l] of [['auto', auto], ['left', 'Left'], ['right', 'Right']]) side.append(new Option(l, v));
+        side.value = ls.by === 'hand' ? ls.side : 'auto';
+        side.title = 'Left or right as you face along the points from their toe';
+        side.addEventListener('change', () => {
+          const tw = (design.trackwork ??= {}), g = (tw.throw ??= {}), e = { ...g[it.key] };
+          if (side.value === 'auto') delete e.side; else e.side = side.value as 'left' | 'right';
+          if (Object.keys(e).length) g[it.key] = e; else delete g[it.key];
+          changed(true);
+        });
+        const sf = field('Side', side); sf.classList.add('stack'); row.append(sf);
         const out = num(lv.leverOffset, (v) => edit('throw', it.key, { leverOffset: Math.max(0, v) }), 1); out.min = '0';
         row.append(field('Out past the track, mm', out));
-        const tine = num(lv.springLength, (v) => edit('throw', it.key, { springLength: Math.min(lv.maxTine, Math.max(16, v)) }), 1); tine.min = '16'; tine.max = String(Math.floor(lv.maxTine));
-        row.append(field('Spring tines (shorter: the lever nearer the heel), mm', tine));
+        if (leverSlides(design)) {
+          const tine = num(lv.springLength, (v) => edit('throw', it.key, { springLength: Math.min(lv.maxTine, Math.max(16, v)) }), 1); tine.min = '16'; tine.max = String(Math.floor(lv.maxTine));
+          row.append(field('Spring tines (shorter: the lever nearer the heel), mm', tine));
+        }
       }
       body.append(row);
     });
   }
-  body.append(btn('Undo every hand edit', () => { design.trackwork = {}; twSig = ''; }, 'Put the check rails, flangeway cuts and points back to what the app works out (points taken out put back, forced ones unforced)'));
+  const edits = Object.values(design.trackwork ?? {}).reduce((n, g) => n + Object.keys(g ?? {}).length, 0);
+  const reset = btn(edits ? `Reset ${edits} hand edit${edits > 1 ? 's' : ''}` : 'No hand edits', () => { design.trackwork = {}; twSig = ''; }, 'Put the check rails, flangeway cuts, points and levers back to what the app works out (points taken out put back, forced ones unforced); Undo brings them back');
+  reset.disabled = !edits; body.append(reset);
+  $('trackwork-count').textContent = list.length ? ` (${edits ? `${edits} edited` : 'none edited'})` : '';
 }
