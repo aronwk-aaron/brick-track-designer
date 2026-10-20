@@ -31,6 +31,7 @@ const norm180 = (a: number) => ((((a + 180) % 360) + 360) % 360) - 180;
 
 export class TrackCanvas {
   private ctx: CanvasRenderingContext2D;
+  private scratch: HTMLCanvasElement | undefined;
   private scale = 6;            // px per stud
   private ox = 0; private oy = 0; // screen px of world (0, 0)
   private mouse: [number, number] | undefined;   // world, studs
@@ -621,11 +622,27 @@ export class TrackCanvas {
       for (let y = oy + Math.ceil((wy0 - oy) / bpS) * bpS; y <= wy1; y += bpS) { const [, sy] = this.toScreen(0, y); c.moveTo(0, sy); c.lineTo(W, sy); }
       c.stroke(); c.setLineDash([]);
     }
-    const line = (pts: [number, number][], color: string, width: number, dash: number[] = []) => {
+    const line = (pts: [number, number][], color: string, width: number, dash: number[] = [], g2: CanvasRenderingContext2D = c) => {
       if (pts.length < 2) return;
-      c.strokeStyle = color; c.lineWidth = width; c.setLineDash(dash); c.lineCap = 'butt'; c.beginPath();
-      pts.forEach((p, i) => { const [sx, sy] = this.toScreen(p[0], p[1]); if (i) c.lineTo(sx, sy); else c.moveTo(sx, sy); });
-      c.stroke(); c.setLineDash([]);
+      g2.strokeStyle = color; g2.lineWidth = width; g2.setLineDash(dash); g2.lineCap = 'butt'; g2.beginPath();
+      pts.forEach((p, i) => { const [sx, sy] = this.toScreen(p[0], p[1]); if (i) g2.lineTo(sx, sy); else g2.moveTo(sx, sy); });
+      g2.stroke(); g2.setLineDash([]);
+    };
+    /**
+     * Wide see-through bands (sleepers, ballast) drawn as one layer: solid on
+     * a scratch canvas, then laid on at the colour's opacity, so where track
+     * overlaps (a switch, a crossover) it doesn't come out darker.
+     */
+    const layer = (color: string, bands: (draw: (pts: [number, number][], width: number) => void) => void) => {
+      const m = /rgba?\(([^)]+)\)/.exec(color), parts = m ? m[1].split(',').map((v) => v.trim()) : [];
+      if (parts.length < 3) { bands((pts, width) => line(pts, color, width)); return; }
+      const off = (this.scratch ??= document.createElement('canvas'));
+      if (off.width !== this.el.width || off.height !== this.el.height) { off.width = this.el.width; off.height = this.el.height; }
+      const oc = off.getContext('2d')!;
+      oc.setTransform(1, 0, 0, 1, 0, 0); oc.clearRect(0, 0, off.width, off.height); oc.setTransform(c.getTransform());
+      const solid = `rgb(${parts[0]}, ${parts[1]}, ${parts[2]})`;
+      bands((pts, width) => line(pts, solid, width, [], oc));
+      c.save(); c.setTransform(1, 0, 0, 1, 0, 0); c.globalAlpha = parts[3] === undefined ? 1 : Number(parts[3]); c.drawImage(off, 0, 0); c.restore();
     };
     const offsetPts = (r: { x: number; y: number; heading: number }, segs: DSeg[], o: number) => {
       // rail at offset o (studs, + = right) from the centre line
@@ -655,7 +672,7 @@ export class TrackCanvas {
       let q = p;
       segs.forEach((sg, k) => {
         const bad = isBad(k);
-        line(trace(q, [sg], 0.5), bad ? 'rgba(224,69,43,0.22)' : band, (2 * g + 3) * this.scale);
+        if (band) line(trace(q, [sg], 0.5), bad ? 'rgba(224,69,43,0.22)' : band, (2 * g + 3) * this.scale);
         for (const o of [-g, g]) line(offsetPts(q, [sg], o), bad ? '#e0452b' : rail, railW);
         q = follow(q, [sg]);
       });
@@ -666,8 +683,23 @@ export class TrackCanvas {
     const ballast = d.options?.ballast ?? 'none';
     if (ballast !== 'none') {
       const wide = (2 * g + 3 + (ballast === 'buddy' ? 4 : 2)) * this.scale;
-      for (const r of d.routes) line(trace(r, r.segs, 0.5), ink.ballastLow, wide);
-      if (ballast === 'buddy') for (const r of d.routes) line(trace(r, r.segs, 0.5), ink.ballast, (2 * g + 5) * this.scale);
+      layer(ink.ballastLow, (draw) => { for (const r of d.routes) draw(trace(r, r.segs, 0.5), wide); });
+      if (ballast === 'buddy') layer(ink.ballast, (draw) => { for (const r of d.routes) draw(trace(r, r.segs, 0.5), (2 * g + 5) * this.scale); });
+    }
+    // the sleeper bands, each colour as one layer (red where a drag can't bend the track)
+    {
+      const bandOf = (i: number) => (i === this.selected || this.extra.has(i) ? 'rgba(43,111,224,0.18)' : ink.band);
+      const badOf = (i: number) => {
+        const dragging = this.drag?.moved && this.drag.route === i && this.dragBad;
+        return (k: number) => !!dragging && (this.dragBadFrom >= 0 ? k >= this.dragBadFrom : k < this.dragBadTo);
+      };
+      for (const color of [ink.band, 'rgba(43,111,224,0.18)', 'rgba(224,69,43,0.22)']) layer(color, (draw) => d.routes.forEach((r, i) => {
+        let q: Pose = r; const bad = badOf(i);
+        r.segs.forEach((sg, k) => {
+          if ((bad(k) ? 'rgba(224,69,43,0.22)' : bandOf(i)) === color) draw(trace(q, [sg], 0.5), (2 * g + 3) * this.scale);
+          q = follow(q, [sg]);
+        });
+      }));
     }
     // labels: gathered, then drawn without overlapping (the selection's first)
     const labels: { x: number; y: number; txt: string; sel: boolean }[] = [];
@@ -676,7 +708,7 @@ export class TrackCanvas {
       const dragging = this.drag?.moved && this.drag.route === i && this.dragBad;
       const isBad = (k: number) => !!dragging && (this.dragBadFrom >= 0 ? k >= this.dragBadFrom : k < this.dragBadTo);
       // sleeper band, rails, centre line
-      drawSegs(r, r.segs, isBad, sel ? 'rgba(43,111,224,0.18)' : ink.band, sel ? ink.sel : ink.rail);
+      drawSegs(r, r.segs, isBad, '', sel ? ink.sel : ink.rail); // (bands drawn above, as layers)
       line(trace(r, r.segs, 0.5), ink.centre, 1, [4, 4]);
       // what each curve is, at its middle (and straights' lengths when zoomed in)
       let q: Pose = { x: r.x, y: r.y, heading: r.heading };
