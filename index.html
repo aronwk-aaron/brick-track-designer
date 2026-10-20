@@ -101,6 +101,10 @@
     #legend i.dot { width: 9px; height: 9px; border-radius: 50%; border: 1.5px solid currentColor; margin: 0 9px 0 3px; }
     #legend i.grip { width: 9px; height: 9px; border-radius: 50%; border: 1.5px solid #2b9e4a; margin: 0 9px 0 3px; }
     #legend i.sq { width: 9px; height: 9px; background: #f0b400; margin: 0 9px 0 3px; }
+    #legend [data-layer] { cursor: pointer; user-select: none; }
+    #legend [data-layer].off { opacity: 0.4; text-decoration: line-through; }
+    #views .sep { display: inline-block; width: 1px; height: 18px; background: var(--line); margin: 0 4px; vertical-align: middle; }
+    #views .show:not(.on) { opacity: 0.45; text-decoration: line-through; }
     #legend i.knob { width: 9px; height: 9px; border-radius: 50%; background: #e8892b; margin: 0 9px 0 3px; }
     #legend button { margin-top: 4px; padding: 1px 6px; font-size: 12px; }
     #help { background: var(--panel); right: 10px; top: 10px; width: min(360px, calc(100% - 20px)); padding: 10px 12px; font-size: 12.5px; display: none; z-index: 2; }
@@ -177,13 +181,13 @@
       <canvas id="track"></canvas>
       <div id="empty" hidden><div><b>Lay some track</b>Click a grid point to start, then click where the track should go.<br>Or pick one of the Templates.</div></div>
       <div id="legend" class="chip">
-        <span><i style="background:#e0452b"></i>flangeway cut</span>
-        <span><i style="background:#2b6fe0"></i>check rail</span>
-        <span><i class="dot"></i>rail crossing</span>
-        <span id="legend-ballast" hidden><i style="background:rgba(150,128,96,0.45)"></i>ballast</span>
-        <span><i class="sq"></i>points (built as a switch)</span>
-        <span><i class="knob"></i>lever (drag it: side, out, along)</span>
-        <span id="legend-grip"><i class="grip"></i>anti-stud tube (grips)</span>
+        <span data-layer="grooves"><i style="background:#e0452b"></i>flangeway cut</span>
+        <span data-layer="checks"><i style="background:#2b6fe0"></i>check rail</span>
+        <span data-layer="crossings"><i class="dot"></i>rail crossing</span>
+        <span id="legend-ballast" data-layer="ballast" hidden><i style="background:rgba(150,128,96,0.45)"></i>ballast</span>
+        <span data-layer="points"><i class="sq"></i>points (built as a switch)</span>
+        <span data-layer="levers"><i class="knob"></i>lever (drag it: side, out, along)</span>
+        <span id="legend-grip" data-layer="grips"><i class="grip"></i>anti-stud tube (grips)</span>
         <button id="help-open" type="button" title="How to use the editor (?)">? Help</button>
       </div>
       <div id="help" class="chip" role="dialog" aria-label="Help">
@@ -210,7 +214,7 @@
       <div id="coords" class="chip"></div>
     </div>
     <div id="splitter" title="Drag to resize; double-click to reset"></div>
-    <div id="view3d"><div id="buildstatus" class="chip" hidden><span class="spin"></span><span id="build-what">Building…</span> <span id="build-time"></span><span class="bar"><i id="build-bar"></i></span></div><div id="views" class="chip"><button id="view-top" type="button" title="Look at the top">Top</button><button id="view-under" type="button" title="Look at the underside, to see where it grips">Underside</button><button id="view-frame" type="button" title="Fit the piece in the view (or double-click it)">Frame</button></div><div id="status" class="chip"><span id="info"></span><span id="error"></span></div></div>
+    <div id="view3d"><div id="buildstatus" class="chip" hidden><span class="spin"></span><span id="build-what">Building…</span> <span id="build-time"></span><span class="bar"><i id="build-bar"></i></span></div><div id="views" class="chip"><button id="view-top" type="button" title="Look at the top">Top</button><button id="view-under" type="button" title="Look at the underside, to see where it grips">Underside</button><button id="view-frame" type="button" title="Fit the piece in the view (or double-click it)">Frame</button><span class="sep"></span><button class="show on" data-show="track" type="button" title="Show or hide the track (bases)">Track</button><button class="show on" data-show="points" type="button" title="Show or hide the points">Points</button><button class="show on" data-show="throw" type="button" title="Show or hide the throws">Throws</button><button class="show on" data-show="lever" type="button" title="Show or hide the levers">Levers</button></div><div id="status" class="chip"><span id="info"></span><span id="error"></span></div></div>
   </main>
   <script type="module" src="/src/app/main.ts"></script>
 </body>
