@@ -18,7 +18,7 @@ const deg = (r: number) => (r * 180) / Math.PI;
  * neighbouring lines), joints added. routes: the piece's routes (for the
  * rails and the bed), in the same frame as body.
  */
-export function cutPiece(s: Scad, t: Track, body: Man, routes: Route[], lines: CutLine[]): Man[] {
+export function cutPiece(s: Scad, t: Track, body: Man, routes: Route[], lines: CutLine[], joint: 'lego' | 'dovetail' | 'butt' = 'lego'): Man[] {
   if (!lines.length) return [body];
   const G = t.c.railOffset, half = t.c.sleeperLen / 2;
   const cz0 = 0, ch = PLATE_H - cz0;
@@ -28,6 +28,11 @@ export function cutPiece(s: Scad, t: Track, body: Man, routes: Route[], lines: C
   const couplerNotch = () => T(t.attachPoly(ch + 1), [-4, -0.11, cz0 - 0.5]);
   const couplerPeg = () => s.difference(s.union([T(s.cylinder(ch, 1, 1, 32), [0, 1.8, cz0]), T(s.cylinder(ch, 1.9, 2.1, 32), [0, 0, cz0])]), [T(s.cylinder(ch + 1, 0.8, 0.8, 32), [0, 0, cz0 - 0.5])]);
   const couplerTab = () => s.difference(T(M(s.extrude(s.polygon([[-0.3, 0], [1.7, 1.9], [6.3, 1.9], [8.3, 0]]), ch), [0, 1, 0]), [-4, 0.3, cz0]), [couplerSocket()]);
+  // dovetail (joint 'dovetail'): a tab on the far side reaching back into a
+  // socket on the near side, through the bed (and any ballast) from the
+  // bottom up; 0.15 mm clear all round
+  const bz = body.boundingBox().min[2];
+  const tail = (grow: number) => T(s.extrude(s.polygon([[-2.2 - grow, 0.01], [2.2 + grow, 0.01], [3.6 + grow, -4.5 - grow], [-3.6 - grow, -4.5 - grow]]), PLATE_H - bz + (grow ? 2 : 0)), [0, 0, bz - (grow ? 1 : 0)]);
   const cutTongue = (type: number, z0: number) => s.union([
     T(type < 0 ? t.railEndpointLeft() : t.railEndpointRight(), [-4, -4, 0]),
     type < 0 ? T(t.railSupport(3, 3.23 - z0), [-3.3, -3, z0]) : T(t.railSupport(4, 2.08 - z0), [-2.2, -3, z0]),
@@ -92,8 +97,8 @@ export function cutPiece(s: Scad, t: Track, body: Man, routes: Route[], lines: C
 
   // material removed at every cut: the rails round each joint, the notches and sockets on the far side
   const removals = s.union(frames.flatMap((f) => [
-    ...f.rails.map((r) => f.place(R(cube([8, 8, 30], [-4, -4, -1]), [0, 0, r[1]]), r[0])),
-    ...f.couplers.flatMap((u) => [f.place(couplerNotch(), u), f.place(couplerSocket(), u)]),
+    ...(joint === 'butt' ? [] : f.rails.map((r) => f.place(R(cube([8, 8, 30], [-4, -4, -1]), [0, 0, r[1]]), r[0]))),
+    ...f.couplers.flatMap((u) => (joint === 'lego' ? [f.place(couplerNotch(), u), f.place(couplerSocket(), u)] : joint === 'dovetail' ? [f.place(tail(0.15), u)] : [])),
   ]));
   const cutBody = s.difference(body, [removals]);
 
@@ -117,13 +122,15 @@ export function cutPiece(s: Scad, t: Track, body: Man, routes: Route[], lines: C
     const joints: Man[] = [];
     frames.forEach((f, k) => {
       const side = sides[k];
-      for (const r of f.rails) {
+      if (joint !== 'butt') for (const r of f.rails) {
         const q: [number, number] = [f.L.p[0] + r[0] * f.L.d[0], f.L.p[1] + r[0] * f.L.d[1]];
         if (inCell(q)) joints.push(f.place(R(cutTongue(side > 0 ? r[2] : -r[2], -0.02), [0, 0, r[1] + (side < 0 ? 180 : 0)]), r[0]));
       }
       for (const u of f.couplers) {
         const q: [number, number] = [f.L.p[0] + u * f.L.d[0], f.L.p[1] + u * f.L.d[1]];
-        if (inCell(q)) joints.push(side > 0 ? f.place(couplerPeg(), u) : f.place(R(couplerTab(), [0, 0, 180]), u));
+        if (!inCell(q)) continue;
+        if (joint === 'lego') joints.push(side > 0 ? f.place(couplerPeg(), u) : f.place(R(couplerTab(), [0, 0, 180]), u));
+        else if (joint === 'dovetail' && side > 0) joints.push(f.place(tail(0), u));
       }
     });
     // (and nothing loose: bits under a few mm3 a cut left over)

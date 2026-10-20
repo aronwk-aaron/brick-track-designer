@@ -527,7 +527,7 @@ const OPTION_FORM: [string, [keyof PieceOptions, string, number?][]][] = [
     ['springPreload', 'Spring preload, mm', 0.25], ['springThickness', 'Spring thickness, mm', 0.05], ['springLength', 'Spring length, mm', 1]]],
   ['Guards (check rails)', [['checkRailLen', 'Check rail length, mm', 2], ['checkRailW', 'Check rail width, mm', 0.1], ['checkRailFlare', 'End flare, mm', 0.25],
     ['flangeway', 'Flangeway width, mm', 0.1], ['flangewayDepth', 'Flangeway depth, mm', 0.5]]],
-  ['Print bed', [['printBedX', 'Bed width, mm', 1], ['printBedY', 'Bed depth, mm', 1], ['baseplate', 'Cut at baseplate edges'], ['baseplateX', 'Plate corner x, studs', 1], ['baseplateY', 'Plate corner y, studs', 1]]],
+  ['Print bed', [['printBedX', 'Bed width, mm', 1], ['printBedY', 'Bed depth, mm', 1], ['baseplate', 'Cut at baseplate edges'], ['baseplateX', 'Plate corner x, studs', 1], ['baseplateY', 'Plate corner y, studs', 1], ['joint', 'Parts join with']]],
 ];
 function renderOptions() {
   const body = $('options-body'); body.replaceChildren();
@@ -535,12 +535,21 @@ function renderOptions() {
   for (const [title, fields] of OPTION_FORM) {
     const h = document.createElement('h4'); h.textContent = title; body.append(h);
     for (const [key, label, step] of fields) {
-      if (key === 'ballast' || key === 'bottomStyle') {
+      if (key === 'joint') {
+        const sel = document.createElement('select');
+        for (const [v, tx, tip] of [['lego', 'Rail tongues + peg and clip (LEGO)', 'As LEGO track joins: interlocking rail-end tongues, and a peg and C-clip in the bed'],
+          ['dovetail', 'Rail tongues + dovetails', 'Interlocking rail-end tongues, and dovetails through the bed: stronger, slides together from above'],
+          ['butt', 'Straight cuts (held by the baseplate)', 'Plain straight cuts, nothing to join them: the baseplate under them holds them in line']]) { const op = new Option(tx, v); op.title = tip; sel.append(op); }
+        sel.value = o.joint ?? 'lego';
+        sel.title = 'How the parts cut for the print bed or the baseplates join';
+        sel.addEventListener('change', () => { design.options = { ...design.options, joint: sel.value as PieceOptions['joint'] }; changed(true); });
+        body.append(field(label, sel));
+      } else if (key === 'ballast' || key === 'bottomStyle') {
         const sel = document.createElement('select');
         const opts = key === 'ballast' ? [['none', 'None (track only)'], ['ballast', 'Ballast'], ['buddy', 'Ballast + buddy layer']] : [['antistud', 'Anti-stud (grips plates)'], ['float', 'Flat']];
         for (const [v, tx] of opts) sel.append(new Option(tx, v));
         sel.value = String(o[key]);
-        sel.title = key === 'ballast' ? 'Ballast under the track, as the OpenSCAD switches have it (switches only so far)' : 'With ballast: the underside';
+        sel.title = key === 'ballast' ? 'Ballast under the track, as the OpenSCAD switches have it' : 'With ballast: the underside';
         sel.addEventListener('change', () => { design.options = { ...design.options, [key]: sel.value }; changed(true); });
         body.append(field(label, sel));
       } else       if (key === 'baseplate') {
