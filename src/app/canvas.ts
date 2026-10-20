@@ -119,8 +119,8 @@ export class TrackCanvas {
     // (the gentler one)
     return plans.sort((a, b) => a.reduce((t, sg) => t + (sg.kind === 'curve' ? Math.abs(sg.angle) : 0), 0) - b.reduce((t, sg) => t + (sg.kind === 'curve' ? Math.abs(sg.angle) : 0), 0))[0];
   }
-  /** How near (studs) the mouse must be to catch a track or an end: about 14 pixels at any zoom (at most 1.2 studs). */
-  private reach(px = 14) { return Math.min(1.2, Math.max(0.1, px / this.scale)); }
+  /** How near (studs) the mouse must be to catch a track or an end: about 14 pixels at any zoom (up to 4 studs, zoomed far out). */
+  private reach(px = 14) { return Math.min(4, Math.max(0.1, px / this.scale)); }
   private nearTrack(p: [number, number], reach = this.reach(), skip?: number): { route: number; pose: Pose; end: 'start' | 'end' | undefined } | undefined {
     let best: { route: number; pose: Pose; end: 'start' | 'end' | undefined; d: number } | undefined;
     this.host.design().routes.forEach((r, i) => {
