@@ -35,6 +35,8 @@ export class TrackCanvas {
   mode: 'draw' | 'select' = 'select';
   /** Moving the selected tracks: where the press was (studs) and where they started. */
   private moving: { x: number; y: number; orig: { i: number; x: number; y: number }[]; moved: boolean } | undefined;
+  /** A selection box being dragged out (studs), and whether it adds to the selection. */
+  private box: { x0: number; y0: number; x1: number; y1: number; add: boolean } | undefined;
   /** While drawing: the route being extended (or a new one not yet added), and where it ends. */
   private active: { route: number | undefined; start?: Pose; end?: Pose; newRoute?: DRoute; either?: number; from?: number } | undefined;
   /** Starting on a track (its start, or along it): lay the new track whichever way the mouse is, along it or back out of it. */
@@ -185,12 +187,15 @@ export class TrackCanvas {
     if (this.mode === 'select') {
       const hit = this.nearTrack(w, this.reach(18));
       // pressing on a selected track: drag the selection about
-      if (hit && !e.shiftKey && (hit.route === this.selected || this.extra.has(hit.route))) {
+      const add = e.shiftKey || e.ctrlKey || e.metaKey;
+      // pressing on empty ground: drag out a box to select what it touches
+      if (!hit) { this.box = { x0: w[0], y0: w[1], x1: w[0], y1: w[1], add }; return; }
+      if (hit && !add && (hit.route === this.selected || this.extra.has(hit.route))) {
         const d = this.host.design();
         this.moving = { x: w[0], y: w[1], moved: false, orig: this.selection().map((i) => ({ i, x: d.routes[i].x, y: d.routes[i].y })) };
         return;
       }
-      if (e.shiftKey && hit) {
+      if (add && hit) {
         // add to the selection, or take it out
         if (this.selected === undefined) this.selected = hit.route;
         else if (hit.route === this.selected) { this.selected = [...this.extra][0]; this.extra.delete(this.selected!); }
@@ -249,6 +254,10 @@ export class TrackCanvas {
     this.draw();
   }
   private move(e: MouseEvent) {
+    if (this.box) {
+      const p = this.evWorld(e); this.box.x1 = p[0]; this.box.y1 = p[1]; this.mouse = p;
+      return this.draw();
+    }
     if (this.moving) {
       const m = this.moving, p = this.evWorld(e), d = this.host.design();
       const dx = Math.round(p[0] - m.x), dy = Math.round(p[1] - m.y); // (whole studs: stays on the grid)
@@ -279,6 +288,15 @@ export class TrackCanvas {
   private up(e: MouseEvent) {
     this.panning = undefined;
     if (this.moving) { const moved = this.moving.moved; this.moving = undefined; if (moved) this.host.changed(true); return this.draw(); }
+    if (this.box) {
+      const b = this.box; this.box = undefined;
+      const x0 = Math.min(b.x0, b.x1), x1 = Math.max(b.x0, b.x1), y0 = Math.min(b.y0, b.y1), y1 = Math.max(b.y0, b.y1);
+      const tiny = x1 - x0 < 0.2 && y1 - y0 < 0.2;
+      const inBox = tiny ? [] : this.host.design().routes.map((r, i) => (trace(r, r.segs, 0.5).some((q) => q[0] >= x0 && q[0] <= x1 && q[1] >= y0 && q[1] <= y1) ? i : -1)).filter((i) => i >= 0);
+      const keep = b.add ? this.selection() : [];
+      this.setSelection([...keep, ...inBox.filter((i) => !keep.includes(i))]);
+      return;
+    }
     const dr = this.drag;
     if (!dr) return;
     this.drag = undefined;
@@ -494,6 +512,15 @@ export class TrackCanvas {
       c.stroke();
     }
     const d = this.host.design(), g = (d.gaugeStuds + 1) / 2;
+    // baseplate edges, where the track is cut (Piece options)
+    const bpS = d.options?.baseplate ?? 0;
+    if (bpS > 0) {
+      const ox = d.options?.baseplateX ?? 0, oy = d.options?.baseplateY ?? 0;
+      c.strokeStyle = 'rgba(224,120,40,0.7)'; c.lineWidth = 1.5; c.setLineDash([8, 6]); c.beginPath();
+      for (let x = ox + Math.ceil((wx0 - ox) / bpS) * bpS; x <= wx1; x += bpS) { const [sx] = this.toScreen(x, 0); c.moveTo(sx, 0); c.lineTo(sx, H); }
+      for (let y = oy + Math.ceil((wy0 - oy) / bpS) * bpS; y <= wy1; y += bpS) { const [, sy] = this.toScreen(0, y); c.moveTo(0, sy); c.lineTo(W, sy); }
+      c.stroke(); c.setLineDash([]);
+    }
     const line = (pts: [number, number][], color: string, width: number, dash: number[] = []) => {
       if (pts.length < 2) return;
       c.strokeStyle = color; c.lineWidth = width; c.setLineDash(dash); c.lineCap = 'butt'; c.beginPath();
@@ -561,6 +588,13 @@ export class TrackCanvas {
         c.fillStyle = ink.rail; c.beginPath(); c.arc(sx, sy, 3, 0, 2 * Math.PI); c.fill();
       }
     });
+    // the selection box being dragged out
+    if (this.box) {
+      const [ax, ay] = this.toScreen(this.box.x0, this.box.y0), [bx, by] = this.toScreen(this.box.x1, this.box.y1);
+      c.fillStyle = 'rgba(43,111,224,0.10)'; c.strokeStyle = 'rgba(43,111,224,0.8)'; c.lineWidth = 1; c.setLineDash([5, 4]);
+      c.fillRect(Math.min(ax, bx), Math.min(ay, by), Math.abs(bx - ax), Math.abs(by - ay));
+      c.strokeRect(Math.min(ax, bx), Math.min(ay, by), Math.abs(bx - ax), Math.abs(by - ay)); c.setLineDash([]);
+    }
     // the solver's results
     if (this.overlay) {
       const w = (mm: [number, number][]) => mm.map(([x, y]) => [x / MM, y / MM] as [number, number]);
