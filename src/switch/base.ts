@@ -475,10 +475,17 @@ export function switchGeometry(s: Scad, plan: SwitchPlan, extraCuts: Man[] = [])
   const bladePlan = (v: SetV, b: number, at: number, pivot: Pt): CS => (b === 0
     ? rot3(bladeStem(v, bRt(v, 0), -G, bOther(v, 0), -G), pivot, at)
     : rot3(bladeStem(v, bRt(v, 1), +G, bOther(v, 1), +G), pivot, at)).project();
+  // (a blade on its own: an arm from its heel in to its pivot's disc, as the heel bar is for both; without it the blade
+  // and its disc and tines were two loose bits)
+  const unitArm2d = (v: SetV, u: Unit) => {
+    const [b, at] = u.blades[0], h = rotAbout(railPoint(bRt(v, b), v.sHeel - c, bO(b)), u.pivot, at), d = sub(u.pivot, h);
+    return W.CrossSection.hull([circle(g.heelBarW / 2, 24, add(h, mul(d, (g.heelBarW / 2 - HEAD_HW) / norm(d)))), circle(g.heelBarW / 2, 24, u.pivot)]);
+  };
   const pointsSweep2d = (v: SetV, m: number) => fdb ? fdbSlot2d(v, m) : W.CrossSection.union(units(v).flatMap((u) => {
     const rng = [0, u.swing];
     return [
       ...(u.heelBar ? [W.CrossSection.hull(rng.map((a) => rot2(offR(heelBar2d(v), m), u.pivot, a)))] : []),
+      ...(u.heelBar ? [] : [W.CrossSection.hull(rng.map((a) => rot2(offR(unitArm2d(v, u), m), u.pivot, a)))]),
       circle(u.discR + m, 48, u.pivot),
       // (a three-way's closed blade's tines bend the extra half travel)
       W.CrossSection.hull(rng.map((a) => rot2(offR(u.heelBar ? tines2d(v) : unitTines2d(u), p.springPreload + (v.three ? v.three.half : 0) + m + 0.5), u.pivot, a))),
@@ -1105,7 +1112,7 @@ export function switchGeometry(s: Scad, plan: SwitchPlan, extraCuts: Man[] = [])
       s.union(u.blades.map(([b, at]) => rot3(blade(v, bRt(v, b), bO(b), bOther(v, b), bO(b)), u.pivot, at))),
       swings.map((a) => rot3(cube([400, g.throwRodW + 2 * c + 0.6, g.layerTop + c - pieceBottomZ + 1], [-200, v.throwY - g.throwRodW / 2 - c - 0.3, pieceBottomZ - 1]), u.pivot, a)));
     const pin = T(s.cylinder(g.cavityTop - g.layerTop + g.pivotPinUp + 0.01, g.pivotPinD / 2, g.pivotPinD / 2, 32), [u.pivot[0], u.pivot[1], g.layerTop - 0.01]);
-    const plan2 = W.CrossSection.union([...(u.heelBar ? [heelBar2d(v)] : []), circle(u.discR, 48, u.pivot), u.heelBar ? tines2d(v) : unitTines2d(u)]);
+    const plan2 = W.CrossSection.union([...(u.heelBar ? [heelBar2d(v)] : [unitArm2d(v, u)]), circle(u.discR, 48, u.pivot), u.heelBar ? tines2d(v) : unitTines2d(u)]);
     const layer = s.difference(s.union([
       T(s.extrude(plan2, g.layerTop - partZ0), [0, 0, partZ0]),
       T(s.extrude(tineFloor2d(v, u), tineFloorT), [0, 0, partZ0]),
