@@ -32,7 +32,9 @@ export class TrackCanvas {
   private mouse: [number, number] | undefined;   // world, studs
   private panning: { x: number; y: number; ox: number; oy: number } | undefined;
   private space = false;
-  mode: 'draw' | 'select' = 'draw';
+  mode: 'draw' | 'select' = 'select';
+  /** Moving the selected tracks: where the press was (studs) and where they started. */
+  private moving: { x: number; y: number; orig: { i: number; x: number; y: number }[]; moved: boolean } | undefined;
   /** While drawing: the route being extended (or a new one not yet added), and where it ends. */
   private active: { route: number | undefined; start?: Pose; end?: Pose; newRoute?: DRoute; either?: number; from?: number } | undefined;
   /** Starting on a track (its start, or along it): lay the new track whichever way the mouse is, along it or back out of it. */
@@ -182,13 +184,23 @@ export class TrackCanvas {
     }
     if (this.mode === 'select') {
       const hit = this.nearTrack(w, this.reach(18));
+      // pressing on a selected track: drag the selection about
+      if (hit && !e.shiftKey && (hit.route === this.selected || this.extra.has(hit.route))) {
+        const d = this.host.design();
+        this.moving = { x: w[0], y: w[1], moved: false, orig: this.selection().map((i) => ({ i, x: d.routes[i].x, y: d.routes[i].y })) };
+        return;
+      }
       if (e.shiftKey && hit) {
         // add to the selection, or take it out
         if (this.selected === undefined) this.selected = hit.route;
         else if (hit.route === this.selected) { this.selected = [...this.extra][0]; this.extra.delete(this.selected!); }
         else if (this.extra.has(hit.route)) this.extra.delete(hit.route);
         else this.extra.add(hit.route);
-      } else { this.selected = hit?.route; this.extra.clear(); }
+      } else {
+        this.selected = hit?.route; this.extra.clear();
+        // (and it can be dragged straight away)
+        if (hit) { const d = this.host.design(); this.moving = { x: w[0], y: w[1], moved: false, orig: [{ i: hit.route, x: d.routes[hit.route].x, y: d.routes[hit.route].y }] }; }
+      }
       this.host.select(this.selected);
       this.draw();
       return;
@@ -237,6 +249,17 @@ export class TrackCanvas {
     this.draw();
   }
   private move(e: MouseEvent) {
+    if (this.moving) {
+      const m = this.moving, p = this.evWorld(e), d = this.host.design();
+      const dx = Math.round(p[0] - m.x), dy = Math.round(p[1] - m.y); // (whole studs: stays on the grid)
+      if (dx || dy || m.moved) {
+        m.moved = true;
+        for (const o of m.orig) { d.routes[o.i].x = Math.round((o.x + dx) * 1e4) / 1e4; d.routes[o.i].y = Math.round((o.y + dy) * 1e4) / 1e4; }
+        this.host.changed(false);
+      }
+      this.mouse = p;
+      return this.draw();
+    }
     if (this.panning) {
       this.ox = this.panning.ox + e.clientX - this.panning.x; this.oy = this.panning.oy + e.clientY - this.panning.y;
       return this.draw();
@@ -255,6 +278,7 @@ export class TrackCanvas {
   }
   private up(e: MouseEvent) {
     this.panning = undefined;
+    if (this.moving) { const moved = this.moving.moved; this.moving = undefined; if (moved) this.host.changed(true); return this.draw(); }
     const dr = this.drag;
     if (!dr) return;
     this.drag = undefined;
@@ -441,8 +465,9 @@ export class TrackCanvas {
     const hit = this.mouse ? this.nearTrack(this.mouse) : undefined;
     if (this.mode === 'select') {
       if (hit?.end) return 'Drag this end to reshape the track';
-      if (this.selected !== undefined) return `${this.host.design().routes[this.selected]?.name ?? ''} selected · Delete removes it · click elsewhere to deselect`;
-      return 'Click a track to select it · drag an end to reshape it';
+      if (this.moving?.moved) return 'Moving: let go to put it down';
+      if (this.selected !== undefined) return `${this.selection().length > 1 ? `${this.selection().length} tracks` : this.host.design().routes[this.selected]?.name ?? ''} selected · drag to move · Shift+click adds more · Delete removes`;
+      return 'Click a track to select it, drag it to move it · drag an end to reshape it · D to draw';
     }
     if (hit?.end === 'end') return 'Click to carry the track on · drag to reshape it';
     if (hit?.end === 'start') return 'Click to lay a new track from this end (back out of it, or along it as a branch) · drag to reshape it';
