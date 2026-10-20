@@ -806,7 +806,8 @@ export class TrackCanvas {
     const tag = (mx: number, my: number, txt: string, color: string) => {
       c.font = '600 12px system-ui, sans-serif';
       const tw = c.measureText(txt).width;
-      const x = mx + 10 + tw + 10 > W ? Math.max(4, mx - 10 - tw - 10) : mx + 10, y = my - 26 < 0 ? my + 10 : my - 26;
+      // (above the mouse, or below it near the top, where the selection bar and the legend are)
+      const x = mx + 10 + tw + 10 > W ? Math.max(4, mx - 10 - tw - 10) : mx + 10, y = my - 26 < 48 ? my + 12 : my - 26;
       c.fillStyle = ink.tagBg; c.fillRect(x, y, tw + 10, 18);
       c.fillStyle = color; c.fillText(txt, x + 5, y + 13);
     };
