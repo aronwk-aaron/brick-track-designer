@@ -112,8 +112,27 @@ export function buildDesign(w: Wasm, design: Design) {
   const bp = (o.baseplate ?? 0) * 8, bedWarnings = new Set<string>();
   const track = new Track(scad, { ...TRACK_DEFAULTS, gaugeStuds: design.gaugeStuds });
   const addTrack = (name: string, world: Man, pieceRoutes: typeof routes) => {
-    if (!bp) return add(name, 0x6f7780, world, world);
     const b = world.boundingBox(), lines: CutLine[] = [];
+    if (!bp) {
+      if (fitsBed(world)) return add(name, 0x6f7780, world, world);
+      // too big for the print bed: cut across, into equal parts that fit (the
+      // way that needs fewest cuts), a few mm short for the joints
+      const W = b.max[0] - b.min[0], H = b.max[1] - b.min[1], room = Math.max(o.printBedX, o.printBedY) - 8, small = Math.min(o.printBedX, o.printBedY) - 8;
+      const nx = Math.max(1, Math.ceil(W / (H > W ? small : room))), ny = Math.max(1, Math.ceil(H / (H > W ? room : small)));
+      // (moved off points and frogs: a cut wants plain track)
+      const avoid = [...overlay.splits, ...overlay.crossings];
+      const clearAt = (v: number, axis: 0 | 1) => {
+        for (const dv of [0, 8, -8, 16, -16, 24, -24, 32, -32, 48, -48, 64, -64])
+          if (avoid.every((q) => Math.abs(q[axis] - (v + dv)) > 45)) return v + dv;
+        return v;
+      };
+      for (let k = 1; k < nx; k++) lines.push({ p: [clearAt(b.min[0] + (W * k) / nx, 0), 0], d: [0, 1] });
+      for (let k = 1; k < ny; k++) lines.push({ p: [0, clearAt(b.min[1] + (H * k) / ny, 1)], d: [1, 0] });
+      const cells = cached(`bedcut:${JSON.stringify(lines)}:${JSON.stringify(pieceRoutes)}:${world.volume().toFixed(3)}`, () => cutPiece(scad, track, world, pieceRoutes, lines));
+      cells.forEach((m, k) => add(cells.length > 1 ? `${name}${k + 1}` : name, 0x6f7780, m, m));
+      if (cells.some((m) => !fitsBed(m))) bedWarnings.add(`some parts still don't fit the ${o.printBedX} x ${o.printBedY} print bed`);
+      return;
+    }
     const ox = (o.baseplateX ?? 0) * 8, oy = (o.baseplateY ?? 0) * 8;
     for (let x = ox + Math.ceil((b.min[0] + 1 - ox) / bp) * bp; x < b.max[0] - 1; x += bp) lines.push({ p: [x, 0], d: [0, 1] });
     for (let y = oy + Math.ceil((b.min[1] + 1 - oy) / bp) * bp; y < b.max[1] - 1; y += bp) lines.push({ p: [0, y], d: [1, 0] });
@@ -137,7 +156,7 @@ export function buildDesign(w: Wasm, design: Design) {
     addTrack('track', net.body, routes);
     for (const m of net.moving) add(m.name, m.color, m.local, m.world);
     pc = { switches: [], rest: [], warnings: [...net.warnings] };
-    pc.warnings.push(...(fitsBed(net.body) || bp ? [] : [`the piece doesn't fit the ${o.printBedX} x ${o.printBedY} print bed (cutting a piece with built-in points comes later)`]));
+
   }
   if (pc.rest.length) {
     const copt = { ...CROSSING_DEFAULTS, gaugeStuds: design.gaugeStuds, grip: design.grip ?? 'edges', flangeway: o.flangeway, flangewayDepth: o.flangewayDepth, checkRailW: o.checkRailW };
@@ -153,7 +172,7 @@ export function buildDesign(w: Wasm, design: Design) {
     const whole = built.m;
     overlay.grips.push(...built.grips);
     if (fits(whole) || pc.rest.length > 1) {
-      if (!fits(whole) && !bp) pc.warnings.push(`the fixed trackwork doesn't fit the ${o.printBedX} x ${o.printBedY} print bed, and pieces with crossings aren't split yet`);
+
       addTrack('track', whole, rest);
     } else {
       // A plain track longer than the bed: in equal lengths, joined like
