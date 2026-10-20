@@ -59,9 +59,11 @@ export function switchGlobals(p: SwitchParams) {
   const pieceBottomZ = ballast ? (buddy ? ballastOffsetZ - buddyT : ballastOffsetZ) : 0;
   const bottomCavity = p.studH + 0.2;
   // (with an anti-stud underside, or none at all, the parts sit above a baseplate's studs)
-  const layerZ0 = pieceBottomZ + (antistud || !ballast ? bottomCavity : 0) + (p.mechFloor ?? 0.2);
-  // (the plate-style: the slider bar, 2.4 tall, in the bed under the blade plates)
-  const layerTop = layerZ0 + (p.mechStyle === 'plates' ? 2.4 : 1.4);
+  // (the plate-style slider runs in a tunnel with a floor: room for one (0.6) under it)
+  const fdb = p.mechStyle === 'plates';
+  const layerZ0 = pieceBottomZ + (antistud || !ballast ? bottomCavity : 0) + (p.mechFloor ?? (fdb ? (ballast ? 1.2 : 0.9) : 0.2));
+  // (the plate-style: the slider bar in the bed under the blade plates: 2.4 tall, 2 without ballast, where the bed's thinner)
+  const layerTop = layerZ0 + (fdb ? (ballast ? 2.4 : 2) : 1.4);
   const cavityTop = layerTop + p.pointClearance;
   const bedTop = ballast ? PLATE_H : Math.max(PLATE_H, cavityTop + 0.8);
   const leverTipD = 4.5, leverBossD = 5;

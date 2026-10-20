@@ -74,7 +74,7 @@ export function networkSplits(s: Scad, routes: Route[], sol: Solution, p: BasePa
     const pp = gm.pointsParts(0);
     pp.forEach((m, k) => moving.push({ name: `${tag}${pp.length > 1 ? (k === 0 ? '-a' : '-b') : ''}`, color: 0x4682b4, local: m, world: place(m, P) }));
     const thr = gm.throwPart(0);
-    moving.push({ name: `${tag}-throw`, color: 0xe8892b, local: thr, world: place(thr, P) });
+    moving.push({ name: `${tag}-throw`, color: 0xe8892b, local: gm.throwPrint(0), world: place(thr, P) });
     moving.push({ name: `${tag}-lever`, color: 0xd4af37, local: gm.leverPrint(), world: place(gm.leverPart(0), P) });
     if (p.throwModule) { const br = gm.bracketPart(0); moving.push({ name: `${tag}-bracket`, color: 0x8a8f99, local: br, world: place(br, P) }); }
     return {
