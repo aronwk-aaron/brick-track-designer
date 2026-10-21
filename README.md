@@ -6,7 +6,7 @@ in 3D and exporting STL and 3MF for printing.
 
 Early days: see [PLAN.md](PLAN.md) and [PHASE2.md](PHASE2.md).
 
-Live at **https://track-designer.aronwk.com** (GitHub Pages, deployed from
+Live at **https://aronwk-aaron.github.io/brick-track-designer/** (GitHub Pages, deployed from
 `main` by `.github/workflows/pages.yml`). It runs entirely in the browser:
 the geometry kernel is WebAssembly, and nothing is uploaded anywhere.
 
