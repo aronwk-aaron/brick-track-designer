@@ -20,7 +20,8 @@ function tracedOnce(key: string, make: () => [number, number][]) {
 }
 const trace = (p: Pose, segs: DSeg[], step = 0.5) => tracedOnce(`t${p.x},${p.y},${p.heading},${step}${JSON.stringify(segs)}`, () => traceRaw(p, segs, step));
 
-export interface Overlay { grooves: [number, number][][]; checkRails: [number, number][][]; crossings: [number, number][]; splits: [number, number][]; grips?: [number, number][]; items?: OverlayItem[] }
+export interface Overlay { grooves: [number, number][][]; checkRails: [number, number][][]; crossings: [number, number][]; splits: [number, number][]; grips?: [number, number][]; items?: OverlayItem[];
+  /** what's wrong, and where (mm): ringed in red */ issues?: { at: [number, number]; r: number; text: string }[] }
 /** A trackwork item on the plan (mm); a lever ('throw') has its points' frame and settings, to drag it. */
 export interface OverlayItem { kind: string; key: string; at: [number, number]; pts: [number, number][]; dir?: [number, number];
   /** points: taken out (off), made by hand (forced), or a near miss where they could be forced (cand) */
@@ -906,6 +907,14 @@ export class TrackCanvas {
         c.strokeStyle = '#2b9e4a'; c.lineWidth = 1.5;
         const r = Math.max(2, (3.2 / MM) * this.scale);
         for (const p of this.overlay.grips ?? []) { const [sx, sy] = this.toScreen(p[0] / MM, p[1] / MM); c.beginPath(); c.arc(sx, sy, r, 0, 2 * Math.PI); c.stroke(); }
+      }
+      // what's wrong, ringed in red, with what it is by the ring (and in full by the mouse, near it)
+      for (const is of this.overlay.issues ?? []) {
+        const [sx, sy] = this.toScreen(is.at[0] / MM, is.at[1] / MM), r = Math.max(14, (is.r / MM) * this.scale);
+        c.strokeStyle = 'rgba(224,40,40,0.95)'; c.lineWidth = 3; c.setLineDash([6, 4]); c.beginPath(); c.arc(sx, sy, r, 0, 2 * Math.PI); c.stroke(); c.setLineDash([]);
+        c.fillStyle = '#e02828'; c.beginPath(); c.arc(sx + r * 0.7071, sy - r * 0.7071, 9, 0, 2 * Math.PI); c.fill();
+        c.fillStyle = '#fff'; c.font = '700 13px system-ui, sans-serif'; c.textAlign = 'center'; c.fillText('!', sx + r * 0.7071, sy - r * 0.7071 + 4.5); c.textAlign = 'left';
+        if (this.mouse) { const [mx, my] = this.toScreen(this.mouse[0], this.mouse[1]); if (Math.hypot(mx - sx, my - sy) < r + 10) tag(mx, my, is.text, '#c01d1d'); }
       }
       // the trackwork item picked out in the Trackwork panel
       const hi = this.overlay.items?.find((it) => it.key === this.highlight);

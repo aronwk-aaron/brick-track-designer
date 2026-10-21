@@ -244,6 +244,8 @@ export function buildDesign(w: Wasm, design: Design, report: (what: string, frac
     splits: sol.splits.map(splitAt),
     grips: [] as [number, number][],
     items,
+    /** what's wrong, and where (mm, and how far round it): ringed in red on the plan and in the 3D view */
+    issues: [] as { at: [number, number]; r: number; text: string }[],
   };
   // Pieces: a switch wherever routes split, the rest as fixed trackwork.
   const scad = new Scad(w), pieces: Piece[] = [];
@@ -271,6 +273,9 @@ export function buildDesign(w: Wasm, design: Design, report: (what: string, frac
   // Cut at baseplate edges (Piece options): the track (not the moving
   // parts) on the design's stud grid, every `baseplate` studs both ways.
   const bp = (o.baseplate ?? 0) * 8, bedWarnings = new Set<string>();
+  /** A part too big for the bed: ringed where it is. */
+  const bedIssue = (bb: { min: number[]; max: number[] }) => overlay.issues.push({ at: [(bb.min[0] + bb.max[0]) / 2, (bb.min[1] + bb.max[1]) / 2],
+    r: Math.hypot(bb.max[0] - bb.min[0], bb.max[1] - bb.min[1]) / 2, text: `A part ${(bb.max[0] - bb.min[0]).toFixed(0)} x ${(bb.max[1] - bb.min[1]).toFixed(0)} mm: too big for the ${o.printBedX} x ${o.printBedY} print bed` });
   const track = new Track(scad, { ...TRACK_DEFAULTS, gaugeStuds: design.gaugeStuds });
   // (how far each side of a centre line the track's base reaches: its sleepers, or its widest ballast layer)
   const bandHalf = (o.ballast === 'buddy' ? track.c.sleeperLen + 32 : o.ballast === 'ballast' ? track.c.sleeperLen + 16 : track.c.sleeperLen) / 2;
@@ -289,7 +294,9 @@ export function buildDesign(w: Wasm, design: Design, report: (what: string, frac
       for (let t = 0; t <= Lj; t += step) { const sj = sp.merge ? Lj - t : t, q = routePose(rj, sj); d = Math.hypot(q[0] - toe[0], q[1] - toe[1]); if (Math.abs(routeLat(routes[i], [q[0], q[1]])) >= gap) break; }
       return { i, j, toe, r: d + 2 * gap };
     });
-    const parting = (p: number[], q: number[]) => parts.some((pt) => ((p[4] === pt.i && q[4] === pt.j) || (p[4] === pt.j && q[4] === pt.i))
+    // (and with them every route of the switches near it: a tandem's or a curve's switches' branches part side by side too)
+    const groups = parts.map((pt) => ({ ...pt, rs: new Set(parts.filter((o2) => Math.hypot(o2.toe[0] - pt.toe[0], o2.toe[1] - pt.toe[1]) < pt.r + o2.r).flatMap((o2) => [o2.i, o2.j])) }));
+    const parting = (p: number[], q: number[]) => groups.some((pt) => pt.rs.has(p[4]) && pt.rs.has(q[4])
       && Math.hypot(p[0] - pt.toe[0], p[1] - pt.toe[1]) < pt.r && Math.hypot(q[0] - pt.toe[0], q[1] - pt.toe[1]) < pt.r);
     const near = (q: number[], ps: number[][], r: number) => ps.some((e) => Math.hypot(e[0] - q[0], e[1] - q[1]) < r);
     const pts = routes.flatMap((rt, i) => { const L = routeLength(rt), out: number[][] = []; for (let s0 = 0; s0 <= L; s0 += step) { const q = routePose(rt, s0); out.push([q[0], q[1], q[2], s0, i]); } return out; })
@@ -303,6 +310,7 @@ export function buildDesign(w: Wasm, design: Design, report: (what: string, frac
       if (Math.abs(Math.cos(((p[2] - q[2]) * Math.PI) / 180)) < cos15) continue; // (crossing at an angle: a crossing)
       if (!near(p, spots, 4 * gap)) spots.push(p);
     }
+    for (const q of spots) overlay.issues.push({ at: [q[0], q[1]], r: 2 * gap, text: 'Tracks run over each other here: trains on them would hit' });
     if (spots.length) bedWarnings.add(`tracks run over each other (closer than their sleepers, nearly parallel) at ${spots.slice(0, 4).map((q) => `${(q[0] / 8).toFixed(0)}, ${(q[1] / 8).toFixed(0)}`).join('; ')}${spots.length > 4 ? ' …' : ''} (studs): trains on them would hit; move them apart, or cross at a steeper angle`);
   }
   // (what the joints stick out past a cut, both ends of a part: rail tongues, and the peg or dovetail)
@@ -406,12 +414,13 @@ export function buildDesign(w: Wasm, design: Design, report: (what: string, frac
     });
     all.forEach((m, k) => add(all.length > 1 ? `${name}${plan.why === 'baseplate' ? '-plate' : ''}${k + 1}` : name, 0x6f7780, m, m));
     if (all.some((m) => !fitsBed(m))) bedWarnings.add(`some parts don't fit the ${o.printBedX} x ${o.printBedY} print bed: there's nowhere left to cut them`);
+    for (const m of all) if (!fitsBed(m)) bedIssue(m.boundingBox());
   };
   /** A part as plain data (its mesh for the view, its STL, its volume, whether it fits the bed), so its solid can be let go. */
   const bake = (m: Man) => {
     const wm = m.getMesh(), positions = new Float32Array(wm.triVerts.length * 3);
     wm.triVerts.forEach((v, i) => positions.set(wm.vertProperties.subarray(v * wm.numProp, v * wm.numProp + 3), i * 3));
-    return { positions, stl: stlBytes(wm, true), volume: m.volume(), fits: fitsBed(m) };
+    return { positions, stl: stlBytes(wm, true), volume: m.volume(), fits: fitsBed(m), box: m.boundingBox() };
   };
   // ---- (prototype) layered: the piece in two layers stacked from the top ----
   // The lower layer (the ballast's bottom, with the pockets the moving parts
@@ -605,6 +614,7 @@ export function buildDesign(w: Wasm, design: Design, report: (what: string, frac
       out.push(...part.ms);
     });
     for (const b2 of out) { pieces.push({ name: out.length > 1 ? `${name}${++n}` : name, color: 0x6f7780, positions: b2.positions.slice(), stl: b2.stl.slice() }); volume += b2.volume; }
+    for (const b2 of out) if (!b2.fits) bedIssue(b2.box);
     if (out.some((b2) => !b2.fits)) bedWarnings.add(plan.why === 'bed'
       ? `some parts don't fit the ${o.printBedX} x ${o.printBedY} print bed without cutting along the track (it isn't)`
       : `a baseplate's worth of track doesn't fit the ${o.printBedX} x ${o.printBedY} print bed without cutting along the track (it isn't)`);
@@ -613,7 +623,7 @@ export function buildDesign(w: Wasm, design: Design, report: (what: string, frac
   // ---- the trackwork first (what the plan shows and the hand edits work
   // on), sent on ahead of the pieces, which take longer ----
   const copt = { ...CROSSING_DEFAULTS, gaugeStuds: design.gaugeStuds, grip: design.grip ?? 'edges', flangeway: o.flangeway, flangewayDepth: o.flangewayDepth, checkRailW: o.checkRailW,
-    ballast: o.ballast, bottomStyle: o.bottomStyle, supports: o.endSupports !== false };
+    ballast: o.ballast, bottomStyle: o.bottomStyle, supports: o.endSupports !== false, curveStuds: o.curveStuds };
   const tp = params;
   const netKey = JSON.stringify({ routes, tp, copt, tw });
   let net: ReturnType<typeof networkSplits> | undefined;
@@ -729,6 +739,13 @@ export function buildDesign(w: Wasm, design: Design, report: (what: string, frac
   const all = pieces.flatMap((p) => [p.positions]);
   const mn = [Infinity, Infinity, Infinity], mx = [-Infinity, -Infinity, -Infinity];
   for (const ps of all) for (let i = 0; i < ps.length; i += 3) for (let k = 0; k < 3; k++) { mn[k] = Math.min(mn[k], ps[i + k]); mx[k] = Math.max(mx[k], ps[i + k]); }
+  // (and every warning that says where, "at x, y (studs)", ringed there)
+  for (const wn of [...forceWarnings, ...pc.warnings, ...bedWarnings]) {
+    const m = /at (-?\d+(?:\.\d+)?), (-?\d+(?:\.\d+)?) \(studs\)/.exec(wn);
+    if (!m) continue;
+    const at: [number, number] = [Number(m[1]) * 8, Number(m[2]) * 8];
+    if (!overlay.issues.some((q) => Math.hypot(q.at[0] - at[0], q.at[1] - at[1]) < 64)) overlay.issues.push({ at, r: 48, text: wn });
+  }
   const info = {
     ms: performance.now() - t0, volume,
     size: [0, 1, 2].map((k) => mx[k] - mn[k]),
