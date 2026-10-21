@@ -9,7 +9,7 @@
 // would be (cutter.ts pathJoints).
 import { T, type Man, type Scad } from './scad';
 import type { Track } from './track';
-import { pathJoints, tidy, type Joint, type Run } from './cutter';
+import { jointKit, pathJoints, tidy, type Joint, type Run } from './cutter';
 import type { Route } from '../route/route';
 import { routeLength, routePose } from '../route/route';
 
@@ -67,6 +67,17 @@ export function pathSplit(s: Scad, m: Man, routes: Route[], railG: number, avoid
     }
   }
   const cellAt = (q: [number, number]) => { const i = Math.floor((q[0] - x0) / STEP), j = Math.floor((q[1] - y0) / STEP); return i >= 0 && j >= 0 && i < nx - 1 && j < ny - 1 && filled[j * nx + i] === 1; };
+  // (joined with axles: where the bed's thick enough for one across the cut (solid at the axle's height), so the
+  // cut keeps to it where it can and the parts get their axles; where only the ballast's thin outer step is, none fit)
+  const kit = join ? jointKit(s, join.t, bb.min[2]) : undefined;
+  const thick = new Uint8Array(nx * ny);
+  const axles = !!kit && kit.kindOf(join!.joint, join!.flatRails) === 'axle';
+  if (axles) {
+    const polys = m.slice(kit!.axleZ).toPolygons() as [number, number][][];
+    const inside = (q: [number, number]) => { let w = 0; for (const poly of polys) for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) { const [xi, yi] = poly[i], [xj, yj] = poly[j]; if ((yi > q[1]) !== (yj > q[1]) && q[0] < ((xj - xi) * (q[1] - yi)) / (yj - yi) + xi) w ^= 1; } return w === 1; };
+    for (let j = 0; j < ny - 1; j++) for (let i = 0; i < nx - 1; i++) if (filled[j * nx + i] && inside([x0 + i * STEP + 4, y0 + j * STEP + 4])) thick[j * nx + i] = 1;
+  }
+  const thickAt = (q: [number, number]) => { const i = Math.floor((q[0] - x0) / STEP), j = Math.floor((q[1] - y0) / STEP); return i >= 0 && j >= 0 && i < nx - 1 && j < ny - 1 && thick[j * nx + i] === 1; };
   // the cost of a cut along the edge from a to b: Infinity where it can't go
   const edgeCost = (a: [number, number], b: [number, number]) => {
     const mid: [number, number] = [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2], ed: [number, number] = [(b[0] - a[0]) / STEP, (b[1] - a[1]) / STEP];
@@ -92,13 +103,15 @@ export function pathSplit(s: Scad, m: Man, routes: Route[], railG: number, avoid
     }
     // (and dearer along the part's edge, two studs or less in from it: it'd leave a strip there)
     const strip = [1, -1].some((sg) => cellOff(sg) && (!cellOff(3 * sg) || !cellOff(5 * sg)));
-    return 1 + bias + (strip ? STRIP : 0);
+    // (through thin ballast, where no axle fits across: dearer, when the joints are axles)
+    const thin = axles && !(thickAt([mid[0] + nrm[0], mid[1] + nrm[1]]) && thickAt([mid[0] - nrm[0], mid[1] - nrm[1]]));
+    return 1 + bias + (strip ? STRIP : 0) + (thin ? THIN : 0);
   };
   // Dijkstra over the grid nodes and the way the path last went (a turn costs
   // more: a cut with as few steps as it can, not a staircase of little
   // tabs), from the bottom (or left) edge to the top (or right)
   // (and each run through the part two studs long at least, the steps too: no tabs a stud wide)
-  const TURN = 6, RUN = 2;
+  const TURN = 6, RUN = 2, THIN = 1.5;
   const id = (i: number, j: number) => j * nx + i, pos = (i: number, j: number): [number, number] => [x0 + i * STEP, y0 + j * STEP];
   const dirs: [number, number][] = [[1, 0], [-1, 0], [0, 1], [0, -1]];
   // (a state: the node, the way the path last went, and how many studs it's gone that way through the part (up to RUN))
