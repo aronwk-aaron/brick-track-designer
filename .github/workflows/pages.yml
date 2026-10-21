@@ -1,6 +1,6 @@
 # The app is static (Vite: HTML, JS, the manifold WASM kernel): built and
-# published to GitHub Pages at track-designer.aronwk.com (public/CNAME) on
-# every push to main that passes the checks.
+# published to GitHub Pages, at https://aronwk-aaron.github.io/brick-track-designer/,
+# on every push to main that passes the checks.
 name: Pages
 
 on:
@@ -34,7 +34,8 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm typecheck
       - run: pnpm lint
-      - run: pnpm build
+      # (served from the repo's path, not a domain's root)
+      - run: pnpm build --base=/brick-track-designer/
 
       - uses: actions/configure-pages@v6
       - uses: actions/upload-pages-artifact@v5
