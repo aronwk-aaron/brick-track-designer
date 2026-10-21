@@ -262,7 +262,7 @@ scene.add(group);
 
 /** Show the pieces as assembled: the track grey, moving parts in their colours. */
 // What the 3D view shows (Track, Points, Throws, Levers buttons), remembered.
-const shown = new Set(['track', 'points', 'throw', 'lever']);
+const shown = new Set(['track', 'points', 'throw', 'lever', 'supports']);
 try { const v = localStorage.getItem('btd-shown'); if (v) { shown.clear(); for (const k of JSON.parse(v) as string[]) shown.add(k); } } catch { /* fine */ }
 const kindOf = (name: string) => (/lid/.test(name) ? 'cassette' : /bracket/.test(name) ? 'bracket' : /lever/.test(name) ? 'lever' : /throw/.test(name) ? 'throw' : /points/.test(name) ? 'points' : 'track');
 let meshKinds: string[] = [];
@@ -297,11 +297,12 @@ explodeEl.addEventListener('input', applyExplode);
 const showKind = (k: string) => (k === 'cassette' ? 'track' : k === 'bracket' ? 'lever' : k);
 function applyShown() {
   redraw3d();
-  meshes.forEach((m, k) => { m.visible = shown.has(showKind(meshKinds[k])); });
+  meshes.forEach((m, k) => { m.visible = shown.has(showKind(meshKinds[k])); const sp = m.getObjectByName('supports'); if (sp) sp.visible = shown.has('supports'); });
   // (only the buttons for parts there are; Explode only with parts to pull apart)
   const kinds = new Set(meshKinds.map(showKind));
-  document.querySelectorAll<HTMLButtonElement>('#views .show').forEach((b) => { b.classList.toggle('on', shown.has(b.dataset.show!)); b.hidden = !kinds.has(b.dataset.show!) || kinds.size < 2; });
+  document.querySelectorAll<HTMLButtonElement>('#views .show').forEach((b) => { b.classList.toggle('on', shown.has(b.dataset.show!)); if (b.dataset.show !== 'supports') b.hidden = !kinds.has(b.dataset.show!) || kinds.size < 2; });
   $('views-sep2').hidden = kinds.size < 2;
+  $('show-supports').hidden = !meshes.some((m) => m.getObjectByName('supports'));
   explodeEl.disabled = meshes.length < 2; explodeEl.parentElement!.title = meshes.length < 2 ? 'One part: nothing to pull apart' : 'Pull the parts apart to see where they separate';
   for (const id of ['view-top', 'view-under', 'view-frame']) $<HTMLButtonElement>(id).disabled = !meshes.length;
 }
@@ -331,12 +332,21 @@ function showIssues(list: { at: [number, number]; r: number }[]) {
   redraw3d();
 }
 function showPieces(list: Piece[]) {
-  for (const m of meshes) { group.remove(m); m.geometry.dispose(); (m.material as THREE.Material).dispose(); }
+  for (const m of meshes) { group.remove(m); m.traverse((o) => { const mm = o as THREE.Mesh; if (mm.geometry) { mm.geometry.dispose(); (mm.material as THREE.Material).dispose(); } }); }
   meshes = list.map((p) => {
     const geo = new THREE.BufferGeometry();
     geo.setAttribute('position', new THREE.BufferAttribute(p.positions, 3));
     geo.computeVertexNormals();
     const m = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ color: p.color, roughness: 0.55, metalness: 0.15 }));
+    // (its breakaway print supports, in their own colour, shown or hidden with the Supports button; they move with it)
+    if (p.supports?.length) {
+      const sg = new THREE.BufferGeometry();
+      sg.setAttribute('position', new THREE.BufferAttribute(p.supports, 3));
+      sg.computeVertexNormals();
+      const sm = new THREE.Mesh(sg, new THREE.MeshStandardMaterial({ color: 0xe0a030, roughness: 0.6 }));
+      sm.name = 'supports';
+      m.add(sm);
+    }
     group.add(m);
     return m;
   });
@@ -551,6 +561,7 @@ addEventListener('keydown', (e) => {
 // Help
 const helpEl = $('help');
 $('help-open').addEventListener('click', () => helpEl.classList.add('open'));
+$('about-open').addEventListener('click', () => { helpEl.classList.add('open'); $('about').scrollIntoView({ block: 'start' }); });
 $('help-close').addEventListener('click', () => helpEl.classList.remove('open'));
 
 // The routes panel: shown or hidden (remembered).

@@ -134,6 +134,8 @@
     #help.open { display: block; }
     #help h3 { margin: 0 0 6px; font-size: 13px; }
     #help ul { margin: 0 0 6px; padding-left: 18px; } #help li { margin: 2px 0; }
+    #help p { margin: 0 0 6px; } #help { max-height: calc(100% - 20px); overflow-y: auto; }
+    #source-link { color: inherit; font-size: 13px; text-decoration: none; padding: 2px 6px; border-radius: 6px; } #source-link:hover { text-decoration: underline; }
     #empty[hidden] { display: none; }
     #empty { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; pointer-events: none; }
     #empty div { background: var(--chip); border: 1px solid var(--line); border-radius: 10px; padding: 14px 18px; text-align: center; color: var(--muted); box-shadow: var(--shadow); }
@@ -173,6 +175,8 @@
 <body>
   <header>
     <h1>Brick Track Designer</h1>
+    <button id="about-open" type="button" title="What this is, and its source code">About</button>
+    <a id="source-link" href="https://github.com/aronwk-aaron/brick-track-designer" target="_blank" rel="noopener" title="The source code, on GitHub">Source ↗</a>
     <button id="toggle-panel" type="button" title="Show or hide the side panel (routes, trackwork, piece options)">☰</button>
     <span class="sep"></span>
     <span class="group" role="group" aria-label="Tool">
@@ -226,6 +230,12 @@
         <button id="help-open" type="button" title="How to use the editor (?)">? Help</button>
       </div>
       <div id="help" class="chip" role="dialog" aria-label="Help">
+        <h3 id="about">About</h3>
+        <p>Brick Track Designer lays out LEGO-compatible train track (switches, crossings, crossovers, yards) and makes it into
+          parts to 3D print: STL or 3MF, cut to your print bed, joined like LEGO track. It runs in your browser: nothing you
+          draw leaves your computer.</p>
+        <p>Free and open source (AGPL-3.0): <a href="https://github.com/aronwk-aaron/brick-track-designer" target="_blank" rel="noopener">source code and issues on GitHub</a>.
+          Made with three.js and the manifold geometry kernel.</p>
         <h3>Laying track</h3>
         <ul>
           <li><kbd>D</kbd> or ✎ Draw, then click a grid point or a track's end to start; move to see the track; click to lay it and carry on.</li>
@@ -255,7 +265,7 @@
       <div id="coords" class="chip"></div>
     </div>
     <div id="splitter" title="Drag to resize; double-click to reset"></div>
-    <div id="view3d"><div id="buildstatus" class="chip" hidden><span class="spin"></span><span id="build-what">Building…</span> <span id="build-time"></span><span class="bar"><i id="build-bar"></i></span><button id="build-stop" type="button" title="Stop this build (the 3D view stays as it was; Rebuild when you're ready)">Stop</button></div><div id="views" class="chip"><button id="view-top" type="button" title="Look at the top">Top</button><button id="view-under" type="button" title="Look at the underside, to see where it grips">Underside</button><button id="view-frame" type="button" title="Fit the piece in the view (or double-click it)">Frame</button><span class="sep" id="views-sep2"></span><button class="show on" data-show="track" type="button" title="Show or hide the track (bases)">Track</button><button class="show on" data-show="points" type="button" title="Show or hide the points">Points</button><button class="show on" data-show="throw" type="button" title="Show or hide the throws">Throws</button><button class="show on" data-show="lever" type="button" title="Show or hide the levers">Levers</button><span class="sep"></span><label class="explode" title="Pull the parts apart to see where they separate">Explode <input id="explode" type="range" min="0" max="1" step="0.02" value="0"></label></div><div id="status" class="chip"><span id="info"></span><span id="error"></span><button id="rebuild" type="button" hidden>Rebuild</button></div></div>
+    <div id="view3d"><div id="buildstatus" class="chip" hidden><span class="spin"></span><span id="build-what">Building…</span> <span id="build-time"></span><span class="bar"><i id="build-bar"></i></span><button id="build-stop" type="button" title="Stop this build (the 3D view stays as it was; Rebuild when you're ready)">Stop</button></div><div id="views" class="chip"><button id="view-top" type="button" title="Look at the top">Top</button><button id="view-under" type="button" title="Look at the underside, to see where it grips">Underside</button><button id="view-frame" type="button" title="Fit the piece in the view (or double-click it)">Frame</button><span class="sep" id="views-sep2"></span><button class="show on" data-show="track" type="button" title="Show or hide the track (bases)">Track</button><button class="show on" data-show="points" type="button" title="Show or hide the points">Points</button><button class="show on" data-show="throw" type="button" title="Show or hide the throws">Throws</button><button class="show on" data-show="lever" type="button" title="Show or hide the levers">Levers</button><button class="show on" id="show-supports" data-show="supports" type="button" title="Show or hide the breakaway print supports (orange): printed with the part, snapped off after">Supports</button><span class="sep"></span><label class="explode" title="Pull the parts apart to see where they separate">Explode <input id="explode" type="range" min="0" max="1" step="0.02" value="0"></label></div><div id="status" class="chip"><span id="info"></span><span id="error"></span><button id="rebuild" type="button" hidden>Rebuild</button></div></div>
   </main>
   <script type="module" src="/src/app/main.ts"></script>
 </body>
