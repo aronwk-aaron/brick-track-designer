@@ -134,7 +134,7 @@ export function pickSpots(lo: number, hi: number, ok: (u: number) => boolean): n
  * far apart as they'll go, for the firmest hold): of the spots where ok(u),
  * between each pair of breaks (where other cuts cross this one: each stretch
  * between them joins a different pair of parts), the two furthest apart,
- * then more in the widest gaps while a gap's over 64 mm (8 studs).
+ * then more in the widest gaps while a gap's over 80 mm (10 studs).
  */
 export function spreadSpots(lo: number, hi: number, ok: (u: number) => boolean, breaks: number[] = [], clearOfBreak = 4): number[] {
   const out: number[] = [], bs = [lo - 1, ...breaks.filter((b) => b > lo && b < hi).sort((a, b) => a - b), hi + 1];
@@ -145,7 +145,7 @@ export function spreadSpots(lo: number, hi: number, ok: (u: number) => boolean, 
     const got = cand.length > 1 && cand[cand.length - 1] - cand[0] >= 8 ? [cand[0], cand[cand.length - 1]] : [cand[Math.floor(cand.length / 2)]];
     for (;;) {
       got.sort((a, b) => a - b);
-      let gi = -1, gw = 64;
+      let gi = -1, gw = 80;
       for (let i = 0; i + 1 < got.length; i++) if (got[i + 1] - got[i] > gw) { gw = got[i + 1] - got[i]; gi = i; }
       if (gi < 0 || got.length >= 6) break;
       const mid = (got[gi] + got[gi + 1]) / 2, best = cand.filter((u) => u - got[gi] >= 16 && got[gi + 1] - u >= 16).sort((a, b) => Math.abs(a - mid) - Math.abs(b - mid))[0];
@@ -191,7 +191,9 @@ export function cutPiece(s: Scad, t: Track, body: Man, routes: Route[], lines: C
       const q = f.at(u);
       return routes.some((rt) => Math.abs(routeLat(rt, q)) <= half - 5) && floorAt(s, strip, f.at(u, 2.5), 2.5) && floorAt(s, strip, f.at(u, -2.5), 2.5);
     };
-    const us = rails.map((r) => r[0]), lo = L.span ? L.span[0] : Math.min(...us, 0) - half - 20, hi = L.span ? L.span[1] : Math.max(...us, 0) + half + 20;
+    // (along the whole of the piece the line crosses: by the rails crossing it missed a cut that runs along between tracks, crossing none)
+    const ends = [[fb.min[0], fb.min[1]], [fb.max[0], fb.min[1]], [fb.min[0], fb.max[1]], [fb.max[0], fb.max[1]]].map(([x, y]) => (x - L.p[0]) * L.d[0] + (y - L.p[1]) * L.d[1]);
+    const us = rails.map((r) => r[0]), lo = L.span ? L.span[0] : Math.min(...us, ...ends) - 1, hi = L.span ? L.span[1] : Math.max(...us, ...ends) + 1;
     // (no couplers on a comb; a flat cut's are axle holes, nothing sticking out, where the bed's thick enough for one)
     const kind = kit.kindOf(L.joint ?? joint, flatRails);
     const axleOk = (u: number) => { const [a, n0, n1] = kit.couplerReach('axle'), b = s.polygon([f.at(u - a - 1, -n0 - 1), f.at(u + a + 1, -n0 - 1), f.at(u + a + 1, n1 + 1), f.at(u - a - 1, n1 + 1)]); return b.intersect(axleSl!).area() > b.area() * 0.99; };
