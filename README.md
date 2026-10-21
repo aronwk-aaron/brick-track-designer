@@ -6,10 +6,17 @@ in 3D and exporting STL and 3MF for printing.
 
 Early days: see [PLAN.md](PLAN.md) and [PHASE2.md](PHASE2.md).
 
+Live at **https://track-designer.aronwk.com** (GitHub Pages, deployed from
+`main` by `.github/workflows/pages.yml`). It runs entirely in the browser:
+the geometry kernel is WebAssembly, and nothing is uploaded anywhere.
+
 ```
 pnpm install
 pnpm dev        # the editor, at the address it prints
-pnpm test       # solver tests, incl. parity with switch.scad's frogs and check rails
+pnpm typecheck  # tsc
+pnpm lint       # eslint: real mistakes only, no style rules
+pnpm build      # the static site, into dist/
+pnpm test       # solver and geometry tests, incl. parity with switch.scad's frogs and check rails
 pnpm parity     # geometry parity with the OpenSCAD files (needs openscad-nightly)
 ```
 
@@ -32,3 +39,13 @@ switch's lever (drag it across to swap sides; hover it to see what set its
 side); below it, the pieces in 3D, which download as STL or one 3MF laid out
 on the print bed. Designs save and open as JSON, and the last one is kept in
 the browser.
+
+## Contributing
+
+Pull requests run CI (`.github/workflows/ci.yml`): Conventional Commits
+(`feat:`, `fix:`, `docs:` ...), typecheck, lint, build and the tests, and an
+OSV scan of the dependencies; every push gets a gitleaks secret scan.
+
+## Licence
+
+AGPL-3.0: see [LICENSE](LICENSE).

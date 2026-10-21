@@ -1,0 +1,10 @@
+# The default gitleaks rules, with the lockfile allowed.
+
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Project-wide allowlist"
+paths = [
+  '''pnpm-lock\.yaml$''',
+]
