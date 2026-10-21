@@ -2,7 +2,7 @@
 // sleepers (grey), the studs on them (dark), the rails (blue), as an SVG.
 // npx tsx scripts/plan-svg.mts <design.json | template name> <out.svg> [options JSON]  (PARTS=1: colour each part; CLASH=1: ring moving parts that are in the track)
 import { readFileSync, writeFileSync } from 'node:fs';
-const R = '/home/aronwk/Documents/git/brick-track-designer/src/';
+const R = new URL('../src/', import.meta.url).pathname;
 const { kernel } = await import(R + 'geom/kernel.ts');
 const { buildDesign } = await import(R + 'app/build.ts');
 const { TEMPLATES } = await import(R + 'app/design.ts');

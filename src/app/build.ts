@@ -287,7 +287,6 @@ export function buildDesign(w: Wasm, design: Design, report: (what: string, frac
     const [s0, s1] = [a0 - 8, a1 + 8];
     for (let s2 = s0; s2 <= s1 + 1e-9; s2 += 12) { const q = railPoint(rt, Math.max(0, Math.min(routeLength(rt), s2)), 0); pointsAvoid.push([q[0], q[1]]); }
   }
-  const cutAvoid: Keep[] = [...overlay.crossings, ...pointsAvoid];
   // (and no rail-end tongue beside the blades, from before the toe to past the heels, where a cut may go under them:
   // a tongue's head beside a stock rail is where a closed blade lies)
   const G0 = track.c.railOffset, zones = sol.splits.flatMap((sp) => sp.routes.map((r, n) => {
@@ -687,7 +686,7 @@ export function buildDesign(w: Wasm, design: Design, report: (what: string, frac
     });
   });
   const all = pieces.flatMap((p) => [p.positions]);
-  let mn = [Infinity, Infinity, Infinity], mx = [-Infinity, -Infinity, -Infinity];
+  const mn = [Infinity, Infinity, Infinity], mx = [-Infinity, -Infinity, -Infinity];
   for (const ps of all) for (let i = 0; i < ps.length; i += 3) for (let k = 0; k < 3; k++) { mn[k] = Math.min(mn[k], ps[i + k]); mx[k] = Math.max(mx[k], ps[i + k]); }
   const info = {
     ms: performance.now() - t0, volume,

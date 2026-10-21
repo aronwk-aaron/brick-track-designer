@@ -10,7 +10,7 @@ import { solve } from '../src/route/solver';
 import { planSvg } from '../src/route/plan';
 import { routeLength, routePose } from '../src/route/route';
 import { STRAIGHT_DEFAULTS, straightTrackOnly } from '../src/geom/straight';
-import { R, T, type Man } from '../src/geom/scad';
+import { R, T } from '../src/geom/scad';
 
 const S = (id: string, start: Route['start'], len: number): Route => ({ id, start, segments: [{ kind: 'straight', length: len }] });
 const rad = (d: number) => (d * Math.PI) / 180;

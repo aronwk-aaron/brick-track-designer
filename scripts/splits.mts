@@ -1,7 +1,7 @@
 // The solver's splits of a design (after orienting its routes), with their toes in studs, and each route's ends.
 // npx tsx scripts/splits.mts <design.json> <solver options JSON>
 import { readFileSync } from 'node:fs';
-const R = '/home/aronwk/Documents/git/brick-track-designer/src/';
+const R = new URL('../src/', import.meta.url).pathname;
 const { toRoutes } = await import(R + 'app/design.ts');
 const { solve } = await import(R + 'route/solver.ts');
 const { routePose } = await import(R + 'route/route.ts');

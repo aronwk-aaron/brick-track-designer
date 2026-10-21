@@ -80,7 +80,6 @@ export function planCuts(b: Rect, bedX: number, bedY: number, bp: number, ox: nu
     }
     return clearOf(v, axis) ? near : -1;
   };
-  const combOk = (v: number, axis: 0 | 1) => railClear(v, axis) >= 12;
   const combs = new Set<number>();
   /** The nearest place to v (within reach, on the 8 mm grid from v) a cut can go; undefined: nowhere near. */
   const place = (v: number, axis: 0 | 1, reach: number) => {
@@ -203,7 +202,7 @@ export function blocks(plan: CutPlan, b: Rect, size: number, far = 1000): Rect[]
 export function cropRoutes(routes: Route[], cell: Rect, margin: number, checks: CheckRail[]) {
   const out: Route[] = [], map: number[] = [], ranges: [number, number][] = [], inner = new Set<string>();
   const near = (p: [number, number, number]) => p[0] >= cell[0] - margin && p[0] <= cell[2] + margin && p[1] >= cell[1] - margin && p[1] <= cell[3] + margin;
-  routes.forEach((rt, i) => {
+  routes.forEach((rt) => {
     const L = routeLength(rt), n = Math.max(1, Math.ceil(L / 2));
     let a = Infinity, b = -Infinity;
     for (let k = 0; k <= n; k++) { const s = (L * k) / n; if (near(routePose(rt, s))) { a = Math.min(a, s); b = Math.max(b, s); } }
