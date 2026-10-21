@@ -8,6 +8,7 @@ import { DEFAULTS as TRACK_DEFAULTS, PLATE_H, Track } from '../geom/track';
 import { CROSSING_DEFAULTS, crossingPiece } from '../geom/crossing';
 import { arena, flat, type Wasm } from '../geom/kernel';
 import { stlBytes } from '../geom/stl';
+import { splitSelfCrossing } from '../route/selfcross';
 import { FORCE_ANGLE, FORCE_LAT, solve, type SplitEdits } from '../route/solver';
 import { railPoint, routeLat, routeLength, routePose, routeSOf, type Pose } from '../route/route';
 import { reversedRoute } from '../switch/reverse';
@@ -140,7 +141,8 @@ export function buildDesign(w: Wasm, design: Design, report: (what: string, frac
   // (progress: steps done of the steps there are, worked out as the plan firms up)
   let stepsDone = 0, steps = 3;
   const progress = (what: string) => { report(what, Math.min(0.97, stepsDone / steps)); stepsDone++; };
-  let routes = orient(toRoutes(design).filter((r) => r.segments.length > 0));
+  // (a route that crosses itself, cut where it does into routes joined end to end: see route/selfcross.ts)
+  let routes = orient(splitSelfCrossing(toRoutes(design).filter((r) => r.segments.length > 0), (design.gaugeStuds + 1) * 8));
   if (routes.length === 0) throw new Error('Draw some track: click a grid point to start, then click where it should go.');
   const t0 = performance.now();
   const gauge = (design.gaugeStuds + 1) * 8;
@@ -272,6 +274,37 @@ export function buildDesign(w: Wasm, design: Design, report: (what: string, frac
   const track = new Track(scad, { ...TRACK_DEFAULTS, gaugeStuds: design.gaugeStuds });
   // (how far each side of a centre line the track's base reaches: its sleepers, or its widest ballast layer)
   const bandHalf = (o.ballast === 'buddy' ? track.c.sleeperLen + 32 : o.ballast === 'ballast' ? track.c.sleeperLen + 16 : track.c.sleeperLen) / 2;
+  // (two stretches of track side by side closer than their sleepers' length, nearly parallel: drawn over each other,
+  // not a crossing (those cross at an angle) nor a switch (those part at its toe): trains on them would hit)
+  {
+    const step = 8, gap = track.c.sleeperLen, cos15 = Math.cos((15 * Math.PI) / 180);
+    const ends = routes.flatMap((rt) => [routePose(rt, 0), routePose(rt, routeLength(rt))]);
+    // (where two routes join end to end, or a route's end lies on another: the same track carrying on, or a switch)
+    const joints = ends.filter((e, i) => ends.some((f, j) => j !== i && Math.hypot(e[0] - f[0], e[1] - f[1]) < 1));
+    // (where a switch's routes part, or would have (taken out): they're side by side by nature until they're a
+    // sleeper's length apart, however gently they part; that far from the toe, and a little more, they're left alone)
+    const parts = [...sol.splits, ...(sol.dropped ?? [])].map((sp) => {
+      const [i, j] = sp.routes, toe = routePose(routes[i], sp.merge ? sp.spans[0][1] : sp.spans[0][0]), rj = routes[j], Lj = routeLength(rj);
+      let d = 0;
+      for (let t = 0; t <= Lj; t += step) { const sj = sp.merge ? Lj - t : t, q = routePose(rj, sj); d = Math.hypot(q[0] - toe[0], q[1] - toe[1]); if (Math.abs(routeLat(routes[i], [q[0], q[1]])) >= gap) break; }
+      return { i, j, toe, r: d + 2 * gap };
+    });
+    const parting = (p: number[], q: number[]) => parts.some((pt) => ((p[4] === pt.i && q[4] === pt.j) || (p[4] === pt.j && q[4] === pt.i))
+      && Math.hypot(p[0] - pt.toe[0], p[1] - pt.toe[1]) < pt.r && Math.hypot(q[0] - pt.toe[0], q[1] - pt.toe[1]) < pt.r);
+    const near = (q: number[], ps: number[][], r: number) => ps.some((e) => Math.hypot(e[0] - q[0], e[1] - q[1]) < r);
+    const pts = routes.flatMap((rt, i) => { const L = routeLength(rt), out: number[][] = []; for (let s0 = 0; s0 <= L; s0 += step) { const q = routePose(rt, s0); out.push([q[0], q[1], q[2], s0, i]); } return out; })
+      .filter((q) => !near(q, joints, 3 * gap));
+    const spots: number[][] = [];
+    for (let a2 = 0; a2 < pts.length; a2++) for (let b2 = a2 + 1; b2 < pts.length; b2++) {
+      const p = pts[a2], q = pts[b2];
+      if (Math.abs(p[0] - q[0]) > gap || Math.abs(p[1] - q[1]) > gap || Math.hypot(p[0] - q[0], p[1] - q[1]) >= gap) continue;
+      if (p[4] === q[4] && Math.abs(p[3] - q[3]) < 4 * gap) continue; // (the same stretch of one route)
+      if (parting(p, q)) continue;
+      if (Math.abs(Math.cos(((p[2] - q[2]) * Math.PI) / 180)) < cos15) continue; // (crossing at an angle: a crossing)
+      if (!near(p, spots, 4 * gap)) spots.push(p);
+    }
+    if (spots.length) bedWarnings.add(`tracks run over each other (closer than their sleepers, nearly parallel) at ${spots.slice(0, 4).map((q) => `${(q[0] / 8).toFixed(0)}, ${(q[1] / 8).toFixed(0)}`).join('; ')}${spots.length > 4 ? ' …' : ''} (studs): trains on them would hit; move them apart, or cross at a steeper angle`);
+  }
   // (what the joints stick out past a cut, both ends of a part: rail tongues, and the peg or dovetail)
   const jointRoom = (o.joint === 'dovetail' ? 14 : o.joint === 'butt' || o.joint === 'axle' ? 4 : 8) - (o.cutRails === 'flat' && o.joint !== 'butt' ? 4 : 0);
   // (where no cut goes: the crossings, and every points set from before its toe to past its heels,
@@ -297,17 +330,8 @@ export function buildDesign(w: Wasm, design: Design, report: (what: string, frac
   }));
   const noTongue = (q: [number, number]) => zones.some((z) => q[0] >= z.box[0] && q[0] <= z.box[2] && q[1] >= z.box[1] && q[1] <= z.box[3]
     && Math.abs(routeLat(z.rt, q)) < G0 + 6 && ((sa) => sa >= z.s0 && sa <= z.s1)(routeSOf(z.rt, q)));
-  const addTrack = (name: string, world: Man, pieceRoutes: typeof routes) => {
-    const bb = world.boundingBox(), b: Rect = [bb.min[0], bb.min[1], bb.max[0], bb.max[1]];
-    if (!bp && fitsBed(world)) return add(name, 0x6f7780, world, world);
-    // too big for the print bed (or at the baseplate edges): cut across the
-    // track (tiles.ts planCuts), each part joined to the next like LEGO track
-    const plan = planCuts(b, o.printBedX, o.printBedY, bp, (o.baseplateX ?? 0) * 8, (o.baseplateY ?? 0) * 8, pointsAvoid, pieceRoutes, bandHalf, jointRoom, track.c.railOffset, overlay.crossings);
-    // (baseplate edges always joined: two or more axles across, as far apart as they go, where the bed's thick enough for them (on ballast), else peg and clip; the cuts to fit the bed as chosen)
-    const lj = (v: number) => (plan.edges?.has(v) ? { joint: 'axle' as const } : plan.combs?.has(v) ? { comb: true } : {});
-    const lines: CutLine[] = [...plan.xs.map((x): CutLine => ({ p: [x, 0], d: [0, 1], ...lj(x) })), ...plan.ys.map((y): CutLine => ({ p: [0, y], d: [1, 0], ...lj(y) }))];
-    steps++; progress(plan.why === 'bed' ? `Cutting ${name} to fit the print bed` : `Cutting ${name} at the baseplate edges`);
-    const cells = cached(`cut:${bp}:${o.joint}:${o.cutRails}:${JSON.stringify(lines)}:${JSON.stringify(pieceRoutes)}:${world.volume().toFixed(3)}`, () => arena(w, () => cutPiece(scad, track, world, pieceRoutes, lines, o.joint === 'ends' ? 'lego' : o.joint ?? 'lego', o.cutRails === 'flat', noTongue), (r) => r));
+  /** Fits a part to the bed: its pieces that don't touch apart, and one too big split along stepped paths (pathsplit.ts), as often as it takes. */
+  const fitter = (pieceRoutes: typeof routes) => {
     // a part still too big: split along a stepped path on the stud grid that
     // goes only where a cut can be made (pathsplit.ts), as often as it takes
     // (pieces of track that don't touch are parts of their own; the small bits, the breakaway supports, stay with the biggest)
@@ -359,6 +383,20 @@ export function buildDesign(w: Wasm, design: Design, report: (what: string, frac
       for (const r of got.runs) if (r.d[axis] === 0) cutAt[axis].push(r.p[axis]);
       return got.parts.flatMap((p) => arena(w, () => fitAll(p, depth + 1), (r) => r));
     };
+    return fitAll;
+  };
+  const addTrack = (name: string, world: Man, pieceRoutes: typeof routes) => {
+    const bb = world.boundingBox(), b: Rect = [bb.min[0], bb.min[1], bb.max[0], bb.max[1]];
+    if (!bp && fitsBed(world)) return add(name, 0x6f7780, world, world);
+    // too big for the print bed (or at the baseplate edges): cut across the
+    // track (tiles.ts planCuts), each part joined to the next like LEGO track
+    const plan = planCuts(b, o.printBedX, o.printBedY, bp, (o.baseplateX ?? 0) * 8, (o.baseplateY ?? 0) * 8, pointsAvoid, pieceRoutes, bandHalf, jointRoom, track.c.railOffset, overlay.crossings);
+    // (baseplate edges always joined: two or more axles across, as far apart as they go, where the bed's thick enough for them (on ballast), else peg and clip; the cuts to fit the bed as chosen)
+    const lj = (v: number) => (plan.edges?.has(v) ? { joint: 'axle' as const } : plan.combs?.has(v) ? { comb: true } : {});
+    const lines: CutLine[] = [...plan.xs.map((x): CutLine => ({ p: [x, 0], d: [0, 1], ...lj(x) })), ...plan.ys.map((y): CutLine => ({ p: [0, y], d: [1, 0], ...lj(y) }))];
+    steps++; progress(plan.why === 'bed' ? `Cutting ${name} to fit the print bed` : `Cutting ${name} at the baseplate edges`);
+    const cells = cached(`cut:${bp}:${o.joint}:${o.cutRails}:${JSON.stringify(lines)}:${JSON.stringify(pieceRoutes)}:${world.volume().toFixed(3)}`, () => arena(w, () => cutPiece(scad, track, world, pieceRoutes, lines, o.joint === 'ends' ? 'lego' : o.joint ?? 'lego', o.cutRails === 'flat', noTongue), (r) => r));
+    const fitAll = fitter(pieceRoutes);
     const all = cached(`fit:${o.printBedX}x${o.printBedY}:${bp}:${o.joint}:${o.cutRails}:${JSON.stringify(lines)}:${JSON.stringify(pieceRoutes)}:${world.volume().toFixed(3)}`, () => {
       // (and each part gripping along its cut edges too)
       const parts = cells.flatMap((m) => arena(w, () => fitAll(m), (r) => r)); // (each cell's leftovers freed as it goes)
@@ -554,7 +592,10 @@ export function buildDesign(w: Wasm, design: Design, report: (what: string, frac
         });
         // (baked: the block's solids are all let go, a whole yard's would fill the kernel's memory)
         const bottom = body.boundingBox().min[2] + 0.02;
-        return { ms: got.filter((m) => m.numTri() > 0).map((m) => bake(edgeGrip(scad, track, m, gridPose, bottom))), grips: grips.filter((q) => q[0] > R[0] && q[0] <= R[2] && q[1] > R[1] && q[1] <= R[3]) };
+        // (and a part still too big, or in pieces that don't touch, fitted as addTrack's are: the straight cuts can't
+        // always get round a curvy track without running along it)
+        const fit = fitter(cr.routes), parts = got.filter((m) => m.numTri() > 0).flatMap((m) => fit(m));
+        return { ms: parts.map((m) => bake(edgeGrip(scad, track, m, gridPose, bottom))), grips: grips.filter((q) => q[0] > R[0] && q[0] <= R[2] && q[1] > R[1] && q[1] <= R[3]) };
       }, () => [])); } catch (err) {
         if (err instanceof WebAssembly.RuntimeError || typeof err === 'number') throw err; // (the kernel's broken now: no use carrying on)
         bedWarnings.add(`part ${ci + 1} of ${name} (x ${Math.max(R[0], b[0]).toFixed(0)} to ${Math.min(R[2], b[2]).toFixed(0)}, y ${Math.max(R[1], b[1]).toFixed(0)} to ${Math.min(R[3], b[3]).toFixed(0)}) failed to build: ${err instanceof Error ? err.message : `kernel error ${String(err)}`}`);
