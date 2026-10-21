@@ -540,9 +540,6 @@ export function switchGeometry(s: Scad, plan: SwitchPlan, extraCuts: Man[] = [])
       sweep(sq([2 * stemHw, bedTop - partZ0], [o - stemHw, partZ0]), rt, v.sToe, v.sHeel - c),
       sweep(sq([30, 20], [side > 0 ? face : face - 30, partZ0 - 1]), other, 0, v.sHeel + 5));
   };
-  const blade2dPlan = (v: SetV, b: number): CS => (b === 0
-    ? bladeStem(v, v.ra, -G, v.rb, -G)
-    : rot3(bladeStem(v, v.rb, +G, v.ra, +G), v.pivotPt, -v.throwAng)).project();
   const tines2d = (v: SetV) => {
     const d = sub(v.tineTip, v.pivotPt), u = mul(d, 1 / norm(d)), n: Pt = [u[1], -u[0]];
     return W.CrossSection.union([-1, 1].map((k) => {

@@ -3,7 +3,7 @@
 // the studs, with anti-stud tubes along the piece's edges and every 4 studs
 // and thin posts elsewhere; loose recesses for studs wholly under the piece
 // but off the hollow; gripping round sockets for the rest.
-import { T, R, type CS, type Man, type Scad } from './scad';
+import { T, type CS, type Man, type Scad } from './scad';
 import { getSocketShape, PLATE_H, STUD, type Track } from './track';
 
 /** A grid spot: position and its place on the grid. */

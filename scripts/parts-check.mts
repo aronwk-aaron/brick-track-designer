@@ -1,7 +1,7 @@
 // Each moving part of a design: how many pieces it is, and how much of it is in the track as assembled.
 // npx tsx scripts/parts-check.mts <design.json | template name> [options JSON]
 import { readFileSync } from 'node:fs';
-const R = '/home/aronwk/Documents/git/brick-track-designer/src/';
+const R = new URL('../src/', import.meta.url).pathname;
 const { kernel } = await import(R + 'geom/kernel.ts');
 const { buildDesign } = await import(R + 'app/build.ts');
 const { TEMPLATES } = await import(R + 'app/design.ts');

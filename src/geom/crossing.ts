@@ -250,7 +250,7 @@ export function crossingPiece(s: Scad, routes: Route[], o: CrossingOptions = CRO
   /** The piece on ballast: the layers under every route, studs on each step, and the underside (anti-stud or flat). */
   function ballastPiece(): Man {
     // (its own constants: it runs before the track-only underside's are set)
-    const W = s.w, studR = t.o.studD / 2, RIM = 1.39, TUBE_D = 6.51 - 0.06;
+    const W = s.w, studR = t.o.studD / 2, RIM = 1.39;
     const layer2d = rect(-topW / 2, topW / 2, bz0, bz0 + thick).add(rect(-midW / 2, midW / 2, bz0, bz0 + thick / 2));
     const layers = routes.map((rt) => sweepRoute(s, layer2d, rt));
     const buddies = buddy ? routes.map((rt) => sweepRoute(s, rect(-botW / 2, botW / 2, bottomZ, bz0), rt)) : [];

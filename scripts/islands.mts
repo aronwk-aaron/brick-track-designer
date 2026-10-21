@@ -2,7 +2,7 @@
 // layer that rest on nothing in the layer below (they'd print in mid-air).
 // npx tsx scripts/islands.mts <design.json | template name> [options JSON]
 import { readFileSync } from 'node:fs';
-const R = '/home/aronwk/Documents/git/brick-track-designer/src/';
+const R = new URL('../src/', import.meta.url).pathname;
 const { kernel } = await import(R + 'geom/kernel.ts');
 const { buildDesign } = await import(R + 'app/build.ts');
 const { TEMPLATES } = await import(R + 'app/design.ts');
