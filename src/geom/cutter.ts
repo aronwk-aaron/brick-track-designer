@@ -13,7 +13,7 @@ import { railPoint, routeLat, routeLength, routePose } from '../route/route';
 
 export type Joint = 'lego' | 'dovetail' | 'butt' | 'axle';
 /** A cut: through point p, along unit direction d; span: only the stretch from p + span[0] d to p + span[1] d gets couplers (a tile's edge, so the tiles either side agree). */
-export interface CutLine { p: [number, number]; d: [number, number]; span?: [number, number]; /** this cut's own joint (baseplate edges: always 'lego') */ joint?: Joint;
+export interface CutLine { p: [number, number]; d: [number, number]; span?: [number, number]; /** this cut's own joint (baseplate edges: 'axle', peg and clip where the bed's too thin) */ joint?: Joint;
   /** a cut along the track (4DBrix's way): interlocking fingers two studs wide and two deep, on the stud grid, instead of a straight cut */
   comb?: boolean }
 
