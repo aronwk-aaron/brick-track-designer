@@ -74,7 +74,9 @@ export function jointKit(s: Scad, t: Track, bz: number) {
   /** A rail-end tongue joint at a crossing r: what it takes away (both sides), and adds on a side. */
   const tongueCut = (r: RailCross) => R(cube([8, 8, 30], [-4, -4, -1]), [0, 0, r[1]]);
   const tonguePart = (r: RailCross, side: number) => R(cutTongue(side > 0 ? r[2] : -r[2], -0.02), [0, 0, r[1] + (side < 0 ? 180 : 0)]);
-  return { axleFits, axleZ, kindOf, tongues, couplerCut, couplerPart, couplerReach, tongueCut, tonguePart };
+  // (the levels an axle hole must be in solid at, and the wall it keeps round it: 1.2 mm, three perimeters)
+  const axleWall = 1.2, axleLevels = [axleZ, axleZ + 2.45 + axleWall, axleZ - 2.45 - axleWall];
+  return { axleFits, axleZ, axleWall, axleLevels, kindOf, tongues, couplerCut, couplerPart, couplerReach, tongueCut, tonguePart };
 }
 
 /**
@@ -174,7 +176,10 @@ export function cutPiece(s: Scad, t: Track, body: Man, routes: Route[], lines: C
   // (and where it has rail: none where a loose blade lies on the bed, so no rail-end tongue there)
   const railSl = body.slice(PLATE_H + 4.5);
   // (an axle hole all in solid, at its height: it may pass under a rail, inside the bed)
-  const axleSl = kit.axleFits ? body.slice(kit.axleZ) : undefined;
+  // (an axle hole all in solid with a wall round it: at its height, and above and below it by its half-height and a
+  // wall more, so it's clear of the ballast's steps (and the hollow underneath) and doesn't break out of them or leave
+  // a skin too thin to print over it)
+  const axleSls = kit.axleFits ? kit.axleLevels.map((z) => body.slice(z)) : undefined;
   const fb = body.boundingBox(), reachAll = Math.hypot(fb.max[0] - fb.min[0], fb.max[1] - fb.min[1]) + Math.hypot(fb.min[0], fb.min[1]) + Math.hypot(fb.max[0], fb.max[1]);
   // ---- each line's frame, rail crossings and coupler spots ----
   const frames = lines.map((L) => {
@@ -196,7 +201,7 @@ export function cutPiece(s: Scad, t: Track, body: Man, routes: Route[], lines: C
     const us = rails.map((r) => r[0]), lo = L.span ? L.span[0] : Math.min(...us, ...ends) - 1, hi = L.span ? L.span[1] : Math.max(...us, ...ends) + 1;
     // (no couplers on a comb; a flat cut's are axle holes, nothing sticking out, where the bed's thick enough for one)
     const kind = kit.kindOf(L.joint ?? joint, flatRails);
-    const axleOk = (u: number) => { const [a, n0, n1] = kit.couplerReach('axle'), b = s.polygon([f.at(u - a - 1, -n0 - 1), f.at(u + a + 1, -n0 - 1), f.at(u + a + 1, n1 + 1), f.at(u - a - 1, n1 + 1)]); return b.intersect(axleSl!).area() > b.area() * 0.99; };
+    const W2 = kit.axleWall, axleOk = (u: number) => { const [a, n0, n1] = kit.couplerReach('axle'), b = s.polygon([f.at(u - a - W2, -n0 - W2), f.at(u + a + W2, -n0 - W2), f.at(u + a + W2, n1 + W2), f.at(u - a - W2, n1 + W2)]); return axleSls!.every((sl) => b.intersect(sl).area() > b.area() * 0.99); };
     // (where the other cuts cross this one: its stretches between them join different parts; an axle kept its
     // length and a bit clear of them, or it'd run into the axles across the other cut (and out of its face))
     const breaks = lines.flatMap((L2) => { const cr = L.d[0] * L2.d[1] - L.d[1] * L2.d[0]; return L2 === L || Math.abs(cr) < 1e-9 ? [] : [((L2.p[0] - L.p[0]) * L2.d[1] - (L2.p[1] - L.p[1]) * L2.d[0]) / cr]; });
@@ -289,7 +294,7 @@ export function pathJoints(s: Scad, t: Track, body: Man, routes: Route[], runs: 
   const kind = kit.kindOf(joint, flatRails), tongues = kit.tongues(joint, flatRails), [ra, rn0, rn1] = kit.couplerReach(kind);
   const floor = body.slice(1.0), railSl = body.slice(PLATE_H + 4.5);
   // (an axle hole all in solid, at its height: not into a hollow, a pocket, or another cut's hole)
-  const solid = kind === 'axle' ? body.slice(kit.axleZ) : floor;
+  const solids = kind === 'axle' ? kit.axleLevels.map((z) => body.slice(z)) : [floor], wall = kind === 'axle' ? kit.axleWall : 1;
   const fs = runs.map((r) => ({ ...cutFrame(r.p, r.d), len: r.len }));
   // (each run as points a mm apart, to keep the joints clear of the other runs)
   const pts = fs.map((f) => Array.from({ length: Math.ceil(f.len) + 1 }, (_, k) => f.at(Math.min(k, f.len))));
@@ -331,7 +336,7 @@ export function pathJoints(s: Scad, t: Track, body: Man, routes: Route[], runs: 
     fs.forEach((f, k) => {
       // (anywhere there's solid all along it: in the ballast between tracks too, not only by a track)
       const ok = (u: number) => clear(k, u, ra, rn0, rn1)
-        && floorAt(s, floor, f.at(u, 2.5), 2.5) && floorAt(s, floor, f.at(u, -2.5), 2.5) && filled(solid, k, u, ra + 1, rn0 + 1, rn1 + 1);
+        && floorAt(s, floor, f.at(u, 2.5), 2.5) && floorAt(s, floor, f.at(u, -2.5), 2.5) && solids.every((sl) => filled(sl, k, u, ra + wall, rn0 + wall, rn1 + wall));
       for (let u = 0; u <= f.len + 1e-9; u += 1) if (ok(u)) cand.push([k, u, f.at(u)]);
     });
     const dist = (a: [number, number], b: [number, number]) => Math.hypot(a[0] - b[0], a[1] - b[1]);
@@ -353,7 +358,7 @@ export function pathJoints(s: Scad, t: Track, body: Man, routes: Route[], runs: 
       const q = f.at(u);
       return railPts.every((p) => Math.hypot(p[0] - q[0], p[1] - q[1]) >= 9) && clear(k, u, ra, rn0, rn1)
         && routes.some((rt) => Math.abs(routeLat(rt, q)) <= half - 5) && floorAt(s, floor, f.at(u, 2.5), 2.5) && floorAt(s, floor, f.at(u, -2.5), 2.5)
-        && filled(solid, k, u, ra + 1, rn0 + 1, rn1 + 1);
+        && solids.every((sl) => filled(sl, k, u, ra + wall, rn0 + wall, rn1 + wall));
     };
     for (const u of pickSpots(0, f.len, ok)) {
       const q = f.at(u);
