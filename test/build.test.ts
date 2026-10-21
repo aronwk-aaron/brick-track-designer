@@ -47,6 +47,10 @@ describe('designs into pieces', { timeout: 60000 }, () => {
       expect((w <= 200 && h <= 200) || (w <= 200 && h <= 200), `${p.name}: ${w.toFixed(0)} x ${h.toFixed(0)}`).toBe(true);
     }
   });
+  it('the three-way template (199 x 252 mm) on a 256 bed: no print-bed warning', async () => {
+    const b = buildDesign(await kernel(), TEMPLATES['Three-way switch (one throw)']);
+    expect(b.info.warnings.filter((w) => /print bed/.test(w))).toEqual([]);
+  });
   it('every part\'s file lies on the bed (its lowest point at z 0), the blades too', async () => {
     const b = buildDesign(await kernel(), TEMPLATES['Left switch (LEGO)']);
     for (const p of b.pieces) {
