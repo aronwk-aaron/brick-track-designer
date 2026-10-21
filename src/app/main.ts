@@ -672,7 +672,7 @@ const OPTION_FORM: OptSection[] = [
   ] },
   { title: 'Switches: points', switches: true, fields: [
     { key: 'mechStyle', label: 'Mechanism', choices: [
-      { v: '4dbrix', t: 'Blades on top, on pins (4DBrix)', tip: 'Each blade on its own plate on top of the bed, turning on a pin, with a spring tongue the slider bar\'s post sits in; the blades go in from above, the slider from below' },
+      { v: '4dbrix', t: 'Blades on top, on pins (4DBrix)', tip: 'Each blade on its own plate on top of the bed, turning on a pin, with a spring tongue the slider bar\'s post sits in; everything goes in from above: the slider down through the lever\'s opening and along its tunnel, then the blades, then the lever' },
       { v: 'tines', t: 'Under the bed, on spring tines (switch.scad)', tip: 'The points under the bed in pockets, on springy tines; they go in from below' }] },
     { key: 'pointsPieces', label: 'Points printed as', when: (c) => !c.fdb,
       get: () => String(design.pointsPieces ?? 1), set: (v) => { design.pointsPieces = Number(v) as 1 | 2; }, choices: [
@@ -681,7 +681,7 @@ const OPTION_FORM: OptSection[] = [
     { key: 'bladeStyle', label: 'Blades', when: (c) => c.fdb, choices: [
       { v: 'simple', t: 'Simple', tip: 'Each blade is its route\'s rail, cut off along the stock rail it closes on' },
       { v: 'prototype', t: 'Like the real thing: planed, under the stock rail', tip: 'Each blade planed to a blunt point (as thin as prints well), tight against the stock rail and tucked in under its undercut head, so a wheel\'s flange can\'t catch it and the head holds it down; the tie bar (the slider) moved up to the points. Drawbacks: the blades go on swung open, then shut; the stock rail\'s head is thinner low down along the points; with the over-centre spring the tie bar stays further back' }] },
-    { key: 'pointsModule', label: 'Points go in', choices: [
+    { key: 'pointsModule', label: 'Points go in', when: (c) => !c.fdb, choices: [
       { v: 'built-in', t: 'From below: one piece', tip: 'The points built into the track, their pockets open through to the bottom: the points and the throw go in from underneath before it goes on the baseplate' },
       { v: 'layers', t: 'From the top, under a lid (layers)', tip: 'The lower layer (with the pockets the moving parts sit in), the moving parts dropped in, then the deck (bed, rails, frogs) laid over, held by studs like LEGO plates',
         no: (c) => (c.ballast ? undefined : 'needs ballast') }] },
