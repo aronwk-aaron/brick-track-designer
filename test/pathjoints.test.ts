@@ -85,6 +85,8 @@ describe('a crossover cut to a small bed', { timeout: 300000 }, () => {
     expect(spreadSpots(0, 100, () => true)).toEqual([0, 50, 100]);
     expect(spreadSpots(0, 60, () => true)).toEqual([0, 60]);
     expect(spreadSpots(0, 100, () => true, [50])).toEqual([0, 46, 54, 100]);
+    // (kept an axle's length clear of a crossing cut, so as not to run into the axles across it)
+    expect(spreadSpots(0, 100, () => true, [50], 20)).toEqual([0, 30, 70, 100]);
     expect(spreadSpots(0, 100, (u) => u >= 30 && u <= 34)).toEqual([32]); // (too short a stretch for two a stud apart)
   });
 
