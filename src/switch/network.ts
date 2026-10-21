@@ -155,6 +155,7 @@ export function networkSplits(s: Scad, routes: Route[], sol: Solution, p: BasePa
     const turns = gm.pointsTurns(0), cz = Math.cos((P[2] * Math.PI) / 180), sz = Math.sin((P[2] * Math.PI) / 180);
     pts.forEach((m, k) => moving.push({ name: `${tag}${pts.length > 1 ? (k === 0 ? '-a' : '-b') : ''}`, color: 0x4682b4, local: m, world: place(m, P),
       ...(turns?.[k] && { turn: { at: [P[0] + turns[k].at[0] * cz - turns[k].at[1] * sz, P[1] + turns[k].at[0] * sz + turns[k].at[1] * cz] as [number, number], by: turns[k].by, swing: turns[k].swing } }) }));
+    gm.holdParts(0).forEach((m, k) => moving.push({ name: `${tag}-holddown-${k === 0 ? 'a' : 'b'}`, color: 0x4682b4, local: gm.holdPrint(m), world: place(m, P) }));
     // (Peco's spring: printed flat and straight, as assembled squeezed between its pins)
     const spr = gm.springPart(0), sprP = gm.springPrint(0);
     if (spr && sprP) moving.push({ name: `${tag}-spring`, color: 0xc0392b, local: sprP, world: place(spr, P) });

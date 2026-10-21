@@ -46,6 +46,8 @@ export interface SwitchParams {
   throwStand?: boolean;
   /** (the plate-style points) The blades: 'simple' (as before) or 'prototype' (planed to a point and laid tight under the stock rail's undercut head, the tie bar at the points). */
   bladeStyle?: 'simple' | 'prototype';
+  /** (the plate-style points) What keeps each blade's plate on its pin: 'lip' (a snap lip on the pin) or 'bracket' (a little bracket on the bed over the plate round the pin, pegged in: the reference points' way). */
+  bladeHold?: 'lip' | 'bracket';
 }
 
 /** The switch stand's handle and eccentric (throwStand). */

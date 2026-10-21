@@ -530,6 +530,7 @@ export function switchGeometry(s: Scad, plan: SwitchPlan, extraCuts: Man[] = [])
   const bSide = (b: number) => (b === 0 ? +1 : -1);
   const bHeel = (v: SetV, b: number): Pt => (b === 0 ? railPoint(v.ra, v.sBpiv, -G) : rotAbout(railPoint(v.rb, v.sBpiv, +G), v.pivotPt, -v.throwAng));
   const fdb = p.mechStyle === 'plates';
+  const holdOn = fdb && p.bladeHold === 'bracket';
   const stockFootCut = (v: SetV) => fdb ? s.union([]) : s.union([0, 1].map((b) => {
     const side = bSide(b), face = bO(b) + side * HEAD_HW;
     return sweep(sq([10, bedTop + 3 - floorZ], [side > 0 ? face : face - 10, floorZ]), bOther(v, b), v.sToe - 2, v.sHeel + g.discR);
@@ -1122,7 +1123,7 @@ export function switchGeometry(s: Scad, plan: SwitchPlan, extraCuts: Man[] = [])
   };
   /** Cut from the bed: the slider's tunnel (floored) and its posts' groove. */
   const fdbPockets = (v: SetV) => s.union([T(s.extrude(fdbSlot2d(v, 0), g.layerTop + c - fdbFloor()), [0, 0, fdbFloor()]), fdbGroove(v),
-    ...(ocOn(v) ? [ocPocket(v)] : []), ...(protoOn ? [protoUndercut(v)] : [])]);
+    ...(ocOn(v) ? [ocPocket(v)] : []), ...(protoOn ? [protoUndercut(v)] : []), ...(holdOn ? [holdHoles(v)] : [])]);
   /** The slider bar: posts up into the blades' tongues, the fork for the lever's tip at its end. */
   const fdbSlider = (v: SetV) => {
     const z0 = g.layerZ0, z1 = g.layerTop, rodW = FDB.rodW;
@@ -1156,10 +1157,42 @@ export function switchGeometry(s: Scad, plan: SwitchPlan, extraCuts: Man[] = [])
   };
   /** The pins the blades turn on, standing on the bed. */
   // (each with a little snap lip over the plate, so the blade stays on: the plate's hole squeezes past it)
-  const fdbPins = (v: SetV) => s.union([...fdbBlades(v).flatMap((f) => [
-    T(s.cylinder(c + FDB.plateT + 0.8, FDB.pinD / 2, FDB.pinD / 2, 24), [f.pivot[0], f.pivot[1], bedTop - 0.01]),
-    T(s.cylinder(0.7, FDB.pinD / 2 + c + 0.15, FDB.pinD / 2, 24), [f.pivot[0], f.pivot[1], bedTop + c + FDB.plateT + 0.1]),
-  ]), ...(ocOn(v) ? ocPins(v) : [])]);
+  const fdbPins = (v: SetV) => s.union([...fdbBlades(v).flatMap((f) => holdOn
+    // (held down by a bracket: the pin plain, up through the bracket's top to locate it)
+    ? [T(s.cylinder(c + FDB.plateT + c + HOLD.t, FDB.pinD / 2, FDB.pinD / 2, 24), [f.pivot[0], f.pivot[1], bedTop - 0.01])]
+    : [T(s.cylinder(c + FDB.plateT + 0.8, FDB.pinD / 2, FDB.pinD / 2, 24), [f.pivot[0], f.pivot[1], bedTop - 0.01]),
+      T(s.cylinder(0.7, FDB.pinD / 2 + c + 0.15, FDB.pinD / 2, 24), [f.pivot[0], f.pivot[1], bedTop + c + FDB.plateT + 0.1])]), ...(ocOn(v) ? ocPins(v) : [])]);
+
+  // ---------- the blades held down by brackets (bladeHold 'bracket') ----------
+  // As the reference points have it: by each blade's pin a little bracket on
+  // the bed, its top over the plate round the pin (a clearance above it), on
+  // two feet beside the plate's disc (inward of its rail, and toward the heel),
+  // each pegged into a hole in the bed. The plate turns under it and can't
+  // lift off its pin. Printed upside down, its top on the bed: nothing hangs.
+  const HOLD = { t: 1.6, foot: 3.6, peg: 2.2, pegL: 1.6 };
+  /** A blade's bracket's plan: its top, its feet and their pegs' centres, in the set's frame. */
+  const holdPlan = (v: SetV, b: number) => {
+    const f = fdbBlades(v)[b], rt = bRt(v, b), o = bO(b);
+    const toRail = sub(f.pivot, railPoint(rt, sOf(rt, f.pivot), o)), n = unit(toRail), u = unit(sub(f.tip, f.pivot));
+    // (its top round the pin clear of the blade's rail on the plate, as the blade swings too)
+    const rTop = Math.min(FDB.discR + 1.5, norm(toRail) - HEAD_HW - c - 0.6);
+    const off = FDB.discR + c + 0.6 + HOLD.foot / 2;
+    const feet = [add(f.pivot, mul(n, off)) as Pt, add(f.pivot, mul(u, -off)) as Pt];
+    const sq2 = (q: Pt, w: number) => W.CrossSection.square([w, w], true).rotate((Math.atan2(u[1], u[0]) * 180) / Math.PI).translate(q as Vec2);
+    const top = W.CrossSection.hull([circle(rTop, 32, f.pivot), ...feet.map((q) => sq2(q, HOLD.foot))]);
+    return { f, feet, top, foot: (q: Pt) => sq2(q, HOLD.foot) };
+  };
+  /** A bracket as assembled: over its blade's plate, on its feet, pegs down into the bed; a hole for the pin. */
+  const holdPart = (v: SetV, b: number) => {
+    const h = holdPlan(v, b), z0 = bedTop + c + FDB.plateT + c, z1 = z0 + HOLD.t;
+    return s.difference(s.union([
+      T(s.extrude(h.top, HOLD.t), [0, 0, z0]),
+      ...h.feet.map((q) => T(s.extrude(h.foot(q), z0 - bedTop + 0.01), [0, 0, bedTop])),
+      ...h.feet.map((q) => T(s.cylinder(HOLD.pegL + 0.01, HOLD.peg / 2, HOLD.peg / 2, 20), [q[0], q[1], bedTop - HOLD.pegL])),
+    ]), [T(s.cylinder(z1 - bedTop + 2, FDB.pinD / 2 + c / 2, FDB.pinD / 2 + c / 2, 24), [h.f.pivot[0], h.f.pivot[1], bedTop - 1])]);
+  };
+  /** The holes in the bed the brackets' pegs go in (snug: 0.05 over). */
+  const holdHoles = (v: SetV) => s.union(fdbBlades(v).flatMap((_, b) => holdPlan(v, b).feet.map((q) => T(s.cylinder(HOLD.pegL + 0.3 + 0.01, HOLD.peg / 2 - 0.05 + 0.1, HOLD.peg / 2 - 0.05 + 0.1, 20), [q[0], q[1], bedTop - HOLD.pegL - 0.3]))));
 
   // ---------- Peco's over-centre spring (throwAction 'overcentre') ----------
   // Peco's turnouts hold their blades with a V spring between the base and
@@ -1627,6 +1660,9 @@ export function switchGeometry(s: Scad, plan: SwitchPlan, extraCuts: Man[] = [])
     pointsPart: (k = 0) => pointsPart(sets[k]),
     /** The points' parts: one, or one per blade (pointsPieces 2). */
     pointsParts: (k = 0) => (fdb ? [0, 1].map((b) => fdbBladePart(sets[k], b)) : units(sets[k]).map((u) => unitPart(sets[k], u))),
+    /** (bladeHold 'bracket') The brackets holding the blades down, as assembled; and one as printed (upside down, its top on the bed). */
+    holdParts: (k = 0) => (holdOn ? [0, 1].map((b) => holdPart(sets[k], b)) : []),
+    holdPrint: (m: Man) => { const r = R(m, [180, 0, 0]), bb = r.boundingBox(); return T(r, [-(bb.min[0] + bb.max[0]) / 2, -(bb.min[1] + bb.max[1]) / 2, -bb.min[2]]); },
     /** Each points part's pivot and swing (to turn it to the left-hand route). */
     pointsUnits: (k = 0) => units(sets[k]).map((u) => ({ pivot: u.pivot, swing: u.swing })),
     throwPart: (k = 0) => throwPart(sets[k]),

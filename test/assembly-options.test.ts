@@ -14,6 +14,9 @@ const cases: [string, Design][] = [
   ['crossover, over-centre spring and prototype blades', { ...crossover, options: { throwAction: 'overcentre', bladeStyle: 'prototype' } }],
   ['crossover, spring-back points on stands', { ...crossover, options: { throwAction: 'springback', throwStyle: 'stand' } }],
   ['left switch with everything, cut to a 128 bed', { ...TEMPLATES['Left switch (LEGO)'], options: { printBedX: 128, printBedY: 128, throwAction: 'springback', throwStyle: 'stand', bladeStyle: 'prototype' } }],
+  // (the blades held down by little brackets over their plates, pegged into the bed)
+  ['left switch, blades held by brackets', { ...TEMPLATES['Left switch (LEGO)'], options: { bladeHold: 'bracket' } }],
+  ['crossover on ballast, blades held by brackets', { ...crossover, options: { ballast: 'buddy', bladeHold: 'bracket' } }],
 ];
 
 assemblySuite(cases);

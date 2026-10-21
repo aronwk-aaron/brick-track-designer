@@ -270,7 +270,7 @@ export function buildDesign(w: Wasm, design: Design, report: (what: string, frac
     // (a floor under the moving parts only with the lid over them: otherwise they go in from below, through their pockets)
     ...(o.pointsModule === 'layers' && o.ballast !== 'none' && { mechFloor: 1.2 }), endSupports: o.endSupports !== false,
     throwModule: o.throwStyle === 'bracket', mechStyle: (o.mechStyle === 'tines' ? 'tines' : 'plates') as 'tines' | 'plates', // (anything else, an older name included: the default)
-    throwStand: o.throwStyle === 'stand', throwAction: o.throwAction ?? 'detent', bladeStyle: o.bladeStyle ?? 'simple' };
+    throwStand: o.throwStyle === 'stand', throwAction: o.throwAction ?? 'detent', bladeStyle: o.bladeStyle ?? 'simple', bladeHold: o.bladeHold ?? 'lip' };
 
   let pc = planPieces(routes, sol.splits, params, toeShift, throwEdit, true);
   steps = 2 + pc.switches.length + (pc.rest.length ? 1 : 0);
@@ -727,7 +727,7 @@ export function buildDesign(w: Wasm, design: Design, report: (what: string, frac
     const gm = cached(`sw:${JSON.stringify({ routes: sw.routes, sets: sw.sets, params, cl, tw: tw.groove })}`, () => {
       const g = switchGeometry(scad, sw.plan, frameCuts);
       return { bases: g.basePieces(), whole: g.base(), grips: g.grips, sets: sw.sets.map((_, k) => ({ thr: g.throwPart(k), thrPrint: g.throwPrint(k), pp: g.pointsParts(k), print: g.leverPrint(k), lever: g.leverPart(k), bracket: params.throwModule ? g.bracketPart(k) : undefined,
-        spring: g.springPart(k), springPrint: g.springPrint(k), turns: g.pointsTurns(k) })) };
+        spring: g.springPart(k), springPrint: g.springPrint(k), turns: g.pointsTurns(k), hold: g.holdParts(k).map((m) => ({ m, print: g.holdPrint(m) })) })) };
     });
     const bases = gm.bases;
     // (its tubes, for the plan's grip marks, in the design's frame)
@@ -741,12 +741,13 @@ export function buildDesign(w: Wasm, design: Design, report: (what: string, frac
       add(`${tag}-lid`, 0x6f7780, ls.deck, ls.deck);
     } else if (bp || !bases.every(fitsBed)) addTrack(`${tag}-base`, place(gm.whole, sw.pose), sw.covers.map(([ri, a, bb]) => subRoute(routes[ri], a, bb)));
     else bases.forEach((m, j) => add(bases.length > 1 ? `${tag}-base${j + 1}` : `${tag}-base`, 0x6f7780, m, place(m, sw.pose)));
-    gm.sets.forEach(({ thr, thrPrint, pp, print, lever, bracket, spring, springPrint, turns }, k) => {
+    gm.sets.forEach(({ thr, thrPrint, pp, print, lever, bracket, spring, springPrint, turns, hold }, k) => {
       const sfx = sw.sets.length > 1 ? `${k + 1}` : '';
       if (bracket) add(`${tag}-bracket${sfx}`, 0x8a8f99, bracket, place(bracket, sw.pose));
       const cz2 = Math.cos((sw.pose[2] * Math.PI) / 180), sz2 = Math.sin((sw.pose[2] * Math.PI) / 180);
       const turnOf = (j: number): Piece['turn'] => { const t2 = turns?.[j]; return t2 && { at: [sw.pose[0] + t2.at[0] * cz2 - t2.at[1] * sz2, sw.pose[1] + t2.at[0] * sz2 + t2.at[1] * cz2], by: t2.by, swing: t2.swing }; };
       pp.forEach((pts, j) => add(`${tag}-points${sfx}${pp.length > 1 ? (j === 0 ? '-a' : '-b') : ''}`, 0x4682b4, pts, place(pts, sw.pose), turnOf(j)));
+      for (const [j, h] of hold.entries()) add(`${tag}-points${sfx}-holddown-${j === 0 ? 'a' : 'b'}`, 0x4682b4, h.print, place(h.m, sw.pose));
       // (Peco's spring: printed flat and straight, as assembled squeezed between its pins)
       if (spring && springPrint) add(`${tag}-points${sfx}-spring`, 0xc0392b, springPrint, place(spring, sw.pose));
       add(`${tag}-throw${sfx}`, 0xe8892b, thrPrint, place(thr, sw.pose));

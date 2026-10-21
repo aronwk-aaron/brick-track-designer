@@ -263,7 +263,7 @@ scene.add(group);
 // What the 3D view shows (Track, Points, Throws, Levers buttons), remembered.
 const shown = new Set(['track', 'points', 'throw', 'lever', 'supports']);
 try { const v = localStorage.getItem('btd-shown'); if (v) { shown.clear(); for (const k of JSON.parse(v) as string[]) shown.add(k); } } catch { /* fine */ }
-const kindOf = (name: string) => (/lid/.test(name) ? 'cassette' : /bracket/.test(name) ? 'bracket' : /lever/.test(name) ? 'lever' : /throw/.test(name) ? 'throw' : /points/.test(name) ? 'points' : 'track');
+const kindOf = (name: string) => (/lid/.test(name) ? 'cassette' : /holddown/.test(name) ? 'hold' : /bracket/.test(name) ? 'bracket' : /lever/.test(name) ? 'lever' : /throw/.test(name) ? 'throw' : /points/.test(name) ? 'points' : 'track');
 let meshKinds: string[] = [];
 // Exploded view: each part pulled out from the middle (the moving parts lifted too), to see where they separate.
 let meshCentres: THREE.Vector3[] = [];
@@ -287,13 +287,13 @@ function applyExplode() {
     // or with the layered points from above under the lid)
     const fdb = design.options?.mechStyle !== 'tines';
     const fromTop = design.options?.pointsModule === 'layers' && (design.options?.ballast ?? 'none') !== 'none';
-    const lift: Record<string, number> = fdb ? { throw: 35, points: 70, cassette: 90, bracket: 50, lever: 110 }
+    const lift: Record<string, number> = fdb ? { throw: 35, points: 70, hold: 90, cassette: 90, bracket: 50, lever: 110 }
       : { throw: fromTop ? 15 : -30, points: fromTop ? 25 : -18, cassette: 45, bracket: 30, lever: 60 };
     m.position.set(off.x, off.y, e * (lift[meshKinds[k]] ?? 40));
   });
 }
 explodeEl.addEventListener('input', applyExplode);
-const showKind = (k: string) => (k === 'cassette' ? 'track' : k === 'bracket' ? 'lever' : k);
+const showKind = (k: string) => (k === 'cassette' ? 'track' : k === 'bracket' ? 'lever' : k === 'hold' ? 'points' : k);
 function applyShown() {
   redraw3d();
   meshes.forEach((m, k) => { m.visible = shown.has(showKind(meshKinds[k])); const sp = m.getObjectByName('supports'); if (sp) sp.visible = shown.has('supports'); });
@@ -705,6 +705,9 @@ const OPTION_FORM: OptSection[] = [
       get: () => String(design.pointsPieces ?? 1), set: (v) => { design.pointsPieces = Number(v) as 1 | 2; }, choices: [
         { v: '1', t: 'One part', tip: 'Both blades on one pivot' },
         { v: '2', t: 'Two parts, a blade each', tip: 'Each blade on its own pivot and spring' }] },
+    { key: 'bladeHold', label: 'Blades held on by', when: (c) => c.fdb, choices: [
+      { v: 'lip', t: 'A snap lip on each pin', tip: 'Each blade\'s plate snaps down over a lip on top of its pin. Nothing more to print; the plate\'s hole squeezes past the lip, and a printed lip can wear' },
+      { v: 'bracket', t: 'A little bracket over each blade', tip: 'By each blade\'s pin a small bracket on the track, its top over the plate round the pin, pegged into the bed: the plate turns under it and can\'t lift. Two more small parts to print (each upside down, flat); a little more height over the plate' }] },
     { key: 'bladeStyle', label: 'Blades', when: (c) => c.fdb, choices: [
       { v: 'simple', t: 'Simple', tip: 'Each blade is its route\'s rail, cut off along the stock rail it closes on' },
       { v: 'prototype', t: 'Like the real thing: planed, under the stock rail', tip: 'Each blade planed to a blunt point (as thin as prints well), tight against the stock rail and tucked in under its undercut head, so a wheel\'s flange can\'t catch it and the head holds it down; the tie bar (the slider) moved up to the points. Drawbacks: the blades go on swung open, then shut; the stock rail\'s head is thinner low down along the points; with the over-centre spring the tie bar stays further back' }] },
