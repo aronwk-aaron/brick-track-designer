@@ -36,7 +36,7 @@ describe('designs into pieces', { timeout: 60000 }, () => {
     const bases = b.pieces.filter((p) => /base/.test(p.name));
     expect(bases.length).toBeGreaterThan(1);
     for (const p of bases) {
-      // each piece's footprint (its STL, in the switch's frame) within the bed, one way round or the other
+      // each piece's footprint (its STL, lying on the bed) within the bed, one way round or the other
       const d = new DataView(p.stl.buffer, p.stl.byteOffset), n = d.getUint32(80, true);
       let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity;
       for (let t = 0; t < n; t++) for (let k = 0; k < 3; k++) {
@@ -45,6 +45,15 @@ describe('designs into pieces', { timeout: 60000 }, () => {
       }
       const w = x1 - x0, h = y1 - y0;
       expect((w <= 200 && h <= 200) || (w <= 200 && h <= 200), `${p.name}: ${w.toFixed(0)} x ${h.toFixed(0)}`).toBe(true);
+    }
+  });
+  it('every part\'s file lies on the bed (its lowest point at z 0), the blades too', async () => {
+    const b = buildDesign(await kernel(), TEMPLATES['Left switch (LEGO)']);
+    for (const p of b.pieces) {
+      const d = new DataView(p.stl.buffer, p.stl.byteOffset), n = d.getUint32(80, true);
+      let z0 = Infinity;
+      for (let t = 0; t < n; t++) for (let k = 0; k < 3; k++) z0 = Math.min(z0, d.getFloat32(84 + t * 50 + 20 + k * 12, true));
+      expect(Math.abs(z0), p.name).toBeLessThan(1e-4);
     }
   });
   it('a plain track longer than the print bed comes in equal lengths that fit it', async () => {
