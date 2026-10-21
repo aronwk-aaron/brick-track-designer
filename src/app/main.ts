@@ -222,6 +222,7 @@ function onBuilt(e: MessageEvent) {
   canvas.draw();
   pieces = d.pieces;
   showPieces(pieces);
+  showIssues(d.overlay.issues ?? []);
   renderTrackwork(d.overlay.items ?? []);
   refreshOptions(); refreshRoutes();
   const i = d.info;
@@ -310,6 +311,25 @@ document.querySelectorAll<HTMLButtonElement>('#views .show').forEach((b) => b.ad
   applyShown();
 }));
 applyShown();
+// What's wrong (the build's issues, where they are): red rings round them in the 3D view too, as on the plan, a
+// post up from each so it's seen over the track.
+const issueGroup = new THREE.Group();
+scene.add(issueGroup);
+function showIssues(list: { at: [number, number]; r: number }[]) {
+  for (const m of [...issueGroup.children]) { issueGroup.remove(m); const mm = m as THREE.Mesh; mm.geometry.dispose(); (mm.material as THREE.Material).dispose(); }
+  const top = meshes.length ? new THREE.Box3().setFromObject(group).max.z : 10;
+  for (const is of list) {
+    const r = Math.max(8, is.r), mat = () => new THREE.MeshBasicMaterial({ color: 0xe02828, transparent: true, opacity: 0.9, depthTest: false });
+    const ring = new THREE.Mesh(new THREE.TorusGeometry(r, Math.max(0.8, r / 60), 8, 64), mat());
+    ring.position.set(is.at[0], is.at[1], top + 1);
+    const post = new THREE.Mesh(new THREE.CylinderGeometry(0.8, 0.8, 30, 8), mat());
+    post.rotation.x = Math.PI / 2; post.position.set(is.at[0], is.at[1], top + 16);
+    const head = new THREE.Mesh(new THREE.SphereGeometry(3, 16, 12), mat());
+    head.position.set(is.at[0], is.at[1], top + 32);
+    for (const m of [ring, post, head]) { m.renderOrder = 10; issueGroup.add(m); }
+  }
+  redraw3d();
+}
 function showPieces(list: Piece[]) {
   for (const m of meshes) { group.remove(m); m.geometry.dispose(); (m.material as THREE.Material).dispose(); }
   meshes = list.map((p) => {
@@ -658,6 +678,9 @@ interface OptField {
 interface OptSection { title: string; switches?: boolean; fields: OptField[] }
 const OPTION_FORM: OptSection[] = [
   { title: 'Underside and ballast', fields: [
+    { key: 'curveStuds', label: 'Studs on the sleepers', choices: [
+      { v: 'grid', t: 'On the baseplate\'s grid', tip: 'Every stud on the baseplate\'s stud grid, wherever one is clear of the rails: on a curve they make a grid across it, not rows along it' },
+      { v: 'follow', t: 'Following the track (as the OpenSCAD curves)', tip: 'In rows along each track, on lines straight across it a stud apart, as LEGO\'s straight track has them: on a curve LEGO tiles fit across them. Drawback: on a curve they\'re off the baseplate\'s grid' }] },
     { key: 'ballast', label: 'Ballast', choices: [
       { v: 'none', t: 'None: track only', tip: 'The sleepers and rails on a thin bed, as LEGO track' },
       { v: 'ballast', t: 'Ballast', tip: 'The track on a ballast shoulder, as the OpenSCAD switches have it' },
