@@ -137,7 +137,7 @@ export function edgeGrip(s: Scad, t: Track, part: Man, gp: [number, number, numb
   const cs = [toG(bb.min[0], bb.min[1]), toG(bb.max[0], bb.min[1]), toG(bb.min[0], bb.max[1]), toG(bb.max[0], bb.max[1])];
   const i0 = Math.floor(Math.min(...cs.map((q) => q[0]))) - 1, i1 = Math.ceil(Math.max(...cs.map((q) => q[0]))) + 1;
   const j0 = Math.floor(Math.min(...cs.map((q) => q[1]))) - 1, j1 = Math.ceil(Math.max(...cs.map((q) => q[1]))) + 1;
-  const rings: CS[] = [];
+  const rings: CS[] = [], bores: CS[] = [];
   for (let i = i0; i <= i1; i++) for (let j = j0; j <= j1; j++) {
     const lx = i * STUD, ly = j * STUD, q: [number, number] = [gp[0] + lx * Math.cos(h) - ly * Math.sin(h), gp[1] + lx * Math.sin(h) + ly * Math.cos(h)];
     const ring = W.CrossSection.circle((TUBE_OD - ANTISTUD_FIT) / 2, 24).subtract(W.CrossSection.circle((TUBE_ID + ANTISTUD_FIT) / 2, 24)).translate(q);
@@ -147,7 +147,11 @@ export function edgeGrip(s: Scad, t: Track, part: Man, gp: [number, number, numb
     // (and where it's hollow: not in a pocket, nor on a tube or post already there)
     if (ring.intersect(mid).area() > 0.5) continue;
     rings.push(ring);
+    // (a thin post already there, inside where the tube goes: taken out, or it'd stand in the tube where the stud goes)
+    const bore = W.CrossSection.circle((TUBE_ID + ANTISTUD_FIT) / 2, 24).translate(q);
+    if (bore.intersect(mid).area() > 0.05) bores.push(bore);
   }
   const add = [rim.area() > 0.5 ? T(s.extrude(rim, cavH), [0, 0, bottom]) : undefined, rings.length ? T(s.extrude(W.CrossSection.union(rings), cavH), [0, 0, bottom]) : undefined].filter((m): m is Man => !!m);
-  return add.length ? s.union([part, ...add]) : part;
+  const out = add.length ? s.union([part, ...add]) : part;
+  return bores.length ? s.difference(out, [T(s.extrude(W.CrossSection.union(bores), cavH + 0.01), [0, 0, bottom - 0.01])]) : out;
 }
