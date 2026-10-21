@@ -198,7 +198,8 @@ export function cutPiece(s: Scad, t: Track, body: Man, routes: Route[], lines: C
     // (where the other cuts cross this one: its stretches between them join different parts)
     const breaks = lines.flatMap((L2) => { const cr = L.d[0] * L2.d[1] - L.d[1] * L2.d[0]; return L2 === L || Math.abs(cr) < 1e-9 ? [] : [((L2.p[0] - L.p[0]) * L2.d[1] - (L2.p[1] - L.p[1]) * L2.d[0]) / cr]; });
     const couplers = L.comb || kind === 'butt' ? [] : kind === 'axle'
-      ? spreadSpots(lo, hi, (u) => onBed(u) && axleOk(u), breaks, kit.couplerReach('axle')[0] + 1.5)
+      // (an axle anywhere there's solid all along it: in the ballast between tracks too, not only by a track)
+      ? spreadSpots(lo, hi, (u) => floorAt(s, strip, f.at(u, 2.5), 2.5) && floorAt(s, strip, f.at(u, -2.5), 2.5) && axleOk(u), breaks, kit.couplerReach('axle')[0] + 1.5)
       : pickSpots(lo, hi, (u) => onBed(u) && us.every((r) => Math.abs(u - r) >= 9));
     return { L, ...f, rails, couplers, kind: kit.kindOf(L.joint ?? joint, flatRails), tongues: kit.tongues(L.joint ?? joint, flatRails) };
   });
@@ -325,7 +326,8 @@ export function pathJoints(s: Scad, t: Track, body: Man, routes: Route[], runs: 
     // (axles as far apart as they'll go over the whole cut: the two furthest apart, then each next the furthest from those taken, while 64 mm clear)
     const cand: [number, number, [number, number]][] = [];
     fs.forEach((f, k) => {
-      const ok = (u: number) => clear(k, u, ra, rn0, rn1) && routes.some((rt) => Math.abs(routeLat(rt, f.at(u))) <= half - 5)
+      // (anywhere there's solid all along it: in the ballast between tracks too, not only by a track)
+      const ok = (u: number) => clear(k, u, ra, rn0, rn1)
         && floorAt(s, floor, f.at(u, 2.5), 2.5) && floorAt(s, floor, f.at(u, -2.5), 2.5) && filled(solid, k, u, ra + 1, rn0 + 1, rn1 + 1);
       for (let u = 0; u <= f.len + 1e-9; u += 1) if (ok(u)) cand.push([k, u, f.at(u)]);
     });
