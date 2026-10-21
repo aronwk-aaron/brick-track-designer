@@ -269,7 +269,7 @@ export function buildDesign(w: Wasm, design: Design, report: (what: string, frac
     generateBallast: o.ballast !== 'none', ballastBuddy: o.ballast === 'buddy', bottomStyle: o.bottomStyle,
     // (a floor under the moving parts only with the lid over them: otherwise they go in from below, through their pockets)
     ...(o.pointsModule === 'layers' && o.ballast !== 'none' && { mechFloor: 1.2 }), endSupports: o.endSupports !== false,
-    throwModule: o.throwStyle === 'bracket', mechStyle: o.mechStyle ?? 'plates',
+    throwModule: o.throwStyle === 'bracket', mechStyle: (o.mechStyle === 'tines' ? 'tines' : 'plates') as 'tines' | 'plates', // (anything else, an older name included: the default)
     throwStand: o.throwStyle === 'stand', throwAction: o.throwAction ?? 'detent', bladeStyle: o.bladeStyle ?? 'simple' };
 
   let pc = planPieces(routes, sol.splits, params, toeShift, throwEdit, true);
@@ -355,7 +355,8 @@ export function buildDesign(w: Wasm, design: Design, report: (what: string, frac
   const noTongue = (q: [number, number]) => zones.some((z) => q[0] >= z.box[0] && q[0] <= z.box[2] && q[1] >= z.box[1] && q[1] <= z.box[3]
     && Math.abs(routeLat(z.rt, q)) < G0 + 6 && ((sa) => sa >= z.s0 && sa <= z.s1)(routeSOf(z.rt, q)));
   /** Fits a part to the bed: its pieces that don't touch apart, and one too big split along stepped paths (pathsplit.ts), as often as it takes. */
-  const fitter = (pieceRoutes: typeof routes) => {
+  /** holes: the axle holes the cuts so far put in (cutter.ts), kept clear of: more are added as it goes. */
+  const fitter = (pieceRoutes: typeof routes, holes: Keep[] = []) => {
     // a part still too big: split along a stepped path on the stud grid that
     // goes only where a cut can be made (pathsplit.ts), as often as it takes
     // (pieces of track that don't touch are parts of their own; the small bits, the breakaway supports, stay with the biggest)
@@ -400,11 +401,12 @@ export function buildDesign(w: Wasm, design: Design, report: (what: string, frac
       // a big part on a small bed tries many paths, and everything they made, kept to the end, ran the kernel out of
       // memory (it aborts))
       const attempt = (f: () => ReturnType<typeof pathSplit>) => arena(w, () => { const g2 = f(); return g2 && good(g2.parts) ? { ...g2, parts: g2.parts.map((p2) => flat(w, p2)) } : undefined; }, (g2) => g2?.parts ?? []);
-      let got = win[0] <= win[1] ? attempt(() => pathSplit(scad, m, pieceRoutes, track.c.railOffset, pointsAvoid, axis, at, { join, window: win })) : undefined;
+      let got = win[0] <= win[1] ? attempt(() => pathSplit(scad, m, pieceRoutes, track.c.railOffset, [...pointsAvoid, ...holes], axis, at, { join, window: win })) : undefined;
       // (no way within it: anywhere near the middle, as before)
-      if (!got) got = attempt(() => pathSplit(scad, m, pieceRoutes, track.c.railOffset, pointsAvoid, axis, lo + ext / 2, { join }));
+      if (!got) got = attempt(() => pathSplit(scad, m, pieceRoutes, track.c.railOffset, [...pointsAvoid, ...holes], axis, lo + ext / 2, { join }));
       if (!got) return [m];
       for (const r of got.runs) if (r.d[axis] === 0) cutAt[axis].push(r.p[axis]);
+      holes.push(...got.holes);
       return got.parts.flatMap((p) => arena(w, () => fitAll(p, depth + 1), (r) => r));
     };
     return fitAll;
@@ -419,8 +421,9 @@ export function buildDesign(w: Wasm, design: Design, report: (what: string, frac
     const lj = (v: number) => (plan.edges?.has(v) ? { joint: 'axle' as const } : plan.combs?.has(v) ? { comb: true } : {});
     const lines: CutLine[] = [...plan.xs.map((x): CutLine => ({ p: [x, 0], d: [0, 1], ...lj(x) })), ...plan.ys.map((y): CutLine => ({ p: [0, y], d: [1, 0], ...lj(y) }))];
     steps++; progress(plan.why === 'bed' ? `Cutting ${name} to fit the print bed` : `Cutting ${name} at the baseplate edges`);
-    const cells = cached(`cut:${bp}:${o.joint}:${o.cutRails}:${JSON.stringify(lines)}:${JSON.stringify(pieceRoutes)}:${world.volume().toFixed(3)}`, () => arena(w, () => cutPiece(scad, track, world, pieceRoutes, lines, o.joint === 'ends' ? 'lego' : o.joint ?? 'lego', o.cutRails === 'flat', noTongue), (r) => r));
-    const fitAll = fitter(pieceRoutes);
+    const cut = cached(`cut:${bp}:${o.joint}:${o.cutRails}:${JSON.stringify(lines)}:${JSON.stringify(pieceRoutes)}:${world.volume().toFixed(3)}`, () => arena(w, () => { const holes: Keep[] = []; return { cells: cutPiece(scad, track, world, pieceRoutes, lines, o.joint === 'ends' ? 'lego' : o.joint ?? 'lego', o.cutRails === 'flat', noTongue, holes as [number, number, number][]), holes }; }, (r) => r.cells));
+    const cells = cut.cells;
+    const fitAll = fitter(pieceRoutes, [...cut.holes]);
     const all = cached(`fit:${o.printBedX}x${o.printBedY}:${bp}:${o.joint}:${o.cutRails}:${JSON.stringify(lines)}:${JSON.stringify(pieceRoutes)}:${world.volume().toFixed(3)}`, () => {
       // (and each part gripping along its cut edges too)
       const parts = cells.flatMap((m) => arena(w, () => fitAll(m), (r) => r)); // (each cell's leftovers freed as it goes)
@@ -608,7 +611,8 @@ export function buildDesign(w: Wasm, design: Design, report: (what: string, frac
       try { part = cached(tk, () => arena(w, () => {
         const grips: [number, number][] = [];
         const body = networkBody(scad, cr.routes, { crossings: [], grooves: [], splits: [], checkRails: cr.checks }, copt, tileSplits, grips, { cuts: tileCuts, innerEnds: tileInner, gridPose });
-        const got = cutPiece(scad, track, body, cr.routes, lines, o.joint === 'ends' ? 'lego' : o.joint ?? 'lego', o.cutRails === 'flat', noTongue).filter((m) => {
+        const holes: [number, number, number][] = [];
+        const got = cutPiece(scad, track, body, cr.routes, lines, o.joint === 'ends' ? 'lego' : o.joint ?? 'lego', o.cutRails === 'flat', noTongue, holes).filter((m) => {
           const bb = m.boundingBox(), cx = (bb.min[0] + bb.max[0]) / 2, cy = (bb.min[1] + bb.max[1]) / 2;
           return cx > R[0] && cx < R[2] && cy > R[1] && cy < R[3];
         });
@@ -616,7 +620,7 @@ export function buildDesign(w: Wasm, design: Design, report: (what: string, frac
         const bottom = body.boundingBox().min[2] + 0.02;
         // (and a part still too big, or in pieces that don't touch, fitted as addTrack's are: the straight cuts can't
         // always get round a curvy track without running along it)
-        const fit = fitter(cr.routes), parts = got.filter((m) => m.numTri() > 0).flatMap((m) => fit(m));
+        const fit = fitter(cr.routes, holes), parts = got.filter((m) => m.numTri() > 0).flatMap((m) => fit(m));
         return { ms: parts.map((m) => bake(edgeGrip(scad, track, m, gridPose, bottom))), grips: grips.filter((q) => q[0] > R[0] && q[0] <= R[2] && q[1] > R[1] && q[1] <= R[3]) };
       }, () => [])); } catch (err) {
         if (err instanceof WebAssembly.RuntimeError || typeof err === 'number') throw err; // (the kernel's broken now: no use carrying on)

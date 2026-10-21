@@ -4,7 +4,7 @@
 // track, and nothing may overlap the track once in.
 import { describe, expect, it } from 'vitest';
 import { kernel } from '../src/geom/kernel';
-import { buildDesign } from '../src/app/build';
+import { buildDesign, clearBuildCache } from '../src/app/build';
 import type { Design } from '../src/app/design';
 
 export const crossover: Design = { version: 1, gaugeStuds: 4, routes: [
@@ -28,6 +28,8 @@ describe('every switch can be put together', { timeout: 120000 }, () => {
   for (const [name, d] of cases)
     it(name, async () => {
       const w = await kernel();
+      // (each design's own build: a cache full of the ones before it ran the kernel's memory up until a later one crawled)
+      clearBuildCache();
       const b = buildDesign(w, { ...d, options: { printBedX: 2000, printBedY: 2000, ...d.options } });
       const man = (p: { positions: Float32Array }) => {
         const P = p.positions, mesh = new w.Mesh({ numProp: 3, vertProperties: new Float32Array(P), triVerts: new Uint32Array(P.length / 3).map((_, i) => i) });
@@ -37,7 +39,7 @@ describe('every switch can be put together', { timeout: 120000 }, () => {
       // (the lid goes on last: the parts go in without it, then it goes on from above over them)
       const track = w.Manifold.union(b.pieces.filter((p) => !/points|throw|lever|bracket|lid/.test(p.name)).map(man));
       const moving = b.pieces.filter((q) => /points|throw/.test(q.name)).map(man); // (the lever goes in after the lid)
-      const fromTop = d.options?.pointsModule === 'layers', bladesTop = (d.options?.mechStyle ?? 'plates') === 'plates';
+      const fromTop = d.options?.pointsModule === 'layers', bladesTop = d.options?.mechStyle !== 'tines';
       const problems: string[] = [];
       for (const p of b.pieces.filter((q) => /points|throw|lever|bracket/.test(q.name))) {
         // (each moving part one piece)

@@ -286,7 +286,7 @@ function applyExplode() {
     // (as they're put together, each lifted clear of the last: the plate-style slider down into its opening, then the
     // blades on it, the bracket on its studs, the lever into it; on tines, the slider and points from underneath,
     // or with the layered points from above under the lid)
-    const fdb = (design.options?.mechStyle ?? 'plates') === 'plates';
+    const fdb = design.options?.mechStyle !== 'tines';
     const fromTop = design.options?.pointsModule === 'layers' && (design.options?.ballast ?? 'none') !== 'none';
     const lift: Record<string, number> = fdb ? { throw: 35, points: 70, cassette: 90, bracket: 50, lever: 110 }
       : { throw: fromTop ? 15 : -30, points: fromTop ? 25 : -18, cassette: 45, bracket: 30, lever: 60 };
@@ -691,10 +691,10 @@ const OPTION_FORM: OptSection[] = [
   { title: 'Underside and ballast', fields: [
     { key: 'curveStuds', label: 'Studs on the sleepers', choices: [
       { v: 'grid', t: 'On the baseplate\'s grid', tip: 'Every stud on the baseplate\'s stud grid, wherever one is clear of the rails: on a curve they make a grid across it, not rows along it' },
-      { v: 'follow', t: 'Following the track (as the OpenSCAD curves)', tip: 'In rows along each track, on lines straight across it a stud apart, as LEGO\'s straight track has them: on a curve LEGO tiles fit across them. Drawback: on a curve they\'re off the baseplate\'s grid' }] },
+      { v: 'follow', t: 'Following the track', tip: 'In rows along each track, on lines straight across it a stud apart, as LEGO\'s straight track has them: on a curve LEGO tiles fit across them. Drawback: on a curve they\'re off the baseplate\'s grid' }] },
     { key: 'ballast', label: 'Ballast', choices: [
       { v: 'none', t: 'None: track only', tip: 'The sleepers and rails on a thin bed, as LEGO track' },
-      { v: 'ballast', t: 'Ballast', tip: 'The track on a ballast shoulder, as the OpenSCAD switches have it' },
+      { v: 'ballast', t: 'Ballast', tip: 'The track on a ballast shoulder' },
       { v: 'buddy', t: 'Ballast + buddy layer', tip: 'Ballast with a wider bottom layer under it' }] },
     { key: 'bottomStyle', label: 'Underside', when: (c) => c.ballast, choices: [
       { v: 'antistud', t: 'Anti-stud: grips the plate', tip: 'Hollow underneath with LEGO tubes, so it sits on the baseplate\'s studs' },
@@ -706,8 +706,8 @@ const OPTION_FORM: OptSection[] = [
   ] },
   { title: 'Switches: points', switches: true, fields: [
     { key: 'mechStyle', label: 'Mechanism', choices: [
-      { v: 'plates', t: 'Blades on top, on pins (plate-style)', tip: 'Each blade on its own plate on top of the bed, turning on a pin, with a spring tongue the slider bar\'s post sits in; everything goes in from above: the slider down through the lever\'s opening and along its tunnel, then the blades, then the lever' },
-      { v: 'tines', t: 'Under the bed, on spring tines (switch.scad)', tip: 'The points under the bed in pockets, on springy tines; they go in from below' }] },
+      { v: 'plates', t: 'Blades on top, on pins', tip: 'Each blade on its own plate on top of the bed, turning on a pin, with a spring tongue the slider bar\'s post sits in; everything goes in from above: the slider down through the lever\'s opening and along its tunnel, then the blades, then the lever' },
+      { v: 'tines', t: 'Under the bed, on spring tines', tip: 'The points under the bed in pockets, on springy tines; they go in from below' }] },
     { key: 'pointsPieces', label: 'Points printed as', when: (c) => !c.fdb,
       get: () => String(design.pointsPieces ?? 1), set: (v) => { design.pointsPieces = Number(v) as 1 | 2; }, choices: [
         { v: '1', t: 'One part', tip: 'Both blades on one pivot' },
@@ -728,12 +728,12 @@ const OPTION_FORM: OptSection[] = [
   { title: 'Switches: throw', switches: true, fields: [
     { key: 'throwStyle', label: 'Throw', choices: [
       { v: 'built-in', t: 'Lever built into the arm', tip: 'The lever\'s ears part of the track piece\'s arm' },
-      { v: 'bracket', t: 'Lever on its own bracket (plate-style)', tip: 'The lever on a separate 3 x 3 stud bracket that sits on studs on the arm, as plate-style throws are' },
-      { v: 'stand', t: 'Switch stand (ground throw)', tip: 'A handle beside the track on an eccentric, as Caboose Industries\' ground throws: swing it over to throw the points; at each end it rests on the arm just past dead centre, so the points can\'t push it back (locked). Drawbacks: a train trailing through against it is stopped (and derails) unless the points spring back; a three-way\'s middle position isn\'t locked',
-        no: (c) => (c.fdb ? undefined : 'plate-style points only') }] },
+      { v: 'bracket', t: 'Lever on its own bracket', tip: 'The lever on a separate 3 x 3 stud bracket that sits on studs on the arm' },
+      { v: 'stand', t: 'Switch stand (ground throw)', tip: 'A handle beside the track on an eccentric, as real ground throws: swing it over to throw the points; at each end it rests on the arm just past dead centre, so the points can\'t push it back (locked). Drawbacks: a train trailing through against it is stopped (and derails) unless the points spring back; a three-way\'s middle position isn\'t locked',
+        no: (c) => (c.fdb ? undefined : 'blades on top only') }] },
     { key: 'throwAction', label: 'Points held by', when: (c) => c.fdb, choices: [
       { v: 'detent', t: 'The lever\'s click', tip: 'The lever clicks into a dimple in its ear at each end. A train trailing through the wrong way pushes the points part way over and can derail' },
-      { v: 'overcentre', t: 'Over-centre spring (Peco)', tip: 'A printed spring between the bed and the slider pushes the points to whichever side they\'re past, as Peco\'s V spring does: a train trailing through pushes them over and they stay, the lever with them. Drawbacks: a PLA spring is light (about 0.3 N at the ends) and its force depends on how accurately it prints; not on three-ways or with a switch stand' },
+      { v: 'overcentre', t: 'Over-centre spring', tip: 'A printed spring between the bed and the slider pushes the points to whichever side they\'re past, as model railway points\' springs do: a train trailing through pushes them over and they stay, the lever with them. Drawbacks: a PLA spring is light (about 0.3 N at the ends) and its force depends on how accurately it prints; not on three-ways or with a switch stand' },
       { v: 'springback', t: 'Spring-back (spring switch)', tip: 'Each blade\'s tongue is a long spring: a train trailing through pushes the blades over and they spring back after it, the throw staying where it\'s set. Use the switch stand, which locks the throw (the lever\'s click won\'t hold it). Drawbacks: wider blade plates; the blades snap back between wheelsets (no dashpot, as the real thing has); a lighter hold on the closed blade' }] },
     { key: 'throwSide', label: 'Lever side', help: 'For every switch, unless its branch route says otherwise (on the route\'s card) or you\'ve dragged its lever across on the plan', choices: [
       { v: 'auto', t: 'Auto: away from the branch', tip: 'On the side of the route the branch leaves (a three-way: the right)' },
@@ -760,7 +760,7 @@ const OPTION_FORM: OptSection[] = [
       { v: 'dovetail', t: 'Rail tongues + dovetails', tip: 'Interlocking rail-end tongues, and dovetails through the bed: stronger, slides together from above' },
       { v: 'butt', t: 'Straight cuts (held by the baseplate)', tip: 'Plain straight cuts, nothing to join them: the baseplate under them holds them in line' },
       { v: 'axle', t: 'Rail tongues + LEGO axles', tip: 'A LEGO cross-axle hole across each cut, two studs deep each side, to pin the parts together with a 4-stud axle. Without ballast the track is too thin: there it falls back to peg and clip', no: (c) => (c.ballast ? undefined : 'needs ballast') },
-      { v: 'ends', t: 'Separate pieces, ordinary track ends (plate-style)', tip: 'Each track cut square to itself where it is clear of the others, with a standard end connector both sides: points, frogs and crossings stay whole, plain track in lengths that fit the bed' }] },
+      { v: 'ends', t: 'Separate pieces, ordinary track ends', tip: 'Each track cut square to itself where it is clear of the others, with a standard end connector both sides: points, frogs and crossings stay whole, plain track in lengths that fit the bed' }] },
     { key: 'cutRails', label: 'Rails where parts are cut', when: (c) => c.o.joint !== 'butt', choices: [
       { v: 'tongues', t: 'Interlocking tongues (LEGO)', tip: 'The rails at a cut get interlocking tongues, as LEGO track ends: they overhang, so they print with supports' },
       { v: 'flat', t: 'Cut flat', tip: 'The rails cut flat across: nothing overhangs, no supports to print; the bed joint and the baseplate hold the parts in line' }] },
@@ -787,7 +787,7 @@ function switchesNow() {
 function renderOptions() {
   const body = $('options-body'), scroll = $('options').scrollTop;
   const o = { ...OPTION_DEFAULTS, ...design.options } as PieceOptions;
-  const c: OptCtx = { o, ballast: o.ballast !== 'none', fdb: (o.mechStyle ?? 'plates') === 'plates', switches: switchesNow() };
+  const c: OptCtx = { o, ballast: o.ballast !== 'none', fdb: o.mechStyle !== 'tines', switches: switchesNow() };
   optSig = JSON.stringify([design.options, design.grip, design.pointsPieces, c.switches]);
   body.replaceChildren();
   const setOpt = (f: OptField, v: string | number | boolean) => {

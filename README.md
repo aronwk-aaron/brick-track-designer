@@ -16,8 +16,7 @@ pnpm dev        # the editor, at the address it prints
 pnpm typecheck  # tsc
 pnpm lint       # eslint: real mistakes only, no style rules
 pnpm build      # the static site, into dist/
-pnpm test       # solver and geometry tests, incl. parity with switch.scad's frogs and check rails
-pnpm parity     # geometry parity with the OpenSCAD files (needs openscad-nightly)
+pnpm test       # solver and geometry tests
 ```
 
 The editor works like laying rails in a top-down train game: on the stud

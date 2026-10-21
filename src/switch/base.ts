@@ -422,12 +422,12 @@ export function switchPlan(routes: Route[], specs: SetSpec[], p: BaseParams = BA
   // switch a network piece): the throw's actions, the stand and the prototype blades are built on the plate-style points
   const notes: string[] = [];
   if (p.mechStyle !== 'plates' && ((p.throwAction ?? 'detent') !== 'detent' || p.throwStand || (p.bladeStyle ?? 'simple') !== 'simple'))
-    notes.push("the over-centre spring, spring-back points, the switch stand and the prototype blades are only built with the plate-style points: left out");
+    notes.push("the over-centre spring, spring-back points, the switch stand and the prototype blades are only built with blades on top: left out");
   else if (p.mechStyle === 'plates') {
     if (p.throwAction === 'overcentre' && sets.some((v) => 'three' in v))
-      notes.push("a three-way's points have three positions: Peco's over-centre spring has two, so it's left out (they click on the lever instead)");
+      notes.push("a three-way's points have three positions: the over-centre spring has two, so it's left out (they click on the lever instead)");
     if (p.throwAction === 'overcentre' && p.throwStand)
-      notes.push("a switch stand locks the points at each end, so a train can't push them over: Peco's over-centre spring is left out");
+      notes.push("a switch stand locks the points at each end, so a train can't push them over: the over-centre spring is left out");
     if (p.throwAction === 'springback' && sets.some((v) => 'three' in v))
       notes.push("a three-way's blades go twice as far: spring-back tongues that gave that much wouldn't fit between them, so it has the ordinary tongues");
     else if (p.throwAction === 'springback' && !p.throwStand)
@@ -453,7 +453,7 @@ export function switchPlan(routes: Route[], specs: SetSpec[], p: BaseParams = BA
       v.fdb = fdbLayout(v, p, rails, springback);
       const why = v.fdb.find((f) => f.blocked)?.blocked;
       // (a network's piece says it in its own words, where the points are)
-      if (why && !foreign.length) warnings.push(`another route's rail runs between a set of plate-style points' stock rails (a tandem's first branch through its second points), and ${why}: move the second points further along, or use 'tines' points`);
+      if (why && !foreign.length) warnings.push(`another route's rail runs between a set of points' stock rails (a tandem's first branch through its second points), and ${why}: move the second points further along, or use 'tines' points`);
     });
   }
   return {
@@ -1583,7 +1583,8 @@ export function switchGeometry(s: Scad, plan: SwitchPlan, extraCuts: Man[] = [])
     type < 0 ? T(t.railSupport(3, 3.23 - z0), [-3.3, -3, z0]) : T(t.railSupport(4, 2.08 - z0), [-2.2, -3, z0]),
   ]);
   const cutRemovals = (yc: number) => s.union([
-    ...cutRails(yc).map((r) => atCut(cube([8, 8, 30], [-4, -4, -1]), r[0], yc, 1, r[1])),
+    // (down to the bottom: on ballast the tongue's breakaway support stands on the bed, clear of the other part's ballast)
+    ...cutRails(yc).map((r) => atCut(cube([8, 8, 30 - Math.min(0, pieceBottomZ)], [-4, -4, Math.min(-1, pieceBottomZ - 1)]), r[0], yc, 1, r[1])),
     ...couplerXs(yc).flatMap((x) => [atCut(couplerNotch(), x, yc, 1), atCut(couplerSocket(), x, yc, 1)]),
   ]);
   const cutJoint = (yc: number, side: number) => s.union([

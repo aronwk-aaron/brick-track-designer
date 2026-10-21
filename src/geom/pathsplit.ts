@@ -186,5 +186,5 @@ export function pathSplit(s: Scad, m: Man, routes: Route[], railG: number, avoid
   let a = s.intersection(body, region(0)), b = s.difference(body, [region(0.1)]);
   if (j?.add[0].length) a = tidy(s, s.union([a, ...j.add[0]]));
   if (j?.add[1].length) b = tidy(s, s.union([b, ...j.add[1]]));
-  return { parts: [a, b].filter((p) => p.volume() > 300), path, runs, couplers: j?.couplers ?? 0, tongues: j?.tongues ?? 0 };
+  return { parts: [a, b].filter((p) => p.volume() > 300), path, runs, couplers: j?.couplers ?? 0, tongues: j?.tongues ?? 0, holes: j?.holes ?? [] };
 }

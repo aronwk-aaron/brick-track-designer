@@ -44,7 +44,7 @@ export interface CanvasHost {
 const MM = 8; // mm per stud
 
 /** Can a lever be moved along the points (its spring tines longer or shorter)? Only on tines: the plate-style lever is level with the slider bar. */
-export const leverSlides = (d: Design) => (d.options?.mechStyle ?? 'plates') === 'tines';
+export const leverSlides = (d: Design) => d.options?.mechStyle === 'tines';
 
 /** Which way round a lever is, and what set it: dragged across by hand, the branch route's own setting, the Piece options', or auto (away from the branch). */
 export interface LeverSide { side: 'left' | 'right'; by: 'hand' | 'route' | 'options' | 'auto'; main?: string; branch?: string; why: string }
