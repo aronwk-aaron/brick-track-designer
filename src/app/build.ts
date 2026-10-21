@@ -373,7 +373,7 @@ export function buildDesign(w: Wasm, design: Design, report: (what: string, frac
   const bake = (m: Man) => {
     const wm = m.getMesh(), positions = new Float32Array(wm.triVerts.length * 3);
     wm.triVerts.forEach((v, i) => positions.set(wm.vertProperties.subarray(v * wm.numProp, v * wm.numProp + 3), i * 3));
-    return { positions, stl: stlBytes(wm), volume: m.volume(), fits: fitsBed(m) };
+    return { positions, stl: stlBytes(wm, true), volume: m.volume(), fits: fitsBed(m) };
   };
   // ---- (prototype) layered: the piece in two layers stacked from the top ----
   // The lower layer (the ballast's bottom, with the pockets the moving parts
@@ -437,7 +437,8 @@ export function buildDesign(w: Wasm, design: Design, report: (what: string, frac
     const wm = world.getMesh(), positions = new Float32Array(wm.triVerts.length * 3);
     wm.triVerts.forEach((v, i) => positions.set(wm.vertProperties.subarray(v * wm.numProp, v * wm.numProp + 3), i * 3));
     let stl = stlOf.get(local);
-    if (!stl) { stl = stlBytes(local.getMesh()); stlOf.set(local, stl); }
+    // (each file lying on the bed: a part modelled where it sits in the track (the blades on the bed's top, say) came in floating)
+    if (!stl) { stl = stlBytes(local.getMesh(), true); stlOf.set(local, stl); }
     pieces.push({ name, color, positions, stl: stl.slice(), ...(turn && { turn }) });
     volume += local.volume();
   };
