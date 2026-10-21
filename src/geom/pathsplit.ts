@@ -8,7 +8,7 @@
 // few turns as it can. Each straight run of it is joined as a straight cut
 // would be (cutter.ts pathJoints).
 import { T, type Man, type Scad } from './scad';
-import type { Track } from './track';
+import { PLATE_H, type Track } from './track';
 import { jointKit, pathJoints, tidy, type Joint, type Run } from './cutter';
 import type { Route } from '../route/route';
 import { routeLength, routePose } from '../route/route';
@@ -70,6 +70,18 @@ export function pathSplit(s: Scad, m: Man, routes: Route[], railG: number, avoid
   // (joined with axles: where the bed's thick enough for one across the cut (solid at the axle's height), so the
   // cut keeps to it where it can and the parts get their axles; where only the ballast's thin outer step is, none fit)
   const kit = join ? jointKit(s, join.t, bb.min[2]) : undefined;
+  // (the joints already in it, an earlier cut's axle holes and peg sockets: no cut through one. Holes in its
+  // section at the axles' height and at the bed's, small ones (not the hollow underneath), kept a few mm clear of)
+  const area = (pl: [number, number][]) => pl.reduce((t, q, k) => { const r2 = pl[(k + 1) % pl.length]; return t + q[0] * r2[1] - r2[0] * q[1]; }, 0) / 2;
+  const holes: Keep[] = [];
+  for (const z of [(bb.min[2] + 2 + PLATE_H) / 2, 1.0]) { // (the axles' height: as jointKit's, studs 1.8 high)
+    for (const pl of m.slice(z).toPolygons() as [number, number][][]) {
+      const a = area(pl);
+      if (a >= 0 || -a > 400) continue; // (an outline, or the hollow)
+      const xs = pl.map((q) => q[0]), ys = pl.map((q) => q[1]), cx = (Math.min(...xs) + Math.max(...xs)) / 2, cy = (Math.min(...ys) + Math.max(...ys)) / 2;
+      holes.push([cx, cy, Math.hypot(Math.max(...xs) - Math.min(...xs), Math.max(...ys) - Math.min(...ys)) / 2 + 3]);
+    }
+  }
   const thick = new Uint8Array(nx * ny);
   const axles = !!kit && kit.kindOf(join!.joint, join!.flatRails) === 'axle';
   if (axles) {
@@ -92,7 +104,7 @@ export function pathSplit(s: Scad, m: Man, routes: Route[], railG: number, avoid
     const cellOff = (k: number) => cellAt([mid[0] + k * nrm[0], mid[1] + k * nrm[1]]);
     if (!cellOff(1) && !cellOff(-1)) return 0.05 + bias;
     // (the whole edge clear of each keep-out, not just its middle)
-    if (avoid.some((q) => segDist([q[0], q[1]], a, b) < (q[2] ?? 22))) return Infinity;
+    if (avoid.some((q) => segDist([q[0], q[1]], a, b) < (q[2] ?? 22)) || holes.some((q) => segDist([q[0], q[1]], a, b) < q[2]!)) return Infinity;
     for (const r of rails) {
       if (Math.abs(r.p[0] - mid[0]) > 14 || Math.abs(r.p[1] - mid[1]) > 14) continue;
       // (a rail running along the edge, near it: no)

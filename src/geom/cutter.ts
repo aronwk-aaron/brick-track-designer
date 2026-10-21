@@ -201,7 +201,10 @@ export function cutPiece(s: Scad, t: Track, body: Man, routes: Route[], lines: C
     const us = rails.map((r) => r[0]), lo = L.span ? L.span[0] : Math.min(...us, ...ends) - 1, hi = L.span ? L.span[1] : Math.max(...us, ...ends) + 1;
     // (no couplers on a comb; a flat cut's are axle holes, nothing sticking out, where the bed's thick enough for one)
     const kind = kit.kindOf(L.joint ?? joint, flatRails);
-    const W2 = kit.axleWall, axleOk = (u: number) => { const [a, n0, n1] = kit.couplerReach('axle'), b = s.polygon([f.at(u - a - W2, -n0 - W2), f.at(u + a + W2, -n0 - W2), f.at(u + a + W2, n1 + W2), f.at(u - a - W2, n1 + W2)]); return axleSls!.every((sl) => b.intersect(sl).area() > b.area() * 0.99); };
+    const W2 = kit.axleWall, axleOk = (u: number) => { const [a, n0, n1] = kit.couplerReach('axle'), b = s.polygon([f.at(u - a - W2, -n0 - W2), f.at(u + a + W2, -n0 - W2), f.at(u + a + W2, n1 + W2), f.at(u - a - W2, n1 + W2)]); if (!axleSls!.every((sl) => b.intersect(sl).area() > b.area() * 0.99)) return false;
+      // (and the axle (across this cut, n0 to n1 either side) clear of every other cut, parallel ones too: none cutting through it)
+      const e0 = f.at(u, -n0 - W2), e1 = f.at(u, n1 + W2), sd = (L2: CutLine, q: [number, number]) => (q[0] - L2.p[0]) * -L2.d[1] + (q[1] - L2.p[1]) * L2.d[0];
+      return lines.every((L2) => L2 === L || (Math.sign(sd(L2, e0)) === Math.sign(sd(L2, e1)) && Math.min(Math.abs(sd(L2, e0)), Math.abs(sd(L2, e1))) > a + W2)); };
     // (where the other cuts cross this one: its stretches between them join different parts; an axle kept its
     // length and a bit clear of them, or it'd run into the axles across the other cut (and out of its face))
     const breaks = lines.flatMap((L2) => { const cr = L.d[0] * L2.d[1] - L.d[1] * L2.d[0]; return L2 === L || Math.abs(cr) < 1e-9 ? [] : [((L2.p[0] - L.p[0]) * L2.d[1] - (L2.p[1] - L.p[1]) * L2.d[0]) / cr]; });
