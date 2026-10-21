@@ -197,11 +197,12 @@ export function cutPiece(s: Scad, t: Track, body: Man, routes: Route[], lines: C
     // (no couplers on a comb; a flat cut's are axle holes, nothing sticking out, where the bed's thick enough for one)
     const kind = kit.kindOf(L.joint ?? joint, flatRails);
     const axleOk = (u: number) => { const [a, n0, n1] = kit.couplerReach('axle'), b = s.polygon([f.at(u - a - 1, -n0 - 1), f.at(u + a + 1, -n0 - 1), f.at(u + a + 1, n1 + 1), f.at(u - a - 1, n1 + 1)]); return b.intersect(axleSl!).area() > b.area() * 0.99; };
-    // (where the other cuts cross this one: its stretches between them join different parts)
+    // (where the other cuts cross this one: its stretches between them join different parts; an axle kept its
+    // length and a bit clear of them, or it'd run into the axles across the other cut (and out of its face))
     const breaks = lines.flatMap((L2) => { const cr = L.d[0] * L2.d[1] - L.d[1] * L2.d[0]; return L2 === L || Math.abs(cr) < 1e-9 ? [] : [((L2.p[0] - L.p[0]) * L2.d[1] - (L2.p[1] - L.p[1]) * L2.d[0]) / cr]; });
     const couplers = L.comb || kind === 'butt' ? [] : kind === 'axle'
       // (an axle anywhere there's solid all along it: in the ballast between tracks too, not only by a track)
-      ? spreadSpots(lo, hi, (u) => floorAt(s, strip, f.at(u, 2.5), 2.5) && floorAt(s, strip, f.at(u, -2.5), 2.5) && axleOk(u), breaks, kit.couplerReach('axle')[0] + 1.5)
+      ? spreadSpots(lo, hi, (u) => floorAt(s, strip, f.at(u, 2.5), 2.5) && floorAt(s, strip, f.at(u, -2.5), 2.5) && axleOk(u), breaks, kit.couplerReach('axle')[0] + kit.couplerReach('axle')[1] + 2)
       : pickSpots(lo, hi, (u) => onBed(u) && us.every((r) => Math.abs(u - r) >= 9));
     return { L, ...f, rails, couplers, kind: kit.kindOf(L.joint ?? joint, flatRails), tongues: kit.tongues(L.joint ?? joint, flatRails) };
   });
