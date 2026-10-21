@@ -10,7 +10,7 @@ self.onmessage = async (e: MessageEvent<{ id: number; design: Design }>) => {
   try {
     const { overlay, pieces, info } = buildDesign(await kernel(wasmUrl), design, (progress, frac) => (self as unknown as Worker).postMessage({ id, progress, frac }),
       (early) => (self as unknown as Worker).postMessage({ id, early }));
-    (self as unknown as Worker).postMessage({ id, overlay, pieces, info }, pieces.flatMap((p) => [p.positions.buffer, p.stl.buffer]));
+    (self as unknown as Worker).postMessage({ id, overlay, pieces, info }, pieces.flatMap((p) => [p.positions.buffer, p.stl.buffer, ...(p.supports ? [p.supports.buffer] : [])]));
   } catch (err) {
     // (a crash inside the kernel leaves it broken for every build after: the page starts a new worker)
     const fatal = err instanceof WebAssembly.RuntimeError || typeof err === 'number';

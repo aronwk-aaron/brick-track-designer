@@ -37,6 +37,8 @@ export interface TrackworkItem {
 /** A built piece: its mesh in the design (for the view) and its STL (in its own frame, to print). */
 export interface Piece {
   name: string; color: number; positions: Float32Array; stl: Uint8Array;
+  /** its breakaway print supports (the small loose bits printed with it), apart, for the view to show or hide */
+  supports?: Float32Array;
   /** (the plate-style blades) the pin it turns on, as assembled, and how far to turn it there to open it (degrees): it goes on open */
   turn?: { at: [number, number]; by: number; swing?: number };
 }
@@ -52,6 +54,12 @@ function cached<T>(key: string, f: () => T): T {
   return v;
 }
 const stlOf = new WeakMap<Man, Uint8Array>();
+/** A solid's triangles, as positions for the view; its small loose bits (the breakaway print supports) apart. */
+function meshPositions(m: Man) {
+  const wm = m.getMesh(), out = new Float32Array(wm.triVerts.length * 3);
+  wm.triVerts.forEach((v, i) => out.set(wm.vertProperties.subarray(v * wm.numProp, v * wm.numProp + 3), i * 3));
+  return out;
+}
 /** Forget the pieces built before (tests: each design's solids let go after it, arena() in kernel.ts, and nothing kept that points at them). */
 export function clearBuildCache() { memo.clear(); }
 
@@ -249,6 +257,14 @@ export function buildDesign(w: Wasm, design: Design, report: (what: string, frac
   };
   // Pieces: a switch wherever routes split, the rest as fixed trackwork.
   const scad = new Scad(w), pieces: Piece[] = [];
+  /** A part for the view: its triangles, and its breakaway supports' apart (loose bits under 200 mm3), to show or hide. */
+  const viewOf = (m: Man): { positions: Float32Array; supports?: Float32Array } => {
+    const bits = flat(w, m).decompose();
+    if (bits.length <= 1) return { positions: meshPositions(m) };
+    const join = (ms: Man[]) => { const ps = ms.map(meshPositions), out = new Float32Array(ps.reduce((t, p) => t + p.length, 0)); let o2 = 0; for (const p of ps) { out.set(p, o2); o2 += p.length; } return out; };
+    const small = bits.filter((b) => b.volume() < 200);
+    return small.length ? { positions: join(bits.filter((b) => b.volume() >= 200)), supports: join(small) } : { positions: meshPositions(m) };
+  };
   const params = { ...BASE_DEFAULTS, ...o, gaugeStuds: design.gaugeStuds, studGrip: design.grip ?? 'edges', pointsPieces: design.pointsPieces ?? 1,
     generateBallast: o.ballast !== 'none', ballastBuddy: o.ballast === 'buddy', bottomStyle: o.bottomStyle,
     // (a floor under the moving parts only with the lid over them: otherwise they go in from below, through their pockets)
@@ -418,9 +434,8 @@ export function buildDesign(w: Wasm, design: Design, report: (what: string, frac
   };
   /** A part as plain data (its mesh for the view, its STL, its volume, whether it fits the bed), so its solid can be let go. */
   const bake = (m: Man) => {
-    const wm = m.getMesh(), positions = new Float32Array(wm.triVerts.length * 3);
-    wm.triVerts.forEach((v, i) => positions.set(wm.vertProperties.subarray(v * wm.numProp, v * wm.numProp + 3), i * 3));
-    return { positions, stl: stlBytes(wm, true), volume: m.volume(), fits: fitsBed(m), box: m.boundingBox() };
+    const { positions, supports } = viewOf(m);
+    return { positions, supports, stl: stlBytes(m.getMesh(), true), volume: m.volume(), fits: fitsBed(m), box: m.boundingBox() };
   };
   // ---- (prototype) layered: the piece in two layers stacked from the top ----
   // The lower layer (the ballast's bottom, with the pockets the moving parts
@@ -480,13 +495,11 @@ export function buildDesign(w: Wasm, design: Design, report: (what: string, frac
     return { lower, deck };
   };
   const add = (name: string, color: number, local: Man, world: Man, turn?: Piece['turn']) => {
-    // (a part that comes apart into loose bits is no good to print: say so)
-    const wm = world.getMesh(), positions = new Float32Array(wm.triVerts.length * 3);
-    wm.triVerts.forEach((v, i) => positions.set(wm.vertProperties.subarray(v * wm.numProp, v * wm.numProp + 3), i * 3));
+    const { positions, supports } = viewOf(world);
     let stl = stlOf.get(local);
     // (each file lying on the bed: a part modelled where it sits in the track (the blades on the bed's top, say) came in floating)
     if (!stl) { stl = stlBytes(local.getMesh(), true); stlOf.set(local, stl); }
-    pieces.push({ name, color, positions, stl: stl.slice(), ...(turn && { turn }) });
+    pieces.push({ name, color, positions, stl: stl.slice(), ...(supports && { supports }), ...(turn && { turn }) });
     volume += local.volume();
   };
   // A big piece in tiles (src/app/tiles.ts): each cell of the cuts built
@@ -550,7 +563,7 @@ export function buildDesign(w: Wasm, design: Design, report: (what: string, frac
       }
       overlay.grips.push(...part.grips);
       for (const b2 of part.ms) {
-        pieces.push({ name: `${name}${++n}`, color: 0x6f7780, positions: b2.positions.slice(), stl: b2.stl.slice() }); volume += b2.volume;
+        pieces.push({ name: `${name}${++n}`, color: 0x6f7780, positions: b2.positions.slice(), stl: b2.stl.slice(), ...(b2.supports && { supports: b2.supports.slice() }) }); volume += b2.volume;
         if (!b2.fits) bedWarnings.add(`some sections don't fit the ${o.printBedX} x ${o.printBedY} print bed: there's nowhere to cut them with ordinary track ends (points, frogs and crossings stay whole)`);
       }
     });
@@ -613,7 +626,7 @@ export function buildDesign(w: Wasm, design: Design, report: (what: string, frac
       overlay.grips.push(...part.grips);
       out.push(...part.ms);
     });
-    for (const b2 of out) { pieces.push({ name: out.length > 1 ? `${name}${++n}` : name, color: 0x6f7780, positions: b2.positions.slice(), stl: b2.stl.slice() }); volume += b2.volume; }
+    for (const b2 of out) { pieces.push({ name: out.length > 1 ? `${name}${++n}` : name, color: 0x6f7780, positions: b2.positions.slice(), stl: b2.stl.slice(), ...(b2.supports && { supports: b2.supports.slice() }) }); volume += b2.volume; }
     for (const b2 of out) if (!b2.fits) bedIssue(b2.box);
     if (out.some((b2) => !b2.fits)) bedWarnings.add(plan.why === 'bed'
       ? `some parts don't fit the ${o.printBedX} x ${o.printBedY} print bed without cutting along the track (it isn't)`
