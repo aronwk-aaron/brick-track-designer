@@ -21,6 +21,8 @@ const LOCAL_LEN = 400; // (how much of each route the points' frame looks at)
 
 /** One split's points, in the design's frame: what it adds to and cuts from the piece, and its moving parts. */
 export interface SplitParts {
+  /** all it's made from (the routes near it, its set, the parameters), as a key for what's built from it */
+  key: string;
   toe: [number, number];
   /** the points' frame (at the split, heading the way the routes part), and its set's values in it (where the lever is) */
   frame: Pose; set: SwitchPlan['sets'][number];
@@ -138,11 +140,11 @@ export function networkSplits(s: Scad, routes: Route[], sol: Solution, p: BasePa
     const spec = (o: typeof over): SetSpec => (three ? [0, 2, 2 + toeShift([P[0], P[1]]), tside, 1, o] : [0, 1, 2 + toeShift([P[0], P[1]]), tside, undefined, o]);
     // (the other track near the points, in their frame; with two branches one side not built as a three-way, the other branch too)
     const foreign = [...nearby(gr), ...(C && !three ? [j2] : [])].map((r) => ({ ...routes[r], start: toFrame(P, routes[r].start) }));
-    let plan = switchPlan(rts, [spec(over)], p, 1, foreign);
+    let used = spec(over), plan = switchPlan(rts, [used], p, 1, foreign);
     // (the lever on a stud of the design's grid, unless moved by hand)
     if (gridLevers && !(ed?.leverOffset !== undefined && ed?.springLength !== undefined)) {
       const g2 = gridLever(P, plan.sets[0], ed ?? {});
-      if (g2.leverOffset !== undefined) plan = switchPlan(rts, [spec(g2)], p, 1, foreign);
+      if (g2.leverOffset !== undefined) { used = spec(g2); plan = switchPlan(rts, [used], p, 1, foreign); }
     }
     throughWarnings(gr, !!plan.sets[0].fdb?.some((f) => f.blocked));
     warnings.push(...plan.warnings.filter((w) => !/print bed/.test(w)), ...plan.notes.filter((w) => !warnings.includes(w)));
@@ -165,6 +167,7 @@ export function networkSplits(s: Scad, routes: Route[], sol: Solution, p: BasePa
     if (p.throwModule) { const br = gm.bracketPart(0); moving.push({ name: `${tag}-bracket`, color: 0x8a8f99, local: br, world: place(br, P) }); }
     const end = sp.merge ? 'end' : 'start';
     built.push({
+      key: JSON.stringify({ rts, used, p, P, routes: [i, j, j2], end, n, of: groups.length }),
       toe: [P[0], P[1]], frame: P, set: plan.sets[0], src: gr.main,
       adds: [place(mech.bed, P), place(mech.arm, P)], cuts: [place(mech.pockets, P), place(mech.channel, P)],
       stock: place(mech.stockCut, P),

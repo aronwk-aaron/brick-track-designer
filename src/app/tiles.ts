@@ -182,10 +182,11 @@ export function planCuts(b: Rect, bedX: number, bedY: number, bp: number, ox: nu
  */
 export function blocks(plan: CutPlan, b: Rect, size: number, far = 1000): Rect[] {
   const group = (cuts: number[], lo: number, hi: number) => {
-    const xs = [...cuts].sort((p, q) => p - q), out = [lo - far];
+    // (the outer edges far off, on a whole multiple of far: so a layout a little bigger (a lever moved out) leaves its blocks as they were)
+    const xs = [...cuts].sort((p, q) => p - q), out = [Math.floor(lo / far - 1) * far];
     let start = lo;
     xs.forEach((x, k) => { const next = k + 1 < xs.length ? xs[k + 1] : hi; if (next - start > size) { out.push(x); start = x; } });
-    return [...out, hi + far];
+    return [...out, Math.ceil(hi / far + 1) * far];
   };
   const X = group(plan.xs, b[0], b[2]), Y = group(plan.ys, b[1], b[3]), out: Rect[] = [];
   for (let j = 0; j + 1 < Y.length; j++) for (let i = 0; i + 1 < X.length; i++) out.push([X[i], Y[j], X[i + 1], Y[j + 1]]);

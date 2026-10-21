@@ -57,3 +57,27 @@ export const T = (m: Man, v: Vec3) => m.translate(v);
 export const R = (m: Man, v: Vec3) => m.rotate(v);
 /** mirror(normal) */
 export const M = (m: Man, n: Vec3) => m.mirror(n);
+
+/**
+ * A cross-section cut down to the square round each spot it's asked about
+ * (on a grid of squares `cell` mm across, each grown by pad): for testing many
+ * small shapes, none reaching more than pad from the spot asked, against a
+ * big outline. The same answers as the whole outline gives (a shape inside
+ * the square meets only what's in it), but each boolean with a few edges, not
+ * all of them: once per stud of a big part, with the whole outline, it was
+ * most of the part's build.
+ */
+export function clipNear(w: Wasm, cs: CS, pad: number, cell = 32): (q: Vec2) => CS {
+  const got = new Map<string, CS>(), b = cs.bounds();
+  return (q) => {
+    const i = Math.floor(q[0] / cell), j = Math.floor(q[1] / cell), k = `${i},${j}`;
+    let c = got.get(k);
+    if (!c) {
+      const x0 = i * cell - pad, y0 = j * cell - pad, x1 = (i + 1) * cell + pad, y1 = (j + 1) * cell + pad;
+      // (all of it inside the square: as it is)
+      c = b.min[0] >= x0 && b.max[0] <= x1 && b.min[1] >= y0 && b.max[1] <= y1 ? cs : w.CrossSection.square([x1 - x0, y1 - y0]).translate([x0, y0]).intersect(cs);
+      got.set(k, c);
+    }
+    return c;
+  };
+}

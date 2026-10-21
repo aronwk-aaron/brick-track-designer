@@ -5,7 +5,7 @@
 // and C-clips (switch.scad's base splitting, for any line and any piece).
 // The joints (jointKit, railCrossings, pickSpots) are shared with the stepped
 // cuts along the stud grid (pathsplit.ts, via pathJoints).
-import { M, R, T, type CS, type Man, type Scad } from './scad';
+import { clipNear, M, R, T, type CS, type Man, type Scad } from './scad';
 import { arena, flat } from './kernel';
 import { PLATE_H, type Track } from './track';
 import type { Route } from '../route/route';
@@ -193,10 +193,11 @@ export function cutPiece(s: Scad, t: Track, body: Man, routes: Route[], lines: C
     // (on the bed, and with floor all round the peg on both sides of the cut)
     // (the floor near the line only: testing spots against the whole piece's
     // floor took minutes on a big layout)
-    const strip = floor.intersect(band);
+    // (and each spot against the strip near it only: clipNear)
+    const strip = floor.intersect(band), nearStrip = clipNear(s.w, strip, 4);
     const onBed = (u: number) => {
-      const q = f.at(u);
-      return routes.some((rt) => Math.abs(routeLat(rt, q)) <= half - 5) && floorAt(s, strip, f.at(u, 2.5), 2.5) && floorAt(s, strip, f.at(u, -2.5), 2.5);
+      const q = f.at(u), a = f.at(u, 2.5), b = f.at(u, -2.5);
+      return routes.some((rt) => Math.abs(routeLat(rt, q)) <= half - 5) && floorAt(s, nearStrip(a), a, 2.5) && floorAt(s, nearStrip(b), b, 2.5);
     };
     // (along the whole of the piece the line crosses: by the rails crossing it missed a cut that runs along between tracks, crossing none)
     const ends = [[fb.min[0], fb.min[1]], [fb.max[0], fb.min[1]], [fb.min[0], fb.max[1]], [fb.max[0], fb.max[1]]].map(([x, y]) => (x - L.p[0]) * L.d[0] + (y - L.p[1]) * L.d[1]);
@@ -231,9 +232,20 @@ export function cutPiece(s: Scad, t: Track, body: Man, routes: Route[], lines: C
   // (each cut's leftovers, and the parts before it, let go as it goes, each part a solid of its own (kernel.ts flat):
   // on a small bed a big piece has many cuts, and every stage of it kept to the end ran the kernel out of memory)
   let parts: Man[] = [cutBody];
+  // (a part wholly to one side of a line (its box clear of it, and of a comb's fingers) is left as it is: splitting
+  // it there gave it back whole, at the cost of a boolean and a copy of the whole part, for every line)
+  const boxes = new Map<Man, { min: number[]; max: number[] }>();
+  const across = (f: typeof frames[number], m: Man) => {
+    let bb = boxes.get(m);
+    if (!bb) { bb = m.boundingBox(); boxes.set(m, bb); }
+    const reach = f.L.comb ? 8.2 : 0.01, c = f.n[0] * f.L.p[0] + f.n[1] * f.L.p[1];
+    let lo = Infinity, hi = -Infinity;
+    for (const x of [bb.min[0], bb.max[0]]) for (const y of [bb.min[1], bb.max[1]]) { const v = f.n[0] * x + f.n[1] * y - c; lo = Math.min(lo, v); hi = Math.max(hi, v); }
+    return lo < reach && hi > -reach;
+  };
   for (const f of frames) {
     const prev = parts;
-    parts = arena(s.w, () => prev.flatMap((m) => (f.L.comb ? combSplit(f, m) : m.splitByPlane([f.n[0], f.n[1], 0], f.n[0] * f.L.p[0] + f.n[1] * f.L.p[1])).filter((c) => c.volume() > 300)).map((c) => flat(s.w, c)), (r) => r); // (not a sliver of print supports)
+    parts = arena(s.w, () => prev.flatMap((m) => (!across(f, m) ? (m.volume() > 300 ? [m] : []) : (f.L.comb ? combSplit(f, m) : m.splitByPlane([f.n[0], f.n[1], 0], f.n[0] * f.L.p[0] + f.n[1] * f.L.p[1])).filter((c) => c.volume() > 300).map((c) => flat(s.w, c)))), (r) => r); // (not a sliver of print supports)
     for (const m of prev) if (m !== body && !parts.includes(m) && !(m as unknown as { isDeleted(): boolean }).isDeleted()) m.delete();
   }
   // (rather than a plane: the far side's fingers, 16 mm wide and reaching
@@ -309,7 +321,12 @@ export function pathJoints(s: Scad, t: Track, body: Man, routes: Route[], runs: 
   const clear = (k: number, u: number, a: number, n0: number, n1: number) => u - a >= 1.5 && u + a <= fs[k].len - 1.5
     && pts.every((ps, j) => j === k || ps.every((q) => { const [lu, lv] = fs[k].toLocal(q); return Math.abs(lu - u) > a + 1.5 || lv < -n0 - 1.5 || lv > n1 + 1.5; }));
   const box = (k: number, u: number, a: number, n0: number, n1: number) => s.polygon([fs[k].at(u - a, -n0), fs[k].at(u + a, -n0), fs[k].at(u + a, n1), fs[k].at(u - a, n1)]);
-  const filled = (cs: CS, k: number, u: number, a: number, n0: number, n1: number) => { const b = box(k, u, a, n0, n1); return b.intersect(cs).area() > b.area() * 0.99; };
+  // (each against the outline near it only: clipNear; a box reaches at most hypot(a, max(n0, n1)) from its spot)
+  const near = new Map<CS, (q: [number, number]) => CS>(), nearOf = (cs: CS) => { let f = near.get(cs); if (!f) { f = clipNear(s.w, cs, 24); near.set(cs, f); } return f; };
+  const filled = (cs: CS, k: number, u: number, a: number, n0: number, n1: number) => {
+    const b = box(k, u, a, n0, n1), q = fs[k].at(u);
+    return b.intersect(Math.hypot(a, Math.max(n0, n1)) < 23 ? nearOf(cs)(q) : cs).area() > b.area() * 0.99;
+  };
   const cut: Man[] = [], add: [Man[], Man[]] = [[], []];
   let couplers = 0, nTongues = 0;
   // the rails crossing each run (where they have rail: none under a loose blade)
@@ -366,7 +383,7 @@ export function pathJoints(s: Scad, t: Track, body: Man, routes: Route[], runs: 
     const ok = (u: number) => {
       const q = f.at(u);
       return railPts.every((p) => Math.hypot(p[0] - q[0], p[1] - q[1]) >= 9) && clear(k, u, ra, rn0, rn1)
-        && routes.some((rt) => Math.abs(routeLat(rt, q)) <= half - 5) && floorAt(s, floor, f.at(u, 2.5), 2.5) && floorAt(s, floor, f.at(u, -2.5), 2.5)
+        && routes.some((rt) => Math.abs(routeLat(rt, q)) <= half - 5) && floorAt(s, nearOf(floor)(f.at(u, 2.5)), f.at(u, 2.5), 2.5) && floorAt(s, nearOf(floor)(f.at(u, -2.5)), f.at(u, -2.5), 2.5)
         && solids.every((sl) => filled(sl, k, u, ra + wall, rn0 + wall, rn1 + wall));
     };
     for (const u of pickSpots(0, f.len, ok)) {

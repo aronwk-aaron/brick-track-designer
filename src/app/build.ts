@@ -53,15 +53,71 @@ function cached<T>(key: string, f: () => T): T {
   if (memo.size > 120) memo.delete(memo.keys().next().value!);
   return v;
 }
+// Parts built before as plain data (baked: their meshes and STLs, not
+// solids in the kernel): the tiles, sections and moving parts, kept up to
+// DATA_BUDGET bytes of them (the solids' cache above keeps 120 at most, a
+// yard's moving parts alone are more), all of them while a build that's
+// been shared out (parallel.ts) waits on its jobs.
+const data = new Map<string, { v: unknown; bytes: number }>();
+const DATA_BUDGET = 1.5e9;
+let dataBytes = 0, holdData = 0;
+const bytesOf = (v: unknown): number => (ArrayBuffer.isView(v) ? v.byteLength : Array.isArray(v) ? v.reduce((t: number, x) => t + bytesOf(x), 0)
+  : v && typeof v === 'object' ? Object.values(v).reduce((t: number, x) => t + bytesOf(x), 0) : 8);
+function putData(key: string, v: unknown) {
+  const old = data.get(key);
+  if (old) { dataBytes -= old.bytes; data.delete(key); }
+  const bytes = bytesOf(v);
+  data.set(key, { v, bytes }); dataBytes += bytes;
+  trimData();
+}
+function trimData() {
+  if (!holdData) while (dataBytes > DATA_BUDGET && data.size > 1) { const [k, e] = data.entries().next().value!; data.delete(k); dataBytes -= e.bytes; }
+}
+function cachedData<T>(key: string, f: () => T): T {
+  const e = data.get(key);
+  if (e) { data.delete(key); data.set(key, e); return e.v as T; }
+  const v = f();
+  putData(key, v);
+  return v;
+}
 const stlOf = new WeakMap<Man, Uint8Array>();
-/** A solid's triangles, as positions for the view; its small loose bits (the breakaway print supports) apart. */
-function meshPositions(m: Man) {
-  const wm = m.getMesh(), out = new Float32Array(wm.triVerts.length * 3);
-  wm.triVerts.forEach((v, i) => out.set(wm.vertProperties.subarray(v * wm.numProp, v * wm.numProp + 3), i * 3));
+/** A mesh's triangles as a flat list of their corners' positions (for the view). */
+function meshPositions(wm: { triVerts: Uint32Array; vertProperties: Float32Array; numProp: number }) {
+  const tv = wm.triVerts, vp = wm.vertProperties, np = wm.numProp, out = new Float32Array(tv.length * 3);
+  for (let i = 0, o = 0; i < tv.length; i++, o += 3) { const b = tv[i] * np; out[o] = vp[b]; out[o + 1] = vp[b + 1]; out[o + 2] = vp[b + 2]; }
   return out;
 }
 /** Forget the pieces built before (tests: each design's solids let go after it, arena() in kernel.ts, and nothing kept that points at them). */
-export function clearBuildCache() { memo.clear(); }
+export function clearBuildCache() { memo.clear(); data.clear(); dataBytes = 0; }
+
+/**
+ * A big build's heavy jobs that don't depend on each other (the tiles of a
+ * piece built in tiles, the sections of one in sections): each made from
+ * plain data in the design, and giving plain data (baked parts), so other
+ * workers, each with its own kernel, can build them at once (parallel.ts).
+ * key: the build cache's key for it; cost: a guess at how long it takes, to
+ * start the longest first; run: build it.
+ */
+export interface BuildJob { key: string; cost: number; run: () => unknown }
+const PLANNED = { planned: true };
+const TILE_OVER = 8000; // mm of track: more, and a piece that needs cutting is built in tiles
+/**
+ * The jobs a build of the design has that aren't in the cache already (none
+ * where it has nothing to share out). Works it out as far as the jobs, no
+ * further: the trackwork, the points' parts (as solids not yet worked out)
+ * and the cuts; their run()s build them in this worker's kernel.
+ */
+export function buildJobs(w: Wasm, design: Design, early?: (overlay: unknown) => void): BuildJob[] {
+  const jobs: BuildJob[] = [];
+  // (only a design built in tiles or in sections has any)
+  if (design.options?.joint !== 'ends' && toRoutes(design).reduce((t, rt) => t + routeLength(rt), 0) < TILE_OVER) return jobs;
+  try { buildDesign(w, design, undefined, early, { plan: jobs }); } catch (e) { if (e !== PLANNED) return []; }
+  return jobs;
+}
+/** A job's result, built elsewhere (buildJobs): kept for the build, which then finds it done. */
+export function jobDone(key: string, part: unknown) { putData(key, part); }
+/** While a build's jobs are built elsewhere (on), all their results kept, past the cache's budget; then (off) back to it. */
+export function holdJobs(on: boolean) { holdData = Math.max(0, holdData + (on ? 1 : -1)); trimData(); }
 
 /**
  * Routes drawn the wrong way round for points: the solver finds points where
@@ -145,7 +201,15 @@ export function droppedInner(routes: Route[], dropped: Split[], rts: Route[], mo
 }
 
 /** progress: what it's doing now (for the 3D view's status while it builds). */
-export function buildDesign(w: Wasm, design: Design, report: (what: string, frac: number) => void = () => {}, early?: (overlay: unknown) => void) {
+/** opts.plan: only list the jobs it'd do (buildJobs), stopping there. */
+export function buildDesign(w: Wasm, design: Design, report: (what: string, frac: number) => void = () => {}, early?: (overlay: unknown) => void, opts: { plan?: BuildJob[] } = {}) {
+  const plan = opts.plan;
+  /** A heavy job (BuildJob): built (or found in the cache); or, planning, listed (if it isn't cached) and passed over. */
+  const job = <T>(key: string, cost: number, f: () => T, none: T): T => {
+    if (!plan) return cachedData(key, f);
+    if (!data.has(key)) plan.push({ key, cost, run: f });
+    return none;
+  };
   // (progress: steps done of the steps there are, worked out as the plan firms up)
   let stepsDone = 0, steps = 3;
   const progress = (what: string) => { report(what, Math.min(0.97, stepsDone / steps)); stepsDone++; };
@@ -260,10 +324,10 @@ export function buildDesign(w: Wasm, design: Design, report: (what: string, frac
   /** A part for the view: its triangles, and its breakaway supports' apart (loose bits under 200 mm3), to show or hide. */
   const viewOf = (m: Man): { positions: Float32Array; supports?: Float32Array } => {
     const bits = flat(w, m).decompose();
-    if (bits.length <= 1) return { positions: meshPositions(m) };
-    const join = (ms: Man[]) => { const ps = ms.map(meshPositions), out = new Float32Array(ps.reduce((t, p) => t + p.length, 0)); let o2 = 0; for (const p of ps) { out.set(p, o2); o2 += p.length; } return out; };
+    if (bits.length <= 1) return { positions: meshPositions(m.getMesh()) };
+    const join = (ms: Man[]) => { const ps = ms.map((b) => meshPositions(b.getMesh())), out = new Float32Array(ps.reduce((t, p) => t + p.length, 0)); let o2 = 0; for (const p of ps) { out.set(p, o2); o2 += p.length; } return out; };
     const small = bits.filter((b) => b.volume() < 200);
-    return small.length ? { positions: join(bits.filter((b) => b.volume() >= 200)), supports: join(small) } : { positions: meshPositions(m) };
+    return small.length ? { positions: join(bits.filter((b) => b.volume() >= 200)), supports: join(small) } : { positions: meshPositions(m.getMesh()) };
   };
   const params = { ...BASE_DEFAULTS, ...o, gaugeStuds: design.gaugeStuds, studGrip: design.grip ?? 'edges', pointsPieces: design.pointsPieces ?? 1,
     generateBallast: o.ballast !== 'none', ballastBuddy: o.ballast === 'buddy', bottomStyle: o.bottomStyle,
@@ -362,15 +426,18 @@ export function buildDesign(w: Wasm, design: Design, report: (what: string, frac
     // (pieces of track that don't touch are parts of their own; the small bits, the breakaway supports, stay with the biggest)
     // (each found in a flat copy of it, kernel.ts flat: a cut part's record of what it was made from made decompose()
     // take most of a gigabyte)
+    // (the parts found to be one body already, and their copies: not taken apart again)
+    const one = new WeakSet<Man>();
     const bodies = (m: Man): Man[] => {
+      if (one.has(m)) return [m];
       const all2 = flat(w, m).decompose(), big2 = all2.filter((b2) => b2.volume() > 1000), small = all2.filter((b2) => b2.volume() <= 1000);
-      if (big2.length <= 1) return [m];
+      if (big2.length <= 1) { one.add(m); return [m]; }
       // (each small bit with the piece nearest it: the one it supports)
       const boxes = big2.map((b2) => b2.boundingBox()), groups: Man[][] = big2.map((b2) => [b2]);
       const gap = (a: { min: number[]; max: number[] }, b: { min: number[]; max: number[] }) =>
         Math.hypot(Math.max(0, a.min[0] - b.max[0], b.min[0] - a.max[0]), Math.max(0, a.min[1] - b.max[1], b.min[1] - a.max[1]));
       for (const sm of small) { const sb = sm.boundingBox(); let best = 0; boxes.forEach((bx, k) => { if (gap(sb, bx) < gap(sb, boxes[best])) best = k; }); groups[best].push(sm); }
-      return groups.map((g2) => (g2.length > 1 ? scad.union(g2) : g2[0]));
+      return groups.map((g2) => { const u = g2.length > 1 ? scad.union(g2) : g2[0]; one.add(u); return u; });
     };
     // (where the stepped cuts so far ran across each axis: the next part's cut lines up with them where it can)
     const cutAt: [number[], number[]] = [[], []];
@@ -400,7 +467,10 @@ export function buildDesign(w: Wasm, design: Design, report: (what: string, frac
       // (each try in an arena of its own, only the parts of a good one kept, as solids of their own (kernel.ts flat):
       // a big part on a small bed tries many paths, and everything they made, kept to the end, ran the kernel out of
       // memory (it aborts))
-      const attempt = (f: () => ReturnType<typeof pathSplit>) => arena(w, () => { const g2 = f(); return g2 && good(g2.parts) ? { ...g2, parts: g2.parts.map((p2) => flat(w, p2)) } : undefined; }, (g2) => g2?.parts ?? []);
+      const attempt = (f: () => ReturnType<typeof pathSplit>) => arena(w, () => {
+        const g2 = f();
+        return g2 && good(g2.parts) ? { ...g2, parts: g2.parts.map((p2) => { const c = flat(w, p2); if (one.has(p2)) one.add(c); return c; }) } : undefined;
+      }, (g2) => g2?.parts ?? []);
       let got = win[0] <= win[1] ? attempt(() => pathSplit(scad, m, pieceRoutes, track.c.railOffset, [...pointsAvoid, ...holes], axis, at, { join, window: win })) : undefined;
       // (no way within it: anywhere near the middle, as before)
       if (!got) got = attempt(() => pathSplit(scad, m, pieceRoutes, track.c.railOffset, [...pointsAvoid, ...holes], axis, lo + ext / 2, { join }));
@@ -510,7 +580,6 @@ export function buildDesign(w: Wasm, design: Design, report: (what: string, frac
   // needs no cutting (build it whole).
   const MARGIN = 72; // (past a cropped end's effects on the bed and underside)
   const BLOCK = 450; // (built together: about as much as builds quickly)
-  const TILE_OVER = 8000; // mm of track: more, and it's built in tiles
   // In separate pieces with ordinary track ends, the plate-style way (sections.ts):
   // each section built from its own pieces of track, its cut ends given
   // standard end connectors.
@@ -543,9 +612,14 @@ export function buildDesign(w: Wasm, design: Design, report: (what: string, frac
         return [{ ...sp, inner, bladeCuts: sp.bladeCuts.filter(([i]) => firstOf(i) >= 0).map(([i, m]) => [firstOf(i), m] as [number, Man]) }];
       });
       const secInner = dropInner(rts);
-      const sk = `sec:${key}:${JSON.stringify({ rts, cChecks, m: mine.map((x) => x.toe), copt, g: grooveCuts.length ? tw.groove : 0, di: [...secInner] })}`;
+      // (keyed by what it's built from, as the tiles are)
+      const sb = routesBox(rts, bandHalf + 8);
+      const zs = zones.filter((z) => z.box[2] >= sb[0] && z.box[0] <= sb[2] && z.box[3] >= sb[1] && z.box[1] <= sb[3]).map((z) => [z.rt.id, z.s0, z.s1, z.box]);
+      const sk = `sec:${JSON.stringify({ rts, cChecks, m: mine.map((x) => [x.key, x.inner, x.bladeCuts.map(([i]) => i)]), copt, g: grooveCuts.length ? tw.groove : 0, di: [...secInner],
+        gp: gridPose, bp, bxy: [o.baseplateX, o.baseplateY], cutRails: o.cutRails, bed: [o.printBedX, o.printBedY], zs })}`;
       let part: { ms: ReturnType<typeof bake>[]; grips: [number, number][] };
-      try { part = cached(sk, () => arena(w, () => {
+      const cost = rts.reduce((t, rt) => t + routeLength(rt), 0) + 400 * mine.length;
+      try { part = job(sk, cost, () => arena(w, () => {
         const grips: [number, number][] = [];
         const cuts = grooveCuts.filter((m) => { const bb = m.boundingBox(); return rts.some((rt) => { const b2 = routesBox([rt], bandHalf + 8); return bb.max[0] >= b2[0] && bb.min[0] <= b2[2] && bb.max[1] >= b2[1] && bb.min[1] <= b2[3]; }); });
         const body = networkBody(scad, rts, { crossings: [], grooves: [], splits: [], checkRails: cChecks }, copt, mine, grips, { cuts, gridPose, innerEnds: secInner });
@@ -559,7 +633,7 @@ export function buildDesign(w: Wasm, design: Design, report: (what: string, frac
           if (lines.length) { const bottom = body.boundingBox().min[2] + 0.02; parts2 = cutPiece(scad, track, body, rts, lines, 'lego', o.cutRails === 'flat', noTongue).map((m) => edgeGrip(scad, track, m, gridPose, bottom)); }
         }
         return { ms: parts2.filter((m) => m.numTri() > 0).map(bake), grips };
-      }, () => [])); } catch (err) {
+      }, () => []), { ms: [], grips: [] }); } catch (err) {
         if (err instanceof WebAssembly.RuntimeError || typeof err === 'number') throw err;
         bedWarnings.add(`section ${si + 1} of ${name} failed to build: ${err instanceof Error ? err.message : String(err)}`);
         return;
@@ -571,7 +645,7 @@ export function buildDesign(w: Wasm, design: Design, report: (what: string, frac
       }
     });
   };
-  const tiled = (name: string, all: Route[], checks: CheckRail[], splits: SplitParts[], copt: typeof CROSSING_DEFAULTS, key: string) => {
+  const tiled = (name: string, all: Route[], checks: CheckRail[], splits: SplitParts[], copt: typeof CROSSING_DEFAULTS) => {
     let b = routesBox(all, track.c.sleeperLen / 2 + 24);
     for (const sp of splits) for (const m of sp.adds) { const bb = m.boundingBox(); b = [Math.min(b[0], bb.min[0]), Math.min(b[1], bb.min[1]), Math.max(b[2], bb.max[0]), Math.max(b[3], bb.max[1])]; }
     const plan = planCuts(b, o.printBedX, o.printBedY, bp, (o.baseplateX ?? 0) * 8, (o.baseplateY ?? 0) * 8, pointsAvoid, all, bandHalf, jointRoom, track.c.railOffset, overlay.crossings);
@@ -606,9 +680,15 @@ export function buildDesign(w: Wasm, design: Design, report: (what: string, frac
         return { ...sp, inner, bladeCuts: sp.bladeCuts.filter(([i]) => cr.map[i] >= 0).map(([i, m]) => [cr.map[i], m] as [number, Man]) };
       });
       const tileCuts = grooveCuts.filter((m) => nearCell(m.boundingBox(), R, MARGIN)), tileInner = dropInner(cr.routes, cr.inner);
-      const tk = `tile:${key}:${JSON.stringify({ r: cr.routes, c: cr.checks, i: [...tileInner], R, lines, near: near.map((x) => x.k), copt, joint: o.joint, cutRails: o.cutRails, g: grooveCuts.length ? tw.groove : 0 })}`;
+      // (keyed by what it's built from, not the whole design: an edit rebuilds only the tiles near it (the points near
+      // it by what each is made from, network.ts SplitParts key; where no rail-end tongue goes, near it))
+      const zs = zones.filter((z) => z.box[2] >= R[0] - MARGIN && z.box[0] <= R[2] + MARGIN && z.box[3] >= R[1] - MARGIN && z.box[1] <= R[3] + MARGIN).map((z) => [z.rt.id, z.s0, z.s1, z.box]);
+      const tk = `tile:${JSON.stringify({ r: cr.routes, c: cr.checks, i: [...tileInner], R, lines, near: tileSplits.map((sp) => [sp.key, sp.inner, sp.bladeCuts.map(([i]) => i)]),
+        copt, joint: o.joint, cutRails: o.cutRails, g: grooveCuts.length ? tw.groove : 0, gp: gridPose, bed: [o.printBedX, o.printBedY], zs })}`;
       let part: { ms: ReturnType<typeof bake>[]; grips: [number, number][] };
-      try { part = cached(tk, () => arena(w, () => {
+      // (how long it takes, about: its track, and points most of all)
+      const cost = cr.routes.reduce((t, rt) => t + routeLength(rt), 0) + 400 * near.length;
+      try { part = job(tk, cost, () => arena(w, () => {
         const grips: [number, number][] = [];
         const body = networkBody(scad, cr.routes, { crossings: [], grooves: [], splits: [], checkRails: cr.checks }, copt, tileSplits, grips, { cuts: tileCuts, innerEnds: tileInner, gridPose });
         const holes: [number, number, number][] = [];
@@ -622,7 +702,7 @@ export function buildDesign(w: Wasm, design: Design, report: (what: string, frac
         // always get round a curvy track without running along it)
         const fit = fitter(cr.routes, holes), parts = got.filter((m) => m.numTri() > 0).flatMap((m) => fit(m));
         return { ms: parts.map((m) => bake(edgeGrip(scad, track, m, gridPose, bottom))), grips: grips.filter((q) => q[0] > R[0] && q[0] <= R[2] && q[1] > R[1] && q[1] <= R[3]) };
-      }, () => [])); } catch (err) {
+      }, () => []), { ms: [], grips: [] }); } catch (err) {
         if (err instanceof WebAssembly.RuntimeError || typeof err === 'number') throw err; // (the kernel's broken now: no use carrying on)
         bedWarnings.add(`part ${ci + 1} of ${name} (x ${Math.max(R[0], b[0]).toFixed(0)} to ${Math.min(R[2], b[2]).toFixed(0)}, y ${Math.max(R[1], b[1]).toFixed(0)} to ${Math.min(R[3], b[3]).toFixed(0)}) failed to build: ${err instanceof Error ? err.message : `kernel error ${String(err)}`}`);
         return;
@@ -677,7 +757,8 @@ export function buildDesign(w: Wasm, design: Design, report: (what: string, frac
     steps = 3;
     progress(`Building the piece with its ${sol.splits.length} points`);
     if (o.joint === 'ends') sectioned('track', routes, sol.checkRails, net.splits, sol.splits, copt, netKey);
-    else if (!tiled('track', routes, sol.checkRails, net.splits, copt, netKey)) {
+    else if (!tiled('track', routes, sol.checkRails, net.splits, copt)) {
+      if (plan) throw PLANNED; // (built whole: nothing to share out)
       const whole = cached(`net:${netKey}`, () => { const grips: [number, number][] = []; return { body: networkBody(scad, routes, sol, copt, net.splits, grips, { cuts: grooveCuts, innerEnds: dropInner(routes) }), grips }; });
       overlay.grips.push(...whole.grips);
       if (layered) {
@@ -690,7 +771,15 @@ export function buildDesign(w: Wasm, design: Design, report: (what: string, frac
         lidParts.forEach((m, k) => add(`points${lidParts.length > 1 ? k + 1 : ''}-lid`, 0x6f7780, m, m));
       } else addTrack('track', whole.body, routes);
     }
-    for (const sp of net.splits) for (const m of sp.moving) add(m.name, m.color, m.local, m.world, m.turn);
+    if (plan) throw PLANNED;
+    // (each points set's moving parts baked, by what they're made from: an edit bakes only the ones it changes)
+    for (const sp of net.splits) {
+      const ms = cachedData(`mov:${sp.key}`, () => sp.moving.map((m) => {
+        const wm = m.world.getMesh();
+        return { positions: meshPositions(wm), stl: stlBytes(m.local === m.world ? wm : m.local.getMesh(), true), volume: m.local.volume() };
+      }));
+      sp.moving.forEach((m, k) => { pieces.push({ name: m.name, color: m.color, positions: ms[k].positions.slice(), stl: ms[k].stl.slice(), ...(m.turn && { turn: m.turn }) }); volume += ms[k].volume; });
+    }
     pc = { switches: [], rest: [], warnings: [...net.warnings] };
 
   }
@@ -704,7 +793,8 @@ export function buildDesign(w: Wasm, design: Design, report: (what: string, frac
     const restKey = JSON.stringify({ rest, copt, solverOpts, tw });
     const whole = () => cached(`cx:${restKey}`, () => { const grips: [number, number][] = []; return { m: crossingPiece(scad, rest, copt, restSol, grips, { cuts: grooveCuts, innerEnds: dropInner(rest) }), grips }; });
     if (o.joint === 'ends') sectioned('track', rest, restSol.checkRails, [], [], copt, restKey);
-    else if (pc.rest.length > 1 && tiled('track', rest, restSol.checkRails, [], copt, restKey)) { /* built in tiles */ }
+    else if (pc.rest.length > 1 && tiled('track', rest, restSol.checkRails, [], copt)) { /* built in tiles */ }
+    else if (plan) throw PLANNED;
     else if (pc.rest.length > 1 || fits(whole().m)) {
       overlay.grips.push(...whole().grips);
       addTrack('track', whole().m, rest);
@@ -718,6 +808,7 @@ export function buildDesign(w: Wasm, design: Design, report: (what: string, frac
       }
     }
   }
+  if (plan) throw PLANNED;
   pc.switches.forEach((sw, n) => {
     progress(`Building switch ${n + 1} of ${pc.switches.length}`);
     for (const note of sw.plan.notes) bedWarnings.add(note);
