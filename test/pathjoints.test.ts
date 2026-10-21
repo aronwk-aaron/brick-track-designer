@@ -87,4 +87,15 @@ describe('a crossover cut to a small bed', { timeout: 300000 }, () => {
     expect(spreadSpots(0, 100, () => true, [50])).toEqual([0, 46, 54, 100]);
     expect(spreadSpots(0, 100, (u) => u >= 30 && u <= 34)).toEqual([32]); // (too short a stretch for two a stud apart)
   });
+
+  it('a baseplate edge on ballast: axles across it (and the rails\' tongues), at least two', async () => {
+    const w = await kernel(), s = new Scad(w), t = new Track(s, { ...DEFAULTS, gaugeStuds: 4 });
+    const routes = toRoutes({ version: 1, gaugeStuds: 4, routes: [{ name: 'A', x: 0, y: 0, heading: 0, segs: [{ kind: 'straight', studs: 24 }] }] });
+    const m = crossingPiece(s, routes, { ...CROSSING_DEFAULTS, ballast: 'buddy' });
+    const parts = cutPiece(s, t, m, routes, [{ p: [0, 96], d: [1, 0], joint: 'axle' }], 'lego', false);
+    expect(parts).toHaveLength(2);
+    // (through the axles' middle: each takes out its cross's bar, 4.9 wide and 32.4 long, about 159 mm2)
+    const z = (m.boundingBox().min[2] + DEFAULTS.studH + 0.2 + 3.2) / 2, gone = m.slice(z).area() - parts.reduce((a, p) => a + p.slice(z).area(), 0);
+    expect(gone / 159).toBeGreaterThan(1.8);
+  });
 });
