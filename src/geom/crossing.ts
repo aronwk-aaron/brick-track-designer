@@ -27,6 +27,14 @@ export interface CrossingOptions extends TrackOptions {
   ballast?: 'none' | 'ballast' | 'buddy';
   /** With ballast: the underside, anti-stud (hollow with tubes) or float (flat). */
   bottomStyle?: 'antistud' | 'float';
+  /**
+   * The studs on the bed (on the sleepers, between and beside the rails):
+   * 'grid', on the baseplate's stud grid, wherever they're clear; 'follow',
+   * in rows along each track, on lines across it a stud apart at its centre
+   * line, as the OpenSCAD curves have them (straight rows across a curve that
+   * LEGO tiles fit on), off the baseplate's grid on a curve.
+   */
+  curveStuds?: 'grid' | 'follow';
 }
 
 export const CROSSING_DEFAULTS: CrossingOptions = { ...DEFAULTS, flangeway: 3, flangewayDepth: 3, checkRailW: 1, supports: true, grip: 'edges' };
@@ -131,9 +139,20 @@ export function crossingPiece(s: Scad, routes: Route[], o: CrossingOptions = CRO
     const bb0 = parts.length ? s.union(parts).boundingBox() : { min: [0, 0, 0], max: [0, 0, 0] };
     const reachS = Math.ceil((Math.hypot(bb0.max[0] - bb0.min[0], bb0.max[1] - bb0.min[1]) + Math.hypot(bb0.min[0] - gp[0], bb0.min[1] - gp[1])) / STUD) + 2;
     const ends = routes.flatMap((rt, i) => [!x.innerEnds?.has(`${i}:start`) && routePose(rt, 0), !x.innerEnds?.has(`${i}:end`) && routePose(rt, routeLength(rt))]).filter((e): e is Pose => !!e);
-    for (let i = -reachS; i <= reachS; i++) for (let j = -reachS; j <= reachS; j++) {
-      const lx = 4 + i * STUD, ly = 4 + j * STUD, q: [number, number] = [gp[0] + lx * Math.cos(hd) - ly * Math.sin(hd), gp[1] + lx * Math.sin(hd) + ly * Math.cos(hd)];
+    // (the spots to try: the stud grid's, or along each track at the straight track's places across it, a stud apart along it)
+    const spots: [number, number][] = [];
+    if (o.curveStuds === 'follow') for (const rt of routes) {
+      const L = routeLength(rt), lats: number[] = [];
+      for (let lt = 4; lt <= c.sleeperLen / 2; lt += STUD) lats.push(lt, -lt);
+      for (let sAt = 4; sAt <= L - 4 + 1e-9; sAt += STUD) for (const lt of lats) spots.push(railPoint(rt, sAt, lt) as [number, number]);
+    } else for (let i = -reachS; i <= reachS; i++) for (let j = -reachS; j <= reachS; j++) {
+      const lx = 4 + i * STUD, ly = 4 + j * STUD;
+      spots.push([gp[0] + lx * Math.cos(hd) - ly * Math.sin(hd), gp[1] + lx * Math.sin(hd) + ly * Math.cos(hd)]);
+    }
+    for (const q of spots) {
       if (q[0] < bb0.min[0] || q[0] > bb0.max[0] || q[1] < bb0.min[1] || q[1] > bb0.max[1]) continue;
+      // (following the tracks: not two at one place, where tracks meet)
+      if (o.curveStuds === 'follow' && studPts.some((p) => Math.hypot(p[0] - q[0], p[1] - q[1]) < c.postD + 0.6)) continue;
       // (on some route's bed, well inside it)
       if (!routes.some((r2) => Math.abs(routeLat(r2, q)) <= c.sleeperLen / 2 - c.postD / 2 - 0.5)) continue;
       // (clear of every rail and its flangeway)
