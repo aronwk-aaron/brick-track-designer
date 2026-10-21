@@ -215,7 +215,7 @@ export function cutPiece(s: Scad, t: Track, body: Man, routes: Route[], lines: C
       // (and 9 mm clear of the rails crossing the cut: their tongue joints' columns go down through the bed there)
       ? spreadSpots(lo, hi, (u) => us.every((r) => Math.abs(u - r) >= 9) && floorAt(s, strip, f.at(u, 2.5), 2.5) && floorAt(s, strip, f.at(u, -2.5), 2.5) && axleOk(u), breaks, kit.couplerReach('axle')[0] + kit.couplerReach('axle')[1] + 2)
       : pickSpots(lo, hi, (u) => onBed(u) && us.every((r) => Math.abs(u - r) >= 9));
-    if (holes && kind === 'axle') for (const u of couplers) for (const o of [-16, -8, 0, 8, 16]) holes.push([...f.at(u, o), 6]);
+    if (holes && kind === 'axle') for (const u of couplers) for (let o = -16; o <= 16; o += 4) holes.push([...f.at(u, o), 4]);
     return { L, ...f, rails, couplers, kind: kit.kindOf(L.joint ?? joint, flatRails), tongues: kit.tongues(L.joint ?? joint, flatRails) };
   });
 
@@ -335,7 +335,7 @@ export function pathJoints(s: Scad, t: Track, body: Man, routes: Route[], runs: 
   const place = (k: number, u: number) => {
     const q = fs[k].at(u);
     got.push(q); couplers++;
-    if (kind === 'axle') for (const o of [-16, -8, 0, 8, 16]) holes.push([...fs[k].at(u, o), 6]);
+    if (kind === 'axle') for (let o = -16; o <= 16; o += 4) holes.push([...fs[k].at(u, o), 4]);
     cut.push(...kit.couplerCut(kind).map((m) => fs[k].place(m, u)));
     for (const [i, side] of [[0, 1], [1, -1]] as const) { const m = kit.couplerPart(kind, side); if (m) add[i].push(fs[k].place(m, u)); }
   };

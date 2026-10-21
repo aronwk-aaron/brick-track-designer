@@ -7,7 +7,6 @@ import { TrackCanvas, type OverlayItem, leverSide, leverSlides, typingIn } from 
 import { describe } from './planner';
 import type { Piece } from './build';
 import { zip } from '../geom/zip';
-import { threeMF } from '../geom/threemf';
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 const routesEl = $('routes'), infoEl = $('info'), errEl = $('error');
@@ -174,9 +173,9 @@ function setStatus(info: string, problem = '', rebuild = false, warn = false) {
 /** The downloads: only of an up-to-date build. */
 function updateExports() {
   const why = building ? 'Wait for the build to finish' : !pieces.length ? 'Nothing built yet' : stale ? 'The 3D view is out of date: rebuild first' : '';
-  for (const id of ['export-stl', 'export-3mf']) {
+  for (const id of ['export-stl']) {
     const b = $<HTMLButtonElement>(id); b.disabled = !!why;
-    b.title = why ? `${why}` : id === 'export-stl' ? 'Download the parts for printing as STL (a zip when there are several)' : 'Download every part in one 3MF, laid out on the print bed, for Orca Slicer';
+    b.title = why ? `${why}` : 'Download the parts for printing as STL (a zip when there are several)';
   }
 }
 
@@ -444,12 +443,6 @@ $('export-stl').addEventListener('click', () => {
   const base = fileBase();
   if (pieces.length === 1) download(new Blob([pieces[0].stl as BlobPart], { type: 'model/stl' }), `${base}.stl`);
   else download(new Blob([zip(pieces.map((p) => ({ name: `${base}-${p.name}.stl`, data: p.stl }))) as BlobPart], { type: 'application/zip' }), `${base}.zip`);
-});
-// All the pieces in one 3MF, each its own object laid out on the print bed, for Orca Slicer (or any slicer).
-$('export-3mf').addEventListener('click', () => {
-  if (!pieces.length || building || stale) return;
-  const o = design.options ?? {};
-  download(new Blob([threeMF(pieces.map((p) => ({ name: p.name, stl: p.stl })), o.printBedX ?? 256, o.printBedY ?? 256) as BlobPart], { type: 'model/3mf' }), `${fileBase()}.3mf`);
 });
 // The design's name (asked on Save): what it saves and downloads under.
 const fileBase = () => (design.name || 'track-piece').replace(/[\\/:*?"<>|]+/g, '-').trim() || 'track-piece';

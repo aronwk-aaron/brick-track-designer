@@ -2,7 +2,7 @@
 
 A web app for designing LEGO-compatible train track pieces with complex
 trackwork (switches, crossings, double slips, switch fields), previewing them
-in 3D and exporting STL and 3MF for printing.
+in 3D and exporting STL for printing.
 
 Early days: see [PLAN.md](PLAN.md) and [PHASE2.md](PHASE2.md).
 
@@ -35,8 +35,7 @@ mechanism and throw, check rails, the print bed and joints); Undo and Redo, pan
 and zoom. Over the track the plan shows where flangeways cut the rails, check
 rails, rail crossings, points (click to take them out or force them) and each
 switch's lever (drag it across to swap sides; hover it to see what set its
-side); below it, the pieces in 3D, which download as STL or one 3MF laid out
-on the print bed. Designs save and open as JSON, and the last one is kept in
+side); below it, the pieces in 3D, which download as STL. Designs save and open as JSON, and the last one is kept in
 the browser.
 
 ## Contributing
