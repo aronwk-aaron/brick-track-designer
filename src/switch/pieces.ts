@@ -185,7 +185,8 @@ export function planPieces(routes: Route[], splits: Split[], p: BaseParams = BAS
         });
         if (moved) built = { ...built, plan: switchPlan(sorted, sets, p) };
       }
-      warnings.push(...built.plan.warnings);
+      // (but not switch.scad's print-bed guess, with its margins: the build cuts the base to the bed and says if a part still doesn't fit)
+      warnings.push(...built.plan.warnings.filter((w) => !/print bed/.test(w)));
       for (const k of kids) used.add(k.child);
       const cutAt = (rt: Route) => (whole ? routeLength(rt) : sAtY(rt, built!.L));
       const covers: [number, number, number][] = [[parent, s0, s0 + cutAt(main)]];
