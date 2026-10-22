@@ -15,7 +15,8 @@ export type RoutePiece = [number, number, number];
  * sections built together (those whose bases overlap). half: how far the
  * base reaches each side of a centre line; room: the longest plain piece.
  */
-export function planSections(routes: Route[], splits: Split[], half: number, room: number, minPart = 40) {
+/** exact: plain stretches in pieces this long (mm, measured from the track's start), the last what's left; else as few as fit room, even. */
+export function planSections(routes: Route[], splits: Split[], half: number, room: number, minPart = 40, exact = 0) {
   const boxes = routes.map((rt) => {
     const L = routeLength(rt), n = Math.max(1, Math.ceil(L / 8)), b = [Infinity, Infinity, -Infinity, -Infinity];
     for (let k = 0; k <= n; k++) { const p = routePose(rt, (L * k) / n); b[0] = Math.min(b[0], p[0]); b[1] = Math.min(b[1], p[1]); b[2] = Math.max(b[2], p[0]); b[3] = Math.max(b[3], p[1]); }
@@ -50,7 +51,10 @@ export function planSections(routes: Route[], splits: Split[], half: number, roo
       // small as they can be), and across it every room or less
       if (b - a >= minPart) {
         const inner = b - a, n = Math.max(1, Math.ceil(inner / room));
-        for (let m = 0; m <= n; m++) cuts.push(Math.round((a + (inner * m) / n) / step) * step);
+        // (whole pieces measured from the track's start, as LEGO's; at a free stretch's end by points or a crossing, a cut
+        // there too, so what's built with them is as small as can be)
+        if (exact > 0) { if (a > minPart) cuts.push(a); for (let c2 = Math.ceil((a + 1e-6) / exact) * exact; c2 < b - 1e-6; c2 += exact) cuts.push(c2); if (b < L - minPart) cuts.push(b); }
+        else for (let m = 0; m <= n; m++) cuts.push(Math.round((a + (inner * m) / n) / step) * step);
       }
       k = e + 1;
     }

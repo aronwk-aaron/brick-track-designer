@@ -988,13 +988,16 @@ const OPTION_FORM: OptSection[] = [
       { v: '0', t: 'No' }, { v: '16', t: '16 x 16 studs' }, { v: '32', t: '32 x 32 studs' }, { v: '48', t: '48 x 48 studs' }, { v: '64', t: '64 x 64 studs' }, { v: '96', t: '96 x 96 studs' }] },
     { key: 'baseplateX', label: 'Baseplate corner x, studs', step: 1, off: (c) => ((c.o.baseplate ?? 0) > 0 ? undefined : 'Cut at baseplate edges is No'), help: 'Where a baseplate corner is on the grid.' },
     { key: 'baseplateY', label: 'Baseplate corner y, studs', step: 1, off: (c) => ((c.o.baseplate ?? 0) > 0 ? undefined : 'Cut at baseplate edges is No'), help: 'Where a baseplate corner is on the grid.' },
-    { key: 'joint', label: 'Parts join with', help: 'How parts cut for the print bed or baseplates join.', choices: [
+    { key: 'splitTrack', label: 'Long track cut into', def: 'bed', get: () => (design.options?.joint === 'ends' ? 'lengths' : design.options?.splitTrack ?? 'bed'), set: (v) => { const { joint, ...rest } = design.options ?? {}; design.options = { ...rest, ...(joint && joint !== 'ends' && { joint }), splitTrack: v as 'bed' | 'lengths' }; }, choices: [
+      { v: 'bed', t: 'Parts that fill the print bed', tip: 'Cut along straight lines where the bed needs it; the parts join as set in Parts join with.' },
+      { v: 'lengths', t: 'Track pieces, cut across the track', tip: 'Each track cut square to itself into pieces with ordinary end connectors, like LEGO track. Switches and crossings stay whole.', con: 'More parts, and a cut only where the track is clear of other tracks.' }] },
+    { key: 'pieceLengthStuds', label: 'Piece length, studs', step: 4, min: 0, max: 64, def: 16, get: () => design.options?.pieceLengthStuds ?? 16, off: (c) => (c.o.splitTrack === 'lengths' || c.o.joint === 'ends' ? undefined : 'only with Long track cut into: Track pieces'), help: 'LEGO straights are 16. 0: as long as fits the print bed. A longer piece than the bed takes: as long as fits.' },
+    { key: 'joint', label: 'Parts join with', off: (c) => (c.o.splitTrack === 'lengths' || c.o.joint === 'ends' ? 'track pieces join with their ordinary end connectors' : undefined), help: 'How parts cut for the print bed or baseplates join.', choices: [
       { v: 'lego', t: 'Rail tongues + peg and clip', tip: 'Like LEGO track ends.' },
       { v: 'dovetail', t: 'Rail tongues + dovetails', tip: 'Stronger. Slides together from above.' },
       { v: 'butt', t: 'Straight cuts', tip: 'Nothing joins them; the baseplate holds them in line.' },
-      { v: 'axle', t: 'Rail tongues + LEGO axles', tip: 'A cross-axle hole across each cut, for a 4-stud axle.', no: (c) => (c.ballast ? undefined : 'needs ballast (track alone is too thin): peg and clip is used instead') },
-      { v: 'ends', t: 'Separate pieces with track ends', tip: 'Plain track cut into lengths with normal end connectors. Switches and crossings stay whole.' }] },
-    { key: 'cutRails', label: 'Rails at cuts', off: (c) => (c.o.joint === 'butt' ? 'Parts join with is Straight cuts' : undefined), choices: [
+      { v: 'axle', t: 'Rail tongues + LEGO axles', tip: 'A cross-axle hole across each cut, for a 4-stud axle.', no: (c) => (c.ballast ? undefined : 'needs ballast (track alone is too thin): peg and clip is used instead') }] },
+          { key: 'cutRails', label: 'Rails at cuts', off: (c) => (c.o.joint === 'butt' ? 'Parts join with is Straight cuts' : undefined), choices: [
       { v: 'tongues', t: 'Interlocking tongues', tip: 'Like LEGO track ends.', con: 'The tongues overhang, so they print with supports.' },
       { v: 'flat', t: 'Cut flat', tip: 'Nothing overhangs, no supports.', con: 'Only the bed joint and the baseplate keep the rails in line.' }] },
     { key: 'endSupports', label: 'Supports under rail ends', check: true, help: 'Breakaway supports under the rail-end tongues. Off: leave it to your slicer.' },

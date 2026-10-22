@@ -120,6 +120,8 @@ export interface PieceOptions {
   sleeperWidthStuds: number; sleeperGapStuds: number;
   /** Track only: the underside lined up with the baseplate's stud grid, or with the track itself (rows along it). */
   undersideGrid?: 'baseplate' | 'track';
+  /** Long track: in parts that fill the print bed (cut along straight lines), or in track pieces cut square across it with ordinary end connectors (pieceLengthStuds long; 0: as long as fits the bed). */
+  splitTrack?: 'bed' | 'lengths'; pieceLengthStuds?: number;
   /** LEGO fit: added to the studs' 4.8 mm (mm); the anti-stud tubes' outside smaller and bore bigger by this (mm). */
   studFit: number; antistudFit: number;
   /** (switch.scad's blade_disc_d) The tines mechanism's points: the round disc they pivot on, its diameter, mm. */

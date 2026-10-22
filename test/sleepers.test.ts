@@ -84,6 +84,18 @@ describe('underside lined up with the track', { timeout: 120000 }, () => {
   });
 });
 
+describe('long track cut into track pieces', { timeout: 120000 }, () => {
+  it('16-stud pieces cut square across each track, each with its connectors, none longer', async () => {
+    const d: Design = { version: 1, gaugeStuds: 4, options: { splitTrack: 'lengths', pieceLengthStuds: 16 }, routes: [
+      { name: 'A', x: 0, y: 0, heading: 0, segs: [{ kind: 'straight', studs: 56 }] }, { name: 'B', x: 16, y: 0, heading: 0, segs: [{ kind: 'straight', studs: 40 }] }] };
+    const b = buildDesign(await kernel(), d);
+    expect(b.info.warnings).toEqual([]);
+    // (56 studs: 16 + 16 + 16 + 8; 40: 16 + 16 + 8)
+    expect(b.pieces).toHaveLength(7);
+    for (const p of b.pieces) { let lo = 1e9, hi = -1e9; for (let i = 1; i < p.positions.length; i += 3) { lo = Math.min(lo, p.positions[i]); hi = Math.max(hi, p.positions[i]); } expect(hi - lo).toBeLessThan(16 * 8 + 12); }
+  });
+});
+
 describe('LEGO fit', { timeout: 120000 }, () => {
   it('a bigger stud fit makes the studs bigger; the default is as before', async () => {
     const w = await kernel(), d = straight(16);

@@ -679,8 +679,10 @@ function buildOne(w: Wasm, design: Design, report: (what: string, frac: number) 
   // each section built from its own pieces of track, its cut ends given
   // standard end connectors.
   const sectioned = (name: string, all: Route[], checks: CheckRail[], splits: SplitParts[], solSplits: Split[], copt: typeof CROSSING_DEFAULTS, key: string) => {
-    const room = Math.max(o.printBedX, o.printBedY) - 4;
-    const plan = cached(`secplan:${key}:${room}:${bandHalf}`, () => planSections(all, solSplits, bandHalf, room));
+    const room = Math.max(o.printBedX, o.printBedY) - 4, exact = Math.max(0, Math.round(o.pieceLengthStuds ?? 16)) * 8;
+    // (pieces of the length set, if they fit the bed; else as long as fits)
+    const ex = exact > 0 && exact <= room ? exact : 0;
+    const plan = cached(`secplan:${key}:${room}:${bandHalf}:${ex}`, () => planSections(all, solSplits, bandHalf, room, 40, ex));
     const gridPose = routePose(all[0], 0);
     steps += plan.sections.length;
     let n = 0;
@@ -819,6 +821,8 @@ function buildOne(w: Wasm, design: Design, report: (what: string, frac: number) 
   // (track only with sleepers: the bed kept across each cut, so the parts there have floor to join with)
   // (track only, its underside lined up with the track: no grip added along the cut edges on the baseplate's grid)
   const alongTrack = o.ballast === 'none' && o.undersideGrid === 'track';
+  // (long track in pieces cut square across it, each end an ordinary connector, as LEGO track: Long track cut into; the old 'ends' joint the same)
+  const inLengths = o.splitTrack === 'lengths' || o.joint === 'ends';
   const sleepered = o.sleepers === 'sleepers' && o.ballast === 'none';
   const copt = { ...CROSSING_DEFAULTS, gaugeStuds: design.gaugeStuds, grip: design.grip ?? 'edges', flangeway: o.flangeway, flangewayDepth: o.flangewayDepth, checkRailW: o.checkRailW,
     ballast: o.ballast, bottomStyle: o.bottomStyle, supports: o.endSupports !== false, curveStuds: o.curveStuds,
@@ -861,7 +865,7 @@ function buildOne(w: Wasm, design: Design, report: (what: string, frac: number) 
   if (net) {
     steps = 3;
     progress(`Building the piece with its ${sol.splits.length} points`);
-    if (o.joint === 'ends') sectioned('track', routes, sol.checkRails, net.splits, sol.splits, copt, netKey);
+    if (inLengths) sectioned('track', routes, sol.checkRails, net.splits, sol.splits, copt, netKey);
     else if (!tiled('track', routes, sol.checkRails, net.splits, copt)) {
       if (plan) throw PLANNED; // (built whole: nothing to share out)
       const whole = cached(`net:${netKey}`, () => { const grips: [number, number][] = []; return { body: networkBody(scad, routes, sol, copt, net.splits, grips, { cuts: grooveCuts, innerEnds: dropInner(routes) }), grips }; });
@@ -897,7 +901,7 @@ function buildOne(w: Wasm, design: Design, report: (what: string, frac: number) 
     };
     const restKey = JSON.stringify({ rest, copt, solverOpts, tw });
     const whole = () => cached(`cx:${restKey}`, () => { const grips: [number, number][] = []; return { m: crossingPiece(scad, rest, copt, restSol, grips, { cuts: grooveCuts, innerEnds: dropInner(rest) }), grips }; });
-    if (o.joint === 'ends') sectioned('track', rest, restSol.checkRails, [], [], copt, restKey);
+    if (inLengths) sectioned('track', rest, restSol.checkRails, [], [], copt, restKey);
     else if (pc.rest.length > 1 && tiled('track', rest, restSol.checkRails, [], copt)) { /* built in tiles */ }
     else if (plan) throw PLANNED;
     else if (pc.rest.length > 1 || fits(whole().m)) {
