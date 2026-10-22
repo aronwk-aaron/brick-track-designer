@@ -15,8 +15,6 @@ const st = (studs: number, more = {}) => ({ name: 'A', x: 0, y: 0, heading: 0, s
 const curve = [{ name: 'C', x: 0, y: 0, heading: 0, segs: [{ kind: 'curve', radius: 40, angle: 45 }] }];
 const D = (routes: unknown[], options: Record<string, unknown> = {}, more: Record<string, unknown> = {}) => ({ version: 1, gaugeStuds: 4, routes, options: { printBedX: 500, printBedY: 500, ...options }, ...more });
 const box = (ps: P[]) => { const b = [1e9, 1e9, 1e9, -1e9, -1e9, -1e9]; for (const p of ps) for (let i = 0; i < p.positions.length; i += 3) for (let k = 0; k < 3; k++) { b[k] = Math.min(b[k], p.positions[i + k]); b[k + 3] = Math.max(b[k + 3], p.positions[i + k]); } return b; };
-// (the first part's cut end: where its joint is)
-const cutEnd = (ps: P[]): [number, number, number] => { const b = box(ps.slice(0, 1)); return [0, b[4] - 4, 4]; };
 // (a part's cut face, where it starts: its joint)
 const faceOf = (ps: P[]): [number, number, number] => { const b = box(ps); return [0, b[1] + 4, 3]; };
 const sw = TEMPLATES['Left switch (LEGO)'].routes;
