@@ -9,7 +9,7 @@
 // out (degrees, from +x towards +y, so clockwise on screen). The design's:
 // mm, y up. A set's sub-part sits with the middle of its outline (its hull,
 // here the picture's box: no <hull> is written) at its position.
-import { type Design, STUD, toRoutes } from './design';
+import { type Design, isMono, STUD, toRoutes } from './design';
 import { routeLength, routePose, type Route } from '../route/route';
 import { gifBytes } from '../geom/gif';
 
@@ -18,14 +18,10 @@ export interface PieceLike { name: string; color: number; positions: Float32Arra
 
 /** Connection types in the library's parts (BlueBrick's ids). */
 export const CONNECTION_TYPE = { rail: '1', monorail: '3' } as const;
-/**
- * The connection type where a route leaves a part. Hook for monorail (being
- * added on its own): a monorail route's ends and joints are type 3, so they
- * only snap to monorail.
- */
+/** The connection type where a route leaves a part: a monorail route's ends and joints are type 3, so they only snap to monorail. */
 export function connectionType(design: Design, routeIndex: number): string {
-  const r = design.routes[routeIndex] as { monorail?: boolean } | undefined;
-  return r?.monorail ? CONNECTION_TYPE.monorail : CONNECTION_TYPE.rail;
+  const r = design.routes[routeIndex];
+  return r && isMono(r) ? CONNECTION_TYPE.monorail : CONNECTION_TYPE.rail;
 }
 
 export const PX_PER_STUD = 8;

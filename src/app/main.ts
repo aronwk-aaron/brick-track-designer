@@ -578,7 +578,7 @@ systemSel.id = 'system'; systemSel.title = 'What Draw lays: train track or LEGO 
 systemSel.append(new Option('Track: train', 'train'), new Option('Track: monorail', 'monorail'));
 try { const v = localStorage.getItem('btd-system'); if (v === 'monorail') systemSel.value = v; } catch { /* fine */ }
 systemSel.addEventListener('change', () => { try { localStorage.setItem('btd-system', systemSel.value); } catch { /* fine */ } });
-{ const lab = document.createElement('label'); lab.className = 'inline'; lab.append(systemSel); radiusSel.closest('label')!.after(lab); }
+radiusSel.after(systemSel);
 const canvas = new TrackCanvas($<HTMLCanvasElement>('track'), {
   design: () => design,
   changed: (commit) => changed(commit, commit), // (one undo step per finished action, none for each mouse move)
