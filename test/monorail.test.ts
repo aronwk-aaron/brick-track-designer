@@ -139,6 +139,27 @@ describe('monorail', { timeout: 120000 }, () => {
     const top = (name: RegExp) => Math.max(...b.pieces.filter((p) => name.test(p.name)).map((p) => { let z = -1e9; for (let i = 2; i < p.positions.length; i += 3) z = Math.max(z, p.positions[i]); return z; }));
     expect(top(/^monorail-B/)).toBeCloseTo(20 * 3.2 + MONO.ridgeTop, 1);
   });
+  it('a monorail ramp: the beam eases up from one level to the next, its parts print lying (lower than built), a warning when too steep', async () => {
+    const lay = (rampStuds: number): Design => ({ version: 1, gaugeStuds: 4, options: { printBedX: 256, printBedY: 256, monoSupportStuds: 16 }, routes: [
+      { name: 'G', x: 0, y: 0, heading: 0, system: 'monorail', monoHeight: 0, segs: [{ kind: 'straight', studs: 16 }] },
+      { name: 'Rp', x: 0, y: 16, heading: 0, system: 'monorail', monoHeight: 0, monoHeightEnd: 10, segs: [{ kind: 'straight', studs: rampStuds }] },
+      { name: 'U', x: 0, y: 16 + rampStuds, heading: 0, system: 'monorail', monoHeight: 10, segs: [{ kind: 'straight', studs: 16 }] },
+    ] });
+    const w = await kernel(), b = buildDesign(w, lay(48));
+    expect(b.info.warnings).toEqual([]);
+    const zs = (p: { positions: Float32Array }) => { let lo = 1e9, hi = -1e9; for (let i = 2; i < p.positions.length; i += 3) { lo = Math.min(lo, p.positions[i]); hi = Math.max(hi, p.positions[i]); } return [lo, hi]; };
+    const beams = b.pieces.filter((p) => /^monorail-G/.test(p.name));
+    // (from the baseplate up to 10 plates: the top of the last part's ridge 32 mm up)
+    expect(Math.min(...beams.map((p) => zs(p)[0]))).toBeCloseTo(0, 1);
+    expect(Math.max(...beams.map((p) => zs(p)[1]))).toBeCloseTo(32 + MONO.ridgeTop, 1);
+    // (a ramp part printed tilted: its STL lower than it stands)
+    for (const p of beams) {
+      const d = new DataView(p.stl.buffer, p.stl.byteOffset), n = d.getUint32(80, true); let top = 0;
+      for (let t = 0; t < n; t++) for (let k = 0; k < 3; k++) top = Math.max(top, d.getFloat32(84 + t * 50 + 12 + (k * 3 + 2) * 4, true));
+      expect(top).toBeLessThan(zs(p)[1] - zs(p)[0] + 0.5);
+    }
+    expect(buildDesign(w, lay(24)).info.warnings.some((wn) => /too steep|climbs 1 in/.test(wn))).toBe(true);
+  });
   it('a design with train track and monorail: the train built as on its own; a warning where the beam runs into it, none on supports', async () => {
     const train: DRoute = { name: 'T', x: 0, y: -12, heading: 0, segs: [{ kind: 'straight', studs: 24 }] };
     const beam = mono({ name: 'M', x: 12, y: 0, heading: 90, segs: [{ kind: 'straight', studs: 24 }] });

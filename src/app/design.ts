@@ -35,6 +35,8 @@ export interface DRoute {
   system?: 'train' | 'monorail';
   /** (monorail) the beam's height off the baseplate, in plates (3.2 mm); left out: the supports' height (Settings › Monorail), or on the baseplate without supports */
   monoHeight?: number;
+  /** (monorail) its height at its end, in plates: it ramps from monoHeight to this, easing in and out (left out: level) */
+  monoHeightEnd?: number;
 }
 /** The extra rails' settings left out of a route (straight.scad's defaults). */
 export const RAIL_DEFAULTS = {
@@ -172,7 +174,7 @@ export function toRoutes(d: Design): Route[] {
     const rt: Route = {
       id: r.name || String(i),
       throwSide: r.throwSide,
-      ...(r.system === 'monorail' && r.monoHeight !== undefined && { elev: r.monoHeight * 3.2 }),
+      ...(r.system === 'monorail' && r.monoHeight !== undefined && { elev: r.monoHeight * 3.2, ...(r.monoHeightEnd !== undefined && { elevEnd: r.monoHeightEnd * 3.2 }) }),
       start: [r.x * STUD, r.y * STUD, r.heading],
       segments: r.segs.map((sg): Segment => (sg.kind === 'straight'
         ? { kind: 'straight', length: sg.studs * STUD }
