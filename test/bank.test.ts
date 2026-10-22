@@ -50,6 +50,9 @@ describe('banked curves', { timeout: 120000 }, () => {
     expect(routeRoll(st, 128)).toBe(3);
     expect(routeRoll(st, 128 - 32)).toBeCloseTo(1.5, 6);
     expect(bankRolls(d, d.routes[0]).warnings).toEqual([]);
+    // monorail routes are left alone
+    const mono = design([curve(5)]); mono.routes[0].system = 'monorail';
+    expect(toRoutes(mono)[0].segments[0].roll).toBeUndefined();
     // a bank of 0 leaves the routes as they were
     expect(JSON.stringify(toRoutes(design([curve(0)])))).toBe(JSON.stringify(toRoutes(design([curve()]))));
   });
