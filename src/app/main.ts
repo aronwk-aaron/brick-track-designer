@@ -736,6 +736,9 @@ const helpEl = $('help');
 $('help-open').addEventListener('click', () => helpEl.classList.add('open'));
 $('about-open').addEventListener('click', () => { helpEl.classList.add('open'); $('about').scrollIntoView({ block: 'start' }); });
 $('help-close').addEventListener('click', () => helpEl.classList.remove('open'));
+$('help-backdrop').addEventListener('click', () => helpEl.classList.remove('open'));
+// (over the whole page, the toolbar and panels dimmed under it too, not only the plan)
+document.body.append(helpEl, $('help-backdrop'));
 
 // The routes panel: shown or hidden (remembered).
 const setPanel = (on: boolean) => {

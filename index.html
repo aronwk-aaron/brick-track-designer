@@ -189,11 +189,13 @@
     #views [hidden] { display: none; }
     #legend i.knob { width: 9px; height: 9px; border-radius: 50%; background: #e8892b; margin: 0 9px 0 3px; }
     #legend button { margin-top: 4px; padding: 1px 6px; font-size: 12px; }
-    #help { background: var(--panel); right: 10px; top: 10px; width: min(360px, calc(100% - 20px)); padding: 10px 12px; font-size: 12.5px; display: none; z-index: 2; }
+    #help { position: fixed; inset: 0; margin: auto; height: fit-content; background: var(--panel); width: min(760px, calc(100vw - 32px)); padding: 22px 28px; font-size: 15px; line-height: 1.5; display: none; z-index: 60; border-radius: 14px; }
+    #help-backdrop { position: fixed; inset: 0; background: rgba(10, 12, 16, 0.5); z-index: 59; display: none; }
+    #help.open ~ #help-backdrop { display: block; }
+    #help h3 { font-size: 17px; margin: 16px 0 8px; } #help h3:first-child { margin-top: 0; } #help kbd { font-size: 13px; }
     #help.open { display: block; }
-    #help h3 { margin: 0 0 6px; font-size: 13px; }
-    #help ul { margin: 0 0 6px; padding-left: 18px; } #help li { margin: 2px 0; }
-    #help p { margin: 0 0 6px; } #help { max-height: calc(100% - 20px); overflow-y: auto; }
+    #help ul { margin: 0 0 10px; padding-left: 22px; } #help li { margin: 4px 0; }
+    #help p { margin: 0 0 10px; } #help { max-height: calc(100vh - 48px); overflow-y: auto; }
     #empty[hidden] { display: none; }
     #empty { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; pointer-events: none; }
     #empty div { background: var(--chip); border: 1px solid var(--line); border-radius: 10px; padding: 14px 18px; text-align: center; color: var(--muted); box-shadow: var(--shadow); }
@@ -249,6 +251,7 @@
     #empty div { border-radius: 12px; padding: 18px 22px; }
     @media (max-width: 1560px) { header h1 { display: none; } }
     @media (max-width: 1240px) { body { grid-template-columns: 260px minmax(0, 1fr); } body.settings { grid-template-columns: 260px minmax(0, 1fr) 300px; } body.settings.nopanel { grid-template-columns: 0 minmax(0, 1fr) 300px; } }
+    @media (max-width: 1640px) { #toggle-3d .lbl, #settings-open .lbl, #load .lbl, #save .lbl, #export-layout .lbl { display: none; } }
     @media (max-width: 1280px) { header .lbl { display: none; } }
     /* ---- phones and small tablets: the plan and 3D view fill the screen; the routes and settings panels slide over them ---- */
     @media (max-width: 760px) {
@@ -264,7 +267,7 @@
       #legend #legend-rows, #legend .lhead { display: none; } /* (just its Help button: the plan's too small for the rest) */
       #views .sep { display: none; } #views .explode input { width: 60px; }
       #selbar { max-width: calc(100% - 20px); }
-      #help { width: calc(100% - 20px); }
+      #help { width: calc(100vw - 20px); padding: 16px; font-size: 14px; }
     }
     /* touch screens: bigger targets */
     @media (pointer: coarse) {
@@ -374,6 +377,11 @@
           draw leaves your computer.</p>
         <p>Free and open source (AGPL-3.0): <a href="https://github.com/aronwk-aaron/brick-track-designer" target="_blank" rel="noopener">source code and issues on GitHub</a>.
           Made with three.js and the manifold geometry kernel.</p>
+        <p>Plan the rest of your layout with <b>Brick Layout Designer</b>: the collaborative web editor at
+          <a href="https://collab.aronwk.com" target="_blank" rel="noopener">collab.aronwk.com</a>
+          (<a href="https://github.com/brick-layout-designer/collaborative-brick-layout-designer" target="_blank" rel="noopener">source</a>),
+          or the desktop app (<a href="https://github.com/brick-layout-designer/brick-layout-designer" target="_blank" rel="noopener">source and downloads</a>).
+          ⬇ Layout parts gives it your printed track as parts.</p>
         <h3>Laying track</h3>
         <ul>
           <li><kbd>D</kbd> or ✎ Draw, then click a grid point or a track's end to start; move to see the track; click to lay it and carry on.</li>
@@ -401,6 +409,7 @@
         </ul>
         <button id="help-close" type="button">Close</button>
       </div>
+      <div id="help-backdrop"></div>
       <div id="selbar" class="chip" hidden>
         <span id="sel-count"></span>
         <button id="sel-copy" type="button" title="Copy (Ctrl+C)">Copy</button><button id="sel-cut" type="button" title="Cut (Ctrl+X)">Cut</button><button id="sel-paste" type="button" title="Paste at the mouse (Ctrl+V)">Paste</button><button id="sel-dup" type="button" title="Duplicate (Ctrl+D)">Duplicate</button><button id="sel-mirror" type="button" title="Mirror left to right (M)">Mirror</button><button id="sel-rotl" type="button" title="Turn 90° left (Shift+R)">⟲ 90°</button><button id="sel-rotr" type="button" title="Turn 90° right (R)">⟳ 90°</button><button id="sel-del" type="button" class="danger" title="Delete (Del)">Delete</button>
