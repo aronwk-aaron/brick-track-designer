@@ -370,7 +370,11 @@ export function crossingPiece(s: Scad, routes: Route[], o: CrossingOptions = CRO
     const marked: number[] = [];
     for (let k = 0; k <= n; k++) {
       const sAt = (L * k) / n, q = routePose(rt, sAt).slice(0, 2) as [number, number];
-      const near = routes.some((r2, j) => near2[j] && Math.abs(routeLat(r2, q)) < c.sleeperLen + 1 && !shared[j].some((e) => Math.hypot(q[0] - e[0], q[1] - e[1]) < c.sleeperLen))
+      // (where a sleeper here, across this route, would reach onto another route's bed: the square where two tracks
+      // cross (as LEGO's crossing: solid in the middle, sleepers on its arms), or all along tracks side by side)
+      const hd = (routePose(rt, sAt)[2] * Math.PI) / 180, nx = Math.cos(hd), ny = Math.sin(hd), half = c.sleeperLen / 2;
+      const near = routes.some((r2, j) => near2[j] && !shared[j].some((e) => Math.hypot(q[0] - e[0], q[1] - e[1]) < c.sleeperLen)
+          && [-1, -0.75, -0.5, -0.25, 0, 0.25, 0.5, 0.75, 1].some((f) => Math.abs(routeLat(r2, [q[0] + nx * half * f, q[1] + ny * half * f])) < half + 1))
         || addBb.some((bb) => q[0] > bb.min[0] - c.sleeperLen / 2 && q[0] < bb.max[0] + c.sleeperLen / 2 && q[1] > bb.min[1] - c.sleeperLen / 2 && q[1] < bb.max[1] + c.sleeperLen / 2)
         || hol.some(({ P, r }) => {
           const dx = q[0] - P[0], dy = q[1] - P[1], hd = (P[2] * Math.PI) / 180;
@@ -381,7 +385,7 @@ export function crossingPiece(s: Scad, routes: Route[], o: CrossingOptions = CRO
       const atCut = (x.bedAt ?? []).some((ln) => Math.abs((q[0] - ln.p[0]) * -ln.d[1] + (q[1] - ln.p[1]) * ln.d[0]) < 10);
       if (near || atCut) marked.push(sAt);
     }
-    const grow = c.sleeperW / 2 + 2, out: [number, number][] = [];
+    const grow = 2, out: [number, number][] = [];
     for (const v of marked) {
       const a = Math.max(0, v - grow), b = Math.min(L, v + grow), last = out[out.length - 1];
       if (last && a <= last[1] + step) last[1] = b; else out.push([a, b]);
