@@ -1046,6 +1046,16 @@ export class TrackCanvas {
           else { c.strokeStyle = st.forced && !st.ok ? '#e0452b' : '#f0b400'; if (!st.ok) c.setLineDash([3, 2]); }
           c.strokeRect(sx - 4.5, sy - 4.5, 9, 9); c.setLineDash([]);
         }
+        // (hand-edited trackwork: a ring in the accent colour round each one changed, so the edits show on the plan)
+        {
+          const twk = this.host.design().trackwork ?? {}, acc = getComputedStyle(this.el).getPropertyValue('--accent').trim() || '#2563eb';
+          for (const it of this.overlay.items ?? []) {
+            const e = ((twk as Record<string, Record<string, Record<string, unknown>> | undefined>)[it.kind] ?? {})[it.key];
+            if (!e || !Object.values(e).some((v) => v !== undefined && v !== false && !(Array.isArray(v) && !v.length))) continue;
+            const [sx, sy] = this.toScreen(it.at[0] / MM, it.at[1] / MM);
+            c.strokeStyle = acc; c.lineWidth = 2; c.setLineDash([3, 2]); c.beginPath(); c.arc(sx, sy, 11, 0, 2 * Math.PI); c.stroke(); c.setLineDash([]);
+          }
+        }
         // (monorail points: a yellow diamond, built as drawn: not changed by hand)
         for (const q of this.overlay.monoPoints ?? []) {
           const [sx, sy] = this.toScreen(q[0] / MM, q[1] / MM);

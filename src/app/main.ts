@@ -598,6 +598,7 @@ function updateLegend() {
   show('legend-points', its.some((it) => it.kind === 'points' && !it.off && !it.cand));
   show('legend-points-off', its.some((it) => it.kind === 'points' && it.off));
   show('legend-points-cand', its.some((it) => it.kind === 'points' && it.cand));
+  show('legend-edited', Object.values(design.trackwork ?? {}).some((g) => Object.keys(g ?? {}).length > 0));
   show('legend-mono-points', !!(o as { monoPoints?: unknown[] } | undefined)?.monoPoints?.length);
   show('legend-levers', has('throw'));
   show('legend-grip', !!o?.grips?.length);
@@ -1259,74 +1260,108 @@ type TwItem = { kind: 'check' | 'groove' | 'points' | 'throw'; key: string; at: 
 let twSig = '';
 /** The monorail points' toes, as last built (mm). */
 const monoToes = (): [number, number][] => (canvas?.overlay as { monoPoints?: [number, number][] } | undefined)?.monoPoints ?? [];
+/** Trackwork: the groups and items open (remembered), and whether only the hand-edited ones show. */
+const twOpen: Set<string> = (() => { try { const v = JSON.parse(localStorage.getItem('btd-tw-open') ?? 'null'); if (Array.isArray(v)) return new Set<string>(v); } catch { /* (none kept) */ } return new Set(['g:points']); })();
+const keepTw = () => { try { localStorage.setItem('btd-tw-open', JSON.stringify([...twOpen])); } catch { /* (not kept) */ } };
+let twOnlyEdited = false;
 function renderTrackwork(list: TwItem[]) {
   const sig = JSON.stringify([list.map((it) => [it.kind, it.key, it.off, Math.round((it.len ?? 0) * 10), it.toe, it.routes, it.forced, it.cand, it.lever && [it.lever.side, it.lever.leverOffset, it.lever.springLength]]),
-    design.trackwork, design.options?.throwSide, design.options?.mechStyle, design.routes.map((r) => [r.name, r.throwSide]), monoToes()]);
+    design.trackwork, design.options?.throwSide, design.options?.mechStyle, design.routes.map((r) => [r.name, r.throwSide]), monoToes(), twOnlyEdited]);
   if (sig === twSig) return; // (don't rebuild the form under the user's fingers)
   twSig = sig;
-  const body = $('trackwork-body'); body.replaceChildren();
-  // (monorail points: what they are, and that they're built as drawn)
-  monoToes().forEach((q, k) => {
-    const row = document.createElement('div'); row.className = 'tw';
-    const t = document.createElement('b'); t.textContent = `Monorail points ${k + 1} (experimental) · at ${(q[0] / 8).toFixed(1)}, ${(q[1] / 8).toFixed(1)} studs`;
-    const n = document.createElement('div'); n.className = 'none';
-    n.textContent = 'Experimental: not test-printed yet. Built where the routes part, as drawn: the lever is on the main track\'s side, away from the branch (as LEGO\'s). To move them, redraw the branch; their slide and clearance are in Settings › Monorail.';
-    row.append(t, n); body.append(row);
-  });
-  if (!list.length) {
-    if (monoToes().length) { $('trackwork-count').textContent = ` (${monoToes().length})`; return; } const n = document.createElement('div'); n.className = 'none'; n.textContent = 'No check rails, flangeway cuts or points in this design.'; body.append(n); $('trackwork-count').textContent = ''; return; }
+  const body = $('trackwork-body'), scroll = $('trackwork').scrollTop; body.replaceChildren();
+  const tw = design.trackwork ?? {};
+  // (a hand edit: anything kept for it in design.trackwork)
+  const editedOf = (kind: keyof Trackwork, key: string) => { const e = (tw[kind] as Record<string, Record<string, unknown>> | undefined)?.[key]; return !!e && Object.values(e).some((v) => v !== undefined && v !== false && !(Array.isArray(v) && !v.length)); };
+  const edits = (['points', 'throw', 'check', 'groove'] as const).reduce((n, k) => n + Object.keys(tw[k] ?? {}).filter((key) => editedOf(k, key)).length, 0);
   const edit = <K extends keyof Trackwork>(kind: K, key: string, patch: Record<string, unknown>) => {
-    const tw = (design.trackwork ??= {}), group = ((tw[kind] ??= {}) as Record<string, Record<string, unknown>>);
+    const t2 = (design.trackwork ??= {}), group = ((t2[kind] ??= {}) as Record<string, Record<string, unknown>>);
     group[key] = { ...group[key], ...patch };
     changed(true);
   };
-  const names = { check: 'Check rail', groove: 'Flangeway cut', points: 'Points', throw: 'Lever' } as const;
-  // Points: a row per toe (a three-way's splits share one), built or not (taken out), and a row per near miss, to force points there.
+  const resetOne = (kind: keyof Trackwork, key: string) => { const g = (design.trackwork?.[kind] ?? {}) as Record<string, unknown>; delete g[key]; twSig = ''; changed(true); };
+  // the bar on top: how many are edited, only those, reset them all
+  if (list.length || monoToes().length) {
+    const bar = document.createElement('div'); bar.className = 'twbar';
+    const cnt = document.createElement('span'); cnt.className = edits ? 'chipn on' : 'chipn'; cnt.textContent = edits ? `${edits} edited by hand` : 'Nothing edited: all as worked out';
+    const only = document.createElement('input'); only.type = 'checkbox'; only.checked = twOnlyEdited; only.disabled = !edits;
+    only.addEventListener('change', () => { twOnlyEdited = only.checked; twSig = ''; renderTrackwork(list); });
+    const ol = document.createElement('label'); ol.className = 'only'; ol.append(only, document.createTextNode(' Show only edited'));
+    const reset = btn('Reset all', () => { design.trackwork = {}; twSig = ''; twOnlyEdited = false; }, 'Put every check rail, flangeway cut, points set and lever back to what the app works out (points taken out put back, forced ones unforced). Undo brings them back.');
+    reset.disabled = !edits; reset.classList.add('danger');
+    bar.append(cnt, ol, reset); body.append(bar);
+  }
+  if (!list.length && !monoToes().length) { const n = document.createElement('div'); n.className = 'none'; n.textContent = 'No check rails, flangeway cuts or points in this design.'; body.append(n); $('trackwork-count').textContent = ''; return; }
+  // a group of items, folding (its header stays in view)
+  const group = (id: string, title: string, n: number, nEdited: number) => {
+    const g = document.createElement('details'); g.className = 'twg'; g.open = twOpen.has(`g:${id}`) || (twOnlyEdited && nEdited > 0);
+    const sm = document.createElement('summary'); sm.textContent = title;
+    const c = document.createElement('span'); c.className = 'n'; c.textContent = nEdited ? `${n} · ${nEdited} edited` : String(n); if (nEdited) c.classList.add('ed'); sm.append(c);
+    g.addEventListener('toggle', () => { if (g.open) twOpen.add(`g:${id}`); else twOpen.delete(`g:${id}`); keepTw(); });
+    g.append(sm); body.append(g); return g;
+  };
+  // an item: its line (name, what it is now, Edited), and its settings under it when open
+  const item = (g: HTMLElement, key: string, title: string, sub: string, edited: boolean, kind?: keyof Trackwork) => {
+    const d = document.createElement('details'); d.className = 'tw' + (edited ? ' edited' : ''); d.open = twOpen.has(`i:${key}`);
+    const sm = document.createElement('summary');
+    const t = document.createElement('b'); t.textContent = title;
+    const st = document.createElement('span'); st.className = 'sub'; st.textContent = sub;
+    sm.append(t, st);
+    if (edited) { const e = document.createElement('em'); e.className = 'edtag'; e.textContent = 'Edited'; e.title = 'Changed by hand from what the app works out'; sm.append(e); }
+    sm.addEventListener('mouseenter', () => { canvas.highlight = key; canvas.draw(); });
+    sm.addEventListener('mouseleave', () => { canvas.highlight = undefined; canvas.draw(); });
+    d.addEventListener('toggle', () => { if (d.open) twOpen.add(`i:${key}`); else twOpen.delete(`i:${key}`); keepTw(); });
+    const b2 = document.createElement('div'); b2.className = 'twb';
+    d.append(sm, b2); g.append(d);
+    if (edited && kind) { const r = btn('Reset this', () => resetOne(kind, key), 'Back to what the app works out'); r.classList.add('reset1'); queueMicrotask(() => b2.append(r)); }
+    return b2;
+  };
+  const check = (row: HTMLElement, label: string, on: boolean, change: (v: boolean) => void, tip?: string) => {
+    const i = document.createElement('input'); i.type = 'checkbox'; i.checked = on; if (tip) i.title = tip;
+    i.addEventListener('change', () => change(i.checked)); row.append(field(label, i));
+  };
+  const show = (edited: boolean) => !twOnlyEdited || edited;
+  // Points: one per toe (a three-way's splits share one), built or taken out; and the near misses, to force points there
   {
     const keys = [...new Set(list.filter((it) => it.kind === 'points').map((it) => it.key))];
-    let n = 0, m = 0;
-    for (const key of keys) {
-      const its = list.filter((it) => it.kind === 'points' && it.key === key), st = canvas.pointsState(key), cand = its.find((it) => it.cand)?.cand;
-      const cur = design.trackwork?.points?.[key] ?? {};
-      const row = document.createElement('div'); row.className = 'tw';
-      row.addEventListener('mouseenter', () => { canvas.highlight = key; canvas.draw(); });
-      row.addEventListener('mouseleave', () => { canvas.highlight = undefined; canvas.draw(); });
-      const t = document.createElement('b');
-      const box = (label: string, on: boolean, change: (v: boolean) => void, tip?: string) => {
-        const i = document.createElement('input'); i.type = 'checkbox'; i.checked = on; if (tip) i.title = tip;
-        i.addEventListener('change', () => change(i.checked));
-        row.append(field(label, i));
-      };
-      if (st.state === 'cand') {
-        t.textContent = `Could be points ${++m}${st.forced && !st.ok ? ' · too far off to build' : ''}`;
-        row.append(t);
-        const why = document.createElement('div'); why.className = 'none'; why.textContent = `${cand?.why ?? ''}${cand?.ok ? '' : ': too far off to force (redraw it to start on the track)'}`;
-        row.append(why);
-        box('Force points here', st.forced, () => canvas.togglePoints(key), 'Make points here though the track end is a hair off the other track');
-      } else {
-        const ids = [...new Set(its.flatMap((it) => it.routes ?? []))];
-        t.textContent = `Points ${++n}${ids.length ? ` · ${ids.join(' / ')}` : ''}${st.state === 'off' ? ' · taken out' : st.forced ? ' · forced' : ''}`;
-        row.append(t);
-        box('Built (off: both tracks\' rails run through as plain track)', st.state === 'built', () => canvas.togglePoints(key));
-        // (a three-way: each route in it or not; one taken out leaves a two-way for the others)
-        if (ids.length > 2 && !cur.off) for (const id of ids) box(`${id} in the points`, !cur.drop?.includes(id), (v) => {
-          const drop = (cur.drop ?? []).filter((d) => d !== id).concat(v ? [] : [id]);
-          edit('points', key, { drop: drop.length ? drop : undefined });
-        });
-        if (st.state === 'built') { const i = num(cur.toe ?? 0, (v) => edit('points', key, { toe: v }), 1); row.append(field('Points moved along, mm', i)); }
+    if (keys.length) {
+      const g = group('points', 'Points', keys.length, keys.filter((k) => editedOf('points', k)).length);
+      let n = 0, m = 0;
+      for (const key of keys) {
+        const its = list.filter((it) => it.kind === 'points' && it.key === key), st = canvas.pointsState(key), cand = its.find((it) => it.cand)?.cand;
+        const cur = design.trackwork?.points?.[key] ?? {}, ed = editedOf('points', key);
+        if (!show(ed)) { if (st.state === 'cand') m++; else n++; continue; }
+        if (st.state === 'cand') {
+          const row = item(g, key, `Could be points ${++m}`, st.forced ? (st.ok ? 'forced' : 'forced · too far off to build') : 'not built', ed, 'points');
+          const why = document.createElement('div'); why.className = 'none'; why.textContent = `${cand?.why ?? ''}${cand?.ok ? '' : ': too far off to force (redraw it to start on the track)'}`; row.append(why);
+          check(row, 'Force points here', st.forced, () => canvas.togglePoints(key), 'Make points here though the track end is a hair off the other track');
+        } else {
+          const ids = [...new Set(its.flatMap((it) => it.routes ?? []))];
+          const sub = [ids.join(' / '), st.state === 'off' ? 'taken out' : st.forced ? 'forced' : '', cur.toe ? `moved ${cur.toe > 0 ? '+' : ''}${cur.toe} mm` : '', cur.drop?.length ? `without ${cur.drop.join(', ')}` : ''].filter(Boolean).join(' · ');
+          const row = item(g, key, `Points ${++n}`, sub, ed, 'points');
+          check(row, 'Built (off: both tracks\' rails run through as plain track)', st.state === 'built', () => canvas.togglePoints(key));
+          // (a three-way: each route in it or not; one taken out leaves a two-way for the others)
+          if (ids.length > 2 && !cur.off) for (const id of ids) check(row, `${id} in the points`, !cur.drop?.includes(id), (v) => {
+            const drop = (cur.drop ?? []).filter((d2) => d2 !== id).concat(v ? [] : [id]);
+            edit('points', key, { drop: drop.length ? drop : undefined });
+          });
+          if (st.state === 'built') { const i = num(cur.toe ?? 0, (v) => edit('points', key, { toe: v }), 1); row.append(field('Moved along, mm', i)); }
+        }
       }
-      body.append(row);
     }
   }
+  const names = { throw: ['Levers', 'Lever'], check: ['Check rails', 'Check rail'], groove: ['Flangeway cuts', 'Flangeway cut'] } as const;
   for (const kind of ['throw', 'check', 'groove'] as const) {
-    list.filter((it) => it.kind === kind).forEach((it, n) => {
-      const row = document.createElement('div'); row.className = 'tw';
-      row.addEventListener('mouseenter', () => { canvas.highlight = it.key; canvas.draw(); });
-      row.addEventListener('mouseleave', () => { canvas.highlight = undefined; canvas.draw(); });
-      const t = document.createElement('b');
-      t.textContent = `${names[kind]} ${n + 1}${it.len ? ` · ${it.len.toFixed(1)} mm` : ''}${it.off ? ' · taken out' : ''}`;
-      row.append(t);
-      const cur = ((design.trackwork?.[kind] ?? {}) as Record<string, Record<string, number | boolean>>)[it.key] ?? {};
+    const its = list.filter((it) => it.kind === kind);
+    if (!its.length) continue;
+    const g = group(kind, names[kind][0], its.length, its.filter((it) => editedOf(kind, it.key)).length);
+    its.forEach((it, n) => {
+      const cur = ((design.trackwork?.[kind] ?? {}) as Record<string, Record<string, number | boolean | string>>)[it.key] ?? {}, ed = editedOf(kind, it.key);
+      if (!show(ed)) return;
+      let sub: string;
+      if (kind === 'throw' && it.lever) { const ls = leverSide(design, it as unknown as OverlayItem, (canvas.overlay?.items ?? [])); sub = `${ls.side} · ${it.lever.leverOffset.toFixed(0)} mm out`; }
+      else sub = [it.len ? `${it.len.toFixed(1)} mm` : '', it.off ? 'taken out' : '', cur.d0 ? `start ${Number(cur.d0) > 0 ? '+' : ''}${cur.d0}` : '', cur.d1 ? `end ${Number(cur.d1) > 0 ? '+' : ''}${cur.d1}` : '', cur.shift ? `moved ${cur.shift}` : ''].filter(Boolean).join(' · ');
+      const row = item(g, it.key, `${names[kind][1]} ${n + 1}`, sub, ed, kind);
       const numField = (label: string, prop: string, step: number, min?: number) => {
         const i = num((cur[prop] as number) ?? 0, (v) => edit(kind, it.key, { [prop]: min === undefined ? v : Math.max(min, v) }), step);
         if (min !== undefined) i.min = String(min);
@@ -1334,23 +1369,21 @@ function renderTrackwork(list: TwItem[]) {
       };
       if (kind === 'check') {
         numField('Longer at the start, mm', 'd0', 1); numField('Longer at the end, mm', 'd1', 1); numField('Moved in from the rail, mm', 'shift', 0.1);
-        const off = document.createElement('input'); off.type = 'checkbox'; off.checked = !!cur.off;
-        off.addEventListener('change', () => edit(kind, it.key, { off: off.checked }));
-        row.append(field('Take it out', off));
+        check(row, 'Take it out', !!cur.off, (v) => edit(kind, it.key, { off: v }));
       } else if (kind === 'groove') {
         numField('Longer at the start, mm', 'd0', 1, 0); numField('Longer at the end, mm', 'd1', 1, 0);
       } else if (kind === 'throw' && it.lever) {
         // (drag the lever on the plan, or set it here; Auto: as the route or the options say)
         const lv = it.lever, ls = leverSide(design, it as unknown as OverlayItem, (canvas.overlay?.items ?? []));
         const side = document.createElement('select');
-        const auto = ls.by === 'hand' ? 'Auto (as the route or the options say)' : `Auto: ${ls.side} (${ls.why})`;
+        const auto = ls.by === 'hand' ? 'Auto (as the route or the settings say)' : `Auto: ${ls.side} (${ls.why})`;
         for (const [v, l] of [['auto', auto], ['left', 'Left'], ['right', 'Right']]) side.append(new Option(l, v));
         side.value = ls.by === 'hand' ? ls.side : 'auto';
         side.title = 'Left or right as you face along the points from their toe';
         side.addEventListener('change', () => {
-          const tw = (design.trackwork ??= {}), g = (tw.throw ??= {}), e = { ...g[it.key] };
+          const t2 = (design.trackwork ??= {}), gg = (t2.throw ??= {}), e = { ...gg[it.key] };
           if (side.value === 'auto') delete e.side; else e.side = side.value as 'left' | 'right';
-          if (Object.keys(e).length) g[it.key] = e; else delete g[it.key];
+          if (Object.keys(e).length) gg[it.key] = e; else delete gg[it.key];
           changed(true);
         });
         const sf = field('Side', side); sf.classList.add('stack'); row.append(sf);
@@ -1361,11 +1394,18 @@ function renderTrackwork(list: TwItem[]) {
           row.append(field('Spring tines (shorter: the lever nearer the heel), mm', tine));
         }
       }
-      body.append(row);
     });
   }
-  const edits = Object.values(design.trackwork ?? {}).reduce((n, g) => n + Object.keys(g ?? {}).length, 0);
-  const reset = btn(edits ? `Reset ${edits} hand edit${edits > 1 ? 's' : ''}` : 'No hand edits', () => { design.trackwork = {}; twSig = ''; }, 'Put the check rails, flangeway cuts, points and levers back to what the app works out (points taken out put back, forced ones unforced); Undo brings them back');
-  reset.disabled = !edits; body.append(reset);
-  $('trackwork-count').textContent = list.length ? ` (${edits ? `${edits} edited` : 'none edited'})` : '';
+  // (monorail points: what they are, and that they're built as drawn)
+  if (monoToes().length && !twOnlyEdited) {
+    const g = group('mono', 'Monorail points (experimental)', monoToes().length, 0);
+    monoToes().forEach((q, k) => {
+      const row = item(g, `mono:${k}`, `Monorail points ${k + 1}`, `at ${(q[0] / 8).toFixed(0)}, ${(q[1] / 8).toFixed(0)} studs`, false);
+      const n2 = document.createElement('div'); n2.className = 'none';
+      n2.textContent = 'Experimental: not test-printed yet. Built where the routes part, as drawn: the lever is on the main track\'s side, away from the branch (as LEGO\'s). To move them, redraw the branch; their slide and clearance are in Settings › Monorail.';
+      row.append(n2);
+    });
+  }
+  $('trackwork').scrollTop = scroll;
+  $('trackwork-count').textContent = list.length || monoToes().length ? ` (${edits ? `${edits} edited` : 'none edited'})` : '';
 }
