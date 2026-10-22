@@ -228,7 +228,7 @@ function render() {
       const he = document.createElement('input'); he.type = 'number'; he.step = '1'; he.min = '0'; he.max = '60';
       he.value = r.monoHeightEnd === undefined ? '' : String(r.monoHeightEnd); he.placeholder = 'level';
       he.disabled = !isMono(r) || r.monoHeight === undefined;
-      he.title = !isMono(r) ? 'Locked: monorail only' : r.monoHeight === undefined ? 'Locked: set its Height first' : 'Its height at its end, in plates: it ramps from its start height to this, easing in and out (level at both ends). Empty: level. At most 1 in 8 at its steepest: about 12 studs of route for every 5 plates of rise.';
+      he.title = !isMono(r) ? 'Locked: monorail only' : r.monoHeight === undefined ? 'Locked: set its Height first' : 'Its height at its end, in plates: it ramps from its start height to this, easing in and out (level at both ends). Empty: level. It may be as steep as LEGO\'s monorail ramps (21° at the steepest): those rise 5 bricks over each 32-stud piece.';
       he.addEventListener('change', () => { const n = Math.round(Number(he.value)); if (he.value.trim() === '' || !Number.isFinite(n)) delete r.monoHeightEnd; else r.monoHeightEnd = Math.min(60, Math.max(0, n)); changed(true); });
       place.append(field('End height, plates (a ramp)', he));
       if (isMono(r) && r.monoHeight === undefined) { const n4 = document.createElement('small'); n4.className = 'desc'; n4.textContent = 'End height: locked until Height is set.'; n4.style.color = 'var(--warn)'; place.append(n4); }

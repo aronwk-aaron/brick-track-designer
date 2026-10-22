@@ -284,7 +284,9 @@ export function buildMonorail(w: Wasm, routes: Route[], o: Partial<PieceOptions>
   const studs = (q: [number, number]) => `${(q[0] / 8).toFixed(0)}, ${(q[1] / 8).toFixed(0)}`;
   // (its height at s along it: a route's own, eased from its start height to its end height (level at both ends:
   // no kink where it meets the next), else the supports' height (with supports), else on the baseplate)
-  const ease = (t: number) => { const u = Math.min(1, Math.max(0, t)); return u * u * (3 - 2 * u); };
+  // (LEGO's own ramps' shape (2677 and 2678, from their LDraw models): two parabolas, the lower curving up from level
+  // to its steepest where they meet, the upper back to level; the slope changes evenly all the way)
+  const ease = (t: number) => { const u = Math.min(1, Math.max(0, t)); return u < 0.5 ? 2 * u * u : 1 - 2 * (1 - u) * (1 - u); };
   const zAt = (ci: number, s: number) => {
     const c = chains[ci], sw = c.closed ? ((s % c.L) + c.L) % c.L : Math.min(c.L, Math.max(0, s));
     const p = c.prof.find((q) => sw >= q.s0 - 1e-6 && sw <= q.s1 + 1e-6) ?? c.prof[c.prof.length - 1];
@@ -293,8 +295,9 @@ export function buildMonorail(w: Wasm, routes: Route[], o: Partial<PieceOptions>
   };
   const zRange = (ci: number, a: number, b: number) => { let lo = Infinity, hi = -Infinity; for (let k = 0; k <= 40; k++) { const z = zAt(ci, a + ((b - a) * k) / 40); lo = Math.min(lo, z); hi = Math.max(hi, z); } return [lo, hi]; };
   const elevOf = (ci: number) => zRange(ci, 0, chains[ci].L)[1];
-  // (the steepest a ramp may climb: the motor's grip on the rack; an eased ramp is 1.5 x its average at its middle)
-  const MAX_GRADE = 1 / 8;
+  // (the steepest a ramp may climb: LEGO's own, 21.3° where its two ramp pieces meet (5 bricks up over 32 studs each);
+  // the parabolas' steepest is twice the ramp's average)
+  const MAX_GRADE = Math.tan((21.34 * Math.PI) / 180);
   chains.forEach((c, ci) => {
     c.prof.forEach((p, k) => {
       const q = c.prof[k + 1] ?? (c.closed ? c.prof[0] : undefined);
@@ -304,11 +307,11 @@ export function buildMonorail(w: Wasm, routes: Route[], o: Partial<PieceOptions>
         issue([at[0], at[1]], 48, 'The monorail\'s height jumps here: one route ends at a different height from where the next starts');
         res.warnings.push(`monorail ${c.name}: its height jumps at ${studs([at[0], at[1]])} (studs), from ${(end / 3.2).toFixed(0)} to ${(start / 3.2).toFixed(0)} plates: make the routes meet at the same height (a route can ramp: set its end height)`);
       }
-      const dz = Math.abs((p.z1 ?? p.z0 ?? 0) - (p.z0 ?? 0)), grade = (1.5 * dz) / Math.max(1, p.s1 - p.s0);
+      const dz = Math.abs((p.z1 ?? p.z0 ?? 0) - (p.z0 ?? 0)), grade = (2 * dz) / Math.max(1, p.s1 - p.s0);
       if (grade > MAX_GRADE + 1e-6) {
         const at = routePose(c.route, (p.s0 + p.s1) / 2);
-        issue([at[0], at[1]], 64, `A monorail ramp too steep: 1 in ${(1 / grade).toFixed(1)} at its steepest (1 in 8 at most)`);
-        res.warnings.push(`a monorail ramp at ${studs([at[0], at[1]])} (studs) climbs 1 in ${(1 / grade).toFixed(1)} at its steepest (1 in 8 at most, or the motor may slip): make it at least ${Math.ceil((1.5 * dz * 8) / 8)} studs long for that rise`);
+        issue([at[0], at[1]], 64, `A monorail ramp too steep: ${(Math.atan(grade) * 180 / Math.PI).toFixed(0)}° at its steepest (LEGO's ramps: 21°)`);
+        res.warnings.push(`a monorail ramp at ${studs([at[0], at[1]])} (studs) is ${(Math.atan(grade) * 180 / Math.PI).toFixed(0)}° at its steepest, steeper than LEGO's monorail ramps (21°): the motor may slip; make it at least ${Math.ceil((2 * dz) / MAX_GRADE / 8)} studs long for that rise (LEGO's: 64 studs for 10 bricks)`);
       }
     });
     if (elevOf(ci) > 0 && !every) res.warnings.push(`monorail ${c.name} is raised ${(elevOf(ci) / 3.2).toFixed(0)} plates with nothing under it: set Support every (Settings › Monorail)`);
@@ -503,7 +506,8 @@ export function buildMonorail(w: Wasm, routes: Route[], o: Partial<PieceOptions>
   // ---- supports: one part each, standing under the beam ----
   const sups = supportsAt.filter((q) => Number.isFinite(q.s));
   // (and under each switch's ends)
-  const supPoses: { P: Pose; h: number }[] = sups.map((q) => ({ P: routePose(chains[q.c].route, q.s), h: zAt(q.c, q.s) }));
+  const slopeAt = (ci: number, sv: number) => (zAt(ci, sv + 1) - zAt(ci, sv - 1)) / 2;
+  const supPoses: { P: Pose; h: number; slope?: number }[] = sups.map((q) => ({ P: routePose(chains[q.c].route, q.s), h: zAt(q.c, q.s), slope: slopeAt(q.c, q.s) }));
   if (every) for (const sw of switches) for (const e of sw.plan.ends) {
     const c = Math.cos((sw.P[2] * Math.PI) / 180), s = Math.sin((sw.P[2] * Math.PI) / 180);
     supPoses.push({ P: [sw.P[0] + e[0] * c - e[1] * s, sw.P[1] + e[0] * s + e[1] * c, sw.P[2] + e[2]], h: sw.elev });
@@ -511,12 +515,21 @@ export function buildMonorail(w: Wasm, routes: Route[], o: Partial<PieceOptions>
   const seen: Pose[] = [];
   if (supPoses.length) {
     // (each as tall as its beam: whole bricks and plates)
-    const supFor = (h: number) => { const bricks = Math.floor((h + 0.01) / 9.6), so2 = { ...so, bricks, plates: Math.max(0, Math.round((h - bricks * 9.6) / 3.2)) };
-      return cached(`sup:${JSON.stringify(so2)}`, () => arena(w, () => { const m = supportPart(scad, so2); return { stl: stlBytes(m.getMesh(), true), volume: m.volume(), mesh: m.getMesh() }; }, () => [])); };
+    // (under a ramp: exactly as tall as the beam where it stands, its top tilted to the beam's slope, the studs into its
+    // anti-studs (which lean with the beam, as they're lifted with it))
+    const supFor = (h: number, slope = 0) => {
+      const flat = Math.abs(slope) < 1e-3, bricks = Math.floor((h + 0.01) / 9.6);
+      const so2 = { ...so, bricks, plates: flat ? Math.max(0, Math.round((h - bricks * 9.6) / 3.2)) : (h - bricks * 9.6) / 3.2 };
+      return cached(`sup:${JSON.stringify(so2)}:${slope.toFixed(4)}`, () => arena(w, () => {
+        let m = supportPart(scad, so2);
+        if (!flat) { const H = supportHeight(so2); m = m.refineToLength(2).warp((v) => { const k = Math.min(1, Math.max(0, (v[2] - (H - 8)) / 8)); v[2] += k * v[1] * slope; }); }
+        return { stl: stlBytes(m.getMesh(), true), volume: m.volume(), mesh: m.getMesh() };
+      }, () => []));
+    };
     let n = 0;
-    for (const { P, h } of supPoses) {
+    for (const { P, h, slope } of supPoses) {
       if (h < 3.2) continue; // (a beam on the baseplate: nothing to hold up)
-      const sp = supFor(h);
+      const sp = supFor(h, slope ?? 0);
       if (seen.some((q) => near(q, P, 1))) continue;
       seen.push(P);
       const pos = meshPositions(sp.mesh), c = Math.cos((P[2] * Math.PI) / 180), s = Math.sin((P[2] * Math.PI) / 180);

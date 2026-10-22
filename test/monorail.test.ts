@@ -139,7 +139,7 @@ describe('monorail', { timeout: 120000 }, () => {
     const top = (name: RegExp) => Math.max(...b.pieces.filter((p) => name.test(p.name)).map((p) => { let z = -1e9; for (let i = 2; i < p.positions.length; i += 3) z = Math.max(z, p.positions[i]); return z; }));
     expect(top(/^monorail-B/)).toBeCloseTo(20 * 3.2 + MONO.ridgeTop, 1);
   });
-  it('a monorail ramp: the beam eases up from one level to the next, its parts print lying (lower than built), a warning when too steep', async () => {
+  it('a monorail ramp: the beam eases up from one level to the next (LEGO\'s ramp curve), its parts print lying (lower than built), a warning when steeper than LEGO\'s', async () => {
     const lay = (rampStuds: number): Design => ({ version: 1, gaugeStuds: 4, options: { printBedX: 256, printBedY: 256, monoSupportStuds: 16 }, routes: [
       { name: 'G', x: 0, y: 0, heading: 0, system: 'monorail', monoHeight: 0, segs: [{ kind: 'straight', studs: 16 }] },
       { name: 'Rp', x: 0, y: 16, heading: 0, system: 'monorail', monoHeight: 0, monoHeightEnd: 10, segs: [{ kind: 'straight', studs: rampStuds }] },
@@ -158,7 +158,8 @@ describe('monorail', { timeout: 120000 }, () => {
       for (let t = 0; t < n; t++) for (let k = 0; k < 3; k++) top = Math.max(top, d.getFloat32(84 + t * 50 + 12 + (k * 3 + 2) * 4, true));
       expect(top).toBeLessThan(zs(p)[1] - zs(p)[0] + 0.5);
     }
-    expect(buildDesign(w, lay(24)).info.warnings.some((wn) => /too steep|climbs 1 in/.test(wn))).toBe(true);
+    // (steeper than LEGO's own ramps, 21°: 10 plates up over 12 studs)
+    expect(buildDesign(w, lay(12)).info.warnings.some((wn) => /steeper than LEGO/.test(wn))).toBe(true);
   });
   it('a design with train track and monorail: the train built as on its own; a warning where the beam runs into it, none on supports', async () => {
     const train: DRoute = { name: 'T', x: 0, y: -12, heading: 0, segs: [{ kind: 'straight', studs: 24 }] };
