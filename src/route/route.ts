@@ -22,6 +22,8 @@ export interface Route {
    * starts along it (s0), its length (L), and whether each of its ends runs on into another route (in0, in1)
    */
   sleeperFrame?: { s0: number; L: number; in0: boolean; in1: boolean };
+  /** (monorail) the beam's height off the baseplate, mm (left out: the settings' support height, or on the baseplate) */
+  elev?: number;
   /** (editor) bridge guard rails and a dual-gauge third rail along it (geom/extrarails.ts); unset: none */
   extra?: ExtraRails;
 }

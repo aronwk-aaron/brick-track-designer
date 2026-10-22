@@ -27,6 +27,8 @@ export interface Chain {
   closed: boolean;
   /** the rack's gaps (a loop's twice round) */
   gaps: RackGap[];
+  /** its height off the baseplate (mm), if its routes set one (the highest, if they differ: heightsDiffer) */
+  elev?: number; heightsDiffer?: boolean;
 }
 
 /** The monorail routes joined end to end into chains. */
@@ -59,8 +61,10 @@ export function monoChains(routes: Route[]): Chain[] {
     const rts = parts.map((p) => (p.rev ? reversedRoute(routes[p.i]) : routes[p.i]));
     const once: Route = { id: rts[0].id, start: rts[0].start, segments: rts.flatMap((r) => r.segments) };
     const L = routeLength(once), gaps = rackGaps(once, closed);
+    const els = parts.map((p) => routes[p.i].elev).filter((e): e is number => e !== undefined);
     chains.push({ name: rts.map((r) => r.id).join('+'), route: closed ? { ...once, segments: [...once.segments, ...once.segments] } : once, L, closed,
-      gaps: closed ? [...gaps, ...gaps.map((g) => ({ ...g, s: g.s + L }))] : gaps });
+      gaps: closed ? [...gaps, ...gaps.map((g) => ({ ...g, s: g.s + L }))] : gaps,
+      ...(els.length && { elev: Math.max(...els), heightsDiffer: els.some((e) => Math.abs(e - els[0]) > 0.01) || (els.length > 0 && els.length < parts.length) }) });
   };
   for (let i = 0; i < n; i++) if (!used.has(i) && routes[i].segments.length) {
     if (!mate.has(`${i}:0`)) walk(i, false);
@@ -230,12 +234,18 @@ export interface TrainNear { routes: Route[]; half: number; top: number }
 export function buildMonorail(w: Wasm, routes: Route[], o: Partial<PieceOptions>, designName: string | undefined, train: TrainNear | undefined, report: (what: string) => void = () => {}): MonoResult {
   const scad = new Scad(w), mo = monoOptions(o), so = supportOptions(o), mono = new Mono(scad, mo);
   const X = o.printBedX ?? 256, Y = o.printBedY ?? 256, grid = MONO.stud;
-  const every = Math.max(0, Math.round(o.monoSupportStuds ?? 0)) * MONO.stud, elev = every ? supportHeight(so) : 0;
+  const every = Math.max(0, Math.round(o.monoSupportStuds ?? 0)) * MONO.stud, elev0 = every ? supportHeight(so) : 0;
   const labels = o.monoLabels ?? 'name';
   const travel = o.monoSwitchTravel ?? 27, fit = o.monoSwitchFit ?? 0.3;
   const res: MonoResult = { pieces: [], volume: 0, warnings: [], issues: [], splits: [] };
   const chains = monoChains(routes);
   if (!chains.length) return res;
+  // (each beam's height: its routes' own, else the supports' (with supports), else on the baseplate)
+  const elevOf = (ci: number) => chains[ci].elev ?? elev0;
+  chains.forEach((c) => {
+    if (c.heightsDiffer) res.warnings.push(`monorail ${c.name}: its routes are set to different heights; ramps between heights aren't made yet, so it's all built at the highest (${((c.elev ?? 0) / 3.2).toFixed(0)} plates)`);
+    if ((c.elev ?? 0) > 0 && !every) res.warnings.push(`monorail ${c.name} is raised ${((c.elev ?? 0) / 3.2).toFixed(0)} plates with nothing under it: set Support every (Settings › Monorail)`);
+  });
   const issue = (at: [number, number], r: number, text: string) => res.issues.push({ at, r, text });
   const studs = (q: [number, number]) => `${(q[0] / 8).toFixed(0)}, ${(q[1] / 8).toFixed(0)}`;
 
@@ -243,7 +253,7 @@ export function buildMonorail(w: Wasm, routes: Route[], o: Partial<PieceOptions>
   const branches = monoBranches(chains);
   // (each chain's stretches the switches take: [a, b] in its s)
   const taken: [number, number][][] = chains.map(() => []);
-  const switches: { plan: SwitchPlan; P: Pose; key: string }[] = [];
+  const switches: { plan: SwitchPlan; P: Pose; key: string; elev: number }[] = [];
   for (const br of branches) {
     const M = chains[br.main], B = chains[br.branch];
     // (the branch run from its toe end; the main from LEGO's 5 mm before the toe, as far as there's room)
@@ -265,7 +275,8 @@ export function buildMonorail(w: Wasm, routes: Route[], o: Partial<PieceOptions>
     taken[br.branch].push(br.branchEnd === 0 ? [0, bl] : [B.L - bl, B.L]);
     res.splits.push([toe[0], toe[1]]);
     if (res.splits.length === 1) res.warnings.push('monorail points are experimental: test-print a set before building more');
-    switches.push({ plan, P: Pd, key: JSON.stringify({ m: main.route.segments, b: bo.route.segments, lead, travel, fit, mo, elev }) });
+    const elev = elevOf(br.main);
+    switches.push({ plan, P: Pd, elev, key: JSON.stringify({ m: main.route.segments, b: bo.route.segments, lead, travel, fit, mo, elev }) });
   }
 
   // ---- level crossings: where two beams (or one coming back) cross at an angle, a piece of its own ----
@@ -291,6 +302,11 @@ export function buildMonorail(w: Wasm, routes: Route[], o: Partial<PieceOptions>
       }
     }
     for (const h of hits) {
+      // (beams at different heights pass over each other: a crossing only at the same height, a warning if too close to clear)
+      const dz = Math.abs(elevOf(h.ci) - elevOf(h.cj));
+      if (dz >= MONO.ridgeTop + 3) continue;
+      if (dz > 0.01 && res.issues.some((q) => Math.hypot(q.at[0] - h.at[0], q.at[1] - h.at[1]) < 32)) continue;
+      if (dz > 0.01) { issue(h.at, 48, 'Monorail beams cross here at heights too close to pass'); res.warnings.push(`monorail beams cross at ${studs(h.at)} (studs) ${(dz / 3.2).toFixed(0)} plates apart in height: too close to pass over each other (5 plates at least), and not level for a crossing`); continue; }
       if (crossings.some((x) => Math.hypot(x.at[0] - h.at[0], x.at[1] - h.at[1]) < 32)) continue;
       if (res.splits.some((t) => Math.hypot(t[0] - h.at[0], t[1] - h.at[1]) < 400)) continue;
       if (h.ang < 15) { issue(h.at, 48, 'Monorail beams cross here at too shallow an angle for a crossing'); res.warnings.push(`monorail beams cross at ${studs(h.at)} (studs) at ${h.ang.toFixed(0)}°: too shallow for a level crossing (15° at least)`); continue; }
@@ -365,6 +381,7 @@ export function buildMonorail(w: Wasm, routes: Route[], o: Partial<PieceOptions>
     const lines = labels === 'none' ? [] : labels === 'part' ? [tag] : [text, tag];
     const sub = subOf(c.route, p.a, p.b), gaps = c.gaps.filter((g) => g.s > p.a - 1 && g.s < p.b + 1).map((g) => ({ ...g, s: g.s - p.a }));
     const sock = (sockets.get(p) ?? []).map((s) => s - p.a);
+    const elev = elevOf(p.c);
     const key = JSON.stringify({ seg: sub.segments, start: sub.start, gaps, sock, lines, mo, elev });
     const turn = fitAngle(footprint(c.route, p.a, p.b), X, Y);
     const b = cached(`mp:${key}:${turn}`, () => arena(w, () => {
@@ -386,7 +403,7 @@ export function buildMonorail(w: Wasm, routes: Route[], o: Partial<PieceOptions>
       const g = monoSwitch(mono, sw.plan, fit);
       const base = placeAt(g.base, sw.P), frame = placeAt(g.frame, sw.P);
       const tb = fitAngle(outline(base), X, Y);
-      return { base: bake(base, tb ?? 0, elev), frame: bake(frame, fitAngle(outline(frame), X, Y) ?? 0, elev), fits: tb !== undefined };
+      return { base: bake(base, tb ?? 0, sw.elev), frame: bake(frame, fitAngle(outline(frame), X, Y) ?? 0, sw.elev), fits: tb !== undefined };
     }, () => []));
     res.pieces.push({ name: `${tag}-base`, color: 0x9aa3ad, positions: pts.base.positions.slice(), stl: pts.base.stl.slice() });
     res.pieces.push({ name: `${tag}-frame`, color: 0x4682b4, positions: pts.frame.positions.slice(), stl: pts.frame.stl.slice() });
@@ -400,6 +417,7 @@ export function buildMonorail(w: Wasm, routes: Route[], o: Partial<PieceOptions>
   crossings.forEach((x, k) => {
     report(`Building monorail crossing ${k + 1} of ${crossings.length}`);
     const name = crossings.length > 1 ? `monorail-crossing${k + 1}` : 'monorail-crossing';
+    const elev = elevOf(x.arms[0].c);
     const key = JSON.stringify({ arms: x.arms.map((a) => [chains[a.c].route.segments, chains[a.c].route.start, a.a, a.b]), mo, elev });
     const b = cached(`mx:${key}`, () => arena(w, () => {
       const arms = x.arms.map((a) => {
@@ -418,16 +436,20 @@ export function buildMonorail(w: Wasm, routes: Route[], o: Partial<PieceOptions>
   // ---- supports: one part each, standing under the beam ----
   const sups = supportsAt.filter((q) => Number.isFinite(q.s));
   // (and under each switch's ends)
-  const supPoses: Pose[] = sups.map((q) => routePose(chains[q.c].route, q.s));
+  const supPoses: { P: Pose; h: number }[] = sups.map((q) => ({ P: routePose(chains[q.c].route, q.s), h: elevOf(q.c) }));
   if (every) for (const sw of switches) for (const e of sw.plan.ends) {
     const c = Math.cos((sw.P[2] * Math.PI) / 180), s = Math.sin((sw.P[2] * Math.PI) / 180);
-    supPoses.push([sw.P[0] + e[0] * c - e[1] * s, sw.P[1] + e[0] * s + e[1] * c, sw.P[2] + e[2]]);
+    supPoses.push({ P: [sw.P[0] + e[0] * c - e[1] * s, sw.P[1] + e[0] * s + e[1] * c, sw.P[2] + e[2]], h: sw.elev });
   }
   const seen: Pose[] = [];
   if (supPoses.length) {
-    const sp = cached(`sup:${JSON.stringify(so)}`, () => arena(w, () => { const m = supportPart(scad, so); return { stl: stlBytes(m.getMesh(), true), volume: m.volume(), mesh: m.getMesh() }; }, () => []));
+    // (each as tall as its beam: whole bricks and plates)
+    const supFor = (h: number) => { const bricks = Math.floor((h + 0.01) / 9.6), so2 = { ...so, bricks, plates: Math.max(0, Math.round((h - bricks * 9.6) / 3.2)) };
+      return cached(`sup:${JSON.stringify(so2)}`, () => arena(w, () => { const m = supportPart(scad, so2); return { stl: stlBytes(m.getMesh(), true), volume: m.volume(), mesh: m.getMesh() }; }, () => [])); };
     let n = 0;
-    for (const P of supPoses) {
+    for (const { P, h } of supPoses) {
+      if (h < 3.2) continue; // (a beam on the baseplate: nothing to hold up)
+      const sp = supFor(h);
       if (seen.some((q) => near(q, P, 1))) continue;
       seen.push(P);
       const pos = meshPositions(sp.mesh), c = Math.cos((P[2] * Math.PI) / 180), s = Math.sin((P[2] * Math.PI) / 180);
@@ -439,10 +461,10 @@ export function buildMonorail(w: Wasm, routes: Route[], o: Partial<PieceOptions>
 
   // ---- where it runs into other things ----
   const samples = chains.flatMap((c, ci) => { const out: { q: Pose; ci: number; s: number }[] = []; for (let s = 0; s <= c.L; s += 8) out.push({ q: routePose(c.route, s), ci, s }); return out; });
-  if (train && train.routes.length && elev < train.top) {
+  if (train && train.routes.length && chains.some((_, ci) => elevOf(ci) < train.top)) {
     const tp = train.routes.flatMap((rt) => { const L = routeLength(rt), out: Pose[] = []; for (let s = 0; s <= L; s += 8) out.push(routePose(rt, s)); return out; });
     const r = MONO.beamHw + train.half, spots: Pose[] = [];
-    for (const m of samples) if (tp.some((t) => Math.abs(t[0] - m.q[0]) < r && Math.abs(t[1] - m.q[1]) < r && Math.hypot(t[0] - m.q[0], t[1] - m.q[1]) < r - 1) && !spots.some((q) => near(q, m.q, 64))) spots.push(m.q);
+    for (const m of samples) if (elevOf(m.ci) < train.top && tp.some((t) => Math.abs(t[0] - m.q[0]) < r && Math.abs(t[1] - m.q[1]) < r && Math.hypot(t[0] - m.q[0], t[1] - m.q[1]) < r - 1) && !spots.some((q) => near(q, m.q, 64))) spots.push(m.q);
     for (const q of spots) issue([q[0], q[1]], 48, 'The monorail beam runs into train track here, at the same height');
     if (spots.length) res.warnings.push(`the monorail beam runs into train track at ${spots.slice(0, 4).map((q) => studs([q[0], q[1]])).join('; ')}${spots.length > 4 ? ' …' : ''} (studs), at the same height: move it, or raise the monorail on supports taller than the track`);
   }
@@ -452,6 +474,7 @@ export function buildMonorail(w: Wasm, routes: Route[], o: Partial<PieceOptions>
     for (let i = 0; i < samples.length; i++) for (let j = i + 1; j < samples.length; j++) {
       const p = samples[i], q = samples[j];
       if (Math.abs(p.q[0] - q.q[0]) > 31 || Math.abs(p.q[1] - q.q[1]) > 31) continue;
+      if (Math.abs(elevOf(p.ci) - elevOf(q.ci)) >= MONO.ridgeTop + 3) continue; // (one over the other)
       if (p.ci === q.ci && (Math.abs(p.s - q.s) < 64 || (chains[p.ci].closed && chains[p.ci].L - Math.abs(p.s - q.s) < 64))) continue;
       if (Math.hypot(p.q[0] - q.q[0], p.q[1] - q.q[1]) >= 31) continue;
       if (toes.some((t) => Math.hypot(t[0] - p.q[0], t[1] - p.q[1]) < 400)) continue;

@@ -163,7 +163,7 @@ function render() {
       const b2 = document.createElement('div'); d2.append(s2, b2); body.append(d2); return b2;
     };
     const shape = part('Shape', `${r.segs.length} piece${r.segs.length === 1 ? '' : 's'}`);
-    const place = part('Place', `${r.x}, ${r.y} · ${r.heading}°${isMono(r) ? ' · monorail' : ''}`);
+    const place = part('Place', `${r.x}, ${r.y} · ${r.heading}°${isMono(r) ? ` · monorail${r.monoHeight !== undefined ? ` · ${r.monoHeight} plates up` : ''}` : ''}`);
     const name = document.createElement('input'); name.value = r.name; name.type = 'text';
     // (routes are known by their names, in the trackwork and the switches: no two the same)
     name.addEventListener('change', () => {
@@ -183,6 +183,14 @@ function render() {
       sys.title = 'Train track, or LEGO monorail: the 4-stud beam with a rack down the middle.';
       sys.addEventListener('change', () => { if (sys.value === 'monorail') r.system = 'monorail'; else delete r.system; changed(true); renderOptions(); });
       place.append(field('Track', sys));
+      // (monorail: the beam's height off the baseplate, in plates; empty: the supports' height in Settings, or on the baseplate)
+      const hi = document.createElement('input'); hi.type = 'number'; hi.step = '1'; hi.min = '0'; hi.max = '60';
+      hi.value = r.monoHeight === undefined ? '' : String(r.monoHeight); hi.placeholder = 'auto';
+      hi.disabled = !isMono(r);
+      hi.title = isMono(r) ? 'The beam\'s height off the baseplate in plates (3.2 mm). Empty: the supports\' height (Settings › Monorail), or on the baseplate. Raise it to pass over train track or another monorail (5 plates clear of a beam, more over track).' : 'Locked: monorail only';
+      hi.addEventListener('change', () => { const n = Math.round(Number(hi.value)); if (hi.value.trim() === '' || !Number.isFinite(n)) delete r.monoHeight; else r.monoHeight = Math.min(60, Math.max(0, n)); changed(true); });
+      place.append(field('Height, plates', hi));
+      if (!isMono(r)) { const n3 = document.createElement('small'); n3.className = 'desc'; n3.textContent = 'Locked: monorail only.'; n3.style.color = 'var(--warn)'; n3.style.fontWeight = '600'; place.append(n3); }
     }
     r.segs.forEach((_, k) => shape.append(segRow(r, k)));
     const ends = part('Ends', [r.startEnd, r.endEnd].includes('buffer') ? 'buffer stop' : '');

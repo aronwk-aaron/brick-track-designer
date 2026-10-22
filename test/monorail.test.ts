@@ -126,6 +126,19 @@ describe('monorail', { timeout: 120000 }, () => {
     expect(midTop).toBeCloseTo(MONO.beamTop, 1);
     expect(armTop).toBeCloseTo(MONO.ridgeTop, 1);
   });
+  it('a monorail route raised (its own height): it passes over another beam and over train track, on supports that tall', async () => {
+    const d: Design = { version: 1, gaugeStuds: 4, options: { printBedX: 256, printBedY: 256, monoSupportStuds: 16 }, routes: [
+      { name: 'A', x: 0, y: -24, heading: 0, system: 'monorail', monoHeight: 0, segs: [{ kind: 'straight', studs: 48 }] },
+      { name: 'B', x: 24, y: 0, heading: 90, system: 'monorail', monoHeight: 20, segs: [{ kind: 'straight', studs: 48 }] },
+      { name: 'T', x: 12, y: -24, heading: 0, segs: [{ kind: 'straight', studs: 48 }] },
+    ] };
+    const b = buildDesign(await kernel(), d);
+    expect(b.pieces.some((p) => /crossing/.test(p.name))).toBe(false);
+    expect(b.info.warnings.filter((wn) => /monorail beam runs into train|beams run over|cross at/.test(wn).valueOf())).toEqual([]);
+    // (B's parts up at 20 plates; its supports that tall)
+    const top = (name: RegExp) => Math.max(...b.pieces.filter((p) => name.test(p.name)).map((p) => { let z = -1e9; for (let i = 2; i < p.positions.length; i += 3) z = Math.max(z, p.positions[i]); return z; }));
+    expect(top(/^monorail-B/)).toBeCloseTo(20 * 3.2 + MONO.ridgeTop, 1);
+  });
   it('a design with train track and monorail: the train built as on its own; a warning where the beam runs into it, none on supports', async () => {
     const train: DRoute = { name: 'T', x: 0, y: -12, heading: 0, segs: [{ kind: 'straight', studs: 24 }] };
     const beam = mono({ name: 'M', x: 12, y: 0, heading: 90, segs: [{ kind: 'straight', studs: 24 }] });
