@@ -408,7 +408,23 @@ view.append(renderer.domElement);
 const scene = new THREE.Scene();
 const cssColor = (v: string, fallback: string) => getComputedStyle(document.documentElement).getPropertyValue(v).trim() || fallback;
 scene.background = new THREE.Color(cssColor('--view-bg', '#f4f4f2'));
-matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => { scene.background = new THREE.Color(cssColor('--view-bg', '#f4f4f2')); redraw3d(); });
+const themeChanged = () => { scene.background = new THREE.Color(cssColor('--view-bg', '#f4f4f2')); redraw3d(); canvas?.draw(); };
+matchMedia('(prefers-color-scheme: dark)').addEventListener('change', themeChanged);
+// Light or dark: the system's (default), or set from the toolbar (remembered)
+{
+  const btnT = $('theme'), modes = ['system', 'light', 'dark'] as const;
+  const icon = { system: 'i-theme', light: 'i-sun', dark: 'i-moon' } as const, tip = { system: 'Light or dark: follows the system (click for light)', light: 'Light (click for dark)', dark: 'Dark (click to follow the system)' } as const;
+  const apply = (m: typeof modes[number]) => {
+    if (m === 'system') delete document.documentElement.dataset.theme; else document.documentElement.dataset.theme = m;
+    btnT.querySelector('use')!.setAttribute('href', `#${icon[m]}`); btnT.title = tip[m];
+    try { localStorage.setItem('btd-theme', m); } catch { /* fine */ }
+    themeChanged();
+  };
+  let mode: typeof modes[number] = 'system';
+  try { const v = localStorage.getItem('btd-theme'); if (v === 'light' || v === 'dark') mode = v; } catch { /* fine */ }
+  btnT.addEventListener('click', () => { mode = modes[(modes.indexOf(mode) + 1) % 3]; apply(mode); });
+  queueMicrotask(() => apply(mode));
+}
 const camera = new THREE.PerspectiveCamera(35, 1, 1, 10000);
 camera.up.set(0, 0, 1);
 const controls = new OrbitControls(camera, renderer.domElement);
@@ -773,6 +789,10 @@ $('help-close').addEventListener('click', () => helpEl.classList.remove('open'))
 $('help-backdrop').addEventListener('click', () => helpEl.classList.remove('open'));
 // (over the whole page, the toolbar and panels dimmed under it too, not only the plan)
 document.body.append(helpEl, $('help-backdrop'));
+// (the settings' choice pictures: the same, a modal over the page)
+document.body.append($('choices'), $('choices-backdrop'));
+for (const id of ['choices-close', 'choices-backdrop']) $(id).addEventListener('click', () => $('choices').classList.remove('open'));
+addEventListener('keydown', (e) => { if (e.key === 'Escape') $('choices').classList.remove('open'); });
 
 // The routes panel: shown or hidden (remembered).
 const setPanel = (on: boolean) => {
@@ -1102,6 +1122,29 @@ function switchesNow() {
 const openSecs: Set<string> = (() => { try { const v = JSON.parse(localStorage.getItem('btd-settings-open') ?? 'null'); if (Array.isArray(v)) return new Set<string>(v); } catch { /* (none kept) */ } return new Set(OPTION_FORM.slice(0, 2).map((sec) => sec.title)); })();
 const keepSecs = () => { try { localStorage.setItem('btd-settings-open', JSON.stringify([...openSecs])); } catch { /* (not kept) */ } };
 let optQuery = '';
+/** The settings whose choices have example pictures (public/options/<key>-<value>.webp, made by scripts/option-pictures.mts). */
+const PICTURED = new Set(['joint', 'cutRails', 'sleepers', 'curveStuds', 'ballast', 'bottomStyle', 'grip', 'undersideGrid', 'splitTrack', 'mechStyle', 'bladeHold', 'bladeStyle', 'throwStyle', 'bufferStyle', 'monoEndStuds']);
+/** A setting's choices side by side in a modal: each one's picture, what it does, its drawback, and a button to use it. */
+function showChoices(f: OptField, cur: string, def: string, c: OptCtx, off: string | undefined, use: (v: string) => void) {
+  const modal = $('choices'), body = $('choices-body');
+  $('choices-title').textContent = f.label;
+  body.replaceChildren();
+  for (const ch of f.choices ?? []) {
+    const card = document.createElement('div'); card.className = 'choice' + (ch.v === cur ? ' current' : '');
+    const img = document.createElement('img'); img.loading = 'lazy'; img.alt = ch.t; img.src = `${import.meta.env.BASE_URL}options/${f.key}-${ch.v}.webp`;
+    img.addEventListener('error', () => img.remove());
+    const h = document.createElement('b'); h.textContent = ch.t + (ch.v === def ? ' (default)' : '');
+    card.append(img, h);
+    const why = ch.no?.(c);
+    for (const [txt, cls] of [[ch.tip, ''], [ch.con && `Drawback: ${ch.con}`, 'con'], [why && `Not built as chosen here: ${why}.`, 'why']] as const) if (txt) { const p2 = document.createElement('p'); p2.textContent = txt; if (cls) p2.className = cls; card.append(p2); }
+    const b = document.createElement('button'); b.type = 'button';
+    b.textContent = ch.v === cur ? 'In use' : 'Use this'; b.disabled = ch.v === cur || !!off;
+    if (off) b.title = `Locked: ${off}`;
+    b.addEventListener('click', () => { use(ch.v); modal.classList.remove('open'); });
+    card.append(b); body.append(card);
+  }
+  modal.classList.add('open');
+}
 function renderOptions() {
   const body = $('options-body'), scroll = $('options').scrollTop;
   const o = { ...OPTION_DEFAULTS, ...design.options } as PieceOptions;
@@ -1155,6 +1198,13 @@ function renderOptions() {
         }
         sel.value = String(cur);
         const lab = field(f.label, sel); lab.classList.add('stack'); wrap.append(lab);
+        // (pictures of the choices: a round button by the label opens them side by side)
+        if (PICTURED.has(f.key)) {
+          const pb = document.createElement('button'); pb.type = 'button'; pb.className = 'pics'; pb.textContent = 'i';
+          pb.title = `See what each choice of ${f.label} looks like`; pb.setAttribute('aria-label', pb.title);
+          pb.addEventListener('click', (e) => { e.preventDefault(); showChoices(f, String(cur), String(def), c, off, (v) => { setOpt(f, f.numeric ? Number(v) : v); changed(true); renderOptions(); }); });
+          lab.querySelector('span')!.append(pb);
+        }
         const chosen = f.choices.find((ch) => ch.v === String(cur)), why = chosen?.no?.(c);
         if (why) note(`Not built as chosen: ${why}.`, 'desc why');
         if (chosen?.tip) note(chosen.tip);

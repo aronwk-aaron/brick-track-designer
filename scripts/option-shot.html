@@ -1,0 +1,24 @@
+<!doctype html><html><body style="margin:0;background:transparent"><script type="module">
+// (scripts/option-pictures.mts's renderer: the STLs in ?stl= (comma separated; each part its own colour), the camera at
+// ?dir= (x,y,z from the target), ?dist= (times the parts' size), looking at ?at= (else their middle))
+import * as THREE from 'three';
+import { STLLoader } from 'three/examples/jsm/loaders/STLLoader.js';
+const q = new URLSearchParams(location.search), W = Number(q.get('w') ?? 960), H = Number(q.get('h') ?? 640);
+const r = new THREE.WebGLRenderer({ antialias: true, alpha: true, preserveDrawingBuffer: true }); r.setSize(W, H); r.setClearColor(0x000000, 0); document.body.append(r.domElement);
+// (a clear background: the pictures sit on the page's own, light or dark)
+const sc = new THREE.Scene();
+sc.add(new THREE.HemisphereLight(0xffffff, 0x666677, 1.7)); const dl = new THREE.DirectionalLight(0xffffff, 1.5); dl.position.set(-1, -2, 3); sc.add(dl);
+const cols = [0x6f7780, 0x8a5a44, 0x4f6f8f, 0x7a7f4f, 0x6f4f7f];
+const box = new THREE.Box3();
+let k = 0;
+for (const url of q.get('stl').split(',')) {
+  const g = new STLLoader().parse(await (await fetch(url)).arrayBuffer()); g.computeVertexNormals();
+  const m = new THREE.Mesh(g, new THREE.MeshStandardMaterial({ color: cols[k++ % cols.length], roughness: 0.6, flatShading: true })); sc.add(m); g.computeBoundingBox(); box.union(g.boundingBox);
+}
+const c = box.getCenter(new THREE.Vector3()), size = box.getSize(new THREE.Vector3()).length();
+const [ax, ay, az] = (q.get('dir') ?? '1,-1,0.8').split(',').map(Number), f = Number(q.get('dist') ?? 1.1);
+const cam = new THREE.PerspectiveCamera(32, W / H, 1, 5000); cam.up.set(0, 0, 1);
+const tgt = q.get('at') ? new THREE.Vector3(...q.get('at').split(',').map(Number)) : c;
+cam.position.copy(tgt).add(new THREE.Vector3(ax, ay, az).normalize().multiplyScalar(Number(q.get('r') ?? size * f))); cam.lookAt(tgt);
+r.render(sc, cam); document.title = 'done'; console.log('cam', cam.position.distanceTo(tgt).toFixed(1), tgt.toArray().map((v) => v.toFixed(1)).join(','), size.toFixed(0));
+</script></body></html>

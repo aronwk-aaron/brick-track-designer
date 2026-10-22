@@ -11,6 +11,7 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="default">
   <meta name="description" content="Lay out LEGO-compatible train track and make it into parts to 3D print.">
   <link rel="manifest" href="manifest.webmanifest">
+  <script>try { const t = localStorage.getItem('btd-theme'); if (t === 'light' || t === 'dark') document.documentElement.dataset.theme = t; } catch { /* fine */ }</script>
   <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
   <title>Brick Track Designer</title>
   <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A//www.w3.org/2000/svg%22%20viewBox%3D%220%200%2024%2024%22%3E%3Crect%20x%3D%222%22%20y%3D%222%22%20width%3D%2220%22%20height%3D%2220%22%20rx%3D%225%22%20fill%3D%22%23d01012%22/%3E%3Cpath%20d%3D%22M8%205v14M16%205v14%22%20stroke%3D%22%23fff%22%20stroke-width%3D%222%22/%3E%3Cpath%20d%3D%22M6%208.5h12M6%2012h12M6%2015.5h12%22%20stroke%3D%22%23fff%22%20stroke-width%3D%221.4%22%20opacity%3D%220.8%22/%3E%3C/svg%3E">
@@ -21,7 +22,8 @@
       --chip: rgba(255,255,255,0.88); --shadow: 0 1px 2px rgba(16,24,40,0.06), 0 2px 8px rgba(16,24,40,0.08); --radius: 8px;
       --canvas-bg: #fbfbf8; --view-bg: #f2f3f5;
     }
-    @media (prefers-color-scheme: dark) { :root {
+    /* dark: the system's, unless the toolbar's switch says light or dark */
+    @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
       --bg: #0f1115; --panel: #171a1f; --raise: #1d2127; --hover: #252a31; --line: #2c3139; --ink: #e5e8eb; --muted: #97a0aa;
       --accent: #5b8def; --accent-soft: rgba(91,141,239,0.16); --accent-ink: #ffffff; --brand: #ff4a3d; --err: #ff7a6b; --warn: #f0b45a;
       --chip: rgba(23,26,31,0.88); --shadow: 0 1px 2px rgba(0,0,0,0.4), 0 4px 14px rgba(0,0,0,0.35);
@@ -29,6 +31,15 @@
       --canvas-bg: #14171b; --c-grid: #1f2328; --c-grid8: #2c3138; --c-rail: #c9d0d6; --c-centre: #5a5f66; --c-label: #aab1b8;
       --c-mark: #e6e8ea; --c-tag-bg: rgba(23,26,31,0.94); --c-band: rgba(200,205,210,0.10); --c-sel: #7fa9f5; --c-sel-ink: #9bbcff;
     } }
+    :root[data-theme="dark"] {
+      --bg: #0f1115; --panel: #171a1f; --raise: #1d2127; --hover: #252a31; --line: #2c3139; --ink: #e5e8eb; --muted: #97a0aa;
+      --accent: #5b8def; --accent-soft: rgba(91,141,239,0.16); --accent-ink: #ffffff; --brand: #ff4a3d; --err: #ff7a6b; --warn: #f0b45a;
+      --chip: rgba(23,26,31,0.88); --shadow: 0 1px 2px rgba(0,0,0,0.4), 0 4px 14px rgba(0,0,0,0.35);
+      --view-bg: #1b1e23;
+      --canvas-bg: #14171b; --c-grid: #1f2328; --c-grid8: #2c3138; --c-rail: #c9d0d6; --c-centre: #5a5f66; --c-label: #aab1b8;
+      --c-mark: #e6e8ea; --c-tag-bg: rgba(23,26,31,0.94); --c-band: rgba(200,205,210,0.10); --c-sel: #7fa9f5; --c-sel-ink: #9bbcff;
+    }
+    :root { color-scheme: light dark; } :root[data-theme="light"] { color-scheme: light; } :root[data-theme="dark"] { color-scheme: dark; }
     * { box-sizing: border-box; }
     html, body { height: 100%; }
     body { margin: 0; font: 13px/1.35 system-ui, sans-serif; display: grid; grid-template-columns: 300px minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr); height: 100vh; overflow: hidden; background: var(--bg); color: var(--ink); }
@@ -190,6 +201,17 @@
     #legend i.knob { width: 9px; height: 9px; border-radius: 50%; background: #e8892b; margin: 0 9px 0 3px; }
     #legend button { margin-top: 4px; padding: 1px 6px; font-size: 12px; }
     #help { position: fixed; inset: 0; margin: auto; height: fit-content; background: var(--panel); width: min(760px, calc(100vw - 32px)); padding: 22px 28px; font-size: 15px; line-height: 1.5; display: none; z-index: 60; border-radius: 14px; }
+    #choices { position: fixed; inset: 0; margin: auto; height: fit-content; max-height: calc(100vh - 48px); overflow-y: auto; width: min(1100px, calc(100vw - 32px)); padding: 18px 22px; background: var(--panel); z-index: 62; display: none; border-radius: 14px; font-size: 14px; }
+    #choices.open { display: block; } #choices-backdrop { position: fixed; inset: 0; background: rgba(10, 12, 16, 0.5); z-index: 61; display: none; } #choices.open ~ #choices-backdrop { display: block; }
+    #choices .chead { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; } #choices h3 { margin: 0; font-size: 18px; }
+    #choices-body { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 14px; }
+    #choices .choice { border: 1px solid var(--line); border-radius: 12px; padding: 10px; display: flex; flex-direction: column; gap: 6px; background: var(--raise); }
+    #choices .choice.current { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+    #choices .choice img { width: 100%; aspect-ratio: 640 / 420; object-fit: contain; border-radius: 8px; background: var(--view-bg); }
+    #choices .choice b { font-size: 15px; } #choices .choice p { margin: 0; color: var(--muted); line-height: 1.45; } #choices .choice p.con { color: var(--ink); opacity: 0.8; } #choices .choice p.why { color: var(--warn); font-weight: 600; }
+    #choices .choice button { margin-top: auto; align-self: flex-start; }
+    #options .field span button.pics { width: 18px; height: 18px; padding: 0; margin-left: 6px; border-radius: 50%; font: italic 600 11px/1 Georgia, serif; color: var(--accent); border-color: var(--accent); background: transparent; vertical-align: 1px; }
+    #options .field span button.pics:hover { background: var(--accent-soft); }
     #help-backdrop { position: fixed; inset: 0; background: rgba(10, 12, 16, 0.5); z-index: 59; display: none; }
     #help.open ~ #help-backdrop { display: block; }
     #help h3 { font-size: 17px; margin: 16px 0 8px; } #help h3:first-child { margin-top: 0; } #help kbd { font-size: 13px; }
@@ -298,6 +320,9 @@
       <symbol id="i-save" viewBox="0 0 24 24"><path d="M5 3h11l4 4v12a2 2 0 01-2 2H6a2 2 0 01-2-2V5a2 2 0 012-2z"/><path d="M8 3v5h7V3M8 21v-7h8v7"/></symbol>
       <symbol id="i-download" viewBox="0 0 24 24"><path d="M12 4v11M7 10l5 5 5-5M5 20h14"/></symbol>
       <symbol id="i-layout" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><path d="M17.5 14v7M14 17.5h7"/></symbol>
+      <symbol id="i-theme" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/><path d="M12 4a8 8 0 010 16z" fill="currentColor"/></symbol>
+      <symbol id="i-sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M2 12h2M20 12h2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></symbol>
+      <symbol id="i-moon" viewBox="0 0 24 24"><path d="M20 14.5A8 8 0 019.5 4 8 8 0 1020 14.5z"/></symbol>
       <symbol id="i-info" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 11v6M12 7.5v.5"/></symbol>
       <symbol id="i-github" viewBox="0 0 16 16"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></symbol>
     </defs>
@@ -331,6 +356,7 @@
     <button id="export-layout" type="button" title="Download the parts as a parts library for the layout designer"><svg><use href="#i-layout"/></svg><span class="lbl">Layout parts</span></button>
     <input id="load-file" type="file" accept=".json,application/json" hidden>
     <span class="sep"></span>
+    <button id="theme" class="icon" type="button" title="Light or dark: follows the system (click for light, then dark)"><svg><use href="#i-theme"/></svg></button>
     <button id="about-open" class="icon" type="button" title="About Brick Track Designer, and its source code"><svg><use href="#i-info"/></svg></button>
     <a id="source-link" class="icon" href="https://github.com/aronwk-aaron/brick-track-designer" target="_blank" rel="noopener" title="Source code on GitHub"><svg class="solid"><use href="#i-github"/></svg></a>
   </header>
@@ -410,6 +436,11 @@
         <button id="help-close" type="button">Close</button>
       </div>
       <div id="help-backdrop"></div>
+      <div id="choices" class="chip" role="dialog" aria-label="Choices">
+        <div class="chead"><h3 id="choices-title"></h3><button id="choices-close" type="button" title="Close (Esc)">✕</button></div>
+        <div id="choices-body"></div>
+      </div>
+      <div id="choices-backdrop"></div>
       <div id="selbar" class="chip" hidden>
         <span id="sel-count"></span>
         <button id="sel-copy" type="button" title="Copy (Ctrl+C)">Copy</button><button id="sel-cut" type="button" title="Cut (Ctrl+X)">Cut</button><button id="sel-paste" type="button" title="Paste at the mouse (Ctrl+V)">Paste</button><button id="sel-dup" type="button" title="Duplicate (Ctrl+D)">Duplicate</button><button id="sel-mirror" type="button" title="Mirror left to right (M)">Mirror</button><button id="sel-rotl" type="button" title="Turn 90° left (Shift+R)">⟲ 90°</button><button id="sel-rotr" type="button" title="Turn 90° right (R)">⟳ 90°</button><button id="sel-del" type="button" class="danger" title="Delete (Del)">Delete</button>
