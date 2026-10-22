@@ -157,8 +157,8 @@ export interface PieceOptions {
   /** Monorail supports (monorail_support.scad): one every this many studs along the beam (0: none); their height in bricks and plates; base size (studs); anti-stud underside; studs round the base; closed frame. */
   monoSupportStuds?: number; monoSupportBricks?: number; monoSupportPlates?: number; monoSupportBaseXStuds?: number; monoSupportBaseYStuds?: number;
   monoSupportAntistud?: boolean; monoSupportBaseStuds?: boolean; monoSupportSolid?: boolean;
-  /** Banked curves: each ramp from level to the full bank, studs (curves.scad's superelevation_ramp_studs, 2 to 24). */
-  bankRampStuds?: number;
+  /** Banked curves: the shortest ramp from level to the full bank, studs (curves.scad's superelevation_ramp_studs), lengthened to keep the outer rail's climb within 1 in bankClimb; ramps on the straights either side ('straight') or inside the curve ('curve', as curves.scad's pieces). */
+  bankRampStuds?: number; bankClimb?: number; bankRampAt?: 'straight' | 'curve';
 }
 export const OPTION_DEFAULTS: PieceOptions = {
   throwSide: 'auto', leverOffset: 8, pointThrow: 3, pointClearance: 0.3, springPreload: 1, springThickness: 0.9, springLength: 40,
@@ -168,7 +168,7 @@ export const OPTION_DEFAULTS: PieceOptions = {
   bufferStyle: 'frame', bufferPostPlates: 8, bufferBeamBottom: 2, bufferBeamTop: 12, bufferPinHoles: true,
   trackBallast: 'together', trackFitTol: 0.2, labelText: '', labelSize: true, labelGauge: false, labelParts: true,
   monoEndStuds: 'side', monoAxleHoles: true, monoLegoAntistud: false, monoAxleLengthStuds: 2, monoHoleFit: 0.1, monoLabels: 'name', monoSwitchTravel: 27, monoSwitchFit: 0.3,
-  monoSupportStuds: 0, monoSupportBricks: 5, monoSupportPlates: 0, monoSupportBaseXStuds: 4, monoSupportBaseYStuds: 4, monoSupportAntistud: true, monoSupportBaseStuds: true, monoSupportSolid: false, bankRampStuds: 8,
+  monoSupportStuds: 0, monoSupportBricks: 5, monoSupportPlates: 0, monoSupportBaseXStuds: 4, monoSupportBaseYStuds: 4, monoSupportAntistud: true, monoSupportBaseStuds: true, monoSupportSolid: false, bankRampStuds: 40, bankClimb: 100, bankRampAt: 'straight',
 };
 
 /** The buffer stops' positions (mm): the route ends set to end in one (by where they are, as routes are turned round and cut up). */
@@ -216,53 +216,97 @@ export function toRoutes(d: Design): Route[] {
 export const BANK_MAX = 10;
 /** A level stretch at a route's end before a ramp: the end connector (curves.scad's bank_flat_end), mm. */
 const BANK_FLAT_END = 8;
+/** The ramp's shape: smoothstep (3t^2 - 2t^3), so the outer rail's slope is 0 at both ends of the ramp (no kink) and at most 1.5 x its mean in the middle. */
+export const bankEase = (t: number) => { const u = Math.min(Math.max(t, 0), 1); return u * u * (3 - 2 * u); };
+/** Its steepest slope, over the mean (d/dt of bankEase at t = 1/2). */
+export const BANK_EASE_PEAK = 1.5;
 
 /**
  * Each segment's roll (undefined: level) along a route, from its curves'
- * banks, and warnings for ramps cut short. A curve's bank is + (the right
- * side up) on a left curve. At each place the bank changes (a route's ends
- * count as level) it ramps linearly over the ramp length: inside the curve
- * with the bigger bank, unless that curve's ends say not to (then on the
- * track the other side), a level stretch first at a route's end (curves.scad's
- * bank_at). Two curves banked the same way the same amount run on with no
- * ramp between them; a curve banked the other way (a reverse curve) ramps
- * through level, each curve its half. Ramps in one segment share it, each
- * shortened to fit. Monorail routes are left alone.
+ * banks, and warnings for ramps steeper than the climb limit. A curve's bank
+ * is + (the right side up) on a left curve. Wherever the bank changes it
+ * eases from one to the other (bankEase: no kink in the outer rail's height),
+ * over the ramp length or, if that's too short for the outer rail to stay
+ * within the steepest climb (options), the length that keeps it there.
+ * Ramps go on the track before and after a curve (the run-off on the
+ * straight, as on real railways), or inside the curve (the 'curve' option, as
+ * curves.scad's pieces); where there isn't enough of that, they run on into
+ * the other side, and only past both sides' room are they shorter (and
+ * steeper: warned, at where they are). A route's end is level (after a short
+ * level stretch for its connector) unless the curve there says it stays
+ * banked; two curves banked the same way the same amount run on with no ramp;
+ * a reverse curve's bank eases through level across the change. Monorail
+ * routes are left alone.
  */
 export function bankRolls(d: Design, r: DRoute): { rolls: (Roll | undefined)[]; warnings: string[] } {
   const segs = r.segs, n = segs.length, warnings: string[] = [];
   const v = segs.map((sg) => (sg.kind === 'curve' && sg.bank ? Math.sign(sg.angle) * Math.min(Math.max(sg.bank, 0), BANK_MAX) : 0));
   if (isMono(r) || !v.some((x) => x !== 0)) return { rolls: segs.map(() => undefined), warnings }; // (monorail: never banked)
+  const o = { ...OPTION_DEFAULTS, ...d.options };
   const L = segs.map((sg) => (sg.kind === 'straight' ? sg.studs * STUD : (Math.abs(sg.angle) * Math.PI * sg.radius * STUD) / 180));
+  const S: number[] = []; L.reduce((acc, l, k) => { S[k] = acc; return acc + l; }, 0);
+  const total = S[n - 1] + L[n - 1], g2 = (d.gaugeStuds + 1) * STUD; // (rail to rail: the outer rail's rise is g2 x sin(bank))
+  const climb = Math.min(Math.max(o.bankClimb ?? 100, 20), 1000), minLen = Math.min(Math.max(o.bankRampStuds ?? 40, 2), 200) * STUD;
+  const inCurve = o.bankRampAt === 'curve';
   const ramps = (k: number) => { const sg = segs[k]; return sg.kind === 'curve' ? sg.bankRamps ?? 'both' : 'both'; };
-  const okStart = (k: number) => ['both', 'start'].includes(ramps(k)), okEnd = (k: number) => ['both', 'end'].includes(ramps(k));
-  const rampLen = Math.min(Math.max(d.options?.bankRampStuds ?? OPTION_DEFAULTS.bankRampStuds ?? 8, 2), 24) * STUD;
-  // the roll at each boundary (0: the route's start, n: its end)
-  const at: number[] = [];
-  at[0] = v[0] !== 0 && okStart(0) ? 0 : v[0];
-  at[n] = v[n - 1] !== 0 && okEnd(n - 1) ? 0 : v[n - 1];
-  for (let k = 1; k < n; k++) {
-    const a = v[k - 1], b = v[k];
-    if (a === b) at[k] = a;
-    else if (a * b < 0) at[k] = okEnd(k - 1) === okStart(k) ? 0 : okStart(k) ? a : b;
+  // the changes: [boundary index, from, to]; a route end that stays banked has none
+  const changes: { k: number; a: number; b: number }[] = [];
+  if (v[0] !== 0 && ['both', 'start'].includes(ramps(0))) changes.push({ k: 0, a: 0, b: v[0] });
+  for (let k = 1; k < n; k++) if (v[k - 1] !== v[k]) changes.push({ k, a: v[k - 1], b: v[k] });
+  if (v[n - 1] !== 0 && ['both', 'end'].includes(ramps(n - 1))) changes.push({ k: n, a: v[n - 1], b: 0 });
+  // each segment's room for the ramps at its ends: all of it for one, half each for two (less the connector's level stretch at a route end)
+  const claims = segs.map((_, k) => changes.filter((c) => c.k === k || c.k === k + 1).length);
+  const room = (k: number, atStart: boolean) => {
+    if (k < 0 || k >= n) return 0;
+    const flat = (k === 0 && atStart ? BANK_FLAT_END : 0) + (k === n - 1 && !atStart ? BANK_FLAT_END : 0);
+    return Math.max(0, L[k] / Math.max(1, claims[k]) - flat);
+  };
+  const rise = (a: number, b: number) => g2 * Math.abs(Math.sin((b * Math.PI) / 180) - Math.sin((a * Math.PI) / 180));
+  const iv = changes.map(({ k, a, b }) => {
+    // (long enough for the climb limit, at least the ramp length)
+    const want = Math.max(minLen, BANK_EASE_PEAK * climb * rise(a, b));
+    const B = k === n ? total : S[k] ?? 0;
+    const before = room(k - 1, false), after = room(k, true); // (room on the segment before the boundary, and after)
+    let lo: number, hi: number;
+    if (k === 0) { lo = BANK_FLAT_END; hi = lo + Math.min(want, after); }
+    else if (k === n) { hi = total - BANK_FLAT_END; lo = hi - Math.min(want, before); }
     else {
-      // (on the bigger bank's side if it may, else the other's if it may)
-      const bigB = Math.abs(b) > Math.abs(a), okBig = bigB ? okStart(k) : okEnd(k - 1), okSmall = bigB ? okEnd(k - 1) : okStart(k);
-      const onB = okBig || !okSmall ? bigB : !bigB;
-      at[k] = onB ? a : b;
+      // (on the flatter side (the straight) by default, on the more banked side (the curve) with 'curve'; a reverse curve: across the change)
+      const flatBefore = Math.abs(a) < Math.abs(b), sideBefore = a * b < 0 ? undefined : inCurve ? !flatBefore : flatBefore;
+      const first = sideBefore === undefined ? want / 2 : sideBefore ? want : 0;
+      let x0 = Math.min(first, before);
+      const x1 = Math.min(want - x0, after);
+      x0 = Math.min(want - x1, before); // (what the one side can't take, the other)
+      lo = B - x0; hi = B + x1;
     }
-  }
+    if (hi - lo < 1e-3) hi = lo + 1e-3;
+    const peak = (BANK_EASE_PEAK * rise(a, b)) / (hi - lo);
+    if (peak > 1 / climb + 1e-9) {
+      const rt: Route = { id: r.name, start: [r.x * STUD, r.y * STUD, r.heading], segments: segs.map((sg): Segment => (sg.kind === 'straight' ? { kind: 'straight', length: sg.studs * STUD } : { kind: 'arc', radius: sg.radius * STUD, angle: sg.angle })) };
+      const p = routePose(rt, (lo + hi) / 2);
+      warnings.push(`${r.name}: a bank's ramp at ${(p[0] / STUD).toFixed(1)}, ${(p[1] / STUD).toFixed(1)} (studs) climbs 1 in ${Math.round(1 / peak)}, steeper than 1 in ${climb}: too little track there (${((hi - lo) / STUD).toFixed(1)} studs, ${(BANK_EASE_PEAK * climb * rise(a, b) / STUD).toFixed(1)} needed); lengthen the track either side or lower the bank`);
+    }
+    return { lo, hi, a, b };
+  });
+  const rollAt = (sAt: number) => {
+    let cur = changes.length && changes[0].k === 0 ? 0 : v[0];
+    for (const q of iv) {
+      if (sAt < q.lo) return cur;
+      if (sAt <= q.hi) return q.a + (q.b - q.a) * bankEase((sAt - q.lo) / (q.hi - q.lo));
+      cur = q.b;
+    }
+    return cur;
+  };
+  // (as knots every 2 mm or so through the ramps, straight lines between; level stretches as two)
   const rolls = segs.map((_, k): Roll | undefined => {
-    const u0 = at[k], u1 = at[k + 1], w = v[k], len0 = L[k];
-    const r0 = u0 !== w, r1 = u1 !== w;
-    if (!r0 && !r1 && w === 0) return undefined;
-    let fs = k === 0 && r0 ? BANK_FLAT_END : 0, fe = k === n - 1 && r1 ? BANK_FLAT_END : 0;
-    if (len0 - fs - fe < 1) { fs = 0; fe = 0; }
-    const nr = (r0 ? 1 : 0) + (r1 ? 1 : 0), room = nr ? (len0 - fs - fe) / nr : 0, len = Math.max(Math.min(rampLen, room), 1e-3);
-    if (nr && len < rampLen - 1e-6) warnings.push(`${r.name}: a bank's ramp is only ${(len / STUD).toFixed(1)} studs long (its ${segs[k].kind === 'straight' ? 'straight' : 'curve'}, part ${k + 1}, is too short for ${rampLen / STUD})`);
-    const kn: Roll = r0 ? [[0, u0], [fs, u0], [fs + len, w]] : [[0, w]];
-    if (r1) kn.push([len0 - fe - len, w], [len0 - fe, u1], [len0, u1]); else kn.push([len0, w]);
-    return kn.filter((q, j) => j === 0 || q[0] > kn[j - 1][0] + 1e-9 || q[1] !== kn[j - 1][1]);
+    const s0 = S[k], s1 = s0 + L[k], at = new Set<number>([s0, s1]);
+    for (const q of iv) {
+      if (q.hi < s0 || q.lo > s1) continue;
+      const m = Math.max(1, Math.ceil((q.hi - q.lo) / 2));
+      for (let j = 0; j <= m; j++) { const x = q.lo + ((q.hi - q.lo) * j) / m; if (x >= s0 && x <= s1) at.add(x); }
+    }
+    const kn = [...at].sort((p, q) => p - q).map((x): [number, number] => [x - s0, rollAt(x)]);
+    return kn.some(([, x]) => Math.abs(x) > 1e-9) ? kn : undefined;
   });
   return { rolls, warnings };
 }

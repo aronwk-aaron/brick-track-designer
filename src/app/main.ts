@@ -141,10 +141,10 @@ function bankFields(sg: DSeg, mono: boolean): HTMLElement[] {
   bank.min = '0'; bank.max = String(BANK_MAX); bank.disabled = !curve;
   const sel = document.createElement('select');
   const choices: Record<BankRamps, [string, string]> = {
-    both: ['In the curve, both ends', 'Ramps up at the curve\'s start and down at its end, inside the curve. Drawback: a short curve gets shorter, steeper ramps.'],
-    start: ['In the curve, start only', 'Ramps up inside the curve at its start; full bank to its end. Drawback: the ramp down is on the track after it, or the route\'s end stays banked.'],
-    end: ['In the curve, end only', 'Full bank from the curve\'s start; ramps down inside it at its end. Drawback: the ramp up is on the track before it, or the route\'s start stays banked.'],
-    none: ['On the track either side', 'Full bank from end to end; the ramps are on the track before and after. Drawback: a route end on the curve stays banked (only banked track joins it).'],
+    both: ['Level at both route ends', 'Where the curve is at a route\'s end, the bank eases down to level before it (the ramps are set in the Banked curves settings). In the middle of a route the bank always eases from one curve to the next.'],
+    start: ['Banked at the route\'s end', 'Where the curve ends a route, that end stays banked, to join more banked track; where it starts a route, it eases from level. Drawback: only banked track joins the banked end.'],
+    end: ['Banked at the route\'s start', 'Where the curve starts a route, that end stays banked, to join more banked track; where it ends a route, it eases to level. Drawback: only banked track joins the banked end.'],
+    none: ['Banked at both route ends', 'Where the curve is at a route\'s end, that end stays banked, to join more banked track. Drawback: only banked track joins it.'],
   };
   for (const [v, [t, tip]] of Object.entries(choices)) { const op = new Option(t, v); op.title = tip; sel.append(op); }
   sel.value = curve?.bankRamps ?? 'both';
@@ -153,7 +153,7 @@ function bankFields(sg: DSeg, mono: boolean): HTMLElement[] {
   sel.addEventListener('change', () => { if (!curve) return; if (sel.value === 'both') delete curve.bankRamps; else curve.bankRamps = sel.value as BankRamps; changed(true); });
   return [
     locked(field('bank °', bank), curve ? undefined : noBank),
-    locked(field('bank ramps', sel), !curve ? noBank : !curve.bank ? 'set a bank first' : undefined),
+    locked(field('at a route end', sel), !curve ? noBank : !curve.bank ? 'set a bank first' : undefined),
   ];
 }
 
@@ -1012,7 +1012,11 @@ const OPTION_FORM: OptSection[] = [
     { key: 'labelParts', label: 'Number parts cut for the bed (#2)', check: true, off: (c) => (c.ballast && c.o.bottomStyle === 'float' ? undefined : 'labels go only on a flat underside: set Ballast to Ballast and Ballast underside to Flat') ?? (c.o.labelText ? undefined : 'Label text is empty'), help: 'Matches the part\'s file name.' },
   ] },
   { title: 'Banked curves', kind: 'train', fields: [
-    { key: 'bankRampStuds', label: 'Bank ramp length, studs', step: 1, min: 2, max: 24, help: 'Each ramp from level to a curve\'s full bank. Set a curve\'s bank on its route card. A ramp too long for its track is shortened to fit (with a warning).' },
+    { key: 'bankRampAt', label: 'Bank ramps', choices: [
+      { v: 'straight', t: 'On the track before and after', tip: 'The bank eases in on the track leading into a curve and out on the track after it, as real railways do: the curve is banked in full from end to end. With no straight there, or not enough, the ramp runs on into the curve.' },
+      { v: 'curve', t: 'Inside the curve', tip: 'The bank eases in and out inside the curve, as the plate-style banked pieces do.', con: 'The outer rail climbs while the train is already turning, and a short curve leaves little room: the ramps get steep.' }] },
+    { key: 'bankRampStuds', label: 'Shortest bank ramp, studs', step: 1, min: 2, max: 200, help: 'Each ramp from level to a curve\'s full bank, eased in and out (no kink in the outer rail). Made longer by itself where the outer rail would climb steeper than the limit below. 40 keeps a 3° bank under 1 in 100.' },
+    { key: 'bankClimb', label: 'Steepest climb of the outer rail, 1 in', step: 10, min: 20, max: 1000, help: 'The outer rail rises at most 1 mm in this many, at the ramp\'s steepest (its middle). 100 is a gentle model railway run-off; full-size railways use 400 or more. Where there isn\'t room for a ramp that gentle, the build warns and rings the place on the plan.' },
   ] },
   { title: 'Check rails and flangeways', kind: 'train', fields: [
     { key: 'checkRailLen', label: 'Check rail length, mm', step: 2, min: 10, max: 80 },

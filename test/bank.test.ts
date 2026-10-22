@@ -1,6 +1,8 @@
 // Banked curves (curves.scad's superelevation): the bed, rails and studs
 // turned about the inner rail's foot, ramping in and out, the underside flat.
 import { describe, expect, it } from 'vitest';
+import { writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { kernel } from '../src/geom/kernel';
 import { Scad, type Man } from '../src/geom/scad';
 import { CROSSING_DEFAULTS, type CrossingOptions, crossingPiece } from '../src/geom/crossing';
@@ -27,29 +29,55 @@ function topAt(m: Man, s: number, lat: number, along = 0.5): number {
 
 describe('banked curves', { timeout: 120000 }, () => {
   const noSupports: CrossingOptions = { ...CROSSING_DEFAULTS, supports: false };
-  it('ramps in and out inside the curve, level at the ends; same-bank curves run on, reverse curves pass through level', () => {
+  it('eases in on the straights before and after (no kink, within the climb limit); same-bank curves run on, reverse curves ease through level', () => {
+    const L = (Math.PI / 4) * R40, sn = (d: number) => Math.sin((d * Math.PI) / 180);
+    // straight 48, a 3° curve, straight 48: the ramps on the straights, the curve banked in full end to end
+    const d = design([{ kind: 'straight', studs: 48 }, curve(3), { kind: 'straight', studs: 48 }]);
+    const [st] = toRoutes(d), B0 = 384, B1 = 384 + L;
+    expect(bankRolls(d, d.routes[0]).warnings).toEqual([]);
+    expect(routeRoll(st, B0)).toBeCloseTo(3, 6);
+    expect(routeRoll(st, B1)).toBeCloseTo(3, 6);
+    expect(routeRoll(st, B0 - 160)).toBeCloseTo(1.5, 2);   // half way up a 40-stud ramp
+    expect(routeRoll(st, B0 - 320)).toBe(0);
+    expect(routeRoll(st, 0)).toBe(0);
+    // the outer rail's height (40 mm gauge: 40 sin(roll)): its slope never over 1 in 100, and no kink (its slope changes smoothly)
+    const step = 4, h = (sAt: number) => 40 * sn(routeRoll(st, sAt)), Ltot = B1 + 384;
+    let maxSlope = 0, maxBend = 0, prev = 0;
+    for (let sAt = step; sAt < Ltot; sAt += step) {
+      const slope = (h(sAt) - h(sAt - step)) / step;
+      maxSlope = Math.max(maxSlope, Math.abs(slope));
+      if (sAt > step) maxBend = Math.max(maxBend, Math.abs(slope - prev) / step);
+      prev = slope;
+    }
+    expect(maxSlope).toBeLessThan(1 / 100);
+    expect(maxBend).toBeLessThan(1.5e-4); // (per mm, over 4 mm: smoothstep's 6 x rise / length^2 is 1.2e-4)
+    writeFileSync(`${tmpdir()}/bank-profile.json`, JSON.stringify({ maxSlope, maxBend, h: Array.from({ length: Math.floor(Ltot / 2) }, (_, k) => [2 * k, h(2 * k)]) }));
+    // on its own (no straights) a curve eases in and out inside itself, level at the connectors, full bank in the middle
     const [r] = toRoutes(design([curve(5)]));
-    const L = (Math.PI / 4) * R40;
-    expect(routeRoll(r, 0)).toBe(0);
-    expect(routeRoll(r, 8)).toBe(0);            // the end connector's level stretch
-    expect(routeRoll(r, 8 + 32)).toBeCloseTo(2.5, 6); // half way up an 8-stud ramp
-    expect(routeRoll(r, L / 2)).toBe(5);
-    expect(routeRoll(r, L - 4)).toBe(0);
+    expect(routeRoll(r, 8)).toBe(0);
+    expect(routeRoll(r, L / 2)).toBeCloseTo(5, 6);
+    expect(routeRoll(r, L - 8)).toBeCloseTo(0, 6);
     // (a left curve's bank is + (right side up); run the other way it's a right curve: -)
-    expect(routeRoll(reversedRoute(r), L / 2)).toBe(-5);
-    expect(routeRoll(subRoute(r, 40, L), L / 2 - 40)).toBe(5);
+    expect(routeRoll(reversedRoute(r), L / 2)).toBeCloseTo(-5, 6);
+    expect(routeRoll(subRoute(r, 40, L), L / 2 - 40)).toBeCloseTo(5, 6);
+    // too short for a 1 in 100 ramp at 5°: warned, with where
+    expect(bankRolls(design([curve(5)]), design([curve(5)]).routes[0]).warnings[0]).toMatch(/at -?\d+\.\d, -?\d+\.\d \(studs\) climbs 1 in \d+, steeper than 1 in 100/);
     const [two] = toRoutes(design([curve(4), curve(4)]));
     expect(routeRoll(two, L)).toBe(4);           // no ramp between them
     const [rev] = toRoutes(design([curve(4), curve(4, -45)]));
-    expect(routeRoll(rev, L)).toBe(0);
-    expect(routeRoll(rev, L / 2)).toBe(4);
-    expect(routeRoll(rev, 1.5 * L)).toBe(-4);
-    // ramps on the straights either side when the curve's ends say so
-    const d = design([{ kind: 'straight', studs: 16 }, { ...curve(3), bankRamps: 'none' } as DSeg, { kind: 'straight', studs: 16 }]);
-    const [st] = toRoutes(d);
-    expect(routeRoll(st, 128)).toBe(3);
-    expect(routeRoll(st, 128 - 32)).toBeCloseTo(1.5, 6);
-    expect(bankRolls(d, d.routes[0]).warnings).toEqual([]);
+    expect(routeRoll(rev, L)).toBeCloseTo(0, 6);
+    expect(routeRoll(rev, L / 2)).toBeCloseTo(4, 6);
+    expect(routeRoll(rev, 1.5 * L)).toBeCloseTo(-4, 6);
+    // inside the curve, as the plate-style pieces: in the curve as far as it can (half of it each end), the rest on the straight
+    const dc = { ...d, options: { bankRampAt: 'curve' as const } };
+    const [ic] = toRoutes(dc);
+    expect(routeRoll(ic, B0 + L / 2)).toBeCloseTo(3, 6);
+    expect(routeRoll(ic, B0)).toBeGreaterThan(1);
+    expect(routeRoll(ic, B0 - 200)).toBe(0);
+    expect(bankRolls(dc, dc.routes[0]).warnings).toEqual([]);
+    // a route end left banked
+    const [kept] = toRoutes(design([{ ...curve(3), bankRamps: 'none' } as DSeg]));
+    expect(routeRoll(kept, 0)).toBe(3);
     // monorail routes are left alone
     const mono = design([curve(5)]); mono.routes[0].system = 'monorail';
     expect(toRoutes(mono)[0].segments[0].roll).toBeUndefined();
@@ -116,7 +144,7 @@ describe('banked curves', { timeout: 120000 }, () => {
 
   it('track and ballast printed apart: both parts build, the warnings clear', async () => {
     const b = buildDesign(await kernel(), design([curve(5)], { printBedX: 500, printBedY: 500, ballast: 'ballast', trackBallast: 'apart' }));
-    expect(b.info.warnings).toEqual([]);
+    expect(b.info.warnings.filter((w) => !/bank's ramp/.test(w))).toEqual([]); // (a curve on its own: its ramps steeper than the limit, warned)
     expect(b.pieces.length).toBeGreaterThanOrEqual(2);
   });
 
