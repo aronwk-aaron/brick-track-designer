@@ -169,6 +169,18 @@ export function pathSplit(s: Scad, m: Man, routes: Route[], railG: number, avoid
   const path: [number, number][] = [];
   for (let sk = goal; sk >= 0; sk = prev[sk]) { const k = Math.floor(sk / NS); path.push(pos(k % nx, Math.floor(k / nx))); }
   path.reverse();
+  return splitOnPath(s, m, routes, path, axis, join);
+}
+
+/**
+ * Split m in two along a given path of stud-grid steps (from beyond one side of
+ * it to beyond the other: running in y for axis 0, in x for axis 1), joined
+ * along its straight runs as pathSplit's are.
+ */
+export function splitOnPath(s: Scad, m: Man, routes: Route[], path: [number, number][], axis: 0 | 1, join?: PathJoin) {
+  const bb = m.boundingBox();
+  const x0 = Math.floor(bb.min[0] / STEP) * STEP - STEP, x1 = Math.ceil(bb.max[0] / STEP) * STEP + STEP;
+  const y0 = Math.floor(bb.min[1] / STEP) * STEP - STEP, y1 = Math.ceil(bb.max[1] / STEP) * STEP + STEP;
   // the region on one side: the path closed round by the far side of the box
   const big = 4000;
   const poly: [number, number][] = axis === 0
