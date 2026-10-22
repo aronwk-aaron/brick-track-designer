@@ -12,29 +12,32 @@ const PORT = process.env.PORT ?? '5204', only = process.argv[2];
 type P = { name: string; positions: Float32Array };
 /** r: the camera's distance (mm, for close-ups); else dist: times the model's size (the whole model in view) */
 type Cam = { dir: string; r?: number; dist?: number; at?: (ps: P[]) => [number, number, number] };
+// (a joint example needs two tracks: one long track alone is built as separate lengths, each with its own track ends, never cut)
 const st = (studs: number, more = {}) => ({ name: 'A', x: 0, y: 0, heading: 0, segs: [{ kind: 'straight', studs }], ...more });
 const curve = [{ name: 'C', x: 0, y: 0, heading: 0, segs: [{ kind: 'curve', radius: 40, angle: 45 }] }];
 const D = (routes: unknown[], options: Record<string, unknown> = {}, more: Record<string, unknown> = {}) => ({ version: 1, gaugeStuds: 4, routes, options: { printBedX: 500, printBedY: 500, ...options }, ...more });
 const box = (ps: P[]) => { const b = [1e9, 1e9, 1e9, -1e9, -1e9, -1e9]; for (const p of ps) for (let i = 0; i < p.positions.length; i += 3) for (let k = 0; k < 3; k++) { b[k] = Math.min(b[k], p.positions[i + k]); b[k + 3] = Math.max(b[k + 3], p.positions[i + k]); } return b; };
 // (a part's cut face, where it starts: its joint)
 const faceOf = (ps: P[]): [number, number, number] => { const b = box(ps); return [0, b[1] + 4, 3]; };
+// (the gap between the first two parts (the second, nearer, moved 24 mm back): both halves of the joint)
+const cutGap = (ps: P[]): [number, number, number] => { const b = box([ps[0]]); return [(b[0] + b[3]) / 2, b[1] - 10, 2]; };
 const sw = TEMPLATES['Left switch (LEGO)'].routes;
 const toe: Cam = { dir: '1,-0.7,1.1', r: 190, at: () => [4, 44, 6] }, throwCam: Cam = { dir: '1.2,-0.6,1', r: 120, at: () => [34, 28, 8] };
 const under: Cam = { dir: '0.6,-0.7,-1', dist: 2.0 };
 // (layouts that show what a setting does: a crossing for sleepers (its solid middle, sleepers on its arms), a curve
 // between straights for where long track is cut and for anything that follows the track)
 const cross = TEMPLATES['90° crossing'].routes, bend = [{ name: 'A', x: 0, y: 0, heading: 0, segs: [{ kind: 'straight', studs: 24 }, { kind: 'curve', radius: 40, angle: 90 }, { kind: 'straight', studs: 24 }] }];
-/** explode: each part after the first moved this far along y (mm), so the joints between them show */
+/** explode: each part after the first moved this far along y (mm; less than 0: back), so the joints between them show */
 const specs: { key: string; values: string[]; design: (v: string) => unknown; pick?: RegExp; cam: Cam; explode?: number }[] = [
-  { key: 'joint', values: ['lego', 'dovetail', 'butt', 'axle'], design: (v) => D([st(32)], { ballast: 'ballast', printBedX: 160, printBedY: 160, joint: v }), pick: /^track2$/, cam: { dir: '0.4,-1,0.55', r: 88, at: faceOf } },
-  { key: 'cutRails', values: ['tongues', 'flat'], design: (v) => D([st(32)], { printBedX: 160, printBedY: 160, cutRails: v }), pick: /^track2$/, cam: { dir: '0.45,-1,0.55', r: 100, at: faceOf } },
+  { key: 'joint', values: ['lego', 'dovetail', 'butt', 'axle'], design: (v) => D([st(32), st(32, { name: 'B', x: 16 })], { ballast: 'buddy', printBedX: 160, printBedY: 160, joint: v }), pick: /^track[12]$/, explode: -24, cam: { dir: '0.8,-0.6,1', r: 170, at: cutGap } },
+  { key: 'cutRails', values: ['tongues', 'flat'], design: (v) => D([st(32), st(32, { name: 'B', x: 16 })], { printBedX: 160, printBedY: 160, cutRails: v }), pick: /^track[12]$/, explode: -24, cam: { dir: '0.8,-0.6,1', r: 170, at: cutGap } },
   { key: 'tongueRails', values: ['all', 'square'], design: (v) => D(TEMPLATES['22.5° crossing'].routes, { printBedX: 150, printBedY: 150, tongueRails: v }), pick: /^track2$/, cam: { dir: '0.5,-1,0.8', r: 170, at: faceOf } },
   { key: 'sleepers', values: ['bed', 'sleepers'], design: (v) => D(cross, { sleepers: v }), cam: { dir: '1,-0.8,1', dist: 2.0 } },
   { key: 'curveStuds', values: ['grid', 'follow'], design: (v) => D(curve, { curveStuds: v }), cam: { dir: '0.25,-0.45,1', dist: 2.0 } },
   { key: 'ballast', values: ['none', 'ballast', 'buddy'], design: (v) => D([st(16)], { ballast: v }), cam: { dir: '1,-1.2,0.6', dist: 2.0 } },
   { key: 'bottomStyle', values: ['antistud', 'float'], design: (v) => D([st(16)], { ballast: 'ballast', bottomStyle: v }), cam: under },
   { key: 'grip', values: ['edges', 'all'], design: (v) => D([st(16)], {}, { grip: v }), cam: under },
-  { key: 'undersideGrid', values: ['baseplate', 'track'], design: (v) => D([{ ...curve[0], heading: 17 }], { undersideGrid: v }), cam: { dir: '0.3,-0.5,-1', dist: 2.0 } },
+  { key: 'undersideGrid', values: ['baseplate', 'track'], design: (v) => D([st(12, { heading: 17 })], { undersideGrid: v }), cam: { dir: '0.5,-0.6,-1', r: 230, at: (ps) => { const b = box(ps); return [(b[0] + b[3]) / 2, (b[1] + b[4]) / 2, 0]; } } },
   { key: 'splitTrack', values: ['bed', 'lengths'], design: (v) => D(bend, { printBedX: 200, printBedY: 200, splitTrack: v }), cam: { dir: '0.15,-0.3,1', dist: 2.0 } },
   { key: 'mechStyle', values: ['plates', 'tines'], design: (v) => D(sw, { mechStyle: v }), cam: toe },
   { key: 'bladeHold', values: ['lip', 'bracket'], design: (v) => D(sw, { bladeHold: v }), cam: toe },

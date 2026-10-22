@@ -331,23 +331,6 @@ export function crossingPiece(s: Scad, routes: Route[], o: CrossingOptions = CRO
   // (banked: the underside's hollows and sockets kept 0.8 mm under the bed's turned top, which comes down on the inner side)
   const roofed = (ms: Man[]) => (anyBank ? [s.difference(s.union(ms), [bankedRoof(s, routes, bankAt(g), c.sleeperLen / 2 + 1, 0.8)])] : ms);
   if (o.grip === 'all' && o.undersideGrid !== 'track') return s.difference(body, [...roofed(spots.map(({ x, y }) => socket(x, y))), ...(x.cuts ?? [])]);
-  // (lined up with the track: a socket at every stud spot along each track, in rows across it a stud apart, turned with
-  // it; none in the end connectors (they have their own), none two at a place where tracks meet)
-  if (o.undersideGrid === 'track') {
-    const at: { q: [number, number]; h: number }[] = [];
-    const endsT = routes.flatMap((rt, i) => [!x.innerEnds?.has(`${i}:start`) && routePose(rt, 0), !x.innerEnds?.has(`${i}:end`) && routePose(rt, routeLength(rt))]).filter((e): e is Pose => !!e);
-    for (const rt of routes) {
-      const L = routeLength(rt);
-      for (let sAt = 4; sAt <= L - 4 + 1e-9; sAt += STUD) for (let lt = 4; lt <= c.sleeperLen / 2 - 4 + 1e-9; lt += STUD) for (const sd of [-1, 1]) {
-        const q = railPoint(rt, sAt, sd * lt) as [number, number], h = routePose(rt, sAt)[2];
-        if (endsT.some((e) => { const dx = q[0] - e[0], dy = q[1] - e[1], hd = (e[2] * Math.PI) / 180; return Math.hypot(dx, dy) < c.sleeperLen && Math.abs(-dx * Math.sin(hd) + dy * Math.cos(hd)) < BED_END; })) continue;
-        if (at.some((p) => Math.hypot(p.q[0] - q[0], p.q[1] - q[1]) < c.studSocketW + 1)) continue;
-        at.push({ q, h });
-      }
-    }
-    return s.difference(body, [...roofed(at.map(({ q, h }) => T(R(t.studSocket(cavH), [0, 0, h]), [q[0], q[1], -0.01]))), ...(x.cuts ?? [])]);
-  }
-
   // 'edges': hollow like a LEGO plate, a rim round each route's bed (not
   // under the end connectors), with anti-stud tubes between the studs that
   // grip along the edges and every 4 studs inside; elsewhere thin posts hold
@@ -386,6 +369,33 @@ export function crossingPiece(s: Scad, routes: Route[], o: CrossingOptions = CRO
     return lx >= r[0] + m && lx <= r[1] - m && ly >= r[2] + m && ly <= r[3] - m;
   });
   for (const { P, r } of extra) beds.push(s.w.CrossSection.square([r[1] - r[0], r[3] - r[2]]).translate([r[0], r[2]]).rotate(P[2]).translate([P[0], P[1]]));
+  // (lined up with the track: hollow as LEGO track's underside, with anti-stud tubes in rows along each track a stud
+  // apart, turned with it, between its rows of studs; none in the end connectors (they have their own), none two at a
+  // place where tracks meet)
+  if (o.undersideGrid === 'track') {
+    const at: Vec2[] = [], tubesT: CS[] = [];
+    for (const [ri, rt] of routes.entries()) {
+      const L = routeLength(rt), m = TUBE_OD / 2 + 0.2;
+      const lo = (bufEnd(ri, 'start') ? WALL : BED_END + WALL) + m, hi = L - (bufEnd(ri, 'end') ? WALL : BED_END + WALL) - m;
+      for (let sAt = STUD; sAt <= L - STUD + 1e-9; sAt += STUD) {
+        if (sAt < lo || sAt > hi) continue;
+        if (sleepered && !zones[ri].some(([a, b]) => sAt >= (a > 0 ? a + WALL + m : a) && sAt <= (b < L ? b - WALL - m : b))) continue;
+        for (let lt = 0; lt <= c.sleeperLen / 2 - STUD + 1e-9; lt += STUD) for (const sd of lt ? [-1, 1] : [1]) {
+          const q = railPoint(rt, sAt, sd * lt) as Vec2;
+          if (at.some((p) => Math.hypot(p[0] - q[0], p[1] - q[1]) < TUBE_OD + 0.5)) continue;
+          at.push(q);
+          tubesT.push(s.w.CrossSection.circle(TUBE_OD / 2, 24).subtract(s.w.CrossSection.circle(TUBE_ID / 2, 24)).translate(q));
+        }
+      }
+    }
+    const cutsT: Man[] = [];
+    if (beds.length) {
+      let hollow = s.w.CrossSection.union(beds);
+      if (tubesT.length) hollow = hollow.subtract(s.w.CrossSection.union(tubesT));
+      cutsT.push(T(s.extrude(hollow, cavH), [0, 0, -0.01]));
+    }
+    return s.difference(body, [...roofed(cutsT), ...(x.cuts ?? [])]);
+  }
   const deepCache = new Map<string, boolean>();
   // a stud at spot (i, j) is wholly inside the hollow of some route's bed
   const deep = (i: number, j: number) => {

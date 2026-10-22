@@ -71,7 +71,7 @@ describe('sleepers', { timeout: 120000 }, () => {
 });
 
 describe('underside lined up with the track', { timeout: 120000 }, () => {
-  it('an angled curve: sockets in rows along it (none on the baseplate grid), one body; the default as before', async () => {
+  it('an angled curve: hollow with anti-stud tubes in rows along it (none on the baseplate grid), one body; the default as before', async () => {
     const w = await kernel(), d: Design = { version: 1, gaugeStuds: 4, options: { printBedX: 500, printBedY: 500 }, routes: [{ name: 'C', x: 0, y: 0, heading: 17, segs: [{ kind: 'straight', studs: 12 }, { kind: 'curve', radius: 40, angle: 45 }] }] };
     const grid = buildDesign(w, d), along = buildDesign(w, { ...d, options: { ...d.options, undersideGrid: 'track' } }), dflt = buildDesign(w, { ...d, options: { ...d.options, undersideGrid: 'baseplate' } });
     expect(along.info.warnings).toEqual([]);
