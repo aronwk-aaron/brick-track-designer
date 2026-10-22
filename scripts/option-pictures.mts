@@ -10,7 +10,8 @@ const { buildDesign } = await import(`${root}src/app/build.ts`);
 const { TEMPLATES } = await import(`${root}src/app/design.ts`);
 const PORT = process.env.PORT ?? '5204', only = process.argv[2];
 type P = { name: string; positions: Float32Array };
-type Cam = { dir: string; r: number; at?: (ps: P[]) => [number, number, number] };
+/** r: the camera's distance (mm, for close-ups); else dist: times the model's size (the whole model in view) */
+type Cam = { dir: string; r?: number; dist?: number; at?: (ps: P[]) => [number, number, number] };
 const st = (studs: number, more = {}) => ({ name: 'A', x: 0, y: 0, heading: 0, segs: [{ kind: 'straight', studs }], ...more });
 const curve = [{ name: 'C', x: 0, y: 0, heading: 0, segs: [{ kind: 'curve', radius: 40, angle: 45 }] }];
 const D = (routes: unknown[], options: Record<string, unknown> = {}, more: Record<string, unknown> = {}) => ({ version: 1, gaugeStuds: 4, routes, options: { printBedX: 500, printBedY: 500, ...options }, ...more });
@@ -19,19 +20,22 @@ const box = (ps: P[]) => { const b = [1e9, 1e9, 1e9, -1e9, -1e9, -1e9]; for (con
 const faceOf = (ps: P[]): [number, number, number] => { const b = box(ps); return [0, b[1] + 4, 3]; };
 const sw = TEMPLATES['Left switch (LEGO)'].routes;
 const toe: Cam = { dir: '1,-0.7,1.1', r: 190, at: () => [4, 44, 6] }, throwCam: Cam = { dir: '1.2,-0.6,1', r: 120, at: () => [34, 28, 8] };
-const iso: Cam = { dir: '1,-0.9,0.8', r: 260 }, under: Cam = { dir: '0.6,-0.7,-1', r: 250 };
+const iso: Cam = { dir: '1,-0.9,0.8', dist: 2.0 }, under: Cam = { dir: '0.6,-0.7,-1', dist: 2.0 };
+// (layouts that show what a setting does: a crossing for sleepers (its solid middle, sleepers on its arms), a curve
+// between straights for where long track is cut and for anything that follows the track)
+const cross = TEMPLATES['90° crossing'].routes, bend = [{ name: 'A', x: 0, y: 0, heading: 0, segs: [{ kind: 'straight', studs: 24 }, { kind: 'curve', radius: 40, angle: 90 }, { kind: 'straight', studs: 24 }] }];
 /** explode: each part after the first moved this far along y (mm), so the joints between them show */
 const specs: { key: string; values: string[]; design: (v: string) => unknown; pick?: RegExp; cam: Cam; explode?: number }[] = [
   { key: 'joint', values: ['lego', 'dovetail', 'butt', 'axle'], design: (v) => D([st(32)], { ballast: 'ballast', printBedX: 160, printBedY: 160, joint: v }), pick: /^track2$/, cam: { dir: '0.4,-1,0.55', r: 88, at: faceOf } },
   { key: 'cutRails', values: ['tongues', 'flat'], design: (v) => D([st(32)], { printBedX: 160, printBedY: 160, cutRails: v }), pick: /^track2$/, cam: { dir: '0.45,-1,0.55', r: 100, at: faceOf } },
   { key: 'tongueRails', values: ['all', 'square'], design: (v) => D(TEMPLATES['22.5° crossing'].routes, { printBedX: 150, printBedY: 150, tongueRails: v }), pick: /^track2$/, cam: { dir: '0.5,-1,0.8', r: 170, at: faceOf } },
-  { key: 'sleepers', values: ['bed', 'sleepers'], design: (v) => D([st(16)], { sleepers: v }), cam: iso },
-  { key: 'curveStuds', values: ['grid', 'follow'], design: (v) => D(curve, { curveStuds: v }), cam: { dir: '0.2,-0.5,1', r: 300 } },
-  { key: 'ballast', values: ['none', 'ballast', 'buddy'], design: (v) => D([st(16)], { ballast: v }), cam: { dir: '1,-1.2,0.6', r: 250 } },
+  { key: 'sleepers', values: ['bed', 'sleepers'], design: (v) => D(cross, { sleepers: v }), cam: { dir: '1,-0.8,1', dist: 2.0 } },
+  { key: 'curveStuds', values: ['grid', 'follow'], design: (v) => D(curve, { curveStuds: v }), cam: { dir: '0.25,-0.45,1', dist: 2.0 } },
+  { key: 'ballast', values: ['none', 'ballast', 'buddy'], design: (v) => D([st(16)], { ballast: v }), cam: { dir: '1,-1.2,0.6', dist: 2.0 } },
   { key: 'bottomStyle', values: ['antistud', 'float'], design: (v) => D([st(16)], { ballast: 'ballast', bottomStyle: v }), cam: under },
   { key: 'grip', values: ['edges', 'all'], design: (v) => D([st(16)], {}, { grip: v }), cam: under },
-  { key: 'undersideGrid', values: ['baseplate', 'track'], design: (v) => D([{ ...curve[0], heading: 17 }], { undersideGrid: v }), cam: { dir: '0.3,-0.5,-1', r: 320 } },
-  { key: 'splitTrack', values: ['bed', 'lengths'], design: (v) => D([st(48), st(48, { name: 'B', x: 16 })], { printBedX: 200, printBedY: 200, splitTrack: v }), cam: { dir: '0.3,-0.5,1', r: 700 } },
+  { key: 'undersideGrid', values: ['baseplate', 'track'], design: (v) => D([{ ...curve[0], heading: 17 }], { undersideGrid: v }), cam: { dir: '0.3,-0.5,-1', dist: 2.0 } },
+  { key: 'splitTrack', values: ['bed', 'lengths'], design: (v) => D(bend, { printBedX: 200, printBedY: 200, splitTrack: v }), cam: { dir: '0.15,-0.3,1', dist: 2.0 } },
   { key: 'mechStyle', values: ['plates', 'tines'], design: (v) => D(sw, { mechStyle: v }), cam: toe },
   { key: 'bladeHold', values: ['lip', 'bracket'], design: (v) => D(sw, { bladeHold: v }), cam: toe },
   { key: 'bladeStyle', values: ['simple', 'prototype'], design: (v) => D(sw, { bladeStyle: v }), cam: toe },
@@ -39,10 +43,22 @@ const specs: { key: string; values: string[]; design: (v: string) => unknown; pi
   { key: 'bufferStyle', values: ['frame', 'blocks'], design: (v) => D([st(16, { endEnd: 'buffer' })], { ballast: 'ballast', bufferStyle: v }), cam: { dir: '0.9,-1,0.7', r: 150, at: () => [0, 116, 12] } },
   { key: 'monoEndStuds', values: ['side', 'top', 'none'], design: (v) => D([st(8, { system: 'monorail' })], { monoEndStuds: v }), cam: { dir: '1,-1,0.8', r: 100, at: () => [0, 4, 7] } },
 ];
+const FIT = `
+import sys
+from PIL import Image
+im = Image.open(sys.argv[1]).convert('RGBA')
+bb = im.getchannel('A').point(lambda a: 255 if a > 8 else 0).getbbox() or (0, 0, im.width, im.height)
+x0, y0, x1, y1 = bb; m = int(0.06 * max(x1 - x0, y1 - y0))
+im = im.crop((max(0, x0 - m), max(0, y0 - m), min(im.width, x1 + m), min(im.height, y1 + m)))
+W, H = 640, 420; k = min(W / im.width, H / im.height)
+im = im.resize((max(1, round(im.width * k)), max(1, round(im.height * k))), Image.LANCZOS)
+out = Image.new('RGBA', (W, H), (0, 0, 0, 0)); out.paste(im, ((W - im.width) // 2, (H - im.height) // 2), im)
+out.save(sys.argv[2], 'WEBP', quality=82, method=6)
+`;
 const w = await kernel();
 mkdirSync(`${root}public/options`, { recursive: true }); mkdirSync(`${root}public/_opt`, { recursive: true });
 const browser = await chromium.launch({ executablePath: process.env.CHROME ?? '/usr/bin/google-chrome-stable', args: ['--use-angle=swiftshader', '--enable-unsafe-swiftshader'] });
-const page = await browser.newPage({ viewport: { width: 640, height: 420 } });
+const page = await browser.newPage({ viewport: { width: 1280, height: 840 } });
 if (process.env.DEBUG) page.on('console', (m) => console.log(m.text()));
 for (const sp of specs) {
   if (only && sp.key !== only) continue;
@@ -56,12 +72,13 @@ for (const sp of specs) {
       writeFileSync(`${root}public/_opt/${k}.stl`, buf); return `/_opt/${k}.stl`;
     });
     const at = sp.cam.at?.(ps);
-    await page.goto(`http://localhost:${PORT}/scripts/option-shot.html?w=640&h=420&stl=${urls.join(',')}&dir=${sp.cam.dir}&r=${sp.cam.r}${at ? `&at=${at.join(',')}` : ''}&n=${Date.now()}`);
+    await page.goto(`http://localhost:${PORT}/scripts/option-shot.html?w=1280&h=840&stl=${urls.join(',')}&dir=${sp.cam.dir}${sp.cam.r ? `&r=${sp.cam.r}` : `&dist=${sp.cam.dist ?? 1}`}${at ? `&at=${at.join(',')}` : ''}&n=${Date.now()}`);
     await page.waitForFunction(() => document.title === 'done', null, { timeout: 60000 });
     // (a PNG with a clear background, then a small WebP with its transparency: the picture on the page's own background)
     const png = `${root}public/_opt/shot.png`;
     await page.screenshot({ path: png, omitBackground: true });
-    execFileSync('python3', ['-c', 'import sys; from PIL import Image; Image.open(sys.argv[1]).save(sys.argv[2], "WEBP", quality=82, method=6)', png, `${root}public/options/${sp.key}-${v}.webp`]);
+    // (rendered at twice the size, cropped to the model with a little margin, and fitted to 640 x 420: no dead space round it)
+    execFileSync('python3', ['-c', FIT, png, `${root}public/options/${sp.key}-${v}.webp`]);
     console.log(`${sp.key}-${v}`, b.info.warnings.length ? b.info.warnings : '');
   }
 }

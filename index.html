@@ -204,7 +204,8 @@
     #choices { position: fixed; inset: 0; margin: auto; height: fit-content; max-height: calc(100vh - 48px); overflow-y: auto; width: min(1100px, calc(100vw - 32px)); padding: 18px 22px; background: var(--panel); z-index: 62; display: none; border-radius: 14px; font-size: 14px; }
     #choices.open { display: block; } #choices-backdrop { position: fixed; inset: 0; background: rgba(10, 12, 16, 0.5); z-index: 61; display: none; } #choices.open ~ #choices-backdrop { display: block; }
     #choices .chead { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; } #choices h3 { margin: 0; font-size: 18px; }
-    #choices-body { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 14px; }
+    #choices-body { display: grid; gap: 14px; }
+    @media (max-width: 760px) { #choices-body { grid-template-columns: minmax(0, 1fr) !important; } }
     #choices .choice { border: 1px solid var(--line); border-radius: 12px; padding: 10px; display: flex; flex-direction: column; gap: 6px; background: var(--raise); }
     #choices .choice.current { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
     #choices .choice img { width: 100%; aspect-ratio: 640 / 420; object-fit: contain; border-radius: 8px; background: var(--view-bg); }

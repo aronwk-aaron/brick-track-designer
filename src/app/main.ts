@@ -1147,6 +1147,10 @@ function showChoices(f: OptField, cur: string, def: string, c: OptCtx, off: stri
     b.addEventListener('click', () => { use(ch.v); modal.classList.remove('open'); });
     card.append(b); body.append(card);
   }
+  // (one column per choice, the window only as wide as they need: no empty space beside two)
+  const n = (f.choices ?? []).length;
+  body.style.gridTemplateColumns = `repeat(${n}, minmax(0, 1fr))`;
+  modal.style.width = `min(${n * 340 + 48}px, calc(100vw - 32px))`;
   modal.classList.add('open');
 }
 function renderOptions() {
