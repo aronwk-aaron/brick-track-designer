@@ -1671,6 +1671,9 @@ export function switchGeometry(s: Scad, plan: SwitchPlan, extraCuts: Man[] = [])
   // connectors'), turned to the rail's heading, and the tie halves snap pegs
   // and C-clips, as LEGO track pieces join.
   const cutRails = (yc: number) => routes.flatMap((rt) => [-G, G].map((o) => { const cr = plan.railCross(rt, o, yc); return [cr[0], cr[1], Math.sign(o)] as const; }));
+  // (the rails that get tongues: every one, or (tongueRails 'square', as plate-style large switches are split) only those
+  // crossing the cut within 12° of square; the others cut flat)
+  const tongueRails = (yc: number) => cutRails(yc).filter((r) => (p as { tongueRails?: string }).tongueRails !== 'square' || Math.abs(r[1]) <= 12);
   const couplerXs = (yc: number) => {
     const rs = cutRails(yc), rL = routes[nRoutes - 1], rR = routes[0];
     const xl = railPoint(rL, routeSOf(rL, [0, yc], 0, -1, 26), -G)[0] - 12 + 5, xr = railPoint(rR, routeSOf(rR, [0, yc], 0, -1, 26), +G)[0] + 12 - 5;
@@ -1693,11 +1696,11 @@ export function switchGeometry(s: Scad, plan: SwitchPlan, extraCuts: Man[] = [])
   ]);
   const cutRemovals = (yc: number) => s.union([
     // (down to the bottom: on ballast the tongue's breakaway support stands on the bed, clear of the other part's ballast)
-    ...cutRails(yc).map((r) => atCut(cube([8, 8, 30 - Math.min(0, pieceBottomZ)], [-4, -4, Math.min(-1, pieceBottomZ - 1)]), r[0], yc, 1, r[1])),
+    ...tongueRails(yc).map((r) => atCut(cube([8, 8, 30 - Math.min(0, pieceBottomZ)], [-4, -4, Math.min(-1, pieceBottomZ - 1)]), r[0], yc, 1, r[1])),
     ...couplerXs(yc).flatMap((x) => [atCut(couplerNotch(), x, yc, 1), atCut(couplerSocket(), x, yc, 1)]),
   ]);
   const cutJoint = (yc: number, side: number) => s.union([
-    ...cutRails(yc).map((r) => atCut(cutTongue(side > 0 ? r[2] : -r[2], pieceBottomZ - 0.02), r[0], yc, side, r[1])),
+    ...tongueRails(yc).map((r) => atCut(cutTongue(side > 0 ? r[2] : -r[2], pieceBottomZ - 0.02), r[0], yc, side, r[1])),
     ...couplerXs(yc).map((x) => (side > 0 ? atCut(couplerPeg(), x, yc, 1) : atCut(couplerTab(), x, yc, -1))),
   ]);
   /** The base in pieces that fit the print bed (one piece if it fits whole). */

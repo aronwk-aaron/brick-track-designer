@@ -130,6 +130,8 @@ export interface PieceOptions {
   undersideGrid?: 'baseplate' | 'track';
   /** Long track: in parts that fill the print bed (cut along straight lines), or in track pieces cut square across it with ordinary end connectors (pieceLengthStuds long; 0: as long as fits the bed). */
   splitTrack?: 'bed' | 'lengths'; pieceLengthStuds?: number;
+  /** Rail tongues at a cut: on every rail it crosses, or only on rails crossing it square (the others cut flat), as plate-style large switches are split. */
+  tongueRails?: 'all' | 'square';
   /** LEGO fit: added to the studs' 4.8 mm (mm); the anti-stud tubes' outside smaller and bore bigger by this (mm). */
   studFit: number; antistudFit: number;
   /** (switch.scad's blade_disc_d) The tines mechanism's points: the round disc they pivot on, its diameter, mm. */

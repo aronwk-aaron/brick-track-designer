@@ -24,6 +24,7 @@ const iso: Cam = { dir: '1,-0.9,0.8', r: 260 }, under: Cam = { dir: '0.6,-0.7,-1
 const specs: { key: string; values: string[]; design: (v: string) => unknown; pick?: RegExp; cam: Cam; explode?: number }[] = [
   { key: 'joint', values: ['lego', 'dovetail', 'butt', 'axle'], design: (v) => D([st(32)], { ballast: 'ballast', printBedX: 160, printBedY: 160, joint: v }), pick: /^track2$/, cam: { dir: '0.4,-1,0.55', r: 88, at: faceOf } },
   { key: 'cutRails', values: ['tongues', 'flat'], design: (v) => D([st(32)], { printBedX: 160, printBedY: 160, cutRails: v }), pick: /^track2$/, cam: { dir: '0.45,-1,0.55', r: 100, at: faceOf } },
+  { key: 'tongueRails', values: ['all', 'square'], design: (v) => D(TEMPLATES['22.5° crossing'].routes, { printBedX: 150, printBedY: 150, tongueRails: v }), pick: /^track2$/, cam: { dir: '0.5,-1,0.8', r: 170, at: faceOf } },
   { key: 'sleepers', values: ['bed', 'sleepers'], design: (v) => D([st(16)], { sleepers: v }), cam: iso },
   { key: 'curveStuds', values: ['grid', 'follow'], design: (v) => D(curve, { curveStuds: v }), cam: { dir: '0.2,-0.5,1', r: 300 } },
   { key: 'ballast', values: ['none', 'ballast', 'buddy'], design: (v) => D([st(16)], { ballast: v }), cam: { dir: '1,-1.2,0.6', r: 250 } },

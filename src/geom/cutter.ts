@@ -165,13 +165,20 @@ export function spreadSpots(lo: number, hi: number, ok: (u: number) => boolean, 
  * neighbouring lines), joints added. routes: the piece's routes (for the
  * rails and the bed), in the same frame as body.
  */
+/**
+ * Which rails crossing a cut get tongues: every one, or (t.o.tongueMaxAngle, as plate-style large switches are split)
+ * only those crossing it within that angle of square; a rail crossing it slantwise (a branch's) is cut flat, held in
+ * line by the others' tongues and the bed's joint.
+ */
+const tongueOk = (t: Track) => (r: RailCross) => t.o.tongueMaxAngle === undefined || Math.abs(r[1]) <= t.o.tongueMaxAngle;
+
 /** flatRails: cut flat: the rails straight across with no tongues, and no peg and clip (nothing sticks out, nothing to support). */
 /** noTongue: where no rail-end tongue may go (beside loose blades: a set of points' stretch), the rail cut plain there. */
 /** holes: where it puts axle holes, to keep later cuts clear of ([x, y, r] along each). */
 export function cutPiece(s: Scad, t: Track, body: Man, routes: Route[], lines: CutLine[], joint: Joint = 'lego', flatRails = false, noTongue?: (q: [number, number]) => boolean, holes?: [number, number, number][]): Man[] {
   if (!lines.length) return [body];
   const G = t.c.railOffset, half = t.c.sleeperLen / 2;
-  const kit = jointKit(s, t, body.boundingBox().min[2]);
+  const kit = jointKit(s, t, body.boundingBox().min[2]), tongued = tongueOk(t);
 
   // where the piece has floor (a slice through its bed), for the couplers
   const floor = body.slice(1.0);
@@ -222,7 +229,7 @@ export function cutPiece(s: Scad, t: Track, body: Man, routes: Route[], lines: C
 
   // material removed at every cut: the rails round each joint, the notches and sockets on the far side
   const removals = s.union(frames.flatMap((f) => [
-    ...(f.tongues ? f.rails.map((r) => f.place(kit.tongueCut(r), r[0])) : []),
+    ...(f.tongues ? f.rails.filter(tongued).map((r) => f.place(kit.tongueCut(r), r[0])) : []),
     ...f.couplers.flatMap((u) => kit.couplerCut(f.kind).map((m) => f.place(m, u))),
   ]));
   const cutBody = s.difference(body, [removals]);
@@ -276,7 +283,7 @@ export function cutPiece(s: Scad, t: Track, body: Man, routes: Route[], lines: C
     const joints: Man[] = [];
     frames.forEach((f, k) => {
       const side = sides[k];
-      if (f.tongues) for (const r of f.rails) if (inCell(f.at(r[0]))) joints.push(f.place(kit.tonguePart(r, side), r[0]));
+      if (f.tongues) for (const r of f.rails.filter(tongued)) if (inCell(f.at(r[0]))) joints.push(f.place(kit.tonguePart(r, side), r[0]));
       for (const u of f.couplers) {
         if (!inCell(f.at(u))) continue;
         const part = kit.couplerPart(f.kind, side);
@@ -336,7 +343,7 @@ export function pathJoints(s: Scad, t: Track, body: Man, routes: Route[], runs: 
   });
   const railPts = rails.flatMap((rs, k) => rs.map((r) => fs[k].at(r[0])));
   if (tongues) rails.forEach((rs, k) => {
-    for (const r of rs) {
+    for (const r of rs.filter(tongueOk(t))) {
       // (the joint's 8 mm square, turned to the rail: how far it reaches along the run and across it)
       const h = (r[1] * Math.PI) / 180, e = 4 * (Math.abs(Math.cos(h)) + Math.abs(Math.sin(h)));
       // (too near a turn, or another rail's joint (where rails meet at a crossing): the rail cut plain)

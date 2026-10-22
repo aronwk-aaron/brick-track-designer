@@ -18,6 +18,8 @@ export interface TrackOptions {
   sleeperWidthStuds: number; // 2 (LEGO) or 1 (bridge ties)
   /** the anti-stud tubes' fit (0.06): their outside this much smaller, their bore this much bigger */
   antistudFit?: number;
+  /** (cuts) only rails crossing a cut within this angle of square get tongues, the others cut flat (plate-style large switches); unset: every rail */
+  tongueMaxAngle?: number;
 }
 
 export const DEFAULTS: TrackOptions = {

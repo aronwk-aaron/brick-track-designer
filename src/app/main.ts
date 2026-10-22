@@ -1064,6 +1064,10 @@ const OPTION_FORM: OptSection[] = [
           { key: 'cutRails', label: 'Rails at cuts', off: (c) => (c.o.joint === 'butt' ? 'Parts join with is Straight cuts' : undefined), choices: [
       { v: 'tongues', t: 'Interlocking tongues', tip: 'Like LEGO track ends.', con: 'The tongues overhang, so they print with supports.' },
       { v: 'flat', t: 'Cut flat', tip: 'Nothing overhangs, no supports.', con: 'Only the bed joint and the baseplate keep the rails in line.' }] },
+    { key: 'tongueRails', label: 'Tongues on', def: 'all', get: () => design.options?.tongueRails ?? 'all', off: (c) => (c.o.joint === 'butt' ? 'Parts join with is Straight cuts' : c.o.cutRails === 'flat' ? 'Rails at cuts is Cut flat' : c.o.splitTrack === 'lengths' || c.o.joint === 'ends' ? 'track pieces join with their ordinary end connectors' : undefined), choices: [
+      { v: 'all', t: 'Every rail a cut crosses', tip: 'Each rail gets interlocking tongues where it\'s cut, slanted ones too.' },
+      { v: 'square', t: 'Only rails crossing the cut square', tip: 'The track the cut crosses squarely gets LEGO track-end tongues; rails crossing it at an angle (a branch\'s) are cut flat, as plate-style large switches are split.',
+        con: 'The slanted rails rely on the square ones and the bed joint to stay in line.' }] },
     { key: 'endSupports', label: 'Supports under rail ends', check: true, help: 'Breakaway supports under the rail-end tongues. Off: leave it to your slicer.' },
   ] },
   { title: 'Monorail', kind: 'monorail', fields: [
@@ -1123,7 +1127,7 @@ const openSecs: Set<string> = (() => { try { const v = JSON.parse(localStorage.g
 const keepSecs = () => { try { localStorage.setItem('btd-settings-open', JSON.stringify([...openSecs])); } catch { /* (not kept) */ } };
 let optQuery = '';
 /** The settings whose choices have example pictures (public/options/<key>-<value>.webp, made by scripts/option-pictures.mts). */
-const PICTURED = new Set(['joint', 'cutRails', 'sleepers', 'curveStuds', 'ballast', 'bottomStyle', 'grip', 'undersideGrid', 'splitTrack', 'mechStyle', 'bladeHold', 'bladeStyle', 'throwStyle', 'bufferStyle', 'monoEndStuds']);
+const PICTURED = new Set(['joint', 'cutRails', 'tongueRails', 'sleepers', 'curveStuds', 'ballast', 'bottomStyle', 'grip', 'undersideGrid', 'splitTrack', 'mechStyle', 'bladeHold', 'bladeStyle', 'throwStyle', 'bufferStyle', 'monoEndStuds']);
 /** A setting's choices side by side in a modal: each one's picture, what it does, its drawback, and a button to use it. */
 function showChoices(f: OptField, cur: string, def: string, c: OptCtx, off: string | undefined, use: (v: string) => void) {
   const modal = $('choices'), body = $('choices-body');

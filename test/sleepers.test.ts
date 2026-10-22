@@ -4,7 +4,7 @@ import { kernel } from '../src/geom/kernel';
 import { Scad } from '../src/geom/scad';
 import { CROSSING_DEFAULTS, crossingPiece, sleeperSpots } from '../src/geom/crossing';
 import { buildDesign } from '../src/app/build';
-import { type Design, toRoutes } from '../src/app/design';
+import { type Design, TEMPLATES, toRoutes } from '../src/app/design';
 import { subRoute } from '../src/switch/pieces';
 import { reversedRoute } from '../src/switch/reverse';
 
@@ -93,6 +93,17 @@ describe('long track cut into track pieces', { timeout: 120000 }, () => {
     // (56 studs: 16 + 16 + 16 + 8; 40: 16 + 16 + 8)
     expect(b.pieces).toHaveLength(7);
     for (const p of b.pieces) { let lo = 1e9, hi = -1e9; for (let i = 1; i < p.positions.length; i += 3) { lo = Math.min(lo, p.positions[i]); hi = Math.max(hi, p.positions[i]); } expect(hi - lo).toBeLessThan(16 * 8 + 12); }
+  });
+});
+
+describe('rail tongues at cuts', { timeout: 120000 }, () => {
+  it('only on rails crossing a cut square (plate-style): a 22.5° crossing cut for the bed, the slanted rails cut flat', async () => {
+    const w = await kernel(), d = TEMPLATES['22.5° crossing'];
+    const all = buildDesign(w, { ...d, options: { printBedX: 150, printBedY: 150 } }), square = buildDesign(w, { ...d, options: { printBedX: 150, printBedY: 150, tongueRails: 'square' } });
+    expect(square.info.warnings).toEqual([]);
+    expect(square.pieces.map((p) => p.name)).toEqual(all.pieces.map((p) => p.name));
+    // (fewer tongue joints cut out of the rails: a little more plastic)
+    expect(square.info.volume).toBeGreaterThan(all.info.volume + 20);
   });
 });
 

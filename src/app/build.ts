@@ -475,7 +475,7 @@ function buildOne(w: Wasm, design: Design, report: (what: string, frac: number) 
   /** A part too big for the bed: ringed where it is. */
   const bedIssue = (bb: { min: number[]; max: number[] }) => overlay.issues.push({ at: [(bb.min[0] + bb.max[0]) / 2, (bb.min[1] + bb.max[1]) / 2],
     r: Math.hypot(bb.max[0] - bb.min[0], bb.max[1] - bb.min[1]) / 2, text: `A part ${(bb.max[0] - bb.min[0]).toFixed(0)} x ${(bb.max[1] - bb.min[1]).toFixed(0)} mm: too big for the ${o.printBedX} x ${o.printBedY} print bed` });
-  const track = new Track(scad, { ...TRACK_DEFAULTS, gaugeStuds: design.gaugeStuds, studFit: o.studFit, antistudFit: o.antistudFit, sleeperWidthStuds: o.sleeperWidthStuds });
+  const track = new Track(scad, { ...TRACK_DEFAULTS, gaugeStuds: design.gaugeStuds, studFit: o.studFit, antistudFit: o.antistudFit, sleeperWidthStuds: o.sleeperWidthStuds, ...(o.tongueRails === 'square' && { tongueMaxAngle: 12 }) });
   // (how far each side of a centre line the track's base reaches: its sleepers, or its widest ballast layer)
   const bandHalf = (o.ballast === 'buddy' ? track.c.sleeperLen + 32 : o.ballast === 'ballast' ? track.c.sleeperLen + 16 : track.c.sleeperLen) / 2;
   // (two stretches of track side by side closer than their sleepers' length, nearly parallel: drawn over each other,
@@ -616,10 +616,10 @@ function buildOne(w: Wasm, design: Design, report: (what: string, frac: number) 
     const lines: CutLine[] = [...plan.xs.map((x): CutLine => ({ p: [x, 0], d: [0, 1], ...lj(x) })), ...plan.ys.map((y): CutLine => ({ p: [0, y], d: [1, 0], ...lj(y) }))];
     steps++; progress(plan.why === 'bed' ? `Cutting ${name} to fit the print bed` : `Cutting ${name} at the baseplate edges`);
     if (rebuild && lines.length) world = rebuild(lines);
-    const cut = cached(`cut:${bp}:${o.joint}:${o.cutRails}:${JSON.stringify(lines)}:${JSON.stringify(pieceRoutes)}:${world.volume().toFixed(3)}`, () => arena(w, () => { const holes: Keep[] = []; return { cells: cutPiece(scad, track, world, pieceRoutes, lines, o.joint === 'ends' ? 'lego' : o.joint ?? 'lego', o.cutRails === 'flat', noTongue, holes as [number, number, number][]), holes }; }, (r) => r.cells));
+    const cut = cached(`cut:${bp}:${o.joint}:${o.cutRails}:${o.tongueRails ?? 'all'}:${JSON.stringify(lines)}:${JSON.stringify(pieceRoutes)}:${world.volume().toFixed(3)}`, () => arena(w, () => { const holes: Keep[] = []; return { cells: cutPiece(scad, track, world, pieceRoutes, lines, o.joint === 'ends' ? 'lego' : o.joint ?? 'lego', o.cutRails === 'flat', noTongue, holes as [number, number, number][]), holes }; }, (r) => r.cells));
     const cells = cut.cells;
     const fitAll = fitter(pieceRoutes, [...cut.holes]);
-    const all = cached(`fit:${o.printBedX}x${o.printBedY}:${bp}:${o.joint}:${o.cutRails}:${JSON.stringify(lines)}:${JSON.stringify(pieceRoutes)}:${world.volume().toFixed(3)}`, () => {
+    const all = cached(`fit:${o.printBedX}x${o.printBedY}:${bp}:${o.joint}:${o.cutRails}:${o.tongueRails ?? 'all'}:${JSON.stringify(lines)}:${JSON.stringify(pieceRoutes)}:${world.volume().toFixed(3)}`, () => {
       // (and each part gripping along its cut edges too)
       const parts = cells.flatMap((m) => arena(w, () => fitAll(m), (r) => r)); // (each cell's leftovers freed as it goes)
       if (parts.length < 2) return parts;
@@ -812,7 +812,7 @@ function buildOne(w: Wasm, design: Design, report: (what: string, frac: number) 
       // it by what each is made from, network.ts SplitParts key; where no rail-end tongue goes, near it))
       const zs = zones.filter((z) => z.box[2] >= R[0] - MARGIN && z.box[0] <= R[2] + MARGIN && z.box[3] >= R[1] - MARGIN && z.box[1] <= R[3] + MARGIN).map((z) => [z.rt.id, z.s0, z.s1, z.box]);
       const tk = `tile:${JSON.stringify({ r: cr.routes, c: cr.checks, i: [...tileInner], R, lines, near: tileSplits.map((sp) => [sp.key, sp.inner, sp.bladeCuts.map(([i]) => i)]),
-        copt, joint: o.joint, cutRails: o.cutRails, g: grooveCuts.length ? tw.groove : 0, gp: gridPose, bed: [o.printBedX, o.printBedY], zs, ...(labelOn && { lab: [o.labelText, o.labelSize, o.labelGauge, o.labelParts] }) })}`;
+        copt, joint: o.joint, cutRails: o.cutRails, tongueRails: o.tongueRails, g: grooveCuts.length ? tw.groove : 0, gp: gridPose, bed: [o.printBedX, o.printBedY], zs, ...(labelOn && { lab: [o.labelText, o.labelSize, o.labelGauge, o.labelParts] }) })}`;
       let part: { ms: (ReturnType<typeof bake> & { id?: string })[]; grips: [number, number][] };
       // (how long it takes, about: its track, and points most of all)
       const cost = cr.routes.reduce((t, rt) => t + routeLength(rt), 0) + 400 * near.length;
