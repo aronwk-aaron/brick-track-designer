@@ -129,7 +129,8 @@ describe('monorail', { timeout: 120000 }, () => {
       mono({ name: 'Branch', x: 0, y: 0, heading: 0, segs: [{ kind: 'curve', radius: 28, angle: 45 }, { kind: 'straight', studs: 8 }] }),
     ] };
     const b = buildDesign(await kernel(), d);
-    expect(b.info.warnings).toEqual([]);
+    // (only the note that they're experimental)
+    expect(b.info.warnings).toEqual(['monorail points are experimental: test-print a set before building more']);
     const names = b.pieces.map((p) => p.name);
     expect(names).toContain('monorail-points-base');
     expect(names).toContain('monorail-points-frame');

@@ -89,7 +89,14 @@ export function monoBranches(chains: Chain[]): MonoBranch[] {
       });
     }
   });
-  return out;
+  // (two routes drawn from one point, each a branch of the other: one set of points, the main the straighter one there)
+  const bend = (c: Chain, s: number) => { const sg = c.route.segments.find((_, k, all) => { let a = 0; for (let j = 0; j < k; j++) a += segLength(all[j]); return s >= a - 1e-6 && s <= a + segLength(all[k]) + 1e-6; }); return sg && sg.kind === 'arc' ? 1 / sg.radius : 0; };
+  return out.filter((x) => {
+    const twin = out.find((y) => y !== x && y.main === x.branch && y.branch === x.main);
+    if (!twin) return true;
+    const bx = bend(chains[x.main], x.toeS), by = bend(chains[twin.main], twin.toeS);
+    return bx < by || (bx === by && x.main < twin.main);
+  });
 }
 
 /** The chain run from s0 the way dir says (+1 along it, -1 back), for length len, as a route starting there; and its rack gaps in that route's s. */
@@ -256,6 +263,7 @@ export function buildMonorail(w: Wasm, routes: Route[], o: Partial<PieceOptions>
     const bl = plan.branchLen - lead;
     taken[br.branch].push(br.branchEnd === 0 ? [0, bl] : [B.L - bl, B.L]);
     res.splits.push([toe[0], toe[1]]);
+    if (res.splits.length === 1) res.warnings.push('monorail points are experimental: test-print a set before building more');
     switches.push({ plan, P: Pd, key: JSON.stringify({ m: main.route.segments, b: bo.route.segments, lead, travel, fit, mo, elev }) });
   }
 
@@ -314,7 +322,8 @@ export function buildMonorail(w: Wasm, routes: Route[], o: Partial<PieceOptions>
     const count = parts.filter((q) => q.c === p.c).length;
     const name = `monorail-${c.name}${count > 1 ? `-${n}` : ''}`;
     const tag = `${c.name.split('+')[0]}${count > 1 ? `-${n}` : ''}`.toUpperCase();
-    const lines = labels === 'none' ? [] : labels === 'part' ? [tag] : [designName ? designName.toUpperCase() : '', tag];
+    const text = (o.labelText || designName || '').toUpperCase();
+    const lines = labels === 'none' ? [] : labels === 'part' ? [tag] : [text, tag];
     const sub = subOf(c.route, p.a, p.b), gaps = c.gaps.filter((g) => g.s > p.a - 1 && g.s < p.b + 1).map((g) => ({ ...g, s: g.s - p.a }));
     const sock = (sockets.get(p) ?? []).map((s) => s - p.a);
     const key = JSON.stringify({ seg: sub.segments, start: sub.start, gaps, sock, lines, mo, elev });

@@ -20,7 +20,7 @@ function tracedOnce(key: string, make: () => [number, number][]) {
 }
 const trace = (p: Pose, segs: DSeg[], step = 0.5) => tracedOnce(`t${p.x},${p.y},${p.heading},${step}${JSON.stringify(segs)}`, () => traceRaw(p, segs, step));
 
-export interface Overlay { grooves: [number, number][][]; checkRails: [number, number][][]; crossings: [number, number][]; splits: [number, number][]; grips?: [number, number][]; items?: OverlayItem[];
+export interface Overlay { grooves: [number, number][][]; checkRails: [number, number][][]; crossings: [number, number][]; splits: [number, number][]; /** monorail points' toes (mm) */ monoPoints?: [number, number][]; grips?: [number, number][]; items?: OverlayItem[];
   /** what's wrong, and where (mm): ringed in red */ issues?: { at: [number, number]; r: number; text: string }[] }
 /** A trackwork item on the plan (mm); a lever ('throw') has its points' frame and settings, to drag it. */
 export interface OverlayItem { kind: string; key: string; at: [number, number]; pts: [number, number][]; dir?: [number, number];
@@ -966,6 +966,11 @@ export class TrackCanvas {
           if (st.state === 'off') c.strokeStyle = '#8a8f99';
           else { c.strokeStyle = st.forced && !st.ok ? '#e0452b' : '#f0b400'; if (!st.ok) c.setLineDash([3, 2]); }
           c.strokeRect(sx - 4.5, sy - 4.5, 9, 9); c.setLineDash([]);
+        }
+        // (monorail points: a yellow diamond, built as drawn: not changed by hand)
+        for (const q of this.overlay.monoPoints ?? []) {
+          const [sx, sy] = this.toScreen(q[0] / MM, q[1] / MM);
+          c.fillStyle = '#f0b400'; c.beginPath(); c.moveTo(sx, sy - 7); c.lineTo(sx + 7, sy); c.lineTo(sx, sy + 7); c.lineTo(sx - 7, sy); c.closePath(); c.fill();
         }
       }
       // handles: check rail and flangeway cut ends, dragged longer or shorter (and the one being dragged)

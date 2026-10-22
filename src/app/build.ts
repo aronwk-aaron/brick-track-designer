@@ -228,6 +228,7 @@ export function buildDesign(w: Wasm, design: Design, report: (what: string, frac
   const sleeperLen = (design.gaugeStuds + 1) * 8 + 24, half = (o.ballast === 'buddy' ? sleeperLen + 32 : o.ballast === 'ballast' ? sleeperLen + 16 : sleeperLen) / 2;
   const mr = buildMonorail(w, monoRoutes, o, design.name, hasTrain ? { routes: toRoutes(trainD).filter((r) => r.segments.length), half, top } : undefined, (what) => report(what, share + (1 - share) * 0.5));
   overlay.splits.push(...mr.splits);
+  (overlay as { monoPoints?: [number, number][] }).monoPoints = mr.splits;
   overlay.issues.push(...mr.issues);
   const pieces = [...(tr?.pieces ?? []), ...mr.pieces];
   const mn = [Infinity, Infinity, Infinity], mx = [-Infinity, -Infinity, -Infinity];
@@ -430,8 +431,11 @@ function buildOne(w: Wasm, design: Design, report: (what: string, frac: number) 
   const bufOnSwitch = bufs.length > 0 && pc.switches.some((sw) => sw.covers.some(([ri, a, b]) => [a, b].some((sv) => {
     const q = routePose(routes[ri], sv); return bufs.some((bq) => Math.hypot(bq[0] - q[0], bq[1] - q[1]) < 0.5);
   })));
+  // (guard rails or a third rail on a switch's routes: built as a network piece too, so their ends meet the switch's in
+  // one piece; a switch built on its own has none, and the track's connector there had extra rail ends that met nothing)
+  const extraOnSwitch = pc.switches.some((sw) => sw.covers.some(([ri]) => !!routes[ri].extra));
   const network = sol.splits.length > 0 && (sol.splits.some((sp) => sp.merge) || pc.warnings.some((w2) => !/print bed/.test(w2))
-    || sol.crossings.some((c) => groupOf(c.a.route) !== groupOf(c.b.route)) || bufOnSwitch);
+    || sol.crossings.some((c) => groupOf(c.a.route) !== groupOf(c.b.route)) || bufOnSwitch || extraOnSwitch);
   const place = (m: Man, P: Pose) => T(R(m, [0, 0, P[2]]), [P[0], P[1], 0]);
   let volume = 0;
   const fitsBed = (m: Man) => {

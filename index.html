@@ -153,6 +153,7 @@
     #legend i.grip { width: 9px; height: 9px; border-radius: 50%; border: 1.5px solid #2b9e4a; margin: 0 9px 0 3px; }
     #legend i.sq { width: 9px; height: 9px; background: #f0b400; margin: 0 9px 0 3px; }
     #legend i.sq.off { background: none; border: 2px solid #8a8f99; width: 5px; height: 5px; }
+    #legend i.diamond { width: 8px; height: 8px; background: #f0b400; transform: rotate(45deg); margin: 0 10px 0 4px; }
     #legend i.sq.cand { background: none; border: 2px solid #f0b400; width: 5px; height: 5px; }
     #legend .sub { padding-left: 14px; font-size: 11.5px; }
     #legend .lhead { display: flex; align-items: center; gap: 6px; color: var(--ink); font-size: 12px; }
@@ -326,6 +327,7 @@
           <span id="legend-points" data-layer="points"><i class="sq"></i>points (built as a switch)</span>
           <span id="legend-points-off" class="sub"><i class="sq off"></i>points taken out</span>
           <span id="legend-points-cand" class="sub"><i class="sq cand"></i>could be points</span>
+          <span id="legend-mono-points" data-layer="points" hidden><i class="diamond"></i>monorail points (experimental)</span>
           <span id="legend-levers" data-layer="levers"><i class="knob"></i>lever (its arm: the side it's on)</span>
           <span id="legend-grip" data-layer="grips"><i class="grip"></i>anti-stud tube (grips the plate)</span>
           <span id="legend-hint" class="hintline">Click a row to hide it; hover the plan for what a click does.</span>

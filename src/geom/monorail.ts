@@ -11,6 +11,7 @@
 import type { Wasm } from './kernel';
 import { M, R, T, type CS, type Man, type Scad, type Vec2 } from './scad';
 import { arcSegments, sweepRoute } from './sweep';
+import { sizeForCap, textOutline, textWidth } from './labels';
 import { routeLength, routePose, segLength, segStarts, type Pose, type Route } from '../route/route';
 
 /** The monorail settings (monorail_lib.scad's Details). */
@@ -225,41 +226,13 @@ export function subOf(rt: Route, a: number, b: number): Route {
 export { routeLength };
 
 // ---------------------------------------------------------------------------
-// Labels: engraved underneath, reading from below (under_label). A plain
-// block letter font (5 x 7), not the .scad's Liberation Sans Bold: the kernel
-// has no fonts.
+// Labels: engraved underneath, reading from below (under_label), in the
+// labels' bundled sans bold (labels.ts), as the train track's.
 // ---------------------------------------------------------------------------
-const FONT: Record<string, string> = {
-  A: '01110100011000111111100011000110001', B: '11110100011000111110100011000111110', C: '01110100011000010000100001000101110',
-  D: '11110100011000110001100011000111110', E: '11111100001000011110100001000011111', F: '11111100001000011110100001000010000',
-  G: '01110100011000010111100011000101111', H: '10001100011000111111100011000110001', I: '01110001000010000100001000010001110',
-  J: '00111000100001000010000101001001100', K: '10001100101010011000101001001010001', L: '10000100001000010000100001000011111',
-  M: '10001110111010110101100011000110001', N: '10001100011100110101100111000110001', O: '01110100011000110001100011000101110',
-  P: '11110100011000111110100001000010000', Q: '01110100011000110001101011001001101', R: '11110100011000111110101001001010001',
-  S: '01111100001000001110000010000111110', T: '11111001000010000100001000010000100', U: '10001100011000110001100011000101110',
-  V: '10001100011000110001100010101000100', W: '10001100011000110101101011010101010', X: '10001100010101000100010101000110001',
-  Y: '10001100010101000100001000010000100', Z: '11111000010001000100010001000011111',
-  0: '01110100011001110101110011000101110', 1: '00100011000010000100001000010001110', 2: '01110100010000100010001000100011111',
-  3: '11111000100010000010000011000101110', 4: '00010001100101010010111110001000010', 5: '11111100001111000001000011000101110',
-  6: '00110010001000011110100011000101110', 7: '11111000010001000100010000100001000', 8: '01110100011000101110100011000101110',
-  9: '01110100011000101111000010001001100',
-  '-': '00000000000000011111000000000000000', '.': '00000000000000000000000000110001100', '°': '01100100101001001100000000000000000',
-  '/': '00001000010001000100010001000010000', '+': '00000001000010011111001000010000000', ' ': '00000000000000000000000000000000000',
-};
-/** A line of text in the block font: u along it (centred), v up (centred), cap height h. */
-function textCS(w: Wasm, txt: string, h: number): CS | undefined {
-  const px = h / 7, chars = [...txt.toUpperCase()].map((ch) => FONT[ch] ?? FONT['-']), W = (chars.length * 6 - 1) * px;
-  const rects: Vec2[][] = [];
-  chars.forEach((bits, k) => {
-    for (let r = 0; r < 7; r++) for (let c = 0; c < 5; c++) if (bits[r * 5 + c] === '1') {
-      const x = (k * 6 + c) * px - W / 2, y = (3.5 - r - 1) * px, e = px * 0.02;
-      rects.push([[x - e, y - e], [x + px + e, y - e], [x + px + e, y + px + e], [x - e, y + px + e]]);
-    }
-  });
-  return rects.length ? new w.CrossSection(rects, 'NonZero') : undefined;
-}
-/** Text width in the block font, at cap height h. */
-const textW = (txt: string, h: number) => (([...txt].length * 6 - 1) * h) / 7;
+/** A line of text: u along it (centred), v up (centred), capitals h mm tall. */
+const textCS = (w: Wasm, txt: string, h: number): CS | undefined => textOutline(w, txt.toUpperCase(), h);
+/** Text width at cap height h. */
+const textW = (txt: string, h: number) => textWidth(txt.toUpperCase(), sizeForCap(h));
 /**
  * under_label: up to two lines engraved 1 mm into the underside, along the
  * piece (avail: mm along it), the first on the +x side, mirrored to read from

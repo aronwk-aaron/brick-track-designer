@@ -182,5 +182,24 @@ export function monoSwitch(mono: Mono, p: SwitchPlan, fit: number): { base: Man;
   fr.push(T(leverPlan().extrude(armZ[1] - armZ[0] + 0.01), [0, 0, armZ[0]]));
   fr.push(T(s.cube([leverW, leverL, bt - armZ[0]]), [armC[0] - leverW / 2, armC[1] - leverL / 2, armZ[0]]));
   for (const dy of [-MONO.stud / 2, MONO.stud / 2]) fr.push(T(s.cylinder(1.7, 2.4, 2.4, 32), [armC[0], armC[1] + dy, bt - 0.01]));
-  return { base, frame: s.union(fr) };
+  // breakaway print supports (thin walls, 0.25 below what they hold, loose from it): as built the frame stands on its
+  // lever arm, its bars and racks above the bed; walls under each bar's flange and under each rack between the bars
+  // hold them up while it prints, and snap off after (monorail_switch.scad's frame needed the slicer's supports)
+  const zMin = armZ[0], gap = 0.25, rect = (wx: number, wy: number, x: number, y: number) => w.CrossSection.square([wx, wy]).translate([x, y]);
+  const keepOut = w.CrossSection.union([
+    ...barYs.map((y) => { const [xa, xb] = frameBarXs(y); return rect(xb - xa, barW + 2 * barFlange, xa, y - barW / 2 - barFlange); }),
+    leverPlan(), rect(leverW, leverL, armC[0] - leverW / 2, armC[1] - leverL / 2),
+  ]).offset(0.4, 'Miter', 1000);
+  const sup: Man[] = [];
+  for (const y of barYs) {
+    const [xa, xb] = frameBarXs(y), h = bt - barH - barFlange - gap - zMin;
+    for (const yy of [y - barW / 2 - barFlange + 0.2, y + barW / 2 + barFlange - 0.8])
+      sup.push(T(s.extrude(rect(xb - xa - 2, 0.6, xa + 1, yy).subtract(leverPlan().offset(0.4, 'Miter', 1000)), h), [0, 0, zMin]));
+  }
+  for (const rs of [ridgeSeg(sel, at(sel, z0) + c, at(sel, z1) - c, 0, 0), ridgeSeg(other, at(other, z0) + c, at(other, z1) - c, off, 0)]) {
+    // (a strip under the rack's middle: the footprint with its teeth's gaps closed, shrunk)
+    const fp = rs.slice(bt + 0.5).offset(1, 'Round').offset(-1, 'Round'), ring = fp.offset(-(MONO.ridgeHw - 1.2), 'Round').subtract(keepOut);
+    if (ring.area() > 1) sup.push(T(s.extrude(ring, bt - gap - zMin), [0, 0, zMin]));
+  }
+  return { base, frame: s.union([...fr, ...sup]) };
 }

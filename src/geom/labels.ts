@@ -24,6 +24,20 @@ export function textWidth(txt: string, size: number): number {
 /** The cap height at a text size, mm. */
 const capOf = (size: number) => (CAP_HEIGHT / UNITS) * EM_PER_SIZE * size;
 
+/** The font size whose capitals are cap mm tall. */
+export const sizeForCap = (cap: number) => cap / ((CAP_HEIGHT / UNITS) * EM_PER_SIZE);
+/** A line of text as outlines, its capitals cap mm tall, centred on the origin, along +x (not mirrored). */
+export function textOutline(w: Scad['w'], txt: string, cap: number): CS | undefined {
+  const size = sizeForCap(cap), k0 = (EM_PER_SIZE * size) / UNITS, total = textWidth(txt, size), paths: Pt[][] = [];
+  let x = -total / 2;
+  for (const ch of txt) {
+    const [adv, contours] = glyphOf(ch);
+    for (const ct of contours) { const out: Pt[] = []; for (let i = 0; i < ct.length; i += 2) out.push([x + ct[i] * k0, ct[i + 1] * k0 - cap / 2]); paths.push(out); }
+    x += adv * k0;
+  }
+  return paths.length ? new w.CrossSection(paths, 'NonZero') : undefined;
+}
+
 /** A line to engrave: its text, and how far right of the track's centre line it runs (mm; negative: left). */
 export interface LabelLine { text: string; lat: number }
 

@@ -513,6 +513,7 @@ function updateLegend() {
   show('legend-points', its.some((it) => it.kind === 'points' && !it.off && !it.cand));
   show('legend-points-off', its.some((it) => it.kind === 'points' && it.off));
   show('legend-points-cand', its.some((it) => it.kind === 'points' && it.cand));
+  show('legend-mono-points', !!(o as { monoPoints?: unknown[] } | undefined)?.monoPoints?.length);
   show('legend-levers', has('throw'));
   show('legend-grip', !!o?.grips?.length);
   show('legend-hint', [...document.querySelectorAll<HTMLElement>('#legend-rows [data-layer]')].some((el) => !el.hidden));
@@ -913,7 +914,7 @@ const OPTION_FORM: OptSection[] = [
     { key: 'bufferPinHoles', label: 'Pin holes in the posts', check: true, off: (c) => noBuf() ?? (c.o.bufferStyle === 'blocks' ? undefined : 'only with Style: Brick posts'), help: 'Holes for LEGO Technic pins at beam height: for a bumper, lights or a sign.' },
   ] },
   { title: 'Labels', fields: [
-    { key: 'labelText', label: 'Label text', text: true, off: (c) => (c.ballast && c.o.bottomStyle === 'float' ? undefined : 'labels go only on a flat underside: set Ballast to Ballast and Ballast underside to Flat'), help: 'Engraved under each part, mirrored to read from below. Empty: no labels.' },
+    { key: 'labelText', label: 'Label text', text: true, off: (c) => (design.routes.some((r) => isMono(r)) ? undefined : (c.ballast && c.o.bottomStyle === 'float' ? undefined : 'labels go only on a flat underside: set Ballast to Ballast and Ballast underside to Flat')), help: 'Engraved under each part, mirrored to read from below. Empty: no labels (monorail: the design\'s name).' },
     { key: 'labelSize', label: 'Add the size (S16, R40 22.5°)', check: true, off: (c) => (c.ballast && c.o.bottomStyle === 'float' ? undefined : 'labels go only on a flat underside: set Ballast to Ballast and Ballast underside to Flat') ?? (c.o.labelText ? undefined : 'Label text is empty') },
     { key: 'labelGauge', label: 'Add the gauge (Ln4)', check: true, off: (c) => (c.ballast && c.o.bottomStyle === 'float' ? undefined : 'labels go only on a flat underside: set Ballast to Ballast and Ballast underside to Flat') ?? (c.o.labelText ? undefined : 'Label text is empty') },
     { key: 'labelParts', label: 'Number parts cut for the bed (#2)', check: true, off: (c) => (c.ballast && c.o.bottomStyle === 'float' ? undefined : 'labels go only on a flat underside: set Ballast to Ballast and Ballast underside to Flat') ?? (c.o.labelText ? undefined : 'Label text is empty'), help: 'Matches the part\'s file name.' },
@@ -956,10 +957,10 @@ const OPTION_FORM: OptSection[] = [
       { v: 'lego', t: '4 mm, like LEGO', tip: 'As deep as LEGO monorail track\'s anti-studs.',
         con: 'The axle holes move: side-stud and top-stud pieces then don\'t join with axles; on side-stud pieces only 0.2 mm is left between hole and anti-stud; the end notch opens into a hole.' }] },
     { key: 'monoLabels', label: 'Engraved underneath', off: noMono, choices: [
-      { v: 'name', t: 'Design name and part name', tip: 'Two lines underside, reading from below: the design\'s name (if it has one) and the part\'s name, as its file.' },
+      { v: 'name', t: 'Label text and part name', tip: 'Two lines underneath, reading from below: the Label text (Labels section; empty: the design\'s name) and the part\'s name, as its file.' },
       { v: 'part', t: 'Part name', tip: 'One line underside: the part\'s name, as its file.' },
       { v: 'none', t: 'Nothing', tip: 'A plain underside.' }] },
-    { key: 'monoSwitchTravel', label: 'Points frame slide, mm', step: 0.5, min: 10, max: 40, sub: 'Points', off: noMono, help: 'How far the points\' frame slides. The idle rack moves this far aside, clear of the train. LEGO\'s: about 27.' },
+    { key: 'monoSwitchTravel', label: 'Points frame slide, mm', step: 0.5, min: 10, max: 40, sub: 'Points (experimental)', off: noMono, help: 'How far the points\' frame slides. The idle rack moves this far aside, clear of the train. LEGO\'s: about 27.' },
     { key: 'monoSwitchFit', label: 'Points clearance, mm', step: 0.05, min: 0.1, max: 0.6, off: noMono, help: 'The gap round the sliding frame.' },
     { key: 'monoSupportStuds', label: 'Support every, studs', step: 4, min: 0, max: 256, sub: 'Supports', off: noMono, help: 'A support column under the beam this often, each its own part. 0: none. Parts are cut over a support where they can.' },
     { key: 'monoSupportBricks', label: 'Support height, bricks', step: 1, min: 1, max: 30, off: noSupports, help: 'Height of the beam\'s underside above the baseplate. LEGO\'s supports: 5 and 10.' },
@@ -1090,13 +1091,24 @@ renderOptions();
 // ---------- trackwork: hand edits to the check rails, flangeway cuts and points ----------
 type TwItem = { kind: 'check' | 'groove' | 'points' | 'throw'; key: string; at: [number, number]; off?: boolean; len?: number; toe?: number; routes?: string[]; forced?: boolean; cand?: { ok: boolean; why: string }; lever?: { side: number; leverOffset: number; springLength: number; maxTine: number; edited: boolean } };
 let twSig = '';
+/** The monorail points' toes, as last built (mm). */
+const monoToes = (): [number, number][] => (canvas?.overlay as { monoPoints?: [number, number][] } | undefined)?.monoPoints ?? [];
 function renderTrackwork(list: TwItem[]) {
   const sig = JSON.stringify([list.map((it) => [it.kind, it.key, it.off, Math.round((it.len ?? 0) * 10), it.toe, it.routes, it.forced, it.cand, it.lever && [it.lever.side, it.lever.leverOffset, it.lever.springLength]]),
-    design.trackwork, design.options?.throwSide, design.options?.mechStyle, design.routes.map((r) => [r.name, r.throwSide])]);
+    design.trackwork, design.options?.throwSide, design.options?.mechStyle, design.routes.map((r) => [r.name, r.throwSide]), monoToes()]);
   if (sig === twSig) return; // (don't rebuild the form under the user's fingers)
   twSig = sig;
   const body = $('trackwork-body'); body.replaceChildren();
-  if (!list.length) { const n = document.createElement('div'); n.className = 'none'; n.textContent = 'No check rails, flangeway cuts or points in this design.'; body.append(n); $('trackwork-count').textContent = ''; return; }
+  // (monorail points: what they are, and that they're built as drawn)
+  monoToes().forEach((q, k) => {
+    const row = document.createElement('div'); row.className = 'tw';
+    const t = document.createElement('b'); t.textContent = `Monorail points ${k + 1} (experimental) · at ${(q[0] / 8).toFixed(1)}, ${(q[1] / 8).toFixed(1)} studs`;
+    const n = document.createElement('div'); n.className = 'none';
+    n.textContent = 'Experimental: not test-printed yet. Built where the routes part, as drawn: the lever is on the main track\'s side, away from the branch (as LEGO\'s). To move them, redraw the branch; their slide and clearance are in Settings › Monorail.';
+    row.append(t, n); body.append(row);
+  });
+  if (!list.length) {
+    if (monoToes().length) { $('trackwork-count').textContent = ` (${monoToes().length})`; return; } const n = document.createElement('div'); n.className = 'none'; n.textContent = 'No check rails, flangeway cuts or points in this design.'; body.append(n); $('trackwork-count').textContent = ''; return; }
   const edit = <K extends keyof Trackwork>(kind: K, key: string, patch: Record<string, unknown>) => {
     const tw = (design.trackwork ??= {}), group = ((tw[kind] ??= {}) as Record<string, Record<string, unknown>>);
     group[key] = { ...group[key], ...patch };
