@@ -90,6 +90,18 @@ describe('banked curves', { timeout: 120000 }, () => {
     expect(topAt(m2, L / 2, G - 24, 3) - topAt(m2, L / 2, -G, 3)).toBeCloseTo(16 * sn, 1);
   });
 
+  it('track only with sleepers: the sleepers turned with the bank, flat underneath, one body', async () => {
+    const s = new Scad(await kernel()), L = (Math.PI / 4) * R40, o: CrossingOptions = { ...noSupports, sleepers: 'sleepers', sleeperGapStuds: 2 };
+    const flat = crossingPiece(s, toRoutes(design([curve()])), o);
+    const m = crossingPiece(s, toRoutes(design([curve(5)])), o);
+    // (a sleeper's ends: the outer one raised, the inner one lowered, by about their distance from the inner rail x sin(bank))
+    const sn = Math.sin((5 * Math.PI) / 180), hw = 32, mid = L / 2;
+    const top = (lat: number) => topAt(m, mid, lat, 6);
+    expect(top(hw - 1) - top(-hw + 1)).toBeGreaterThan(2 * (hw - 1) * sn - 0.3);
+    expect(m.boundingBox().min[2]).toBeCloseTo(flat.boundingBox().min[2], 4);
+    expect(m.decompose().filter((b) => b.volume() > 1).length).toBe(1);
+  });
+
   it('on ballast: the top follows the bank, the bottom stays flat, one body', async () => {
     const s = new Scad(await kernel()), L = (Math.PI / 4) * R40, o: CrossingOptions = { ...noSupports, ballast: 'ballast' };
     const flat = crossingPiece(s, toRoutes(design([curve()])), o);
