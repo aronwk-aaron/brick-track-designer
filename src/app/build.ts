@@ -942,8 +942,11 @@ function buildOne(w: Wasm, design: Design, report: (what: string, frac: number) 
       // LEGO track pieces (rail-end tongues, peg and clip), each fitting it.
       const rt = pc.rest[0], L = routeLength(rt);
       for (let n = 2; n <= 20; n++) {
-        const subs = Array.from({ length: n }, (_, k) => subRoute(rt, (L * k) / n, (L * (k + 1)) / n));
-        const bits = subs.map((sub) => cached(`cx1:${JSON.stringify({ sub, copt })}`, () => crossingPiece(scad, [sub], copt)));
+        // (cut on whole studs from its start, each length's underside and studs on the whole track's grid: lengths of
+        // L / n each were off it, their sockets and tubes beside the baseplate's studs)
+        const at = (k: number) => (k === n ? L : Math.round((L * k) / n / 8) * 8), gridPose = routePose(rt, 0);
+        const subs = Array.from({ length: n }, (_, k) => subRoute(rt, at(k), at(k + 1)));
+        const bits = subs.map((sub) => cached(`cx1:${JSON.stringify({ sub, copt, gridPose })}`, () => crossingPiece(scad, [sub], copt, undefined, undefined, { gridPose })));
         if (bits.every(fits) || n === 20) { bits.forEach((m, k) => { const lm = labelled(m, [subs[k]], sizeOf([subs[k]])); add(`track${k + 1}`, 0x6f7780, lm, lm); }); break; }
       }
     }
