@@ -24,8 +24,9 @@ import type { Route } from '../route/route';
 import { cutPiece, type CutLine } from '../geom/cutter';
 import { edgeGrip } from '../geom/underside';
 import { pathSplit, type Keep } from '../geom/pathsplit';
-import { type Design, OPTION_DEFAULTS, bufferEnds, toRoutes } from './design';
+import { type Design, OPTION_DEFAULTS, bufferEnds, isMono, toRoutes } from './design';
 import { labelCut, labelLines } from '../geom/labels';
+import { buildMonorail, clearMonoCache } from './monobuild';
 
 /** An item of trackwork the hand edits apply to: a check rail, a flangeway cut, a points set. */
 export interface TrackworkItem {
@@ -90,7 +91,7 @@ function meshPositions(wm: { triVerts: Uint32Array; vertProperties: Float32Array
   return out;
 }
 /** Forget the pieces built before (tests: each design's solids let go after it, arena() in kernel.ts, and nothing kept that points at them). */
-export function clearBuildCache() { memo.clear(); data.clear(); dataBytes = 0; }
+export function clearBuildCache() { memo.clear(); data.clear(); dataBytes = 0; clearMonoCache(); }
 
 /**
  * A big build's heavy jobs that don't depend on each other (the tiles of a
@@ -202,9 +203,46 @@ export function droppedInner(routes: Route[], dropped: Split[], rts: Route[], mo
   return out;
 }
 
+/**
+ * Build a design: its train track (buildTrain), and its monorail routes
+ * (monobuild.ts) beside it. A design with no monorail is built just as
+ * buildTrain builds it.
+ */
 /** progress: what it's doing now (for the 3D view's status while it builds). */
 /** opts.plan: only list the jobs it'd do (buildJobs), stopping there. */
 export function buildDesign(w: Wasm, design: Design, report: (what: string, frac: number) => void = () => {}, early?: (overlay: unknown) => void, opts: { plan?: BuildJob[] } = {}) {
+  if (!design.routes.some((r) => isMono(r) && r.segs.length > 0)) return buildTrain(w, design, report, early, opts);
+  const t0 = performance.now();
+  const trainD: Design = { ...design, routes: design.routes.filter((r) => !isMono(r)) };
+  const hasTrain = trainD.routes.some((r) => r.segs.length > 0);
+  if (opts.plan) { if (hasTrain) buildTrain(w, trainD, report, early, opts); throw PLANNED; }
+  // (the monorail's points, for the plan: sent with the train's trackwork)
+  const monoRoutes = toRoutes({ ...design, routes: design.routes.filter((r) => isMono(r) && r.segs.length > 0) });
+  const share = hasTrain ? 0.7 : 0;
+  const tr = hasTrain ? buildTrain(w, trainD, (what, f) => report(what, f * share), early, opts) : undefined;
+  const overlay = tr?.overlay ?? { grooves: [], checkRails: [], crossings: [], splits: [], grips: [], items: [], issues: [] };
+  if (!tr) early?.(overlay);
+  const o = { ...OPTION_DEFAULTS, ...design.options };
+  let top = 0;
+  for (const p of tr?.pieces ?? []) for (let i = 2; i < p.positions.length; i += 3) top = Math.max(top, p.positions[i]);
+  const sleeperLen = (design.gaugeStuds + 1) * 8 + 24, half = (o.ballast === 'buddy' ? sleeperLen + 32 : o.ballast === 'ballast' ? sleeperLen + 16 : sleeperLen) / 2;
+  const mr = buildMonorail(w, monoRoutes, o, design.name, hasTrain ? { routes: toRoutes(trainD).filter((r) => r.segments.length), half, top } : undefined, (what) => report(what, share + (1 - share) * 0.5));
+  overlay.splits.push(...mr.splits);
+  overlay.issues.push(...mr.issues);
+  const pieces = [...(tr?.pieces ?? []), ...mr.pieces];
+  const mn = [Infinity, Infinity, Infinity], mx = [-Infinity, -Infinity, -Infinity];
+  for (const p of pieces) for (let i = 0; i < p.positions.length; i += 3) for (let k = 0; k < 3; k++) { mn[k] = Math.min(mn[k], p.positions[i + k]); mx[k] = Math.max(mx[k], p.positions[i + k]); }
+  const ti = tr?.info;
+  const info = {
+    ms: performance.now() - t0, volume: (ti?.volume ?? 0) + mr.volume, size: [0, 1, 2].map((k) => mx[k] - mn[k]),
+    crossings: ti?.crossings ?? 0, checkRails: ti?.checkRails ?? 0, splits: (ti?.splits ?? 0) + mr.splits.length,
+    switches: (ti?.switches ?? 0) + mr.splits.length, pieces: pieces.length, warnings: [...(ti?.warnings ?? []), ...mr.warnings],
+  };
+  return { overlay, pieces, info };
+}
+
+/** The train track's build: all of a design's routes (as buildDesign passes them, the train routes only). */
+function buildTrain(w: Wasm, design: Design, report: (what: string, frac: number) => void = () => {}, early?: (overlay: unknown) => void, opts: { plan?: BuildJob[] } = {}) {
   const o = { ...OPTION_DEFAULTS, ...design.options };
   if (o.trackBallast !== 'apart' || o.ballast === 'none') return buildOne(w, design, report, early, opts);
   // The track and the ballast printed apart (the OpenSCAD files' generate_track / generate_ballast): the track on its

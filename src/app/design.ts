@@ -31,12 +31,16 @@ export interface DRoute {
   dualShared?: 'right' | 'left';
   /** Ends of the route as drawn that meet plain track: the third rail stops short there (dual_plain_ends). */
   dualPlainEnds?: RouteEnds;
+  /** What runs on it: train track (left out: train), or LEGO monorail beam. */
+  system?: 'train' | 'monorail';
 }
 /** The extra rails' settings left out of a route (straight.scad's defaults). */
 export const RAIL_DEFAULTS = {
   guardRailEnds: 'none' as RouteEnds, guardRailGapStuds: 0.8, guardRailTaperStuds: 8, guardRailTaperShape: 'straight' as 'straight' | 'curve', guardRailNoseRampStuds: 1.5,
   dualGaugeStuds: 2, dualShared: 'right' as 'right' | 'left', dualPlainEnds: 'none' as RouteEnds,
 };
+/** Is a route monorail (not train track)? */
+export const isMono = (r: DRoute) => r.system === 'monorail';
 export interface Design {
   version: 1; gaugeStuds: number; routes: DRoute[];
   /** The design's name: the file names it saves and downloads under. */
@@ -129,6 +133,14 @@ export interface PieceOptions {
   trackFitTol?: number;
   /** (name, label_*) Text engraved under the parts with a flat underside ('' = no labels); the size line (S16, R40 22.5°, LEFT R40 22.5°), the gauge (Ln4), and part numbers for parts cut for the bed. */
   labelText?: string; labelSize?: boolean; labelGauge?: boolean; labelParts?: boolean;
+  /** Monorail (monorail_lib.scad's Details): studs at the ends (side, top in recesses, none); axle holes in the end faces; LEGO's 4 mm anti-studs; the joining axles' length (studs); the holes' fit (mm); what's engraved underneath. */
+  monoEndStuds?: 'side' | 'top' | 'none'; monoAxleHoles?: boolean; monoLegoAntistud?: boolean; monoAxleLengthStuds?: number; monoHoleFit?: number;
+  monoLabels?: 'name' | 'part' | 'none';
+  /** Monorail points: how far the frame slides (mm), the clearance round it (mm). */
+  monoSwitchTravel?: number; monoSwitchFit?: number;
+  /** Monorail supports (monorail_support.scad): one every this many studs along the beam (0: none); their height in bricks and plates; base size (studs); anti-stud underside; studs round the base; closed frame. */
+  monoSupportStuds?: number; monoSupportBricks?: number; monoSupportPlates?: number; monoSupportBaseXStuds?: number; monoSupportBaseYStuds?: number;
+  monoSupportAntistud?: boolean; monoSupportBaseStuds?: boolean; monoSupportSolid?: boolean;
 }
 export const OPTION_DEFAULTS: PieceOptions = {
   throwSide: 'auto', leverOffset: 8, pointThrow: 3, pointClearance: 0.3, springPreload: 1, springThickness: 0.9, springLength: 40,
@@ -137,6 +149,8 @@ export const OPTION_DEFAULTS: PieceOptions = {
   bladeDiscD: 14, throwBallast: false, axleHoles: false, pegOnBallast: false,
   bufferStyle: 'frame', bufferPostPlates: 8, bufferBeamBottom: 2, bufferBeamTop: 12, bufferPinHoles: true,
   trackBallast: 'together', trackFitTol: 0.2, labelText: '', labelSize: true, labelGauge: false, labelParts: true,
+  monoEndStuds: 'side', monoAxleHoles: true, monoLegoAntistud: false, monoAxleLengthStuds: 2, monoHoleFit: 0.1, monoLabels: 'name', monoSwitchTravel: 27, monoSwitchFit: 0.3,
+  monoSupportStuds: 0, monoSupportBricks: 5, monoSupportPlates: 0, monoSupportBaseXStuds: 4, monoSupportBaseYStuds: 4, monoSupportAntistud: true, monoSupportBaseStuds: true, monoSupportSolid: false,
 };
 
 /** The buffer stops' positions (mm): the route ends set to end in one (by where they are, as routes are turned round and cut up). */

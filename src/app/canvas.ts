@@ -6,7 +6,7 @@
 // branches off it (a switch). Select mode picks a track to edit or delete.
 // Drag with the right or middle button (or Space + drag) to pan; the wheel
 // zooms.
-import { type Design, type DRoute, type DSeg, freeName } from './design';
+import { type Design, type DRoute, type DSeg, freeName, isMono } from './design';
 import { describe, follow, plan, planAnyway, planAuto, planFreeTurning, planToPose, reversed, trace as traceRaw, type Pose } from './planner';
 
 // Track outlines traced once and kept (they're in studs, the same at any
@@ -39,9 +39,12 @@ export interface CanvasHost {
   status?(hint: string, at: [number, number] | undefined): void;
   /** Esc with nothing being drawn: back to Select mode. */
   leaveDraw?(): void;
+  /** What new routes are: train track or monorail (Draw's Track choice). */
+  system?(): 'train' | 'monorail';
 }
 
 const MM = 8; // mm per stud
+const MONO_HW = 15.9, MONO_RIDGE_HW = 3.2; // the monorail beam's and its ridge's half-widths, mm (monorail_lib.scad)
 
 /** Can a lever be moved along the points (its spring tines longer or shorter)? Only on tines: the plate-style lever is level with the slider bar. */
 export const leverSlides = (d: Design) => d.options?.mechStyle === 'tines';
@@ -390,7 +393,9 @@ export class TrackCanvas {
     if (this.active.route === undefined) {
       const st = this.active.start!;
       const heading = Number.isNaN(st.heading) ? this.freeHeading(st, w) : st.heading;
-      d.routes.push({ name: freeName(d, 'T'), x: st.x, y: st.y, heading, segs });
+      // (a branch is what the track it leaves is; else what Draw's Track choice says)
+      const sys = this.active.from !== undefined ? d.routes[this.active.from]?.system : this.host.system?.();
+      d.routes.push({ name: freeName(d, 'T'), x: st.x, y: st.y, heading, segs, ...(sys === 'monorail' && { system: sys }) });
       this.active = { route: d.routes.length - 1, end: follow({ ...st, heading }, segs) };
     } else {
       const rs = d.routes[this.active.route].segs, last = rs[rs.length - 1];
@@ -602,6 +607,8 @@ export class TrackCanvas {
   /** Join route b onto the end of route a (b's start or end meeting a's end): a gets b's track, b goes. */
   private join(a: number, b: number, bEnd: 'start' | 'end') {
     const routes = this.host.design().routes, rb = routes[b];
+    // (train track and monorail only meet: a route is one or the other)
+    if (isMono(routes[a]) !== isMono(rb)) return a;
     const more = bEnd === 'start' ? rb.segs.map((sg) => ({ ...sg })) : reversed(rb).segs;
     const segs = routes[a].segs;
     for (const sg of more) {
@@ -745,7 +752,8 @@ export class TrackCanvas {
     const css = getComputedStyle(this.el);
     const v = (name: string, fallback: string) => css.getPropertyValue(name).trim() || fallback;
     const ink = { rail: v('--c-rail', '#4a5560'), centre: v('--c-centre', '#b8b8b0'), label: v('--c-label', '#5c5c55'), mark: v('--c-mark', '#111'),
-      tagBg: v('--c-tag-bg', 'rgba(255,255,255,0.92)'), band: v('--c-band', 'rgba(120,110,95,0.16)'), ballast: v('--c-ballast', 'rgba(150,128,96,0.30)'), ballastLow: v('--c-ballast-low', 'rgba(150,128,96,0.16)'), sel: v('--c-sel', '#2b5fb8'), selInk: v('--c-sel-ink', '#1d4fae') };
+      tagBg: v('--c-tag-bg', 'rgba(255,255,255,0.92)'), band: v('--c-band', 'rgba(120,110,95,0.16)'), ballast: v('--c-ballast', 'rgba(150,128,96,0.30)'), ballastLow: v('--c-ballast-low', 'rgba(150,128,96,0.16)'), sel: v('--c-sel', '#2b5fb8'), selInk: v('--c-sel-ink', '#1d4fae'),
+      mono: v('--c-mono', 'rgba(140,150,170,0.42)'), monoEdge: v('--c-mono-edge', '#5d6678') };
     c.fillStyle = v('--canvas-bg', '#fbfbf8'); c.fillRect(0, 0, W, H);
     // grid: a line every stud (when not too dense), stronger every 8
     const [wx0, wy1] = this.toWorld(0, 0), [wx1, wy0] = this.toWorld(W, H);
@@ -831,8 +839,8 @@ export class TrackCanvas {
     const ballast = d.options?.ballast ?? 'none';
     if (ballast !== 'none' && !this.hidden.has('ballast')) {
       const wide = (2 * g + 3 + (ballast === 'buddy' ? 4 : 2)) * this.scale;
-      layer(ink.ballastLow, (draw) => { for (const r of d.routes) draw(trace(r, r.segs, 0.5), wide); });
-      if (ballast === 'buddy') layer(ink.ballast, (draw) => { for (const r of d.routes) draw(trace(r, r.segs, 0.5), (2 * g + 5) * this.scale); });
+      layer(ink.ballastLow, (draw) => { for (const r of d.routes) if (!isMono(r)) draw(trace(r, r.segs, 0.5), wide); });
+      if (ballast === 'buddy') layer(ink.ballast, (draw) => { for (const r of d.routes) if (!isMono(r)) draw(trace(r, r.segs, 0.5), (2 * g + 5) * this.scale); });
     }
     // the sleeper bands, each colour as one layer (red where a drag can't bend the track)
     {
@@ -842,6 +850,7 @@ export class TrackCanvas {
         return (k: number) => !!dragging && (this.dragBadFrom >= 0 ? k >= this.dragBadFrom : k < this.dragBadTo);
       };
       for (const color of [ink.band, 'rgba(43,111,224,0.18)', 'rgba(224,69,43,0.22)']) layer(color, (draw) => d.routes.forEach((r, i) => {
+        if (isMono(r)) return; // (the monorail's beam: drawn below)
         let q: Pose = r; const bad = badOf(i);
         r.segs.forEach((sg, k) => {
           if ((bad(k) ? 'rgba(224,69,43,0.22)' : bandOf(i)) === color) draw(trace(q, [sg], 0.5), (2 * g + 3) * this.scale);
@@ -849,15 +858,26 @@ export class TrackCanvas {
         });
       }));
     }
+    // monorail: the 4-stud beam (its narrower ends where pieces join aren't shown) with the rack's ridge down its middle
+    const monoHw = MONO_HW / MM, ridgeHw = MONO_RIDGE_HW / MM;
+    const drawMono = (p: Pose, segs: DSeg[], sel: boolean, bad = false) => {
+      const beam = bad ? 'rgba(224,69,43,0.30)' : sel ? 'rgba(43,111,224,0.28)' : ink.mono, edge = bad ? '#e0452b' : sel ? ink.sel : ink.monoEdge;
+      line(trace(p, segs, 0.5), beam, 2 * monoHw * this.scale);
+      for (const o of [-monoHw, monoHw]) line(offsetPts(p, segs, o), edge, Math.max(1, railW * 0.6));
+      line(trace(p, segs, 0.5), edge, Math.max(1.5, 2 * ridgeHw * this.scale));
+    };
+    d.routes.forEach((r, i) => { if (isMono(r)) drawMono(r, r.segs, i === this.selected || this.extra.has(i), !!(this.drag?.moved && this.drag.route === i && this.dragBad)); });
     // labels: gathered, then drawn without overlapping (the selection's first)
     const labels: { x: number; y: number; txt: string; sel: boolean }[] = [];
     d.routes.forEach((r, i) => {
       const sel = i === this.selected || this.extra.has(i);
       const dragging = this.drag?.moved && this.drag.route === i && this.dragBad;
       const isBad = (k: number) => !!dragging && (this.dragBadFrom >= 0 ? k >= this.dragBadFrom : k < this.dragBadTo);
-      // sleeper band, rails, centre line
-      drawSegs(r, r.segs, isBad, '', sel ? ink.sel : ink.rail); // (bands drawn above, as layers)
-      line(trace(r, r.segs, 0.5), ink.centre, 1, [4, 4]);
+      // sleeper band, rails, centre line (the monorail's beam drawn above)
+      if (!isMono(r)) {
+        drawSegs(r, r.segs, isBad, '', sel ? ink.sel : ink.rail); // (bands drawn above, as layers)
+        line(trace(r, r.segs, 0.5), ink.centre, 1, [4, 4]);
+      }
       // what each curve is, at its middle (and straights' lengths when zoomed in)
       let q: Pose = { x: r.x, y: r.y, heading: r.heading };
       c.font = '11px system-ui, sans-serif'; c.textAlign = 'center';
@@ -865,7 +885,7 @@ export class TrackCanvas {
         const show = sg.kind === 'curve' || this.scale > 10;
         if (show) {
           const mid = follow(q, [sg.kind === 'straight' ? { kind: 'straight', studs: sg.studs / 2 } : { ...sg, angle: sg.angle / 2 }]);
-          const off = (g + 2.2) * (sg.kind === 'curve' ? -Math.sign(sg.angle) : 1);  // outside the curve
+          const off = ((isMono(r) ? monoHw : g) + 2.2) * (sg.kind === 'curve' ? -Math.sign(sg.angle) : 1);  // outside the curve
           const [sx, sy] = this.toScreen(mid.x + off * Math.cos((mid.heading * Math.PI) / 180), mid.y + off * Math.sin((mid.heading * Math.PI) / 180));
           const txt = sg.kind === 'curve' ? `R${Math.round(sg.radius * 10) / 10} ${Math.round(Math.abs(sg.angle) * 10) / 10}°` : `${Math.round(sg.studs * 10) / 10}`;
           labels.push({ x: sx, y: sy, txt, sel });
@@ -992,8 +1012,13 @@ export class TrackCanvas {
         const from = this.active.end ?? this.active.start!;
         const st = Number.isNaN(from.heading) ? { ...from, heading: this.freeHeading(from, this.mouse) } : from;
         if (segs) {
-          line(trace(st, segs, 0.5), 'rgba(43,111,224,0.25)', (2 * g + 3) * this.scale);
-          for (const o of [-g, g]) line(offsetPts(st, segs, o), '#2b6fe0', railW);
+          // (as the track it'll be: carrying a route on, or branching off one, that route's; else Draw's Track choice)
+          const src = this.active.route ?? this.active.from;
+          if ((src !== undefined ? isMono(d.routes[src]) : this.host.system?.() === 'monorail')) drawMono(st, segs, true);
+          else {
+            line(trace(st, segs, 0.5), 'rgba(43,111,224,0.25)', (2 * g + 3) * this.scale);
+            for (const o of [-g, g]) line(offsetPts(st, segs, o), '#2b6fe0', railW);
+          }
           const [mx, my] = this.toScreen(...this.snap(this.mouse));
           const sn = this.joinableEnd(this.mouse);
           const txt = sn ? `${describe(segs)}: joins ${d.routes[sn.route].name}` : describe(segs);

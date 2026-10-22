@@ -2,7 +2,7 @@
 // 3D piece on the right, rebuilt in a worker as you edit.
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
-import { type Design, type DRoute, type DSeg, OPTION_DEFAULTS, type PieceOptions, RAIL_DEFAULTS, TEMPLATES, type Trackwork, endOf, freeName } from './design';
+import { type Design, type DRoute, type DSeg, OPTION_DEFAULTS, type PieceOptions, RAIL_DEFAULTS, TEMPLATES, type Trackwork, endOf, freeName, isMono } from './design';
 import { TrackCanvas, type OverlayItem, leverSide, leverSlides, typingIn } from './canvas';
 import { describe } from './planner';
 import type { Piece } from './build';
@@ -162,6 +162,15 @@ function render() {
       field('Start x, studs', num(r.x, (n) => { r.x = n; }, 1)),
       field('Start y, studs', num(r.y, (n) => { r.y = n; }, 1)),
       field('Heading ° (0 = up, + = left)', num(r.heading, (n) => { r.heading = n; }, 22.5)));
+    {
+      // (what runs on it: train track or the monorail beam)
+      const sys = document.createElement('select');
+      sys.append(new Option('Train track', 'train'), new Option('Monorail', 'monorail'));
+      sys.value = isMono(r) ? 'monorail' : 'train';
+      sys.title = 'Train track, or LEGO monorail: the 4-stud beam with a rack down the middle.';
+      sys.addEventListener('change', () => { if (sys.value === 'monorail') r.system = 'monorail'; else delete r.system; changed(true); renderOptions(); });
+      body.append(field('Track', sys));
+    }
     r.segs.forEach((_, k) => body.append(segRow(r, k)));
     // (each end: an ordinary end connector, or a buffer stop)
     for (const [prop, label] of [['startEnd', 'Starts in'], ['endEnd', 'Ends in']] as const) {
@@ -199,7 +208,7 @@ function render() {
     );
     const more = document.createElement('div'); more.className = 'row';
     more.append(
-      btn('New route from its end', () => { const e = endOf(design, i); design.routes.push({ name: freeName(design, 'R'), ...e, segs: [{ kind: 'straight', studs: 16 }] }); }),
+      btn('New route from its end', () => { const e = endOf(design, i); design.routes.push({ name: freeName(design, 'R'), ...e, segs: [{ kind: 'straight', studs: 16 }], ...(isMono(r) && { system: 'monorail' as const }) }); }),
       btn('Delete', () => { design.routes.splice(i, 1); if (canvas.selected === i) canvas.selected = undefined; openCards.clear(); }),
     );
     more.lastElementChild!.className = 'danger';
@@ -563,11 +572,19 @@ for (const r of [24, 32, 40, 48, 56, 64, 72, 88, 104, 120]) radiusSel.append(new
 // (remembered: it's how you like to draw, not part of the design)
 try { const v = localStorage.getItem('btd-radius'); if (v && [...radiusSel.options].some((op) => op.value === v)) radiusSel.value = v; } catch { /* fine */ }
 radiusSel.addEventListener('change', () => { try { localStorage.setItem('btd-radius', radiusSel.value); } catch { /* fine */ } });
+// What Draw lays: train track or monorail (beside the curves picker; remembered, as the curves are)
+const systemSel = document.createElement('select');
+systemSel.id = 'system'; systemSel.title = 'What Draw lays: train track or LEGO monorail. A branch drawn off a track is the same as that track.';
+systemSel.append(new Option('Track: train', 'train'), new Option('Track: monorail', 'monorail'));
+try { const v = localStorage.getItem('btd-system'); if (v === 'monorail') systemSel.value = v; } catch { /* fine */ }
+systemSel.addEventListener('change', () => { try { localStorage.setItem('btd-system', systemSel.value); } catch { /* fine */ } });
+{ const lab = document.createElement('label'); lab.className = 'inline'; lab.append(systemSel); radiusSel.closest('label')!.after(lab); }
 const canvas = new TrackCanvas($<HTMLCanvasElement>('track'), {
   design: () => design,
   changed: (commit) => changed(commit, commit), // (one undo step per finished action, none for each mouse move)
   select: () => { render(); updateSelbar(); },
   radius: () => Number(radiusSel.value),
+  system: () => (systemSel.value === 'monorail' ? 'monorail' : 'train'),
   leaveDraw: () => setMode('select'),
   status: (hint, at) => {
     hintEl.textContent = hint;
@@ -926,11 +943,41 @@ const OPTION_FORM: OptSection[] = [
       { v: 'flat', t: 'Cut flat', tip: 'Nothing overhangs, no supports.', con: 'Only the bed joint and the baseplate keep the rails in line.' }] },
     { key: 'endSupports', label: 'Supports under rail ends', check: true, help: 'Breakaway supports under the rail-end tongues. Off: leave it to your slicer.' },
   ] },
+  { title: 'Monorail', fields: [
+    { key: 'monoEndStuds', label: 'Studs at the ends', off: noMono, choices: [
+      { v: 'side', t: 'Out of the sides', tip: 'Hollow studs out of both sides of each end, like LEGO monorail track.' },
+      { v: 'top', t: 'On top, in recesses', tip: 'Two studs in a recess each side of the ridge at each end. A 1 x 2 tile sits in flush; a 1 x 4 plate across a joint holds it.' },
+      { v: 'none', t: 'None', tip: 'Plain ends, the full beam width.' }] },
+    { key: 'monoAxleHoles', label: 'Axle holes in the ends', check: true, off: noMono, help: 'Two LEGO cross-axle holes in each end face, to pin pieces together with axles.' },
+    { key: 'monoAxleLengthStuds', label: 'Joining axle length, studs', step: 1, min: 2, max: 6, off: (c) => noMono(c) ?? (c.o.monoAxleHoles === false ? 'Axle holes in the ends is off' : undefined), help: 'Each end\'s hole takes half the axle.' },
+    { key: 'monoHoleFit', label: 'Hole fit, mm', step: 0.05, min: 0, max: 0.5, off: noMono, help: 'Added round the axle holes and anti-studs. Bigger: looser.' },
+    { key: 'monoLegoAntistud', label: 'Anti-stud depth', off: noMono, get: () => ((design.options?.monoLegoAntistud ?? false) ? 'lego' : 'short'), set: (v) => { design.options = { ...design.options, monoLegoAntistud: v === 'lego' }; }, def: 'short', choices: [
+      { v: 'short', t: '2.2 mm', tip: 'Deep enough for a stud, with room for the axle holes above.' },
+      { v: 'lego', t: '4 mm, like LEGO', tip: 'As deep as LEGO monorail track\'s anti-studs.',
+        con: 'The axle holes move: side-stud and top-stud pieces then don\'t join with axles; on side-stud pieces only 0.2 mm is left between hole and anti-stud; the end notch opens into a hole.' }] },
+    { key: 'monoLabels', label: 'Engraved underneath', off: noMono, choices: [
+      { v: 'name', t: 'Design name and part name', tip: 'Two lines underside, reading from below: the design\'s name (if it has one) and the part\'s name, as its file.' },
+      { v: 'part', t: 'Part name', tip: 'One line underside: the part\'s name, as its file.' },
+      { v: 'none', t: 'Nothing', tip: 'A plain underside.' }] },
+    { key: 'monoSwitchTravel', label: 'Points frame slide, mm', step: 0.5, min: 10, max: 40, sub: 'Points', off: noMono, help: 'How far the points\' frame slides. The idle rack moves this far aside, clear of the train. LEGO\'s: about 27.' },
+    { key: 'monoSwitchFit', label: 'Points clearance, mm', step: 0.05, min: 0.1, max: 0.6, off: noMono, help: 'The gap round the sliding frame.' },
+    { key: 'monoSupportStuds', label: 'Support every, studs', step: 4, min: 0, max: 256, sub: 'Supports', off: noMono, help: 'A support column under the beam this often, each its own part. 0: none. Parts are cut over a support where they can.' },
+    { key: 'monoSupportBricks', label: 'Support height, bricks', step: 1, min: 1, max: 30, off: noSupports, help: 'Height of the beam\'s underside above the baseplate. LEGO\'s supports: 5 and 10.' },
+    { key: 'monoSupportPlates', label: 'Extra height, plates', step: 1, min: 0, max: 2, off: noSupports, help: 'Plates added on top of the bricks.' },
+    { key: 'monoSupportBaseXStuds', label: 'Support base across, studs', step: 1, min: 2, max: 16, off: noSupports, help: 'Base plate size across the legs. LEGO\'s: 4 (short), 6 (tall).' },
+    { key: 'monoSupportBaseYStuds', label: 'Support base along, studs', step: 1, min: 2, max: 16, off: noSupports, help: 'Base plate size along the track. LEGO\'s: 4 (short), 6 (tall).' },
+    { key: 'monoSupportAntistud', label: 'Support grips the baseplate', check: true, off: noSupports, help: 'Hollow under the base with LEGO tubes.' },
+    { key: 'monoSupportBaseStuds', label: 'Studs round the support base', check: true, off: noSupports, help: 'Studs along the base\'s edges to build onto, like LEGO\'s supports.' },
+    { key: 'monoSupportSolid', label: 'Support frame closed', check: true, off: noSupports, help: 'A full web between the legs, no openings. Stiffer; more to print.' },
+  ] },
   { title: 'LEGO fit', fields: [
     { key: 'studFit', label: 'Stud fit, mm', step: 0.01, min: -0.3, max: 0.5, help: 'Added to the 4.8 mm studs. Bigger: bricks grip tighter.' },
     { key: 'antistudFit', label: 'Anti-stud fit, mm', step: 0.01, min: -0.3, max: 0.5, help: 'Makes the tubes underneath looser. Bigger: grips the baseplate less.' },
   ] },
 ];
+/** Why the monorail settings can't be changed: no monorail in the design (undefined: there is). */
+function noMono(_c?: OptCtx) { return design.routes.some(isMono) ? undefined : 'no monorail track in this design'; }
+function noSupports(c: OptCtx) { return noMono(c) ?? ((c.o.monoSupportStuds ?? 0) > 0 ? undefined : 'Support every is 0'); }
 let optSig = '';
 /** After a build: the options panel again if what applies has changed (switches appearing or going). */
 /** After a build: the route cards again if which routes branch has changed (a branch's card has its lever's side). */
@@ -940,7 +987,7 @@ function refreshRoutes() {
   if (sig !== branchSig) { branchSig = sig; render(); }
 }
 function refreshOptions() {
-  if (JSON.stringify([design.options, design.grip, design.pointsPieces, design.gaugeStuds, switchesNow()]) !== optSig) renderOptions();
+  if (JSON.stringify([design.options, design.grip, design.pointsPieces, design.gaugeStuds, switchesNow(), noMono()]) !== optSig) renderOptions();
 }
 /** Switches in the design, as last built (undefined: not built yet). */
 function switchesNow() {
@@ -956,7 +1003,7 @@ function renderOptions() {
   const body = $('options-body'), scroll = $('options').scrollTop;
   const o = { ...OPTION_DEFAULTS, ...design.options } as PieceOptions;
   const c: OptCtx = { o, ballast: o.ballast !== 'none', fdb: o.mechStyle !== 'tines', switches: switchesNow() };
-  optSig = JSON.stringify([design.options, design.grip, design.pointsPieces, design.gaugeStuds, c.switches]);
+  optSig = JSON.stringify([design.options, design.grip, design.pointsPieces, design.gaugeStuds, c.switches, noMono()]);
   body.replaceChildren();
   const setOpt = (f: OptField, v: string | number | boolean) => {
     if (f.set) f.set(v); else design.options = { ...design.options, [f.key]: v };
