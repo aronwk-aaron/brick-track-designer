@@ -421,12 +421,15 @@ function buildOne(w: Wasm, design: Design, report: (what: string, frac: number) 
   // Pieces: a switch wherever routes split, the rest as fixed trackwork.
   const scad = new Scad(w), pieces: Piece[] = [];
   /** A part for the view: its triangles, and its breakaway supports' apart (loose bits under 200 mm3), to show or hide. */
-  const viewOf = (m: Man): { positions: Float32Array; supports?: Float32Array } => {
-    const bits = flat(w, m).decompose();
-    if (bits.length <= 1) return { positions: meshPositions(m.getMesh()) };
+  // (clean: the part less any flat, empty shells (no volume) the cuts left where faces met, drawn as loose bits and
+  // written to the file)
+  const viewOf = (m: Man): { positions: Float32Array; supports?: Float32Array; clean: Man } => {
+    const all = flat(w, m).decompose(), bits = all.filter((b) => b.volume() >= 0.5);
+    const clean = bits.length === all.length || !bits.length ? m : w.Manifold.compose(bits);
+    if (bits.length <= 1) return { positions: meshPositions(clean.getMesh()), clean };
     const join = (ms: Man[]) => { const ps = ms.map((b) => meshPositions(b.getMesh())), out = new Float32Array(ps.reduce((t, p) => t + p.length, 0)); let o2 = 0; for (const p of ps) { out.set(p, o2); o2 += p.length; } return out; };
     const small = bits.filter((b) => b.volume() < 200);
-    return small.length ? { positions: join(bits.filter((b) => b.volume() >= 200)), supports: join(small) } : { positions: meshPositions(m.getMesh()) };
+    return small.length ? { positions: join(bits.filter((b) => b.volume() >= 200)), supports: join(small), clean } : { positions: meshPositions(clean.getMesh()), clean };
   };
   const params = { ...BASE_DEFAULTS, ...o, gaugeStuds: design.gaugeStuds, studGrip: design.grip ?? 'edges', pointsPieces: design.pointsPieces ?? 1,
     generateBallast: o.ballast !== 'none', ballastBuddy: o.ballast === 'buddy', bottomStyle: o.bottomStyle,
@@ -632,8 +635,8 @@ function buildOne(w: Wasm, design: Design, report: (what: string, frac: number) 
   };
   /** A part as plain data (its mesh for the view, its STL, its volume, whether it fits the bed), so its solid can be let go. */
   const bake = (m: Man) => {
-    const { positions, supports } = viewOf(m);
-    return { positions, supports, stl: stlBytes(m.getMesh(), true), volume: m.volume(), fits: fitsBed(m), box: m.boundingBox() };
+    const { positions, supports, clean } = viewOf(m);
+    return { positions, supports, stl: stlBytes(clean.getMesh(), true), volume: m.volume(), fits: fitsBed(m), box: m.boundingBox() };
   };
   // ---- (prototype) layered: the piece in two layers stacked from the top ----
   // The lower layer (the ballast's bottom, with the pockets the moving parts
@@ -693,10 +696,10 @@ function buildOne(w: Wasm, design: Design, report: (what: string, frac: number) 
     return { lower, deck };
   };
   const add = (name: string, color: number, local: Man, world: Man, turn?: Piece['turn']) => {
-    const { positions, supports } = viewOf(world);
+    const { positions, supports, clean } = viewOf(world);
     let stl = stlOf.get(local);
     // (each file lying on the bed: a part modelled where it sits in the track (the blades on the bed's top, say) came in floating)
-    if (!stl) { stl = stlBytes(local.getMesh(), true); stlOf.set(local, stl); }
+    if (!stl) { stl = stlBytes((local === world ? clean : local).getMesh(), true); stlOf.set(local, stl); }
     pieces.push({ name, color, positions, stl: stl.slice(), ...(supports && { supports }), ...(turn && { turn }) });
     volume += local.volume();
   };
