@@ -331,6 +331,14 @@ export function endOf(d: Design, i: number): { x: number; y: number; heading: nu
 const sin = (d: number) => Math.sin((d * Math.PI) / 180), cos = (d: number) => Math.cos((d * Math.PI) / 180);
 
 /** Starting points for a design. */
+/** The Templates list's groups (in order), each its templates by name. */
+export const TEMPLATE_GROUPS: [string, string[]][] = [
+  ['Crossings', ['90° crossing', '22.5° crossing', 'Crossing on a curve']],
+  ['Switches', ['Left switch (LEGO)', 'Right switch (LEGO)', 'Wye switch', 'Three-way switch (one throw)', 'Three-way switch (tandem, two throws)']],
+  ['Layouts', ['Oval (LEGO R40)', 'Crossover (R40)', 'Scissors crossover (R56)', 'Yard ladder (R40)', 'Wye with a crossover']],
+  ['Features', ['Siding ending in a buffer stop', 'Bridge with guard rails', 'Dual gauge track', 'Banked curve', 'Crossing on sleepers']],
+  ['Monorail', ['Monorail oval on supports', 'Monorail ramp (as LEGO\'s)', 'Monorail switch (experimental)', 'Monorail level crossing (experimental)']],
+];
 export const TEMPLATES: Record<string, Design> = {
   '90° crossing': { version: 1, gaugeStuds: 4, routes: [
     { name: 'A', x: 0, y: -8, heading: 0, segs: [{ kind: 'straight', studs: 16 }] },
@@ -368,5 +376,49 @@ export const TEMPLATES: Record<string, Design> = {
     { name: 'Straight', x: 0, y: 0, heading: 0, segs: [{ kind: 'straight', studs: 36 }] },
     { name: 'Left', x: 0, y: 0, heading: 0, segs: [{ kind: 'curve', radius: 40, angle: 22.5 }, { kind: 'straight', studs: 23 }] },
     { name: 'Right', x: 0, y: 8, heading: 0, segs: [{ kind: 'curve', radius: 40, angle: -22.5 }, { kind: 'straight', studs: 14 }] },
+  ] },
+
+  // ---- layouts ----
+  'Oval (LEGO R40)': { version: 1, gaugeStuds: 4, routes: [
+    { name: 'Oval', x: 0, y: 0, heading: 0, segs: [{ kind: 'straight', studs: 32 }, { kind: 'curve', radius: 40, angle: 180 }, { kind: 'straight', studs: 32 }, { kind: 'curve', radius: 40, angle: 180 }] },
+  ] },
+  'Crossover (R40)': { version: 1, gaugeStuds: 4, routes: [{name: 'A', x: 0, y: 0, heading: 0, segs: [{kind: 'straight', studs: 64}]}, {name: 'B', x: 16, y: 0, heading: 0, segs: [{kind: 'straight', studs: 64}]}, {name: 'AB', x: 0, y: 8, heading: 0, segs: [{kind: 'curve', radius: 40, angle: -36.869898}, {kind: 'curve', radius: 40, angle: 36.869898}]}] },
+  'Scissors crossover (R56)': { version: 1, gaugeStuds: 4, routes: [{name: 'A', x: 0, y: 0, heading: 0, segs: [{kind: 'straight', studs: 90}]}, {name: 'B', x: 16, y: 0, heading: 0, segs: [{kind: 'straight', studs: 90}]}, {name: 'AB', x: 0, y: 16, heading: 0, segs: [{kind: 'curve', radius: 56, angle: -31.002719}, {kind: 'curve', radius: 56, angle: 31.002719}]}, {name: 'BA', x: 16, y: 16, heading: 0, segs: [{kind: 'curve', radius: 56, angle: 31.002719}, {kind: 'curve', radius: 56, angle: -31.002719}]}] },
+  'Yard ladder (R40)': { version: 1, gaugeStuds: 4, routes: [{name: 'Main', x: 0, y: -8, heading: 0, segs: [{kind: 'straight', studs: 194.052048}]}, {name: 'Ladder', x: 0, y: 0, heading: 0, segs: [{kind: 'curve', radius: 40, angle: -22.5}, {kind: 'straight', studs: 141.517055}]}, {name: 'Y1', x: 12.955181, y: 39.233069, heading: -22.5, segs: [{kind: 'curve', radius: 40, angle: 22.5}, {kind: 'straight', studs: 40}]}, {name: 'Y2', x: 28.955181, y: 77.860486, heading: -22.5, segs: [{kind: 'curve', radius: 40, angle: 22.5}, {kind: 'straight', studs: 32}]}, {name: 'Y3', x: 44.955181, y: 116.487903, heading: -22.5, segs: [{kind: 'curve', radius: 40, angle: 22.5}, {kind: 'straight', studs: 24}]}] },
+  'Wye with a crossover': { version: 1, gaugeStuds: 4, routes: [{name: 'In', x: 8, y: -16, heading: 0, segs: [{kind: 'straight', studs: 16}]}, {name: 'WL', x: 8, y: 0, heading: 0, segs: [{kind: 'curve', radius: 72, angle: 19.188136}, {kind: 'curve', radius: 72, angle: -19.188136}, {kind: 'straight', studs: 81.96969}]}, {name: 'WR', x: 8, y: 0, heading: 0, segs: [{kind: 'curve', radius: 72, angle: -19.188136}, {kind: 'curve', radius: 72, angle: 19.188136}, {kind: 'straight', studs: 81.96969}]}, {name: 'X', x: 0, y: 55.328638, heading: 0, segs: [{kind: 'curve', radius: 72, angle: -27.266044}, {kind: 'curve', radius: 72, angle: 27.266044}]}, {name: 'ML', x: 0, y: 129.298328, heading: 0, segs: [{kind: 'curve', radius: 72, angle: -19.188136}, {kind: 'curve', radius: 72, angle: 19.188136}]}, {name: 'MR', x: 16, y: 129.298328, heading: 0, segs: [{kind: 'curve', radius: 72, angle: 19.188136}, {kind: 'curve', radius: 72, angle: -19.188136}]}, {name: 'Out', x: 8, y: 176.626967, heading: 0, segs: [{kind: 'straight', studs: 16}]}] },
+  // ---- features ----
+  'Siding ending in a buffer stop': { version: 1, gaugeStuds: 4, options: { ballast: 'ballast' }, routes: [
+    { name: 'Main', x: 0, y: 0, heading: 0, segs: [{ kind: 'straight', studs: 48 }] },
+    { name: 'Siding', x: 0, y: 0, heading: 0, endEnd: 'buffer', segs: [{ kind: 'curve', radius: 40, angle: 22.5 }, { kind: 'curve', radius: 40, angle: -22.5 }, { kind: 'straight', studs: 24 }] },
+  ] },
+  'Bridge with guard rails': { version: 1, gaugeStuds: 4, routes: [
+    { name: 'Bridge', x: 0, y: 0, heading: 0, guardRails: true, guardRailEnds: 'both', segs: [{ kind: 'straight', studs: 64 }] },
+  ] },
+  'Dual gauge track': { version: 1, gaugeStuds: 4, routes: [
+    { name: 'Dual', x: 0, y: 0, heading: 0, dualGauge: true, segs: [{ kind: 'straight', studs: 32 }, { kind: 'curve', radius: 56, angle: 45 }] },
+  ] },
+  'Banked curve': { version: 1, gaugeStuds: 4, routes: [
+    { name: 'Curve', x: 0, y: 0, heading: 0, segs: [{ kind: 'straight', studs: 40 }, { kind: 'curve', radius: 56, angle: 90, bank: 4 }, { kind: 'straight', studs: 40 }] },
+  ] },
+  'Crossing on sleepers': { version: 1, gaugeStuds: 4, options: { sleepers: 'sleepers' }, routes: [
+    { name: 'A', x: 0, y: -24, heading: 0, segs: [{ kind: 'straight', studs: 48 }] },
+    { name: 'B', x: 24, y: 0, heading: 90, segs: [{ kind: 'straight', studs: 48 }] },
+  ] },
+  // ---- monorail ----
+  'Monorail oval on supports': { version: 1, gaugeStuds: 4, options: { monoSupportStuds: 32 }, routes: [
+    { name: 'Loop', x: 0, y: 0, heading: 0, system: 'monorail', segs: [{ kind: 'straight', studs: 32 }, { kind: 'curve', radius: 40, angle: 180 }, { kind: 'straight', studs: 32 }, { kind: 'curve', radius: 40, angle: 180 }] },
+  ] },
+  'Monorail ramp (as LEGO\'s)': { version: 1, gaugeStuds: 4, options: { monoSupportStuds: 32 }, routes: [
+    { name: 'Low', x: 0, y: 0, heading: 0, system: 'monorail', monoHeight: 0, segs: [{ kind: 'straight', studs: 16 }] },
+    { name: 'Ramp', x: 0, y: 16, heading: 0, system: 'monorail', monoHeight: 0, monoHeightEnd: 30, segs: [{ kind: 'straight', studs: 64 }] },
+    { name: 'High', x: 0, y: 80, heading: 0, system: 'monorail', monoHeight: 30, segs: [{ kind: 'straight', studs: 16 }] },
+  ] },
+  'Monorail switch (experimental)': { version: 1, gaugeStuds: 4, routes: [
+    { name: 'Main', x: 0, y: 0, heading: 0, system: 'monorail', segs: [{ kind: 'straight', studs: 32 }] },
+    { name: 'Branch', x: 0, y: 0, heading: 0, system: 'monorail', segs: [{ kind: 'curve', radius: 40, angle: 36.8699 }, { kind: 'curve', radius: 40, angle: -14.3699 }] },
+  ] },
+  'Monorail level crossing (experimental)': { version: 1, gaugeStuds: 4, routes: [
+    { name: 'A', x: 0, y: -24, heading: 0, system: 'monorail', segs: [{ kind: 'straight', studs: 48 }] },
+    { name: 'B', x: 24, y: 0, heading: 90, system: 'monorail', segs: [{ kind: 'straight', studs: 48 }] },
   ] },
 };

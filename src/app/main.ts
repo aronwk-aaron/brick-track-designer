@@ -2,7 +2,7 @@
 // 3D piece on the right, rebuilt in a worker as you edit.
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
-import { BANK_MAX, type BankRamps, type Design, type DRoute, type DSeg, OPTION_DEFAULTS, type PieceOptions, RAIL_DEFAULTS, TEMPLATES, type Trackwork, endOf, freeName, isMono } from './design';
+import { BANK_MAX, type BankRamps, type Design, type DRoute, type DSeg, OPTION_DEFAULTS, type PieceOptions, RAIL_DEFAULTS, TEMPLATE_GROUPS, TEMPLATES, type Trackwork, endOf, freeName, isMono } from './design';
 import { TrackCanvas, type OverlayItem, leverSide, leverSlides, typingIn } from './canvas';
 import { describe } from './planner';
 import type { Piece } from './build';
@@ -577,7 +577,8 @@ renderer.setAnimationLoop(() => { if (!dirty3d) return; dirty3d = false; rendere
 
 // ---------- toolbar ----------
 const tpl = $<HTMLSelectElement>('template');
-for (const name of Object.keys(TEMPLATES)) tpl.append(new Option(name, name));
+// (in groups: crossings, switches, layouts, features, monorail)
+for (const [g, names] of TEMPLATE_GROUPS) { const og = document.createElement('optgroup'); og.label = g; for (const name of names) if (TEMPLATES[name]) og.append(new Option(name, name)); tpl.append(og); }
 tpl.addEventListener('change', () => {
   if (!tpl.value) return;
   design = structuredClone(TEMPLATES[tpl.value]); tpl.value = ''; replaced(); framed = false; changed(true); canvas.fit();
