@@ -694,7 +694,7 @@ updateSelbar();
 // ---------- piece options (switch.scad's Customizer settings, and the underside) ----------
 /** What the options panel needs to know to show only what applies. */
 interface OptCtx { o: PieceOptions; ballast: boolean; fdb: boolean; switches: boolean | undefined }
-interface OptChoice { v: string; t: string; tip?: string; no?: (c: OptCtx) => string | undefined }
+interface OptChoice { v: string; t: string; tip?: string; /** its drawback */ con?: string; /** why it can't be built now */ no?: (c: OptCtx) => string | undefined }
 interface OptField {
   key: string; label: string; help?: string; step?: number; min?: number; max?: number;
   choices?: OptChoice[]; check?: boolean;
@@ -702,112 +702,117 @@ interface OptField {
   numeric?: boolean;
   /** a small heading over this field, grouping it with the ones after it */
   sub?: string;
-  /** a number field's help shown under it too (not only on hover) */
-  showHelp?: boolean;
   /** the form drawn again when it changes (other fields depend on it) */
   rerender?: boolean;
-  /** shown only when this says so */
+  /** why it can't be changed now (another setting rules it out): shown greyed out with this reason; undefined: it can */
+  off?: (c: OptCtx) => string | undefined;
+  /** (older form) changeable only when this says so */
   when?: (c: OptCtx) => boolean;
+  /** its default, where it isn't in OPTION_DEFAULTS */
+  def?: string | number | boolean;
   get?: () => string | number | boolean; set?: (v: string | number | boolean) => void;
 }
 interface OptSection { title: string; switches?: boolean; fields: OptField[] }
 const OPTION_FORM: OptSection[] = [
   { title: 'Track', fields: [
-    { key: 'gaugeStuds', label: 'Gauge, studs', step: 1, min: 2, max: 10, rerender: true, help: 'Studs between the rails (LEGO\'s is 4); the same as the toolbar\'s Gauge',
-      get: () => design.gaugeStuds, set: (v) => { design.gaugeStuds = Math.round(Number(v)); gauge.value = String(design.gaugeStuds); } },
+    { key: 'gaugeStuds', label: 'Gauge, studs', step: 1, min: 2, max: 10, rerender: true, help: 'Studs between the rails. LEGO track is 4. Same as Gauge in the toolbar.',
+      def: 4, get: () => design.gaugeStuds, set: (v) => { design.gaugeStuds = Math.round(Number(v)); gauge.value = String(design.gaugeStuds); } },
     { key: 'sleepers', label: 'Under the rails', choices: [
-      { v: 'bed', t: 'A solid bed', tip: 'The rails on one solid bed, as LEGO\'s switches: strong, and simple to print' },
-      { v: 'sleepers', t: 'Sleepers, with gaps between', tip: 'Where the track is plain, separate sleepers with the rails bridging the gaps between them, as LEGO\'s straight and curved track; the bed stays where tracks meet (switches, crossings, tracks side by side). Drawbacks: the rails bridge the gaps when printed; a part cut for the bed in a gap is joined by its rail tongues only (no peg and clip there)',
-        no: (c) => (c.ballast ? 'track only: ballast fills between the sleepers, level with their tops' : undefined) }] },
-    { key: 'sleeperWidthStuds', label: 'Sleeper width', numeric: true, when: (c) => c.o.sleepers === 'sleepers' && !c.ballast, choices: [
-      { v: '2', t: '2 studs', tip: 'As LEGO\'s sleepers' },
-      { v: '1', t: '1 stud', tip: 'Narrow, as bridge ties: one row of studs on each' }] },
-    { key: 'sleeperGapStuds', label: 'Gap between sleepers, studs', step: 1, min: 1, max: 6, when: (c) => c.o.sleepers === 'sleepers' && !c.ballast, help: 'Studs between one sleeper and the next (LEGO\'s is 2)' },
+      { v: 'bed', t: 'Solid bed', tip: 'One solid bed under the rails, like LEGO switches.' },
+      { v: 'sleepers', t: 'Sleepers with gaps', tip: 'Separate sleepers, like LEGO straight and curved track. Where tracks meet (switches, crossings) the bed stays solid.',
+        con: 'The rails print as bridges over the gaps. A cut in a gap is held by the rails only.',
+        no: (c) => (c.ballast ? 'it\'s for track without ballast, so a solid bed is built' : undefined) }] },
+    { key: 'sleeperWidthStuds', label: 'Sleeper width', numeric: true, off: (c) => (c.ballast ? 'with ballast there are no separate sleepers' : c.o.sleepers !== 'sleepers' ? 'set Under the rails to Sleepers with gaps' : undefined), choices: [
+      { v: '2', t: '2 studs', tip: 'Like LEGO sleepers.' },
+      { v: '1', t: '1 stud', tip: 'Narrow, like bridge ties.' }] },
+    { key: 'sleeperGapStuds', label: 'Gap between sleepers, studs', step: 1, min: 1, max: 6, off: (c) => (c.ballast ? 'with ballast there are no separate sleepers' : c.o.sleepers !== 'sleepers' ? 'set Under the rails to Sleepers with gaps' : undefined), help: 'LEGO track is 2.' },
     { key: 'curveStuds', label: 'Studs on the track', choices: [
-      { v: 'grid', t: 'On the baseplate\'s grid', tip: 'Every stud on the baseplate\'s stud grid, wherever one is clear of the rails: on a curve they make a grid across it, not rows along it' },
-      { v: 'follow', t: 'Following the track', tip: 'In rows along each track, on lines straight across it a stud apart, as LEGO\'s straight track has them: on a curve LEGO tiles fit across them. Drawback: on a curve they\'re off the baseplate\'s grid' }] },
+      { v: 'grid', t: 'On the baseplate grid', tip: 'Every stud lines up with the baseplate. On curves they form a grid, not rows.' },
+      { v: 'follow', t: 'In rows along the track', tip: 'Rows across the track, like LEGO track, so tiles fit across curves.', con: 'On curves the studs are off the baseplate grid.' }] },
   ] },
   { title: 'Underside and ballast', fields: [
     { key: 'ballast', label: 'Ballast', choices: [
-      { v: 'none', t: 'None: track only', tip: 'The track alone, as LEGO track: its rails on a bed or on sleepers (Track, above)' },
-      { v: 'ballast', t: 'Ballast', tip: 'The track on a ballast shoulder' },
-      { v: 'buddy', t: 'Ballast + buddy layer', tip: 'Ballast with a wider bottom layer under it' }] },
-    { key: 'bottomStyle', label: 'Underside', when: (c) => c.ballast, choices: [
-      { v: 'antistud', t: 'Anti-stud: grips the plate', tip: 'Hollow underneath with LEGO tubes, so it sits on the baseplate\'s studs' },
-      { v: 'float', t: 'Flat', tip: 'Flat underneath: it sits on the studs, not held' }] },
-    { key: 'grip', label: 'Grip on the baseplate', when: (c) => !c.ballast || c.o.bottomStyle === 'antistud',
-      get: () => design.grip ?? 'edges', set: (v) => { design.grip = v as Design['grip']; }, choices: [
-        { v: 'edges', t: 'Along the edges', tip: 'Hollow like a LEGO plate: anti-stud tubes grip along the edges and every 4 studs (green circles on the plan), thin posts elsewhere. Holds firmly and comes off again' },
-        { v: 'all', t: 'Every stud', tip: 'A gripping square socket at every stud: holds hard, and can be hard to pull off' }] },
+      { v: 'none', t: 'None', tip: 'Track only, like LEGO track.' },
+      { v: 'ballast', t: 'Ballast', tip: 'The track sits on a stepped ballast shoulder.' },
+      { v: 'buddy', t: 'Ballast + buddy layer', tip: 'Ballast with a wider bottom layer.' }] },
+    { key: 'bottomStyle', label: 'Ballast underside', off: (c) => (c.ballast ? undefined : 'only with ballast'), choices: [
+      { v: 'antistud', t: 'Anti-studs (grips the baseplate)', tip: 'Hollow with LEGO tubes, so it clicks onto the baseplate.' },
+      { v: 'float', t: 'Flat', tip: 'Flat underneath. It rests on the studs without gripping.' }] },
+    { key: 'grip', label: 'Grip on the baseplate', off: (c) => (c.ballast && c.o.bottomStyle === 'float' ? 'Ballast underside is Flat, so nothing grips' : undefined),
+      def: 'edges', get: () => design.grip ?? 'edges', set: (v) => { design.grip = v as Design['grip']; }, choices: [
+        { v: 'edges', t: 'Along the edges', tip: 'Like a LEGO plate: tubes grip along the edges and every 4 studs (green circles on the plan). Firm, and comes off again.' },
+        { v: 'all', t: 'Every stud', tip: 'A socket on every stud.', con: 'Grips very hard: can be difficult to pull off.' }] },
   ] },
   { title: 'Switches: points', switches: true, fields: [
     { key: 'mechStyle', label: 'Mechanism', choices: [
-      { v: 'plates', t: 'Blades on top, on pins', tip: 'Each blade on its own plate on top of the bed, turning on a pin, with a spring tongue the slider bar\'s post sits in; everything goes in from above: the slider down through the lever\'s opening and along its tunnel, then the blades, then the lever' },
-      { v: 'tines', t: 'Under the bed, on spring tines', tip: 'The points under the bed in pockets, on springy tines; they go in from below' }] },
-    { key: 'pointsPieces', label: 'Points printed as', when: (c) => !c.fdb,
-      get: () => String(design.pointsPieces ?? 1), set: (v) => { design.pointsPieces = Number(v) as 1 | 2; }, choices: [
-        { v: '1', t: 'One part', tip: 'Both blades on one pivot' },
-        { v: '2', t: 'Two parts, a blade each', tip: 'Each blade on its own pivot and spring' }] },
-    { key: 'bladeHold', label: 'Blades held on by', when: (c) => c.fdb, choices: [
-      { v: 'lip', t: 'A snap lip on each pin', tip: 'Each blade\'s plate snaps down over a lip on top of its pin. Nothing more to print; the plate\'s hole squeezes past the lip, and a printed lip can wear' },
-      { v: 'bracket', t: 'A little bracket over each blade', tip: 'By each blade\'s pin a small bracket on the track, its top over the plate round the pin, pegged into the bed: the plate turns under it and can\'t lift. Two more small parts to print (each upside down, flat); a little more height over the plate' }] },
-    { key: 'bladeStyle', label: 'Blades', when: (c) => c.fdb, choices: [
-      { v: 'simple', t: 'Simple', tip: 'Each blade is its route\'s rail, cut off along the stock rail it closes on' },
-      { v: 'prototype', t: 'Like the real thing: planed, under the stock rail', tip: 'Each blade planed to a blunt point (as thin as prints well), tight against the stock rail and tucked in under its undercut head, so a wheel\'s flange can\'t catch it and the head holds it down; the tie bar (the slider) moved up to the points. Drawbacks: the blades go on swung open, then shut; the stock rail\'s head is thinner low down along the points; with the over-centre spring the tie bar stays further back' }] },
-    { key: 'pointsModule', label: 'Points go in', when: (c) => !c.fdb, choices: [
-      { v: 'built-in', t: 'From below: one piece', tip: 'The points built into the track, their pockets open through to the bottom: the points and the throw go in from underneath before it goes on the baseplate' },
-      { v: 'layers', t: 'From the top, under a lid (layers)', tip: 'The lower layer (with the pockets the moving parts sit in), the moving parts dropped in, then the deck (bed, rails, frogs) laid over, held by studs like LEGO plates',
-        no: (c) => (c.ballast ? undefined : 'needs ballast') }] },
-    { key: 'pointThrow', label: 'Blade throw, mm', step: 0.25, help: 'How far the blade tips move' },
-    { key: 'pointClearance', label: 'Clearance, mm', step: 0.05, help: 'The gap round the moving parts' },
-    { key: 'springPreload', label: 'Spring preload, mm', step: 0.25, help: 'How far past closed the springs push the blades, to hold them shut' },
-    { key: 'springThickness', label: 'Spring thickness, mm', step: 0.05, when: (c) => !c.fdb, help: 'The spring tines\' thickness' },
-    { key: 'springLength', label: 'Spring tine length, mm', step: 1, when: (c) => !c.fdb, help: 'The spring tines\' length (each lever\'s own: drag it along on the plan)' },
+      { v: 'plates', t: 'Blades on top, on pins', tip: 'Each blade sits on a plate on top of the bed and turns on a pin. Everything goes in from above.' },
+      { v: 'tines', t: 'Under the bed, on spring tines', tip: 'The points sit in pockets under the bed on springy tines. They go in from below.' }] },
+    { key: 'pointsPieces', label: 'Points printed as', off: (c) => (c.fdb ? 'only with Mechanism: Under the bed, on spring tines' : undefined),
+      def: '1', get: () => String(design.pointsPieces ?? 1), set: (v) => { design.pointsPieces = Number(v) as 1 | 2; }, choices: [
+        { v: '1', t: 'One part', tip: 'Both blades on one pivot.' },
+        { v: '2', t: 'Two parts', tip: 'Each blade on its own pivot and spring.' }] },
+    { key: 'bladeHold', label: 'Blades held down by', off: (c) => (c.fdb ? undefined : 'only with Mechanism: Blades on top, on pins'), choices: [
+      { v: 'lip', t: 'Snap lip on the pin', tip: 'Each blade plate snaps over a lip on its pin. Nothing extra to print.', con: 'A printed lip can wear.' },
+      { v: 'bracket', t: 'Small bracket over the blade', tip: 'A small bracket pegged into the bed covers each blade plate so it can\'t lift.', con: 'Two more small parts to print.' }] },
+    { key: 'bladeStyle', label: 'Blade shape', off: (c) => (c.fdb ? undefined : 'only with Mechanism: Blades on top, on pins'), choices: [
+      { v: 'simple', t: 'Simple', tip: 'Each blade is its rail, cut off along the rail it closes against.' },
+      { v: 'prototype', t: 'Realistic (planed, tucked under the rail)', tip: 'Blades planed to a point and tucked under the stock rail head, so flanges can\'t catch them.',
+        con: 'Fit the blades swung open, then close them. The stock rail head is thinner along the points.' }] },
+    { key: 'pointsModule', label: 'Points go in', off: (c) => (c.fdb ? 'only with Mechanism: Under the bed, on spring tines' : undefined), choices: [
+      { v: 'built-in', t: 'From below', tip: 'The pockets open through the bottom. Fit the points before putting the track on the baseplate.' },
+      { v: 'layers', t: 'From above, under a lid', tip: 'A lower layer holds the moving parts; the deck with the rails clips on top with studs.',
+        no: (c) => (c.ballast ? undefined : 'it needs ballast, so the points go in from below') }] },
+    { key: 'pointThrow', label: 'Blade throw, mm', step: 0.25, min: 2, max: 6, help: 'How far the blade tips move.' },
+    { key: 'pointClearance', label: 'Clearance, mm', step: 0.05, min: 0.1, max: 0.8, help: 'Gap round the moving parts.' },
+    { key: 'springPreload', label: 'Spring preload, mm', step: 0.25, min: 0, max: 3, help: 'How far past closed the springs push the blades, to hold them shut.' },
+    { key: 'springThickness', label: 'Spring thickness, mm', step: 0.05, min: 0.5, max: 2, off: (c) => (c.fdb ? 'only with Mechanism: Under the bed, on spring tines' : undefined), help: 'Thickness of the spring tines.' },
+    { key: 'springLength', label: 'Spring length, mm', step: 1, min: 15, max: 80, off: (c) => (c.fdb ? 'only with Mechanism: Under the bed, on spring tines' : undefined), help: 'Length of the spring tines. Each lever can also be dragged along on the plan.' },
   ] },
   { title: 'Switches: throw', switches: true, fields: [
     { key: 'throwStyle', label: 'Throw', choices: [
-      { v: 'built-in', t: 'Lever built into the arm', tip: 'The lever\'s ears part of the track piece\'s arm' },
-      { v: 'bracket', t: 'Lever on its own bracket', tip: 'The lever on a separate 3 x 3 stud bracket that sits on studs on the arm' },
-      { v: 'stand', t: 'Switch stand (ground throw)', tip: 'A handle beside the track on an eccentric, as real ground throws: swing it over to throw the points; at each end it rests on the arm just past dead centre, so the points can\'t push it back (locked). Drawbacks: a train trailing through against it is stopped (and derails) unless the points spring back; a three-way\'s middle position isn\'t locked',
-        no: (c) => (c.fdb ? undefined : 'blades on top only') }] },
-    { key: 'throwAction', label: 'Points held by', when: (c) => c.fdb, choices: [
-      { v: 'detent', t: 'The lever\'s click', tip: 'The lever clicks into a dimple in its ear at each end. A train trailing through the wrong way pushes the points part way over and can derail' },
-      { v: 'overcentre', t: 'Over-centre spring', tip: 'A printed spring between the bed and the slider pushes the points to whichever side they\'re past, as model railway points\' springs do: a train trailing through pushes them over and they stay, the lever with them. Drawbacks: a PLA spring is light (about 0.3 N at the ends) and its force depends on how accurately it prints; not on three-ways or with a switch stand' },
-      { v: 'springback', t: 'Spring-back (spring switch)', tip: 'Each blade\'s tongue is a long spring: a train trailing through pushes the blades over and they spring back after it, the throw staying where it\'s set. Use the switch stand, which locks the throw (the lever\'s click won\'t hold it). Drawbacks: wider blade plates; the blades snap back between wheelsets (no dashpot, as the real thing has); a lighter hold on the closed blade' }] },
-    { key: 'throwSide', label: 'Lever side', help: 'For every switch, unless its branch route says otherwise (on the route\'s card) or you\'ve dragged its lever across on the plan', choices: [
-      { v: 'auto', t: 'Auto: away from the branch', tip: 'On the side of the route the branch leaves (a three-way: the right)' },
-      { v: 'left', t: 'Left', tip: 'On the left, as you face along the points from their toe' },
-      { v: 'right', t: 'Right', tip: 'On the right, as you face along the points from their toe' }] },
-    { key: 'leverOffset', label: 'Lever out past the track, mm', step: 1, help: 'How far past the sleepers\' ends the lever is (each lever\'s own: drag it on the plan)' },
+      { v: 'built-in', t: 'Lever built into the arm', tip: 'The lever mounts on the track piece itself.' },
+      { v: 'bracket', t: 'Lever on a bracket', tip: 'The lever sits on a separate 3 x 3 stud bracket on the arm.' },
+      { v: 'stand', t: 'Switch stand (ground throw)', tip: 'A handle beside the track, like a real ground throw. It locks at each end.',
+        con: 'A train trailing through against it derails unless the points spring back. A three-way\'s middle position isn\'t locked.',
+        no: (c) => (c.fdb ? undefined : 'only with Mechanism: Blades on top, on pins') }] },
+    { key: 'throwAction', label: 'Points held by', off: (c) => (c.fdb ? undefined : 'only with Mechanism: Blades on top, on pins'), choices: [
+      { v: 'detent', t: 'Lever click', tip: 'The lever clicks into place at each end.', con: 'A train trailing through the wrong way can push the points part way and derail.' },
+      { v: 'overcentre', t: 'Over-centre spring', tip: 'A printed spring snaps the points to whichever side they\'re pushed. Trains can trail through.', con: 'The spring is light (about 0.3 N) and depends on print accuracy. Not on three-ways or with a switch stand.' },
+      { v: 'springback', t: 'Spring-back', tip: 'The blades give way for a trailing train and spring back after it. Use with the switch stand.', con: 'Wider blade plates and a lighter hold on the closed blade.' }] },
+    { key: 'throwSide', label: 'Lever side', help: 'For every switch, unless set on the branch route\'s card or dragged on the plan.', choices: [
+      { v: 'auto', t: 'Auto', tip: 'On the side the branch leaves (a three-way: right).' },
+      { v: 'left', t: 'Left', tip: 'Left, facing along the points from the toe.' },
+      { v: 'right', t: 'Right', tip: 'Right, facing along the points from the toe.' }] },
+    { key: 'leverOffset', label: 'Lever distance from track, mm', step: 1, min: -24, max: 30, help: 'How far past the sleeper ends. Each lever can also be dragged on the plan.' },
   ] },
   { title: 'Check rails and flangeways', fields: [
-    { key: 'checkRailLen', label: 'Check rail length, mm', step: 2 },
-    { key: 'checkRailW', label: 'Check rail width, mm', step: 0.1 },
-    { key: 'checkRailFlare', label: 'Check rail end flare, mm', step: 0.25, help: 'How far a switch\'s check rails\' ends flare out, to lead the flanges in' },
-    { key: 'flangeway', label: 'Flangeway width, mm', step: 0.1 },
-    { key: 'flangewayDepth', label: 'Flangeway depth, mm', step: 0.5 },
+    { key: 'checkRailLen', label: 'Check rail length, mm', step: 2, min: 10, max: 80 },
+    { key: 'checkRailW', label: 'Check rail width, mm', step: 0.1, min: 1, max: 3 },
+    { key: 'checkRailFlare', label: 'Check rail end flare, mm', step: 0.25, min: 0, max: 4, help: 'How far the ends bend out to guide the flanges in.' },
+    { key: 'flangeway', label: 'Flangeway width, mm', step: 0.1, min: 1, max: 4 },
+    { key: 'flangewayDepth', label: 'Flangeway depth, mm', step: 0.5, min: 1, max: 6 },
   ] },
   { title: 'Print bed and joints', fields: [
-    { key: 'printBedX', label: 'Bed width, mm', step: 1, min: 50 },
-    { key: 'printBedY', label: 'Bed depth, mm', step: 1, min: 50 },
-    { key: 'baseplate', label: 'Cut at baseplate edges', numeric: true, help: 'Cut the track where baseplates of this size meet (the dashed orange lines on the plan), so every part sits on one plate', choices: [
+    { key: 'printBedX', label: 'Print bed width, mm', step: 1, min: 50, max: 1000 },
+    { key: 'printBedY', label: 'Print bed depth, mm', step: 1, min: 50, max: 1000 },
+    { key: 'baseplate', label: 'Cut at baseplate edges', numeric: true, help: 'So every part sits on one baseplate (orange dashed lines on the plan).', choices: [
       { v: '0', t: 'No' }, { v: '16', t: '16 x 16 studs' }, { v: '32', t: '32 x 32 studs' }, { v: '48', t: '48 x 48 studs' }, { v: '64', t: '64 x 64 studs' }, { v: '96', t: '96 x 96 studs' }] },
-    { key: 'baseplateX', label: 'Plate corner x, studs', step: 1, when: (c) => (c.o.baseplate ?? 0) > 0, help: 'Where a baseplate\'s corner is on the grid' },
-    { key: 'baseplateY', label: 'Plate corner y, studs', step: 1, when: (c) => (c.o.baseplate ?? 0) > 0, help: 'Where a baseplate\'s corner is on the grid' },
-    { key: 'joint', label: 'Parts join with', help: 'How the parts cut for the print bed or the baseplates join', choices: [
-      { v: 'lego', t: 'Rail tongues + peg and clip (LEGO)', tip: 'As LEGO track joins: interlocking rail-end tongues, and a peg and C-clip in the bed' },
-      { v: 'dovetail', t: 'Rail tongues + dovetails', tip: 'Interlocking rail-end tongues, and dovetails through the bed: stronger, slides together from above' },
-      { v: 'butt', t: 'Straight cuts (held by the baseplate)', tip: 'Plain straight cuts, nothing to join them: the baseplate under them holds them in line' },
-      { v: 'axle', t: 'Rail tongues + LEGO axles', tip: 'A LEGO cross-axle hole across each cut, two studs deep each side, to pin the parts together with a 4-stud axle. Without ballast the track is too thin: there it falls back to peg and clip', no: (c) => (c.ballast ? undefined : 'needs ballast') },
-      { v: 'ends', t: 'Separate pieces, ordinary track ends', tip: 'Each track cut square to itself where it is clear of the others, with a standard end connector both sides: points, frogs and crossings stay whole, plain track in lengths that fit the bed' }] },
-    { key: 'cutRails', label: 'Rails where parts are cut', when: (c) => c.o.joint !== 'butt', choices: [
-      { v: 'tongues', t: 'Interlocking tongues (LEGO)', tip: 'The rails at a cut get interlocking tongues, as LEGO track ends: they overhang, so they print with supports' },
-      { v: 'flat', t: 'Cut flat', tip: 'The rails cut flat across: nothing overhangs, no supports to print; the bed joint and the baseplate hold the parts in line' }] },
-    { key: 'endSupports', label: 'Supports under the rail ends', check: true, help: 'Breakaway print supports under the rail-end tongues at each end; off: let the slicer support them' },
+    { key: 'baseplateX', label: 'Baseplate corner x, studs', step: 1, off: (c) => ((c.o.baseplate ?? 0) > 0 ? undefined : 'Cut at baseplate edges is No'), help: 'Where a baseplate corner is on the grid.' },
+    { key: 'baseplateY', label: 'Baseplate corner y, studs', step: 1, off: (c) => ((c.o.baseplate ?? 0) > 0 ? undefined : 'Cut at baseplate edges is No'), help: 'Where a baseplate corner is on the grid.' },
+    { key: 'joint', label: 'Parts join with', help: 'How parts cut for the print bed or baseplates join.', choices: [
+      { v: 'lego', t: 'Rail tongues + peg and clip', tip: 'Like LEGO track ends.' },
+      { v: 'dovetail', t: 'Rail tongues + dovetails', tip: 'Stronger. Slides together from above.' },
+      { v: 'butt', t: 'Straight cuts', tip: 'Nothing joins them; the baseplate holds them in line.' },
+      { v: 'axle', t: 'Rail tongues + LEGO axles', tip: 'A cross-axle hole across each cut, for a 4-stud axle.', no: (c) => (c.ballast ? undefined : 'needs ballast (track alone is too thin): peg and clip is used instead') },
+      { v: 'ends', t: 'Separate pieces with track ends', tip: 'Plain track cut into lengths with normal end connectors. Switches and crossings stay whole.' }] },
+    { key: 'cutRails', label: 'Rails at cuts', off: (c) => (c.o.joint === 'butt' ? 'Parts join with is Straight cuts' : undefined), choices: [
+      { v: 'tongues', t: 'Interlocking tongues', tip: 'Like LEGO track ends.', con: 'The tongues overhang, so they print with supports.' },
+      { v: 'flat', t: 'Cut flat', tip: 'Nothing overhangs, no supports.', con: 'Only the bed joint and the baseplate keep the rails in line.' }] },
+    { key: 'endSupports', label: 'Supports under rail ends', check: true, help: 'Breakaway supports under the rail-end tongues. Off: leave it to your slicer.' },
   ] },
   { title: 'LEGO fit', fields: [
-    { key: 'studFit', label: 'Stud fit, mm', step: 0.01, min: -0.3, max: 0.5, showHelp: true, help: 'Added to the studs\' 4.8 mm: more grips LEGO bricks put on the track harder, less looser (0.18 suits most printers)' },
-    { key: 'antistudFit', label: 'Anti-stud fit, mm', step: 0.01, min: -0.3, max: 0.5, showHelp: true, help: 'The tubes underneath: their outside this much smaller, their bore this much bigger: more grips the baseplate less, less harder (0.06 suits most printers)' },
+    { key: 'studFit', label: 'Stud fit, mm', step: 0.01, min: -0.3, max: 0.5, help: 'Added to the 4.8 mm studs. Bigger: bricks grip tighter.' },
+    { key: 'antistudFit', label: 'Anti-stud fit, mm', step: 0.01, min: -0.3, max: 0.5, help: 'Makes the tubes underneath looser. Bigger: grips the baseplate less.' },
   ] },
 ];
 let optSig = '';
@@ -845,7 +850,7 @@ function renderOptions() {
   const hit = (f: OptField) => { const txt = [f.label, f.help, ...(f.choices ?? []).flatMap((ch) => [ch.t, ch.tip])].join(' ').toLowerCase(); return words.every((w) => txt.includes(w)); };
   let shown = 0;
   for (const sec of OPTION_FORM) {
-    const fields = sec.fields.filter((f) => (!f.when || f.when(c)) && (!words.length || hit(f)));
+    const fields = sec.fields.filter((f) => !words.length || hit(f));
     if (words.length && !fields.length) continue;
     const det = document.createElement('details'); det.className = 'osec';
     det.open = words.length > 0 || openSecs.has(sec.title);
@@ -863,35 +868,45 @@ function renderOptions() {
       shown++;
       if (f.sub) { const h = document.createElement('div'); h.className = 'sub'; h.textContent = f.sub; box.append(h); }
       const cur = f.get ? f.get() : (o as unknown as Record<string, string | number | boolean>)[f.key];
+      const def = f.def ?? (OPTION_DEFAULTS as unknown as Record<string, string | number | boolean>)[f.key];
+      // (can't be changed now: greyed out, and why, exactly)
+      const off = f.off?.(c) ?? (f.when && !f.when(c) ? 'Not used with the settings above' : undefined);
+      const wrap = document.createElement('div'); wrap.className = off ? 'opt off' : 'opt';
+      const note = (txt: string, cls = 'desc') => { const d = document.createElement('small'); d.className = cls; d.textContent = txt; wrap.append(d); };
       if (f.choices) {
-        const sel = document.createElement('select');
+        const sel = document.createElement('select'); sel.disabled = !!off;
         for (const ch of f.choices) {
-          const why = ch.no?.(c), op = new Option(why ? `${ch.t} (${why})` : ch.t, ch.v);
-          op.disabled = !!why && String(cur) !== ch.v; if (ch.tip) op.title = ch.tip;
+          const why = ch.no?.(c), dflt = String(def) === ch.v ? ' (default)' : '';
+          const op = new Option(why ? `${ch.t}${dflt} (not available)` : `${ch.t}${dflt}`, ch.v);
+          op.disabled = !!why && String(cur) !== ch.v; if (ch.tip) op.title = [ch.tip, ch.con && `Drawback: ${ch.con}`, why && `Not available: ${why}.`].filter(Boolean).join(' ');
           sel.append(op);
         }
         sel.value = String(cur);
-        const lab = field(f.label, sel); lab.classList.add('stack');
+        const lab = field(f.label, sel); lab.classList.add('stack'); wrap.append(lab);
         const chosen = f.choices.find((ch) => ch.v === String(cur)), why = chosen?.no?.(c);
-        const d = document.createElement('small'); d.className = 'desc';
-        d.textContent = [why && `This ${why}: it isn't built as chosen.`, chosen?.tip, f.help].filter(Boolean).join(' · ');
-        if (why) d.classList.add('bad');
-        sel.title = f.help ?? '';
+        if (why) note(`Not built as chosen: ${why}.`, 'desc why');
+        if (chosen?.tip) note(chosen.tip);
+        if (chosen?.con) note(`Drawback: ${chosen.con}`, 'desc con');
+        if (f.help) note(f.help);
         sel.addEventListener('change', () => { setOpt(f, f.numeric ? Number(sel.value) : sel.value); changed(true); renderOptions(); });
-        box.append(lab); if (d.textContent) box.append(d);
       } else if (f.check) {
-        const cb = document.createElement('input'); cb.type = 'checkbox'; cb.checked = cur !== false; cb.title = f.help ?? '';
+        const cb = document.createElement('input'); cb.type = 'checkbox'; cb.checked = cur !== false; cb.disabled = !!off;
         cb.addEventListener('change', () => { setOpt(f, cb.checked); changed(true); renderOptions(); });
-        box.append(field(f.label, cb));
-        if (f.help) { const d = document.createElement('small'); d.className = 'desc'; d.textContent = f.help; box.append(d); }
+        wrap.append(field(f.label, cb));
+        note([f.help, `Default: ${def === false ? 'off' : 'on'}.`].filter(Boolean).join(' '));
       } else {
         const lim = (v: number) => Math.min(f.max ?? Infinity, Math.max(f.min ?? -Infinity, v));
         const i = num(Number(cur), (v) => { const x = lim(v); setOpt(f, x); i.value = String(x); if (f.rerender) renderOptions(); }, f.step ?? 1, f.help ?? '');
+        i.disabled = !!off;
         if (f.min !== undefined) i.min = String(f.min);
         if (f.max !== undefined) i.max = String(f.max);
-        box.append(field(f.label, i));
-        if (f.help && f.showHelp) { const d = document.createElement('small'); d.className = 'desc'; d.textContent = f.help; box.append(d); }
+        wrap.append(field(f.label, i));
+        // (exactly what it takes: its range and steps, and its default)
+        const range = f.min !== undefined && f.max !== undefined ? `${f.min} to ${f.max}` : f.min !== undefined ? `at least ${f.min}` : f.max !== undefined ? `at most ${f.max}` : '';
+        note([f.help, [range && `Range ${range}`, def !== undefined && `default ${def}`].filter(Boolean).join(', ') + '.'].filter(Boolean).join(' '));
       }
+      if (off) note(`Locked: ${off}.`, 'desc why');
+      box.append(wrap);
     }
     det.append(box); body.append(det);
   }

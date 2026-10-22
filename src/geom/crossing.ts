@@ -156,7 +156,10 @@ export function crossingPiece(s: Scad, routes: Route[], o: CrossingOptions = CRO
     else {
       const bed = zones[i].map(([a, b]) => sweepRoute(s, rect(-c.sleeperLen / 2, c.sleeperLen / 2, 0, PLATE_H), rt, a, b));
       if (bed.length) parts.push(s.difference(s.union(bed), endBoxes(BED_END)));
-      const f = rt.sleeperFrame ?? { s0: 0, L, in0: x.innerEnds?.has(`${i}:start`) ?? false, in1: x.innerEnds?.has(`${i}:end`) ?? false };
+      // (as the whole route has them, unless this stretch of it has an end connector of its own partway along it: a
+      // plain track built in lengths, each a piece of its own, LEGO's way; then each piece's own, from its connectors)
+      const in0 = x.innerEnds?.has(`${i}:start`) ?? false, in1 = x.innerEnds?.has(`${i}:end`) ?? false, wf = rt.sleeperFrame;
+      const f = wf && (in0 || wf.s0 < 0.01) && (in1 || wf.s0 + L > wf.L - 0.01) ? wf : { s0: 0, L, in0, in1 };
       const at = sleeperSpots(f.L, f.in0, f.in1, o.sleeperGapStuds ?? 2, o.sleeperWidthStuds).map((v) => v - f.s0).filter((v) => v >= 0 && v <= L && !inZone(i, v));
       if (at.length) parts.push(s.union(at.map((v) => atPose(t.sleeper(true), routePose(rt, v)))));
     }

@@ -55,6 +55,14 @@ describe('sleepers', { timeout: 120000 }, () => {
     // (and gaps further out along each track)
     expect(s.w.CrossSection.square([40, 150], true).translate([0, -110]).intersect(mid).area()).toBeLessThan(40 * 150 * 0.8);
   });
+  it('a plain track built in lengths: each length its own sleepers, none twice', async () => {
+    const w = await kernel(), d = { ...straight(16), options: { sleepers: 'sleepers' as const, printBedX: 128, printBedY: 128, cutRails: 'flat' as const, joint: 'axle' as const } };
+    const cut = buildDesign(w, d), whole = buildDesign(w, { ...d, options: { ...d.options, printBedX: 500, printBedY: 500 } });
+    expect(cut.pieces).toHaveLength(2);
+    // (the same plastic as the whole: the sleeper at the join not in both)
+    // (the two end connectors at the join in place of track: a little more; a sleeper twice was 14% more)
+    expect(Math.abs(cut.info.volume / whole.info.volume - 1)).toBeLessThan(0.02);
+  });
   it('builds and cuts for a small bed', async () => {
     const b = buildDesign(await kernel(), { ...straight(64), options: { sleepers: 'sleepers', printBedX: 200, printBedY: 200 } });
     expect(b.info.warnings).toEqual([]);
