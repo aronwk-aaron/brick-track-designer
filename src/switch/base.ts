@@ -13,6 +13,7 @@ import { M, R, T, type CS, type Man, type Scad, type Vec2, type Vec3 } from '../
 import { sweepRoute } from '../geom/sweep';
 import { hollowGrid, type Spot, studSpots } from '../geom/underside';
 import { DEFAULTS as TRACK_DEFAULTS, getSocketShape, scadParity, PLATE_H, RAIL_PROFILE, STUD, Track } from '../geom/track';
+import { couplerSupports, trackSeat } from '../geom/extras';
 import { type FdbBladeLayout, HEAD_HW, pointsSet, type PointsSetValues, STAND, type SwitchParams, switchGlobals } from './context';
 
 export interface BaseParams extends SwitchParams {
@@ -335,6 +336,8 @@ export function switchPlan(routes: Route[], specs: SetSpec[], p: BaseParams = BA
     leverX: v.leverX, throwY: v.throwY, leverTravel: v.leverTravel, toeY: v.toeY, pointsEndY: v.pointsEndY,
     armX0: Math.min(v.throwStockX, v.leverX + v.throwDir * 10), armX1: Math.max(v.throwStockX, v.leverX + v.throwDir * 10),
     throwDir: v.throwDir, throwStockX: v.throwStockX, throwStockRt: v.throwStockRt,
+    // (throw_ballast: the steps round the arm, their outer x and their y span: switch.scad's set_data[9..11])
+    ...throwStepsData(v, g, !!p.throwBallast && g.ballast),
   }));
   const swTiePitch = sleeperW + 2 * STUD;
   const tieYs = (): number[] => {
@@ -354,6 +357,7 @@ export function switchPlan(routes: Route[], specs: SetSpec[], p: BaseParams = BA
       if (q[1] >= y0 && q[1] <= y1) xs.push(q[0]);
     }
     for (const d of setData) if (d.throwY + g.armW / 2 >= y0 && d.throwY - g.armW / 2 <= y1) xs.push(d.leverX + d.throwDir * 10, d.throwStockX);
+    for (const d of setData) if (d.steps && d.steps.ya - STUD <= y1 && d.steps.yb + STUD >= y0) xs.push(d.steps.xOuter);
     return [Math.min(...xs), Math.max(...xs)];
   };
   const baseY0 = -7;
@@ -464,6 +468,23 @@ export function switchPlan(routes: Route[], specs: SetSpec[], p: BaseParams = BA
   };
 }
 export type SwitchPlan = ReturnType<typeof switchPlan>;
+
+/**
+ * (throw_ballast) The ballast's steps round a set's lever arm, on the stud
+ * grid, a stud wider each step down: step_rect(k) for the mid step (k = 0)
+ * and the buddy (k = 1), as [x0, x1, y0, y1] in the switch's frame, and the
+ * outermost x (set_data[9]). Undefined when they're off.
+ */
+function throwStepsData(v: { throwY: number; leverX: number; throwDir: number; throwStockX: number }, g: ReturnType<typeof switchGlobals>, on: boolean) {
+  if (!on) return { steps: undefined };
+  const ya = Math.max(0, Math.floor((v.throwY - g.armW / 2) / STUD) * STUD - STUD), yb = Math.ceil((v.throwY + g.armW / 2) / STUD) * STUD + STUD;
+  const xo = v.throwDir * (Math.ceil((v.throwDir * (v.leverX + v.throwDir * 10)) / STUD) * STUD + STUD);
+  const rect = (k: number): [number, number, number, number] => {
+    const x = xo + v.throwDir * k * STUD;
+    return [Math.min(v.throwStockX, x), Math.max(v.throwStockX, x), Math.max(0, ya - k * STUD), yb + k * STUD];
+  };
+  return { steps: { ya, yb, xOuter: xo + (g.buddy ? v.throwDir * STUD : 0), rect, buddy: g.buddy } };
+}
 
 /** dedupe(pts, acc): add the points of pts not within a stud (+0.5) of one already taken. */
 function dedupe(pts: Pt[], acc: Pt[] = []): Pt[] {
@@ -787,10 +808,15 @@ export function switchGeometry(s: Scad, plan: SwitchPlan, extraCuts: Man[] = [])
     }
     return s.union(out);
   };
-  const connectors = () => s.union([
-    T(t.fullEndpoint(!g.ballast, !g.ballast), [0, 4, 0]),
-    ...plan.endPoses.map((e) => atPose(T(R(t.fullEndpoint(!g.ballast, !g.ballast), [0, 0, 180]), [0, -4, 0]), e)),
+  // (on ballast the peg and clip only with pegOnBallast, held up by breakaway supports; the ballast alone has them for its seat, see base())
+  const connectors = (peg = !g.ballast || !!p.pegOnBallast) => s.union([
+    T(t.fullEndpoint(peg, !g.ballast), [0, 4, 0]),
+    ...plan.endPoses.map((e) => atPose(T(R(t.fullEndpoint(peg, !g.ballast), [0, 0, 180]), [0, -4, 0]), e)),
   ]);
+  const pegSupports = () => {
+    const cs = g.ballast && p.pegOnBallast && p.endSupports !== false && p.ballastOnly === undefined ? couplerSupports(t, pieceBottomZ - 0.02) : undefined;
+    return cs && s.union([T(cs, [0, 4, 0]), ...plan.endPoses.map((e) => atPose(T(R(cs, [0, 0, 180]), [0, -4, 0]), e))]);
+  };
 
   // ---------- the throw ----------
   /**
@@ -1434,6 +1460,39 @@ export function switchGeometry(s: Scad, plan: SwitchPlan, extraCuts: Man[] = [])
       ...routes.flatMap((_, i) => (i === 0 ? [-1] : i === last ? [+1] : [-1, +1]).flatMap((sd) => routeRowPts(i, sd * o, hwUp)))]);
     return s.union(pts.map((q) => T(t.stud(), [q[0], q[1], z - 0.01])));
   };
+  const nearLever = (q: Pt, r: number) => {
+    const earHw = leverT() / 2 + c + g.leverEarT, wf = leverT() / 2 + c;
+    return plan.setData.some((d) => (p.throwModule && Math.abs(q[0] - d.leverX) < 1.5 * STUD + r && Math.abs(q[1] - d.throwY) < 1.5 * STUD + r) // (under the bracket)
+      || (Math.abs(q[0] - d.leverX) < 4 + r && Math.abs(q[1] - d.throwY) < earHw + r)
+      || (Math.abs(q[0] - d.leverX) < d.leverTravel / 2 + forkHw + 1.5 + r && Math.abs(q[1] - d.throwY) < wf + r));
+  };
+  // (throw_ballast) the steps round each set's lever arm (switch.scad's throw_steps): the mid step from the buddy's top
+  // (or the bottom) up to the mid step's top, the buddy's step under it, studs on each where they're clear
+  const throwSteps = (k: number): Man[] => {
+    const d = plan.setData[k], st = d.steps;
+    if (!st) return [];
+    const armRect: [number, number, number, number] = [d.armX0, d.armX1, d.throwY - g.armW / 2, d.throwY + g.armW / 2];
+    const inRect = (q: Pt, rc: number[], m: number) => q[0] > rc[0] + m && q[0] < rc[1] - m && q[1] > rc[2] + m && q[1] < rc[3] - m;
+    const studPts = (j: number): Pt[] => {
+      const rc = st.rect(j), r = studD / 2 + 0.3, inner = j === 0 ? armRect : st.rect(0), hw = j === 0 ? g.ballastMidW / 2 : g.ballastBottomW / 2, out: Pt[] = [];
+      for (let x = Math.floor(rc[0] / 8) * 8 + 4; x <= rc[1] + 1e-9; x += STUD) for (let y = 4; y <= rc[3] + 1e-9; y += STUD) {
+        const q: Pt = [x, y];
+        if (inRect(q, rc, r) && !inRect(q, [inner[0] - r, inner[1] + r, inner[2] - r, inner[3] + r], 0)
+          && !(Math.min(...routes.map((rt) => Math.abs(routeLat(rt, q)))) < hw + r) && !nearLever(q, r)) out.push(q);
+      }
+      return out;
+    };
+    const midTop = g.ballastOffsetZ + g.ballastThickness / 2, out: Man[] = [];
+    const r0 = st.rect(0), z0 = st.buddy ? g.ballastOffsetZ : pieceBottomZ;
+    out.push(cube([r0[1] - r0[0], r0[3] - r0[2], midTop - z0], [r0[0], r0[2], z0]));
+    for (const q of studPts(0)) out.push(T(t.stud(), [q[0], q[1], midTop - 0.01]));
+    if (st.buddy) {
+      const r1 = st.rect(1);
+      out.push(cube([r1[1] - r1[0], r1[3] - r1[2], g.ballastOffsetZ - pieceBottomZ], [r1[0], r1[2], pieceBottomZ]));
+      for (const q of studPts(1)) out.push(T(t.stud(), [q[0], q[1], g.ballastOffsetZ - 0.01]));
+    }
+    return out;
+  };
   // top-layer studs: on every free spot of the top layer (switch.scad's top_stud_pts)
   const topStudPts = (): Pt[] => {
     const r0 = studD / 2 + 0.3, set0 = sets[0];
@@ -1453,12 +1512,6 @@ export function switchGeometry(s: Scad, plan: SwitchPlan, extraCuts: Man[] = [])
         if ((only < 0 || only === i) && zp && local(zp, q)[1] >= -m && Math.abs(routeLat(routes[i], q)) <= g.ballastTopW / 2 + m) return i;
       }
       return -1;
-    };
-    const nearLever = (q: Pt, r: number) => {
-      const earHw = leverT() / 2 + c + g.leverEarT, wf = leverT() / 2 + c;
-      return plan.setData.some((d) => (p.throwModule && Math.abs(q[0] - d.leverX) < 1.5 * STUD + r && Math.abs(q[1] - d.throwY) < 1.5 * STUD + r) // (under the bracket)
-        || (Math.abs(q[0] - d.leverX) < 4 + r && Math.abs(q[1] - d.throwY) < earHw + r)
-        || (Math.abs(q[0] - d.leverX) < d.leverTravel / 2 + forkHw + 1.5 + r && Math.abs(q[1] - d.throwY) < wf + r));
     };
     const spotFree = (q: Pt) => {
       const r = r0;
@@ -1518,6 +1571,7 @@ export function switchGeometry(s: Scad, plan: SwitchPlan, extraCuts: Man[] = [])
     const outline = W.CrossSection.union([
       ...routes.map((rt) => (g.buddy ? routeBuddy(rt) : sweep(sq([g.ballastMidW, 0.1], [-g.ballastMidW / 2, g.ballastOffsetZ]), rt)).project()),
       ...sets.map((v) => throwArm(v).project()),
+      ...sets.flatMap((_, k) => throwSteps(k).map((m) => m.project())),
     ]);
     let cav = outline.offset(-1.39, 'Miter', 1000);
     for (const yc of plan.baseCuts) cav = cav.subtract(sq([2000, 2 * 1.39 + 8], [-1000, yc - 1.39 - 4]));
@@ -1551,15 +1605,20 @@ export function switchGeometry(s: Scad, plan: SwitchPlan, extraCuts: Man[] = [])
   if (parts) Object.assign(parts, named, { throwArms: s.union(sets.map(throwArm)), throwChannels: s.union(sets.map(throwChannel)) });
   if (g.ballast) {
     // on ballast: the ballast (less the points' pockets) under the track, the anti-stud bottom or a flat one
-    const bal = s.difference(switchBallast(), sets.map(pointsPockets));
+    const bal = s.difference(s.union([switchBallast(), ...sets.flatMap((_, k) => throwSteps(k))]), sets.map(pointsPockets));
     const ast = g.antistud ? antistudParts() : undefined;
-    const bodyB = s.difference(s.union([bal, ...Object.values(named), ...sets.map(throwArm)]), [...sets.map(throwChannel), ...(ast ? [ast.under] : [])]);
+    // (the ballast alone, printed apart from the track: everything over the track's outline (its connectors with the peg
+    // and clip, its throw arms) from the bed up taken out, the seat a little bigger all round; no supports)
+    const alone = p.ballastOnly !== undefined;
+    const seat = alone ? trackSeat(s, s.union([...Object.values(named), connectors(true), ...sets.map(throwArm)]), p.ballastOnly ?? 0) : undefined;
+    const bodyB = s.difference(s.union([bal, ...Object.values(named), ...sets.map(throwArm)]), [...sets.map(throwChannel), ...(ast ? [ast.under] : []), seat]);
     const supportZ = pieceBottomZ - 0.02;
     return s.union([
       bodyB,
       ast && s.difference(ast.tubes, [...sets.map(pointsPockets), ...sets.map(throwChannel)]),
-      ...(p.endSupports === false ? [] : [t.startRailSupports(supportZ), t.supportFooting(supportZ, 0, -1),
+      ...(p.endSupports === false || alone ? [] : [t.startRailSupports(supportZ), t.supportFooting(supportZ, 0, -1),
         ...plan.endPoses.map((e) => atPose(s.union([t.endRailSupports(supportZ), t.supportFooting(supportZ, 0, +1)]), e))]),
+      pegSupports(),
     ]);
   }
   const track = s.union(Object.values(named));
@@ -1648,6 +1707,8 @@ export function switchGeometry(s: Scad, plan: SwitchPlan, extraCuts: Man[] = [])
     return {
       // (the plate-style blades' pins on it too: a network's piece left them out)
       bed: fdb ? s.union([pointsBed(v), fdbPins(v)]) : pointsBed(v), pockets: pointsPockets(v), stockCut: stockFootCut(v), arm: throwArm(v), channel: throwChannel(v),
+      // (throw_ballast: the ballast's steps round the arm, and their outermost outline, for the underside)
+      steps: throwSteps(k), stepRect: plan.setData[k].steps?.rect(plan.setData[k].steps!.buddy ? 1 : 0),
       bladeRails: [
         ...[0, 1].map((b) => [bRt(v, b), sweep(sq([9, 30], [bO(b) - 4.5, -5]), bRt(v, b), 0, v.sHeel + c)] as [Route, Man]),
         // (a three-way's branches' inner rails too: they start at the heels, the blades in their place before)

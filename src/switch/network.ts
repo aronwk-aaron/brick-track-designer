@@ -35,6 +35,8 @@ export interface SplitParts {
   inner: string[];
   /** the solver's split it is (sol.splits index; a three-way's first) */
   src: number;
+  /** (throw_ballast) the steps round the lever's arm: their outermost outline [x0, x1, y0, y1], in the points' frame */
+  stepRect?: [number, number, number, number];
   moving: NetworkPart[];
 }
 
@@ -169,7 +171,8 @@ export function networkSplits(s: Scad, routes: Route[], sol: Solution, p: BasePa
     built.push({
       key: JSON.stringify({ rts, used, p, P, routes: [i, j, j2], end, n, of: groups.length }),
       toe: [P[0], P[1]], frame: P, set: plan.sets[0], src: gr.main,
-      adds: [place(mech.bed, P), place(mech.arm, P)], cuts: [place(mech.pockets, P), place(mech.channel, P)],
+      adds: [place(mech.bed, P), place(mech.arm, P), ...mech.steps.map((m) => place(m, P))], cuts: [place(mech.pockets, P), place(mech.channel, P)],
+      ...(mech.stepRect && { stepRect: mech.stepRect }),
       stock: place(mech.stockCut, P),
       bladeCuts: mech.bladeRails.map(([rt, cut]) => [worldOf(rt), place(cut, P)] as [number, Man]),
       inner: [`${j}:${end}`, ...(j2 >= 0 ? [`${j2}:${end}`] : [])],
@@ -198,6 +201,8 @@ export function networkBody(s: Scad, routes: Route[], sol: Solution, copt: Cross
     const v = sp.set, xEnd = v.leverX + v.throwDir * 10, xOut = v.throwDir * Math.ceil((v.throwDir * xEnd) / 8 - 1e-6) * 8, hw = 12;
     return { P: sp.frame, r: [Math.min(v.throwStockX, xOut), Math.max(v.throwStockX, xOut), v.throwY - hw, v.throwY + hw] as [number, number, number, number] };
   });
+  // (and the steps round them, on ballast)
+  for (const sp of splits) if (sp.stepRect) hollows.push({ P: sp.frame, r: sp.stepRect });
   return crossingPiece(s, routes, copt, sol, grips, { railCuts, innerEnds, adds: adds.filter(ok), cuts: [...cuts, ...(more.cuts ?? [])].filter(ok), gridPose: more.gridPose, hollows });
 }
 

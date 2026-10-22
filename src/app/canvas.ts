@@ -514,7 +514,7 @@ export class TrackCanvas {
       else if (this.dragSnap) {
         // joined: make the two one track (the dragged end meeting the other's end)
         const routes = this.host.design().routes;
-        if (dr.end === 'start') routes[dr.route] = { ...routes[dr.route], ...reversed(routes[dr.route]) };
+        if (dr.end === 'start') { const r0 = routes[dr.route]; routes[dr.route] = { ...r0, ...reversed(r0), startEnd: r0.endEnd, endEnd: r0.startEnd }; }
         this.extra.clear(); this.selected = this.join(dr.route, this.dragSnap.route, this.dragSnap.end);
         this.host.select(this.selected);
       }
@@ -609,6 +609,9 @@ export class TrackCanvas {
       if (last?.kind === 'straight' && sg.kind === 'straight') last.studs = Math.round((last.studs + sg.studs) * 1e6) / 1e6;
       else segs.push(sg);
     }
+    // (its far end, connector or buffer stop, is the joined track's end now)
+    const far = bEnd === 'start' ? rb.endEnd : rb.startEnd;
+    if (far) routes[a].endEnd = far; else delete routes[a].endEnd;
     routes.splice(b, 1);
     return b < a ? a - 1 : a;
   }
@@ -870,10 +873,17 @@ export class TrackCanvas {
         q = follow(q, [sg]);
       }
       c.textAlign = 'start';
-      // ends
+      // ends (a buffer stop: its beam across the track, a stud in from the end, and its posts)
       for (const p of [{ x: r.x, y: r.y }, follow(r, r.segs)]) {
         const [sx, sy] = this.toScreen(p.x, p.y);
         c.fillStyle = ink.rail; c.beginPath(); c.arc(sx, sy, 3, 0, 2 * Math.PI); c.fill();
+      }
+      for (const [which, p, k] of [['startEnd', { x: r.x, y: r.y, heading: r.heading }, 1], ['endEnd', follow(r, r.segs), -1]] as const) {
+        if (r[which] !== 'buffer' || !r.segs.length) continue;
+        const h = (p.heading * Math.PI) / 180, ax = -Math.sin(h) * k, ay = Math.cos(h) * k, rx = Math.cos(h), ry = Math.sin(h);
+        const at = (al: number, lat: number): [number, number] => [p.x + ax * al + rx * lat, p.y + ay * al + ry * lat];
+        line([at(1, -(g + 1.5)), at(1, g + 1.5)], ink.rail, Math.max(3, 0.8 * this.scale));
+        for (const sd of [-1, 1]) line([at(0, sd * (g + 0.5)), at(2, sd * (g + 0.5))], ink.rail, Math.max(3, 2 * this.scale));
       }
     });
     {

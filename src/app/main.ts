@@ -88,6 +88,15 @@ function render() {
       field('Start y, studs', num(r.y, (n) => { r.y = n; }, 1)),
       field('Heading ° (0 = up, + = left)', num(r.heading, (n) => { r.heading = n; }, 22.5)));
     r.segs.forEach((_, k) => body.append(segRow(r, k)));
+    // (each end: an ordinary end connector, or a buffer stop)
+    for (const [prop, label] of [['startEnd', 'Starts in'], ['endEnd', 'Ends in']] as const) {
+      const es = document.createElement('select');
+      for (const [v, t] of [['connector', 'An end connector'], ['buffer', 'A buffer stop']]) es.append(new Option(t, v));
+      es.value = r[prop] ?? 'connector';
+      es.title = 'An ordinary end connector, to join more track, or a buffer stop: the rails run into two posts joined by a buffer beam, its last two studs (the Buffer stops settings)';
+      es.addEventListener('change', () => { if (es.value === 'buffer') r[prop] = 'buffer'; else delete r[prop]; changed(true); });
+      const f = field(label, es); f.classList.add('stack'); body.append(f);
+    }
     // (a branch, i.e. a switch's: its lever's side, where it branches; shown once the plan knows it's one)
     const id = r.name || String(i), items = canvas?.overlay?.items ?? [];
     const keys = new Set(items.filter((it) => it.kind === 'points' && !it.cand && (it.routes ?? []).slice(1).includes(id)).map((it) => it.key));
@@ -698,6 +707,8 @@ interface OptChoice { v: string; t: string; tip?: string; /** its drawback */ co
 interface OptField {
   key: string; label: string; help?: string; step?: number; min?: number; max?: number;
   choices?: OptChoice[]; check?: boolean;
+  /** a line of text */
+  text?: boolean;
   /** a choice's value is a number (stored as one) */
   numeric?: boolean;
   /** a small heading over this field, grouping it with the ones after it */
@@ -742,6 +753,13 @@ const OPTION_FORM: OptSection[] = [
       def: 'edges', get: () => design.grip ?? 'edges', set: (v) => { design.grip = v as Design['grip']; }, choices: [
         { v: 'edges', t: 'Along the edges', tip: 'Like a LEGO plate: tubes grip along the edges and every 4 studs (green circles on the plan). Firm, and comes off again.' },
         { v: 'all', t: 'Every stud', tip: 'A socket on every stud.', con: 'Grips very hard: can be difficult to pull off.' }] },
+    { key: 'trackBallast', label: 'Track and ballast printed', off: (c) => (c.ballast ? undefined : 'only with ballast'), choices: [
+      { v: 'together', t: 'Together', tip: 'Track and ballast print as one part.' },
+      { v: 'apart', t: 'Apart', tip: 'Track and ballast print as separate parts (…-track, …-ballast). The track drops into a seat in the ballast.',
+        con: 'Twice as many parts. The track is held only by its fit and the baseplate; with a solid bed the seat is just the ballast steps (with sleepers, each sleeper gets a pocket).' }] },
+    { key: 'trackFitTol', label: 'Track fit in the seat, mm', step: 0.05, min: 0, max: 1, off: (c) => (!c.ballast ? 'only with ballast' : c.o.trackBallast !== 'apart' ? 'Track and ballast printed is Together' : undefined), help: 'Gap round the track in its seat.' },
+    { key: 'pegOnBallast', label: 'Peg and clip on ballast ends', check: true, off: (c) => (c.ballast ? undefined : 'only with ballast'), help: 'Keeps the peg and clip on the end connectors, so pieces clip together. They print on small breakaway supports. Off: the ends just butt together.' },
+    { key: 'axleHoles', label: 'LEGO axle holes through the ends', check: true, off: (c) => (c.o.ballast !== 'buddy' ? 'needs Ballast + buddy layer' : c.o.trackBallast === 'apart' ? 'not with Track and ballast printed Apart' : undefined), help: 'Cross-axle holes through each end, so a LEGO axle pins two pieces together.' },
   ] },
   { title: 'Switches: points', switches: true, fields: [
     { key: 'mechStyle', label: 'Mechanism', choices: [
@@ -767,6 +785,7 @@ const OPTION_FORM: OptSection[] = [
     { key: 'springPreload', label: 'Spring preload, mm', step: 0.25, min: 0, max: 3, help: 'How far past closed the springs push the blades, to hold them shut.' },
     { key: 'springThickness', label: 'Spring thickness, mm', step: 0.05, min: 0.5, max: 2, off: (c) => (c.fdb ? 'only with Mechanism: Under the bed, on spring tines' : undefined), help: 'Thickness of the spring tines.' },
     { key: 'springLength', label: 'Spring length, mm', step: 1, min: 15, max: 80, off: (c) => (c.fdb ? 'only with Mechanism: Under the bed, on spring tines' : undefined), help: 'Length of the spring tines. Each lever can also be dragged along on the plan.' },
+    { key: 'bladeDiscD', label: 'Pivot disc diameter, mm', step: 1, min: 10, max: 24, off: (c) => (c.fdb ? 'only with Mechanism: Under the bed, on spring tines' : undefined), help: 'The disc the points pivot on. Bigger is steadier but needs more room under the bed.' },
   ] },
   { title: 'Switches: throw', switches: true, fields: [
     { key: 'throwStyle', label: 'Throw', choices: [
@@ -784,6 +803,19 @@ const OPTION_FORM: OptSection[] = [
       { v: 'left', t: 'Left', tip: 'Left, facing along the points from the toe.' },
       { v: 'right', t: 'Right', tip: 'Right, facing along the points from the toe.' }] },
     { key: 'leverOffset', label: 'Lever distance from track, mm', step: 1, min: -24, max: 30, help: 'How far past the sleeper ends. Each lever can also be dragged on the plan.' },
+    { key: 'throwBallast', label: 'Ballast round the lever', check: true, off: (c) => (c.ballast ? undefined : 'only with ballast'), help: 'The ballast steps continue round the lever arm, so the lever stands on ballast.' },
+  ] },
+  { title: 'Buffer stops', fields: [
+    { key: 'bufferPostPlates', label: 'Post height, plates', step: 1, min: 4, max: 15, off: () => (design.routes.some((r) => r.startEnd === 'buffer' || r.endEnd === 'buffer') ? undefined : 'no route ends in a buffer stop (set Starts in / Ends in on a route card)'), help: 'Height of the two posts above the ballast top, with studs on top.' },
+    { key: 'bufferBeamBottom', label: 'Beam bottom above the rails, mm', step: 0.5, min: 0, max: 10, off: () => (design.routes.some((r) => r.startEnd === 'buffer' || r.endEnd === 'buffer') ? undefined : 'no route ends in a buffer stop (set Starts in / Ends in on a route card)'), help: 'Set it to meet your trains\' buffers or magnets.' },
+    { key: 'bufferBeamTop', label: 'Beam top above the rails, mm', step: 0.5, min: 4, max: 20, off: () => (design.routes.some((r) => r.startEnd === 'buffer' || r.endEnd === 'buffer') ? undefined : 'no route ends in a buffer stop (set Starts in / Ends in on a route card)') },
+    { key: 'bufferPinHoles', label: 'Pin holes in the posts', check: true, off: () => (design.routes.some((r) => r.startEnd === 'buffer' || r.endEnd === 'buffer') ? undefined : 'no route ends in a buffer stop (set Starts in / Ends in on a route card)'), help: 'Holes for LEGO Technic pins at beam height: for a bumper, lights or a sign.' },
+  ] },
+  { title: 'Labels', fields: [
+    { key: 'labelText', label: 'Label text', text: true, off: (c) => (c.ballast && c.o.bottomStyle === 'float' ? undefined : 'labels go only on a flat underside: set Ballast to Ballast and Ballast underside to Flat'), help: 'Engraved under each part, mirrored to read from below. Empty: no labels.' },
+    { key: 'labelSize', label: 'Add the size (S16, R40 22.5°)', check: true, off: (c) => (c.ballast && c.o.bottomStyle === 'float' ? undefined : 'labels go only on a flat underside: set Ballast to Ballast and Ballast underside to Flat') ?? (c.o.labelText ? undefined : 'Label text is empty') },
+    { key: 'labelGauge', label: 'Add the gauge (Ln4)', check: true, off: (c) => (c.ballast && c.o.bottomStyle === 'float' ? undefined : 'labels go only on a flat underside: set Ballast to Ballast and Ballast underside to Flat') ?? (c.o.labelText ? undefined : 'Label text is empty') },
+    { key: 'labelParts', label: 'Number parts cut for the bed (#2)', check: true, off: (c) => (c.ballast && c.o.bottomStyle === 'float' ? undefined : 'labels go only on a flat underside: set Ballast to Ballast and Ballast underside to Flat') ?? (c.o.labelText ? undefined : 'Label text is empty'), help: 'Matches the part\'s file name.' },
   ] },
   { title: 'Check rails and flangeways', fields: [
     { key: 'checkRailLen', label: 'Check rail length, mm', step: 2, min: 10, max: 80 },
@@ -889,6 +921,11 @@ function renderOptions() {
         if (chosen?.con) note(`Drawback: ${chosen.con}`, 'desc con');
         if (f.help) note(f.help);
         sel.addEventListener('change', () => { setOpt(f, f.numeric ? Number(sel.value) : sel.value); changed(true); renderOptions(); });
+      } else if (f.text) {
+        const ti = document.createElement('input'); ti.type = 'text'; ti.value = String(cur ?? ''); ti.disabled = !!off; ti.maxLength = 24;
+        ti.addEventListener('change', () => { setOpt(f, ti.value.trim().toUpperCase()); changed(true); renderOptions(); });
+        const lab = field(f.label, ti); lab.classList.add('stack'); wrap.append(lab);
+        if (f.help) note(f.help);
       } else if (f.check) {
         const cb = document.createElement('input'); cb.type = 'checkbox'; cb.checked = cur !== false; cb.disabled = !!off;
         cb.addEventListener('change', () => { setOpt(f, cb.checked); changed(true); renderOptions(); });

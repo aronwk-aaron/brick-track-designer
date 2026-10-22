@@ -13,6 +13,9 @@ export interface DRoute {
   name: string; x: number; y: number; heading: number; segs: DSeg[]; // start in studs
   /** When this route branches off another (a switch): which side its lever goes (auto: the options' setting). */
   throwSide?: 'auto' | 'left' | 'right';
+  /** What the route's start / end is: an ordinary end connector (default), or a buffer stop (buffer.scad: the rails run into two posts joined by a buffer beam, no connector). */
+  startEnd?: 'connector' | 'buffer';
+  endEnd?: 'connector' | 'buffer';
 }
 export interface Design {
   version: 1; gaugeStuds: number; routes: DRoute[];
@@ -89,12 +92,42 @@ export interface PieceOptions {
   sleeperWidthStuds: number; sleeperGapStuds: number;
   /** LEGO fit: added to the studs' 4.8 mm (mm); the anti-stud tubes' outside smaller and bore bigger by this (mm). */
   studFit: number; antistudFit: number;
+  /** (switch.scad's blade_disc_d) The tines mechanism's points: the round disc they pivot on, its diameter, mm. */
+  bladeDiscD?: number;
+  /** (switch.scad's throw_ballast) On ballast: the ballast's steps carried on round the lever's arm, so the lever stands on ballast. */
+  throwBallast?: boolean;
+  /** (straight.scad's technic_axle_holes) On ballast with the buddy layer: LEGO cross-axle holes through each end, under the outermost studs between the rails, to pin pieces together. */
+  axleHoles?: boolean;
+  /** (clip_and_peg_on_ballast) On ballast: the end connectors keep their snap peg and C-clip. */
+  pegOnBallast?: boolean;
+  /** (buffer.scad) Buffer stops: the posts' height above the ballast top, in plates; the beam's bottom and top above the rail top, mm; Technic pin holes through the posts. */
+  bufferPostPlates?: number; bufferBeamBottom?: number; bufferBeamTop?: number; bufferPinHoles?: boolean;
+  /** (generate_track / generate_ballast) The track and the ballast printed as one part, or apart (the ballast with a seat the track drops into, trackFitTol mm clear each side). */
+  trackBallast?: 'together' | 'apart';
+  trackFitTol?: number;
+  /** (name, label_*) Text engraved under the parts with a flat underside ('' = no labels); the size line (S16, R40 22.5°, LEFT R40 22.5°), the gauge (Ln4), and part numbers for parts cut for the bed. */
+  labelText?: string; labelSize?: boolean; labelGauge?: boolean; labelParts?: boolean;
 }
 export const OPTION_DEFAULTS: PieceOptions = {
   throwSide: 'auto', leverOffset: 8, pointThrow: 3, pointClearance: 0.3, springPreload: 1, springThickness: 0.9, springLength: 40,
   flangeway: 3, flangewayDepth: 3, checkRailLen: 30, checkRailW: 1, checkRailFlare: 1.5, printBedX: 256, printBedY: 256, baseplate: 0, baseplateX: 0, baseplateY: 0, ballast: 'none', bottomStyle: 'antistud', joint: 'lego', pointsModule: 'built-in', endSupports: true, cutRails: 'tongues', throwStyle: 'built-in', mechStyle: 'plates', curveStuds: 'grid',
   throwAction: 'detent', bladeStyle: 'simple', sleepers: 'bed', sleeperWidthStuds: 2, sleeperGapStuds: 2, studFit: 0.18, antistudFit: 0.06,
+  bladeDiscD: 14, throwBallast: false, axleHoles: false, pegOnBallast: false,
+  bufferPostPlates: 8, bufferBeamBottom: 2, bufferBeamTop: 12, bufferPinHoles: true,
+  trackBallast: 'together', trackFitTol: 0.2, labelText: '', labelSize: true, labelGauge: false, labelParts: true,
 };
+
+/** The buffer stops' positions (mm): the route ends set to end in one (by where they are, as routes are turned round and cut up). */
+export function bufferEnds(d: Design): [number, number][] {
+  const out: [number, number][] = [];
+  toRoutes(d).forEach((rt, i) => {
+    const r = d.routes[i];
+    if (!rt.segments.length) return;
+    if (r.startEnd === 'buffer') out.push([rt.start[0], rt.start[1]]);
+    if (r.endEnd === 'buffer') { const p = routePose(rt, routeLength(rt)); out.push([p[0], p[1]]); }
+  });
+  return out;
+}
 
 export function toRoutes(d: Design): Route[] {
   return d.routes.map((r, i) => ({

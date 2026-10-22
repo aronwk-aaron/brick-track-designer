@@ -50,6 +50,12 @@ export interface SwitchParams {
   bladeStyle?: 'simple' | 'prototype';
   /** (the plate-style points) What keeps each blade's plate on its pin: 'lip' (a snap lip on the pin) or 'bracket' (a little bracket on the bed over the plate round the pin, pegged in: the reference points' way). */
   bladeHold?: 'lip' | 'bracket';
+  /** (switch.scad's throw_ballast) On ballast: the ballast's steps carried on round the lever's arm, with studs. */
+  throwBallast?: boolean;
+  /** (clip_and_peg_on_ballast) On ballast: the end connectors keep their snap peg and C-clip. */
+  pegOnBallast?: boolean;
+  /** (generate_track off) The ballast alone, with a seat this much clear each side (mm) for the track printed apart. */
+  ballastOnly?: number;
 }
 
 /** The switch stand's handle and eccentric (throwStand). */
