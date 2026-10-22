@@ -22,7 +22,8 @@ const vol = (b: ReturnType<typeof buildDesign>) => b.info.volume;
 describe('the OpenSCAD extras', { timeout: 120000 }, () => {
   it('a route end in a buffer stop: no connector, posts 8 plates over the ballast top with studs, either end', async () => {
     const w = await kernel();
-    const plain = buildDesign(w, straight(8)), end = buildDesign(w, straight(8, { endEnd: 'buffer' })), start = buildDesign(w, straight(8, { startEnd: 'buffer' }));
+    const B = { bufferStyle: 'blocks' as const };
+    const plain = buildDesign(w, straight(8)), end = buildDesign(w, straight(8, { endEnd: 'buffer' }, B)), start = buildDesign(w, straight(8, { startEnd: 'buffer' }, B));
     for (const b of [end, start]) {
       expect(b.info.warnings).toEqual([]);
       expect(b.pieces.map((p) => p.name)).toEqual(['track']);
@@ -33,8 +34,19 @@ describe('the OpenSCAD extras', { timeout: 120000 }, () => {
     // (the same buffer turned round)
     expect(vol(start)).toBeCloseTo(vol(end), -1);
     // (lower posts, no pin holes)
-    const low = buildDesign(w, straight(8, { endEnd: 'buffer' }, { bufferPostPlates: 5, bufferBeamTop: 8, bufferPinHoles: false }));
+    const low = buildDesign(w, straight(8, { endEnd: 'buffer' }, { ...B, bufferPostPlates: 5, bufferBeamTop: 8, bufferPinHoles: false }));
     expect(top(low.pieces[0].stl)).toBeCloseTo(3.2 + 5 * 3.2 + 1.8, 1);
+  });
+  it('the rail-built buffer stop (the default): its beam top 12 mm over the rails, buffers on it, one body; the underside hollow under it too', async () => {
+    const w = await kernel();
+    const plain = buildDesign(w, straight(8)), b = buildDesign(w, straight(8, { endEnd: 'buffer' }));
+    expect(b.info.warnings).toEqual([]);
+    expect(b.pieces.map((p) => p.name)).toEqual(['track']);
+    expect(top(b.pieces[0].stl)).toBeCloseTo(3.2 + 6.4 + 12, 1);
+    expect(vol(b)).toBeGreaterThan(vol(plain) + 1000);
+    // (track only: no square sockets of its own under the slab: less plastic taken out there than the old way, so more left)
+    const blocksTrack = buildDesign(w, straight(8, { endEnd: 'buffer' }, { ballast: 'none', bufferStyle: 'blocks' }));
+    expect(blocksTrack.info.warnings).toEqual([]);
   });
   it('axle holes through the ends (with the buddy), and the peg and clip kept on ballast', async () => {
     const w = await kernel();

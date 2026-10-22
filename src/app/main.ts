@@ -428,17 +428,8 @@ function updateLegend() {
   show('legend-grip', !!o?.grips?.length);
   show('legend-hint', [...document.querySelectorAll<HTMLElement>('#legend-rows [data-layer]')].some((el) => !el.hidden));
 }
-const gauge = $<HTMLInputElement>('gauge');
-gauge.value = String(design.gaugeStuds);
-// (a whole number of studs, 2 to 10: anything else put back to what it was)
-gauge.addEventListener('change', () => {
-  const n = Math.round(Number(gauge.value));
-  if (gauge.value.trim() === '' || !Number.isFinite(n)) { gauge.value = String(design.gaugeStuds); return; }
-  design.gaugeStuds = Math.min(10, Math.max(2, n)); gauge.value = String(design.gaugeStuds); changed();
-});
 /** A different design (a template, a file, undo or redo): the toolbar and the forms show it, nothing selected. */
 function replaced() {
-  gauge.value = String(design.gaugeStuds);
   canvas.setSelection([]); openCards.clear(); twSig = ''; renderOptions();
 }
 
@@ -724,10 +715,12 @@ interface OptField {
   get?: () => string | number | boolean; set?: (v: string | number | boolean) => void;
 }
 interface OptSection { title: string; switches?: boolean; fields: OptField[] }
+/** (buffer stop settings) why they don't apply: no route ends in one */
+const noBuf = () => (design.routes.some((r) => r.startEnd === 'buffer' || r.endEnd === 'buffer') ? undefined : 'no route ends in a buffer stop (set Starts in / Ends in on a route card)');
 const OPTION_FORM: OptSection[] = [
   { title: 'Track', fields: [
-    { key: 'gaugeStuds', label: 'Gauge, studs', step: 1, min: 2, max: 10, rerender: true, help: 'Studs between the rails. LEGO track is 4. Same as Gauge in the toolbar.',
-      def: 4, get: () => design.gaugeStuds, set: (v) => { design.gaugeStuds = Math.round(Number(v)); gauge.value = String(design.gaugeStuds); } },
+    { key: 'gaugeStuds', label: 'Gauge, studs', step: 1, min: 2, max: 10, rerender: true, help: 'Studs between the rails. LEGO track is 4.',
+      def: 4, get: () => design.gaugeStuds, set: (v) => { design.gaugeStuds = Math.round(Number(v)); } },
     { key: 'sleepers', label: 'Under the rails', choices: [
       { v: 'bed', t: 'Solid bed', tip: 'One solid bed under the rails, like LEGO switches.' },
       { v: 'sleepers', t: 'Sleepers with gaps', tip: 'Separate sleepers, like LEGO straight and curved track. Where tracks meet (switches, crossings) the bed stays solid.',
@@ -806,10 +799,13 @@ const OPTION_FORM: OptSection[] = [
     { key: 'throwBallast', label: 'Ballast round the lever', check: true, off: (c) => (c.ballast ? undefined : 'only with ballast'), help: 'The ballast steps continue round the lever arm, so the lever stands on ballast.' },
   ] },
   { title: 'Buffer stops', fields: [
-    { key: 'bufferPostPlates', label: 'Post height, plates', step: 1, min: 4, max: 15, off: () => (design.routes.some((r) => r.startEnd === 'buffer' || r.endEnd === 'buffer') ? undefined : 'no route ends in a buffer stop (set Starts in / Ends in on a route card)'), help: 'Height of the two posts above the ballast top, with studs on top.' },
-    { key: 'bufferBeamBottom', label: 'Beam bottom above the rails, mm', step: 0.5, min: 0, max: 10, off: () => (design.routes.some((r) => r.startEnd === 'buffer' || r.endEnd === 'buffer') ? undefined : 'no route ends in a buffer stop (set Starts in / Ends in on a route card)'), help: 'Set it to meet your trains\' buffers or magnets.' },
-    { key: 'bufferBeamTop', label: 'Beam top above the rails, mm', step: 0.5, min: 4, max: 20, off: () => (design.routes.some((r) => r.startEnd === 'buffer' || r.endEnd === 'buffer') ? undefined : 'no route ends in a buffer stop (set Starts in / Ends in on a route card)') },
-    { key: 'bufferPinHoles', label: 'Pin holes in the posts', check: true, off: () => (design.routes.some((r) => r.startEnd === 'buffer' || r.endEnd === 'buffer') ? undefined : 'no route ends in a buffer stop (set Starts in / Ends in on a route card)'), help: 'Holes for LEGO Technic pins at beam height: for a bumper, lights or a sign.' },
+    { key: 'bufferStyle', label: 'Style', off: () => noBuf(), choices: [
+      { v: 'frame', t: 'Rail-built frame with buffers', tip: 'A braced frame over each rail, a beam across with two sprung buffers, like a real buffer stop.' },
+      { v: 'blocks', t: 'Brick posts', tip: 'Two 2 x 2 posts with studs on top to build on, joined by a beam.' }] },
+    { key: 'bufferPostPlates', label: 'Post height, plates', step: 1, min: 4, max: 15, off: (c) => noBuf() ?? (c.o.bufferStyle === 'blocks' ? undefined : 'only with Style: Brick posts'), help: 'Height of the posts above the ballast top, with studs on top.' },
+    { key: 'bufferBeamBottom', label: 'Beam bottom above the rails, mm', step: 0.5, min: 0, max: 10, off: () => noBuf(), help: 'Set it to meet your trains\' buffers or magnets.' },
+    { key: 'bufferBeamTop', label: 'Beam top above the rails, mm', step: 0.5, min: 4, max: 20, off: () => noBuf() },
+    { key: 'bufferPinHoles', label: 'Pin holes in the posts', check: true, off: (c) => noBuf() ?? (c.o.bufferStyle === 'blocks' ? undefined : 'only with Style: Brick posts'), help: 'Holes for LEGO Technic pins at beam height: for a bumper, lights or a sign.' },
   ] },
   { title: 'Labels', fields: [
     { key: 'labelText', label: 'Label text', text: true, off: (c) => (c.ballast && c.o.bottomStyle === 'float' ? undefined : 'labels go only on a flat underside: set Ballast to Ballast and Ballast underside to Flat'), help: 'Engraved under each part, mirrored to read from below. Empty: no labels.' },

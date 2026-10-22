@@ -772,7 +772,7 @@ function buildOne(w: Wasm, design: Design, report: (what: string, frac: number) 
     ballast: o.ballast, bottomStyle: o.bottomStyle, supports: o.endSupports !== false, curveStuds: o.curveStuds,
     studFit: o.studFit, antistudFit: o.antistudFit, sleepers: o.sleepers, sleeperWidthStuds: o.sleeperWidthStuds, sleeperGapStuds: o.sleeperGapStuds,
     // (only what's set: the defaults' build, and its cache keys, as before)
-    ...(bufs.length && { buffers: bufs, buffer: { postPlates: o.bufferPostPlates ?? 8, beamBottom: o.bufferBeamBottom ?? 2, beamTop: o.bufferBeamTop ?? 12, pinHoles: o.bufferPinHoles !== false } }),
+    ...(bufs.length && { buffers: bufs, buffer: { postPlates: o.bufferPostPlates ?? 8, beamBottom: o.bufferBeamBottom ?? 2, beamTop: o.bufferBeamTop ?? 12, pinHoles: o.bufferPinHoles !== false, style: o.bufferStyle ?? 'frame' } }),
     ...(o.axleHoles && { axleHoles: true }), ...(o.pegOnBallast && { pegOnBallast: true }), ...(alone && { ballastOnly: o.trackFitTol ?? 0.2 }) };
   const tp = params;
   const netKey = JSON.stringify({ routes, tp, copt, tw });

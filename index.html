@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Brick Track Designer</title>
-  <link rel="icon" href="data:,">
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A//www.w3.org/2000/svg%22%20viewBox%3D%220%200%2024%2024%22%3E%3Crect%20x%3D%222%22%20y%3D%222%22%20width%3D%2220%22%20height%3D%2220%22%20rx%3D%225%22%20fill%3D%22%23d01012%22/%3E%3Cpath%20d%3D%22M8%205v14M16%205v14%22%20stroke%3D%22%23fff%22%20stroke-width%3D%222%22/%3E%3Cpath%20d%3D%22M6%208.5h12M6%2012h12M6%2015.5h12%22%20stroke%3D%22%23fff%22%20stroke-width%3D%221.4%22%20opacity%3D%220.8%22/%3E%3C/svg%3E">
   <style>
     :root {
       --bg: #eef0f3; --panel: #ffffff; --raise: #f6f7f9; --hover: #eceef2; --line: #dfe3e8; --ink: #1c2026; --muted: #69727d;
@@ -44,6 +44,8 @@
       border-radius: var(--radius); padding: 0 10px; cursor: pointer; white-space: nowrap; transition: background 0.12s, border-color 0.12s, color 0.12s; }
     select { padding: 0 6px 0 9px; }
     button svg, a.icon svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; flex: none; }
+    button svg.solid, a.icon svg.solid { fill: currentColor; stroke: none; }
+    a { color: var(--accent); } a:visited { color: var(--accent); }
     button.icon, a.icon { width: 30px; padding: 0; color: var(--muted); text-decoration: none; }
     button.icon:hover:not(:disabled), a.icon:hover { color: var(--ink); }
     button:hover:not(:disabled), select:hover, a.icon:hover { background: var(--hover); border-color: var(--line); }
@@ -259,7 +261,7 @@
       <symbol id="i-save" viewBox="0 0 24 24"><path d="M5 3h11l4 4v12a2 2 0 01-2 2H6a2 2 0 01-2-2V5a2 2 0 012-2z"/><path d="M8 3v5h7V3M8 21v-7h8v7"/></symbol>
       <symbol id="i-download" viewBox="0 0 24 24"><path d="M12 4v11M7 10l5 5 5-5M5 20h14"/></symbol>
       <symbol id="i-info" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 11v6M12 7.5v.5"/></symbol>
-      <symbol id="i-code" viewBox="0 0 24 24"><path d="M8 7l-5 5 5 5M16 7l5 5-5 5"/></symbol>
+      <symbol id="i-github" viewBox="0 0 16 16"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></symbol>
     </defs>
   </svg>
   <header>
@@ -280,8 +282,6 @@
     <span class="sep"></span>
     <select id="template" title="Replace the design with a starting point"><option value="">Templates…</option></select>
     <button id="clear" type="button" class="icon danger" title="Remove all the track (Undo brings it back)"><svg><use href="#i-trash"/></svg></button>
-    <span class="sep"></span>
-    <label class="inline" title="Studs between the rails (LEGO is 4)">Gauge <input id="gauge" type="number" min="2" max="10" step="1"></label>
     <span class="spacer"></span>
     <button id="fit" class="icon" type="button" title="Fit the track in view (F)"><svg><use href="#i-fit"/></svg></button>
     <button id="toggle-3d" class="on" type="button" title="Show or hide the 3D preview (P)"><svg><use href="#i-cube"/></svg><span class="lbl">3D</span></button>
@@ -293,7 +293,7 @@
     <input id="load-file" type="file" accept=".json,application/json" hidden>
     <span class="sep"></span>
     <button id="about-open" class="icon" type="button" title="About Brick Track Designer, and its source code"><svg><use href="#i-info"/></svg></button>
-    <a id="source-link" class="icon" href="https://github.com/aronwk-aaron/brick-track-designer" target="_blank" rel="noopener" title="Source code on GitHub"><svg><use href="#i-code"/></svg></a>
+    <a id="source-link" class="icon" href="https://github.com/aronwk-aaron/brick-track-designer" target="_blank" rel="noopener" title="Source code on GitHub"><svg class="solid"><use href="#i-github"/></svg></a>
   </header>
   <aside>
     <div class="head"><h2 id="routes-title">Routes</h2><button id="add-route" type="button" title="Add a route by numbers">+ Route</button></div>

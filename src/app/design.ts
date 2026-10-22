@@ -101,6 +101,8 @@ export interface PieceOptions {
   /** (clip_and_peg_on_ballast) On ballast: the end connectors keep their snap peg and C-clip. */
   pegOnBallast?: boolean;
   /** (buffer.scad) Buffer stops: the posts' height above the ballast top, in plates; the beam's bottom and top above the rail top, mm; Technic pin holes through the posts. */
+  /** Buffer stops: a rail-built frame with sprung buffers, or brick posts with studs on top to build on. */
+  bufferStyle?: 'frame' | 'blocks';
   bufferPostPlates?: number; bufferBeamBottom?: number; bufferBeamTop?: number; bufferPinHoles?: boolean;
   /** (generate_track / generate_ballast) The track and the ballast printed as one part, or apart (the ballast with a seat the track drops into, trackFitTol mm clear each side). */
   trackBallast?: 'together' | 'apart';
@@ -113,7 +115,7 @@ export const OPTION_DEFAULTS: PieceOptions = {
   flangeway: 3, flangewayDepth: 3, checkRailLen: 30, checkRailW: 1, checkRailFlare: 1.5, printBedX: 256, printBedY: 256, baseplate: 0, baseplateX: 0, baseplateY: 0, ballast: 'none', bottomStyle: 'antistud', joint: 'lego', pointsModule: 'built-in', endSupports: true, cutRails: 'tongues', throwStyle: 'built-in', mechStyle: 'plates', curveStuds: 'grid',
   throwAction: 'detent', bladeStyle: 'simple', sleepers: 'bed', sleeperWidthStuds: 2, sleeperGapStuds: 2, studFit: 0.18, antistudFit: 0.06,
   bladeDiscD: 14, throwBallast: false, axleHoles: false, pegOnBallast: false,
-  bufferPostPlates: 8, bufferBeamBottom: 2, bufferBeamTop: 12, bufferPinHoles: true,
+  bufferStyle: 'frame', bufferPostPlates: 8, bufferBeamBottom: 2, bufferBeamTop: 12, bufferPinHoles: true,
   trackBallast: 'together', trackFitTol: 0.2, labelText: '', labelSize: true, labelGauge: false, labelParts: true,
 };
 

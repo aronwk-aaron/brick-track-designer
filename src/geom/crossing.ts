@@ -232,7 +232,7 @@ export function crossingPiece(s: Scad, routes: Route[], o: CrossingOptions = CRO
       // (clear of the end connectors: 8 mm in from each end)
       if (ends.some((e) => { const dx = q[0] - e[0], dy = q[1] - e[1]; return Math.hypot(dx, dy) < c.sleeperLen && Math.abs(-dx * Math.sin((e[2] * Math.PI) / 180) + dy * Math.cos((e[2] * Math.PI) / 180)) < 10; })) continue;
       if (addBoxes.some((bb) => q[0] > bb.min[0] - 3 && q[0] < bb.max[0] + 3 && q[1] > bb.min[1] - 3 && q[1] < bb.max[1] + 3)) continue;
-      if (bufPoses.some((e) => inBufferPost(t, toLocal(e, q), c.postD / 2 + 0.6))) continue;
+      if (bufPoses.some((e) => inBufferPost(t, toLocal(e, q), c.postD / 2 + 0.6, (o.buffer ?? BUFFER_DEFAULTS).style ?? 'frame'))) continue;
       // (and of the check rails)
       if (sol.checkRails.some((cr) => {
         const rt = routes[cr.route], lat = routeLat(rt, q), mid = cr.offset + cr.width / 2;
@@ -273,8 +273,10 @@ export function crossingPiece(s: Scad, routes: Route[], o: CrossingOptions = CRO
   // each route's bed, less the rim, cut square to each end's frame (on a
   // curve a cut across the bed at one arc length isn't square to the end)
   const beds = routes.map((rt) => {
-    const L = routeLength(rt), cut = BED_END + WALL;
-    if (L <= 2 * cut) return undefined;
+    const L = routeLength(rt), cut = BED_END + WALL, i0 = routes.indexOf(rt);
+    // (a buffered end has no connector: the hollow runs on under the buffer's slab to the rim at the end, as the rest)
+    const cutAt = (k: number) => (bufEnd(i0, k > 0 ? 'start' : 'end') ? WALL : cut);
+    if (L <= cutAt(1) + cutAt(-1)) return undefined;
     const n = Math.max(2, Math.ceil(L));
     const side = (o2: number, a = 0, b = L) => Array.from({ length: n + 1 }, (_, k) => railPoint(rt, a + ((b - a) * k) / n, o2) as Vec2);
     // (with sleepers, only where the bed is, a rim across each of its ends that isn't the route's end)
@@ -285,7 +287,7 @@ export function crossingPiece(s: Scad, routes: Route[], o: CrossingOptions = CRO
     for (const [e, k] of [[routePose(rt, 0), 1], [routePose(rt, L), -1]] as const) {
       const big = 4 * (L + c.sleeperLen);
       // the half-plane beyond the cut, in the end's frame (+y into the route at the start)
-      const keep = s.w.CrossSection.square([2 * big, big]).translate([-big, cut]).rotate(k > 0 ? 0 : 180).rotate(e[2]).translate([e[0], e[1]]);
+      const keep = s.w.CrossSection.square([2 * big, big]).translate([-big, cutAt(k)]).rotate(k > 0 ? 0 : 180).rotate(e[2]).translate([e[0], e[1]]);
       bed = bed.intersect(keep);
     }
     return bed;
@@ -316,7 +318,7 @@ export function crossingPiece(s: Scad, routes: Route[], o: CrossingOptions = CRO
           const dx = pt[0] - e[0], dy = pt[1] - e[1];
           if (Math.hypot(dx, dy) > c.sleeperLen + 2 * STUD) return true;
           const hd = (e[2] * Math.PI) / 180, along = (-dx * Math.sin(hd) + dy * Math.cos(hd)) * (k ? -1 : 1);
-          return along >= BED_END + WALL + m;
+          return along >= (bufEnd(ri, k ? 'end' : 'start') ? WALL : BED_END + WALL) + m;
         });
       });
       deepCache.set(k, v);
