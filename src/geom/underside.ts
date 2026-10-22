@@ -59,7 +59,7 @@ export function studSpots(s: Scad, t: Track, spots: Spot[], bed: (x: number, y: 
     if (edge || lattice || allHollow) corners.push({ c, tube: edge || lattice });
   });
   const shape = (q: { c: [number, number]; tube: boolean }): CS => (q.tube
-    ? W.CrossSection.circle((TUBE_OD - ANTISTUD_FIT) / 2, 24).subtract(W.CrossSection.circle(TUBE_ID / 2, 24))
+    ? W.CrossSection.circle((TUBE_OD - (t.o.antistudFit ?? ANTISTUD_FIT)) / 2, 24).subtract(W.CrossSection.circle(TUBE_ID / 2, 24))
     : W.CrossSection.circle(POST_D / 2, 24)).translate(q.c);
   const tubes = corners.length ? s.extrude(W.CrossSection.union(corners.map(shape)), PLATE_H) : undefined;
   const squares = spots.filter((_, k) => hol[k])
@@ -94,7 +94,7 @@ export function hollowGrid(s: Scad, t: Track, cav: CS, wd: (lx: number, ly: numb
     if (v === undefined) { const q = wd(4 + i * STUD, 4 + j * STUD); v = W.CrossSection.circle(studR, 12).translate(q).subtract(nearCav(q)).area() < 0.01; deepC.set(k, v); }
     return v;
   };
-  const tubeCS = (q: [number, number]) => W.CrossSection.circle((TUBE_OD - ANTISTUD_FIT) / 2, 24).subtract(W.CrossSection.circle((TUBE_ID + ANTISTUD_FIT) / 2, 24)).translate(q);
+  const tubeCS = (q: [number, number]) => W.CrossSection.circle((TUBE_OD - (t.o.antistudFit ?? ANTISTUD_FIT)) / 2, 24).subtract(W.CrossSection.circle((TUBE_ID + (t.o.antistudFit ?? ANTISTUD_FIT)) / 2, 24)).translate(q);
   const socks: CS[] = [], shapes: CS[] = [], grips: [number, number][] = [];
   // (square sockets, turned with the grid)
   const o0 = wd(0, 0), o1 = wd(1, 0), gridTurn = (Math.atan2(o1[1] - o0[1], o1[0] - o0[0]) * 180) / Math.PI;
@@ -147,11 +147,11 @@ export function edgeGrip(s: Scad, t: Track, part: Man, gp: [number, number, numb
     if (W.CrossSection.circle(TUBE_OD / 2 + 0.2, 24).translate(q).subtract(nearInner(q)).area() > 0.01) continue;
     if (W.CrossSection.circle(10, 24).translate(q).subtract(nearRoof(q)).area() < 0.01) continue;
     // (and where it's hollow: not in a pocket, nor on a tube or post already there)
-    const ring = W.CrossSection.circle((TUBE_OD - ANTISTUD_FIT) / 2, 24).subtract(W.CrossSection.circle((TUBE_ID + ANTISTUD_FIT) / 2, 24)).translate(q);
+    const ring = W.CrossSection.circle((TUBE_OD - (t.o.antistudFit ?? ANTISTUD_FIT)) / 2, 24).subtract(W.CrossSection.circle((TUBE_ID + (t.o.antistudFit ?? ANTISTUD_FIT)) / 2, 24)).translate(q);
     if (ring.intersect(nearMid(q)).area() > 0.5) continue;
     rings.push(ring);
     // (a thin post already there, inside where the tube goes: taken out, or it'd stand in the tube where the stud goes)
-    const bore = W.CrossSection.circle((TUBE_ID + ANTISTUD_FIT) / 2, 24).translate(q);
+    const bore = W.CrossSection.circle((TUBE_ID + (t.o.antistudFit ?? ANTISTUD_FIT)) / 2, 24).translate(q);
     if (bore.intersect(nearMid(q)).area() > 0.05) bores.push(bore);
   }
   const add = [rim.area() > 0.5 ? T(s.extrude(rim, cavH), [0, 0, bottom]) : undefined, rings.length ? T(s.extrude(W.CrossSection.union(rings), cavH), [0, 0, bottom]) : undefined].filter((m): m is Man => !!m);

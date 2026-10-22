@@ -5,7 +5,7 @@
 import { Scad, R, T, type Man } from '../geom/scad';
 import { sweepRoute } from '../geom/sweep';
 import { DEFAULTS as TRACK_DEFAULTS, PLATE_H, Track } from '../geom/track';
-import { CROSSING_DEFAULTS, crossingPiece } from '../geom/crossing';
+import { CROSSING_DEFAULTS, crossingPiece, joinedEnds } from '../geom/crossing';
 import { arena, flat, type Wasm } from '../geom/kernel';
 import { stlBytes } from '../geom/stl';
 import { splitSelfCrossing } from '../route/selfcross';
@@ -233,6 +233,11 @@ export function buildDesign(w: Wasm, design: Design, report: (what: string, frac
   // (forced where a route meets another heading back along it: that route turned round, as orient() does when it's exact, and solved again)
   const flip = new Set((sol.near ?? []).filter((c) => c.opposite && c.ok && splitEdits.force!(c.at)).map((c) => c.routes[1]));
   if (flip.size) { routes = routes.map((rt, k) => (flip.has(k) ? reversedRoute(rt) : rt)); sol = solve(routes, solverOpts, splitEdits); }
+  // (track only with sleepers: each route's own, so a stretch of it (cut into tiles, sections, a switch's cover) has its sleepers where the whole route has them)
+  if (o.sleepers === 'sleepers' && o.ballast === 'none') {
+    const j = joinedEnds(routes);
+    routes = routes.map((rt, i) => ({ ...rt, sleeperFrame: { s0: 0, L: routeLength(rt), in0: j.has(`${i}:start`), in1: j.has(`${i}:end`) } }));
+  }
   // What the canvas draws over the track, in mm: flangeway cuts, check rails,
   // rail crossings and points.
   const g = gauge / 2;
@@ -356,7 +361,7 @@ export function buildDesign(w: Wasm, design: Design, report: (what: string, frac
   /** A part too big for the bed: ringed where it is. */
   const bedIssue = (bb: { min: number[]; max: number[] }) => overlay.issues.push({ at: [(bb.min[0] + bb.max[0]) / 2, (bb.min[1] + bb.max[1]) / 2],
     r: Math.hypot(bb.max[0] - bb.min[0], bb.max[1] - bb.min[1]) / 2, text: `A part ${(bb.max[0] - bb.min[0]).toFixed(0)} x ${(bb.max[1] - bb.min[1]).toFixed(0)} mm: too big for the ${o.printBedX} x ${o.printBedY} print bed` });
-  const track = new Track(scad, { ...TRACK_DEFAULTS, gaugeStuds: design.gaugeStuds });
+  const track = new Track(scad, { ...TRACK_DEFAULTS, gaugeStuds: design.gaugeStuds, studFit: o.studFit, antistudFit: o.antistudFit, sleeperWidthStuds: o.sleeperWidthStuds });
   // (how far each side of a centre line the track's base reaches: its sleepers, or its widest ballast layer)
   const bandHalf = (o.ballast === 'buddy' ? track.c.sleeperLen + 32 : o.ballast === 'ballast' ? track.c.sleeperLen + 16 : track.c.sleeperLen) / 2;
   // (two stretches of track side by side closer than their sleepers' length, nearly parallel: drawn over each other,
@@ -720,7 +725,8 @@ export function buildDesign(w: Wasm, design: Design, report: (what: string, frac
   // ---- the trackwork first (what the plan shows and the hand edits work
   // on), sent on ahead of the pieces, which take longer ----
   const copt = { ...CROSSING_DEFAULTS, gaugeStuds: design.gaugeStuds, grip: design.grip ?? 'edges', flangeway: o.flangeway, flangewayDepth: o.flangewayDepth, checkRailW: o.checkRailW,
-    ballast: o.ballast, bottomStyle: o.bottomStyle, supports: o.endSupports !== false, curveStuds: o.curveStuds };
+    ballast: o.ballast, bottomStyle: o.bottomStyle, supports: o.endSupports !== false, curveStuds: o.curveStuds,
+    studFit: o.studFit, antistudFit: o.antistudFit, sleepers: o.sleepers, sleeperWidthStuds: o.sleeperWidthStuds, sleeperGapStuds: o.sleeperGapStuds };
   const tp = params;
   const netKey = JSON.stringify({ routes, tp, copt, tw });
   let net: ReturnType<typeof networkSplits> | undefined;

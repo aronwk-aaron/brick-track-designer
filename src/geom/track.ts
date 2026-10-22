@@ -16,6 +16,8 @@ export interface TrackOptions {
   studFit: number;         // 0.18
   studH: number;           // 1.8
   sleeperWidthStuds: number; // 2 (LEGO) or 1 (bridge ties)
+  /** the anti-stud tubes' fit (0.06): their outside this much smaller, their bore this much bigger */
+  antistudFit?: number;
 }
 
 export const DEFAULTS: TrackOptions = {

@@ -17,6 +17,8 @@ export interface SwitchParams {
   bladeDiscD: number;       // 14
   leverOffset: number;      // 8
   studH: number;            // 1.8
+  /** the studs' fit (0.18, added to their 4.8 mm) and the anti-stud tubes' (0.06), as the LEGO fit settings */
+  studFit?: number; antistudFit?: number;
   generateBallast: boolean; // false: track only; true: on ballast (switch.scad's generate_ballast)
   /** With ballast: the widest bottom layer (generate_ballast_buddy). */
   ballastBuddy?: boolean;

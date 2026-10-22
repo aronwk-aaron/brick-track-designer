@@ -23,7 +23,8 @@ export function subRoute(rt: Route, s0: number, s1: number, id = rt.id): Route {
     const a = Math.max(s0, st[i]), b = Math.min(s1, st[i] + segLength(sg));
     if (b > a + 1e-6) segments.push(part(sg, a - st[i], b - st[i]));
   });
-  return { id, start: routePose(rt, s0), segments };
+  const f = rt.sleeperFrame;
+  return { id, start: routePose(rt, s0), segments, ...(f && { sleeperFrame: { ...f, s0: f.s0 + s0 } }) };
 }
 /** A pose in frame P's coordinates (P at the origin heading +y). */
 export function toFrame(P: Pose, q: Pose): Pose {

@@ -548,8 +548,29 @@ addEventListener('keydown', (e) => {
   if (e.key === 'p' || e.key === 'P') { show3d = !show3d; set3d(show3d); }
   if ((e.key === 'f' || e.key === 'F') && !e.ctrlKey && !e.metaKey) canvas.fit();
   if (e.key === '?') helpEl.classList.toggle('open');
-  if (e.key === 'Escape') helpEl.classList.remove('open');
+  if (e.key === ',') openSettings(settingsEl.hidden);
+  if (e.key === 'Escape') { helpEl.classList.remove('open'); openSettings(false); }
 });
+
+// Settings: a drawer over the plan's right side, opened from the toolbar (or ","), closed with Esc or its ✕.
+const settingsEl = $('settings');
+function openSettings(on: boolean) {
+  settingsEl.hidden = !on; $('settings-open').classList.toggle('on', on);
+  if (on) { document.documentElement.style.setProperty('--head-h', `${document.querySelector('header')!.offsetHeight}px`); renderOptions(); }
+}
+$('settings-open').addEventListener('click', () => openSettings(settingsEl.hidden));
+$('settings-close').addEventListener('click', () => openSettings(false));
+addEventListener('resize', () => document.documentElement.style.setProperty('--head-h', `${document.querySelector('header')!.offsetHeight}px`));
+{
+  const search = $<HTMLInputElement>('settings-search');
+  search.addEventListener('input', () => { optQuery = search.value.trim(); renderOptions(); });
+  search.addEventListener('keydown', (e) => { if (e.key === 'Escape' && search.value) { e.stopPropagation(); search.value = ''; optQuery = ''; renderOptions(); } });
+  $('settings-fold').addEventListener('click', () => {
+    const fold = OPTION_FORM.some((sec) => openSecs.has(sec.title));
+    for (const sec of OPTION_FORM) { if (fold) openSecs.delete(sec.title); else openSecs.add(sec.title); }
+    keepSecs(); renderOptions();
+  });
+}
 
 // Help
 const helpEl = $('help');
@@ -673,20 +694,40 @@ updateSelbar();
 interface OptCtx { o: PieceOptions; ballast: boolean; fdb: boolean; switches: boolean | undefined }
 interface OptChoice { v: string; t: string; tip?: string; no?: (c: OptCtx) => string | undefined }
 interface OptField {
-  key: string; label: string; help?: string; step?: number; min?: number;
+  key: string; label: string; help?: string; step?: number; min?: number; max?: number;
   choices?: OptChoice[]; check?: boolean;
+  /** a choice's value is a number (stored as one) */
+  numeric?: boolean;
+  /** a small heading over this field, grouping it with the ones after it */
+  sub?: string;
+  /** a number field's help shown under it too (not only on hover) */
+  showHelp?: boolean;
+  /** the form drawn again when it changes (other fields depend on it) */
+  rerender?: boolean;
   /** shown only when this says so */
   when?: (c: OptCtx) => boolean;
   get?: () => string | number | boolean; set?: (v: string | number | boolean) => void;
 }
 interface OptSection { title: string; switches?: boolean; fields: OptField[] }
 const OPTION_FORM: OptSection[] = [
-  { title: 'Underside and ballast', fields: [
-    { key: 'curveStuds', label: 'Studs on the sleepers', choices: [
+  { title: 'Track', fields: [
+    { key: 'gaugeStuds', label: 'Gauge, studs', step: 1, min: 2, max: 10, rerender: true, help: 'Studs between the rails (LEGO\'s is 4); the same as the toolbar\'s Gauge',
+      get: () => design.gaugeStuds, set: (v) => { design.gaugeStuds = Math.round(Number(v)); gauge.value = String(design.gaugeStuds); } },
+    { key: 'sleepers', label: 'Under the rails', choices: [
+      { v: 'bed', t: 'A solid bed', tip: 'The rails on one solid bed, as LEGO\'s switches: strong, and simple to print' },
+      { v: 'sleepers', t: 'Sleepers, with gaps between', tip: 'Where the track is plain, separate sleepers with the rails bridging the gaps between them, as LEGO\'s straight and curved track; the bed stays where tracks meet (switches, crossings, tracks side by side). Drawbacks: the rails bridge the gaps when printed; a part cut for the bed in a gap is joined by its rail tongues only (no peg and clip there)',
+        no: (c) => (c.ballast ? 'track only: ballast fills between the sleepers, level with their tops' : undefined) }] },
+    { key: 'sleeperWidthStuds', label: 'Sleeper width', numeric: true, when: (c) => c.o.sleepers === 'sleepers' && !c.ballast, choices: [
+      { v: '2', t: '2 studs', tip: 'As LEGO\'s sleepers' },
+      { v: '1', t: '1 stud', tip: 'Narrow, as bridge ties: one row of studs on each' }] },
+    { key: 'sleeperGapStuds', label: 'Gap between sleepers, studs', step: 1, min: 1, max: 6, when: (c) => c.o.sleepers === 'sleepers' && !c.ballast, help: 'Studs between one sleeper and the next (LEGO\'s is 2)' },
+    { key: 'curveStuds', label: 'Studs on the track', choices: [
       { v: 'grid', t: 'On the baseplate\'s grid', tip: 'Every stud on the baseplate\'s stud grid, wherever one is clear of the rails: on a curve they make a grid across it, not rows along it' },
       { v: 'follow', t: 'Following the track', tip: 'In rows along each track, on lines straight across it a stud apart, as LEGO\'s straight track has them: on a curve LEGO tiles fit across them. Drawback: on a curve they\'re off the baseplate\'s grid' }] },
+  ] },
+  { title: 'Underside and ballast', fields: [
     { key: 'ballast', label: 'Ballast', choices: [
-      { v: 'none', t: 'None: track only', tip: 'The sleepers and rails on a thin bed, as LEGO track' },
+      { v: 'none', t: 'None: track only', tip: 'The track alone, as LEGO track: its rails on a bed or on sleepers (Track, above)' },
       { v: 'ballast', t: 'Ballast', tip: 'The track on a ballast shoulder' },
       { v: 'buddy', t: 'Ballast + buddy layer', tip: 'Ballast with a wider bottom layer under it' }] },
     { key: 'bottomStyle', label: 'Underside', when: (c) => c.ballast, choices: [
@@ -747,7 +788,7 @@ const OPTION_FORM: OptSection[] = [
   { title: 'Print bed and joints', fields: [
     { key: 'printBedX', label: 'Bed width, mm', step: 1, min: 50 },
     { key: 'printBedY', label: 'Bed depth, mm', step: 1, min: 50 },
-    { key: 'baseplate', label: 'Cut at baseplate edges', help: 'Cut the track where baseplates of this size meet (the dashed orange lines on the plan), so every part sits on one plate', choices: [
+    { key: 'baseplate', label: 'Cut at baseplate edges', numeric: true, help: 'Cut the track where baseplates of this size meet (the dashed orange lines on the plan), so every part sits on one plate', choices: [
       { v: '0', t: 'No' }, { v: '16', t: '16 x 16 studs' }, { v: '32', t: '32 x 32 studs' }, { v: '48', t: '48 x 48 studs' }, { v: '64', t: '64 x 64 studs' }, { v: '96', t: '96 x 96 studs' }] },
     { key: 'baseplateX', label: 'Plate corner x, studs', step: 1, when: (c) => (c.o.baseplate ?? 0) > 0, help: 'Where a baseplate\'s corner is on the grid' },
     { key: 'baseplateY', label: 'Plate corner y, studs', step: 1, when: (c) => (c.o.baseplate ?? 0) > 0, help: 'Where a baseplate\'s corner is on the grid' },
@@ -762,6 +803,10 @@ const OPTION_FORM: OptSection[] = [
       { v: 'flat', t: 'Cut flat', tip: 'The rails cut flat across: nothing overhangs, no supports to print; the bed joint and the baseplate hold the parts in line' }] },
     { key: 'endSupports', label: 'Supports under the rail ends', check: true, help: 'Breakaway print supports under the rail-end tongues at each end; off: let the slicer support them' },
   ] },
+  { title: 'LEGO fit', fields: [
+    { key: 'studFit', label: 'Stud fit, mm', step: 0.01, min: -0.3, max: 0.5, showHelp: true, help: 'Added to the studs\' 4.8 mm: more grips LEGO bricks put on the track harder, less looser (0.18 suits most printers)' },
+    { key: 'antistudFit', label: 'Anti-stud fit, mm', step: 0.01, min: -0.3, max: 0.5, showHelp: true, help: 'The tubes underneath: their outside this much smaller, their bore this much bigger: more grips the baseplate less, less harder (0.06 suits most printers)' },
+  ] },
 ];
 let optSig = '';
 /** After a build: the options panel again if what applies has changed (switches appearing or going). */
@@ -772,7 +817,7 @@ function refreshRoutes() {
   if (sig !== branchSig) { branchSig = sig; render(); }
 }
 function refreshOptions() {
-  if (JSON.stringify([design.options, design.grip, design.pointsPieces, switchesNow()]) !== optSig) renderOptions();
+  if (JSON.stringify([design.options, design.grip, design.pointsPieces, design.gaugeStuds, switchesNow()]) !== optSig) renderOptions();
 }
 /** Switches in the design, as last built (undefined: not built yet). */
 function switchesNow() {
@@ -780,25 +825,41 @@ function switchesNow() {
   const items = canvas?.overlay?.items;
   return items && items.some((it) => it.kind === 'points' && !it.off && !it.cand);
 }
+/** Which settings sections are open (by title), remembered in this browser; the search box's text. */
+const openSecs: Set<string> = (() => { try { const v = JSON.parse(localStorage.getItem('btd-settings-open') ?? 'null'); if (Array.isArray(v)) return new Set<string>(v); } catch { /* (none kept) */ } return new Set(OPTION_FORM.slice(0, 2).map((sec) => sec.title)); })();
+const keepSecs = () => { try { localStorage.setItem('btd-settings-open', JSON.stringify([...openSecs])); } catch { /* (not kept) */ } };
+let optQuery = '';
 function renderOptions() {
   const body = $('options-body'), scroll = $('options').scrollTop;
   const o = { ...OPTION_DEFAULTS, ...design.options } as PieceOptions;
   const c: OptCtx = { o, ballast: o.ballast !== 'none', fdb: o.mechStyle !== 'tines', switches: switchesNow() };
-  optSig = JSON.stringify([design.options, design.grip, design.pointsPieces, c.switches]);
+  optSig = JSON.stringify([design.options, design.grip, design.pointsPieces, design.gaugeStuds, c.switches]);
   body.replaceChildren();
   const setOpt = (f: OptField, v: string | number | boolean) => {
     if (f.set) f.set(v); else design.options = { ...design.options, [f.key]: v };
   };
+  // (searching: only the fields whose label, help or choices have every word in them, their sections open)
+  const words = optQuery.toLowerCase().split(/\s+/).filter(Boolean);
+  const hit = (f: OptField) => { const txt = [f.label, f.help, ...(f.choices ?? []).flatMap((ch) => [ch.t, ch.tip])].join(' ').toLowerCase(); return words.every((w) => txt.includes(w)); };
+  let shown = 0;
   for (const sec of OPTION_FORM) {
-    const h = document.createElement('h4'); h.textContent = sec.title; body.append(h);
+    const fields = sec.fields.filter((f) => (!f.when || f.when(c)) && (!words.length || hit(f)));
+    if (words.length && !fields.length) continue;
+    const det = document.createElement('details'); det.className = 'osec';
+    det.open = words.length > 0 || openSecs.has(sec.title);
+    const sum = document.createElement('summary'); sum.textContent = sec.title;
+    const n = document.createElement('span'); n.className = 'n'; n.textContent = String(fields.length); sum.append(n);
+    det.append(sum);
+    det.addEventListener('toggle', () => { if (words.length) return; if (det.open) openSecs.add(sec.title); else openSecs.delete(sec.title); keepSecs(); });
     const box = document.createElement('div'); box.className = 'sec';
     if (sec.switches && c.switches === false) {
       box.classList.add('idle');
-      const n = document.createElement('div'); n.className = 'note'; n.textContent = 'No switches in this design yet: these apply where a track branches off another.';
-      box.append(n);
+      const nt = document.createElement('div'); nt.className = 'note'; nt.textContent = 'No switches in this design yet: these apply where a track branches off another.';
+      box.append(nt);
     }
-    for (const f of sec.fields) {
-      if (f.when && !f.when(c)) continue;
+    for (const f of fields) {
+      shown++;
+      if (f.sub) { const h = document.createElement('div'); h.className = 'sub'; h.textContent = f.sub; box.append(h); }
       const cur = f.get ? f.get() : (o as unknown as Record<string, string | number | boolean>)[f.key];
       if (f.choices) {
         const sel = document.createElement('select');
@@ -814,23 +875,29 @@ function renderOptions() {
         d.textContent = [why && `This ${why}: it isn't built as chosen.`, chosen?.tip, f.help].filter(Boolean).join(' · ');
         if (why) d.classList.add('bad');
         sel.title = f.help ?? '';
-        sel.addEventListener('change', () => { setOpt(f, f.key === 'baseplate' ? Number(sel.value) : sel.value); changed(true); renderOptions(); });
+        sel.addEventListener('change', () => { setOpt(f, f.numeric ? Number(sel.value) : sel.value); changed(true); renderOptions(); });
         box.append(lab); if (d.textContent) box.append(d);
       } else if (f.check) {
         const cb = document.createElement('input'); cb.type = 'checkbox'; cb.checked = cur !== false; cb.title = f.help ?? '';
-        cb.addEventListener('change', () => { setOpt(f, cb.checked); changed(true); });
+        cb.addEventListener('change', () => { setOpt(f, cb.checked); changed(true); renderOptions(); });
         box.append(field(f.label, cb));
+        if (f.help) { const d = document.createElement('small'); d.className = 'desc'; d.textContent = f.help; box.append(d); }
       } else {
-        const i = num(Number(cur), (n) => setOpt(f, f.min !== undefined ? Math.max(f.min, n) : n), f.step ?? 1, f.help ?? '');
+        const lim = (v: number) => Math.min(f.max ?? Infinity, Math.max(f.min ?? -Infinity, v));
+        const i = num(Number(cur), (v) => { const x = lim(v); setOpt(f, x); i.value = String(x); if (f.rerender) renderOptions(); }, f.step ?? 1, f.help ?? '');
         if (f.min !== undefined) i.min = String(f.min);
+        if (f.max !== undefined) i.max = String(f.max);
         box.append(field(f.label, i));
+        if (f.help && f.showHelp) { const d = document.createElement('small'); d.className = 'desc'; d.textContent = f.help; box.append(d); }
       }
     }
-    body.append(box);
+    det.append(box); body.append(det);
   }
-  const reset = btn('Reset to defaults', () => { design.options = {}; delete design.grip; delete design.pointsPieces; renderOptions(); }, 'Every piece option back to its default (Undo brings them back)');
+  if (words.length && !shown) { const nm = document.createElement('div'); nm.className = 'nomatch'; nm.textContent = `No setting matches “${optQuery}”.`; body.append(nm); }
+  const reset = btn('Reset to defaults', () => { design.options = {}; delete design.grip; delete design.pointsPieces; renderOptions(); }, 'Every piece setting back to its default (Undo brings them back; the gauge stays)');
   reset.classList.add('reset'); body.append(reset);
   $('options').scrollTop = scroll;
+  $('settings-fold').textContent = OPTION_FORM.some((sec) => openSecs.has(sec.title)) ? 'Fold all' : 'Open all';
 }
 renderOptions();
 

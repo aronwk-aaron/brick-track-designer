@@ -47,19 +47,35 @@
     aside .head { display: flex; align-items: center; gap: 6px; padding: 8px 10px; border-bottom: 1px solid var(--line); }
     aside .head h2 { font-size: 13px; margin: 0; flex: 1; }
     #routes { overflow: auto; padding: 8px; flex: 1; min-height: 120px; }
-    #trackwork { border-top: 1px solid var(--line); padding: 6px 10px 10px; max-height: 40%; overflow: auto; flex: 0 1 auto; }
-    #trackwork > summary { cursor: pointer; font-weight: 600; padding: 4px 0; }
+    #trackwork { border-top: 1px solid var(--line); padding: 6px 10px 10px; max-height: 60%; overflow: auto; flex: 0 1 auto; }
+    #trackwork > summary { cursor: pointer; font-weight: 600; padding: 4px 0; position: sticky; top: -6px; z-index: 1; background: var(--panel); }
     #trackwork .tw { border: 1px solid var(--line); border-radius: 6px; padding: 4px 6px; margin: 4px 0; }
     #trackwork .tw:hover { border-color: #f0b400; }
     #trackwork .tw b { font-size: 12px; }
     #trackwork .tw .field { grid-template-columns: 1fr 64px; }
     #trackwork .tw .field.stack { grid-template-columns: minmax(0, 1fr); gap: 2px; }
     #trackwork .none { color: var(--muted); font-size: 12px; }
-    #trackwork > summary .count, #options > summary .count { font-weight: 400; color: var(--muted); }
+    #trackwork > summary .count { font-weight: 400; color: var(--muted); }
     #trackwork .row button, #trackwork > div > button { margin-top: 6px; }
-    #options { border-top: 1px solid var(--line); padding: 6px 10px 10px; max-height: 45%; overflow: auto; flex: 0 1 auto; }
-    #options > summary { cursor: pointer; font-weight: 600; padding: 4px 0; }
-    #options h4 { margin: 10px 0 4px; font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em; }
+    /* settings: a drawer over the right of the plan and 3D view, each section folding, its header kept in view */
+    #settings { position: fixed; right: 0; top: var(--head-h, 44px); bottom: 0; width: min(440px, 100vw); z-index: 5; display: flex; flex-direction: column;
+      background: var(--panel); border-left: 1px solid var(--line); box-shadow: -4px 0 16px rgba(0,0,0,0.15); }
+    #settings[hidden] { display: none; }
+    #settings .shead { display: flex; gap: 6px; align-items: center; padding: 8px 10px; border-bottom: 1px solid var(--line); }
+    #settings .shead h2 { font-size: 13px; margin: 0 4px 0 0; }
+    #settings .shead input { flex: 1; min-width: 0; background: var(--panel); border: 1px solid var(--line); border-radius: 5px; padding: 3px 6px; }
+    #settings .shead button { padding: 2px 8px; }
+    #options { overflow: auto; flex: 1; padding: 0 10px 10px; }
+    #options details.osec { border-bottom: 1px solid var(--line); }
+    #options details.osec > summary { position: sticky; top: 0; z-index: 2; background: var(--panel); cursor: pointer; list-style: none; padding: 8px 0 6px;
+      font-size: 12px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em; display: flex; gap: 6px; }
+    #options details.osec > summary::-webkit-details-marker { display: none; }
+    #options details.osec > summary::before { content: '▸'; } #options details.osec[open] > summary::before { content: '▾'; }
+    #options details.osec > summary .n { margin-left: auto; font-weight: 400; text-transform: none; letter-spacing: 0; }
+    #options details.osec > .sec { padding-bottom: 8px; }
+    #options .sub { margin: 10px 0 2px; font-size: 11.5px; font-weight: 600; color: var(--ink); }
+    #options .nomatch { color: var(--muted); padding: 12px 0; }
+    #options mark { background: rgba(240,180,0,0.35); color: inherit; border-radius: 2px; }
     #options .field select { width: 100%; }
     .field.stack { grid-template-columns: minmax(0, 1fr); gap: 2px; margin-top: 8px; }
     #options .desc { display: block; color: var(--muted); font-size: 11.5px; margin: 2px 0 4px; }
@@ -72,6 +88,7 @@
     details.route[open] { background: var(--raise); }
     details.route.selected { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
     details.route > summary { display: flex; gap: 8px; align-items: baseline; padding: 7px 9px; cursor: pointer; list-style: none; }
+    details.route[open] > summary { position: sticky; top: -8px; z-index: 1; background: var(--raise); border-radius: 8px 8px 0 0; border-bottom: 1px solid var(--line); }
     details.route > summary::-webkit-details-marker { display: none; }
     details.route > summary::before { content: '▸'; color: var(--muted); } details.route[open] > summary::before { content: '▾'; }
     details.route > summary b { white-space: nowrap; }
@@ -177,7 +194,7 @@
     <h1>Brick Track Designer</h1>
     <button id="about-open" type="button" title="What this is, and its source code">About</button>
     <a id="source-link" href="https://github.com/aronwk-aaron/brick-track-designer" target="_blank" rel="noopener" title="The source code, on GitHub">Source ↗</a>
-    <button id="toggle-panel" type="button" title="Show or hide the side panel (routes, trackwork, piece options)">☰</button>
+    <button id="toggle-panel" type="button" title="Show or hide the side panel (routes, trackwork)">☰</button>
     <span class="sep"></span>
     <span class="group" role="group" aria-label="Tool">
       <button id="mode-select" class="on" type="button" title="Select tracks (S): click, Shift+click for more; drag to move them; Delete removes them">⬚ Select</button><button id="mode-draw" type="button" title="Lay track (D)">✎ Draw</button>
@@ -195,6 +212,7 @@
     <span class="spacer"></span>
     <button id="fit" type="button" title="Fit the track in view (F)">⤢<span class="lbl"> Fit</span></button>
     <button id="toggle-3d" class="on" type="button" title="Show or hide the 3D preview (P)">3D</button>
+    <button id="settings-open" type="button" title="Every setting for the pieces: track, underside and ballast, switches, joints, fit (,)">⚙<span class="lbl"> Settings</span></button>
     <span class="sep"></span>
     <button id="load" type="button" title="Open a saved design (.btd.json) (Ctrl+O)">Open</button>
     <button id="save" type="button" title="Save the design as a file (Ctrl+S); it's also kept in this browser as you work">Save</button>
@@ -205,8 +223,16 @@
     <div class="head"><h2 id="routes-title">Routes</h2><button id="add-route" type="button" title="Add a route by numbers">+ Route</button></div>
     <div id="routes"></div>
     <details id="trackwork"><summary title="The check rails, flangeway cuts, points and levers the app works out, each to change by hand">Trackwork<span id="trackwork-count" class="count"></span></summary><div id="trackwork-body"></div></details>
-    <details id="options"><summary>Piece options</summary><div id="options-body"></div></details>
   </aside>
+  <section id="settings" hidden aria-label="Settings">
+    <div class="shead">
+      <h2>Settings</h2>
+      <input id="settings-search" type="search" placeholder="Find a setting…" title="Show only the settings whose name or description has this in it">
+      <button id="settings-fold" type="button" title="Fold every section (or open them all)">Fold all</button>
+      <button id="settings-close" type="button" title="Close (Esc)">✕</button>
+    </div>
+    <div id="options"><div id="options-body"></div></div>
+  </section>
   <main>
     <div id="plan">
       <canvas id="track"></canvas>
@@ -231,7 +257,7 @@
       <div id="help" class="chip" role="dialog" aria-label="Help">
         <h3 id="about">About</h3>
         <p>Brick Track Designer lays out LEGO-compatible train track (switches, crossings, crossovers, yards) and makes it into
-          parts to 3D print: STL or 3MF, cut to your print bed, joined like LEGO track. It runs in your browser: nothing you
+          parts to 3D print: STL files cut to your print bed, joined like LEGO track. It runs in your browser: nothing you
           draw leaves your computer.</p>
         <p>Free and open source (AGPL-3.0): <a href="https://github.com/aronwk-aaron/brick-track-designer" target="_blank" rel="noopener">source code and issues on GitHub</a>.
           Made with three.js and the manifold geometry kernel.</p>

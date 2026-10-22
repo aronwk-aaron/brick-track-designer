@@ -270,7 +270,7 @@ export function switchPlan(routes: Route[], specs: SetSpec[], p: BaseParams = BA
       p = { ...p, leverReach: Math.max(p.leverReach ?? 10, Math.ceil(half / Math.sin((17 * Math.PI) / 180))) };
     }
   const g = switchGlobals(p), G = g.G;
-  const tc = new Track({} as Scad, { ...TRACK_DEFAULTS, gaugeStuds: p.gaugeStuds, studH: p.studH }).c;
+  const tc = new Track({} as Scad, { ...TRACK_DEFAULTS, gaugeStuds: p.gaugeStuds, studH: p.studH, studFit: p.studFit ?? TRACK_DEFAULTS.studFit, antistudFit: p.antistudFit }).c;
   const sleeperW = tc.sleeperW, sleeperLen = tc.sleeperLen;
   const nRoutes = routes.length;
   const sets = specs.map((ps) => (ps[4] === undefined
@@ -492,7 +492,7 @@ function sphereScad(s: Scad, r: number, fn: number, scaleZ = 1): Man {
 /** extraCuts: cut from the base too (in its frame: hand-widened flangeways). */
 export function switchGeometry(s: Scad, plan: SwitchPlan, extraCuts: Man[] = []) {
   const { p, g, G, routes, nRoutes, sets, sleeperW, sleeperLen } = plan;
-  const t = new Track(s, { ...TRACK_DEFAULTS, gaugeStuds: p.gaugeStuds, studH: p.studH });
+  const t = new Track(s, { ...TRACK_DEFAULTS, gaugeStuds: p.gaugeStuds, studH: p.studH, studFit: p.studFit ?? TRACK_DEFAULTS.studFit, antistudFit: p.antistudFit });
   const tc = t.c, c = p.pointClearance;
   const railTop = PLATE_H + 6.4, endTrim = 4, stemHw = 2.5;
   const pieceBottomZ = g.pieceBottomZ, bedTop = g.bedTop, partZ0 = g.layerZ0;
@@ -1532,7 +1532,7 @@ export function switchGeometry(s: Scad, plan: SwitchPlan, extraCuts: Man[] = [])
     const under = T(s.extrude(W.CrossSection.union([cav, ...socks]), g.bottomCavity + 0.01), [0, 0, pieceBottomZ - 0.01]);
     const rings: CS[] = [];
     for (let x = Math.floor(xr[0] / 8) * 8; x <= xr[1] + 1e-9; x += 8) for (let y = 0; y <= plan.baseY1 + 1e-9; y += 8)
-      rings.push(circle((6.51 - 0.06) / 2, 32, [x, y]).subtract(circle((4.8 + 0.06) / 2, 32, [x, y])));
+      rings.push(circle((6.51 - (p.antistudFit ?? 0.06)) / 2, 32, [x, y]).subtract(circle((4.8 + (p.antistudFit ?? 0.06)) / 2, 32, [x, y])));
     const tubes = T(s.extrude(W.CrossSection.union(rings).intersect(cav), g.bottomCavity), [0, 0, pieceBottomZ]);
     return { under, tubes };
   };

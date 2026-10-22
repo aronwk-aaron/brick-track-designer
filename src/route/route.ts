@@ -17,6 +17,11 @@ export interface Route {
   segments: Segment[];
   /** (editor) a branch's lever side, if set per switch */
   throwSide?: 'auto' | 'left' | 'right';
+  /**
+   * (sleepers) the whole route this is a stretch of, so its sleepers fall where the whole route's do: where this one
+   * starts along it (s0), its length (L), and whether each of its ends runs on into another route (in0, in1)
+   */
+  sleeperFrame?: { s0: number; L: number; in0: boolean; in1: boolean };
 }
 
 const rad = (d: number) => (d * Math.PI) / 180;
