@@ -2,7 +2,7 @@
 // 3D piece on the right, rebuilt in a worker as you edit.
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
-import { type Design, type DRoute, type DSeg, OPTION_DEFAULTS, type PieceOptions, TEMPLATES, type Trackwork, endOf, freeName } from './design';
+import { type Design, type DRoute, type DSeg, OPTION_DEFAULTS, type PieceOptions, RAIL_DEFAULTS, TEMPLATES, type Trackwork, endOf, freeName } from './design';
 import { TrackCanvas, type OverlayItem, leverSide, leverSlides, typingIn } from './canvas';
 import { describe } from './planner';
 import type { Piece } from './build';
@@ -47,6 +47,65 @@ function segRow(r: DRoute, k: number): HTMLElement {
     field('angle ° (+ left)', num(sg.angle, (n) => { (sg as Extract<DSeg, { kind: 'curve' }>).angle = n; }, 0.5)));
   row.append(btn('✕', () => { r.segs.splice(k, 1); }, 'Remove this segment'));
   return row;
+}
+
+type Choice = { v: string; t: string; tip: string };
+const ENDS_LEFT_OUT = 'They\'re left out wherever another track comes within a sleeper length (switches, crossings, a track close alongside): there they stop short, plain.';
+/** A route card's bridge guard rails and dual gauge (straight.scad's guard_* and dual_* settings), each off unless turned on. */
+function extraRailFields(r: DRoute, body: HTMLElement) {
+  const d = { ...RAIL_DEFAULTS, ...Object.fromEntries(Object.entries(r).filter(([, v]) => v !== undefined)) } as typeof RAIL_DEFAULTS & DRoute;
+  const pick = (label: string, cur: string, choices: Choice[], set: (v: string) => void) => {
+    const sel = document.createElement('select');
+    for (const ch of choices) { const op = new Option(ch.t, ch.v); op.title = ch.tip; sel.append(op); }
+    sel.value = cur;
+    const tip = choices.find((ch) => ch.v === cur)?.tip ?? '';
+    sel.title = tip;
+    sel.addEventListener('change', () => { set(sel.value); changed(true); });
+    const f = field(label, sel); f.classList.add('stack'); body.append(f);
+    const n = document.createElement('small'); n.className = 'desc'; n.style.color = 'var(--muted)'; n.textContent = tip; body.append(n);
+  };
+  const ends = (what: string, at: string): Choice[] => [
+    { v: 'none', t: 'Neither end', tip: `${what} at both ends` },
+    { v: 'start', t: 'The start', tip: `${at} at the start (where the route was drawn from); ${what.toLowerCase()} at the end` },
+    { v: 'end', t: 'The end', tip: `${at} at the end; ${what.toLowerCase()} at the start` },
+    { v: 'both', t: 'Both ends', tip: `${at} at both ends` }];
+  const studs = (label: string, v: number, step: number, min: number, max: number, set: (n: number) => void, tip: string) => {
+    const i = num(v, (n) => set(Math.min(max, Math.max(min, n))), step, tip); i.min = String(min); i.max = String(max);
+    body.append(field(label, i));
+  };
+  pick('Bridge guard rails', r.guardRails ? 'on' : 'off', [
+    { v: 'off', t: 'None', tip: 'Just the two running rails' },
+    { v: 'on', t: 'Guard rails inside the running rails', tip: `A guard rail just inside each running rail, as on bridges, to keep a derailed train on the bridge. More to print, and fewer studs between the rails (none near the guard rails). ${ENDS_LEFT_OUT}` }],
+  (v) => { r.guardRails = v === 'on' || undefined; });
+  if (r.guardRails) {
+    pick('Guard rails come to a point at', d.guardRailEnds, ends('Rail ends that carry on into the next piece\'s guard rails', 'They curve in to a point on the centre line (the start of a bridge)'), (v) => { r.guardRailEnds = v as DRoute['guardRailEnds']; });
+    studs('Gap from the running rails, studs', d.guardRailGapStuds, 0.05, 0.45, 1.25, (n) => { r.guardRailGapStuds = n; }, 'Between each running rail\'s head and its guard rail (real bridges: about a sixth of the gauge, 0.8 at the LEGO gauge). Narrower catches a wheel sooner; too narrow and a wheel\'s back can rub it');
+    if (d.guardRailEnds !== 'none') {
+      studs('Point length, studs', d.guardRailTaperStuds, 1, 2, 24, (n) => { r.guardRailTaperStuds = n; }, 'From the point to where the guard rails run parallel (shortened on a route too short for it)');
+      pick('Point shape', d.guardRailTaperShape, [
+        { v: 'straight', t: 'Straight in', tip: 'Straight in from the point, bent where they meet the parallel guard rails, as on real bridges' },
+        { v: 'curve', t: 'One smooth curve', tip: 'One smooth curve from the point, meeting the parallel guard rails without a bend; wider sooner, so fewer studs near the point' }],
+      (v) => { r.guardRailTaperShape = v as DRoute['guardRailTaperShape']; });
+      studs('Nose ramp, studs', d.guardRailNoseRampStuds, 0.25, 0, 5, (n) => { r.guardRailNoseRampStuds = n; }, 'The point\'s nose ramps down from the rail top to just above the bed over this length, so anything dragging rides over it (0: no ramp, a blunt full-height nose)');
+    }
+  }
+  pick('Dual gauge', r.dualGauge ? 'on' : 'off', [
+    { v: 'off', t: 'No', tip: 'One gauge' },
+    { v: 'on', t: 'A third rail for a narrower gauge', tip: `A third rail, so a narrower gauge's trains run on it and one of the running rails. More to print, and no studs near the third rail. Needs a narrower gauge than the track's. ${ENDS_LEFT_OUT}` }],
+  (v) => { r.dualGauge = v === 'on' || undefined; });
+  if (r.dualGauge) {
+    const gs = design.gaugeStuds;
+    studs('Narrow gauge, studs between its rails', d.dualGaugeStuds, 1, 1, 9, (n) => { r.dualGaugeStuds = Math.round(n); }, '2: the LEGO narrow gauge. Must be less than the track\'s gauge');
+    if (d.dualGaugeStuds >= gs) {
+      const n = document.createElement('small'); n.className = 'desc';
+      n.textContent = `The narrow gauge must be less than the track's (${gs} studs): no third rail is built.`; body.append(n);
+    }
+    pick('Rail both gauges share', d.dualShared, [
+      { v: 'right', t: 'The right rail', tip: 'The narrow gauge runs on the right-hand running rail (as you face along the route as drawn) and the third rail' },
+      { v: 'left', t: 'The left rail', tip: 'The narrow gauge runs on the left-hand running rail (as you face along the route as drawn) and the third rail' }],
+    (v) => { r.dualShared = v as DRoute['dualShared']; });
+    pick('Ends that meet single-gauge track', d.dualPlainEnds, ends('The third rail has a rail end that locks into the next dual-gauge piece\'s', 'The third rail stops short, clear of a plain piece\'s end connector'), (v) => { r.dualPlainEnds = v as DRoute['dualPlainEnds']; });
+  }
 }
 
 // Which route cards are open (by index); the selected one always is.
@@ -116,6 +175,7 @@ function render() {
         body.append(n);
       }
     }
+    extraRailFields(r, body);
     const add = document.createElement('div'); add.className = 'row';
     add.append(
       btn('+ Straight', () => r.segs.push({ kind: 'straight', studs: 16 })),

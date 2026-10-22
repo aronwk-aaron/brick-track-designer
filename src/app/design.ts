@@ -1,6 +1,6 @@
 // The editor's document: routes in studs and degrees, as people enter them,
 // and their conversion to the solver's routes in mm.
-import type { Route, Segment } from '../route/route';
+import type { ExtraRails, Route, RouteEnds, Segment } from '../route/route';
 import { routeLength, routePose } from '../route/route';
 
 export const STUD = 8;
@@ -16,7 +16,27 @@ export interface DRoute {
   /** What the route's start / end is: an ordinary end connector (default), or a buffer stop (buffer.scad: the rails run into two posts joined by a buffer beam, no connector). */
   startEnd?: 'connector' | 'buffer';
   endEnd?: 'connector' | 'buffer';
+  /** Bridge guard rails: one inside each running rail (straight.scad's guard_rails; the rest left out = the defaults in RAIL_DEFAULTS). */
+  guardRails?: boolean;
+  /** Which ends of the route as drawn the guard rails come to a point at (guard_rail_ends). */
+  guardRailEnds?: RouteEnds;
+  guardRailGapStuds?: number;
+  guardRailTaperStuds?: number;
+  guardRailTaperShape?: 'straight' | 'curve';
+  guardRailNoseRampStuds?: number;
+  /** Dual gauge: a third rail for a narrower gauge sharing one running rail (dual_gauge). */
+  dualGauge?: boolean;
+  dualGaugeStuds?: number;
+  /** The running rail both gauges share, right or left of the route as drawn (dual_shared). */
+  dualShared?: 'right' | 'left';
+  /** Ends of the route as drawn that meet plain track: the third rail stops short there (dual_plain_ends). */
+  dualPlainEnds?: RouteEnds;
 }
+/** The extra rails' settings left out of a route (straight.scad's defaults). */
+export const RAIL_DEFAULTS = {
+  guardRailEnds: 'none' as RouteEnds, guardRailGapStuds: 0.8, guardRailTaperStuds: 8, guardRailTaperShape: 'straight' as 'straight' | 'curve', guardRailNoseRampStuds: 1.5,
+  dualGaugeStuds: 2, dualShared: 'right' as 'right' | 'left', dualPlainEnds: 'none' as RouteEnds,
+};
 export interface Design {
   version: 1; gaugeStuds: number; routes: DRoute[];
   /** The design's name: the file names it saves and downloads under. */
@@ -132,14 +152,26 @@ export function bufferEnds(d: Design): [number, number][] {
 }
 
 export function toRoutes(d: Design): Route[] {
-  return d.routes.map((r, i) => ({
-    id: r.name || String(i),
-    throwSide: r.throwSide,
-    start: [r.x * STUD, r.y * STUD, r.heading],
-    segments: r.segs.map((sg): Segment => (sg.kind === 'straight'
-      ? { kind: 'straight', length: sg.studs * STUD }
-      : { kind: 'arc', radius: sg.radius * STUD, angle: sg.angle })),
-  }));
+  return d.routes.map((r, i) => {
+    const rt: Route = {
+      id: r.name || String(i),
+      throwSide: r.throwSide,
+      start: [r.x * STUD, r.y * STUD, r.heading],
+      segments: r.segs.map((sg): Segment => (sg.kind === 'straight'
+        ? { kind: 'straight', length: sg.studs * STUD }
+        : { kind: 'arc', radius: sg.radius * STUD, angle: sg.angle })),
+    };
+    // (its extra rails, only if it has any: a route without them is as it always was)
+    if (r.guardRails || r.dualGauge) {
+      const v = { ...RAIL_DEFAULTS, ...Object.fromEntries(Object.entries(r).filter(([, x]) => x !== undefined)) } as typeof RAIL_DEFAULTS & DRoute, len = routeLength(rt);
+      const extra: ExtraRails = {
+        guard: !!r.guardRails, guardEnds: v.guardRailEnds, guardGapStuds: v.guardRailGapStuds, guardTaperStuds: v.guardRailTaperStuds, guardShape: v.guardRailTaperShape, guardRampStuds: v.guardRailNoseRampStuds,
+        dual: !!r.dualGauge, dualStuds: v.dualGaugeStuds, dualShared: v.dualShared, dualPlainEnds: v.dualPlainEnds, from: 0, to: len, len,
+      };
+      rt.extra = extra;
+    }
+    return rt;
+  });
 }
 
 /** A name for a new route, prefix and the first number no route has (routes are known by their names: two the same would be mixed up). */

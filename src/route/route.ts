@@ -22,7 +22,41 @@ export interface Route {
    * starts along it (s0), its length (L), and whether each of its ends runs on into another route (in0, in1)
    */
   sleeperFrame?: { s0: number; L: number; in0: boolean; in1: boolean };
+  /** (editor) bridge guard rails and a dual-gauge third rail along it (geom/extrarails.ts); unset: none */
+  extra?: ExtraRails;
 }
+
+export type RouteEnds = 'none' | 'start' | 'end' | 'both';
+/**
+ * A route's extra rails (straight.scad / curves.scad's guard_* and dual_*
+ * settings), and which stretch of the route as drawn this route is, so a
+ * route cut up (tiles, sections, a self-crossing) or turned round still has
+ * them where they were and "start" / "end" still mean the drawn route's.
+ */
+export interface ExtraRails {
+  guard: boolean;
+  guardEnds: RouteEnds;     // which drawn ends the guard rails come to a point at
+  guardGapStuds: number;    // gap from each running rail's head
+  guardTaperStuds: number;  // each pointed end's length
+  guardShape: 'straight' | 'curve';
+  guardRampStuds: number;   // the point's nose ramp (0: none)
+  dual: boolean;
+  dualStuds: number;        // the narrow gauge (studs between its rails)
+  dualShared: 'right' | 'left'; // the running rail both gauges use (right / left of the route as drawn)
+  dualPlainEnds: RouteEnds; // drawn ends meeting plain track: the third rail stops short there
+  /** arc lengths along the drawn route at this route's start and end (from > to: it runs the other way), and the drawn route's length */
+  from: number; to: number; len: number;
+  /** where along the drawn route they may run (clear of other routes), drawn arc lengths; unset: worked out from the routes in the piece */
+  clear?: [number, number][];
+}
+
+/** The extra rails of a route's stretch s0..s1 (subRoute), or of it turned round. */
+export function subExtra(x: ExtraRails | undefined, s0: number, s1: number): ExtraRails | undefined {
+  if (!x) return undefined;
+  const d = x.to >= x.from ? 1 : -1;
+  return { ...x, from: x.from + d * s0, to: x.from + d * s1 };
+}
+export const reversedExtra = (x: ExtraRails | undefined): ExtraRails | undefined => (x ? { ...x, from: x.to, to: x.from } : undefined);
 
 const rad = (d: number) => (d * Math.PI) / 180;
 const deg = (r: number) => (r * 180) / Math.PI;

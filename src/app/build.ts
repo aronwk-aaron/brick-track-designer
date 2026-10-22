@@ -6,6 +6,7 @@ import { Scad, R, T, type Man } from '../geom/scad';
 import { sweepRoute } from '../geom/sweep';
 import { DEFAULTS as TRACK_DEFAULTS, PLATE_H, Track } from '../geom/track';
 import { CROSSING_DEFAULTS, crossingPiece, joinedEnds } from '../geom/crossing';
+import { markClear } from '../geom/extrarails';
 import { arena, flat, type Wasm } from '../geom/kernel';
 import { stlBytes } from '../geom/stl';
 import { splitSelfCrossing } from '../route/selfcross';
@@ -263,6 +264,8 @@ function buildOne(w: Wasm, design: Design, report: (what: string, frac: number) 
     const j = joinedEnds(routes);
     routes = routes.map((rt, i) => ({ ...rt, sleeperFrame: { s0: 0, L: routeLength(rt), in0: j.has(`${i}:start`), in1: j.has(`${i}:end`) } }));
   }
+  // (guard rails and third rails: where each may run, clear of the other routes, worked out on the whole design so its parts agree)
+  if (routes.some((rt) => rt.extra)) routes = markClear(routes, gauge + 24);
   // What the canvas draws over the track, in mm: flangeway cuts, check rails,
   // rail crossings and points.
   const g = gauge / 2;

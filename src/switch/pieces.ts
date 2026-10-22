@@ -5,7 +5,7 @@
 // fixed trackwork piece (crossings and plain track).
 import type { Pose, Pt, Route, Segment } from '../route/route';
 import type { SetOver } from './base';
-import { routeLat, routeLength, routePose, segLength, segStarts } from '../route/route';
+import { routeLat, routeLength, routePose, segLength, segStarts, subExtra } from '../route/route';
 import type { Split } from '../route/solver';
 import { type BaseParams, BASE_DEFAULTS, type SetSpec, switchPlan, type SwitchPlan } from './base';
 
@@ -24,7 +24,7 @@ export function subRoute(rt: Route, s0: number, s1: number, id = rt.id): Route {
     if (b > a + 1e-6) segments.push(part(sg, a - st[i], b - st[i]));
   });
   const f = rt.sleeperFrame;
-  return { id, start: routePose(rt, s0), segments, ...(f && { sleeperFrame: { ...f, s0: f.s0 + s0 } }) };
+  return { id, start: routePose(rt, s0), segments, ...(f && { sleeperFrame: { ...f, s0: f.s0 + s0 } }), ...(rt.extra && { extra: subExtra(rt.extra, s0, s1) }) };
 }
 /** A pose in frame P's coordinates (P at the origin heading +y). */
 export function toFrame(P: Pose, q: Pose): Pose {

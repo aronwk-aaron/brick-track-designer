@@ -117,12 +117,20 @@ export class Track {
     return this.s.polygon([[-offL, 0], [2 - offL, 1.9], [6 + offL, 1.9], [8 + offL, 0]]).extrude(h);
   }
 
-  /** endpoint_base(peg_and_clip, stud_recesses) without extra rails. */
-  endpointBase(pegAndClip = true, studRecesses = false): Man {
+  /**
+   * endpoint_base(peg_and_clip, stud_recesses, xfs): xfs, the extra rails'
+   * offsets in this end's frame (extra_rails()), get room for the next
+   * piece's rail ends; guardX, the guard rails' offset if the piece has them
+   * (the posts keep clear of them: endpoint_offsets()).
+   */
+  endpointBase(pegAndClip = true, studRecesses = false, xfs: number[] = [], guardX?: number): Man {
     const s = this.s, c = this.c, g = c.railOffset;
     const off = 0.1;
     const capW = c.sleeperLen / 2 - (g + 4);
-    const posts = [-c.outerPostX, ...c.betweenRailsRaw, c.outerPostX];
+    const clr = c.railFootHalfW + this.o.studD / 2 + 0.3, gclr = 3.0 + this.o.studD / 2 + 0.3;
+    const offs = !xfs.length && guardX === undefined ? c.betweenRailsRaw
+      : c.betweenRailsRaw.filter((o) => xfs.every((xf) => Math.abs(o - xf) >= clr) && (guardX === undefined || Math.abs(Math.abs(o) - guardX) >= gclr));
+    const posts = [-c.outerPostX, ...offs, c.outerPostX];
     const plate = s.difference(T(s.cube([2 * g - 4.4, 8, PLATE_H]), [-(g - 4.2), -4, 0]), [
       c.hasCoupler && T(this.attachPoly(4), [-c.couplerX - 4, -4.11, -0.5]),
     ]);
@@ -139,6 +147,8 @@ export class Track {
       c.hasCoupler && pegAndClip && T(M(this.attachPoly(PLATE_H), [0, 1, 0]), [c.couplerX - 4, -3.7, 0]),
     ]);
     const cuts: (Man | false)[] = [
+      // (extra rails: room above 2.3 for the neighbour's rail end, down through the plate, the peg and the clip there)
+      ...xfs.map((xf) => T(s.cube([8.6, 8.2, 10]), [xf - 4.3, -4.1, 2.3])),
       c.hasCoupler && T(s.cylinder(4, 2 + off, 2 - off, 32), [c.couplerX, -4, -0.5]),
     ];
     if (studRecesses) {
@@ -152,14 +162,19 @@ export class Track {
     return s.difference(body, cuts);
   }
 
-  /** full_endpoint(peg_and_clip, stud_recesses) without extra rails. */
-  fullEndpoint(pegAndClip = true, studRecesses = false): Man {
+  /**
+   * full_endpoint(peg_and_clip, stud_recesses, xfs): the extra rails' ends
+   * too (the left-hand kind left of the centre line, the right-hand kind
+   * right of it, as the running rails), so they lock into the next piece's.
+   */
+  fullEndpoint(pegAndClip = true, studRecesses = false, xfs: number[] = [], guardX?: number): Man {
     const s = this.s, g = this.c.railOffset;
     return s.union([
       T(this.railEndpointLeft(), [-(g + 4), -8, 0]),
       T(s.cube([1, 4, 3.6]), [-(g + 3.8), -4, 0]),
       T(this.railEndpointRight(), [g - 4, -8, 0]),
-      this.endpointBase(pegAndClip, studRecesses),
+      ...xfs.map((xf) => T(xf < 0 ? this.railEndpointLeft() : this.railEndpointRight(), [xf - 4, -8, 0])),
+      this.endpointBase(pegAndClip, studRecesses, xfs, guardX),
     ]);
   }
 
@@ -173,21 +188,23 @@ export class Track {
     ]), [90, 0, 0]);
   }
 
-  /** start_rail_supports(z0), without extra rails. */
-  startRailSupports(z0: number): Man {
+  /** start_rail_supports(z0): xfs, the extra rails' ends (extra_rails(false)), the same way by their kind. */
+  startRailSupports(z0: number, xfs: number[] = []): Man {
     const g = this.c.railOffset;
     return this.s.union([
       T(this.railSupport(4, 2.08 - z0), [g - 2.2, -3, z0]),
       T(this.railSupport(3, 3.23 - z0), [-g - 3.3, -3, z0]),
+      ...xfs.map((xf) => (xf < 0 ? T(this.railSupport(3, 3.23 - z0), [xf - 3.3, -3, z0]) : T(this.railSupport(4, 2.08 - z0), [xf - 2.2, -3, z0]))),
     ]);
   }
 
-  /** end_rail_supports(z0), without extra rails. */
-  endRailSupports(z0: number): Man {
+  /** end_rail_supports(z0): xfs as extra_rails(true), in the end connector's own frame (at -xf here). */
+  endRailSupports(z0: number, xfs: number[] = []): Man {
     const g = this.c.railOffset;
     return this.s.union([
       T(this.railSupport(3, 3.23 - z0, false), [g + 0.2, 3, z0]),
       T(this.railSupport(4, 2.08 - z0, false), [-g - 1.8, 3, z0]),
+      ...xfs.map((xf) => (xf < 0 ? T(this.railSupport(3, 3.23 - z0, false), [-xf + 0.2, 3, z0]) : T(this.railSupport(4, 2.08 - z0, false), [-xf - 1.8, 3, z0]))),
     ]);
   }
 

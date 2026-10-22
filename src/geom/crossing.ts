@@ -10,6 +10,7 @@ import { solve, type Solution, type SolverOptions, SOLVER_DEFAULTS } from '../ro
 import { Scad, T, R, type CS, type Man, type Vec2 } from './scad';
 import { sweepRoute } from './sweep';
 import { hollowGrid } from './underside';
+import { type ExtraBuilt, extraRails } from './extrarails';
 import { DEFAULTS, PLATE_H, RAIL_PROFILE, STUD, Track, type TrackOptions } from './track';
 import { BUFFER_DEFAULTS, BUFFER_RAIL_END, type BufferOptions, bufferStop, couplerSupports, endAxleHoles, inBufferPost, trackSeat } from './extras';
 
@@ -148,8 +149,10 @@ export function crossingPiece(s: Scad, routes: Route[], o: CrossingOptions = CRO
   const sleepered = !onBallast && o.sleepers === 'sleepers';
   const zones: [number, number][][] = sleepered ? routes.map((rt, i) => bedZones(i)) : [];
   const inZone = (i: number, sAt: number, m = 0) => zones[i].some(([a, b]) => sAt >= a + m && sAt <= b - m);
+  // (each route's guard rails and third rail, if it has them: extrarails.ts)
+  const extras = routes.map((_, i) => extraRails(s, t, routes, i, !!x.innerEnds?.has(`${i}:start`), !!x.innerEnds?.has(`${i}:end`)));
   routes.forEach((rt, i) => {
-    const L = routeLength(rt);
+    const L = routeLength(rt), ex: ExtraBuilt | undefined = extras[i];
     // Rails and this route's check rails, grooved by the other routes' flangeways.
     const p0 = routePose(rt, 0), p1 = routePose(rt, L);
     // Ends cut square to each end, as curves.scad does (so a curve's rails end
@@ -178,13 +181,13 @@ export function crossingPiece(s: Scad, routes: Route[], o: CrossingOptions = CRO
       const in0 = x.innerEnds?.has(`${i}:start`) ?? false, in1 = x.innerEnds?.has(`${i}:end`) ?? false, wf = rt.sleeperFrame;
       const f = wf && (in0 || wf.s0 < 0.01) && (in1 || wf.s0 + L > wf.L - 0.01) ? wf : { s0: 0, L, in0, in1 };
       const at = sleeperSpots(f.L, f.in0, f.in1, o.sleeperGapStuds ?? 2, o.sleeperWidthStuds).map((v) => v - f.s0).filter((v) => v >= 0 && v <= L && !inZone(i, v));
-      if (at.length) parts.push(s.union(at.map((v) => atPose(t.sleeper(true), routePose(rt, v)))));
+      if (at.length) parts.push(s.union(at.map((v) => { const P = routePose(rt, v); return atPose(t.sleeper(true, ex?.postOk(P)), P); })));
     }
     // End connectors and breakaway supports, at both ends.
     // (on ballast: no peg and clip, no stud recesses, as the switches')
     const peg = !onBallast || !!o.pegOnBallast || alone;
-    if (!inStart) parts.push(atPose(T(t.fullEndpoint(peg, !onBallast), [0, 4, 0]), p0));
-    if (!inEnd) parts.push(atPose(T(R(t.fullEndpoint(peg, !onBallast), [0, 0, 180]), [0, -4, 0]), p1));
+    if (!inStart) parts.push(atPose(T(t.fullEndpoint(peg, !onBallast, ex?.xfs[0], ex?.guardX), [0, 4, 0]), p0));
+    if (!inEnd) parts.push(atPose(T(R(t.fullEndpoint(peg, !onBallast, ex?.xfs[1], ex?.guardX), [0, 0, 180]), [0, -4, 0]), p1));
     // (buffer stops, in their end's frame; the peg and clip above the bed on ballast held up by breakaway supports)
     if (bufS) parts.push(atPose(R(bufferStop(t, o.buffer ?? BUFFER_DEFAULTS, onBallast), [0, 0, 180]), p0));
     if (bufE) parts.push(atPose(bufferStop(t, o.buffer ?? BUFFER_DEFAULTS, onBallast), p1));
@@ -195,9 +198,10 @@ export function crossingPiece(s: Scad, routes: Route[], o: CrossingOptions = CRO
     }
     if (o.supports) {
       const zs = bottomZ - 0.02;
-      if (!inStart) parts.push(atPose(s.union([t.startRailSupports(zs), t.supportFooting(zs, 0, -1)]), p0));
-      if (!inEnd) parts.push(atPose(s.union([t.endRailSupports(zs), t.supportFooting(zs, 0, +1)]), p1));
+      if (!inStart) parts.push(atPose(s.union([t.startRailSupports(zs, ex?.xfs[0]), t.supportFooting(zs, 0, -1)]), p0));
+      if (!inEnd) parts.push(atPose(s.union([t.endRailSupports(zs, ex?.xfs[1]), t.supportFooting(zs, 0, +1)]), p1));
     }
+    if (ex?.solid) parts.push(ex.solid);
   });
   // Studs on the bed, as on LEGO track's sleepers: on the stud grid (of the
   // grid pose), between and beside the rails, wherever they're clear of
@@ -229,6 +233,8 @@ export function crossingPiece(s: Scad, routes: Route[], o: CrossingOptions = CRO
       if (!routes.some((r2, k) => Math.abs(routeLat(r2, q)) <= c.sleeperLen / 2 - c.postD / 2 - 0.5 && (!sleepered || inZone(k, routeSOf(r2, q), c.postD / 2 + 0.5)))) continue;
       // (clear of every rail and its flangeway)
       if (!routes.every((r2) => Math.abs(Math.abs(routeLat(r2, q)) - g) >= clearR)) continue;
+      // (and of the guard rails and third rails)
+      if (extras.some((ex) => ex && !ex.clearOf(q))) continue;
       // (clear of the end connectors: 8 mm in from each end)
       if (ends.some((e) => { const dx = q[0] - e[0], dy = q[1] - e[1]; return Math.hypot(dx, dy) < c.sleeperLen && Math.abs(-dx * Math.sin((e[2] * Math.PI) / 180) + dy * Math.cos((e[2] * Math.PI) / 180)) < 10; })) continue;
       if (addBoxes.some((bb) => q[0] > bb.min[0] - 3 && q[0] < bb.max[0] + 3 && q[1] > bb.min[1] - 3 && q[1] < bb.max[1] + 3)) continue;
