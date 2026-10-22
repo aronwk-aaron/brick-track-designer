@@ -126,6 +126,9 @@ function extraRailFields(r: DRoute, body: HTMLElement) {
 // Which route cards are open (by index); the selected one always is.
 const openCards = new Set<number>();
 
+/** The route cards' sections open (by title), the same for every card, remembered in this browser. */
+const openParts: Set<string> = (() => { try { const v = JSON.parse(localStorage.getItem('btd-card-parts') ?? 'null'); if (Array.isArray(v)) return new Set<string>(v); } catch { /* (none kept) */ } return new Set(['Shape']); })();
+const keepParts = () => { try { localStorage.setItem('btd-card-parts', JSON.stringify([...openParts])); } catch { /* (not kept) */ } };
 function render() {
   routesEl.replaceChildren();
   $('routes-title').textContent = design.routes.length ? `Routes (${design.routes.length})` : 'Routes';
@@ -151,6 +154,16 @@ function render() {
       render(); canvas.draw();
     });
     const body = document.createElement('div'); body.className = 'body';
+    // (the card in folding sections, each remembered open or shut for every card: only the shape open to start with)
+    const part = (title: string, note = '') => {
+      const d2 = document.createElement('details'); d2.className = 'rsub'; d2.open = openParts.has(title);
+      const s2 = document.createElement('summary'); s2.textContent = title;
+      if (note) { const n2 = document.createElement('span'); n2.textContent = note; s2.append(n2); }
+      d2.addEventListener('toggle', () => { if (d2.open) openParts.add(title); else openParts.delete(title); keepParts(); });
+      const b2 = document.createElement('div'); d2.append(s2, b2); body.append(d2); return b2;
+    };
+    const shape = part('Shape', `${r.segs.length} piece${r.segs.length === 1 ? '' : 's'}`);
+    const place = part('Place', `${r.x}, ${r.y} · ${r.heading}°${isMono(r) ? ' · monorail' : ''}`);
     const name = document.createElement('input'); name.value = r.name; name.type = 'text';
     // (routes are known by their names, in the trackwork and the switches: no two the same)
     name.addEventListener('change', () => {
@@ -158,7 +171,7 @@ function render() {
       if (!v || design.routes.some((q, j) => j !== i && q.name === v)) { name.value = r.name; setStatus(infoEl.textContent ?? '', v ? `There's already a route called ${v}: names must differ` : 'A route needs a name', false, true); return; }
       r.name = v; changed(true);
     });
-    body.append(field('Name', name),
+    place.append(field('Name', name),
       field('Start x, studs', num(r.x, (n) => { r.x = n; }, 1)),
       field('Start y, studs', num(r.y, (n) => { r.y = n; }, 1)),
       field('Heading ° (0 = up, + = left)', num(r.heading, (n) => { r.heading = n; }, 22.5)));
@@ -169,9 +182,10 @@ function render() {
       sys.value = isMono(r) ? 'monorail' : 'train';
       sys.title = 'Train track, or LEGO monorail: the 4-stud beam with a rack down the middle.';
       sys.addEventListener('change', () => { if (sys.value === 'monorail') r.system = 'monorail'; else delete r.system; changed(true); renderOptions(); });
-      body.append(field('Track', sys));
+      place.append(field('Track', sys));
     }
-    r.segs.forEach((_, k) => body.append(segRow(r, k)));
+    r.segs.forEach((_, k) => shape.append(segRow(r, k)));
+    const ends = part('Ends', [r.startEnd, r.endEnd].includes('buffer') ? 'buffer stop' : '');
     // (each end: an ordinary end connector, or a buffer stop)
     for (const [prop, label] of [['startEnd', 'Starts in'], ['endEnd', 'Ends in']] as const) {
       const es = document.createElement('select');
@@ -179,7 +193,8 @@ function render() {
       es.value = r[prop] ?? 'connector';
       es.title = 'An ordinary end connector, to join more track, or a buffer stop: the rails run into two posts joined by a buffer beam, its last two studs (the Buffer stops settings)';
       es.addEventListener('change', () => { if (es.value === 'buffer') r[prop] = 'buffer'; else delete r[prop]; changed(true); });
-      const f = field(label, es); f.classList.add('stack'); body.append(f);
+      if (isMono(r)) { es.disabled = true; es.title = 'Locked: buffer stops are for train track'; }
+      const f = field(label, es); f.classList.add('stack'); ends.append(f);
     }
     // (a branch, i.e. a switch's: its lever's side, where it branches; shown once the plan knows it's one)
     const id = r.name || String(i), items = canvas?.overlay?.items ?? [];
@@ -191,15 +206,19 @@ function render() {
       sel.value = r.throwSide ?? 'auto';
       sel.title = 'Which side the lever goes at the points where this track branches off another, as you face along them from their toe';
       sel.addEventListener('change', () => { r.throwSide = sel.value as DRoute['throwSide']; changed(true); });
-      const f = field('Lever side where it branches', sel); f.classList.add('stack'); body.append(f);
+      const f = field('Lever side where it branches', sel); f.classList.add('stack'); ends.append(f);
       const hand = [...keys].filter((k) => design.trackwork?.throw?.[k]?.side);
       if (hand.length) {
         const n = document.createElement('small'); n.className = 'desc';
         n.textContent = `The lever${keys.size > 1 ? 's' : ''} here ${hand.length > 1 ? 'were' : 'was'} dragged across by hand, which wins: set its Side back to Auto in the Trackwork panel for this to apply.`;
-        body.append(n);
+        ends.append(n);
       }
     }
-    extraRailFields(r, body);
+    {
+      const rails = part('Guard rails and dual gauge', isMono(r) ? 'train track only' : [r.guardRails && 'guard rails', r.dualGauge && 'dual gauge'].filter(Boolean).join(' · '));
+      if (isMono(r)) { const n2 = document.createElement('small'); n2.className = 'desc'; n2.textContent = 'Locked: guard rails and a third rail are for train track; this route is monorail (Place › Track).'; rails.append(n2); }
+      else extraRailFields(r, rails);
+    }
     const add = document.createElement('div'); add.className = 'row';
     add.append(
       btn('+ Straight', () => r.segs.push({ kind: 'straight', studs: 16 })),
@@ -212,7 +231,7 @@ function render() {
       btn('Delete', () => { design.routes.splice(i, 1); if (canvas.selected === i) canvas.selected = undefined; openCards.clear(); }),
     );
     more.lastElementChild!.className = 'danger';
-    body.append(add, more);
+    shape.append(add); body.append(more);
     box.append(sum, body);
     routesEl.append(box);
   });
@@ -829,11 +848,11 @@ interface OptField {
   def?: string | number | boolean;
   get?: () => string | number | boolean; set?: (v: string | number | boolean) => void;
 }
-interface OptSection { title: string; switches?: boolean; fields: OptField[] }
+interface OptSection { title: string; switches?: boolean; /** only for one kind of track: folded, its settings locked, when the design has none of it */ kind?: 'train' | 'monorail'; fields: OptField[] }
 /** (buffer stop settings) why they don't apply: no route ends in one */
 const noBuf = () => (design.routes.some((r) => r.startEnd === 'buffer' || r.endEnd === 'buffer') ? undefined : 'no route ends in a buffer stop (set Starts in / Ends in on a route card)');
 const OPTION_FORM: OptSection[] = [
-  { title: 'Track', fields: [
+  { title: 'Track', kind: 'train', fields: [
     { key: 'gaugeStuds', label: 'Gauge, studs', step: 1, min: 2, max: 10, rerender: true, help: 'Studs between the rails. LEGO track is 4.',
       def: 4, get: () => design.gaugeStuds, set: (v) => { design.gaugeStuds = Math.round(Number(v)); } },
     { key: 'sleepers', label: 'Under the rails', choices: [
@@ -849,7 +868,7 @@ const OPTION_FORM: OptSection[] = [
       { v: 'grid', t: 'On the baseplate grid', tip: 'Every stud lines up with the baseplate. On curves they form a grid, not rows.' },
       { v: 'follow', t: 'In rows along the track', tip: 'Rows across the track, like LEGO track, so tiles fit across curves.', con: 'On curves the studs are off the baseplate grid.' }] },
   ] },
-  { title: 'Underside and ballast', fields: [
+  { title: 'Underside and ballast', kind: 'train', fields: [
     { key: 'ballast', label: 'Ballast', choices: [
       { v: 'none', t: 'None', tip: 'Track only, like LEGO track.' },
       { v: 'ballast', t: 'Ballast', tip: 'The track sits on a stepped ballast shoulder.' },
@@ -869,7 +888,7 @@ const OPTION_FORM: OptSection[] = [
     { key: 'pegOnBallast', label: 'Peg and clip on ballast ends', check: true, off: (c) => (c.ballast ? undefined : 'only with ballast'), help: 'Keeps the peg and clip on the end connectors, so pieces clip together. They print on small breakaway supports. Off: the ends just butt together.' },
     { key: 'axleHoles', label: 'LEGO axle holes through the ends', check: true, off: (c) => (c.o.ballast !== 'buddy' ? 'needs Ballast + buddy layer' : c.o.trackBallast === 'apart' ? 'not with Track and ballast printed Apart' : undefined), help: 'Cross-axle holes through each end, so a LEGO axle pins two pieces together.' },
   ] },
-  { title: 'Switches: points', switches: true, fields: [
+  { title: 'Switches: points', kind: 'train', switches: true, fields: [
     { key: 'mechStyle', label: 'Mechanism', choices: [
       { v: 'plates', t: 'Blades on top, on pins', tip: 'Each blade sits on a plate on top of the bed and turns on a pin. Everything goes in from above.' },
       { v: 'tines', t: 'Under the bed, on spring tines', tip: 'The points sit in pockets under the bed on springy tines. They go in from below.' }] },
@@ -895,7 +914,7 @@ const OPTION_FORM: OptSection[] = [
     { key: 'springLength', label: 'Spring length, mm', step: 1, min: 15, max: 80, off: (c) => (c.fdb ? 'only with Mechanism: Under the bed, on spring tines' : undefined), help: 'Length of the spring tines. Each lever can also be dragged along on the plan.' },
     { key: 'bladeDiscD', label: 'Pivot disc diameter, mm', step: 1, min: 10, max: 24, off: (c) => (c.fdb ? 'only with Mechanism: Under the bed, on spring tines' : undefined), help: 'The disc the points pivot on. Bigger is steadier but needs more room under the bed.' },
   ] },
-  { title: 'Switches: throw', switches: true, fields: [
+  { title: 'Switches: throw', kind: 'train', switches: true, fields: [
     { key: 'throwStyle', label: 'Throw', choices: [
       { v: 'built-in', t: 'Lever built into the arm', tip: 'The lever mounts on the track piece itself.' },
       { v: 'bracket', t: 'Lever on a bracket', tip: 'The lever sits on a separate 3 x 3 stud bracket on the arm.' },
@@ -913,7 +932,7 @@ const OPTION_FORM: OptSection[] = [
     { key: 'leverOffset', label: 'Lever distance from track, mm', step: 1, min: -24, max: 30, help: 'How far past the sleeper ends. Each lever can also be dragged on the plan.' },
     { key: 'throwBallast', label: 'Ballast round the lever', check: true, off: (c) => (c.ballast ? undefined : 'only with ballast'), help: 'The ballast steps continue round the lever arm, so the lever stands on ballast.' },
   ] },
-  { title: 'Buffer stops', fields: [
+  { title: 'Buffer stops', kind: 'train', fields: [
     { key: 'bufferStyle', label: 'Style', off: () => noBuf(), choices: [
       { v: 'frame', t: 'Rail-built frame with buffers', tip: 'A braced frame over each rail, a beam across with two sprung buffers, like a real buffer stop.' },
       { v: 'blocks', t: 'Brick posts', tip: 'Two 2 x 2 posts with studs on top to build on, joined by a beam.' }] },
@@ -928,7 +947,7 @@ const OPTION_FORM: OptSection[] = [
     { key: 'labelGauge', label: 'Add the gauge (Ln4)', check: true, off: (c) => (c.ballast && c.o.bottomStyle === 'float' ? undefined : 'labels go only on a flat underside: set Ballast to Ballast and Ballast underside to Flat') ?? (c.o.labelText ? undefined : 'Label text is empty') },
     { key: 'labelParts', label: 'Number parts cut for the bed (#2)', check: true, off: (c) => (c.ballast && c.o.bottomStyle === 'float' ? undefined : 'labels go only on a flat underside: set Ballast to Ballast and Ballast underside to Flat') ?? (c.o.labelText ? undefined : 'Label text is empty'), help: 'Matches the part\'s file name.' },
   ] },
-  { title: 'Check rails and flangeways', fields: [
+  { title: 'Check rails and flangeways', kind: 'train', fields: [
     { key: 'checkRailLen', label: 'Check rail length, mm', step: 2, min: 10, max: 80 },
     { key: 'checkRailW', label: 'Check rail width, mm', step: 0.1, min: 1, max: 3 },
     { key: 'checkRailFlare', label: 'Check rail end flare, mm', step: 0.25, min: 0, max: 4, help: 'How far the ends bend out to guide the flanges in.' },
@@ -953,7 +972,7 @@ const OPTION_FORM: OptSection[] = [
       { v: 'flat', t: 'Cut flat', tip: 'Nothing overhangs, no supports.', con: 'Only the bed joint and the baseplate keep the rails in line.' }] },
     { key: 'endSupports', label: 'Supports under rail ends', check: true, help: 'Breakaway supports under the rail-end tongues. Off: leave it to your slicer.' },
   ] },
-  { title: 'Monorail', fields: [
+  { title: 'Monorail', kind: 'monorail', fields: [
     { key: 'monoEndStuds', label: 'Studs at the ends', off: noMono, choices: [
       { v: 'side', t: 'Out of the sides', tip: 'Hollow studs out of both sides of each end, like LEGO monorail track.' },
       { v: 'top', t: 'On top, in recesses', tip: 'Two studs in a recess each side of the ridge at each end. A 1 x 2 tile sits in flush; a 1 x 4 plate across a joint holds it.' },
@@ -1026,8 +1045,14 @@ function renderOptions() {
     const fields = sec.fields.filter((f) => !words.length || hit(f));
     if (words.length && !fields.length) continue;
     const det = document.createElement('details'); det.className = 'osec';
-    det.open = words.length > 0 || openSecs.has(sec.title);
+    // (a section for the kind of track the design hasn't got: folded, and says so)
+    const kinds = design.routes.filter((r) => r.segs.length), hasTrain = kinds.some((r) => !isMono(r)), hasMono = kinds.some((r) => isMono(r));
+    const absent = kinds.length > 0 && ((sec.kind === 'train' && !hasTrain) || (sec.kind === 'monorail' && !hasMono));
+    const absentWhy = sec.kind === 'train' ? 'no train track in this design (only monorail)' : 'no monorail in this design';
+    det.open = !absent && (words.length > 0 || openSecs.has(sec.title));
+    if (absent) det.classList.add('absent');
     const sum = document.createElement('summary'); sum.textContent = sec.title;
+    if (absent) { const ab = document.createElement('em'); ab.className = 'ab'; ab.textContent = 'not used'; ab.title = absentWhy; sum.append(ab); }
     const n = document.createElement('span'); n.className = 'n'; n.textContent = String(fields.length); sum.append(n);
     det.append(sum);
     det.addEventListener('toggle', () => { if (words.length) return; if (det.open) openSecs.add(sec.title); else openSecs.delete(sec.title); keepSecs(); });
@@ -1043,7 +1068,7 @@ function renderOptions() {
       const cur = f.get ? f.get() : (o as unknown as Record<string, string | number | boolean>)[f.key];
       const def = f.def ?? (OPTION_DEFAULTS as unknown as Record<string, string | number | boolean>)[f.key];
       // (can't be changed now: greyed out, and why, exactly)
-      const off = f.off?.(c) ?? (f.when && !f.when(c) ? 'Not used with the settings above' : undefined);
+      const off = (absent ? absentWhy : undefined) ?? f.off?.(c) ?? (f.when && !f.when(c) ? 'Not used with the settings above' : undefined);
       const wrap = document.createElement('div'); wrap.className = off ? 'opt off' : 'opt';
       const note = (txt: string, cls = 'desc') => { const d = document.createElement('small'); d.className = cls; d.textContent = txt; wrap.append(d); };
       if (f.choices) {
