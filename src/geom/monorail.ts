@@ -111,8 +111,10 @@ export class Mono {
   }
   /** tooth_gap_2d on the +x flank (or mirrored, side -1), centred on y = 0, in plan. */
   gapPts(side: 1 | -1): Vec2[] {
-    const r = MONO.rackRoot, e = MONO.ridgeHw + 0.01;
-    return ([[r, -0.25], [r, 0.25], [e, 0.6], [e, -0.6]] as Vec2[]).map(([x, y]) => [side * x, y]);
+    // (its mouth carried on 1 mm past the ridge's side, along the same taper: on a curve's inside the ridge's edge is
+    // made of chords that bulge past the true flank, and gaps that stopped at the flank didn't open through them)
+    const r = MONO.rackRoot, e = MONO.ridgeHw + 0.01, out = e + 1, wOut = 0.25 + ((0.6 - 0.25) * (out - r)) / (e - r);
+    return ([[r, -0.25], [r, 0.25], [out, wOut], [out, -wOut]] as Vec2[]).map(([x, y]) => [side * x, y]);
   }
   /** An anti-stud from below: square, with a small grip bump in the middle of each side. */
   antistud(): Man {
