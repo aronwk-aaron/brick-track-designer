@@ -392,9 +392,26 @@ export function switchPlan(routes: Route[], specs: SetSpec[], p: BaseParams = BA
     }
   };
   const clearOfCuts = (rt: Route, ss: number[]) => ss.filter((s) => Math.min(1e9, ...baseCuts.map((c) => Math.abs(railPoint(rt, s, 0)[1] - c))) >= sleeperW + 2 * STUD);
-  const routeTieList = routes.map((rt, i) => clearOfCuts(rt, routeTieSs(i)));
-  const firstRouteY = Math.min(1e9, ...routeTieList.flatMap((ss, i) => ss.flatMap((s) => [-sleeperW / 2, sleeperW / 2].flatMap((ds) => [-1, 1].map((o) => railPoint(routes[i], s + ds, (o * sleeperLen) / 2)[1])))));
-  const longTieYs = tieYs().filter((y) => y + sleeperW / 2 + 2 * STUD <= firstRouteY + 0.01 || baseCuts.some((c) => Math.abs(c - y) < 0.01));
+  const tieCornersY = (i: number, s: number) => [-sleeperW / 2, sleeperW / 2].flatMap((ds) => [-1, 1].map((o) => railPoint(routes[i], s + ds, (o * sleeperLen) / 2)[1]));
+  let routeTieList = routes.map((rt, i) => clearOfCuts(rt, routeTieSs(i)));
+  let longTieYs: number[];
+  if (scadParity()) {
+    // (switch.scad's: the long ties stop short of the first route's own sleeper, whichever route that is)
+    const firstRouteY = Math.min(1e9, ...routeTieList.flatMap((ss, i) => ss.flatMap((s) => tieCornersY(i, s))));
+    longTieYs = tieYs().filter((y) => y + sleeperW / 2 + 2 * STUD <= firstRouteY + 0.01 || baseCuts.some((c) => Math.abs(c - y) < 0.01));
+  } else {
+    // (the long ties carry on as long as any route can't have sleepers of its own yet (still too near another), as a
+    // real turnout's do; the routes' own sleepers start after them: stopping them at the first route's own sleeper
+    // left the other route bare there, a gap of several sleepers)
+    const ownOk = (i: number, y: number) => {
+      const rt = routes[i], sp = sOf(rt, [0, y]), inner = i === 0 ? [-1] : i === nRoutes - 1 ? [+1] : [-1, +1];
+      const ends = inner.flatMap((sd) => [-sleeperW / 2, sleeperW / 2].map((ds) => railPoint(rt, sp + ds, sd * (G + 3.9 + 1))));
+      return Math.min(...ends.map((e) => latOthers(i, e))) >= sleeperLen / 2 + 1;
+    };
+    longTieYs = tieYs().filter((y) => baseCuts.some((c) => Math.abs(c - y) < 0.01) || routes.some((_, i) => !ownOk(i, y)));
+    const lastLong = Math.max(-1e9, ...longTieYs);
+    routeTieList = routeTieList.map((ss, i) => ss.filter((s) => Math.min(...tieCornersY(i, s)) >= lastLong + sleeperW / 2 + 2 * STUD - 0.01));
+  }
   const routeServed = (i: number, y: number) => {
     const rt = routes[i], sp = sOf(rt, [0, y]), L = routeLength(rt);
     return sp > L - 8 - 2 * STUD - sleeperW / 2 || routeTieList[i].some((s) => Math.abs(sp - s) < sleeperW + 2 * STUD);
