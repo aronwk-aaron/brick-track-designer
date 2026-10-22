@@ -1,13 +1,21 @@
 // The editor's document: routes in studs and degrees, as people enter them,
 // and their conversion to the solver's routes in mm.
-import type { ExtraRails, Route, RouteEnds, Segment } from '../route/route';
+import type { ExtraRails, Roll, Route, RouteEnds, Segment } from '../route/route';
 import { routeLength, routePose } from '../route/route';
 
 export const STUD = 8;
 
 export type DSeg =
   | { kind: 'straight'; studs: number }
-  | { kind: 'curve'; radius: number; angle: number }; // radius in studs, angle signed (+ = left)
+  | { kind: 'curve'; radius: number; angle: number; bank?: number; bankRamps?: BankRamps }; // radius in studs, angle signed (+ = left)
+
+/**
+ * A banked curve's ends where its bank ramps to the track beyond inside the
+ * curve (curves.scad's superelevation_ramp_ends). At an end that doesn't, the
+ * bank holds to the curve's end: the ramp is on the track beyond it, or, at a
+ * route's end, the end stays banked (to join other banked track).
+ */
+export type BankRamps = 'both' | 'start' | 'end' | 'none';
 
 export interface DRoute {
   name: string; x: number; y: number; heading: number; segs: DSeg[]; // start in studs
@@ -149,6 +157,8 @@ export interface PieceOptions {
   /** Monorail supports (monorail_support.scad): one every this many studs along the beam (0: none); their height in bricks and plates; base size (studs); anti-stud underside; studs round the base; closed frame. */
   monoSupportStuds?: number; monoSupportBricks?: number; monoSupportPlates?: number; monoSupportBaseXStuds?: number; monoSupportBaseYStuds?: number;
   monoSupportAntistud?: boolean; monoSupportBaseStuds?: boolean; monoSupportSolid?: boolean;
+  /** Banked curves: each ramp from level to the full bank, studs (curves.scad's superelevation_ramp_studs, 2 to 24). */
+  bankRampStuds?: number;
 }
 export const OPTION_DEFAULTS: PieceOptions = {
   throwSide: 'auto', leverOffset: 8, pointThrow: 3, pointClearance: 0.3, springPreload: 1, springThickness: 0.9, springLength: 40,
@@ -158,7 +168,7 @@ export const OPTION_DEFAULTS: PieceOptions = {
   bufferStyle: 'frame', bufferPostPlates: 8, bufferBeamBottom: 2, bufferBeamTop: 12, bufferPinHoles: true,
   trackBallast: 'together', trackFitTol: 0.2, labelText: '', labelSize: true, labelGauge: false, labelParts: true,
   monoEndStuds: 'side', monoAxleHoles: true, monoLegoAntistud: false, monoAxleLengthStuds: 2, monoHoleFit: 0.1, monoLabels: 'name', monoSwitchTravel: 27, monoSwitchFit: 0.3,
-  monoSupportStuds: 0, monoSupportBricks: 5, monoSupportPlates: 0, monoSupportBaseXStuds: 4, monoSupportBaseYStuds: 4, monoSupportAntistud: true, monoSupportBaseStuds: true, monoSupportSolid: false,
+  monoSupportStuds: 0, monoSupportBricks: 5, monoSupportPlates: 0, monoSupportBaseXStuds: 4, monoSupportBaseYStuds: 4, monoSupportAntistud: true, monoSupportBaseStuds: true, monoSupportSolid: false, bankRampStuds: 8,
 };
 
 /** The buffer stops' positions (mm): the route ends set to end in one (by where they are, as routes are turned round and cut up). */
@@ -175,14 +185,19 @@ export function bufferEnds(d: Design): [number, number][] {
 
 export function toRoutes(d: Design): Route[] {
   return d.routes.map((r, i) => {
+    const rolls = bankRolls(d, r).rolls;
     const rt: Route = {
       id: r.name || String(i),
       throwSide: r.throwSide,
       ...(r.system === 'monorail' && r.monoHeight !== undefined && { elev: r.monoHeight * 3.2, ...(r.monoHeightEnd !== undefined && { elevEnd: r.monoHeightEnd * 3.2 }) }),
       start: [r.x * STUD, r.y * STUD, r.heading],
-      segments: r.segs.map((sg): Segment => (sg.kind === 'straight'
-        ? { kind: 'straight', length: sg.studs * STUD }
-        : { kind: 'arc', radius: sg.radius * STUD, angle: sg.angle })),
+      segments: r.segs.map((sg, k): Segment => {
+        const out: Segment = sg.kind === 'straight'
+          ? { kind: 'straight', length: sg.studs * STUD }
+          : { kind: 'arc', radius: sg.radius * STUD, angle: sg.angle };
+        if (rolls[k]) out.roll = rolls[k];
+        return out;
+      }),
     };
     // (its extra rails, only if it has any: a route without them is as it always was)
     if (r.guardRails || r.dualGauge) {
@@ -195,6 +210,61 @@ export function toRoutes(d: Design): Route[] {
     }
     return rt;
   });
+}
+
+/** The longest bank (degrees), as curves.scad's superelevation_angle. */
+export const BANK_MAX = 10;
+/** A level stretch at a route's end before a ramp: the end connector (curves.scad's bank_flat_end), mm. */
+const BANK_FLAT_END = 8;
+
+/**
+ * Each segment's roll (undefined: level) along a route, from its curves'
+ * banks, and warnings for ramps cut short. A curve's bank is + (the right
+ * side up) on a left curve. At each place the bank changes (a route's ends
+ * count as level) it ramps linearly over the ramp length: inside the curve
+ * with the bigger bank, unless that curve's ends say not to (then on the
+ * track the other side), a level stretch first at a route's end (curves.scad's
+ * bank_at). Two curves banked the same way the same amount run on with no
+ * ramp between them; a curve banked the other way (a reverse curve) ramps
+ * through level, each curve its half. Ramps in one segment share it, each
+ * shortened to fit. Monorail routes are left alone.
+ */
+export function bankRolls(d: Design, r: DRoute): { rolls: (Roll | undefined)[]; warnings: string[] } {
+  const segs = r.segs, n = segs.length, warnings: string[] = [];
+  const v = segs.map((sg) => (sg.kind === 'curve' && sg.bank ? Math.sign(sg.angle) * Math.min(Math.max(sg.bank, 0), BANK_MAX) : 0));
+  if (isMono(r) || !v.some((x) => x !== 0)) return { rolls: segs.map(() => undefined), warnings }; // (monorail: never banked)
+  const L = segs.map((sg) => (sg.kind === 'straight' ? sg.studs * STUD : (Math.abs(sg.angle) * Math.PI * sg.radius * STUD) / 180));
+  const ramps = (k: number) => { const sg = segs[k]; return sg.kind === 'curve' ? sg.bankRamps ?? 'both' : 'both'; };
+  const okStart = (k: number) => ['both', 'start'].includes(ramps(k)), okEnd = (k: number) => ['both', 'end'].includes(ramps(k));
+  const rampLen = Math.min(Math.max(d.options?.bankRampStuds ?? OPTION_DEFAULTS.bankRampStuds ?? 8, 2), 24) * STUD;
+  // the roll at each boundary (0: the route's start, n: its end)
+  const at: number[] = [];
+  at[0] = v[0] !== 0 && okStart(0) ? 0 : v[0];
+  at[n] = v[n - 1] !== 0 && okEnd(n - 1) ? 0 : v[n - 1];
+  for (let k = 1; k < n; k++) {
+    const a = v[k - 1], b = v[k];
+    if (a === b) at[k] = a;
+    else if (a * b < 0) at[k] = okEnd(k - 1) === okStart(k) ? 0 : okStart(k) ? a : b;
+    else {
+      // (on the bigger bank's side if it may, else the other's if it may)
+      const bigB = Math.abs(b) > Math.abs(a), okBig = bigB ? okStart(k) : okEnd(k - 1), okSmall = bigB ? okEnd(k - 1) : okStart(k);
+      const onB = okBig || !okSmall ? bigB : !bigB;
+      at[k] = onB ? a : b;
+    }
+  }
+  const rolls = segs.map((_, k): Roll | undefined => {
+    const u0 = at[k], u1 = at[k + 1], w = v[k], len0 = L[k];
+    const r0 = u0 !== w, r1 = u1 !== w;
+    if (!r0 && !r1 && w === 0) return undefined;
+    let fs = k === 0 && r0 ? BANK_FLAT_END : 0, fe = k === n - 1 && r1 ? BANK_FLAT_END : 0;
+    if (len0 - fs - fe < 1) { fs = 0; fe = 0; }
+    const nr = (r0 ? 1 : 0) + (r1 ? 1 : 0), room = nr ? (len0 - fs - fe) / nr : 0, len = Math.max(Math.min(rampLen, room), 1e-3);
+    if (nr && len < rampLen - 1e-6) warnings.push(`${r.name}: a bank's ramp is only ${(len / STUD).toFixed(1)} studs long (its ${segs[k].kind === 'straight' ? 'straight' : 'curve'}, part ${k + 1}, is too short for ${rampLen / STUD})`);
+    const kn: Roll = r0 ? [[0, u0], [fs, u0], [fs + len, w]] : [[0, w]];
+    if (r1) kn.push([len0 - fe - len, w], [len0 - fe, u1], [len0, u1]); else kn.push([len0, w]);
+    return kn.filter((q, j) => j === 0 || q[0] > kn[j - 1][0] + 1e-9 || q[1] !== kn[j - 1][1]);
+  });
+  return { rolls, warnings };
 }
 
 /** A name for a new route, prefix and the first number no route has (routes are known by their names: two the same would be mixed up). */

@@ -964,9 +964,11 @@ export class TrackCanvas {
           const mid = follow(q, [sg.kind === 'straight' ? { kind: 'straight', studs: sg.studs / 2 } : { ...sg, angle: sg.angle / 2 }]);
           const off = ((isMono(r) ? monoHw : g) + 2.2) * (sg.kind === 'curve' ? -Math.sign(sg.angle) : 1);  // outside the curve
           const [sx, sy] = this.toScreen(mid.x + off * Math.cos((mid.heading * Math.PI) / 180), mid.y + off * Math.sin((mid.heading * Math.PI) / 180));
-          const txt = sg.kind === 'curve' ? `R${Math.round(sg.radius * 10) / 10} ${Math.round(Math.abs(sg.angle) * 10) / 10}°` : `${Math.round(sg.studs * 10) / 10}`;
+          const txt = sg.kind === 'curve' ? `R${Math.round(sg.radius * 10) / 10} ${Math.round(Math.abs(sg.angle) * 10) / 10}°${sg.bank ? `, bank ${sg.bank}°` : ''}` : `${Math.round(sg.studs * 10) / 10}`;
           labels.push({ x: sx, y: sy, txt, sel });
         }
+        // (a banked curve: a fine dotted line along its high, outer side)
+        if (sg.kind === 'curve' && sg.bank) line(offsetPts(q, [sg], (g + 1) * Math.sign(sg.angle)), 'rgba(200,120,40,0.75)', 1.5, [2, 3]);
         q = follow(q, [sg]);
       }
       c.textAlign = 'start';

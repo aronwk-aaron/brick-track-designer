@@ -11,7 +11,7 @@
 import type { ExtraRails, Route, RouteEnds } from '../route/route';
 import { railPoint, routeLat, routeLength, routePose } from '../route/route';
 import { R, T, type Man, type Scad, type Vec2 } from './scad';
-import { sweepRoute } from './sweep';
+import { bankAlong, sweepRoute } from './sweep';
 import { PLATE_H, RAIL_PROFILE, STUD, type Track } from './track';
 
 const V_IN = 10;          // guard_v_in: a point this far in from its end
@@ -87,6 +87,9 @@ export interface ExtraBuilt {
  * routes; inStart / inEnd: that end has no connector (the rails run on
  * through it).
  */
+/** The bank's pivot (as crossing.ts's): the inner rail's foot. */
+const BANK = (g: number) => ({ pivotX: g, pivotZ: PLATE_H });
+
 export function extraRails(s: Scad, t: Track, routes: Route[], i: number, inStart: boolean, inEnd: boolean): ExtraBuilt | undefined {
   const rt = routes[i], x = rt.extra, c = t.c, gs = t.o.gaugeStuds;
   if (!x || !hasExtraRails(x, gs)) return undefined;
@@ -117,7 +120,7 @@ export function extraRails(s: Scad, t: Track, routes: Route[], i: number, inStar
     const a = Math.max(0, Math.min(loc(d0), loc(d1))), b = Math.min(L, Math.max(loc(d0), loc(d1)));
     if (b - a < 0.1) return;
     const c0 = a < 1e-6 && !inStart, c1 = b > L - 1e-6 && !inEnd;
-    pieces.push({ m: sweepRoute(s, prof(xl), rt, a, b), c0, c1 });
+    pieces.push({ m: sweepRoute(s, prof(xl), rt, a, b, BANK(c.railOffset)), c0, c1 }); // (banked: turned with the track)
     const n = Math.max(1, Math.ceil((b - a) / 4));
     for (let k = 0; k < n; k++) clr.push({ a: ptAt(a + ((b - a) * k) / n, xl), b: ptAt(a + ((b - a) * (k + 1)) / n, xl), r });
   };
@@ -189,7 +192,7 @@ export function extraRails(s: Scad, t: Track, routes: Route[], i: number, inStar
   const parts = pieces.map(({ m, c0, c1 }) => s.difference(m, [c0 && cut0, c1 && cut1]));
   // (a point's bend past where this route's stretch ends: cut off there)
   const out0 = lo > 1e-6 || hi < x.len - 1e-6 ? [atPose(T(s.cube([w, 400, 40]), [-w / 2, -400, -5]), p0), atPose(T(s.cube([w, 400, 40]), [-w / 2, 0, -5]), p1)] : [];
-  for (const m of tapers) parts.push(s.difference(m, out0));
+  for (const m of tapers) parts.push(bankAlong(s.difference(m, out0), rt, BANK(c.railOffset)));
   const box = clr.length ? clr.reduce((b, { a, b: q }) => [Math.min(b[0], a[0], q[0]), Math.min(b[1], a[1], q[1]), Math.max(b[2], a[0], q[0]), Math.max(b[3], a[1], q[1])], [Infinity, Infinity, -Infinity, -Infinity]) : undefined;
   const pad = Math.max(guardClr, dualClr);
   const out: ExtraBuilt = {

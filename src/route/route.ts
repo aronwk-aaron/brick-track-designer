@@ -5,8 +5,16 @@
 // = turned left. Offsets across a route are positive to the right.
 
 export type Segment =
-  | { kind: 'straight'; length: number }
-  | { kind: 'arc'; radius: number; angle: number }; // angle signed, + = left
+  | { kind: 'straight'; length: number; roll?: Roll }
+  | { kind: 'arc'; radius: number; angle: number; roll?: Roll }; // angle signed, + = left
+
+/**
+ * A banked stretch's roll along a segment: knots [l, degrees] (l = mm from
+ * the segment's start, rising), straight lines between them, the first and
+ * last held beyond them. + = the right side up (a left curve's bank),
+ * turned about the lower (inner) rail's foot. Left out: level.
+ */
+export type Roll = [number, number][];
 
 export type Pose = [number, number, number];
 export type Pt = [number, number];
@@ -61,6 +69,40 @@ export function subExtra(x: ExtraRails | undefined, s0: number, s1: number): Ext
   return { ...x, from: x.from + d * s0, to: x.from + d * s1 };
 }
 export const reversedExtra = (x: ExtraRails | undefined): ExtraRails | undefined => (x ? { ...x, from: x.to, to: x.from } : undefined);
+
+/** The roll (degrees) at l along a segment. */
+export function segRoll(sg: Segment, l: number): number {
+  const k = sg.roll;
+  if (!k?.length) return 0;
+  if (l <= k[0][0]) return k[0][1];
+  for (let i = 1; i < k.length; i++) if (l <= k[i][0]) {
+    const [a, u] = k[i - 1], [b, v] = k[i];
+    return b - a < 1e-9 ? v : u + ((v - u) * (l - a)) / (b - a);
+  }
+  return k[k.length - 1][1];
+}
+/** A roll's part from l0 to l1, as from 0 (undefined if level there). */
+export function rollPart(k: Roll | undefined, l0: number, l1: number): Roll | undefined {
+  if (!k?.length) return undefined;
+  const at = (l: number) => segRoll({ kind: 'straight', length: 0, roll: k }, l);
+  const out: Roll = [[0, at(l0)], ...k.filter(([l]) => l > l0 + 1e-9 && l < l1 - 1e-9).map(([l, v]): [number, number] => [l - l0, v]), [l1 - l0, at(l1)]];
+  return out.some(([, v]) => Math.abs(v) > 1e-9) ? out : undefined;
+}
+/** A roll run the other way along a segment of length L (the right side is then the left). */
+export const rollReversed = (k: Roll | undefined, L: number): Roll | undefined => k && k.map(([l, v]): [number, number] => [L - l, -v]).reverse();
+/** The roll (degrees) at arc length s along a route. */
+export function routeRoll(rt: Route, s: number): number {
+  let acc = 0;
+  for (const sg of rt.segments) {
+    const l = segLength(sg);
+    if (s <= acc + l) return segRoll(sg, s - acc);
+    acc += l;
+  }
+  const last = rt.segments[rt.segments.length - 1];
+  return last ? segRoll(last, segLength(last)) : 0;
+}
+/** Is any of the route banked? */
+export const hasRoll = (rt: Route) => rt.segments.some((sg) => sg.roll?.some(([, v]) => Math.abs(v) > 1e-9));
 
 const rad = (d: number) => (d * Math.PI) / 180;
 const deg = (r: number) => (r * 180) / Math.PI;

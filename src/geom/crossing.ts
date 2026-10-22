@@ -5,10 +5,10 @@
 // supports at every route end, and square stud sockets on the grid of the
 // first route's start, so the piece sits on plates and baseplates.
 import type { Pose, Route } from '../route/route';
-import { railPoint, routeLat, routeLength, routePose, routeSOf } from '../route/route';
+import { hasRoll, railPoint, routeLat, routeLength, routePose, routeRoll, routeSOf } from '../route/route';
 import { solve, type Solution, type SolverOptions, SOLVER_DEFAULTS } from '../route/solver';
 import { Scad, T, R, type CS, type Man, type Vec2 } from './scad';
-import { sweepRoute } from './sweep';
+import { type Bank, bankPoint, sweepRoute } from './sweep';
 import { hollowGrid } from './underside';
 import { type ExtraBuilt, extraRails } from './extrarails';
 import { DEFAULTS, PLATE_H, RAIL_PROFILE, STUD, Track, type TrackOptions } from './track';
@@ -67,6 +67,56 @@ const BED_END = 8;    // the track bed stops here (the connector's base is the r
 
 /** Place a shape given in a pose's frame (origin at the pose, +y along the heading). */
 const atPose = (m: Man, p: [number, number, number]) => T(R(m, [0, 0, p[2]]), [p[0], p[1], 0]);
+
+// Banked track (curves.scad's bank_piece): the track bed (the bed, rails,
+// check rails and the studs on it, and the ballast's top layer, which is the
+// bed) turned along a banked route by its roll about the inner rail's foot,
+// the gap opened under the raised side filled, and kept above z = 0: the
+// ballast's lower layers and the underside stay flat on the baseplate.
+// (A route's roll comes from its segments: see route.ts.)
+const bankAt = (g: number): Bank => ({ pivotX: g, pivotZ: PLATE_H });
+/** A shape in a route end's frame turned by roll degrees about the bank's pivot (as sweepRoute turns the track there). */
+const bankTurn = (m: Man, b: Bank, roll: number): Man => {
+  if (Math.abs(roll) < 1e-12) return m;
+  const px = roll > 0 ? -b.pivotX : b.pivotX;
+  return T(R(T(m, [-px, 0, -b.pivotZ]), [0, -roll, 0]), [px, 0, b.pivotZ]);
+};
+/** What of m is above z (banked track kept above the bed's bottom, as curves.scad's bank_piece). */
+const aboveZ = (s: Scad, m: Man, z: number) => { const big = 1e5; return s.intersection(m, T(s.cube([2 * big, 2 * big, 400]), [-big, -big, z])); };
+/** A banked route's bed: the bed's section run 20 mm down, swept turned, cut off at z = floor (0; on ballast a little into the layer under it, to fuse with it) (the gap under the raised side filled). */
+function bankedBed(s: Scad, rt: Route, b: Bank, hw: number, floor = 0, s0 = 0, s1 = Infinity): Man {
+  const big = 1e5;
+  return s.intersection(sweepRoute(s, s.square([2 * hw, PLATE_H + 20]).translate([-hw, -20]), rt, s0, s1, b), T(s.cube([2 * big, 2 * big, 200]), [-big, -big, floor]));
+}
+/** A sleeper (in its frame, at its middle) on a banked route: turned by the roll there, filled under, cut off at z = 0. */
+function bankedSleeper(s: Scad, m: Man, b: Bank, roll: number, sleeperLen: number, w: number): Man {
+  if (Math.abs(roll) < 1e-9) return m;
+  const fill = T(s.cube([sleeperLen, w, 20]), [-sleeperLen / 2, -w / 2, -20]);
+  return aboveZ(s, bankTurn(s.union([m, fill]), b, roll), 0);
+}
+/** The top t of each banked route's bed, turned with it (kept clear of the underside's cuts: the inner side comes down to near the bottom). */
+function bankedRoof(s: Scad, routes: Route[], b: Bank, hw: number, t: number): Man {
+  return s.union(routes.filter(hasRoll).map((rt) => sweepRoute(s, s.square([2 * hw, 20 + t]).translate([-hw, PLATE_H - t]), rt, 0, Infinity, b)));
+}
+/** A connector (or anything at a route end, in its frame, y into the route) at a banked end: turned with the bed, filled under, cut off at z = 0. */
+function bankedEnd(s: Scad, m: Man, b: Bank, roll: number, sleeperLen: number, start: boolean): Man {
+  const fill = T(s.cube([sleeperLen, 8, 20]), [-sleeperLen / 2, start ? 0 : -8, -20]), big = 1e4;
+  return s.intersection(bankTurn(s.union([m, fill]), b, roll), T(s.cube([2 * big, 2 * big, 200]), [-big, -big, 0]));
+}
+/** A route end's breakaway supports (down to z0) at a banked end: made longer, turned with the rail ends, cut off at z0. */
+function bankedSupports(s: Scad, mk: (z0: number) => Man, b: Bank, roll: number, z0: number): Man {
+  const big = 1e4;
+  return s.intersection(bankTurn(mk(z0 - 15), b, roll), T(s.cube([2 * big, 2 * big, 200]), [-big, -big, z0]));
+}
+/** A stud on the bed at q, on a banked route there: turned with the bed (undefined: level there). */
+function bankedStud(routes: Route[], b: Bank, hw: number, q: [number, number], z: number, stud: Man): Man | undefined {
+  const rt = routes.find((r2) => hasRoll(r2) && Math.abs(routeLat(r2, q)) <= hw);
+  if (!rt) return undefined;
+  const sq = routeSOf(rt, q), roll = routeRoll(rt, sq);
+  if (Math.abs(roll) < 1e-9) return undefined;
+  const [x, zz] = bankPoint(b, roll, routeLat(rt, q), z), p = railPoint(rt, sq, x);
+  return T(R(stud, [0, -roll, routePose(rt, sq)[2]]), [p[0], p[1], zz]);
+}
 
 /** What a network piece (switch/network.ts) adds to the fixed trackwork: points built in. */
 export interface CrossingExtras {
@@ -128,7 +178,7 @@ export function crossingPiece(s: Scad, routes: Route[], o: CrossingOptions = CRO
   // depth below the rail top up, swept along the whole route.
   const bands = routes.map((rt) => sweepRoute(s,
     rect(g - HEAD_HW - o.flangeway, g - HEAD_HW, RAIL_TOP - o.flangewayDepth, RAIL_TOP + 1)
-      .add(rect(-g + HEAD_HW, -g + HEAD_HW + o.flangeway, RAIL_TOP - o.flangewayDepth, RAIL_TOP + 1)), rt));
+      .add(rect(-g + HEAD_HW, -g + HEAD_HW + o.flangeway, RAIL_TOP - o.flangewayDepth, RAIL_TOP + 1)), rt, 0, Infinity, bankAt(g)));
   // (only the routes near enough to cut each other: on a big layout, every
   // route against every other is most of the work)
   const boxes = routes.map((rt) => {
@@ -171,27 +221,33 @@ export function crossingPiece(s: Scad, routes: Route[], o: CrossingOptions = CRO
         bufS && bufDepth !== undefined && atPose(box(bufDepth, -1), p0), bufE && bufDepth !== undefined && atPose(box(bufDepth, -bufDepth), p1)];
     };
     const rails = s.difference(s.union([-g, g].map((x) =>
-      sweepRoute(s, s.polygon(RAIL_PROFILE.map(([px, py]) => [px + x, py + PLATE_H] as Vec2)), rt))), endBoxes(END, BUFFER_RAIL_END));
+      sweepRoute(s, s.polygon(RAIL_PROFILE.map(([px, py]) => [px + x, py + PLATE_H] as Vec2)), rt, 0, Infinity, bankAt(g)))), endBoxes(END, BUFFER_RAIL_END));
     const checks = sol.checkRails.filter((cr) => cr.route === i)
-      .map((cr) => sweepRoute(s, rect(cr.offset, cr.offset + cr.width, PLATE_H - 0.01, RAIL_TOP), rt, cr.s0, cr.s1));
-    parts.push(s.difference(s.union([rails, ...checks]), [...othersBands(i), ...nearCuts(i, x.railCuts?.get(i) ?? [])]));
+      .map((cr) => sweepRoute(s, rect(cr.offset, cr.offset + cr.width, PLATE_H - 0.01, RAIL_TOP), rt, cr.s0, cr.s1, bankAt(g)));
+    const railsAll = s.difference(s.union([rails, ...checks]), [...othersBands(i), ...nearCuts(i, x.railCuts?.get(i) ?? [])]);
+    parts.push(hasRoll(rt) ? aboveZ(s, railsAll, 0) : railsAll); // (banked: the rails' feet, run down through the bed, turned, kept above its bottom)
+    const banked = hasRoll(rt), roll0 = banked ? routeRoll(rt, 0) : 0, roll1 = banked ? routeRoll(rt, L) : 0;
+    const bedAlong = (a = 0, b = Infinity) => (banked ? bankedBed(s, rt, bankAt(g), c.sleeperLen / 2, onBallast ? -1 : 0, a, b) : sweepRoute(s, rect(-c.sleeperLen / 2, c.sleeperLen / 2, 0, PLATE_H), rt, a, b));
     // Track bed under the route (with sleepers: only where it needs it, sleepers elsewhere).
-    if (!sleepered) parts.push(s.difference(sweepRoute(s, rect(-c.sleeperLen / 2, c.sleeperLen / 2, 0, PLATE_H), rt), endBoxes(BED_END)));
+    if (!sleepered) parts.push(s.difference(bedAlong(), endBoxes(BED_END)));
     else {
-      const bed = zones[i].map(([a, b]) => sweepRoute(s, rect(-c.sleeperLen / 2, c.sleeperLen / 2, 0, PLATE_H), rt, a, b));
+      const bed = zones[i].map(([a, b]) => bedAlong(a, b));
       if (bed.length) parts.push(s.difference(s.union(bed), endBoxes(BED_END)));
       // (as the whole route has them, unless this stretch of it has an end connector of its own partway along it: a
       // plain track built in lengths, each a piece of its own, LEGO's way; then each piece's own, from its connectors)
       const in0 = x.innerEnds?.has(`${i}:start`) ?? false, in1 = x.innerEnds?.has(`${i}:end`) ?? false, wf = rt.sleeperFrame;
       const f = wf && (in0 || wf.s0 < 0.01) && (in1 || wf.s0 + L > wf.L - 0.01) ? wf : { s0: 0, L, in0, in1 };
       const at = sleeperSpots(f.L, f.in0, f.in1, o.sleeperGapStuds ?? 2, o.sleeperWidthStuds).map((v) => v - f.s0).filter((v) => v >= 0 && v <= L && !inZone(i, v));
-      if (at.length) parts.push(s.union(at.map((v) => { const P = routePose(rt, v); return atPose(t.sleeper(true, ex?.postOk(P)), P); })));
+      // (banked: each sleeper turned by the roll at it)
+      if (at.length) parts.push(s.union(at.map((v) => { const P = routePose(rt, v), sl = t.sleeper(true, ex?.postOk(P)); return atPose(banked ? bankedSleeper(s, sl, bankAt(g), routeRoll(rt, v), c.sleeperLen, c.sleeperW) : sl, P); })));
     }
     // End connectors and breakaway supports, at both ends.
     // (on ballast: no peg and clip, no stud recesses, as the switches')
     const peg = !onBallast || !!o.pegOnBallast || alone;
-    if (!inStart) parts.push(atPose(T(t.fullEndpoint(peg, !onBallast, ex?.xfs[0], ex?.guardX), [0, 4, 0]), p0));
-    if (!inEnd) parts.push(atPose(T(R(t.fullEndpoint(peg, !onBallast, ex?.xfs[1], ex?.guardX), [0, 0, 180]), [0, -4, 0]), p1));
+    // (at a banked end, a route left banked to its end: turned with the bed)
+    const conn0 = T(t.fullEndpoint(peg, !onBallast, ex?.xfs[0], ex?.guardX), [0, 4, 0]), conn1 = T(R(t.fullEndpoint(peg, !onBallast, ex?.xfs[1], ex?.guardX), [0, 0, 180]), [0, -4, 0]);
+    if (!inStart) parts.push(atPose(roll0 ? bankedEnd(s, conn0, bankAt(g), roll0, c.sleeperLen, true) : conn0, p0));
+    if (!inEnd) parts.push(atPose(roll1 ? bankedEnd(s, conn1, bankAt(g), roll1, c.sleeperLen, false) : conn1, p1));
     // (buffer stops, in their end's frame; the peg and clip above the bed on ballast held up by breakaway supports)
     if (bufS) parts.push(atPose(R(bufferStop(t, o.buffer ?? BUFFER_DEFAULTS, onBallast), [0, 0, 180]), p0));
     if (bufE) parts.push(atPose(bufferStop(t, o.buffer ?? BUFFER_DEFAULTS, onBallast), p1));
@@ -202,10 +258,10 @@ export function crossingPiece(s: Scad, routes: Route[], o: CrossingOptions = CRO
     }
     if (o.supports) {
       const zs = bottomZ - 0.02;
-      if (!inStart) parts.push(atPose(s.union([t.startRailSupports(zs, ex?.xfs[0]), t.supportFooting(zs, 0, -1)]), p0));
-      if (!inEnd) parts.push(atPose(s.union([t.endRailSupports(zs, ex?.xfs[1]), t.supportFooting(zs, 0, +1)]), p1));
+      if (!inStart) parts.push(atPose(roll0 ? s.union([bankedSupports(s, (z) => t.startRailSupports(z, ex?.xfs[0]), bankAt(g), roll0, zs), t.supportFooting(zs, 0, -1)]) : s.union([t.startRailSupports(zs, ex?.xfs[0]), t.supportFooting(zs, 0, -1)]), p0));
+      if (!inEnd) parts.push(atPose(roll1 ? s.union([bankedSupports(s, (z) => t.endRailSupports(z, ex?.xfs[1]), bankAt(g), roll1, zs), t.supportFooting(zs, 0, +1)]) : s.union([t.endRailSupports(zs, ex?.xfs[1]), t.supportFooting(zs, 0, +1)]), p1));
     }
-    if (ex?.solid) parts.push(ex.solid);
+    if (ex?.solid) parts.push(banked ? aboveZ(s, ex.solid, 0) : ex.solid); // (banked: turned with the track, kept above the bed's bottom)
   });
   // Studs on the bed, as on LEGO track's sleepers: on the stud grid (of the
   // grid pose), between and beside the rails, wherever they're clear of
@@ -252,7 +308,8 @@ export function crossingPiece(s: Scad, routes: Route[], o: CrossingOptions = CRO
       studPts.push(q);
     }
   }
-  const bedStuds = studPts.length ? s.union(studPts.map(([px, py]) => T(t.stud(c.postD, c.postH), [px, py, PLATE_H - 0.2]))) : undefined;
+  const anyBank = routes.some(hasRoll), bedStud = t.stud(c.postD, c.postH);
+  const bedStuds = studPts.length ? s.union(studPts.map(([px, py]) => (anyBank && bankedStud(routes, bankAt(g), c.sleeperLen / 2, [px, py], PLATE_H - 0.2, bedStud)) || T(t.stud(c.postD, c.postH), [px, py, PLATE_H - 0.2]))) : undefined;
   const body = s.union([...parts, ...(x.adds ?? []), bedStuds]);
   if (onBallast) return withAxleHoles(ballastPiece());
 
@@ -271,7 +328,9 @@ export function crossingPiece(s: Scad, routes: Route[], o: CrossingOptions = CRO
     }
   const cavH = o.studH + 0.21;
   const socket = (x: number, y: number) => T(R(t.studSocket(cavH), [0, 0, p0[2]]), [x, y, -0.01]);
-  if (o.grip === 'all' && o.undersideGrid !== 'track') return s.difference(body, [...spots.map(({ x, y }) => socket(x, y)), ...(x.cuts ?? [])]);
+  // (banked: the underside's hollows and sockets kept 0.8 mm under the bed's turned top, which comes down on the inner side)
+  const roofed = (ms: Man[]) => (anyBank ? [s.difference(s.union(ms), [bankedRoof(s, routes, bankAt(g), c.sleeperLen / 2 + 1, 0.8)])] : ms);
+  if (o.grip === 'all' && o.undersideGrid !== 'track') return s.difference(body, [...roofed(spots.map(({ x, y }) => socket(x, y))), ...(x.cuts ?? [])]);
   // (lined up with the track: a socket at every stud spot along each track, in rows across it a stud apart, turned with
   // it; none in the end connectors (they have their own), none two at a place where tracks meet)
   if (o.undersideGrid === 'track') {
@@ -286,7 +345,7 @@ export function crossingPiece(s: Scad, routes: Route[], o: CrossingOptions = CRO
         at.push({ q, h });
       }
     }
-    return s.difference(body, [...at.map(({ q, h }) => T(R(t.studSocket(cavH), [0, 0, h]), [q[0], q[1], -0.01])), ...(x.cuts ?? [])]);
+    return s.difference(body, [...roofed(at.map(({ q, h }) => T(R(t.studSocket(cavH), [0, 0, h]), [q[0], q[1], -0.01]))), ...(x.cuts ?? [])]);
   }
 
   // 'edges': hollow like a LEGO plate, a rim round each route's bed (not
@@ -370,7 +429,7 @@ export function crossingPiece(s: Scad, routes: Route[], o: CrossingOptions = CRO
     cuts.push(T(s.extrude(hollow, cavH), [0, 0, -0.01]));
   }
   for (const { i, j, x, y } of spots) if (!deep(i, j)) cuts.push(socket(x, y));
-  return s.difference(body, [...cuts, ...(x.cuts ?? [])]);
+  return s.difference(body, [...roofed(cuts), ...(x.cuts ?? [])]);
 
   /**
    * (sleepers) Where route i keeps its bed: the stretches (s ranges) near
@@ -416,7 +475,8 @@ export function crossingPiece(s: Scad, routes: Route[], o: CrossingOptions = CRO
     // (its own constants: it runs before the track-only underside's are set)
     const W = s.w, studR = t.o.studD / 2, RIM = 1.39;
     const layer2d = rect(-topW / 2, topW / 2, bz0, bz0 + thick).add(rect(-midW / 2, midW / 2, bz0, bz0 + thick / 2));
-    const layers = routes.map((rt) => sweepRoute(s, layer2d, rt));
+    // (a banked route's top layer above z = 0 is its bed, turned: only the layers below are swept here)
+    const layers = routes.map((rt) => sweepRoute(s, hasRoll(rt) ? rect(-midW / 2, midW / 2, bz0, bz0 + thick / 2) : layer2d, rt));
     const buddies = buddy ? routes.map((rt) => sweepRoute(s, rect(-botW / 2, botW / 2, bottomZ, bz0), rt)) : [];
     // (the top layer cut back at each connector, which sits on the one below)
     const endCuts = routes.flatMap((rt, i) => [

@@ -5,7 +5,7 @@
 // fixed trackwork piece (crossings and plain track).
 import type { Pose, Pt, Route, Segment } from '../route/route';
 import type { SetOver } from './base';
-import { routeLat, routeLength, routePose, segLength, segStarts, subExtra } from '../route/route';
+import { rollPart, routeLat, routeLength, routePose, segLength, segStarts, subExtra } from '../route/route';
 import type { Split } from '../route/solver';
 import { type BaseParams, BASE_DEFAULTS, type SetSpec, switchPlan, type SwitchPlan } from './base';
 
@@ -14,7 +14,10 @@ const sind = (d: number) => Math.sin(rad(d)), cosd = (d: number) => Math.cos(rad
 
 /** The part of segment sg from l0 to l1 along it. */
 function part(sg: Segment, l0: number, l1: number): Segment {
-  return sg.kind === 'straight' ? { kind: 'straight', length: l1 - l0 } : { kind: 'arc', radius: sg.radius, angle: (Math.sign(sg.angle) * (l1 - l0) * 180) / (Math.PI * sg.radius) };
+  const out: Segment = sg.kind === 'straight' ? { kind: 'straight', length: l1 - l0 } : { kind: 'arc', radius: sg.radius, angle: (Math.sign(sg.angle) * (l1 - l0) * 180) / (Math.PI * sg.radius) };
+  const roll = rollPart(sg.roll, l0, l1);
+  if (roll) out.roll = roll;
+  return out;
 }
 /** A route's stretch from arc length s0 to s1, as a route of its own. */
 export function subRoute(rt: Route, s0: number, s1: number, id = rt.id): Route {

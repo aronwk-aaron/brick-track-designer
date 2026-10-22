@@ -2,7 +2,7 @@
 // 3D piece on the right, rebuilt in a worker as you edit.
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
-import { type Design, type DRoute, type DSeg, OPTION_DEFAULTS, type PieceOptions, RAIL_DEFAULTS, TEMPLATES, type Trackwork, endOf, freeName, isMono } from './design';
+import { BANK_MAX, type BankRamps, type Design, type DRoute, type DSeg, OPTION_DEFAULTS, type PieceOptions, RAIL_DEFAULTS, TEMPLATES, type Trackwork, endOf, freeName, isMono } from './design';
 import { TrackCanvas, type OverlayItem, leverSide, leverSlides, typingIn } from './canvas';
 import { describe } from './planner';
 import type { Piece } from './build';
@@ -46,6 +46,7 @@ function segRow(r: DRoute, k: number): HTMLElement {
   else row.append(field('Curve: radius, studs', (() => { const i = num(sg.radius, (n) => { const x = Math.min(1000, Math.max(24, n)); (sg as Extract<DSeg, { kind: 'curve' }>).radius = x; i.value = String(x); }, 8); i.min = '24'; i.max = '1000'; i.title = 'Radius in studs, 24 to 1000 (the OpenSCAD curves run 24 + 8k)'; return i; })()),
     field('angle ° (+ left)', num(sg.angle, (n) => { (sg as Extract<DSeg, { kind: 'curve' }>).angle = n; }, 0.5)));
   row.append(btn('✕', () => { r.segs.splice(k, 1); }, 'Remove this segment'));
+  row.append(...bankFields(sg, isMono(r)));
   return row;
 }
 
@@ -121,6 +122,39 @@ function extraRailFields(r: DRoute, body: HTMLElement) {
     { v: 'none', t: 'None', tip: 'The third rail has rail ends at both ends, to join the next dual-gauge piece.' },
     (w) => `The third rail stops short at ${w}, clear of a single-gauge piece's end connector.`, 'Narrow-gauge trains can\'t run on past that end.'),
   (v) => { r.dualPlainEnds = v as DRoute['dualPlainEnds']; }, dOff);
+}
+
+/** A curve's bank (superelevation): how far it leans in, and where it ramps from level. Always shown; locked on a straight, the ramps until there's a bank. */
+function bankFields(sg: DSeg, mono: boolean): HTMLElement[] {
+  const curve = sg.kind === 'curve' && !mono ? sg : undefined, noBank = mono ? 'monorail track doesn\'t bank' : 'only curves bank';
+  const locked = (el: HTMLElement, why: string | undefined) => {
+    if (!why) return el;
+    const n = document.createElement('small'); n.className = 'desc why'; n.textContent = `Locked: ${why}.`;
+    const d = document.createElement('div'); d.className = 'stack'; d.append(el, n); return d;
+  };
+  const bank = num(curve?.bank ?? 0, (n) => {
+    if (!curve) return;
+    const v = Math.min(Math.max(n, 0), BANK_MAX);
+    if (v > 0) curve.bank = v; else { delete curve.bank; delete curve.bankRamps; }
+    render();
+  }, 0.5, 'The track leans in by this many degrees, about the inner rail: the outer rail is higher (4-stud gauge: 3° = 2.1 mm). The underside stays flat. 0 = level. Range 0 to 10, default 0.');
+  bank.min = '0'; bank.max = String(BANK_MAX); bank.disabled = !curve;
+  const sel = document.createElement('select');
+  const choices: Record<BankRamps, [string, string]> = {
+    both: ['In the curve, both ends', 'Ramps up at the curve\'s start and down at its end, inside the curve. Drawback: a short curve gets shorter, steeper ramps.'],
+    start: ['In the curve, start only', 'Ramps up inside the curve at its start; full bank to its end. Drawback: the ramp down is on the track after it, or the route\'s end stays banked.'],
+    end: ['In the curve, end only', 'Full bank from the curve\'s start; ramps down inside it at its end. Drawback: the ramp up is on the track before it, or the route\'s start stays banked.'],
+    none: ['On the track either side', 'Full bank from end to end; the ramps are on the track before and after. Drawback: a route end on the curve stays banked (only banked track joins it).'],
+  };
+  for (const [v, [t, tip]] of Object.entries(choices)) { const op = new Option(t, v); op.title = tip; sel.append(op); }
+  sel.value = curve?.bankRamps ?? 'both';
+  sel.title = choices[sel.value as BankRamps][1];
+  sel.disabled = !curve?.bank;
+  sel.addEventListener('change', () => { if (!curve) return; if (sel.value === 'both') delete curve.bankRamps; else curve.bankRamps = sel.value as BankRamps; changed(true); });
+  return [
+    locked(field('bank °', bank), curve ? undefined : noBank),
+    locked(field('bank ramps', sel), !curve ? noBank : !curve.bank ? 'set a bank first' : undefined),
+  ];
 }
 
 // Which route cards are open (by index); the selected one always is.
@@ -976,6 +1010,9 @@ const OPTION_FORM: OptSection[] = [
     { key: 'labelSize', label: 'Add the size (S16, R40 22.5°)', check: true, off: (c) => (c.ballast && c.o.bottomStyle === 'float' ? undefined : 'labels go only on a flat underside: set Ballast to Ballast and Ballast underside to Flat') ?? (c.o.labelText ? undefined : 'Label text is empty') },
     { key: 'labelGauge', label: 'Add the gauge (Ln4)', check: true, off: (c) => (c.ballast && c.o.bottomStyle === 'float' ? undefined : 'labels go only on a flat underside: set Ballast to Ballast and Ballast underside to Flat') ?? (c.o.labelText ? undefined : 'Label text is empty') },
     { key: 'labelParts', label: 'Number parts cut for the bed (#2)', check: true, off: (c) => (c.ballast && c.o.bottomStyle === 'float' ? undefined : 'labels go only on a flat underside: set Ballast to Ballast and Ballast underside to Flat') ?? (c.o.labelText ? undefined : 'Label text is empty'), help: 'Matches the part\'s file name.' },
+  ] },
+  { title: 'Banked curves', kind: 'train', fields: [
+    { key: 'bankRampStuds', label: 'Bank ramp length, studs', step: 1, min: 2, max: 24, help: 'Each ramp from level to a curve\'s full bank. Set a curve\'s bank on its route card. A ramp too long for its track is shortened to fit (with a warning).' },
   ] },
   { title: 'Check rails and flangeways', kind: 'train', fields: [
     { key: 'checkRailLen', label: 'Check rail length, mm', step: 2, min: 10, max: 80 },

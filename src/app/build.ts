@@ -11,7 +11,7 @@ import { arena, flat, type Wasm } from '../geom/kernel';
 import { stlBytes } from '../geom/stl';
 import { splitSelfCrossing } from '../route/selfcross';
 import { FORCE_ANGLE, FORCE_LAT, solve, type SplitEdits } from '../route/solver';
-import { railPoint, routeLat, routeLength, routePose, routeSOf, type Pose } from '../route/route';
+import { hasRoll, railPoint, routeLat, routeLength, routePose, routeRoll, routeSOf, type Pose } from '../route/route';
 import { reversedRoute } from '../switch/reverse';
 import { BASE_DEFAULTS, switchGeometry } from '../switch/base';
 import { switchGlobals } from '../switch/context';
@@ -24,7 +24,7 @@ import type { Route } from '../route/route';
 import { cutPiece, type CutLine } from '../geom/cutter';
 import { edgeGrip } from '../geom/underside';
 import { pathSplit, type Keep } from '../geom/pathsplit';
-import { type Design, OPTION_DEFAULTS, bufferEnds, isMono, toRoutes } from './design';
+import { bankRolls, type Design, OPTION_DEFAULTS, bufferEnds, isMono, toRoutes } from './design';
 import { labelCut, labelLines } from '../geom/labels';
 import { buildMonorail, clearMonoCache } from './monobuild';
 
@@ -204,6 +204,30 @@ export function droppedInner(routes: Route[], dropped: Split[], rts: Route[], mo
 }
 
 /**
+ * Banked curves can't have switches or crossings on them (their points and
+ * frogs are built level): a banked route that another track comes within a
+ * sleeper's length of (centre line to centre line), where it's banked, is
+ * built level, with a warning.
+ */
+export function levelBankedNearOthers(routes: Route[], near: number): { routes: Route[]; warnings: string[] } {
+  const warnings: string[] = [];
+  const out = routes.map((rt, i) => {
+    if (!hasRoll(rt)) return rt;
+    const L = routeLength(rt), n = Math.max(1, Math.ceil(L / 4));
+    for (let k = 0; k <= n; k++) {
+      const sAt = (L * k) / n;
+      if (Math.abs(routeRoll(rt, sAt)) < 1e-9) continue;
+      const p = routePose(rt, sAt);
+      if (!routes.some((r2, j) => j !== i && Math.abs(routeLat(r2, [p[0], p[1]])) < near)) continue;
+      warnings.push(`the bank on ${rt.id.replace(/~\d+$/, '')} is left out: another track comes within a sleeper's length of it where it's banked, at ${(p[0] / 8).toFixed(1)}, ${(p[1] / 8).toFixed(1)} (studs); a banked curve can't have switches or crossings on it`);
+      return { ...rt, segments: rt.segments.map(({ roll: _roll, ...sg }) => sg) };
+    }
+    return rt;
+  });
+  return { routes: out, warnings };
+}
+
+/**
  * Build a design: its train track (buildTrain), and its monorail routes
  * (monobuild.ts) beside it. A design with no monorail is built just as
  * buildTrain builds it.
@@ -281,6 +305,9 @@ function buildOne(w: Wasm, design: Design, report: (what: string, frac: number) 
   // (a route that crosses itself, cut where it does into routes joined end to end: see route/selfcross.ts)
   let routes = orient(splitSelfCrossing(toRoutes(design).filter((r) => r.segments.length > 0), (design.gaugeStuds + 1) * 8));
   if (routes.length === 0) throw new Error('Draw some track: click a grid point to start, then click where it should go.');
+  // (banked curves: level where other track comes near; ramps cut short)
+  const bankWarnings = design.routes.flatMap((r) => bankRolls(design, r).warnings);
+  if (routes.some(hasRoll)) { const lv = levelBankedNearOthers(routes, (design.gaugeStuds + 1) * 8 + 24); routes = lv.routes; bankWarnings.push(...lv.warnings); }
   const t0 = performance.now();
   const gauge = (design.gaugeStuds + 1) * 8;
   const o = { ...OPTION_DEFAULTS, ...design.options };
@@ -508,8 +535,11 @@ function buildOne(w: Wasm, design: Design, report: (what: string, frac: number) 
     const pad = G0 + 8, box = [Math.min(...pts.map((q) => q[0])) - pad, Math.min(...pts.map((q) => q[1])) - pad, Math.max(...pts.map((q) => q[0])) + pad, Math.max(...pts.map((q) => q[1])) + pad];
     return { rt, s0, s1, box };
   }));
+  // (nor on a banked stretch, the rails there tilted: cut plain)
+  const bankedRts = routes.filter(hasRoll);
   const noTongue = (q: [number, number]) => zones.some((z) => q[0] >= z.box[0] && q[0] <= z.box[2] && q[1] >= z.box[1] && q[1] <= z.box[3]
-    && Math.abs(routeLat(z.rt, q)) < G0 + 6 && ((sa) => sa >= z.s0 && sa <= z.s1)(routeSOf(z.rt, q)));
+    && Math.abs(routeLat(z.rt, q)) < G0 + 6 && ((sa) => sa >= z.s0 && sa <= z.s1)(routeSOf(z.rt, q)))
+    || bankedRts.some((rt) => Math.abs(routeLat(rt, q)) < G0 + 6 && Math.abs(routeRoll(rt, routeSOf(rt, q))) > 1e-9);
   /** Fits a part to the bed: its pieces that don't touch apart, and one too big split along stepped paths (pathsplit.ts), as often as it takes. */
   /** holes: the axle holes the cuts so far put in (cutter.ts), kept clear of: more are added as it goes. */
   const fitter = (pieceRoutes: typeof routes, holes: Keep[] = []) => {
@@ -962,7 +992,7 @@ function buildOne(w: Wasm, design: Design, report: (what: string, frac: number) 
   const mn = [Infinity, Infinity, Infinity], mx = [-Infinity, -Infinity, -Infinity];
   for (const ps of all) for (let i = 0; i < ps.length; i += 3) for (let k = 0; k < 3; k++) { mn[k] = Math.min(mn[k], ps[i + k]); mx[k] = Math.max(mx[k], ps[i + k]); }
   // (and every warning that says where, "at x, y (studs)", ringed there)
-  for (const wn of [...forceWarnings, ...pc.warnings, ...bedWarnings]) {
+  for (const wn of [...forceWarnings, ...bankWarnings, ...pc.warnings, ...bedWarnings]) {
     const m = /at (-?\d+(?:\.\d+)?), (-?\d+(?:\.\d+)?) \(studs\)/.exec(wn);
     if (!m) continue;
     const at: [number, number] = [Number(m[1]) * 8, Number(m[2]) * 8];
@@ -972,7 +1002,7 @@ function buildOne(w: Wasm, design: Design, report: (what: string, frac: number) 
     ms: performance.now() - t0, volume,
     size: [0, 1, 2].map((k) => mx[k] - mn[k]),
     crossings: sol.crossings.length, checkRails: sol.checkRails.length, splits: sol.splits.length,
-    switches: network ? sol.splits.length : pc.switches.length, pieces: pieces.length, warnings: [...forceWarnings, ...pc.warnings, ...bedWarnings],
+    switches: network ? sol.splits.length : pc.switches.length, pieces: pieces.length, warnings: [...forceWarnings, ...bankWarnings, ...pc.warnings, ...bedWarnings],
   };
   return { overlay, pieces, info };
 }
