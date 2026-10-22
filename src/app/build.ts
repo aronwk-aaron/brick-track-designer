@@ -573,7 +573,9 @@ function buildOne(w: Wasm, design: Design, report: (what: string, frac: number) 
     };
     return fitAll;
   };
-  const addTrack = (name: string, world: Man, pieceRoutes: typeof routes, size?: string) => {
+  /** rebuild: (sleepers) the piece built again with the bed kept across the cut lines (crossing.ts bedAt). */
+  const addTrack = (name: string, world0: Man, pieceRoutes: typeof routes, size?: string, rebuild?: (lines: CutLine[]) => Man) => {
+    let world = world0;
     const bb = world.boundingBox(), b: Rect = [bb.min[0], bb.min[1], bb.max[0], bb.max[1]];
     if (!bp && fitsBed(world)) { const lm = labelled(world, pieceRoutes, size); return add(name, 0x6f7780, lm, lm); }
     // too big for the print bed (or at the baseplate edges): cut across the
@@ -583,6 +585,7 @@ function buildOne(w: Wasm, design: Design, report: (what: string, frac: number) 
     const lj = (v: number) => (plan.edges?.has(v) ? { joint: 'axle' as const } : plan.combs?.has(v) ? { comb: true } : {});
     const lines: CutLine[] = [...plan.xs.map((x): CutLine => ({ p: [x, 0], d: [0, 1], ...lj(x) })), ...plan.ys.map((y): CutLine => ({ p: [0, y], d: [1, 0], ...lj(y) }))];
     steps++; progress(plan.why === 'bed' ? `Cutting ${name} to fit the print bed` : `Cutting ${name} at the baseplate edges`);
+    if (rebuild && lines.length) world = rebuild(lines);
     const cut = cached(`cut:${bp}:${o.joint}:${o.cutRails}:${JSON.stringify(lines)}:${JSON.stringify(pieceRoutes)}:${world.volume().toFixed(3)}`, () => arena(w, () => { const holes: Keep[] = []; return { cells: cutPiece(scad, track, world, pieceRoutes, lines, o.joint === 'ends' ? 'lego' : o.joint ?? 'lego', o.cutRails === 'flat', noTongue, holes as [number, number, number][]), holes }; }, (r) => r.cells));
     const cells = cut.cells;
     const fitAll = fitter(pieceRoutes, [...cut.holes]);
@@ -783,7 +786,7 @@ function buildOne(w: Wasm, design: Design, report: (what: string, frac: number) 
       const cost = cr.routes.reduce((t, rt) => t + routeLength(rt), 0) + 400 * near.length;
       try { part = job(tk, cost, () => arena(w, () => {
         const grips: [number, number][] = [];
-        const body = networkBody(scad, cr.routes, { crossings: [], grooves: [], splits: [], checkRails: cr.checks }, copt, tileSplits, grips, { cuts: tileCuts, innerEnds: tileInner, gridPose });
+        const body = networkBody(scad, cr.routes, { crossings: [], grooves: [], splits: [], checkRails: cr.checks }, copt, tileSplits, grips, { cuts: tileCuts, innerEnds: tileInner, gridPose, ...(sleepered && { bedAt: lines }) });
         const holes: [number, number, number][] = [];
         const got = cutPiece(scad, track, body, cr.routes, lines, o.joint === 'ends' ? 'lego' : o.joint ?? 'lego', o.cutRails === 'flat', noTongue, holes).filter((m) => {
           const bb = m.boundingBox(), cx = (bb.min[0] + bb.max[0]) / 2, cy = (bb.min[1] + bb.max[1]) / 2;
@@ -813,6 +816,8 @@ function buildOne(w: Wasm, design: Design, report: (what: string, frac: number) 
   };
   // ---- the trackwork first (what the plan shows and the hand edits work
   // on), sent on ahead of the pieces, which take longer ----
+  // (track only with sleepers: the bed kept across each cut, so the parts there have floor to join with)
+  const sleepered = o.sleepers === 'sleepers' && o.ballast === 'none';
   const copt = { ...CROSSING_DEFAULTS, gaugeStuds: design.gaugeStuds, grip: design.grip ?? 'edges', flangeway: o.flangeway, flangewayDepth: o.flangewayDepth, checkRailW: o.checkRailW,
     ballast: o.ballast, bottomStyle: o.bottomStyle, supports: o.endSupports !== false, curveStuds: o.curveStuds,
     studFit: o.studFit, antistudFit: o.antistudFit, sleepers: o.sleepers, sleeperWidthStuds: o.sleeperWidthStuds, sleeperGapStuds: o.sleeperGapStuds,
@@ -867,7 +872,7 @@ function buildOne(w: Wasm, design: Design, report: (what: string, frac: number) 
         // (each lid its own part)
         const lidParts = ls.deck.decompose().filter((m) => m.volume() > 20);
         lidParts.forEach((m, k) => add(`points${lidParts.length > 1 ? k + 1 : ''}-lid`, 0x6f7780, m, m));
-      } else addTrack('track', whole.body, routes);
+      } else addTrack('track', whole.body, routes, undefined, sleepered ? (ls) => cached(`netcut:${netKey}:${JSON.stringify(ls)}`, () => networkBody(scad, routes, sol, copt, net.splits, [], { cuts: grooveCuts, innerEnds: dropInner(routes), bedAt: ls })) : undefined);
     }
     if (plan) throw PLANNED;
     // (each points set's moving parts baked, by what they're made from: an edit bakes only the ones it changes)
@@ -895,7 +900,7 @@ function buildOne(w: Wasm, design: Design, report: (what: string, frac: number) 
     else if (plan) throw PLANNED;
     else if (pc.rest.length > 1 || fits(whole().m)) {
       overlay.grips.push(...whole().grips);
-      addTrack('track', whole().m, rest, sizeOf(rest));
+      addTrack('track', whole().m, rest, sizeOf(rest), sleepered ? (ls) => cached(`cxcut:${restKey}:${JSON.stringify(ls)}`, () => crossingPiece(scad, rest, copt, restSol, [], { cuts: grooveCuts, innerEnds: dropInner(rest), bedAt: ls })) : undefined);
     } else {
       // A plain track longer than the bed: in equal lengths, joined like
       // LEGO track pieces (rail-end tongues, peg and clip), each fitting it.

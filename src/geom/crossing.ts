@@ -78,6 +78,8 @@ export interface CrossingExtras {
   gridPose?: Pose;
   /** more floor to hollow out underneath with tubes, like the track bed's (the throw arms): rectangles [x0, x1, y0, y1] in frame P */
   hollows?: { P: Pose; r: [number, number, number, number] }[];
+  /** (sleepers) the lines the piece will be cut along (for the bed, the baseplates): the bed kept across each, so the parts have floor there to join with */
+  bedAt?: { p: [number, number]; d: [number, number] }[];
 }
 
 /** Route ends that another route runs on from, end to end (a route drawn in two, the track into a wye's toe): "i:start" / "i:end". */
@@ -375,7 +377,9 @@ export function crossingPiece(s: Scad, routes: Route[], o: CrossingOptions = CRO
           const lx = dx * Math.cos(hd) + dy * Math.sin(hd), ly = -dx * Math.sin(hd) + dy * Math.cos(hd), m = c.sleeperLen / 2;
           return lx >= r[0] - m && lx <= r[1] + m && ly >= r[2] - m && ly <= r[3] + m;
         });
-      if (near) marked.push(sAt);
+      // (and across each cut line, the joint's room either side: a cut in a gap had nothing but the rails to join)
+      const atCut = (x.bedAt ?? []).some((ln) => Math.abs((q[0] - ln.p[0]) * -ln.d[1] + (q[1] - ln.p[1]) * ln.d[0]) < 10);
+      if (near || atCut) marked.push(sAt);
     }
     const grow = c.sleeperW / 2 + 2, out: [number, number][] = [];
     for (const v of marked) {

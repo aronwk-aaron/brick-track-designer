@@ -6,7 +6,9 @@
 // branches off it (a switch). Select mode picks a track to edit or delete.
 // Drag with the right or middle button (or Space + drag) to pan; the wheel
 // zooms.
-import { type Design, type DRoute, type DSeg, freeName, isMono } from './design';
+import { type Design, type DRoute, type DSeg, freeName, isMono, toRoutes } from './design';
+import { sleeperSpots } from '../geom/crossing';
+import { routeLength, routePose } from '../route/route';
 import { describe, follow, plan, planAnyway, planAuto, planFreeTurning, planToPose, reversed, trace as traceRaw, type Pose } from './planner';
 
 // Track outlines traced once and kept (they're in studs, the same at any
@@ -857,6 +859,21 @@ export class TrackCanvas {
           q = follow(q, [sg]);
         });
       }));
+    }
+    // (track only with sleepers: each sleeper across the band, where the build lays them (crossing.ts sleeperSpots;
+    // where tracks meet the build keeps the bed, drawn as the band))
+    {
+      const op = d.options ?? {};
+      if (op.sleepers === 'sleepers' && (op.ballast ?? 'none') === 'none') {
+        const gapS = op.sleeperGapStuds ?? 2, sw = op.sleeperWidthStuds ?? 2, half = g + 1.5;
+        toRoutes(d).forEach((rt, i) => {
+          if (isMono(d.routes[i]) || !rt.segments.length) return;
+          for (const sAt of sleeperSpots(routeLength(rt), false, false, gapS, sw)) {
+            const p = routePose(rt, sAt), h = (p[2] * Math.PI) / 180, rx = Math.cos(h), ry = Math.sin(h), x = p[0] / MM, y = p[1] / MM;
+            line([[x - rx * half, y - ry * half], [x + rx * half, y + ry * half]], 'rgba(140,128,110,0.42)', sw * this.scale);
+          }
+        });
+      }
     }
     // monorail: the 4-stud beam (its narrower ends where pieces join aren't shown) with the rack's ridge down its middle
     const monoHw = MONO_HW / MM, ridgeHw = MONO_RIDGE_HW / MM;
