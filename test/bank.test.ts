@@ -111,6 +111,12 @@ describe('banked curves', { timeout: 120000 }, () => {
     expect(m.decompose().filter((b) => b.volume() > 1).length).toBe(1); // (and no more than zero-volume slivers)
   });
 
+  it('track and ballast printed apart: both parts build, the warnings clear', async () => {
+    const b = buildDesign(await kernel(), design([curve(5)], { printBedX: 500, printBedY: 500, ballast: 'ballast', trackBallast: 'apart' }));
+    expect(b.info.warnings).toEqual([]);
+    expect(b.pieces.length).toBeGreaterThanOrEqual(2);
+  });
+
   it('left level, with a warning, where another track crosses it', async () => {
     const d: Design = { version: 1, gaugeStuds: 4, options: { printBedX: 500, printBedY: 500 }, routes: [
       { name: 'Curve', x: 0, y: -12, heading: 0, segs: [{ kind: 'curve', radius: 40, angle: 30, bank: 4 }] },
