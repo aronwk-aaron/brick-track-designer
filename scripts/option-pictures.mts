@@ -20,7 +20,7 @@ const box = (ps: P[]) => { const b = [1e9, 1e9, 1e9, -1e9, -1e9, -1e9]; for (con
 const faceOf = (ps: P[]): [number, number, number] => { const b = box(ps); return [0, b[1] + 4, 3]; };
 const sw = TEMPLATES['Left switch (LEGO)'].routes;
 const toe: Cam = { dir: '1,-0.7,1.1', r: 190, at: () => [4, 44, 6] }, throwCam: Cam = { dir: '1.2,-0.6,1', r: 120, at: () => [34, 28, 8] };
-const iso: Cam = { dir: '1,-0.9,0.8', dist: 2.0 }, under: Cam = { dir: '0.6,-0.7,-1', dist: 2.0 };
+const under: Cam = { dir: '0.6,-0.7,-1', dist: 2.0 };
 // (layouts that show what a setting does: a crossing for sleepers (its solid middle, sleepers on its arms), a curve
 // between straights for where long track is cut and for anything that follows the track)
 const cross = TEMPLATES['90° crossing'].routes, bend = [{ name: 'A', x: 0, y: 0, heading: 0, segs: [{ kind: 'straight', studs: 24 }, { kind: 'curve', radius: 40, angle: 90 }, { kind: 'straight', studs: 24 }] }];
