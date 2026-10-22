@@ -260,6 +260,7 @@
       <symbol id="i-open" viewBox="0 0 24 24"><path d="M3 7a2 2 0 012-2h4l2 2h8a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2z"/></symbol>
       <symbol id="i-save" viewBox="0 0 24 24"><path d="M5 3h11l4 4v12a2 2 0 01-2 2H6a2 2 0 01-2-2V5a2 2 0 012-2z"/><path d="M8 3v5h7V3M8 21v-7h8v7"/></symbol>
       <symbol id="i-download" viewBox="0 0 24 24"><path d="M12 4v11M7 10l5 5 5-5M5 20h14"/></symbol>
+      <symbol id="i-layout" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><path d="M17.5 14v7M14 17.5h7"/></symbol>
       <symbol id="i-info" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 11v6M12 7.5v.5"/></symbol>
       <symbol id="i-github" viewBox="0 0 16 16"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></symbol>
     </defs>
@@ -290,6 +291,7 @@
     <button id="load" type="button" title="Open a saved design (.btd.json) (Ctrl+O)"><svg><use href="#i-open"/></svg><span class="lbl">Open</span></button>
     <button id="save" type="button" title="Save the design as a file (Ctrl+S); it's also kept in this browser as you work"><svg><use href="#i-save"/></svg><span class="lbl">Save</span></button>
     <button id="export-stl" type="button" class="primary" title="Download the parts to print (STL files)"><svg><use href="#i-download"/></svg>STL</button>
+    <button id="export-layout" type="button" title="Download the parts as a parts library for the layout designer"><svg><use href="#i-layout"/></svg><span class="lbl">Layout parts</span></button>
     <input id="load-file" type="file" accept=".json,application/json" hidden>
     <span class="sep"></span>
     <button id="about-open" class="icon" type="button" title="About Brick Track Designer, and its source code"><svg><use href="#i-info"/></svg></button>
@@ -349,6 +351,12 @@
           <li>Points (yellow squares): click to take them out (both tracks' rails run through as plain track: a grey square), again to put them back; drag to move them along. A hollow yellow square is a track end a little off another track: click it to force points there (dashed: too far off; redraw it to start on the track).</li>
           <li>Levers (orange): drag one across the track to swap its side, or further out (on tines, along too). Hover a lever to see what set its side, the branch it throws picked out in orange: a lever dragged across wins, then the branch route's own Lever side (on its card), then the Piece options'.</li>
           <li>The Trackwork panel has each one's numbers, and a three-way's branches one at a time.</li>
+        </ul>
+        <h3>Layout parts (for the layout designer)</h3>
+        <ul>
+          <li>⬇ Layout parts downloads a zip with a parts library for the collaborative layout designer (and BlueBrick): one part for each printed track part, as cut for your print bed (the points, throws and levers drawn on the part they go in), with connection points where the track leaves it, and a set that puts them all down as designed.</li>
+          <li>Save the design under a name first: the folder, the parts and the set are named after it, so each design's parts are its own.</li>
+          <li>In the layout designer: unzip it somewhere to keep it, then Tools &gt; Parts &gt; Parts Folders…, Add…, the unzipped folder, OK. The parts are under the design's name in the Parts panel. After exporting again, unzip over the old folder and use Tools &gt; Parts &gt; Reload Parts. (BlueBrick: copy the folder into its parts folder.) The README in the zip says the same.</li>
         </ul>
         <h3>View and keys</h3>
         <ul>

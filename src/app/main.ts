@@ -7,6 +7,7 @@ import { TrackCanvas, type OverlayItem, leverSide, leverSlides, typingIn } from 
 import { describe } from './planner';
 import type { Piece } from './build';
 import { zip } from '../geom/zip';
+import { layoutParts } from './layoutparts';
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 const routesEl = $('routes'), infoEl = $('info'), errEl = $('error');
@@ -182,9 +183,13 @@ function setStatus(info: string, problem = '', rebuild = false, warn = false) {
 /** The downloads: only of an up-to-date build. */
 function updateExports() {
   const why = building ? 'Wait for the build to finish' : !pieces.length ? 'Nothing built yet' : stale ? 'The 3D view is out of date: rebuild first' : '';
-  for (const id of ['export-stl']) {
+  const tips: Record<string, string> = {
+    'export-stl': 'Download the parts for printing as STL (a zip when there are several)',
+    'export-layout': 'Download a parts library for the layout designer (a zip): one part per printed track part, each with its picture and connection points, and a set of them all as designed. Help says how to load it',
+  };
+  for (const id of ['export-stl', 'export-layout']) {
     const b = $<HTMLButtonElement>(id); b.disabled = !!why;
-    b.title = why ? `${why}` : 'Download the parts for printing as STL (a zip when there are several)';
+    b.title = why ? `${why}` : tips[id];
   }
 }
 
@@ -443,6 +448,14 @@ $('export-stl').addEventListener('click', () => {
   const base = fileBase();
   if (pieces.length === 1) download(new Blob([pieces[0].stl as BlobPart], { type: 'model/stl' }), `${base}.stl`);
   else download(new Blob([zip(pieces.map((p) => ({ name: `${base}-${p.name}.stl`, data: p.stl }))) as BlobPart], { type: 'application/zip' }), `${base}.zip`);
+});
+// The parts as a parts library for the layout designer (layoutparts.ts): a zip of the library's folder and a README.
+$('export-layout').addEventListener('click', () => {
+  if (!pieces.length || building || stale) return;
+  try {
+    const x = layoutParts(design, pieces, fileBase());
+    download(new Blob([zip(x.files) as BlobPart], { type: 'application/zip' }), `${fileBase()}-layout-parts.zip`);
+  } catch (err) { setStatus(infoEl.textContent ?? '', `Couldn't make the layout parts: ${err instanceof Error ? err.message : err}`); }
 });
 // The design's name (asked on Save): what it saves and downloads under.
 const fileBase = () => (design.name || 'track-piece').replace(/[\\/:*?"<>|]+/g, '-').trim() || 'track-piece';
