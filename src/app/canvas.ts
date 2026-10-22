@@ -903,6 +903,8 @@ export class TrackCanvas {
       const wide = (2 * g + 3 + (ballast === 'buddy' ? 4 : 2)) * this.scale;
       layer(ink.ballastLow, (draw) => { for (const r of d.routes) if (!isMono(r)) draw(trace(r, r.segs, 0.5), wide); });
       if (ballast === 'buddy') layer(ink.ballast, (draw) => { for (const r of d.routes) if (!isMono(r)) draw(trace(r, r.segs, 0.5), (2 * g + 5) * this.scale); });
+      // (the selected tracks' ballast picked out with them, as their band)
+      layer('rgba(43,111,224,0.16)', (draw) => d.routes.forEach((r, i) => { if (!isMono(r) && (i === this.selected || this.extra.has(i))) draw(trace(r, r.segs, 0.5), wide); }));
     }
     // the sleeper bands, each colour as one layer (red where a drag can't bend the track)
     {
