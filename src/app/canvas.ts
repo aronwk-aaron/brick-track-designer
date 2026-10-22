@@ -275,6 +275,13 @@ export class TrackCanvas {
   }
   /** How near (studs) the mouse must be to catch a track or an end: about 14 pixels at any zoom (up to 4 studs, zoomed far out). */
   private reach(px = 14) { return Math.min(4, Math.max(0.1, px / this.scale)); }
+  /** (select) The track whose bed, sleepers or ballast p is on: a click anywhere on it picks it, not only near its centre line. */
+  private onBand(p: [number, number]) {
+    const d = this.host.design(), bal = d.options?.ballast ?? 'none';
+    const half = (d.gaugeStuds + 1) / 2 + 1.5 + (bal === 'buddy' ? 2 : bal === 'ballast' ? 1 : 0);
+    const h = this.nearTrack(p, half);
+    return h && Math.hypot(h.pose.x - p[0], h.pose.y - p[1]) <= half + 0.25 ? { ...h, end: undefined } : undefined;
+  }
   private nearTrack(p: [number, number], reach = this.reach(), skip?: number): { route: number; pose: Pose; end: 'start' | 'end' | undefined } | undefined {
     let best: { route: number; pose: Pose; end: 'start' | 'end' | undefined; d: number } | undefined;
     this.host.design().routes.forEach((r, i) => {
@@ -346,7 +353,7 @@ export class TrackCanvas {
       }
     }
     if (this.mode === 'select') {
-      const hit = this.nearTrack(w, this.reach(18));
+      const hit = this.nearTrack(w, this.reach(18)) ?? this.onBand(w);
       // pressing on a selected track: drag the selection about
       const add = e.shiftKey || e.ctrlKey || e.metaKey;
       // pressing on empty ground: drag out a box to select what it touches
@@ -480,7 +487,7 @@ export class TrackCanvas {
     let c = this.mode === 'draw' ? 'crosshair' : 'default';
     if (this.space) c = 'grab';
     else if (w && !this.active) {
-      const grab = !!(this.leverAt(w) || this.itemAt(w)), hit = grab ? undefined : this.nearTrack(w, this.reach(18));
+      const grab = !!(this.leverAt(w) || this.itemAt(w)), hit = grab ? undefined : this.nearTrack(w, this.reach(18)) ?? (this.mode === 'select' ? this.onBand(w) : undefined);
       if (grab) c = 'grab';
       else if (hit?.end) c = 'move';
       else if (hit && this.mode === 'select') c = 'pointer';
@@ -723,7 +730,7 @@ export class TrackCanvas {
       if (this.leverDrag?.moved) return 'Let go to put the lever here: it goes on the nearest stud it can';
       return `Lever on the ${ls.side} (${ls.why}) · drag it across the track to change sides, or further out${leverSlides(d) ? ' or along' : ''}`;
     }
-    const hit = this.mouse ? this.nearTrack(this.mouse) : undefined;
+    const hit = this.mouse ? this.nearTrack(this.mouse) ?? (this.mode === 'select' ? this.onBand(this.mouse) : undefined) : undefined;
     // (over points: what a click does to them)
     const pi = !this.active && this.mouse ? this.itemAt(this.mouse) : undefined;
     if (pi?.it.kind === 'points' && !this.itemDrag?.moved) {
