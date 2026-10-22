@@ -43,7 +43,7 @@ const field = (label: string, ...els: HTMLElement[]) => {
 function segRow(r: DRoute, k: number): HTMLElement {
   const sg = r.segs[k], row = document.createElement('div'); row.className = 'seg';
   if (sg.kind === 'straight') row.append(field('Straight, studs', num(sg.studs, (n) => { sg.studs = n; }, 1)));
-  else row.append(field('Curve: radius, studs', num(sg.radius, (n) => { (sg as Extract<DSeg, { kind: 'curve' }>).radius = n; }, 8)),
+  else row.append(field('Curve: radius, studs', (() => { const i = num(sg.radius, (n) => { const x = Math.min(1000, Math.max(24, n)); (sg as Extract<DSeg, { kind: 'curve' }>).radius = x; i.value = String(x); }, 8); i.min = '24'; i.max = '1000'; i.title = 'Radius in studs, 24 to 1000 (the OpenSCAD curves run 24 + 8k)'; return i; })()),
     field('angle ° (+ left)', num(sg.angle, (n) => { (sg as Extract<DSeg, { kind: 'curve' }>).angle = n; }, 0.5)));
   row.append(btn('✕', () => { r.segs.splice(k, 1); }, 'Remove this segment'));
   return row;
@@ -596,7 +596,14 @@ const hintEl = $('hint'), coordsEl = $('coords');
 const radiusSel = $<HTMLSelectElement>('radius');
 radiusSel.append(new Option('Curves: free', '-1', true, true));
 radiusSel.append(new Option('Curves: LEGO radii', '0'));
-for (const r of [24, 32, 40, 48, 56, 64, 72, 88, 104, 120]) radiusSel.append(new Option(`Curves: R${r}`, String(r)));
+// (every radius curves.scad makes, 24 + 8k studs, up to R1000: LEGO's and the common ones first, in a group of their own)
+{
+  const common = [24, 32, 40, 48, 56, 64, 72, 88, 104, 120], g1 = document.createElement('optgroup'), g2 = document.createElement('optgroup');
+  g1.label = 'LEGO and common radii'; g2.label = 'Every radius to R1000';
+  for (const r of common) g1.append(new Option(`Curves: R${r}`, String(r)));
+  for (let r = 24; r <= 1000; r += 8) if (!common.includes(r)) g2.append(new Option(`Curves: R${r}`, String(r)));
+  radiusSel.append(g1, g2);
+}
 // (remembered: it's how you like to draw, not part of the design)
 try { const v = localStorage.getItem('btd-radius'); if (v && [...radiusSel.options].some((op) => op.value === v)) radiusSel.value = v; } catch { /* fine */ }
 radiusSel.addEventListener('change', () => { try { localStorage.setItem('btd-radius', radiusSel.value); } catch { /* fine */ } });
