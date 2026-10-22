@@ -42,7 +42,7 @@ describe('undersides on the baseplate', { timeout: 300000 }, () => {
     ['track only, a switch', TEMPLATES['Left switch (LEGO)'].routes, {}],
     ['ballast, a crossing', TEMPLATES['90° crossing'].routes, { ballast: 'ballast' }],
   ] as const) it(`${name}: every stud fits, some grip`, async () => {
-    const parts = await check({ version: 1, gaugeStuds: 4, routes: routes as Design['routes'], options: { printBedX: 500, printBedY: 500, ...options } });
+    const parts = await check({ version: 1, gaugeStuds: 4, routes: routes as Design['routes'], options: Object.assign({ printBedX: 500, printBedY: 500 }, options) });
     expect(parts.length).toBeGreaterThan(0);
     for (const p of parts) { expect(p.clash, `${p.name}: studs that don't fit`).toBe(0); expect(p.grip, `${p.name}: gripped`).toBeGreaterThan(p.under / 4); }
   });
