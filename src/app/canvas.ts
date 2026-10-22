@@ -230,6 +230,7 @@ export class TrackCanvas {
     addEventListener('mousemove', (e) => this.move(e));
     addEventListener('mouseup', (e) => this.up(e));
     el.addEventListener('wheel', (e) => this.wheel(e), { passive: false });
+    this.touch();
     addEventListener('keydown', (e) => this.key(e, true));
     addEventListener('keyup', (e) => this.key(e, false));
     this.resize();
@@ -322,6 +323,58 @@ export class TrackCanvas {
   }
 
   // ---------- input ----------
+  /**
+   * Touch: one finger is the mouse's left button (select, drag, draw), but on
+   * empty ground in Select it pans (as the middle button); two fingers pinch
+   * to zoom and drag to pan.
+   */
+  private touch() {
+    const el = this.el;
+    const fake = (t: { clientX: number; clientY: number }, button = 0) =>
+      ({ clientX: t.clientX, clientY: t.clientY, button, buttons: 1, shiftKey: false, ctrlKey: false, metaKey: false, altKey: false, preventDefault() {}, stopPropagation() {} }) as unknown as MouseEvent;
+    let pinch: { d: number; scale: number; world: [number, number] } | undefined, last: { clientX: number; clientY: number } | undefined, oneButton = 0, start: [number, number] = [0, 0];
+    const mid = (e: TouchEvent): [number, number] => { const r = el.getBoundingClientRect(), [a, b] = [e.touches[0], e.touches[1]]; return [(a.clientX + b.clientX) / 2 - r.left, (a.clientY + b.clientY) / 2 - r.top]; };
+    const spread = (e: TouchEvent) => Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY);
+    el.addEventListener('touchstart', (e) => {
+      e.preventDefault();
+      if (e.touches.length === 1 && !pinch) {
+        const t = e.touches[0], r = el.getBoundingClientRect(), w = this.toWorld(t.clientX - r.left, t.clientY - r.top);
+        // (on empty ground in Select: pan, as the middle button; on track, a lever or points: as the left button)
+        const onSomething = !!(this.leverAt(w) || this.itemAt(w) || this.nearTrack(w, this.reach(24)) || this.onBand(w));
+        oneButton = this.mode === 'select' && !onSomething ? 1 : 0;
+        last = t; start = [t.clientX, t.clientY]; this.mouse = w; this.down(fake(t, oneButton));
+        return;
+      }
+      if (e.touches.length === 2) {
+        // (a second finger: whatever the first began ends where it is, and the two pinch and pan)
+        if (last && !pinch) this.up(fake(last, oneButton));
+        const m = mid(e);
+        pinch = { d: spread(e), scale: this.scale, world: this.toWorld(m[0], m[1]) };
+      }
+    }, { passive: false });
+    el.addEventListener('touchmove', (e) => {
+      e.preventDefault();
+      if (pinch && e.touches.length >= 2) {
+        const m = mid(e);
+        this.scale = Math.min(80, Math.max(0.5, (pinch.scale * spread(e)) / Math.max(1, pinch.d)));
+        this.ox = m[0] - pinch.world[0] * this.scale; this.oy = m[1] + pinch.world[1] * this.scale;
+        this.drawSoon();
+        return;
+      }
+      if (!pinch && e.touches.length === 1) { last = e.touches[0]; this.move(fake(last, oneButton)); }
+    }, { passive: false });
+    const end = (e: TouchEvent) => {
+      e.preventDefault();
+      if (pinch) { if (e.touches.length === 0) pinch = undefined; last = undefined; return; }
+      const t = e.changedTouches[0] ?? last;
+      if (last) this.up(fake(t, oneButton));
+      // (a tap on empty ground: nothing selected, as a click there)
+      if (last && oneButton === 1 && Math.hypot(t.clientX - start[0], t.clientY - start[1]) < 8) { this.setSelection([]); this.draw(); }
+      last = undefined;
+    };
+    el.addEventListener('touchend', end, { passive: false });
+    el.addEventListener('touchcancel', end, { passive: false });
+  }
   private down(e: MouseEvent) {
     // (the right button pans, drawing or not: a right click without a drag stops the track being drawn)
     if (e.button === 1 || e.button === 2 || this.space) {

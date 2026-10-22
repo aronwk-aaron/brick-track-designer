@@ -2,7 +2,16 @@
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#171a1f" media="(prefers-color-scheme: dark)">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="Track Designer">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <meta name="description" content="Lay out LEGO-compatible train track and make it into parts to 3D print.">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
   <title>Brick Track Designer</title>
   <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A//www.w3.org/2000/svg%22%20viewBox%3D%220%200%2024%2024%22%3E%3Crect%20x%3D%222%22%20y%3D%222%22%20width%3D%2220%22%20height%3D%2220%22%20rx%3D%225%22%20fill%3D%22%23d01012%22/%3E%3Cpath%20d%3D%22M8%205v14M16%205v14%22%20stroke%3D%22%23fff%22%20stroke-width%3D%222%22/%3E%3Cpath%20d%3D%22M6%208.5h12M6%2012h12M6%2015.5h12%22%20stroke%3D%22%23fff%22%20stroke-width%3D%221.4%22%20opacity%3D%220.8%22/%3E%3C/svg%3E">
   <style>
@@ -234,16 +243,33 @@
     @media (max-width: 1560px) { header h1 { display: none; } }
     @media (max-width: 1240px) { body { grid-template-columns: 260px minmax(0, 1fr); } body.settings { grid-template-columns: 260px minmax(0, 1fr) 300px; } body.settings.nopanel { grid-template-columns: 0 minmax(0, 1fr) 300px; } }
     @media (max-width: 1280px) { header .lbl { display: none; } }
+    /* ---- phones and small tablets: the plan and 3D view fill the screen; the routes and settings panels slide over them ---- */
     @media (max-width: 760px) {
-      body { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto auto minmax(0, 1fr); overflow: auto; }
-      body.nopanel, body.settings, body.settings.nopanel { grid-template-columns: minmax(0, 1fr); }
-      #settings { grid-column: 1; grid-row: 3; max-height: 50vh; border-left: 0; border-bottom: 1px solid var(--line); } body.settings > main { grid-row: 4; }
-      body > main { grid-column: 1; grid-row: 3; }
-      aside { max-height: 40vh; border-right: 0; border-bottom: 1px solid var(--line); }
-      header { grid-column: 1; } header h1 { display: none; } header .spacer { display: none; }
+      body, body.nopanel, body.settings, body.settings.nopanel { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr); }
+      header { grid-column: 1; flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; gap: 4px; padding: 6px 8px; min-height: 52px; }
+      header::-webkit-scrollbar { display: none; }
+      header h1, header .spacer { display: none; } header .sep { flex: none; }
+      header > * { flex: none; }
+      body > main { grid-column: 1; grid-row: 2; }
+      aside, #settings { position: fixed; top: var(--head-h, 52px); bottom: 0; z-index: 20; width: min(92vw, 400px); max-height: none; box-shadow: var(--shadow); }
+      aside { left: 0; border-right: 1px solid var(--line); } #settings { right: 0; grid-column: auto; grid-row: auto; }
+      body.nopanel aside { display: none; }
       #legend #legend-rows, #legend .lhead { display: none; } /* (just its Help button: the plan's too small for the rest) */
       #views .sep { display: none; } #views .explode input { width: 60px; }
+      #selbar { max-width: calc(100% - 20px); }
+      #help { width: calc(100% - 20px); }
     }
+    /* touch screens: bigger targets */
+    @media (pointer: coarse) {
+      button, select, a.icon { height: 38px; } button.icon, a.icon { width: 38px; }
+      .group > button { height: 34px; } .group > button.icon { width: 34px; }
+      input[type=number], input[type=text], input[type=search] { height: 36px; font-size: 16px; } /* (16px: no zoom on focus in iOS) */
+      select { font-size: 16px; }
+      #views button, #selbar button { height: 34px; }
+    }
+    /* the notch and the home bar (installed to the home screen) */
+    header { padding-top: max(7px, env(safe-area-inset-top)); padding-left: max(12px, env(safe-area-inset-left)); padding-right: max(12px, env(safe-area-inset-right)); }
+    #status, #hint { margin-bottom: env(safe-area-inset-bottom); }
   </style>
 </head>
 <body>

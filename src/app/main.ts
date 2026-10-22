@@ -680,6 +680,15 @@ $('settings-close').addEventListener('click', () => openSettings(false));
   });
 }
 
+// (the header's height, for the side panels that slide over the view on a phone)
+const headH = () => document.documentElement.style.setProperty('--head-h', `${document.querySelector('header')!.offsetHeight}px`);
+addEventListener('resize', headH); headH();
+// (a phone: the routes panel starts closed, unless it was left open; the panels close when you tap the plan)
+const narrow = () => matchMedia('(max-width: 760px)').matches;
+$('track').addEventListener('touchstart', () => { if (narrow()) { if (!document.body.classList.contains('nopanel')) $('toggle-panel').click(); if (!settingsEl.hidden) openSettings(false); } }, { passive: true });
+// Installable (add to home screen): the service worker keeps the app (and the geometry kernel) for offline use.
+if ('serviceWorker' in navigator && import.meta.env.PROD) addEventListener('load', () => { navigator.serviceWorker.register('sw.js').catch(() => { /* (no offline copy: fine) */ }); });
+
 // Help
 const helpEl = $('help');
 $('help-open').addEventListener('click', () => helpEl.classList.add('open'));
@@ -693,7 +702,7 @@ const setPanel = (on: boolean) => {
   try { localStorage.setItem('btd-panel', on ? '1' : '0'); } catch { /* fine */ }
 };
 let showPanel = true;
-try { showPanel = localStorage.getItem('btd-panel') !== '0'; } catch { /* fine */ }
+try { const v = localStorage.getItem('btd-panel'); showPanel = v === null ? !matchMedia('(max-width: 760px)').matches : v !== '0'; } catch { /* fine */ }
 setPanel(showPanel);
 $('toggle-panel').addEventListener('click', () => { showPanel = !showPanel; setPanel(showPanel); });
 
