@@ -107,6 +107,25 @@ describe('monorail', { timeout: 120000 }, () => {
     expect(parts.length).toBeGreaterThan(4);
     for (const p of parts) { const [x, y] = footprint(p.stl); expect((x <= 200 && y <= 200) || (x <= 200 && y <= 200), `${p.name}: ${x.toFixed(0)} x ${y.toFixed(0)}`).toBe(true); }
   });
+  it('two monorail beams crossing at 90°: a level crossing part of its own, flat in the middle, the beams cut either side of it', async () => {
+    const d: Design = { version: 1, gaugeStuds: 4, options: { printBedX: 256, printBedY: 256 }, routes: [
+      { name: 'A', x: 0, y: -24, heading: 0, system: 'monorail', segs: [{ kind: 'straight', studs: 48 }] },
+      { name: 'B', x: 24, y: 0, heading: 90, system: 'monorail', segs: [{ kind: 'straight', studs: 48 }] },
+    ] };
+    const b = buildDesign(await kernel(), d);
+    expect(b.pieces.map((p) => p.name).sort()).toEqual(['monorail-A-1', 'monorail-A-2', 'monorail-B-1', 'monorail-B-2', 'monorail-crossing']);
+    expect(b.info.warnings.some((wn) => /beams run over/.test(wn))).toBe(false);
+    // (the crossing: nothing above the beam's top in its middle, the racks on its arms)
+    const x = b.pieces.find((p) => p.name === 'monorail-crossing')!.positions;
+    let midTop = 0, armTop = 0;
+    for (let i = 0; i < x.length; i += 3) {
+      const ax = Math.abs(x[i]), ay = Math.abs(x[i + 1]);
+      if (ax < 14 && ay < 14) midTop = Math.max(midTop, x[i + 2]);
+      if (ax < 3 && ay > 22) armTop = Math.max(armTop, x[i + 2]);
+    }
+    expect(midTop).toBeCloseTo(MONO.beamTop, 1);
+    expect(armTop).toBeCloseTo(MONO.ridgeTop, 1);
+  });
   it('a design with train track and monorail: the train built as on its own; a warning where the beam runs into it, none on supports', async () => {
     const train: DRoute = { name: 'T', x: 0, y: -12, heading: 0, segs: [{ kind: 'straight', studs: 24 }] };
     const beam = mono({ name: 'M', x: 12, y: 0, heading: 90, segs: [{ kind: 'straight', studs: 24 }] });

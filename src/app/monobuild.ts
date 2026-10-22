@@ -5,6 +5,7 @@
 // support columns. Runs beside the train track's build (build.ts).
 import { arena, type Wasm } from '../geom/kernel';
 import { Scad, type Man } from '../geom/scad';
+import { sweepRoute } from '../geom/sweep';
 import { stlBytes } from '../geom/stl';
 import { MONO, MONO_DEFAULTS, Mono, type MonoOptions, rackGaps, type RackGap, SUPPORT_DEFAULTS, type SupportOptions, placeAt, subOf, supportHeight, supportPart, underLabel } from '../geom/monorail';
 import { monoSwitch, type SwitchPlan, planSwitch } from '../geom/monoswitch';
@@ -267,6 +268,44 @@ export function buildMonorail(w: Wasm, routes: Route[], o: Partial<PieceOptions>
     switches.push({ plan, P: Pd, key: JSON.stringify({ m: main.route.segments, b: bo.route.segments, lead, travel, fit, mo, elev }) });
   }
 
+  // ---- level crossings: where two beams (or one coming back) cross at an angle, a piece of its own ----
+  // (both beams through it, each with proper ends on its arms; each rack's ridge cut back where it's on the other beam,
+  // the middle flat, so either train runs across: its gear coasts over the gap)
+  const crossings: { at: [number, number]; arms: { c: number; a: number; b: number }[] }[] = [];
+  {
+    const poly = chains.map((c) => { const out: { q: Pose; s: number }[] = []; for (let s2 = 0; s2 <= c.L + 1e-6; s2 += 2) out.push({ q: routePose(c.route, s2), s: s2 }); return out; });
+    const hits: { at: [number, number]; ci: number; si: number; cj: number; sj: number; ang: number }[] = [];
+    for (let ci = 0; ci < chains.length; ci++) for (let cj = ci; cj < chains.length; cj++) {
+      const P = poly[ci], Q = poly[cj];
+      for (let i = 0; i + 1 < P.length; i++) for (let j = cj === ci ? i + 2 : 0; j + 1 < Q.length; j++) {
+        const a = P[i].q, b = P[i + 1].q, c2 = Q[j].q, d = Q[j + 1].q;
+        if (Math.max(a[0], b[0]) < Math.min(c2[0], d[0]) || Math.max(c2[0], d[0]) < Math.min(a[0], b[0]) || Math.max(a[1], b[1]) < Math.min(c2[1], d[1]) || Math.max(c2[1], d[1]) < Math.min(a[1], b[1])) continue;
+        const r = [b[0] - a[0], b[1] - a[1]], t2 = [d[0] - c2[0], d[1] - c2[1]], den = r[0] * t2[1] - r[1] * t2[0];
+        if (Math.abs(den) < 1e-9) continue;
+        const u = ((c2[0] - a[0]) * t2[1] - (c2[1] - a[1]) * t2[0]) / den, v = ((c2[0] - a[0]) * r[1] - (c2[1] - a[1]) * r[0]) / den;
+        if (u < 0 || u > 1 || v < 0 || v > 1) continue;
+        const si = P[i].s + 2 * u, sj = Q[j].s + 2 * v;
+        if (ci === cj && Math.abs(si - sj) < 64) continue;
+        const ang = Math.abs((((P[i].q[2] - Q[j].q[2]) % 180) + 180) % 180);
+        hits.push({ at: [a[0] + r[0] * u, a[1] + r[1] * u], ci, si, cj, sj, ang: Math.min(ang, 180 - ang) });
+      }
+    }
+    for (const h of hits) {
+      if (crossings.some((x) => Math.hypot(x.at[0] - h.at[0], x.at[1] - h.at[1]) < 32)) continue;
+      if (res.splits.some((t) => Math.hypot(t[0] - h.at[0], t[1] - h.at[1]) < 400)) continue;
+      if (h.ang < 15) { issue(h.at, 48, 'Monorail beams cross here at too shallow an angle for a crossing'); res.warnings.push(`monorail beams cross at ${studs(h.at)} (studs) at ${h.ang.toFixed(0)}°: too shallow for a level crossing (15° at least)`); continue; }
+      // (each arm long enough for the other beam's width at this angle and a proper end beyond, on whole studs)
+      const half = (MONO.beamHw + 2) / Math.sin((h.ang * Math.PI) / 180) + MONO.endLen + 4;
+      const arm = (c: number, s2: number) => {
+        const C = chains[c], a = Math.floor((s2 - half) / grid) * grid, b = Math.ceil((s2 + half) / grid) * grid;
+        return C.closed ? { c, a: a < 0 ? a + C.L : a, b: a < 0 ? b + C.L : b } : { c, a: Math.max(0, a), b: Math.min(C.L, b) };
+      };
+      const arms = [arm(h.ci, h.si), arm(h.cj, h.sj)];
+      crossings.push({ at: h.at, arms });
+      for (const x of arms) taken[x.c].push([x.a, x.b]);
+    }
+  }
+
   // ---- the plain beam: each chain's stretches outside the switches, cut for the bed ----
   type Part = { c: number; a: number; b: number };
   const parts: Part[] = [];
@@ -358,6 +397,24 @@ export function buildMonorail(w: Wasm, routes: Route[], o: Partial<PieceOptions>
       res.warnings.push(`the monorail points (${tag}) don't fit the ${X} x ${Y} print bed: points aren't cut`);
     }
   });
+  crossings.forEach((x, k) => {
+    report(`Building monorail crossing ${k + 1} of ${crossings.length}`);
+    const name = crossings.length > 1 ? `monorail-crossing${k + 1}` : 'monorail-crossing';
+    const key = JSON.stringify({ arms: x.arms.map((a) => [chains[a.c].route.segments, chains[a.c].route.start, a.a, a.b]), mo, elev });
+    const b = cached(`mx:${key}`, () => arena(w, () => {
+      const arms = x.arms.map((a) => {
+        const C = chains[a.c], sub = subOf(C.route, a.a, a.b), gaps = C.gaps.filter((g) => g.s > a.a - 1 && g.s < a.b + 1).map((g) => ({ ...g, s: g.s - a.a }));
+        return { sub, m: mono.piece(sub, 0, a.b - a.a, gaps, [true, true]) };
+      });
+      // (each beam's ridge off where it's on the other beam: above its top, the other's width and a little)
+      const over = (sub: Route) => sweepRoute(scad, scad.square([2 * MONO.beamHw + 3, 20]).translate([-MONO.beamHw - 1.5, MONO.beamTop - 0.01]), sub);
+      const m = scad.union([scad.difference(arms[0].m, [over(arms[1].sub)]), scad.difference(arms[1].m, [over(arms[0].sub)])]);
+      return bake(m, fitAngle(outline(m), X, Y) ?? 0, elev);
+    }, () => []));
+    res.pieces.push({ name, color: 0x9aa3ad, positions: b.positions.slice(), stl: b.stl.slice() });
+    res.volume += b.volume;
+    if (res.warnings.every((wn) => !/level crossings are experimental/.test(wn))) res.warnings.push('monorail level crossings are experimental: the gear coasts across the middle (no rack there); test-print one first');
+  });
   // ---- supports: one part each, standing under the beam ----
   const sups = supportsAt.filter((q) => Number.isFinite(q.s));
   // (and under each switch's ends)
@@ -398,10 +455,11 @@ export function buildMonorail(w: Wasm, routes: Route[], o: Partial<PieceOptions>
       if (p.ci === q.ci && (Math.abs(p.s - q.s) < 64 || (chains[p.ci].closed && chains[p.ci].L - Math.abs(p.s - q.s) < 64))) continue;
       if (Math.hypot(p.q[0] - q.q[0], p.q[1] - q.q[1]) >= 31) continue;
       if (toes.some((t) => Math.hypot(t[0] - p.q[0], t[1] - p.q[1]) < 400)) continue;
+      if (crossings.some((x) => Math.hypot(x.at[0] - p.q[0], x.at[1] - p.q[1]) < 80)) continue;
       if (!spots.some((s) => near(s, p.q, 64))) spots.push(p.q);
     }
     for (const q of spots) issue([q[0], q[1]], 48, 'Monorail beams run over each other here');
-    if (spots.length) res.warnings.push(`monorail beams run over each other at ${spots.slice(0, 4).map((q) => studs([q[0], q[1]])).join('; ')} (studs): they can't cross on the same level`);
+    if (spots.length) res.warnings.push(`monorail beams run over each other at ${spots.slice(0, 4).map((q) => studs([q[0], q[1]])).join('; ')} (studs): they run along each other (they can only cross at 15° or more)`);
   }
   return res;
 }
