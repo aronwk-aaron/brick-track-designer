@@ -22,10 +22,12 @@
     html, body { height: 100%; }
     body { margin: 0; font: 13px/1.35 system-ui, sans-serif; display: grid; grid-template-columns: 300px minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr); height: 100vh; overflow: hidden; background: var(--bg); color: var(--ink); }
     body.nopanel { grid-template-columns: 0 minmax(0, 1fr); } body.nopanel aside { display: none; }
+    /* the settings: a panel down the right, as the routes' down the left */
+    body.settings { grid-template-columns: 300px minmax(0, 1fr) 340px; } body.settings.nopanel { grid-template-columns: 0 minmax(0, 1fr) 340px; }
     body > main { grid-column: 2; grid-row: 2; }
 
     /* toolbar */
-    header { grid-column: 1 / 3; display: flex; gap: 6px; align-items: center; flex-wrap: wrap; padding: 6px 10px; border-bottom: 1px solid var(--line); background: var(--panel); }
+    header { grid-column: 1 / -1; display: flex; gap: 6px; align-items: center; flex-wrap: wrap; padding: 6px 10px; border-bottom: 1px solid var(--line); background: var(--panel); }
     header h1 { font-size: 15px; margin: 0 6px 0 2px; white-space: nowrap; }
     header .sep { width: 1px; align-self: stretch; background: var(--line); margin: 2px 4px; }
     header .spacer { flex: 1; }
@@ -58,10 +60,10 @@
     #trackwork > summary .count { font-weight: 400; color: var(--muted); }
     #trackwork .row button, #trackwork > div > button { margin-top: 6px; }
     /* settings: a drawer over the right of the plan and 3D view, each section folding, its header kept in view */
-    #settings { position: fixed; right: 0; top: var(--head-h, 44px); bottom: 0; width: min(440px, 100vw); z-index: 5; display: flex; flex-direction: column;
-      background: var(--panel); border-left: 1px solid var(--line); box-shadow: -4px 0 16px rgba(0,0,0,0.15); }
+    #settings { grid-column: 3; grid-row: 2; min-height: 0; display: flex; flex-direction: column; background: var(--panel); border-left: 1px solid var(--line); }
     #settings[hidden] { display: none; }
-    #settings .shead { display: flex; gap: 6px; align-items: center; padding: 8px 10px; border-bottom: 1px solid var(--line); }
+    #settings .shead { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; padding: 8px 10px; border-bottom: 1px solid var(--line); }
+    #settings .shead input[type=search] { order: 9; flex: 1 1 100%; } #settings .shead h2 { flex: 1; }
     #settings .shead h2 { font-size: 13px; margin: 0 4px 0 0; }
     #settings .shead input { flex: 1; min-width: 0; background: var(--panel); border: 1px solid var(--line); border-radius: 5px; padding: 3px 6px; }
     #settings .shead button { padding: 2px 8px; }
@@ -180,7 +182,8 @@
     @media (max-width: 1480px) { header .lbl { display: none; } }
     @media (max-width: 760px) {
       body { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto auto minmax(0, 1fr); overflow: auto; }
-      body.nopanel { grid-template-columns: minmax(0, 1fr); }
+      body.nopanel, body.settings, body.settings.nopanel { grid-template-columns: minmax(0, 1fr); }
+      #settings { grid-column: 1; grid-row: 3; max-height: 50vh; border-left: 0; border-bottom: 1px solid var(--line); } body.settings > main { grid-row: 4; }
       body > main { grid-column: 1; grid-row: 3; }
       aside { max-height: 40vh; border-right: 0; border-bottom: 1px solid var(--line); }
       header { grid-column: 1; } header h1 { display: none; } header .spacer { display: none; }
@@ -229,7 +232,7 @@
       <h2>Settings</h2>
       <input id="settings-search" type="search" placeholder="Find a setting…" title="Show only the settings whose name or description has this in it">
       <button id="settings-fold" type="button" title="Fold every section (or open them all)">Fold all</button>
-      <button id="settings-close" type="button" title="Close (Esc)">✕</button>
+      <button id="settings-close" type="button" title="Hide the settings (,)">✕</button>
     </div>
     <div id="options"><div id="options-body"></div></div>
   </section>

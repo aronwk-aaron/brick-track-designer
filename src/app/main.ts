@@ -549,18 +549,20 @@ addEventListener('keydown', (e) => {
   if ((e.key === 'f' || e.key === 'F') && !e.ctrlKey && !e.metaKey) canvas.fit();
   if (e.key === '?') helpEl.classList.toggle('open');
   if (e.key === ',') openSettings(settingsEl.hidden);
-  if (e.key === 'Escape') { helpEl.classList.remove('open'); openSettings(false); }
+  if (e.key === 'Escape') helpEl.classList.remove('open');
 });
 
-// Settings: a drawer over the plan's right side, opened from the toolbar (or ","), closed with Esc or its ✕.
+// Settings: a panel down the right (as the routes' down the left), shown or hidden from the toolbar (or ","), remembered.
 const settingsEl = $('settings');
-function openSettings(on: boolean) {
-  settingsEl.hidden = !on; $('settings-open').classList.toggle('on', on);
-  if (on) { document.documentElement.style.setProperty('--head-h', `${document.querySelector('header')!.offsetHeight}px`); renderOptions(); }
+function openSettings(on: boolean, draw = true) {
+  settingsEl.hidden = !on; document.body.classList.toggle('settings', on); $('settings-open').classList.toggle('on', on);
+  try { localStorage.setItem('btd-settings', on ? '1' : '0'); } catch { /* fine */ }
+  if (on && draw) renderOptions();
 }
+// (drawn with the rest of the form further down)
+try { if (localStorage.getItem('btd-settings') === '1') openSettings(true, false); } catch { /* fine */ }
 $('settings-open').addEventListener('click', () => openSettings(settingsEl.hidden));
 $('settings-close').addEventListener('click', () => openSettings(false));
-addEventListener('resize', () => document.documentElement.style.setProperty('--head-h', `${document.querySelector('header')!.offsetHeight}px`));
 {
   const search = $<HTMLInputElement>('settings-search');
   search.addEventListener('input', () => { optQuery = search.value.trim(); renderOptions(); });
