@@ -118,6 +118,8 @@ export interface PieceOptions {
   sleepers: 'bed' | 'sleepers';
   /** The sleepers: each this many studs wide (2 as LEGO's, 1 as bridge ties), this many studs apart. */
   sleeperWidthStuds: number; sleeperGapStuds: number;
+  /** Track only: the underside lined up with the baseplate's stud grid, or with the track itself (rows along it). */
+  undersideGrid?: 'baseplate' | 'track';
   /** LEGO fit: added to the studs' 4.8 mm (mm); the anti-stud tubes' outside smaller and bore bigger by this (mm). */
   studFit: number; antistudFit: number;
   /** (switch.scad's blade_disc_d) The tines mechanism's points: the round disc they pivot on, its diameter, mm. */

@@ -70,6 +70,20 @@ describe('sleepers', { timeout: 120000 }, () => {
   });
 });
 
+describe('underside lined up with the track', { timeout: 120000 }, () => {
+  it('an angled curve: sockets in rows along it (none on the baseplate grid), one body; the default as before', async () => {
+    const w = await kernel(), d: Design = { version: 1, gaugeStuds: 4, options: { printBedX: 500, printBedY: 500 }, routes: [{ name: 'C', x: 0, y: 0, heading: 17, segs: [{ kind: 'straight', studs: 12 }, { kind: 'curve', radius: 40, angle: 45 }] }] };
+    const grid = buildDesign(w, d), along = buildDesign(w, { ...d, options: { ...d.options, undersideGrid: 'track' } }), dflt = buildDesign(w, { ...d, options: { ...d.options, undersideGrid: 'baseplate' } });
+    expect(along.info.warnings).toEqual([]);
+    expect(along.pieces).toHaveLength(1);
+    expect(dflt.info.volume).toBeCloseTo(grid.info.volume, 3);
+    expect(Math.abs(along.info.volume - grid.info.volume)).toBeGreaterThan(50);
+    // (with ballast it's the baseplate's grid regardless)
+    const b1 = buildDesign(w, { ...d, options: { ...d.options, ballast: 'ballast' } }), b2 = buildDesign(w, { ...d, options: { ...d.options, ballast: 'ballast', undersideGrid: 'track' } });
+    expect(b2.info.volume).toBeCloseTo(b1.info.volume, 3);
+  });
+});
+
 describe('LEGO fit', { timeout: 120000 }, () => {
   it('a bigger stud fit makes the studs bigger; the default is as before', async () => {
     const w = await kernel(), d = straight(16);

@@ -45,6 +45,8 @@ export interface CrossingOptions extends TrackOptions {
    * under the points.
    */
   sleepers?: 'bed' | 'sleepers';
+  /** Track only: the underside's sockets on the baseplate's stud grid ('baseplate'), or in rows along the track and turned with it ('track', as LEGO track's: for track off the grid, or on other studs) */
+  undersideGrid?: 'baseplate' | 'track';
   sleeperGapStuds?: number;
   /** (buffer.scad) Route ends that end in a buffer stop, by where they are (mm), and the buffers' settings. */
   buffers?: [number, number][]; buffer?: BufferOptions;
@@ -269,7 +271,23 @@ export function crossingPiece(s: Scad, routes: Route[], o: CrossingOptions = CRO
     }
   const cavH = o.studH + 0.21;
   const socket = (x: number, y: number) => T(R(t.studSocket(cavH), [0, 0, p0[2]]), [x, y, -0.01]);
-  if (o.grip === 'all') return s.difference(body, [...spots.map(({ x, y }) => socket(x, y)), ...(x.cuts ?? [])]);
+  if (o.grip === 'all' && o.undersideGrid !== 'track') return s.difference(body, [...spots.map(({ x, y }) => socket(x, y)), ...(x.cuts ?? [])]);
+  // (lined up with the track: a socket at every stud spot along each track, in rows across it a stud apart, turned with
+  // it; none in the end connectors (they have their own), none two at a place where tracks meet)
+  if (o.undersideGrid === 'track') {
+    const at: { q: [number, number]; h: number }[] = [];
+    const endsT = routes.flatMap((rt, i) => [!x.innerEnds?.has(`${i}:start`) && routePose(rt, 0), !x.innerEnds?.has(`${i}:end`) && routePose(rt, routeLength(rt))]).filter((e): e is Pose => !!e);
+    for (const rt of routes) {
+      const L = routeLength(rt);
+      for (let sAt = 4; sAt <= L - 4 + 1e-9; sAt += STUD) for (let lt = 4; lt <= c.sleeperLen / 2 - 4 + 1e-9; lt += STUD) for (const sd of [-1, 1]) {
+        const q = railPoint(rt, sAt, sd * lt) as [number, number], h = routePose(rt, sAt)[2];
+        if (endsT.some((e) => { const dx = q[0] - e[0], dy = q[1] - e[1], hd = (e[2] * Math.PI) / 180; return Math.hypot(dx, dy) < c.sleeperLen && Math.abs(-dx * Math.sin(hd) + dy * Math.cos(hd)) < BED_END; })) continue;
+        if (at.some((p) => Math.hypot(p.q[0] - q[0], p.q[1] - q[1]) < c.studSocketW + 1)) continue;
+        at.push({ q, h });
+      }
+    }
+    return s.difference(body, [...at.map(({ q, h }) => T(R(t.studSocket(cavH), [0, 0, h]), [q[0], q[1], -0.01])), ...(x.cuts ?? [])]);
+  }
 
   // 'edges': hollow like a LEGO plate, a rim round each route's bed (not
   // under the end connectors), with anti-stud tubes between the studs that

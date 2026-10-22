@@ -594,7 +594,7 @@ function buildOne(w: Wasm, design: Design, report: (what: string, frac: number) 
       const parts = cells.flatMap((m) => arena(w, () => fitAll(m), (r) => r)); // (each cell's leftovers freed as it goes)
       if (parts.length < 2) return parts;
       const gp = routePose(pieceRoutes[0], 0), bottom = world.boundingBox().min[2] + 0.02;
-      return parts.map((m) => arena(w, () => edgeGrip(scad, track, m, gp, bottom), (r) => [r]));
+      return parts.map((m) => arena(w, () => (alongTrack ? m : edgeGrip(scad, track, m, gp, bottom)), (r) => [r]));
     });
     all.forEach((m, k) => { const lm = labelled(m, pieceRoutes, all.length > 1 ? undefined : size, all.length > 1 ? `${k + 1}` : undefined); add(all.length > 1 ? `${name}${plan.why === 'baseplate' ? '-plate' : ''}${k + 1}` : name, 0x6f7780, lm, lm); });
     if (all.some((m) => !fitsBed(m))) bedWarnings.add(`some parts don't fit the ${o.printBedX} x ${o.printBedY} print bed: there's nowhere left to cut them`);
@@ -725,7 +725,7 @@ function buildOne(w: Wasm, design: Design, report: (what: string, frac: number) 
           const bb = body.boundingBox(), ox = (o.baseplateX ?? 0) * 8, oy = (o.baseplateY ?? 0) * 8, lines: CutLine[] = [];
           for (let x = ox + Math.ceil((bb.min[0] + 1 - ox) / bp) * bp; x < bb.max[0] - 1; x += bp) lines.push({ p: [x, 0], d: [0, 1], joint: 'lego' });
           for (let y = oy + Math.ceil((bb.min[1] + 1 - oy) / bp) * bp; y < bb.max[1] - 1; y += bp) lines.push({ p: [0, y], d: [1, 0], joint: 'lego' });
-          if (lines.length) { const bottom = body.boundingBox().min[2] + 0.02; parts2 = cutPiece(scad, track, body, rts, lines, 'lego', o.cutRails === 'flat', noTongue).map((m) => edgeGrip(scad, track, m, gridPose, bottom)); }
+          if (lines.length) { const bottom = body.boundingBox().min[2] + 0.02; parts2 = cutPiece(scad, track, body, rts, lines, 'lego', o.cutRails === 'flat', noTongue).map((m) => (alongTrack ? m : edgeGrip(scad, track, m, gridPose, bottom))); }
         }
         const kept = parts2.filter((m) => m.numTri() > 0), id = (k: number) => (kept.length > 1 ? `${si + 1}-${k + 1}` : `${si + 1}`);
         return { ms: kept.map((m, k) => ({ ...bake(labelled(m, rts, kept.length > 1 ? undefined : sizeOf(rts), id(k))), ...(labelOn && { id: id(k) }) })), grips };
@@ -797,7 +797,7 @@ function buildOne(w: Wasm, design: Design, report: (what: string, frac: number) 
         // (and a part still too big, or in pieces that don't touch, fitted as addTrack's are: the straight cuts can't
         // always get round a curvy track without running along it)
         const fit = fitter(cr.routes, holes), parts = got.filter((m) => m.numTri() > 0).flatMap((m) => fit(m));
-        return { ms: parts.map((m, k) => ({ ...bake(labelled(edgeGrip(scad, track, m, gridPose, bottom), cr.routes, undefined, `${ci + 1}-${k + 1}`)), ...(labelOn && { id: `${ci + 1}-${k + 1}` }) })),
+        return { ms: parts.map((m, k) => ({ ...bake(labelled(alongTrack ? m : edgeGrip(scad, track, m, gridPose, bottom), cr.routes, undefined, `${ci + 1}-${k + 1}`)), ...(labelOn && { id: `${ci + 1}-${k + 1}` }) })),
           grips: grips.filter((q) => q[0] > R[0] && q[0] <= R[2] && q[1] > R[1] && q[1] <= R[3]) };
       }, () => []), { ms: [], grips: [] }); } catch (err) {
         if (err instanceof WebAssembly.RuntimeError || typeof err === 'number') throw err; // (the kernel's broken now: no use carrying on)
@@ -817,10 +817,12 @@ function buildOne(w: Wasm, design: Design, report: (what: string, frac: number) 
   // ---- the trackwork first (what the plan shows and the hand edits work
   // on), sent on ahead of the pieces, which take longer ----
   // (track only with sleepers: the bed kept across each cut, so the parts there have floor to join with)
+  // (track only, its underside lined up with the track: no grip added along the cut edges on the baseplate's grid)
+  const alongTrack = o.ballast === 'none' && o.undersideGrid === 'track';
   const sleepered = o.sleepers === 'sleepers' && o.ballast === 'none';
   const copt = { ...CROSSING_DEFAULTS, gaugeStuds: design.gaugeStuds, grip: design.grip ?? 'edges', flangeway: o.flangeway, flangewayDepth: o.flangewayDepth, checkRailW: o.checkRailW,
     ballast: o.ballast, bottomStyle: o.bottomStyle, supports: o.endSupports !== false, curveStuds: o.curveStuds,
-    studFit: o.studFit, antistudFit: o.antistudFit, sleepers: o.sleepers, sleeperWidthStuds: o.sleeperWidthStuds, sleeperGapStuds: o.sleeperGapStuds,
+    studFit: o.studFit, antistudFit: o.antistudFit, sleepers: o.sleepers, undersideGrid: o.ballast === 'none' ? o.undersideGrid : undefined, sleeperWidthStuds: o.sleeperWidthStuds, sleeperGapStuds: o.sleeperGapStuds,
     // (only what's set: the defaults' build, and its cache keys, as before)
     ...(bufs.length && { buffers: bufs, buffer: { postPlates: o.bufferPostPlates ?? 8, beamBottom: o.bufferBeamBottom ?? 2, beamTop: o.bufferBeamTop ?? 12, pinHoles: o.bufferPinHoles !== false, style: o.bufferStyle ?? 'frame' } }),
     ...(o.axleHoles && { axleHoles: true }), ...(o.pegOnBallast && { pegOnBallast: true }), ...(alone && { ballastOnly: o.trackFitTol ?? 0.2 }) };

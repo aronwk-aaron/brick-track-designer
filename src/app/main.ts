@@ -899,7 +899,11 @@ const OPTION_FORM: OptSection[] = [
     { key: 'bottomStyle', label: 'Ballast underside', off: (c) => (c.ballast ? undefined : 'only with ballast'), choices: [
       { v: 'antistud', t: 'Anti-studs (grips the baseplate)', tip: 'Hollow with LEGO tubes, so it clicks onto the baseplate.' },
       { v: 'float', t: 'Flat', tip: 'Flat underneath. It rests on the studs without gripping.' }] },
-    { key: 'grip', label: 'Grip on the baseplate', off: (c) => (c.ballast && c.o.bottomStyle === 'float' ? 'Ballast underside is Flat, so nothing grips' : undefined),
+    { key: 'undersideGrid', label: 'Underside lined up with', def: 'baseplate', get: () => design.options?.undersideGrid ?? 'baseplate', off: (c) => (c.ballast ? 'only for track without ballast (ballast always lines up with the baseplate)' : undefined), choices: [
+      { v: 'baseplate', t: 'The baseplate grid', tip: 'The sockets and tubes line up with the baseplate\'s studs, so the track clicks onto it.' },
+      { v: 'track', t: 'The track itself', tip: 'Sockets in rows along the track, turned with it, like LEGO track\'s underside: for track laid off the grid, at an angle, or on other parts\' studs.',
+        con: 'A socket at every stud spot (no hollow with tubes): it grips harder. On a baseplate it only clicks on where the track happens to line up with the grid.' }] },
+    { key: 'grip', label: 'Grip on the baseplate', off: (c) => (c.ballast && c.o.bottomStyle === 'float' ? 'Ballast underside is Flat, so nothing grips' : !c.ballast && c.o.undersideGrid === 'track' ? 'Underside lined up with the track: a socket at every spot' : undefined),
       def: 'edges', get: () => design.grip ?? 'edges', set: (v) => { design.grip = v as Design['grip']; }, choices: [
         { v: 'edges', t: 'Along the edges', tip: 'Like a LEGO plate: tubes grip along the edges and every 4 studs (green circles on the plan). Firm, and comes off again.' },
         { v: 'all', t: 'Every stud', tip: 'A socket on every stud.', con: 'Grips very hard: can be difficult to pull off.' }] },
