@@ -858,8 +858,9 @@ function buildOne(w: Wasm, design: Design, report: (what: string, frac: number) 
         let parts2 = [body];
         if (bp && (mine.length || rts.length > 1)) {
           const bb = body.boundingBox(), ox = (o.baseplateX ?? 0) * 8, oy = (o.baseplateY ?? 0) * 8, lines: CutLine[] = [];
-          for (let x = ox + Math.ceil((bb.min[0] + 1 - ox) / bp) * bp; x < bb.max[0] - 1; x += bp) lines.push({ p: [x, 0], d: [0, 1], joint: 'lego' });
-          for (let y = oy + Math.ceil((bb.min[1] + 1 - oy) / bp) * bp; y < bb.max[1] - 1; y += bp) lines.push({ p: [0, y], d: [1, 0], joint: 'lego' });
+          // (not within two studs of its edge: an edge on a baseplate's cut off the track ends' tongues as parts of their own)
+          for (let x = ox + Math.ceil((bb.min[0] + 16 - ox) / bp) * bp; x < bb.max[0] - 16; x += bp) lines.push({ p: [x, 0], d: [0, 1], joint: 'lego' });
+          for (let y = oy + Math.ceil((bb.min[1] + 16 - oy) / bp) * bp; y < bb.max[1] - 16; y += bp) lines.push({ p: [0, y], d: [1, 0], joint: 'lego' });
           if (lines.length) { const bottom = body.boundingBox().min[2] + 0.02; parts2 = whole(body, cutPiece(scad, track, body, rts, lines, 'lego', o.cutRails === 'flat', noTongue, undefined, fitsBed)).map((m) => (alongTrack ? m : edgeGrip(scad, track, m, gridPose, bottom))); }
         }
         // (a section still too big for the bed: points, frogs and crossings stay whole, so there was no ordinary track end
@@ -876,6 +877,10 @@ function buildOne(w: Wasm, design: Design, report: (what: string, frac: number) 
           const halves = mc ? splitOnPath(scad, body, rts, mc.path, mc.axis, join).parts.map((h) => flat(w, h)) : [body];
           const bottom = body.boundingBox().min[2] + 0.02;
           parts2 = whole(body, halves.flatMap((m) => bedCut(m, rts))).map((m) => (alongTrack ? m : edgeGrip(scad, track, m, gridPose, bottom)));
+        } else if (parts2.some((m) => !fitsBed(m))) {
+          // (cut at the baseplate edges, and a part still too big for the bed: cut as the parts filling the bed are)
+          const bottom = body.boundingBox().min[2] + 0.02;
+          parts2 = parts2.flatMap((m) => (fitsBed(m) ? [m] : whole(m, bedCut(flat(w, m), rts)).map((m2) => (alongTrack ? m2 : edgeGrip(scad, track, m2, gridPose, bottom)))));
         }
         const kept = parts2.filter((m) => m.numTri() > 0), id = (k: number) => (kept.length > 1 ? `${si + 1}-${k + 1}` : `${si + 1}`);
         return { ms: kept.map((m, k) => ({ ...bake(labelled(m, rts, kept.length > 1 ? undefined : sizeOf(rts), id(k))), ...(labelOn && { id: id(k) }) })), grips };
