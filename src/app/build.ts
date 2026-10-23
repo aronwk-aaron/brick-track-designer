@@ -860,8 +860,8 @@ function buildOne(w: Wasm, design: Design, report: (what: string, frac: number) 
         if (bp && (mine.length || rts.length > 1)) {
           const bb = body.boundingBox(), ox = (o.baseplateX ?? 0) * 8, oy = (o.baseplateY ?? 0) * 8, lines: CutLine[] = [];
           // (not within two studs of its edge: an edge on a baseplate's cut off the track ends' tongues as parts of their own)
-          // (joined with peg and clip, unless Parts join with is Straight cuts)
-          const bj = o.joint === 'butt' ? 'butt' as const : 'lego' as const;
+          // (joined as Parts join with says)
+          const bj = o.joint === 'ends' || !o.joint ? 'lego' as const : o.joint;
           for (let x = ox + Math.ceil((bb.min[0] + 16 - ox) / bp) * bp; x < bb.max[0] - 16; x += bp) lines.push({ p: [x, 0], d: [0, 1], joint: bj });
           for (let y = oy + Math.ceil((bb.min[1] + 16 - oy) / bp) * bp; y < bb.max[1] - 16; y += bp) lines.push({ p: [0, y], d: [1, 0], joint: bj });
           if (lines.length) { const bottom = body.boundingBox().min[2] + 0.02; parts2 = whole(body, cutPiece(scad, track, body, rts, lines, bj, o.cutRails === 'flat', noTongue, undefined, fitsBed)).map((m) => (alongTrack ? m : edgeGrip(scad, track, m, gridPose, bottom))); }
