@@ -24,6 +24,29 @@ export const segDist = (q: [number, number], a: [number, number], b: [number, nu
   const dx = b[0] - a[0], dy = b[1] - a[1], l2 = dx * dx + dy * dy, k = l2 ? Math.max(0, Math.min(1, ((q[0] - a[0]) * dx + (q[1] - a[1]) * dy) / l2)) : 0;
   return Math.hypot(q[0] - a[0] - k * dx, q[1] - a[1] - k * dy);
 };
+/**
+ * Whether a point is inside polygons (even-odd), for points on rows every 2 mm from y0 to y1 (the grid's cells sampled
+ * 2, 4 and 6 mm in): each row's crossings worked out once, sorted, then each point a binary search. (Testing each point
+ * against every edge took minutes on a whole yard's piece.)
+ */
+function insideOf(polys: [number, number][][], y0: number, y1: number) {
+  const rows: number[][] = Array.from({ length: Math.ceil((y1 - y0) / 2) + 2 }, () => []);
+  for (const poly of polys) for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+    const [xi, yi] = poly[i], [xj, yj] = poly[j];
+    if (yi === yj) continue;
+    const lo = Math.max(0, Math.ceil((Math.min(yi, yj) - y0) / 2 - 1e-9)), hi = Math.min(rows.length - 1, Math.floor((Math.max(yi, yj) - y0) / 2 + 1e-9));
+    for (let r = lo; r <= hi; r++) { const y = y0 + 2 * r; if ((yi > y) !== (yj > y)) rows[r].push(((xj - xi) * (y - yi)) / (yj - yi) + xi); }
+  }
+  const sorted = rows.map((r) => Float64Array.from(r).sort());
+  return (q: [number, number]) => {
+    const r = Math.round((q[1] - y0) / 2), xs = sorted[r];
+    if (!xs || Math.abs(y0 + 2 * r - q[1]) > 1e-6) throw new Error('insideOf: not on a row');
+    let a = 0, b = xs.length;
+    while (a < b) { const mid = (a + b) >> 1; if (xs[mid] < q[0]) a = mid + 1; else b = mid; }
+    return (a & 1) === 1;
+  };
+}
+
 /** How to join the parts (cutter.ts's joints): none given, they just butt together. */
 export interface PathJoin { t: Track; joint: Joint; flatRails: boolean; /** where no rail-end tongue may go (cutter.ts cutPiece) */ noTongue?: (q: [number, number]) => boolean }
 
@@ -51,15 +74,16 @@ export function pathSplit(s: Scad, m: Man, routes: Route[], railG: number, avoid
   // (all of it seen from above: a slice through the bed missed the ballast
   // between tracks, and holes, and the path went through them as if there
   // were nothing there to cut)
-  const floor = m.project();
+  // (as slices a few heights up it, together: projecting a whole yard's piece took minutes; these are at the bottom,
+  // through the ballast's steps and the bed, and its top)
+  const floor = s.w.CrossSection.union([0.3, 1.5, 3.0, 4.5, 6].map((dz) => bb.min[2] + dz).filter((z) => z < bb.max[2]).map((z) => m.slice(z)));
   const x0 = Math.floor(bb.min[0] / STEP) * STEP - STEP, x1 = Math.ceil(bb.max[0] / STEP) * STEP + STEP;
   const y0 = Math.floor(bb.min[1] / STEP) * STEP - STEP, y1 = Math.ceil(bb.max[1] / STEP) * STEP + STEP;
   const nx = Math.round((x1 - x0) / STEP) + 1, ny = Math.round((y1 - y0) / STEP) + 1;
   // which grid cells have track in them (worked out once: a cross-section per edge filled the kernel's memory)
   const filled = new Uint8Array(nx * ny);
   {
-    const polys = floor.toPolygons() as [number, number][][];
-    const inside = (q: [number, number]) => { let w = 0; for (const poly of polys) for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) { const [xi, yi] = poly[i], [xj, yj] = poly[j]; if ((yi > q[1]) !== (yj > q[1]) && q[0] < ((xj - xi) * (q[1] - yi)) / (yj - yi) + xi) w ^= 1; } return w === 1; };
+    const inside = insideOf(floor.toPolygons() as [number, number][][], y0, y1);
     for (let j = 0; j < ny - 1; j++) for (let i = 0; i < nx - 1; i++) {
       // (a cell has track if any of a few points in it is on the floor)
       const cx = x0 + i * STEP, cy = y0 + j * STEP;
@@ -85,8 +109,7 @@ export function pathSplit(s: Scad, m: Man, routes: Route[], railG: number, avoid
   const thick = new Uint8Array(nx * ny);
   const axles = !!kit && kit.kindOf(join!.joint, join!.flatRails) === 'axle';
   if (axles) {
-    const polys = m.slice(kit!.axleZ).toPolygons() as [number, number][][];
-    const inside = (q: [number, number]) => { let w = 0; for (const poly of polys) for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) { const [xi, yi] = poly[i], [xj, yj] = poly[j]; if ((yi > q[1]) !== (yj > q[1]) && q[0] < ((xj - xi) * (q[1] - yi)) / (yj - yi) + xi) w ^= 1; } return w === 1; };
+    const inside = insideOf(m.slice(kit!.axleZ).toPolygons() as [number, number][][], y0, y1);
     for (let j = 0; j < ny - 1; j++) for (let i = 0; i < nx - 1; i++) if (filled[j * nx + i] && inside([x0 + i * STEP + 4, y0 + j * STEP + 4])) thick[j * nx + i] = 1;
   }
   const thickAt = (q: [number, number]) => { const i = Math.floor((q[0] - x0) / STEP), j = Math.floor((q[1] - y0) / STEP); return i >= 0 && j >= 0 && i < nx - 1 && j < ny - 1 && thick[j * nx + i] === 1; };

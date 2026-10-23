@@ -227,12 +227,13 @@ export function cutPiece(s: Scad, t: Track, body: Man, routes: Route[], lines: C
     return { L, ...f, rails, couplers, kind: kit.kindOf(L.joint ?? joint, flatRails), tongues: kit.tongues(L.joint ?? joint, flatRails) };
   });
 
-  // material removed at every cut: the rails round each joint, the notches and sockets on the far side
-  const removals = s.union(frames.flatMap((f) => [
+  // material removed at every cut: the rails round each joint, the notches and sockets on the far side (taken off each
+  // part once it's cut, only those near it: taken off the whole piece first, a big piece's one boolean took minutes)
+  const removals = frames.flatMap((f) => [
     ...(f.tongues ? f.rails.filter(tongued).map((r) => f.place(kit.tongueCut(r), r[0])) : []),
     ...f.couplers.flatMap((u) => kit.couplerCut(f.kind).map((m) => f.place(m, u))),
-  ]));
-  const cutBody = s.difference(body, [removals]);
+  ]).map((m) => ({ m, bb: m.boundingBox() }));
+  const cutBody = body;
 
   // cells: by which side of each line a point is
   // cut the piece by each line in turn, keeping the parts that hold any of it
@@ -250,6 +251,56 @@ export function cutPiece(s: Scad, t: Track, body: Man, routes: Route[], lines: C
     for (const x of [bb.min[0], bb.max[0]]) for (const y of [bb.min[1], bb.max[1]]) { const v = f.n[0] * x + f.n[1] * y - c; lo = Math.min(lo, v); hi = Math.max(hi, v); }
     return lo < reach && hi > -reach;
   };
+  // the cells, each the piece within one region the lines cut the plane into (convex: each the box round it clipped
+  // by one side of every line), each from the whole piece at once. (A line at a time, each cut made from the last one's
+  // parts: on a big piece the second cut, and any copy of a part, took many minutes.) With a comb cut, a line at a time.
+  if (frames.every((f) => !f.L.comb)) {
+    type Poly = [number, number][];
+    const fb2 = body.boundingBox(), big2 = 50;
+    let regions: Poly[] = [[[fb2.min[0] - big2, fb2.min[1] - big2], [fb2.max[0] + big2, fb2.min[1] - big2], [fb2.max[0] + big2, fb2.max[1] + big2], [fb2.min[0] - big2, fb2.max[1] + big2]]];
+    const clip = (poly: Poly, n: [number, number], c: number, sgn: number): Poly => {
+      const out: Poly = [], v = (q: [number, number]) => sgn * (n[0] * q[0] + n[1] * q[1] - c);
+      poly.forEach((q, k) => {
+        const r = poly[(k + 1) % poly.length], a2 = v(q), b2 = v(r);
+        if (a2 >= 0) out.push(q);
+        if ((a2 >= 0) !== (b2 >= 0)) { const t2 = a2 / (a2 - b2); out.push([q[0] + (r[0] - q[0]) * t2, q[1] + (r[1] - q[1]) * t2]); }
+      });
+      return out;
+    };
+    const area2 = (p: Poly) => Math.abs(p.reduce((t2, q, k) => { const r = p[(k + 1) % p.length]; return t2 + q[0] * r[1] - r[0] * q[1]; }, 0) / 2);
+    for (const f of frames) {
+      const n: [number, number] = [f.n[0], f.n[1]], c = f.n[0] * f.L.p[0] + f.n[1] * f.L.p[1];
+      regions = regions.flatMap((p) => [clip(p, n, c, 1), clip(p, n, c, -1)].filter((q) => q.length >= 3 && area2(q) > 1));
+    }
+    const prism = (p: Poly) => T(s.extrude(s.polygon(p), 1000), [0, 0, -500]);
+    const cellOf = (p: Poly) => { const m2 = s.intersection(cutBody, prism(p)); return m2.volume() > 1e-6 ? flat(s.w, m2) : undefined; };
+    let cellsR = regions.map((p) => ({ p, m: cellOf(p) })).filter((r): r is { p: Poly; m: Man } => !!r.m);
+    // (a small piece of bed on its own: not a breakaway support (thin, a rail end's or a footing, a few hundred mm3), nor
+    // a whole track's part (a cell can hold parts of two tracks side by side))
+    const chunk = (b2: Man) => { const v = b2.volume(), bb = b2.boundingBox(); return v > 400 && v < 4000 && bb.max[2] - bb.min[2] > 3.4; };
+    // (a cell under 2000 mm3, a corner the lines just clip (where two meet by the track's edge, a stud or two of bed),
+    // or with a small piece of bed on its own in it: kept with the cell beside it across one line, if that still fits
+    // the bed (fits). Cut off, it was dropped and left a notch, or went in with the next part as if a loose support)
+    const small = (m2: Man) => m2.volume() <= 2000 || (m2.volume() < 20000 && (() => { const bs = m2.decompose(); return bs.length > 1 && bs.some(chunk); })());
+    for (let guard = 0; guard < 20; guard++) {
+      const k = cellsR.findIndex((r) => small(r.m));
+      if (k < 0) break;
+      // (its neighbours: the cells sharing a stretch of edge with it, the one it shares most with first)
+      const shared = (p: Poly, q: Poly) => s.polygon(p).offset(0.5, 'Miter', 4).intersect(s.polygon(q)).area();
+      const nb = cellsR.map((r, j) => ({ j, a: j === k ? 0 : shared(cellsR[k].p, r.p) })).filter((x) => x.a > 1).sort((x, y) => y.a - x.a);
+      let merged = false;
+      for (const { j } of nb) {
+        const m2 = flat(s.w, s.union([cellsR[k].m, cellsR[j].m]));
+        if (fits && !fits(m2)) continue;
+        const u = s.w.CrossSection.union([s.polygon(cellsR[k].p), s.polygon(cellsR[j].p)]).toPolygons() as Poly[];
+        cellsR = cellsR.filter((_, i) => i !== k && i !== j).concat([{ p: u[0], m: m2 }]);
+        merged = true;
+        break;
+      }
+      if (!merged) { const keep = cellsR[k]; cellsR = cellsR.filter((_, i) => i !== k).concat([{ ...keep, m: keep.m }]); if (guard > 10) break; }
+    }
+    parts = cellsR.map((r) => r.m);
+  } else {
   for (const f of frames) {
     const prev = parts;
     // (a side under 2000 mm3, a corner the line just clips (where two cut lines meet by the track's edge, a stud or two
@@ -262,12 +313,18 @@ export function cutPiece(s: Scad, t: Track, body: Man, routes: Route[], lines: C
       // nor a whole track's part (a side can hold parts of two tracks side by side))
       const chunk = (b: Man) => { const v = b.volume(), bb = b.boundingBox(); return v > 400 && v < 4000 && bb.max[2] - bb.min[2] > 3.4; };
       // (nor where it'd leave one, a corner of bed cut off on its own between two lines: it went in with the part beside
-      // it as if a loose support)
-      const fl = cs.map((c) => flat(s.w, c));
-      return (!fits || fits(m)) && (cs.some((c) => c.volume() <= 2000) || fl.some((c) => { const bs = c.decompose(); return bs.length > 1 && bs.some(chunk); })) ? [flat(s.w, m)] : fl;
+      // it as if a loose support. Only a small side looked at: taking a big one apart took minutes)
+      // (a copy of its own (kernel.ts flat) only of a small part: remaking a big one from its mesh took minutes)
+      const fl = cs.map((c) => (c.numTri() < 200000 ? flat(s.w, c) : c));
+      return (!fits || fits(m)) && (cs.some((c) => c.volume() <= 2000) || fl.some((c) => { if (c.volume() > 20000) return false; const bs = c.decompose(); return bs.length > 1 && bs.some(chunk); })) ? [flat(s.w, m)] : fl;
     }), (r) => r);
     for (const m of prev) if (m !== body && !parts.includes(m) && !(m as unknown as { isDeleted(): boolean }).isDeleted()) m.delete();
   }
+  }
+  parts = parts.map((m) => {
+    const bb = m.boundingBox(), near = removals.filter(({ bb: r }) => r.min[0] <= bb.max[0] && r.max[0] >= bb.min[0] && r.min[1] <= bb.max[1] && r.max[1] >= bb.min[1]).map(({ m: r }) => r);
+    return near.length ? s.difference(m, near) : m;
+  });
   // (rather than a plane: the far side's fingers, 16 mm wide and reaching
   // 8 mm either side of the line, their faces on the stud grid; 0.1 mm clear)
   function combSplit(f: typeof frames[number], m: Man): Man[] {

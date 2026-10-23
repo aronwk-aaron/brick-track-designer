@@ -966,6 +966,8 @@ interface OptField {
 interface OptSection { title: string; switches?: boolean; /** only for one kind of track: folded, its settings locked, when the design has none of it */ kind?: 'train' | 'monorail'; fields: OptField[] }
 /** (buffer stop settings) why they don't apply: no route ends in one */
 const noBuf = () => (design.routes.some((r) => r.startEnd === 'buffer' || r.endEnd === 'buffer') ? undefined : 'no route ends in a buffer stop (set Starts in / Ends in on a route card)');
+/** (the banked curves' settings: locked till a curve has a bank) */
+const noBank = () => (design.routes.some((r) => r.segs.some((sg) => sg.kind === 'curve' && (sg.bank ?? 0) > 0)) ? undefined : 'no curve is banked: give one a bank on its route card (Shape)');
 const OPTION_FORM: OptSection[] = [
   { title: 'Track', kind: 'train', fields: [
     { key: 'gaugeStuds', label: 'Gauge, studs', step: 1, min: 2, max: 10, rerender: true, help: 'Studs between the rails. LEGO track is 4.',
@@ -1067,11 +1069,11 @@ const OPTION_FORM: OptSection[] = [
     { key: 'labelParts', label: 'Number parts cut for the bed (#2)', check: true, off: (c) => (c.ballast && c.o.bottomStyle === 'float' ? undefined : 'labels go only on a flat underside: set Ballast to Ballast and Ballast underside to Flat') ?? (c.o.labelText ? undefined : 'Label text is empty'), help: 'Matches the part\'s file name.' },
   ] },
   { title: 'Banked curves', kind: 'train', fields: [
-    { key: 'bankRampAt', label: 'Bank ramps', choices: [
+    { key: 'bankRampAt', label: 'Bank ramps', off: noBank, choices: [
       { v: 'straight', t: 'On the track before and after', tip: 'The bank eases in on the track leading into a curve and out on the track after it, as real railways do: the curve is banked in full from end to end. With no straight there, or not enough, the ramp runs on into the curve.' },
       { v: 'curve', t: 'Inside the curve', tip: 'The bank eases in and out inside the curve, as the plate-style banked pieces do.', con: 'The outer rail climbs while the train is already turning, and a short curve leaves little room: the ramps get steep.' }] },
-    { key: 'bankRampStuds', label: 'Shortest bank ramp, studs', step: 1, min: 2, max: 200, help: 'Each ramp from level to a curve\'s full bank, eased in and out (no kink in the outer rail). Made longer by itself where the outer rail would climb steeper than the limit below. 40 keeps a 3° bank under 1 in 100.' },
-    { key: 'bankClimb', label: 'Steepest climb of the outer rail, 1 in', step: 10, min: 20, max: 1000, help: 'The outer rail rises at most 1 mm in this many, at the ramp\'s steepest (its middle). 100 is a gentle model railway run-off; full-size railways use 400 or more. Where there isn\'t room for a ramp that gentle, the build warns and rings the place on the plan.' },
+    { key: 'bankRampStuds', label: 'Shortest bank ramp, studs', off: noBank, step: 1, min: 2, max: 200, help: 'Each ramp from level to a curve\'s full bank, eased in and out (no kink in the outer rail). Made longer by itself where the outer rail would climb steeper than the limit below. 40 keeps a 3° bank under 1 in 100.' },
+    { key: 'bankClimb', label: 'Steepest climb of the outer rail, 1 in', off: noBank, step: 10, min: 20, max: 1000, help: 'The outer rail rises at most 1 mm in this many, at the ramp\'s steepest (its middle). 100 is a gentle model railway run-off; full-size railways use 400 or more. Where there isn\'t room for a ramp that gentle, the build warns and rings the place on the plan.' },
   ] },
   { title: 'Check rails and flangeways', kind: 'train', fields: [
     { key: 'checkRailLen', label: 'Check rail length, mm', step: 2, min: 10, max: 80 },
@@ -1091,7 +1093,7 @@ const OPTION_FORM: OptSection[] = [
       { v: 'bed', t: 'Parts that fill the print bed', tip: 'Cut along straight lines where the bed needs it; the parts join as set in Parts join with.' },
       { v: 'lengths', t: 'Track pieces, cut across the track', tip: 'Each track cut square to itself into pieces with ordinary end connectors, like LEGO track. Switches and crossings stay whole.', con: 'More parts, and a cut only where the track is clear of other tracks.' }] },
     { key: 'pieceLengthStuds', label: 'Piece length, studs', step: 4, min: 0, max: 64, def: 16, get: () => design.options?.pieceLengthStuds ?? 16, off: (c) => (c.o.splitTrack === 'lengths' || c.o.joint === 'ends' ? undefined : 'only with Long track cut into: Track pieces'), help: 'LEGO straights are 16. 0: as long as fits the print bed. A longer piece than the bed takes: as long as fits.' },
-    { key: 'joint', label: 'Parts join with', off: (c) => (c.o.splitTrack === 'lengths' || c.o.joint === 'ends' ? 'track pieces join with their ordinary end connectors' : undefined), help: 'How parts cut for the print bed or baseplates join.', choices: [
+    { key: 'joint', label: 'Parts join with', help: 'How parts cut for the print bed or at baseplate edges join. With Long track cut into: Track pieces, plain track joins with its own end connectors; this is for the switches and crossings too big for the bed.', choices: [
       { v: 'lego', t: 'Rail tongues + peg and clip', tip: 'Like LEGO track ends.' },
       { v: 'dovetail', t: 'Rail tongues + dovetails', tip: 'Stronger. Slides together from above.' },
       { v: 'butt', t: 'Straight cuts', tip: 'Nothing joins them; the baseplate holds them in line.' },
@@ -1099,7 +1101,7 @@ const OPTION_FORM: OptSection[] = [
           { key: 'cutRails', label: 'Rails at cuts', off: (c) => (c.o.joint === 'butt' ? 'Parts join with is Straight cuts' : undefined), choices: [
       { v: 'tongues', t: 'Interlocking tongues', tip: 'Like LEGO track ends.', con: 'The tongues overhang, so they print with supports.' },
       { v: 'flat', t: 'Cut flat', tip: 'Nothing overhangs, no supports.', con: 'Only the bed joint and the baseplate keep the rails in line.' }] },
-    { key: 'tongueRails', label: 'Tongues on', def: 'all', get: () => design.options?.tongueRails ?? 'all', off: (c) => (c.o.joint === 'butt' ? 'Parts join with is Straight cuts' : c.o.cutRails === 'flat' ? 'Rails at cuts is Cut flat' : c.o.splitTrack === 'lengths' || c.o.joint === 'ends' ? 'track pieces join with their ordinary end connectors' : undefined), choices: [
+    { key: 'tongueRails', label: 'Tongues on', def: 'all', get: () => design.options?.tongueRails ?? 'all', off: (c) => (c.o.joint === 'butt' ? 'Parts join with is Straight cuts' : c.o.cutRails === 'flat' ? 'Rails at cuts is Cut flat' : undefined), choices: [
       { v: 'all', t: 'Every rail a cut crosses', tip: 'Each rail gets interlocking tongues where it\'s cut, slanted ones too.' },
       { v: 'square', t: 'Only rails crossing the cut square', tip: 'The track the cut crosses squarely gets LEGO track-end tongues; rails crossing it at an angle (a branch\'s) are cut flat, as plate-style large switches are split.',
         con: 'The slanted rails rely on the square ones and the bed joint to stay in line.' }] },

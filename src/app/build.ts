@@ -111,11 +111,13 @@ const TILE_OVER = 8000; // mm of track: more, and a piece that needs cutting is 
  * further: the trackwork, the points' parts (as solids not yet worked out)
  * and the cuts; their run()s build them in this worker's kernel.
  */
+/** Thrown from early by a build that only wanted the plan's trackwork (the 3D view hidden, or Auto off): the build stops there. */
+export const PLAN_ONLY = { planOnly: true };
 export function buildJobs(w: Wasm, design: Design, early?: (overlay: unknown) => void): BuildJob[] {
   const jobs: BuildJob[] = [];
   // (only a design built in tiles or in sections has any)
   if (design.options?.joint !== 'ends' && toRoutes(design).reduce((t, rt) => t + routeLength(rt), 0) < TILE_OVER) return jobs;
-  try { buildDesign(w, design, undefined, early, { plan: jobs }); } catch (e) { if (e !== PLANNED) return []; }
+  try { buildDesign(w, design, undefined, early, { plan: jobs }); } catch (e) { if (e === PLAN_ONLY) throw e; if (e !== PLANNED) return []; }
   return jobs;
 }
 /** A job's result, built elsewhere (buildJobs): kept for the build, which then finds it done. */
@@ -811,6 +813,9 @@ function buildOne(w: Wasm, design: Design, report: (what: string, frac: number) 
       const secInner = dropInner(rts);
       // (keyed by what it's built from, as the tiles are)
       const sb = routesBox(rts, bandHalf + 8);
+      // (a section many print beds big, a whole yard's throat: built in blocks as a big layout cut to fill the bed is,
+      // not as one piece: one piece of it took the kernel minutes to cut, and ran it out of memory)
+      if ((sb[2] - sb[0]) * (sb[3] - sb[1]) > 8 * o.printBedX * o.printBedY && tiled(name, rts, cChecks, mine, copt)) return;
       const zs = zones.filter((z) => z.box[2] >= sb[0] && z.box[0] <= sb[2] && z.box[3] >= sb[1] && z.box[1] <= sb[3]).map((z) => [z.rt.id, z.s0, z.s1, z.box]);
       const sk = `sec:${JSON.stringify({ rts, cChecks, m: mine.map((x) => [x.key, x.inner, x.bladeCuts.map(([i]) => i)]), copt, g: grooveCuts.length ? tw.groove : 0, di: [...secInner],
         gp: gridPose, bp, bxy: [o.baseplateX, o.baseplateY], cutRails: o.cutRails, bed: [o.printBedX, o.printBedY], zs, ...(labelOn && { lab: [o.labelText, o.labelSize, o.labelGauge, o.labelParts] }) })}`;
@@ -840,7 +845,9 @@ function buildOne(w: Wasm, design: Design, report: (what: string, frac: number) 
           // tracks, as plate-style monster switches are; a crossover across its middle)
           const mc = lengthwiseCut(body, rts, join) ?? middleCut(body, sec);
           if (mc && sleepered) body = buildBody(mc.bedAt);
-          const halves = mc ? splitOnPath(scad, body, rts, mc.path, mc.axis, join).parts : [body];
+          // (each half a solid of its own (kernel.ts flat): cut again with its record of what it was cut from, a half of a
+          // big piece took many minutes)
+          const halves = mc ? splitOnPath(scad, body, rts, mc.path, mc.axis, join).parts.map((h) => flat(w, h)) : [body];
           const bottom = body.boundingBox().min[2] + 0.02;
           parts2 = whole(body, halves.flatMap((m) => bedCut(m, rts))).map((m) => (alongTrack ? m : edgeGrip(scad, track, m, gridPose, bottom)));
         }
