@@ -99,7 +99,7 @@ export interface PieceOptions {
   /** Where a baseplate's corner is, studs (the plate grid's offset). */
   baseplateX: number; baseplateY: number;
   /** How parts cut for the bed or the baseplates join: 'lego' rail-end tongues with a peg and C-clip (as LEGO track); 'dovetail' rail tongues with dovetails through the bed; 'butt' straight cuts, held only by the baseplate under them; 'ends' separate pieces joined by ordinary track ends, cut only where the tracks are clear of each other (the plate-style way). */
-  joint?: 'lego' | 'dovetail' | 'butt' | 'ends' | 'axle';
+  joint?: 'lego' | 'dovetail' | 'butt' | 'ends' | 'axle' | 'flataxle';
   /** (prototype) The points: built into the one piece, their pockets through to the bottom (switch.scad's); on a solid floor, the pockets stopping on it ('floor'); or the piece in layers stacked from the top (the lower layer with the moving parts' pockets, the deck with the bed and rails over it, held by studs; needs ballast). */
   pointsModule?: 'built-in' | 'layers';
   /** Breakaway print supports under the rail-end tongues at each end (off: the slicer supports them). */
@@ -134,6 +134,8 @@ export interface PieceOptions {
   studsAtCuts?: 'off' | 'whole' | 'split';
   /** With track pieces: a plain 16-stud straight as LEGO's own track (53401) and, with ballast, LEGO plates under it, not printed ('lego'), or every piece printed ('print'). */
   legoTrack?: 'lego' | 'print';
+  /** Parts joined with LEGO axles: the axles' length, studs (half in each part). */
+  axleStuds?: number;
   /** Rail tongues at a cut: on every rail it crosses, or only on rails crossing it square (the others cut flat), as plate-style large switches are split. */
   tongueRails?: 'all' | 'square';
   /** LEGO fit: added to the studs' 4.8 mm (mm); the anti-stud tubes' outside smaller and bore bigger by this (mm). */
@@ -169,7 +171,7 @@ export interface PieceOptions {
 export const OPTION_DEFAULTS: PieceOptions = {
   throwSide: 'auto', leverOffset: 8, pointThrow: 3, pointClearance: 0.3, springPreload: 1, springThickness: 0.9, springLength: 40,
   flangeway: 3, flangewayDepth: 3, checkRailLen: 30, checkRailW: 1, checkRailFlare: 1.5, printBedX: 256, printBedY: 256, baseplate: 0, baseplateX: 0, baseplateY: 0, ballast: 'none', bottomStyle: 'antistud', joint: 'lego', pointsModule: 'built-in', endSupports: true, cutRails: 'tongues', throwStyle: 'built-in', mechStyle: 'plates', curveStuds: 'follow',
-  throwAction: 'detent', bladeStyle: 'simple', sleepers: 'sleepers', undersideGrid: 'track', splitTrack: 'lengths', pieceLengthStuds: 16, studsAtCuts: 'off', legoTrack: 'lego', sleeperWidthStuds: 2, sleeperGapStuds: 2, studFit: 0.18, antistudFit: 0.06,
+  throwAction: 'detent', bladeStyle: 'simple', sleepers: 'sleepers', undersideGrid: 'track', splitTrack: 'lengths', pieceLengthStuds: 16, studsAtCuts: 'off', legoTrack: 'lego', axleStuds: 2, sleeperWidthStuds: 2, sleeperGapStuds: 2, studFit: 0.18, antistudFit: 0.06,
   bladeDiscD: 14, throwBallast: false, axleHoles: false, pegOnBallast: false,
   bufferStyle: 'frame', bufferPostPlates: 8, bufferBeamBottom: 2, bufferBeamTop: 12, bufferPinHoles: true,
   trackBallast: 'together', trackFitTol: 0.2, labelText: '', labelSize: true, labelGauge: false, labelParts: true,

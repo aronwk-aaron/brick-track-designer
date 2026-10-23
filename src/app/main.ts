@@ -1115,11 +1115,13 @@ const OPTION_FORM: OptSection[] = [
       { v: 'lego', t: 'Rail tongues + peg and clip', tip: 'Like LEGO track ends.' },
       { v: 'dovetail', t: 'Rail tongues + dovetails', tip: 'Stronger. Slides together from above.' },
       { v: 'butt', t: 'Straight cuts', tip: 'Nothing joins them; the baseplate holds them in line.' },
+      { v: 'flataxle', t: 'Straight cuts + LEGO axles', tip: 'Cut straight, rails and all (no tongues), pinned with LEGO cross axles across each cut (Axle length).', no: (c) => (c.ballast ? undefined : 'needs ballast (track alone is too thin): straight cuts with nothing joining them') },
       { v: 'axle', t: 'Rail tongues + LEGO axles', tip: 'A cross-axle hole across each cut, for a 4-stud axle.', no: (c) => (c.ballast ? undefined : 'needs ballast (track alone is too thin): peg and clip is used instead') }] },
-          { key: 'cutRails', label: 'Rails at cuts', off: (c) => (c.o.joint === 'butt' ? 'Parts join with is Straight cuts' : undefined), choices: [
+          { key: 'axleStuds', label: 'Axle length, studs', step: 2, min: 2, max: 8, off: (c) => (c.o.joint === 'axle' || c.o.joint === 'flataxle' || c.o.cutRails === 'flat' ? undefined : 'only with Parts join with: LEGO axles'), help: 'The LEGO cross axles that pin the parts together across a cut: half of each axle in each part. 2: a 2-stud axle (3704), 4: a 4-stud axle (3705).' },
+    { key: 'cutRails', label: 'Rails at cuts', off: (c) => (c.o.joint === 'butt' || c.o.joint === 'flataxle' ? 'Parts join with is Straight cuts' : undefined), choices: [
       { v: 'tongues', t: 'Interlocking tongues', tip: 'Like LEGO track ends.', con: 'The tongues overhang, so they print with supports.' },
       { v: 'flat', t: 'Cut flat', tip: 'Nothing overhangs, no supports.', con: 'Only the bed joint and the baseplate keep the rails in line.' }] },
-    { key: 'tongueRails', label: 'Tongues on', def: 'all', get: () => design.options?.tongueRails ?? 'all', off: (c) => (c.o.joint === 'butt' ? 'Parts join with is Straight cuts' : c.o.cutRails === 'flat' ? 'Rails at cuts is Cut flat' : undefined), choices: [
+    { key: 'tongueRails', label: 'Tongues on', def: 'all', get: () => design.options?.tongueRails ?? 'all', off: (c) => (c.o.joint === 'butt' || c.o.joint === 'flataxle' ? 'Parts join with is Straight cuts' : c.o.cutRails === 'flat' ? 'Rails at cuts is Cut flat' : undefined), choices: [
       { v: 'all', t: 'Every rail a cut crosses', tip: 'Each rail gets interlocking tongues where it\'s cut, slanted ones too.' },
       { v: 'square', t: 'Only rails crossing the cut square', tip: 'The track the cut crosses squarely gets LEGO track-end tongues; rails crossing it at an angle (a branch\'s) are cut flat, as plate-style large switches are split.',
         con: 'The slanted rails rely on the square ones and the bed joint to stay in line.' }] },

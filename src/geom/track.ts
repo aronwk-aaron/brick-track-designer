@@ -15,6 +15,8 @@ export interface TrackOptions {
   studD: number;           // 4.8
   studFit: number;         // 0.18
   studH: number;           // 1.8
+  /** joints with LEGO axles across a cut: the axle's length, studs (half in each part; left out: 4) */
+  axleStuds?: number;
   sleeperWidthStuds: number; // 2 (LEGO) or 1 (bridge ties)
   /** the anti-stud tubes' fit (0.06): their outside this much smaller, their bore this much bigger */
   antistudFit?: number;

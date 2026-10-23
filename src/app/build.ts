@@ -333,7 +333,9 @@ function buildOne(w: Wasm, design: Design, report: (what: string, frac: number) 
   if (routes.some(hasRoll)) { const lv = levelBankedNearOthers(routes, (design.gaugeStuds + 1) * 8 + 24); routes = lv.routes; bankWarnings.push(...lv.warnings); }
   const t0 = performance.now();
   const gauge = (design.gaugeStuds + 1) * 8;
-  const o = { ...OPTION_DEFAULTS, ...design.options };
+  const o0 = { ...OPTION_DEFAULTS, ...design.options };
+  // (Straight cuts + LEGO axles: axle joints, the rails cut flat)
+  const o = { ...o0, joint: o0.joint === 'flataxle' ? 'axle' as const : o0.joint, cutRails: o0.joint === 'flataxle' ? 'flat' as const : o0.cutRails };
   const solverOpts = { gauge, step: 0.5, flangeway: o.flangeway, checkRailLen: o.checkRailLen, checkRailW: o.checkRailW };
   progress('Working out the trackwork');
   // Hand edits (design.trackwork), by where each item is.
@@ -502,7 +504,7 @@ function buildOne(w: Wasm, design: Design, report: (what: string, frac: number) 
   /** A part too big for the bed: ringed where it is. */
   const bedIssue = (bb: { min: number[]; max: number[] }) => overlay.issues.push({ at: [(bb.min[0] + bb.max[0]) / 2, (bb.min[1] + bb.max[1]) / 2],
     r: Math.hypot(bb.max[0] - bb.min[0], bb.max[1] - bb.min[1]) / 2, text: `A part ${(bb.max[0] - bb.min[0]).toFixed(0)} x ${(bb.max[1] - bb.min[1]).toFixed(0)} mm: too big for the ${o.printBedX} x ${o.printBedY} print bed` });
-  const track = new Track(scad, { ...TRACK_DEFAULTS, gaugeStuds: design.gaugeStuds, studFit: o.studFit, antistudFit: o.antistudFit, sleeperWidthStuds: o.sleeperWidthStuds, ...(o.tongueRails === 'square' && { tongueMaxAngle: 12 }) });
+  const track = new Track(scad, { ...TRACK_DEFAULTS, gaugeStuds: design.gaugeStuds, studFit: o.studFit, antistudFit: o.antistudFit, sleeperWidthStuds: o.sleeperWidthStuds, axleStuds: o.axleStuds ?? 4, ...(o.tongueRails === 'square' && { tongueMaxAngle: 12 }) });
   // (how far each side of a centre line the track's base reaches: its sleepers, or its widest ballast layer)
   const bandHalf = (o.ballast === 'buddy' ? track.c.sleeperLen + 32 : o.ballast === 'ballast' ? track.c.sleeperLen + 16 : track.c.sleeperLen) / 2;
   // (two stretches of track side by side closer than their sleepers' length, nearly parallel: drawn over each other,

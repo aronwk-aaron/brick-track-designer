@@ -48,14 +48,15 @@ export function jointKit(s: Scad, t: Track, bz: number) {
   // socket on the near side, through the bed (and any ballast) from the
   // bottom up; 0.15 mm clear all round
   const tail = (grow: number) => T(s.extrude(s.polygon([[-2.2 - grow, 0.01], [2.2 + grow, 0.01], [3.6 + grow, -4.5 - grow], [-3.6 - grow, -4.5 - grow]]), PLATE_H - bz + (grow ? 2 : 0)), [0, 0, bz - (grow ? 1 : 0)]);
-  // axle (joint 'axle'): a LEGO cross-axle hole across the cut, two studs
-  // deep each side, in the solid between the underside's hollow and the top
-  // of the bed, for an axle (4 studs long) to pin the parts together;
-  // 0.1 mm over a LEGO axle's 4.8 x 1.8 cross
+  // axle (joint 'axle'): a LEGO cross-axle hole across the cut, half the
+  // axle's length deep each side (Track axleStuds: 4 unless set), in the solid
+  // between the underside's hollow and the top of the bed, for an axle to pin
+  // the parts together; 0.1 mm over a LEGO axle's 4.8 x 1.8 cross
+  const axleHalf = ((t.o.axleStuds ?? 4) * 8) / 2;
   const axleZ = (bz + t.o.studH + 0.2 + PLATE_H) / 2, axleFits = PLATE_H - (bz + t.o.studH + 0.2) >= 5.4;
   const axleHole = () => {
     const cross = s.w.CrossSection.union([s.square([4.9, 1.9], true), s.square([1.9, 4.9], true)]);
-    return T(R(T(s.extrude(cross, 2 * 2 * 8 + 0.4), [0, 0, -(2 * 8 + 0.2)]), [90, 0, 0]), [0, 0, axleZ]);
+    return T(R(T(s.extrude(cross, 2 * axleHalf + 0.4), [0, 0, -(axleHalf + 0.2)]), [90, 0, 0]), [0, 0, axleZ]);
   };
   const cutTongue = (type: number, z0: number) => s.union([
     T(type < 0 ? t.railEndpointLeft() : t.railEndpointRight(), [-4, -4, 0]),
@@ -70,14 +71,14 @@ export function jointKit(s: Scad, t: Track, bz: number) {
   /** What it adds on side (+1: the far side, -1: the near). */
   const couplerPart = (k: Joint, side: number): Man | undefined => (k === 'lego' ? (side > 0 ? couplerPeg() : R(couplerTab(), [0, 0, 180])) : k === 'dovetail' && side > 0 ? tail(0) : undefined);
   /** How far a coupler reaches: along the cut either way, and across it to the near side and to the far side (mm). */
-  const couplerReach = (k: Joint): [number, number, number] => (k === 'lego' ? [4.5, 2.3, 3] : k === 'dovetail' ? [3.8, 4.7, 0.2] : k === 'axle' ? [2.5, 16.3, 16.3] : [0, 0, 0]);
+  const couplerReach = (k: Joint): [number, number, number] => (k === 'lego' ? [4.5, 2.3, 3] : k === 'dovetail' ? [3.8, 4.7, 0.2] : k === 'axle' ? [2.5, axleHalf + 0.3, axleHalf + 0.3] : [0, 0, 0]);
   /** A rail-end tongue joint at a crossing r: what it takes away (both sides), and adds on a side. */
   // (the joint's column down to the bottom: on ballast the tongue's breakaway support stands on the bed, not in the air)
   const tongueCut = (r: RailCross) => R(cube([8, 8, 30 - bz], [-4, -4, Math.min(-1, bz - 1)]), [0, 0, r[1]]);
   const tonguePart = (r: RailCross, side: number) => R(cutTongue(side > 0 ? r[2] : -r[2], Math.min(0, bz) - 0.02), [0, 0, r[1] + (side < 0 ? 180 : 0)]);
   // (the levels an axle hole must be in solid at, and the wall it keeps round it: 1.2 mm, three perimeters)
   const axleWall = 1.2, axleLevels = [axleZ, axleZ + 2.45 + axleWall, axleZ - 2.45 - axleWall];
-  return { axleFits, axleZ, axleWall, axleLevels, kindOf, tongues, couplerCut, couplerPart, couplerReach, tongueCut, tonguePart };
+  return { axleFits, axleZ, axleHalf, axleWall, axleLevels, kindOf, tongues, couplerCut, couplerPart, couplerReach, tongueCut, tonguePart };
 }
 
 /**
@@ -223,7 +224,7 @@ export function cutPiece(s: Scad, t: Track, body: Man, routes: Route[], lines: C
       // (and 9 mm clear of the rails crossing the cut: their tongue joints' columns go down through the bed there)
       ? spreadSpots(lo, hi, (u) => us.every((r) => Math.abs(u - r) >= 9) && floorAt(s, strip, f.at(u, 2.5), 2.5) && floorAt(s, strip, f.at(u, -2.5), 2.5) && axleOk(u), breaks, kit.couplerReach('axle')[0] + kit.couplerReach('axle')[1] + 2)
       : pickSpots(lo, hi, (u) => onBed(u) && us.every((r) => Math.abs(u - r) >= 9));
-    if (holes && kind === 'axle') for (const u of couplers) for (let o = -16; o <= 16; o += 4) holes.push([...f.at(u, o), 4]);
+    if (holes && kind === 'axle') for (const u of couplers) for (let o = -kit.axleHalf; o <= kit.axleHalf + 1e-9; o += 4) holes.push([...f.at(u, o), 4]);
     return { L, ...f, rails, couplers, kind: kit.kindOf(L.joint ?? joint, flatRails), tongues: kit.tongues(L.joint ?? joint, flatRails) };
   });
 
@@ -429,7 +430,7 @@ export function pathJoints(s: Scad, t: Track, body: Man, routes: Route[], runs: 
   const place = (k: number, u: number) => {
     const q = fs[k].at(u);
     got.push(q); couplers++;
-    if (kind === 'axle') for (let o = -16; o <= 16; o += 4) holes.push([...fs[k].at(u, o), 4]);
+    if (kind === 'axle') for (let o = -kit.axleHalf; o <= kit.axleHalf + 1e-9; o += 4) holes.push([...fs[k].at(u, o), 4]);
     cut.push(...kit.couplerCut(kind).map((m) => fs[k].place(m, u)));
     for (const [i, side] of [[0, 1], [1, -1]] as const) { const m = kit.couplerPart(kind, side); if (m) add[i].push(fs[k].place(m, u)); }
   };
