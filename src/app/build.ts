@@ -651,7 +651,8 @@ function buildOne(w: Wasm, design: Design, report: (what: string, frac: number) 
     // track (tiles.ts planCuts), each part joined to the next like LEGO track
     const plan = planCuts(b, o.printBedX, o.printBedY, bp, (o.baseplateX ?? 0) * 8, (o.baseplateY ?? 0) * 8, pointsAvoid, pieceRoutes, bandHalf, jointRoom, track.c.railOffset, overlay.crossings);
     // (baseplate edges always joined: two or more axles across, as far apart as they go, where the bed's thick enough for them (on ballast), else peg and clip; the cuts to fit the bed as chosen)
-    const lj = (v: number) => (plan.edges?.has(v) ? { joint: 'axle' as const } : plan.combs?.has(v) ? { comb: true } : {});
+    // (with Parts join with: Straight cuts, the baseplate edges too)
+    const lj = (v: number) => (o.joint === 'butt' ? {} : plan.edges?.has(v) ? { joint: 'axle' as const } : plan.combs?.has(v) ? { comb: true } : {});
     const lines: CutLine[] = [...plan.xs.map((x): CutLine => ({ p: [x, 0], d: [0, 1], ...lj(x) })), ...plan.ys.map((y): CutLine => ({ p: [0, y], d: [1, 0], ...lj(y) }))];
     steps++; progress(plan.why === 'bed' ? `Cutting ${name} to fit the print bed` : `Cutting ${name} at the baseplate edges`);
     if (rebuild && lines.length) world = rebuild(lines);
@@ -859,9 +860,11 @@ function buildOne(w: Wasm, design: Design, report: (what: string, frac: number) 
         if (bp && (mine.length || rts.length > 1)) {
           const bb = body.boundingBox(), ox = (o.baseplateX ?? 0) * 8, oy = (o.baseplateY ?? 0) * 8, lines: CutLine[] = [];
           // (not within two studs of its edge: an edge on a baseplate's cut off the track ends' tongues as parts of their own)
-          for (let x = ox + Math.ceil((bb.min[0] + 16 - ox) / bp) * bp; x < bb.max[0] - 16; x += bp) lines.push({ p: [x, 0], d: [0, 1], joint: 'lego' });
-          for (let y = oy + Math.ceil((bb.min[1] + 16 - oy) / bp) * bp; y < bb.max[1] - 16; y += bp) lines.push({ p: [0, y], d: [1, 0], joint: 'lego' });
-          if (lines.length) { const bottom = body.boundingBox().min[2] + 0.02; parts2 = whole(body, cutPiece(scad, track, body, rts, lines, 'lego', o.cutRails === 'flat', noTongue, undefined, fitsBed)).map((m) => (alongTrack ? m : edgeGrip(scad, track, m, gridPose, bottom))); }
+          // (joined with peg and clip, unless Parts join with is Straight cuts)
+          const bj = o.joint === 'butt' ? 'butt' as const : 'lego' as const;
+          for (let x = ox + Math.ceil((bb.min[0] + 16 - ox) / bp) * bp; x < bb.max[0] - 16; x += bp) lines.push({ p: [x, 0], d: [0, 1], joint: bj });
+          for (let y = oy + Math.ceil((bb.min[1] + 16 - oy) / bp) * bp; y < bb.max[1] - 16; y += bp) lines.push({ p: [0, y], d: [1, 0], joint: bj });
+          if (lines.length) { const bottom = body.boundingBox().min[2] + 0.02; parts2 = whole(body, cutPiece(scad, track, body, rts, lines, bj, o.cutRails === 'flat', noTongue, undefined, fitsBed)).map((m) => (alongTrack ? m : edgeGrip(scad, track, m, gridPose, bottom))); }
         }
         // (a section still too big for the bed: points, frogs and crossings stay whole, so there was no ordinary track end
         // to cut at. A crossover is cut across its middle first, each side its own switch (middleCut); then any part
@@ -918,8 +921,8 @@ function buildOne(w: Wasm, design: Design, report: (what: string, frac: number) 
       // its cuts: those on and in the block, couplers along the block only
       // (so the blocks either side of an edge agree)
       const lines: CutLine[] = [
-        ...plan.xs.filter((x) => x >= R[0] && x <= R[2]).map((x): CutLine => ({ p: [x, 0], d: [0, 1], span: [R[1], R[3]], ...(plan.edges?.has(x) ? { joint: 'axle' as const } : plan.combs?.has(x) ? { comb: true } : {}) })),
-        ...plan.ys.filter((y) => y >= R[1] && y <= R[3]).map((y): CutLine => ({ p: [0, y], d: [1, 0], span: [R[0], R[2]], ...(plan.edges?.has(y) ? { joint: 'axle' as const } : plan.combs?.has(y) ? { comb: true } : {}) })),
+        ...plan.xs.filter((x) => x >= R[0] && x <= R[2]).map((x): CutLine => ({ p: [x, 0], d: [0, 1], span: [R[1], R[3]], ...(o.joint !== 'butt' && plan.edges?.has(x) ? { joint: 'axle' as const } : o.joint !== 'butt' && plan.combs?.has(x) ? { comb: true } : {}) })),
+        ...plan.ys.filter((y) => y >= R[1] && y <= R[3]).map((y): CutLine => ({ p: [0, y], d: [1, 0], span: [R[0], R[2]], ...(o.joint !== 'butt' && plan.edges?.has(y) ? { joint: 'axle' as const } : o.joint !== 'butt' && plan.combs?.has(y) ? { comb: true } : {}) })),
       ];
       // the points near it, on the cropped routes
       const near = splits.flatMap((sp, k) => (splitBoxes[k].some((bb) => nearCell(bb, R, MARGIN)) ? [{ sp, k }] : []));
