@@ -45,6 +45,26 @@ export interface Piece {
   supports?: Float32Array;
   /** (the plate-style blades) the pin it turns on, as assembled, and how far to turn it there to open it (degrees): it goes on open */
   turn?: { at: [number, number]; by: number; swing?: number };
+  /** LEGO parts this piece is (a plain straight as LEGO's own track, its ballast as plates): not printed, in the LEGO parts list */
+  lego?: LegoPart[];
+}
+
+/** A LEGO part (BrickLink's number and name) and how many. */
+export interface LegoPart { part: string; name: string; qty: number }
+
+/** The LEGO parts for a plain 16-stud straight: LEGO's track, and under it the ballast's layers as plates (10 studs wide, and 12 more for the buddy layer). */
+export function legoStraight(ballast: string | undefined): LegoPart[] {
+  const out: LegoPart[] = [{ part: '53401', name: 'Train, Track Plastic Straight (16 studs)', qty: 1 }];
+  if (ballast === 'ballast' || ballast === 'buddy') out.push({ part: '3027', name: 'Plate 6 x 16', qty: 1 }, { part: '4282', name: 'Plate 2 x 16', qty: 2 });
+  if (ballast === 'buddy') out.push({ part: '3027', name: 'Plate 6 x 16', qty: 2 });
+  return out;
+}
+
+/** The LEGO parts of all the pieces, added up. */
+export function legoParts(pieces: { lego?: LegoPart[] }[]): LegoPart[] {
+  const m = new Map<string, LegoPart>();
+  for (const p of pieces) for (const l of p.lego ?? []) { const e = m.get(l.part); if (e) e.qty += l.qty; else m.set(l.part, { ...l }); }
+  return [...m.values()].sort((a, b) => b.qty - a.qty);
 }
 
 // Pieces built before, by what they were built from: an edit rebuilds only
@@ -811,6 +831,12 @@ function buildOne(w: Wasm, design: Design, report: (what: string, frac: number) 
         return [{ ...sp, inner, bladeCuts: sp.bladeCuts.filter(([i]) => firstOf(i) >= 0).map(([i, m]) => [firstOf(i), m] as [number, Man]) }];
       });
       const secInner = dropInner(rts);
+      // (a plain 16-stud straight, ordinary ends both sides: LEGO's own track, not printed, with LEGO plates for the ballast)
+      const sg0 = rts.length === 1 ? rts[0].segments : [];
+      const lego = (o.legoTrack ?? 'lego') === 'lego' && design.gaugeStuds === 4 && !mine.length && !cChecks.length && sg0.length === 1 && sg0[0].kind === 'straight'
+        && Math.abs(sg0[0].length - 16 * 8) < 0.01 && !sg0[0].roll && !rts[0].extra && !secInner.size
+        && ![routePose(rts[0], 0), routePose(rts[0], routeLength(rts[0]))].some((e) => bufs.some((b) => Math.hypot(b[0] - e[0], b[1] - e[1]) < 1))
+        ? legoStraight(o.ballast) : undefined;
       // (keyed by what it's built from, as the tiles are)
       const sb = routesBox(rts, bandHalf + 8);
       // (a section many print beds big, a whole yard's throat: built in blocks as a big layout cut to fill the bed is,
@@ -860,7 +886,8 @@ function buildOne(w: Wasm, design: Design, report: (what: string, frac: number) 
       }
       overlay.grips.push(...part.grips);
       for (const b2 of part.ms) {
-        pieces.push({ name: b2.id ? `${name}${b2.id}` : `${name}${++n}`, color: 0x6f7780, positions: b2.positions.slice(), stl: b2.stl.slice(), ...(b2.supports && { supports: b2.supports.slice() }) }); volume += b2.volume;
+        pieces.push({ name: lego ? `lego-straight${++n}` : b2.id ? `${name}${b2.id}` : `${name}${++n}`, color: lego ? 0x8e9cab : 0x6f7780, positions: b2.positions.slice(), stl: b2.stl.slice(), ...(b2.supports && !lego && { supports: b2.supports.slice() }), ...(lego && { lego }) });
+        if (!lego) volume += b2.volume;
         if (!b2.fits) bedWarnings.add(`some sections don't fit the ${o.printBedX} x ${o.printBedY} print bed: there's nowhere left to cut them`);
       }
     });

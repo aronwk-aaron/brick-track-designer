@@ -5,7 +5,7 @@ import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { BANK_MAX, type BankRamps, type Design, type DRoute, type DSeg, OPTION_DEFAULTS, type PieceOptions, RAIL_DEFAULTS, TEMPLATE_GROUPS, TEMPLATES, type Trackwork, endOf, freeName, isMono } from './design';
 import { TrackCanvas, type OverlayItem, leverSide, leverSlides, typingIn } from './canvas';
 import { describe } from './planner';
-import type { Piece } from './build';
+import { legoParts, type Piece } from './build';
 import { zip } from '../geom/zip';
 import { layoutParts } from './layoutparts';
 
@@ -347,11 +347,13 @@ function updateExports() {
   const why = building ? 'Wait for the build to finish' : !pieces.length ? 'Nothing built yet' : stale ? 'The 3D view is out of date: rebuild first' : '';
   const tips: Record<string, string> = {
     'export-stl': 'Download the parts for printing as STL (a zip when there are several)',
+    'export-lego': 'Download the LEGO parts list (a CSV, and a BrickLink wanted list to upload): the plain straights built as LEGO track, their ballast as LEGO plates',
     'export-layout': 'Download a parts library for the layout designer (a zip): one part per printed track part, each with its picture and connection points, and a set of them all as designed. Help says how to load it',
   };
-  for (const id of ['export-stl', 'export-layout']) {
-    const b = $<HTMLButtonElement>(id); b.disabled = !!why;
-    b.title = why ? `${why}` : tips[id];
+  for (const id of ['export-stl', 'export-layout', 'export-lego']) {
+    const b = $<HTMLButtonElement>(id), none = id === 'export-lego' ? !legoParts(pieces).length : id === 'export-stl' ? !pieces.some((p) => !p.lego) : false;
+    b.disabled = !!why || none;
+    b.title = why ? `${why}` : none ? (id === 'export-lego' ? 'No LEGO parts: every piece is printed (Settings: Plain straights)' : 'Nothing to print: every piece is LEGO\'s own') : tips[id];
   }
 }
 
@@ -410,7 +412,8 @@ function onBuilt(e: MessageEvent) {
   refreshOptions(); refreshRoutes();
   const i = d.info;
   const trackwork = [i.switches && plural(i.switches, 'switch', 'switches'), i.crossings && plural(i.crossings, 'rail crossing'), i.checkRails && plural(i.checkRails, 'check rail')].filter(Boolean).join(', ');
-  setStatus(`${trackwork ? `${trackwork} · ` : ''}${plural(i.pieces, 'part')} · ${i.size.map((v: number) => v.toFixed(0)).join(' × ')} mm · ${(i.volume / 1000).toFixed(1)} cm³ · built in ${(i.ms / 1000).toFixed(1)} s`,
+  const nLego = pieces.filter((p) => p.lego).length;
+  setStatus(`${trackwork ? `${trackwork} · ` : ''}${plural(i.pieces - nLego, 'part')} to print${nLego ? ` · ${plural(nLego, 'LEGO straight')}` : ''} · ${i.size.map((v: number) => v.toFixed(0)).join(' × ')} mm · ${(i.volume / 1000).toFixed(1)} cm³ · built in ${(i.ms / 1000).toFixed(1)} s`,
     (i.warnings as string[]).join('; '), false, true);
 }
 worker = newWorker();
@@ -642,12 +645,24 @@ const download = (blob: Blob, name: string) => {
   const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = name; a.click();
   setTimeout(() => URL.revokeObjectURL(a.href), 1000);
 };
-// One piece: its STL; several (a switch and its moving parts): a zip of them.
+// One piece: its STL; several (a switch and its moving parts): a zip of them. (Not the pieces that are LEGO's own: the LEGO parts list has those.)
 $('export-stl').addEventListener('click', () => {
   if (!pieces.length || building || stale) return;
-  const base = fileBase();
-  if (pieces.length === 1) download(new Blob([pieces[0].stl as BlobPart], { type: 'model/stl' }), `${base}.stl`);
-  else download(new Blob([zip(pieces.map((p) => ({ name: `${base}-${p.name}.stl`, data: p.stl }))) as BlobPart], { type: 'application/zip' }), `${base}.zip`);
+  const base = fileBase(), printed = pieces.filter((p) => !p.lego);
+  if (!printed.length) return;
+  if (printed.length === 1) download(new Blob([printed[0].stl as BlobPart], { type: 'model/stl' }), `${base}.stl`);
+  else download(new Blob([zip(printed.map((p) => ({ name: `${base}-${p.name}.stl`, data: p.stl }))) as BlobPart], { type: 'application/zip' }), `${base}.zip`);
+});
+// The LEGO parts the design uses instead of printing (plain straights as LEGO track, their ballast as plates): a list,
+// and a BrickLink wanted list to upload, in a zip.
+$('export-lego').addEventListener('click', () => {
+  if (!pieces.length || building || stale) return;
+  const parts = legoParts(pieces);
+  if (!parts.length) return;
+  const csv = ['Part,Name,Quantity', ...parts.map((p) => `${p.part},"${p.name}",${p.qty}`)].join('\n');
+  const xml = `<INVENTORY>\n${parts.map((p) => `  <ITEM><ITEMTYPE>P</ITEMTYPE><ITEMID>${p.part}</ITEMID><COLOR>85</COLOR><MINQTY>${p.qty}</MINQTY></ITEM>`).join('\n')}\n</INVENTORY>\n`;
+  const enc = new TextEncoder();
+  download(new Blob([zip([{ name: `${fileBase()}-lego-parts.csv`, data: enc.encode(csv) }, { name: `${fileBase()}-bricklink-wanted-list.xml`, data: enc.encode(xml) }]) as BlobPart], { type: 'application/zip' }), `${fileBase()}-lego-parts.zip`);
 });
 // The parts as a parts library for the layout designer (layoutparts.ts): a zip of the library's folder and a README.
 $('export-layout').addEventListener('click', () => {
@@ -1093,6 +1108,9 @@ const OPTION_FORM: OptSection[] = [
       { v: 'bed', t: 'Parts that fill the print bed', tip: 'Cut along straight lines where the bed needs it; the parts join as set in Parts join with.' },
       { v: 'lengths', t: 'Track pieces, cut across the track', tip: 'Each track cut square to itself into pieces with ordinary end connectors, like LEGO track. Switches and crossings stay whole.', con: 'More parts, and a cut only where the track is clear of other tracks.' }] },
     { key: 'pieceLengthStuds', label: 'Piece length, studs', step: 4, min: 0, max: 64, def: 16, get: () => design.options?.pieceLengthStuds ?? 16, off: (c) => (c.o.splitTrack === 'lengths' || c.o.joint === 'ends' ? undefined : 'only with Long track cut into: Track pieces'), help: 'LEGO straights are 16. 0: as long as fits the print bed. A longer piece than the bed takes: as long as fits.' },
+    { key: 'legoTrack', label: 'Plain straights', off: (c) => (c.o.splitTrack !== 'lengths' && c.o.joint !== 'ends' ? 'only with Long track cut into: Track pieces' : design.gaugeStuds !== 4 ? 'LEGO track is 4 studs between the rails: the gauge isn\'t 4' : undefined), choices: [
+      { v: 'lego', t: 'LEGO track', tip: 'Each plain 16-stud straight piece is LEGO\'s own straight (53401), not printed; with ballast, LEGO plates under it (6 x 16 and two 2 x 16, two more 6 x 16 for the buddy layer). They\'re in the LEGO parts list (toolbar), not the STL download.', con: 'Its sleepers and underside are LEGO\'s, not as set here.' },
+      { v: 'print', t: 'Printed', tip: 'Every piece printed, as set here.', con: 'More to print.' }] },
     { key: 'joint', label: 'Parts join with', help: 'How parts cut for the print bed or at baseplate edges join. With Long track cut into: Track pieces, plain track joins with its own end connectors; this is for the switches and crossings too big for the bed.', choices: [
       { v: 'lego', t: 'Rail tongues + peg and clip', tip: 'Like LEGO track ends.' },
       { v: 'dovetail', t: 'Rail tongues + dovetails', tip: 'Stronger. Slides together from above.' },

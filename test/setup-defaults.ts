@@ -6,4 +6,4 @@ import { OPTION_DEFAULTS, type PieceOptions } from '../src/app/design';
 
 export const APP_DEFAULTS: PieceOptions = { ...OPTION_DEFAULTS };
 (globalThis as { APP_DEFAULTS?: PieceOptions }).APP_DEFAULTS = APP_DEFAULTS;
-Object.assign(OPTION_DEFAULTS, { sleepers: 'bed', undersideGrid: 'baseplate', splitTrack: 'bed' });
+Object.assign(OPTION_DEFAULTS, { sleepers: 'bed', undersideGrid: 'baseplate', splitTrack: 'bed', legoTrack: 'print' });

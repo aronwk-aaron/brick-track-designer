@@ -293,7 +293,7 @@
     #empty div { border-radius: 12px; padding: 18px 22px; }
     @media (max-width: 1560px) { header h1 { display: none; } }
     @media (max-width: 1240px) { body { grid-template-columns: 260px minmax(0, 1fr); } body.settings { grid-template-columns: 260px minmax(0, 1fr) 300px; } body.settings.nopanel { grid-template-columns: 0 minmax(0, 1fr) 300px; } }
-    @media (max-width: 1640px) { #toggle-3d .lbl, #settings-open .lbl, #load .lbl, #save .lbl, #export-layout .lbl { display: none; } }
+    @media (max-width: 1640px) { #toggle-3d .lbl, #settings-open .lbl, #load .lbl, #save .lbl, #export-layout .lbl, #export-lego .lbl { display: none; } }
     @media (max-width: 1280px) { header .lbl { display: none; } }
     /* ---- phones and small tablets: the plan and 3D view fill the screen; the routes and settings panels slide over them ---- */
     @media (max-width: 760px) {
@@ -373,6 +373,7 @@
     <button id="load" type="button" title="Open a saved design (.btd.json) (Ctrl+O)"><svg><use href="#i-open"/></svg><span class="lbl">Open</span></button>
     <button id="save" type="button" title="Save the design as a file (Ctrl+S); it's also kept in this browser as you work"><svg><use href="#i-save"/></svg><span class="lbl">Save</span></button>
     <button id="export-stl" type="button" class="primary" title="Download the parts to print (STL files)"><svg><use href="#i-download"/></svg>STL</button>
+    <button id="export-lego" type="button" title="Download the LEGO parts list"><svg><use href="#i-layout"/></svg><span class="lbl">LEGO parts</span></button>
     <button id="export-layout" type="button" title="Download the parts as a parts library for the layout designer"><svg><use href="#i-layout"/></svg><span class="lbl">Layout parts</span></button>
     <input id="load-file" type="file" accept=".json,application/json" hidden>
     <span class="sep"></span>
