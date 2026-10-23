@@ -215,7 +215,7 @@
     #views .sep { display: inline-block; width: 1px; height: 18px; background: var(--line); margin: 0 4px; vertical-align: middle; }
     #views .explode { font-size: 12px; display: inline-flex; align-items: center; gap: 4px; padding: 0 4px; }
     #views .explode input { width: 80px; }
-    #views .show:not(.on) { opacity: 0.45; text-decoration: line-through; }
+    #views .show:not(.on), #views .tog:not(.on) { opacity: 0.45; text-decoration: line-through; }
     #views [hidden] { display: none; }
     #legend i.knob { width: 9px; height: 9px; border-radius: 50%; background: #e8892b; margin: 0 9px 0 3px; }
     #legend button { margin-top: 4px; padding: 1px 6px; font-size: 12px; }
@@ -412,7 +412,7 @@
           <span id="legend-mono-points" data-layer="points" hidden><i class="diamond"></i>monorail points (experimental)</span>
           <span id="legend-levers" data-layer="levers"><i class="knob"></i>lever (its arm: the side it's on)</span>
           <span id="legend-edited" hidden><i class="edring"></i>edited by hand (Trackwork)</span>
-          <span id="legend-grip" data-layer="grips"><i class="grip"></i>anti-stud tube (grips the plate)</span>
+          <span id="legend-grip" data-layer="grips"><i class="grip"></i>anti-stud tubes (grip the plate)</span>
           <span id="legend-hint" class="hintline">Click a row to hide it; hover the plan for what a click does.</span>
         </div>
         <button id="help-open" type="button" title="How to use the editor (?)">? Help</button>
@@ -470,7 +470,7 @@
       <div id="coords" class="chip"></div>
     </div>
     <div id="splitter" title="Drag to resize; double-click to reset"></div>
-    <div id="view3d"><div id="buildstatus" class="chip" hidden><span class="spin"></span><span id="build-what">Building…</span> <span id="build-time"></span><span class="bar"><i id="build-bar"></i></span><button id="build-stop" type="button" title="Stop this build (the 3D view stays as it was; Rebuild when you're ready)">Stop</button></div><div id="views" class="chip"><button id="view-top" type="button" title="Look at the top">Top</button><button id="view-under" type="button" title="Look at the underside, to see where it grips">Underside</button><button id="view-frame" type="button" title="Fit the piece in the view (or double-click it)">Frame</button><span class="sep" id="views-sep2"></span><button class="show on" data-show="track" type="button" title="Show or hide the track (bases)">Track</button><button class="show on" data-show="points" type="button" title="Show or hide the points">Points</button><button class="show on" data-show="throw" type="button" title="Show or hide the throws">Throws</button><button class="show on" data-show="lever" type="button" title="Show or hide the levers">Levers</button><button class="show on" id="show-supports" data-show="supports" type="button" title="Show or hide the breakaway print supports (orange): printed with the part, snapped off after">Supports</button><span class="sep"></span><label class="explode" title="Pull the parts apart to see where they separate">Explode <input id="explode" type="range" min="0" max="1" step="0.02" value="0"></label></div><div id="status" class="chip"><span id="info"></span><span id="error"></span><button id="rebuild" type="button" hidden>Rebuild</button></div></div>
+    <div id="view3d"><div id="buildstatus" class="chip" hidden><span class="spin"></span><span id="build-what">Building…</span> <span id="build-time"></span><span class="bar"><i id="build-bar"></i></span><button id="build-stop" type="button" title="Stop this build (the 3D view stays as it was; Rebuild when you're ready)">Stop</button></div><div id="views" class="chip"><button id="view-top" type="button" title="Look at the top">Top</button><button id="view-under" type="button" title="Look at the underside, to see where it grips">Underside</button><button id="view-frame" type="button" title="Fit the piece in the view (or double-click it)">Frame</button><span class="sep" id="views-sep2"></span><button class="show on" data-show="track" type="button" title="Show or hide the track (bases)">Track</button><button class="show on" data-show="points" type="button" title="Show or hide the points">Points</button><button class="show on" data-show="throw" type="button" title="Show or hide the throws">Throws</button><button class="show on" data-show="lever" type="button" title="Show or hide the levers">Levers</button><button class="show on" id="show-supports" data-show="supports" type="button" title="Show or hide the breakaway print supports (orange): printed with the part, snapped off after">Supports</button><span class="sep"></span><button class="tog on" id="auto-build" type="button">Auto</button><span class="sep"></span><label class="explode" title="Pull the parts apart to see where they separate">Explode <input id="explode" type="range" min="0" max="1" step="0.02" value="0"></label></div><div id="status" class="chip"><span id="info"></span><span id="error"></span><button id="rebuild" type="button" hidden>Rebuild</button></div></div>
   </main>
   <script type="module" src="/src/app/main.ts"></script>
 </body>

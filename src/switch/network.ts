@@ -184,7 +184,7 @@ export function networkSplits(s: Scad, routes: Route[], sol: Solution, p: BasePa
 
 /** The piece's body with the given splits' points built in (routes and splits by the same route indices). */
 export function networkBody(s: Scad, routes: Route[], sol: Solution, copt: CrossingOptions, splits: SplitParts[], grips?: [number, number][],
-  more: { cuts?: Man[]; innerEnds?: Set<string>; gridPose?: Pose; bedAt?: { p: [number, number]; d: [number, number] }[] } = {}) {
+  more: { cuts?: Man[]; innerEnds?: Set<string>; gridPose?: Pose; bedAt?: { p: [number, number]; d: [number, number]; len?: number }[] } = {}) {
   const railCuts = new Map<number, Man[]>(), innerEnds = new Set<string>(more.innerEnds), adds: Man[] = [], cuts: Man[] = [];
   const addCut = (i: number, m: Man) => { if (!railCuts.has(i)) railCuts.set(i, []); railCuts.get(i)!.push(m); };
   for (const sp of splits) {

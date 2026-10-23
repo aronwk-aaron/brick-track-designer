@@ -16,16 +16,19 @@ const spawn = (): HelperPort => {
 };
 // (the build going now: a newer one stops it while it waits on its helpers)
 let current = 0;
-self.onmessage = async (e: MessageEvent<{ id: number; design: Design }>) => {
-  const { id, design } = e.data;
+/** (planOnly: the plan's trackwork wanted, not the 3D view: stopped once that's sent) */
+const PLAN_DONE = { planDone: true };
+self.onmessage = async (e: MessageEvent<{ id: number; design: Design; planOnly?: boolean }>) => {
+  const { id, design, planOnly } = e.data;
   current = id;
   post({ id, progress: 'Starting', frac: 0 }); // (picked up: the page knows this worker isn't stuck)
   try {
     const { overlay, pieces, info } = await buildShared(await kernel(wasmUrl), design, spawn, helperCount(navigator.hardwareConcurrency),
-      (progress, frac) => post({ id, progress, frac }), (early) => post({ id, early }), () => current !== id);
+      (progress, frac) => post({ id, progress, frac }), (early) => { post({ id, early }); if (planOnly) throw PLAN_DONE; }, () => current !== id);
     post({ id, overlay, pieces, info }, pieces.flatMap((p) => [p.positions.buffer, p.stl.buffer, ...(p.supports ? [p.supports.buffer] : [])]));
   } catch (err) {
     if (err === CANCELLED) return;
+    if (err === PLAN_DONE) { post({ id, planDone: true }); return; }
     // (a crash inside the kernel leaves it broken for every build after: the page starts a new worker)
     const fatal = err instanceof WebAssembly.RuntimeError || typeof err === 'number';
     post({ id, fatal, error: String(err instanceof Error ? err.message : typeof err === 'number' ? 'the geometry kernel failed' : err) });

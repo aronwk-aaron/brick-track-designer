@@ -2,9 +2,8 @@ import { describe, expect, it } from 'vitest';
 import { kernel } from '../src/geom/kernel';
 import { Scad } from '../src/geom/scad';
 import { CROSSING_DEFAULTS, crossingPiece } from '../src/geom/crossing';
-import { TEMPLATE_GROUPS, TEMPLATES, toRoutes } from '../src/app/design';
-import { T } from '../src/geom/scad';
-import { routePose } from '../src/route/route';
+import { TEMPLATES, toRoutes } from '../src/app/design';
+import { sitsOnStuds } from './grip.shared';
 
 // Count the underside's stud sockets (square, 5.0 across: never round, they grip too hard) by size, in a slice just above the bottom.
 const area = (p: number[][]) => Math.abs(p.reduce((a, [x, y], k) => { const [u, v] = p[(k + 1) % p.length]; return a + x * v - u * y; }, 0) / 2);
@@ -37,24 +36,6 @@ describe('underside grip', () => {
       expect(Math.abs((((y + 64) % 8) + 8) % 8)).toBeLessThan(1e-6);
     }
   });
-  // The piece must sit flat on a baseplate: no stud of the plate's grid
-  // (4.8 x 1.8) may run into it, at the edges, the ends or anywhere.
-  // (each crossing, switch and feature built as one piece; the layouts are built whole, cut for the bed, in templates-layouts.test.ts)
-  // (not the banked curve yet: its bed comes down on the inner side, over the hollow, onto the studs; to fix)
-  const names = TEMPLATE_GROUPS.filter(([g]) => g !== 'Layouts' && g !== 'Monorail').flatMap(([, ns]) => ns).filter((n) => n !== 'Banked curve');
-  for (const name of names)
-    for (const grip of ['edges', 'all'] as const)
-      it(`${name}, grip ${grip}: sits on a baseplate's studs`, { timeout: 60000 }, async () => {
-        const w = await kernel(), s = new Scad(w), routes = toRoutes(TEMPLATES[name]);
-        const m = crossingPiece(s, routes, { ...CROSSING_DEFAULTS, grip });
-        const b = m.boundingBox(), p0 = routePose(routes[0], 0), h = (p0[2] * Math.PI) / 180;
-        const studs = [];
-        for (let i = -80; i <= 80; i++) for (let j = -80; j <= 80; j++) {
-          const lx = 4 + 8 * i, ly = 4 + 8 * j;
-          const x = p0[0] + lx * Math.cos(h) - ly * Math.sin(h), y = p0[1] + lx * Math.sin(h) + ly * Math.cos(h);
-          if (x < b.min[0] - 4 || x > b.max[0] + 4 || y < b.min[1] - 4 || y > b.max[1] + 4) continue;
-          studs.push(T(s.cylinder(1.8, 2.4, 2.4, 32), [x, y, 0]));
-        }
-        expect(m.intersect(w.Manifold.union(studs)).volume()).toBeLessThan(1e-3);
-      });
+  // The piece must sit flat on a baseplate: grip.shared.ts (the features in grip-features.test.ts)
+  sitsOnStuds(['Crossings', 'Switches']);
 });

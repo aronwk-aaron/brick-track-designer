@@ -15,8 +15,12 @@ export type RoutePiece = [number, number, number];
  * sections built together (those whose bases overlap). half: how far the
  * base reaches each side of a centre line; room: the longest plain piece.
  */
-/** exact: plain stretches in pieces this long (mm, measured from the track's start), the last what's left; else as few as fit room, even. */
-export function planSections(routes: Route[], splits: Split[], half: number, room: number, minPart = 40, exact = 0) {
+/**
+ * exact: plain stretches in pieces this long (mm, measured from the track's start), the last what's left; else as few
+ * as fit room, even. plates: the baseplates' grid (their size and corner, mm): a joint too where a plain stretch
+ * crosses a baseplate's edge (on the whole stud nearest), so its pieces sit on one baseplate each, not cut again there.
+ */
+export function planSections(routes: Route[], splits: Split[], half: number, room: number, minPart = 40, exact = 0, plates?: { size: number; x: number; y: number }) {
   const boxes = routes.map((rt) => {
     const L = routeLength(rt), n = Math.max(1, Math.ceil(L / 8)), b = [Infinity, Infinity, -Infinity, -Infinity];
     for (let k = 0; k <= n; k++) { const p = routePose(rt, (L * k) / n); b[0] = Math.min(b[0], p[0]); b[1] = Math.min(b[1], p[1]); b[2] = Math.max(b[2], p[0]); b[3] = Math.max(b[3], p[1]); }
@@ -53,8 +57,24 @@ export function planSections(routes: Route[], splits: Split[], half: number, roo
         const inner = b - a, n = Math.max(1, Math.ceil(inner / room));
         // (whole pieces measured from the track's start, as LEGO's; at a free stretch's end by points or a crossing, a cut
         // there too, so what's built with them is as small as can be)
-        if (exact > 0) { if (a > minPart) cuts.push(a); for (let c2 = Math.ceil((a + 1e-6) / exact) * exact; c2 < b - 1e-6; c2 += exact) cuts.push(c2); if (b < L - minPart) cuts.push(b); }
-        else for (let m = 0; m <= n; m++) cuts.push(Math.round((a + (inner * m) / n) / step) * step);
+        // (at each baseplate edge it crosses first, then the lengths between, measured on from there)
+        const edges: number[] = [];
+        if (plates && plates.size > 0) {
+          const cell = (q: number[]) => [Math.floor((q[0] - plates.x) / plates.size), Math.floor((q[1] - plates.y) / plates.size)].join();
+          for (let s2 = a + step; s2 <= b; s2 += 1) if (cell(routePose(rt, s2 - 1)) !== cell(routePose(rt, s2))) edges.push(Math.round(s2 / step) * step);
+        }
+        const fill = (lo: number, hi: number) => {
+          if (exact > 0) for (let c2 = lo + exact; c2 < hi - minPart / 2; c2 += exact) cuts.push(c2);
+          else { const k = Math.max(1, Math.ceil((hi - lo) / room)); for (let m = 1; m < k; m++) cuts.push(Math.round((lo + ((hi - lo) * m) / k) / step) * step); }
+        };
+        if (exact > 0 && !edges.length) { if (a > minPart) cuts.push(a); for (let c2 = Math.ceil((a + 1e-6) / exact) * exact; c2 < b - 1e-6; c2 += exact) cuts.push(c2); if (b < L - minPart) cuts.push(b); }
+        else if (!edges.length) for (let m = 0; m <= n; m++) cuts.push(Math.round((a + (inner * m) / n) / step) * step);
+        else {
+          if (a > minPart) cuts.push(a);
+          if (b < L - minPart) cuts.push(b);
+          const stops = [a, ...edges.filter((e) => e > a + minPart / 2 && e < b - minPart / 2), b];
+          for (let k2 = 0; k2 + 1 < stops.length; k2++) { if (k2 > 0) cuts.push(stops[k2]); fill(stops[k2], stops[k2 + 1]); }
+        }
       }
       k = e + 1;
     }

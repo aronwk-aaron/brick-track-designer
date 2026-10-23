@@ -175,7 +175,7 @@ const tongueOk = (t: Track) => (r: RailCross) => t.o.tongueMaxAngle === undefine
 /** flatRails: cut flat: the rails straight across with no tongues, and no peg and clip (nothing sticks out, nothing to support). */
 /** noTongue: where no rail-end tongue may go (beside loose blades: a set of points' stretch), the rail cut plain there. */
 /** holes: where it puts axle holes, to keep later cuts clear of ([x, y, r] along each). */
-export function cutPiece(s: Scad, t: Track, body: Man, routes: Route[], lines: CutLine[], joint: Joint = 'lego', flatRails = false, noTongue?: (q: [number, number]) => boolean, holes?: [number, number, number][]): Man[] {
+export function cutPiece(s: Scad, t: Track, body: Man, routes: Route[], lines: CutLine[], joint: Joint = 'lego', flatRails = false, noTongue?: (q: [number, number]) => boolean, holes?: [number, number, number][], fits?: (m: Man) => boolean): Man[] {
   if (!lines.length) return [body];
   const G = t.c.railOffset, half = t.c.sleeperLen / 2;
   const kit = jointKit(s, t, body.boundingBox().min[2]), tongued = tongueOk(t);
@@ -252,7 +252,20 @@ export function cutPiece(s: Scad, t: Track, body: Man, routes: Route[], lines: C
   };
   for (const f of frames) {
     const prev = parts;
-    parts = arena(s.w, () => prev.flatMap((m) => (!across(f, m) ? (m.volume() > 300 ? [m] : []) : (f.L.comb ? combSplit(f, m) : m.splitByPlane([f.n[0], f.n[1], 0], f.n[0] * f.L.p[0] + f.n[1] * f.L.p[1])).filter((c) => c.volume() > 300).map((c) => flat(s.w, c)))), (r) => r); // (not a sliver of print supports)
+    // (a side under 2000 mm3, a corner the line just clips (where two cut lines meet by the track's edge, a stud or two
+    // of bed) or a sliver of print supports: not cut off there, the part kept whole across the line, if it still fits
+    // the bed (fits). Cut off, it was dropped and left a notch)
+    parts = arena(s.w, () => prev.flatMap((m) => {
+      if (!across(f, m)) return [m];
+      const cs = (f.L.comb ? combSplit(f, m) : m.splitByPlane([f.n[0], f.n[1], 0], f.n[0] * f.L.p[0] + f.n[1] * f.L.p[1])).filter((c) => c.volume() > 1e-6);
+      // (a small piece of bed on its own: not a breakaway support (thin, a rail end's or a footing, a few hundred mm3),
+      // nor a whole track's part (a side can hold parts of two tracks side by side))
+      const chunk = (b: Man) => { const v = b.volume(), bb = b.boundingBox(); return v > 400 && v < 4000 && bb.max[2] - bb.min[2] > 3.4; };
+      // (nor where it'd leave one, a corner of bed cut off on its own between two lines: it went in with the part beside
+      // it as if a loose support)
+      const fl = cs.map((c) => flat(s.w, c));
+      return (!fits || fits(m)) && (cs.some((c) => c.volume() <= 2000) || fl.some((c) => { const bs = c.decompose(); return bs.length > 1 && bs.some(chunk); })) ? [flat(s.w, m)] : fl;
+    }), (r) => r);
     for (const m of prev) if (m !== body && !parts.includes(m) && !(m as unknown as { isDeleted(): boolean }).isDeleted()) m.delete();
   }
   // (rather than a plane: the far side's fingers, 16 mm wide and reaching

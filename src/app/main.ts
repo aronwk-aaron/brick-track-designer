@@ -203,7 +203,11 @@ function render() {
     name.addEventListener('change', () => {
       const v = name.value.trim();
       if (!v || design.routes.some((q, j) => j !== i && q.name === v)) { name.value = r.name; setStatus(infoEl.textContent ?? '', v ? `There's already a route called ${v}: names must differ` : 'A route needs a name', false, true); return; }
-      r.name = v; changed(true);
+      // (just a name: the trackwork's references to it renamed too, no rebuild)
+      const was = r.name;
+      r.name = v;
+      for (const e of Object.values(design.trackwork?.points ?? {})) if (e.drop) e.drop = e.drop.map((id) => (id === was ? v : id));
+      changed(true, true, false);
     });
     place.append(field('Name', name),
       field('Start x, studs', num(r.x, (n) => { r.x = n; }, 1)),
@@ -300,22 +304,27 @@ let building = false, stale = false;
 /** The first build of the design as last let go of (a lever dropped is held where it was put on the plan till then). */
 let settleFrom = 0;
 const hasTrack = () => design.routes.some((r) => r.segs.length > 0);
-function requestBuild() {
+/** Build the 3D view after each change (Auto in the 3D view's bar; remembered), and only while it's showing; else just the plan's trackwork. */
+let autoBuild = true, show3d = true;
+try { autoBuild = localStorage.getItem('btd-auto') !== '0'; show3d = localStorage.getItem('btd-3d') !== '0'; } catch { /* fine */ }
+const want3d = () => autoBuild && show3d;
+/** force: the 3D view too, whatever Auto says (Build pressed, the view shown again). */
+function requestBuild(force = false) {
   clearTimeout(timer);
-  const id = ++seq;
+  const id = ++seq, planOnly = !force && !want3d();
   // (nothing to build: no need to ask the worker, which would only say so)
   if (!hasTrack()) {
     buildDone(); stale = false; pieces = []; showPieces(pieces); canvas.overlay = undefined; updateLegend(); canvas.draw(); renderTrackwork([]); refreshOptions();
     setStatus('Nothing to build yet: draw some track, or pick a template.');
     return;
   }
-  worker.postMessage({ id, design: structuredClone(design) });
+  worker.postMessage({ id, design: structuredClone(design), planOnly });
   buildStarted();
   clearTimeout(restartCheck);
   restartCheck = window.setTimeout(() => {
     if (started >= id || id !== seq) return;
     worker.terminate(); worker = newWorker();
-    worker.postMessage({ id, design: structuredClone(design) });
+    worker.postMessage({ id, design: structuredClone(design), planOnly });
   }, 1000);
 }
 /** Stop the build that's going (a big layout taking its time): the 3D view stays as it was, out of date, till Rebuild. */
@@ -346,8 +355,8 @@ function updateExports() {
   }
 }
 
-/** The design changed: save it and rebuild. record: an undo step (not while a drag or a draw is still going on). */
-function changed(rerender = false, record = true) {
+/** The design changed: save it and rebuild. record: an undo step (not while a drag or a draw is still going on). build: false for what doesn't change the parts (a route's name). */
+function changed(rerender = false, record = true, build = true) {
   const json = JSON.stringify(design);
   if (record && json !== history[history.length - 1]) { history.push(json); future.length = 0; if (history.length > 200) history.shift(); }
   if (record) settleFrom = seq + 1; // (the next build is of the design as let go of)
@@ -356,6 +365,7 @@ function changed(rerender = false, record = true) {
   if (rerender) render();
   canvas?.draw();
   updateHistoryButtons();
+  if (!build) return;
   clearTimeout(timer);
   timer = window.setTimeout(requestBuild, 150);
   building = true; updateExports();
@@ -377,6 +387,13 @@ function onBuilt(e: MessageEvent) {
   if (d.id !== seq) return;          // an older build
   // (the trackwork, ahead of the pieces: the plan and the Trackwork panel can be worked on while they build)
   if (d.early) { canvas.overlay = d.early; if (d.id >= settleFrom) canvas.settled(); updateLegend(); canvas.draw(); renderTrackwork(d.early.items ?? []); refreshOptions(); refreshRoutes(); return; }
+  // (just the plan's trackwork, the 3D view not built: out of date till Build)
+  if (d.planDone) {
+    buildDone(); stale = true;
+    $('rebuild').textContent = 'Build';
+    setStatus(show3d ? 'The 3D view is built when you press Build (Auto is off).' : 'The 3D view is hidden: it\'s built when you show it.', '', show3d);
+    return;
+  }
   if (d.progress) { $('build-what').textContent = `${d.progress}…`; $('build-bar').style.width = `${Math.round((d.frac ?? 0) * 100)}%`; return; }
   if (d.fatal && fatalRetry !== d.id) { fatalRetry = d.id; worker.terminate(); worker = newWorker(); worker.postMessage({ id: d.id, design: structuredClone(design) }); return; }
   buildDone();
@@ -398,7 +415,18 @@ function onBuilt(e: MessageEvent) {
 }
 worker = newWorker();
 $('build-stop').addEventListener('click', stopBuild);
-$('rebuild').addEventListener('click', () => { stale = false; setStatus(''); requestBuild(); });
+$('rebuild').addEventListener('click', () => { stale = false; setStatus(''); requestBuild(true); $('rebuild').textContent = 'Rebuild'; });
+// Auto: build the 3D view after every change, or only when Build is pressed
+{
+  const b = $('auto-build');
+  const show = () => { b.classList.toggle('on', autoBuild); b.title = autoBuild ? 'The 3D view builds after every change. Click to build it only when you press Build' : 'The 3D view builds only when you press Build. Click to build it after every change'; };
+  show();
+  b.addEventListener('click', () => {
+    autoBuild = !autoBuild; show();
+    try { localStorage.setItem('btd-auto', autoBuild ? '1' : '0'); } catch { /* fine */ }
+    if (autoBuild && stale) { stale = false; requestBuild(true); }
+  });
+}
 
 // ---------- 3D view ----------
 const view = $('view3d');
@@ -687,7 +715,9 @@ const canvas = new TrackCanvas($<HTMLCanvasElement>('track'), {
   },
 });
 // Plan layers on and off: click one in the legend (remembered).
-try { const v = localStorage.getItem('btd-hidden'); if (v) for (const k of JSON.parse(v) as string[]) canvas.hidden.add(k); } catch { /* fine */ }
+// (the anti-stud tubes off to start with: a ring at every one cluttered the plan)
+canvas.hidden.add('grips');
+try { const v = localStorage.getItem('btd-hidden'); if (v) { canvas.hidden.clear(); for (const k of JSON.parse(v) as string[]) canvas.hidden.add(k); } } catch { /* fine */ }
 document.querySelectorAll<HTMLElement>('#legend [data-layer]').forEach((el) => {
   const k = el.dataset.layer!;
   el.title = 'Click to show or hide this on the plan';
@@ -722,10 +752,13 @@ const set3d = (on: boolean) => {
   $('toggle-3d').classList.toggle('on', on);
   try { localStorage.setItem('btd-3d', on ? '1' : '0'); } catch { /* fine */ }
 };
-let show3d = true;
-try { show3d = localStorage.getItem('btd-3d') !== '0'; } catch { /* fine */ }
 set3d(show3d);
-$('toggle-3d').addEventListener('click', () => { show3d = !show3d; set3d(show3d); });
+const toggle3d = () => {
+  show3d = !show3d; set3d(show3d);
+  // (shown again, out of date: built now, if Auto's on; else it says to press Build)
+  if (show3d && stale) { if (autoBuild) { stale = false; requestBuild(true); } else { $('rebuild').textContent = 'Build'; setStatus('The 3D view is built when you press Build (Auto is off).', '', true); } }
+};
+$('toggle-3d').addEventListener('click', toggle3d);
 const restore = (json: string) => { design = JSON.parse(json); replaced(); save(); render(); canvas.draw(); updateHistoryButtons(); requestBuild(); };
 const undo = () => { if (history.length > 1) { future.push(history.pop()!); restore(history[history.length - 1]); } };
 const redo = () => { if (future.length) { const j = future.pop()!; history.push(j); restore(j); } };
@@ -745,7 +778,7 @@ addEventListener('keydown', (e) => {
   if (e.ctrlKey || e.metaKey || e.altKey) return;
   if (e.key === 'd' || e.key === 'D') setMode('draw');
   if (e.key === 's' || e.key === 'S') setMode('select');
-  if (e.key === 'p' || e.key === 'P') { show3d = !show3d; set3d(show3d); }
+  if (e.key === 'p' || e.key === 'P') toggle3d();
   if ((e.key === 'f' || e.key === 'F') && !e.ctrlKey && !e.metaKey) canvas.fit();
   if (e.key === '?') helpEl.classList.toggle('open');
   if (e.key === ',') openSettings(settingsEl.hidden);
@@ -1070,6 +1103,10 @@ const OPTION_FORM: OptSection[] = [
       { v: 'all', t: 'Every rail a cut crosses', tip: 'Each rail gets interlocking tongues where it\'s cut, slanted ones too.' },
       { v: 'square', t: 'Only rails crossing the cut square', tip: 'The track the cut crosses squarely gets LEGO track-end tongues; rails crossing it at an angle (a branch\'s) are cut flat, as plate-style large switches are split.',
         con: 'The slanted rails rely on the square ones and the bed joint to stay in line.' }] },
+    { key: 'studsAtCuts', label: 'Studs a cut goes through', choices: [
+      { v: 'off', t: 'Taken off', tip: 'No stud is cut in half: one a cut would go through is left off, on both parts.', con: 'A stud missing here and there along each cut.' },
+      { v: 'whole', t: 'Whole on one part', tip: 'Each one whole on the part its middle is on, standing a little over the next part\'s edge.', con: 'Those studs overhang the joint: printed on the edge, they can snap off.' },
+      { v: 'split', t: 'Cut in half', tip: 'Cut straight through with the rest.', con: 'Half studs either side of the joint: a brick won\'t sit on them.' }] },
     { key: 'endSupports', label: 'Supports under rail ends', check: true, help: 'Breakaway supports under the rail-end tongues. Off: leave it to your slicer.' },
   ] },
   { title: 'Monorail', kind: 'monorail', fields: [

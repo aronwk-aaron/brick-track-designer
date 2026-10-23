@@ -1,5 +1,5 @@
 // Banked curves (curves.scad's superelevation): the bed, rails and studs
-// turned about the inner rail's foot, ramping in and out, the underside flat.
+// turned about the bed's inner edge, ramping in and out, the underside flat.
 import { describe, expect, it } from 'vitest';
 import { writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -101,7 +101,7 @@ describe('banked curves', { timeout: 120000 }, () => {
     expect(m.volume()).toBeGreaterThan(flat.volume());
   });
 
-  it('at the steepest bank (10°), track only: the underside hollow stays under the inner side lowered top (one body)', async () => {
+  it('at the steepest bank (10°), track only: the underside hollow stays under the top (one body)', async () => {
     const s = new Scad(await kernel());
     const m = crossingPiece(s, toRoutes(design([curve(10)])), noSupports);
     expect(m.decompose().filter((b) => b.volume() > 1).length).toBe(1);
@@ -125,7 +125,7 @@ describe('banked curves', { timeout: 120000 }, () => {
     const s = new Scad(await kernel()), L = (Math.PI / 4) * R40, o: CrossingOptions = { ...noSupports, sleepers: 'sleepers', sleeperGapStuds: 2 };
     const flat = crossingPiece(s, toRoutes(design([curve()])), o);
     const m = crossingPiece(s, toRoutes(design([curve(5)])), o);
-    // (a sleeper's ends: the outer one raised, the inner one lowered, by about their distance from the inner rail x sin(bank))
+    // (a sleeper's ends: the outer one raised above the inner by about their distance apart x sin(bank))
     const sn = Math.sin((5 * Math.PI) / 180), hw = 32, mid = L / 2;
     const top = (lat: number) => topAt(m, mid, lat, 6);
     expect(top(hw - 1) - top(-hw + 1)).toBeGreaterThan(2 * (hw - 1) * sn - 0.3);
