@@ -39,6 +39,7 @@ const specs: { key: string; values: string[]; design: (v: string) => unknown; pi
   { key: 'undersideGrid', values: ['baseplate', 'track'], design: (v) => D([st(12, { heading: 17 })], { undersideGrid: v }), cam: { dir: '0.5,-0.6,-1', r: 230, at: (ps) => { const b = box(ps); return [(b[0] + b[3]) / 2, (b[1] + b[4]) / 2, 0]; } } },
   { key: 'splitTrack', values: ['bed', 'lengths'], design: (v) => D(bend, { printBedX: 200, printBedY: 200, splitTrack: v }), cam: { dir: '0.15,-0.3,1', dist: 2.0 } },
   { key: 'mechStyle', values: ['plates', 'tines'], design: (v) => D(sw, { mechStyle: v }), cam: toe },
+  { key: 'pointBlades', values: ['2', '1'], design: (v) => D(sw, { pointBlades: Number(v) }), cam: toe },
   { key: 'bladeHold', values: ['lip', 'bracket'], design: (v) => D(sw, { bladeHold: v }), cam: toe },
   { key: 'bladeStyle', values: ['simple', 'prototype'], design: (v) => D(sw, { bladeStyle: v }), cam: toe },
   { key: 'throwStyle', values: ['built-in', 'bracket', 'stand'], design: (v) => D(sw, { throwStyle: v }), cam: throwCam },

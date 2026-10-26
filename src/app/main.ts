@@ -984,6 +984,8 @@ const noBuf = () => (design.routes.some((r) => r.startEnd === 'buffer' || r.endE
 const noBank = () => (design.routes.some((r) => r.segs.some((sg) => sg.kind === 'curve' && (sg.bank ?? 0) > 0)) ? undefined : 'no curve is banked: give one a bank on its route card (Shape)');
 /** (settings for the tines mechanism only) */
 const onlyTines = (c: OptCtx) => (c.fdb ? 'only with Mechanism: Under the bed, on spring tines' : undefined);
+/** (settings for the blades-on-top mechanism only) */
+const onlyPlates = (c: OptCtx) => (c.fdb ? undefined : 'only with Mechanism: Blades on top, on pins');
 /** (settings for joints with rail tongues only) */
 const noTongues = (c: OptCtx) => (c.o.joint === 'butt' || c.o.joint === 'flataxle' ? 'Parts join with is Straight cuts: no rail tongues' : undefined);
 const OPTION_FORM: OptSection[] = [
@@ -1034,10 +1036,14 @@ const OPTION_FORM: OptSection[] = [
     { key: 'pointsPieces', label: 'Points printed as', numeric: true, off: onlyTines, choices: [
         { v: '1', t: 'One part', tip: 'Both blades on one pivot.' },
         { v: '2', t: 'Two parts', tip: 'Each blade on its own pivot and spring.' }] },
-    { key: 'bladeHold', label: 'Blades held down by', off: (c) => (c.fdb ? undefined : 'only with Mechanism: Blades on top, on pins'), choices: [
+    { key: 'pointBlades', label: 'Moving blades', numeric: true, off: onlyPlates, choices: [
+      { v: '2', t: 'Two', tip: 'Both blades move, as LEGO and most model switches.' },
+      { v: '1', t: 'One (single point)', tip: 'Only the blade on the curved side moves; the other rail is fixed, with a flangeway beside its stock rail, as a tram\'s single-point switch.',
+        con: 'The one blade steers both ways: a wheel can pick the wrong way if the wheels are loose. Three-ways keep both blades.' }] },
+    { key: 'bladeHold', label: 'Blades held down by', off: onlyPlates, choices: [
       { v: 'lip', t: 'Snap lip on the pin', tip: 'Each blade plate snaps over a lip on its pin. Nothing extra to print.', con: 'A printed lip can wear.' },
       { v: 'bracket', t: 'Small bracket over the blade', tip: 'A small bracket pegged into the bed covers each blade plate so it can\'t lift.', con: 'Two more small parts to print.' }] },
-    { key: 'bladeStyle', label: 'Blade shape', off: (c) => (c.fdb ? undefined : 'only with Mechanism: Blades on top, on pins'), choices: [
+    { key: 'bladeStyle', label: 'Blade shape', off: onlyPlates, choices: [
       { v: 'simple', t: 'Simple', tip: 'Each blade is its rail, cut off along the rail it closes against.' },
       { v: 'prototype', t: 'Realistic (planed, tucked under the rail)', tip: 'Blades planed to a point and tucked under the stock rail head, so flanges can\'t catch them.',
         con: 'Fit the blades swung open, then close them. The stock rail head is thinner along the points.' }] },
@@ -1059,7 +1065,7 @@ const OPTION_FORM: OptSection[] = [
       { v: 'stand', t: 'Switch stand (ground throw)', tip: 'A handle beside the track, like a real ground throw. It locks at each end.',
         con: 'A train trailing through against it derails unless the points spring back. A three-way\'s middle position isn\'t locked.',
         no: (c) => (c.fdb ? undefined : 'only with Mechanism: Blades on top, on pins') }] },
-    { key: 'throwAction', label: 'Points held by', off: (c) => (c.fdb ? undefined : 'only with Mechanism: Blades on top, on pins'), choices: [
+    { key: 'throwAction', label: 'Points held by', off: onlyPlates, choices: [
       { v: 'detent', t: 'Lever click', tip: 'The lever clicks into place at each end.', con: 'A train trailing through the wrong way can push the points part way and derail.' },
       { v: 'overcentre', t: 'Over-centre spring', tip: 'A printed spring snaps the points to whichever side they\'re pushed. Trains can trail through.', con: 'The spring is light (about 0.3 N) and depends on print accuracy. Not on three-ways or with a switch stand.' },
       { v: 'springback', t: 'Spring-back', tip: 'The blades give way for a trailing train and spring back after it. Use with the switch stand.', con: 'Wider blade plates and a lighter hold on the closed blade.' }] },
@@ -1187,7 +1193,7 @@ const openSecs: Set<string> = (() => { try { const v = JSON.parse(localStorage.g
 const keepSecs = () => { try { localStorage.setItem('btd-settings-open', JSON.stringify([...openSecs])); } catch { /* (not kept) */ } };
 let optQuery = '';
 /** The settings whose choices have example pictures (public/options/<key>-<value>.webp, made by scripts/option-pictures.mts). */
-const PICTURED = new Set(['joint', 'tongueRails', 'sleepers', 'curveStuds', 'ballast', 'bottomStyle', 'grip', 'undersideGrid', 'splitTrack', 'mechStyle', 'bladeHold', 'bladeStyle', 'throwStyle', 'bufferStyle', 'monoEndStuds']);
+const PICTURED = new Set(['joint', 'pointBlades', 'tongueRails', 'sleepers', 'curveStuds', 'ballast', 'bottomStyle', 'grip', 'undersideGrid', 'splitTrack', 'mechStyle', 'bladeHold', 'bladeStyle', 'throwStyle', 'bufferStyle', 'monoEndStuds']);
 /** A setting's choices side by side in a modal: each one's picture, what it does, its drawback, and a button to use it. */
 function showChoices(f: OptField, cur: string, def: string, c: OptCtx, off: string | undefined, use: (v: string) => void) {
   const modal = $('choices'), body = $('choices-body');

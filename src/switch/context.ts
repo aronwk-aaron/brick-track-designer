@@ -50,6 +50,8 @@ export interface SwitchParams {
   bladeStyle?: 'simple' | 'prototype';
   /** (the plate-style points) What keeps each blade's plate on its pin: 'lip' (a snap lip on the pin) or 'bracket' (a little bracket on the bed over the plate round the pin, pegged in: the reference points' way). */
   bladeHold?: 'lip' | 'bracket';
+  /** (the plate-style points) Blades per set: 2 (both move), or 1 (a single-point switch, as a tram's: only the blade on the more curved route moves; the other side's rail is fixed, from where it's a flangeway clear of its stock rail). A three-way keeps both. */
+  pointBlades?: 1 | 2;
   /** (switch.scad's throw_ballast) On ballast: the ballast's steps carried on round the lever's arm, with studs. */
   throwBallast?: boolean;
   /** (clip_and_peg_on_ballast) On ballast: the end connectors keep their snap peg and C-clip. */
@@ -228,6 +230,8 @@ export function pointsSet(routes: Route[], ps: PointsSet, p: SwitchParams, defau
     bladeMidAt, warnings,
     /** (the plate-style points) each blade's layout: filled in by switchPlan */
     fdb: undefined as FdbBladeLayout[] | undefined,
+    /** (a single-point switch) the blade that's fixed rail instead, and where along its route that rail starts: filled in by switchPlan */
+    fixed: undefined as 0 | 1 | undefined, sMate: undefined as number | undefined,
   };
 }
 export type PointsSetValues = ReturnType<typeof pointsSet>;

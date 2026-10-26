@@ -148,7 +148,7 @@ export function networkSplits(s: Scad, routes: Route[], sol: Solution, p: BasePa
       const g2 = gridLever(P, plan.sets[0], ed ?? {});
       if (g2.leverOffset !== undefined) { used = spec(g2); plan = switchPlan(rts, [used], p, 1, foreign); }
     }
-    throughWarnings(gr, !!plan.sets[0].fdb?.some((f) => f.blocked));
+    throughWarnings(gr, !!plan.sets[0].fdb?.some((f, b) => f.blocked && b !== plan.sets[0].fixed));
     warnings.push(...plan.warnings.filter((w) => !/print bed/.test(w)), ...plan.notes.filter((w) => !warnings.includes(w)));
     const gm = switchGeometry(s, plan), mech = gm.mech(0);
     // which design route (and which way round) each frame route is

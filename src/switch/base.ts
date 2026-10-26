@@ -260,6 +260,20 @@ export function threeWaySet(routes: Route[], ps: SetSpec, p: BaseParams, default
   return { ...v, three: { S, L, R, half: p.mechStyle === 'plates' ? travel / 2 : half } };
 }
 
+/**
+ * A single-point switch (pointBlades 1): the blade on the straighter route is
+ * left out, its rail fixed from where it's a flangeway clear of its stock
+ * rail; the other blade, moving, steers the wheels both ways.
+ */
+function singlePoint(v: PointsSetValues, G: number, flangeway: number) {
+  const turn = (rt: Route) => Math.abs(((routePose(rt, v.sHeel)[2] - routePose(rt, v.sToe)[2] + 540) % 360) - 180);
+  const fixed = turn(v.ra) >= turn(v.rb) ? 1 : 0;
+  const [rt, o, stock] = fixed === 0 ? [v.ra, -G, v.rb] : [v.rb, +G, v.ra];
+  let s = v.sToe;
+  while (s < v.sHeel && Math.abs(routeLat(stock, railPoint(rt, s, o)) - o) < 2 * HEAD_HW + flangeway) s += 0.25;
+  v.fixed = fixed; v.sMate = s;
+}
+
 /** Everything switch.scad works out before building: routes, sets, frogs, check rails, ties, cuts. */
 /** foreign: other track running past, in this frame (a network's routes that aren't the switch's): the plate-style blade plates keep clear of its rails. */
 export function switchPlan(routes: Route[], specs: SetSpec[], p: BaseParams = BASE_DEFAULTS, defaultThrowDir = 1, foreign: Route[] = []) {
@@ -277,13 +291,14 @@ export function switchPlan(routes: Route[], specs: SetSpec[], p: BaseParams = BA
   const sets = specs.map((ps) => (ps[4] === undefined
     ? pointsSet(routes, { ra: ps[0], rb: ps[1], sToe: ps[2], tside: ps[3] }, { ...p, ...ps[5] }, defaultThrowDir)
     : threeWaySet(routes, ps, p, defaultThrowDir)));
+  if (p.pointBlades === 1 && p.mechStyle === 'plates') for (const v of sets) if (!('three' in v)) singlePoint(v, G, p.flangeway);
   const set0 = sets[0];
   const others = (i: number) => routes.map((_, j) => j).filter((j) => j !== i);
   const latOthers = (i: number, q: Pt) => Math.min(...others(i).map((j) => Math.abs(routeLat(routes[j], q))));
   const isStock = (i: number, o: number) => (i === 0 && o > 0) || (i === nRoutes - 1 && o < 0);
   const railFixS = (i: number, o: number) => Math.max(0, ...specs.map((ps, k) => (ps[4] !== undefined
     ? ([ps[0], ps[1], ps[4]].includes(i) && !isStock(i, o) ? sets[k].sHeel : -Infinity)  // a three-way: every rail but the stock rails starts at the heels
-    : (ps[0] === i && o < 0) || (ps[1] === i && o > 0) ? sets[k].sHeel : -Infinity)));
+    : (ps[0] === i && o < 0) || (ps[1] === i && o > 0) ? (sets[k].fixed === (o < 0 ? 0 : 1) ? sets[k].sMate! : sets[k].sHeel) : -Infinity)));
 
   // Frogs: [i, j, s along i, point, s along j].
   const frogFn = (i: number, j: number, s: number) => routeLat(routes[j], railPoint(routes[i], s, -G)) - G;
@@ -456,6 +471,7 @@ export function switchPlan(routes: Route[], specs: SetSpec[], p: BaseParams = BA
     if (p.throwStand && sets.some((v) => 'three' in v))
       notes.push("a switch stand locks at its two ends: a three-way's middle (straight) position is with the handle upright, not locked");
   }
+  if (p.pointBlades === 1 && p.mechStyle === 'plates' && sets.some((v) => 'three' in v)) notes.push("a three-way's points keep both blades: one blade can't steer three ways");
   if (!planOk(baseCuts)) warnings.push(`the switch doesn't fit the ${p.printBedX} x ${p.printBedY} print bed even when split across: it may be too wide`);
   const bySetY = [...sets].sort((a, b) => a.toeY - b.toeY);
   for (let k = 0; k + 1 < bySetY.length; k++)
@@ -472,7 +488,7 @@ export function switchPlan(routes: Route[], specs: SetSpec[], p: BaseParams = BA
       routes.forEach((rt, i) => { if (!own.includes(rt)) for (const o of [-G, G]) rails.push([rt, o, isStock(i, o) ? 0 : railFixS(i, o) + p.pointClearance]); });
       for (const rt of foreign) for (const o of [-G, G]) rails.push([rt, o, 0]);
       v.fdb = fdbLayout(v, p, rails, springback);
-      const why = v.fdb.find((f) => f.blocked)?.blocked;
+      const why = v.fdb.find((f, b) => f.blocked && b !== v.fixed)?.blocked;
       // (a network's piece says it in its own words, where the points are)
       if (why && !foreign.length) warnings.push(`another route's rail runs between a set of points' stock rails (a tandem's first branch through its second points), and ${why}: move the second points further along, or use 'tines' points`);
     });
@@ -568,6 +584,8 @@ export function switchGeometry(s: Scad, plan: SwitchPlan, extraCuts: Man[] = [])
   const bSide = (b: number) => (b === 0 ? +1 : -1);
   const bHeel = (v: SetV, b: number): Pt => (b === 0 ? railPoint(v.ra, v.sBpiv, -G) : rotAbout(railPoint(v.rb, v.sBpiv, +G), v.pivotPt, -v.throwAng));
   const fdb = p.mechStyle === 'plates';
+  /** The blades that move (a single-point switch's one; else both). */
+  const blades = (v: SetV) => [0, 1].filter((b) => b !== v.fixed);
   const holdOn = fdb && p.bladeHold === 'bracket';
   const stockFootCut = (v: SetV) => fdb ? s.union([]) : s.union([0, 1].map((b) => {
     const side = bSide(b), face = bO(b) + side * HEAD_HW;
@@ -1105,7 +1123,7 @@ export function switchGeometry(s: Scad, plan: SwitchPlan, extraCuts: Man[] = [])
     return s.polygon(sideS > 0 ? pts : [...pts].reverse());
   };
   /** The undercut cut from the stock rails (and their flares, with ballast): the gauge side under the lip, chamfered up to it so it prints. */
-  const protoUndercut = (v: SetV) => s.union([0, 1].map((b) => {
+  const protoUndercut = (v: SetV) => s.union(blades(v).map((b) => {
     const oS = bO(b), sideS = oS < 0 ? 1 : -1, fx = oS + sideS * HEAD_HW, zU = railTop - PROTO.lip, u = PROTO.cut;
     const lat = (d: number) => fx + sideS * d;
     const pts: Vec2[] = [[lat(-u), bedTop - 0.01], [lat(-u), zU - u], [lat(0), zU], [lat(3), zU], [lat(3), bedTop - 0.01]];
@@ -1135,8 +1153,8 @@ export function switchGeometry(s: Scad, plan: SwitchPlan, extraCuts: Man[] = [])
   // pointed down as printed (at -y as assembled).
   /** A post's section at q (with m round it): a teardrop pointed to -y. */
   const fdbPost2d = (q: Pt, m: number) => W.CrossSection.hull([circle(FDB.postD / 2 + m, 24, q), circle(0.05 + m, 8, [q[0], q[1] - (FDB.postD / 2) * Math.SQRT2])]);
-  /** Where each post is as modelled (blade 0 closed, its tongue pressed by the preload). */
-  const fdbPostAt = (v: SetV) => fdbBlades(v).map((f, b) => { const q = rotAbout(f.post, f.pivot, f.open); return [q[0] - (b === 0 ? p.springPreload : 0), q[1]] as Pt; });
+  /** Where each post is as modelled (blade 0 closed, its tongue pressed by the preload): the moving blades', or all: where both would be. */
+  const fdbPostAt = (v: SetV, all = false) => fdbBlades(v).flatMap((f, b) => { const q = rotAbout(f.post, f.pivot, f.open); return all || b !== v.fixed ? [[q[0] - (b === 0 ? p.springPreload : 0), q[1]] as Pt] : []; });
   /** The lever's opening through the arm, in x: over the fork's travel, and on toward the arm's end, short of it. */
   const fdbMouth = (v: SetV) => {
     const f0 = Math.min(v.forkX - forkHw, v.forkX + v.leverTravel + forkHw) - c - 1, f1 = Math.max(v.forkX - forkHw, v.forkX + v.leverTravel + forkHw) + c + 1;
@@ -1156,7 +1174,7 @@ export function switchGeometry(s: Scad, plan: SwitchPlan, extraCuts: Man[] = [])
   const fdbGroove = (v: SetV) => {
     const qs = fdbPostAt(v), T2 = v.leverTravel + 1, [m0, m1] = fdbMouth(v), mouth = (m0 + m1) / 2;
     // (wide enough for the posts wherever they are as the blades swing: their y moves a little)
-    const dy = Math.max(0, ...fdbBlades(v).flatMap((f) => [f.open, f.open === 0 ? f.ang : 0].map((a) => Math.abs(rotAbout(f.post, f.pivot, a)[1] - v.throwY)))) + 0.2;
+    const dy = Math.max(0, ...fdbBlades(v).filter((_, b) => b !== v.fixed).flatMap((f) => [f.open, f.open === 0 ? f.ang : 0].map((a) => Math.abs(rotAbout(f.post, f.pivot, a)[1] - v.throwY)))) + 0.2;
     const far = qs.reduce((a, q) => (v.throwDir * q[0] < v.throwDir * a[0] ? q : a));
     const groove = W.CrossSection.hull([fdbPost2d([far[0] - v.throwDir * T2, v.throwY - dy], c), fdbPost2d([far[0] - v.throwDir * T2, v.throwY + dy], c),
       fdbPost2d([mouth, v.throwY - dy], c), fdbPost2d([mouth, v.throwY + dy], c)]);
@@ -1200,7 +1218,7 @@ export function switchGeometry(s: Scad, plan: SwitchPlan, extraCuts: Man[] = [])
   };
   /** The pins the blades turn on, standing on the bed. */
   // (each with a little snap lip over the plate, so the blade stays on: the plate's hole squeezes past it)
-  const fdbPins = (v: SetV) => s.union([...fdbBlades(v).flatMap((f) => holdOn
+  const fdbPins = (v: SetV) => s.union([...fdbBlades(v).filter((_, b) => b !== v.fixed).flatMap((f) => holdOn
     // (held down by a bracket: the pin plain, up through the bracket's top to locate it)
     ? [T(s.cylinder(c + FDB.plateT + c + HOLD.t, FDB.pinD / 2, FDB.pinD / 2, 24), [f.pivot[0], f.pivot[1], bedTop - 0.01])]
     : [T(s.cylinder(c + FDB.plateT + 0.8, FDB.pinD / 2, FDB.pinD / 2, 24), [f.pivot[0], f.pivot[1], bedTop - 0.01]),
@@ -1235,7 +1253,7 @@ export function switchGeometry(s: Scad, plan: SwitchPlan, extraCuts: Man[] = [])
     ]), [T(s.cylinder(z1 - bedTop + 2, FDB.pinD / 2 + c / 2, FDB.pinD / 2 + c / 2, 24), [h.f.pivot[0], h.f.pivot[1], bedTop - 1])]);
   };
   /** The holes in the bed the brackets' pegs go in (snug: 0.05 over). */
-  const holdHoles = (v: SetV) => s.union(fdbBlades(v).flatMap((_, b) => holdPlan(v, b).feet.map((q) => T(s.cylinder(HOLD.pegL + 0.3 + 0.01, HOLD.peg / 2 - 0.05 + 0.1, HOLD.peg / 2 - 0.05 + 0.1, 20), [q[0], q[1], bedTop - HOLD.pegL - 0.3]))));
+  const holdHoles = (v: SetV) => s.union(blades(v).flatMap((b) => holdPlan(v, b).feet.map((q) => T(s.cylinder(HOLD.pegL + 0.3 + 0.01, HOLD.peg / 2 - 0.05 + 0.1, HOLD.peg / 2 - 0.05 + 0.1, 20), [q[0], q[1], bedTop - HOLD.pegL - 0.3]))));
 
   // ---------- Peco's over-centre spring (throwAction 'overcentre') ----------
   // Peco's turnouts hold their blades with a V spring between the base and
@@ -1252,7 +1270,7 @@ export function switchGeometry(s: Scad, plan: SwitchPlan, extraCuts: Man[] = [])
   // over the post. Printed flat, it flexes in its plane, along its layers.
   /** Where it all is: the post at rest (the right-hand route's), the pins, the travel; and each half's length at rest, at the middle and free. */
   const ocGeo = (v: SetV) => {
-    const qs = fdbPostAt(v), T = v.leverTravel, P: Pt = [(qs[0][0] + qs[1][0]) / 2, v.throwY];
+    const qs = fdbPostAt(v, true), T = v.leverTravel, P: Pt = [(qs[0][0] + qs[1][0]) / 2, v.throwY];
     // (the pins over the post's travel's middle, where the spring's squeezed most)
     const A: Pt[] = [1, -1].map((sg) => [P[0] + T / 2, v.throwY + sg * OC.D]);
     const dEnd = Math.hypot(OC.D, T / 2), free = dEnd + OC.preload;
@@ -1730,7 +1748,7 @@ export function switchGeometry(s: Scad, plan: SwitchPlan, extraCuts: Man[] = [])
       // (throw_ballast: the ballast's steps round the arm, and their outermost outline, for the underside)
       steps: throwSteps(k), stepRect: plan.setData[k].steps?.rect(plan.setData[k].steps!.buddy ? 1 : 0),
       bladeRails: [
-        ...[0, 1].map((b) => [bRt(v, b), sweep(sq([9, 30], [bO(b) - 4.5, -5]), bRt(v, b), 0, v.sHeel + c)] as [Route, Man]),
+        ...[0, 1].map((b) => [bRt(v, b), sweep(sq([9, 30], [bO(b) - 4.5, -5]), bRt(v, b), 0, (b === v.fixed ? v.sMate! : v.sHeel) + c)] as [Route, Man]),
         // (a three-way's branches' inner rails too: they start at the heels, the blades in their place before)
         ...(v.three ? [[v.three.L, +G], [v.three.R, -G]].map(([rt, o]) => [rt, sweep(sq([9, 30], [(o as number) - 4.5, -5]), rt as Route, 0, v.sHeel + c)] as [Route, Man]) : []),
       ],
@@ -1740,9 +1758,9 @@ export function switchGeometry(s: Scad, plan: SwitchPlan, extraCuts: Man[] = [])
     base, basePieces, mech,
     pointsPart: (k = 0) => pointsPart(sets[k]),
     /** The points' parts: one, or one per blade (pointsPieces 2). */
-    pointsParts: (k = 0) => (fdb ? [0, 1].map((b) => fdbBladePart(sets[k], b)) : units(sets[k]).map((u) => unitPart(sets[k], u))),
+    pointsParts: (k = 0) => (fdb ? blades(sets[k]).map((b) => fdbBladePart(sets[k], b)) : units(sets[k]).map((u) => unitPart(sets[k], u))),
     /** (bladeHold 'bracket') The brackets holding the blades down, as assembled; and one as printed (upside down, its top on the bed). */
-    holdParts: (k = 0) => (holdOn ? [0, 1].map((b) => holdPart(sets[k], b)) : []),
+    holdParts: (k = 0) => (holdOn ? blades(sets[k]).map((b) => holdPart(sets[k], b)) : []),
     holdPrint: (m: Man) => { const r = R(m, [180, 0, 0]), bb = r.boundingBox(); return T(r, [-(bb.min[0] + bb.max[0]) / 2, -(bb.min[1] + bb.max[1]) / 2, -bb.min[2]]); },
     /** Each points part's pivot and swing (to turn it to the left-hand route). */
     pointsUnits: (k = 0) => units(sets[k]).map((u) => ({ pivot: u.pivot, swing: u.swing })),
@@ -1753,7 +1771,7 @@ export function switchGeometry(s: Scad, plan: SwitchPlan, extraCuts: Man[] = [])
     springPart: (k = 0) => (ocOn(sets[k]) ? ocPart(sets[k]) : undefined),
     springPrint: (k = 0) => (ocOn(sets[k]) ? ocPrint(sets[k]) : undefined),
     /** Each points part's pin (where it turns), how far to turn it from as assembled to open it (blade 0 is closed as assembled), and to its other end (the plate-style blades; else undefined). */
-    pointsTurns: (k = 0) => (fdb ? fdbBlades(sets[k]).map((f, b) => ({ at: f.pivot, by: b === 0 ? f.ang : 0, swing: b === 0 ? f.ang : -f.open })) : undefined),
+    pointsTurns: (k = 0) => (fdb ? blades(sets[k]).map((b) => { const f = fdbBlades(sets[k])[b]; return { at: f.pivot, by: b === 0 ? f.ang : 0, swing: b === 0 ? f.ang : -f.open }; }) : undefined),
     /** (throwModule) the lever's bracket, on the arm's studs. */
     bracketPart: (k = 0) => bracketPart(sets[k]),
     leverShape, leverPrint: (k = 0) => leverPrint(sets[k]),
