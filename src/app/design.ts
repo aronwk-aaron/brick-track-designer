@@ -351,11 +351,14 @@ export function endOf(d: Design, i: number): { x: number; y: number; heading: nu
 }
 
 const sin = (d: number) => Math.sin((d * Math.PI) / 180), cos = (d: number) => Math.cos((d * Math.PI) / 180);
+const tan = (d: number) => sin(d) / cos(d);
+/** (a double slip's R40 slip road at 22.5 degrees, tangent to both tracks) how far before the crossing it leaves one track, studs */
+const SLIP_LEAD = 40 * sin(22.5) - (40 * (1 - cos(22.5))) / tan(22.5);
 
 /** Starting points for a design. */
 /** The Templates list's groups (in order), each its templates by name. */
 export const TEMPLATE_GROUPS: [string, string[]][] = [
-  ['Crossings', ['90° crossing', '22.5° crossing', 'Crossing on a curve']],
+  ['Crossings', ['90° crossing', '22.5° crossing', 'Double slip (22.5°)', 'Crossing on a curve']],
   ['Switches', ['Left switch (LEGO)', 'Right switch (LEGO)', 'Wye switch', 'Three-way switch (one throw)', 'Three-way switch (tandem, two throws)']],
   ['Layouts', ['Oval (LEGO R40)', 'Crossover (R40)', 'Scissors crossover (R56)', 'Yard ladder (R40)', 'Wye with a crossover']],
   ['Features', ['Siding ending in a buffer stop', 'Bridge with guard rails', 'Dual gauge track', 'Banked curve', 'Crossing on sleepers']],
@@ -369,6 +372,16 @@ export const TEMPLATES: Record<string, Design> = {
   '22.5° crossing': { version: 1, gaugeStuds: 4, routes: [
     { name: 'A', x: 0, y: -24, heading: 0, segs: [{ kind: 'straight', studs: 48 }] },
     { name: 'B', x: 24 * sin(22.5), y: -24 * cos(22.5), heading: 22.5, segs: [{ kind: 'straight', studs: 48 }] },
+  ] },
+  // (as the reference double slip R104: 40 studs, the tracks crossing at 22.5 degrees, each slip road an R40 curve
+  // leaving one track 7.96 studs before the crossing and joining the other 7.96 studs after it; the points are
+  // in the middle, their blades side by side. One blade a set (single point): blades on top fit between its rails;
+  // with two, they're built on tines under the bed)
+  'Double slip (22.5°)': { version: 1, gaugeStuds: 4, options: { pointBlades: 1 }, routes: [
+    { name: 'A', x: 0, y: -20, heading: 0, segs: [{ kind: 'straight', studs: 40 }] },
+    { name: 'B', x: 20 * tan(22.5), y: -20, heading: 22.5, segs: [{ kind: 'straight', studs: 40 / cos(22.5) }] },
+    { name: 'A to B', x: 0, y: -SLIP_LEAD, heading: 0, segs: [{ kind: 'curve', radius: 40, angle: 22.5 }] },
+    { name: 'B to A', x: SLIP_LEAD * sin(22.5), y: -SLIP_LEAD * cos(22.5), heading: 22.5, segs: [{ kind: 'curve', radius: 40, angle: -22.5 }] },
   ] },
   'Crossing on a curve': { version: 1, gaugeStuds: 4, routes: [
     { name: 'Curve', x: 0, y: -12, heading: 0, segs: [{ kind: 'curve', radius: 40, angle: 30 }] },

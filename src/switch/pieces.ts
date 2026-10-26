@@ -5,7 +5,7 @@
 // fixed trackwork piece (crossings and plain track).
 import type { Pose, Pt, Route, Segment } from '../route/route';
 import type { SetOver } from './base';
-import { rollPart, routeLat, routeLength, routePose, segLength, segStarts, subExtra } from '../route/route';
+import { rollPart, routeLat, routeLength, routePose, routeSOf, segLength, segStarts, subExtra } from '../route/route';
 import type { Split } from '../route/solver';
 import { type BaseParams, BASE_DEFAULTS, type SetSpec, switchPlan, type SwitchPlan } from './base';
 
@@ -88,6 +88,18 @@ export interface ThrowEdit { side?: 'left' | 'right'; leverOffset?: number; spri
 export interface Pieces { switches: SwitchPiece[]; rest: Route[]; warnings: string[] }
 
 /** Work out the switch pieces of a design and what's left over. */
+/** How far two routes from the same start run together (mm), before they part: 0 for a branch that leaves at once. */
+export function sharedLead(a: Route, b: Route): number {
+  const L = Math.min(routeLength(a), routeLength(b));
+  let t = 0;
+  // (the same line: as close, and heading the same way; two curves parting at once differ in heading straight away)
+  const same = (u: number) => {
+    const q = routePose(b, u), sa = routeSOf(a, [q[0], q[1]]);
+    return Math.abs(routeLat(a, [q[0], q[1]])) < 0.02 && Math.abs(((routePose(a, sa)[2] - q[2] + 540) % 360) - 180) < 0.02;
+  };
+  while (t < L && same(t + 0.5)) t += 0.5;
+  return t;
+}
 /** toeShift: how far (mm) to move the points from where the branch leaves, by that point in the design (hand edits). */
 export function planPieces(routes: Route[], splits: Split[], p: BaseParams = BASE_DEFAULTS, toeShift: (at: [number, number]) => number = () => 0,
   throwEdit: (at: [number, number]) => ThrowEdit | undefined = () => undefined, gridLevers = false): Pieces {
@@ -143,7 +155,8 @@ export function planPieces(routes: Route[], splits: Split[], p: BaseParams = BAS
         const ci = pos(n + 1), mi = pos(0);
         if (Math.abs(ci - mi) !== 1) { ok = false; return; }
         // (the throw on the main route's side, as switch.scad's)
-        const toe = kd.lead + 12 + shift(kd.sa);
+        // (from where it leaves: a branch drawn running along the main route first leaves later)
+        const toe = Math.max(kd.lead, sharedLead(main, kd.route)) + 12 + shift(kd.sa);
         sets.push(ci < mi ? [ci, mi, toe, -1] : [mi, ci, toe, +1]);
         setAts.push(atOf(kd.sa));
       });

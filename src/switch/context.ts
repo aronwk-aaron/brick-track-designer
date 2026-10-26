@@ -132,7 +132,12 @@ export interface FdbBladeLayout {
   pivot: Pt; tip: Pt; ang: number; post: Pt; open: number;
   pivotIn: number; postIn: number; shift: number;
   keep: Pt[][]; hw: number; stockKeep?: Pt[]; stockHw?: number; blocked?: string;
+  /** Another track's rails crossing the blade near its pin, where it hardly moves (a double slip's obtuse crossing): the blade notched there for their flanges, as a frog. */
+  notches?: Notch[];
 }
+
+/** Another track's rail across a blade near its heel (a double slip's obtuse crossing): the rail, where along it and where it crosses; how far along it it's within the blade's width. */
+export interface Notch { rt: Route; o: number; s: number; at: Pt; reach: number }
 
 /** One points set: right-hand route, left-hand route, toe (arc length), throw side (or undefined: the default). */
 export interface PointsSet { ra: number; rb: number; sToe: number; tside?: number }
@@ -230,6 +235,8 @@ export function pointsSet(routes: Route[], ps: PointsSet, p: SwitchParams, defau
     bladeMidAt, warnings,
     /** (the plate-style points) each blade's layout: filled in by switchPlan */
     fdb: undefined as FdbBladeLayout[] | undefined,
+    /** other track's rails across each blade near its heel (notched), and whether any comes across it anywhere else: filled in by switchPlan */
+    notches: undefined as Notch[][] | undefined, crossBlocked: false,
     /** (a single-point switch) the blade that's fixed rail instead, and where along its route that rail starts: filled in by switchPlan */
     fixed: undefined as 0 | 1 | undefined, sMate: undefined as number | undefined,
   };

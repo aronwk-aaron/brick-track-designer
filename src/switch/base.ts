@@ -14,7 +14,7 @@ import { sweepRoute } from '../geom/sweep';
 import { hollowGrid, type Spot, studSpots } from '../geom/underside';
 import { DEFAULTS as TRACK_DEFAULTS, getSocketShape, scadParity, PLATE_H, RAIL_PROFILE, STUD, Track } from '../geom/track';
 import { couplerSupports, trackSeat } from '../geom/extras';
-import { type FdbBladeLayout, HEAD_HW, pointsSet, type PointsSetValues, STAND, type SwitchParams, switchGlobals } from './context';
+import { type FdbBladeLayout, HEAD_HW, type Notch, pointsSet, type PointsSetValues, STAND, type SwitchParams, switchGlobals } from './context';
 
 export interface BaseParams extends SwitchParams {
   flangeway: number;        // 3
@@ -174,7 +174,8 @@ function fdbLayout(v: SetLike, p: BaseParams, rails: [Route, number, number][], 
     flush();
   }
   const pts = keep.flat(), n3 = v.three ? 2 : 1, plateW = fdbPlateW(v, p, springback), postIn0 = plateW / 2 + HEAD_HW;
-  return [0, 1].map((b): FdbBladeLayout => {
+  return [0, 1].map((b) => blade(b));
+  function blade(b: number): FdbBladeLayout {
     const rt = v.three ? v.three.S : b === 0 ? v.ra : v.rb, o = b === 0 ? -G : +G, side = b === 0 ? 1 : -1;
     const stockRt = v.three ? (b === 0 ? v.three.L : v.three.R) : b === 0 ? v.rb : v.ra;
     // (turning + opens blade 0 (its toe moves in, to +x), - blade 1; it goes from closed (0) to open (n3 * ang))
@@ -186,8 +187,9 @@ function fdbLayout(v: SetLike, p: BaseParams, rails: [Route, number, number][], 
       const ang = shift === 0 && pin === FDB.pivotIn ? (p.pointThrow / norm(sub(tip, pivot))) * (180 / Math.PI)
         : ((v.fdbTravel - pre) / Math.max(1, Math.abs(pivot[1] - post[1]))) * (180 / Math.PI);
       // (a three-way's other blade is open twice as far: the middle has both open by the throw)
-      return { pivot, tip, ang, post, open: b === 0 ? 0 : -n3 * ang, pivotIn: pin, postIn, shift, keep, hw };
+      return { pivot, tip, ang, post, open: b === 0 ? 0 : -n3 * ang, pivotIn: pin, postIn, shift, keep, hw, ...(notches.length && { notches }) };
     };
+    const notches = v.notches?.[b] ?? [];
     const f0 = make(0, FDB.pivotIn, postIn0);
     if (!pts.length) return f0;
     const angles = (f: { ang: number }) => Array.from({ length: 9 }, (_, k) => (dir * n3 * f.ang * k) / 8);
@@ -196,7 +198,7 @@ function fdbLayout(v: SetLike, p: BaseParams, rails: [Route, number, number][], 
     const stockBehind = (f: { pivot: Pt }) => { const out: Pt[] = []; for (let s = sOf(stockRt, f.pivot); s <= v.sHeel + 6; s += 0.5) out.push(railPoint(stockRt, s, o)); return out; };
     // the blade's own rail (on the plate, toe to heel) clear of them as it swings
     const barOk = (f: ReturnType<typeof make>) => {
-      const cand = [...pts, ...stockBehind(f)].filter((q) => Math.abs(routeLat(rt, q) - o) < HEAD_HW + hwBar + 12);
+      const cand = [...pts.filter((q) => !notches.some((nt) => norm(sub(q, nt.at)) < nt.reach)), ...stockBehind(f)].filter((q) => Math.abs(routeLat(rt, q) - o) < HEAD_HW + hwBar + 12);
       return angles(f).every((a) => cand.every((q) => {
         const q2 = rotAbout(q, f.pivot, -a);
         if (Math.abs(routeLat(rt, q2) - o) >= HEAD_HW + hwBar) return true;
@@ -243,7 +245,7 @@ function fdbLayout(v: SetLike, p: BaseParams, rails: [Route, number, number][], 
       if (sOf(rt, railPoint(rt, v.sHeel - 4 - shift, o)) - sPost < (fourD ? D4.root : FDB.tongueL) + pinR + FDB_RIM) break;
     }
     return { ...f0, blocked: "there's no room for plate round its pin and its tongue" };
-  });
+  }
 }
 
 /**
@@ -292,6 +294,35 @@ function singlePoint(v: PointsSetValues, G: number, flangeway: number) {
   let s = v.sToe;
   while (s < v.sHeel && Math.abs(routeLat(stock, railPoint(rt, s, o)) - o) < 2 * HEAD_HW + flangeway) s += 0.25;
   v.fixed = fixed; v.sMate = s;
+}
+
+/**
+ * Other track's rails across a blade (on rt at o, toe to heel): near the heel,
+ * in its last quarter, where it hardly moves, and steeply (20 degrees or more:
+ * a double slip's obtuse crossing), they're notches (the blade cut for their
+ * flanges, as a frog); anywhere else, shallower (a notch that long would cut
+ * the blade through), or running past closer than it swings, it's blocked.
+ */
+function bladeCrossings(rt: Route, o: number, sToe: number, sHeel: number, rails: [Route, number, number][], throwMm: number) {
+  const zone = sHeel - 0.25 * (sHeel - sToe), notches: Notch[] = [];
+  let blocked = false;
+  for (const [fr, fo, fs0] of rails) {
+    let prev: number | undefined;
+    for (let s = Math.max(0, fs0); s <= routeLength(fr); s += 0.5) {
+      const q = railPoint(fr, s, fo), sq = sOf(rt, q);
+      if (sq < sToe - 2 || sq > sHeel) { prev = undefined; continue; }
+      const d = routeLat(rt, q) - o, room = 2 * HEAD_HW + throwMm * Math.max(0, (sHeel - sq) / (sHeel - sToe)) + 0.6;
+      if (Math.abs(d) < room && sq < zone) blocked = true;
+      if (prev !== undefined && Math.sign(d) !== Math.sign(prev) && sq >= zone) {
+        // (as far along that rail as it's within the blade's width: further the shallower it crosses)
+        const sinX = Math.abs(Math.sin(((routePose(fr, s)[2] - routePose(rt, sq)[2]) * Math.PI) / 180));
+        if (sinX < Math.sin((20 * Math.PI) / 180)) blocked = true;
+        else notches.push({ rt: fr, o: fo, s, at: q, reach: (HEAD_HW + 4) / sinX });
+      }
+      prev = d;
+    }
+  }
+  return { notches, blocked };
 }
 
 /** Everything switch.scad works out before building: routes, sets, frogs, check rails, ties, cuts. */
@@ -501,13 +532,23 @@ export function switchPlan(routes: Route[], specs: SetSpec[], p: BaseParams = BA
   // (the plate-style blades lie on plates on the bed, reaching in to the slider's posts: another route's rail between a set's
   // stock rails, toe to heels (a tandem's first branch through its second points), runs through them. Each plate is cut
   // clear of it, its pin and post moved to keep it strong (fdbLayout); where that can't be done, say so)
+  // (the other rails near each set's points: the rest of the switch's routes', and other track's)
+  const railsNear = (v: SetLike) => {
+    const own = v.three ? [v.three.S, v.three.L, v.three.R] : [v.ra, v.rb];
+    const rails: [Route, number, number][] = [];
+    routes.forEach((rt, i) => { if (!own.includes(rt)) for (const o of [-G, G]) rails.push([rt, o, isStock(i, o) ? 0 : railFixS(i, o) + p.pointClearance]); });
+    for (const rt of foreign) for (const o of [-G, G]) rails.push([rt, o, 0]);
+    return rails;
+  };
+  // (other track across the blades: notched near the heels, as a double slip's; else blocked)
+  for (const v of sets as SetLike[]) if (!v.three) {
+    const cr = [[v.ra, -G], [v.rb, +G]].map(([rt, o]) => bladeCrossings(rt as Route, o as number, v.sToe, v.sHeel, railsNear(v), p.pointThrow));
+    v.notches = cr.map((x) => x.notches); v.crossBlocked = cr.some((x) => x.blocked);
+  }
   if (p.mechStyle === 'plates') {
     const springback = fdbSpringback(p, sets);
     (sets as SetLike[]).forEach((v) => {
-      const own = v.three ? [v.three.S, v.three.L, v.three.R] : [v.ra, v.rb];
-      const rails: [Route, number, number][] = [];
-      routes.forEach((rt, i) => { if (!own.includes(rt)) for (const o of [-G, G]) rails.push([rt, o, isStock(i, o) ? 0 : railFixS(i, o) + p.pointClearance]); });
-      for (const rt of foreign) for (const o of [-G, G]) rails.push([rt, o, 0]);
+      const rails = railsNear(v);
       v.fdb = fdbLayout(v, p, rails, springback);
       const why = v.fdb.find((f, b) => f.blocked && b !== v.fixed)?.blocked;
       // (a network's piece says it in its own words, where the points are)
@@ -1112,7 +1153,10 @@ export function switchGeometry(s: Scad, plan: SwitchPlan, extraCuts: Man[] = [])
     const bevel = (q: Vec2[]) => s.polygon(sideS > 0 ? q : q.map(([x, y]) => [2 * face - x, y] as Vec2).reverse());
     const offStock = keep ?? sweep(flareW ? bevel([[face + flareW, z0 - 1], [face + flareW, z1], [face, z1 + flareW], [face, z1 + 40], [face + 30, z1 + 40], [face + 30, z0 - 1]])
       : sq([30, 40], [sideS > 0 ? face : face - 30, z0 - 1]), bOther(v, b), 0, v.sHeel + 5);
-    const bar = s.intersection(sweep(sq([2 * HEAD_HW, railTop - z1 + 0.01], [o - HEAD_HW, z1 - 0.01]), rt, protoOn ? protoTip(v, b) : v.sToe, v.sHeel - c), offStock);
+    const bar0 = s.intersection(sweep(sq([2 * HEAD_HW, railTop - z1 + 0.01], [o - HEAD_HW, z1 - 0.01]), rt, protoOn ? protoTip(v, b) : v.sToe, v.sHeel - c), offStock);
+    // (a rail crossing it near the heel: notched for that rail's flanges, closed and open)
+    const turns = [0, (b === 0 ? 1 : -1) * (v.three ? 2 : 1) * fb.ang];
+    const bar = notched(bar0, v, b, fb.pivot, turns);
     const y0 = Math.max(v.toeY - 1, 8 + c);
     // (the plate a little further off the stock rail than the rail is: clear of its foot's flare, where that's
     // above the bed (with ballast); without, only the head's above the bed, and the plate runs under all the rail)
@@ -1396,10 +1440,18 @@ export function switchGeometry(s: Scad, plan: SwitchPlan, extraCuts: Man[] = [])
     ? [[v.three.S, -G], [v.three.S, +G], [v.three.L, +G], [v.three.R, -G]]
     : [[bRt(v, 0), -G], [bRt(v, 1), +G]]);
   /** A points part as assembled for the right-hand route (points_part; with two-piece points, each blade's). */
+  /** A blade (as closed) cut for other track's flanges where its rails cross it near the heel, wherever the blade turns to (turns about pin). */
+  const notched = (m: Man, v: SetV, b: number, pin: Pt, turns: number[]): Man => {
+    const nts = v.notches?.[b] ?? [];
+    return nts.length ? s.difference(m, nts.flatMap((nt) => {
+      const band = sweep(flangeBand2d(nt.o, -Math.sign(nt.o)), nt.rt, Math.max(0, nt.s - 12), nt.s + 12);
+      return turns.map((a) => rot3(band, pin, -a));
+    })) : m;
+  };
   const unitPart = (v: SetV, u: Unit) => {
     const swings = [0, -u.swing];
     const blades = s.difference(
-      s.union(u.blades.map(([b, at]) => rot3(blade(v, bRt(v, b), bO(b), bOther(v, b), bO(b)), u.pivot, at))),
+      s.union(u.blades.map(([b, at]) => rot3(notched(blade(v, bRt(v, b), bO(b), bOther(v, b), bO(b)), v, b, u.pivot, [at, at + u.swing, at - u.swing]), u.pivot, at))),
       swings.map((a) => rot3(cube([400, g.throwRodW + 2 * c + 0.6, g.layerTop + c - pieceBottomZ + 1], [-200, v.throwY - g.throwRodW / 2 - c - 0.3, pieceBottomZ - 1]), u.pivot, a)));
     const pin = T(s.cylinder(g.cavityTop - g.layerTop + g.pivotPinUp + 0.01, g.pivotPinD / 2, g.pivotPinD / 2, 32), [u.pivot[0], u.pivot[1], g.layerTop - 0.01]);
     const plan2 = W.CrossSection.union([...(u.heelBar ? [heelBar2d(v)] : [unitArm2d(v, u)]), circle(u.discR, 48, u.pivot), u.heelBar ? tines2d(v) : unitTines2d(u)]);
@@ -1794,6 +1846,13 @@ export function switchGeometry(s: Scad, plan: SwitchPlan, extraCuts: Man[] = [])
    * feet, the throw arm and its channel, and the cuts that take out the
    * routes' rails the blades replace ([route, cut] in this frame).
    */
+  /** What a blade takes out of other track's rails: along it, as wide as it swings; where a rail crosses it near the heel (notches), only the blade's own width, so that rail's gap is short, as at a frog. */
+  const bladeCut = (v: SetV, b: number): Man => {
+    const rt = bRt(v, b), end = (b === v.fixed ? v.sMate! : v.sHeel) + c, nts = v.notches?.[b] ?? [];
+    if (!nts.length) return sweep(sq([9, 30], [bO(b) - 4.5, -5]), rt, 0, end);
+    const sN = Math.min(...nts.map((nt) => sOf(rt, nt.at))) - 6, w = HEAD_HW + c + 0.3;
+    return s.union([sweep(sq([9, 30], [bO(b) - 4.5, -5]), rt, 0, sN), sweep(sq([2 * w, 30], [bO(b) - w, -5]), rt, sN, end)]);
+  };
   const mech = (k = 0) => {
     const v: SetV = sets[k];
     return {
@@ -1802,7 +1861,7 @@ export function switchGeometry(s: Scad, plan: SwitchPlan, extraCuts: Man[] = [])
       // (throw_ballast: the ballast's steps round the arm, and their outermost outline, for the underside)
       steps: throwSteps(k), stepRect: plan.setData[k].steps?.rect(plan.setData[k].steps!.buddy ? 1 : 0),
       bladeRails: [
-        ...[0, 1].map((b) => [bRt(v, b), sweep(sq([9, 30], [bO(b) - 4.5, -5]), bRt(v, b), 0, (b === v.fixed ? v.sMate! : v.sHeel) + c)] as [Route, Man]),
+        ...[0, 1].map((b) => [bRt(v, b), bladeCut(v, b)] as [Route, Man]),
         // (a three-way's branches' inner rails too: they start at the heels, the blades in their place before)
         ...(v.three ? [[v.three.L, +G], [v.three.R, -G]].map(([rt, o]) => [rt, sweep(sq([9, 30], [(o as number) - 4.5, -5]), rt as Route, 0, v.sHeel + c)] as [Route, Man]) : []),
       ],
