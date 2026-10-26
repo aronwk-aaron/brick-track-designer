@@ -3,6 +3,7 @@
 import type { Route, Segment } from '../route/route';
 import { hasRoll, railPoint, rollPart, routeLat, routeLength, routePose, routeRoll, routeSOf, segLength, segStarts } from '../route/route';
 import { T, R, M, type CS, type Man, type Scad } from './scad';
+import { PLATE_H } from './track';
 
 /**
  * How finely arcs are cut into straight pieces. 'scad': OpenSCAD's ($fn =
@@ -56,6 +57,8 @@ function part(sg: Segment, l0: number, l1: number): Segment {
  * +pivotX when the left is, at height pivotZ.
  */
 export interface Bank { pivotX: number; pivotZ: number }
+/** A banked track's pivot: the bed's inner edge (half the sleepers' length out), at the top of the bed. */
+export const trackBank = (sleeperLen: number): Bank => ({ pivotX: sleeperLen / 2, pivotZ: PLATE_H });
 
 /** Where a cross-section point (x across, z up) goes, turned by roll degrees about the bank's pivot. */
 export function bankPoint(b: Bank, roll: number, x: number, z: number): [number, number] {

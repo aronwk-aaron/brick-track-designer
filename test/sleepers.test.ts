@@ -56,7 +56,7 @@ describe('sleepers', { timeout: 120000 }, () => {
     expect(s.w.CrossSection.square([40, 150], true).translate([0, -110]).intersect(mid).area()).toBeLessThan(40 * 150 * 0.8);
   });
   it('a plain track built in lengths: each length its own sleepers, none twice', async () => {
-    const w = await kernel(), d = { ...straight(16), options: { sleepers: 'sleepers' as const, printBedX: 128, printBedY: 128, cutRails: 'flat' as const, joint: 'axle' as const } };
+    const w = await kernel(), d = { ...straight(16), options: { sleepers: 'sleepers' as const, printBedX: 128, printBedY: 128, joint: 'flataxle' as const } };
     const cut = buildDesign(w, d), whole = buildDesign(w, { ...d, options: { ...d.options, printBedX: 500, printBedY: 500 } });
     expect(cut.pieces).toHaveLength(2);
     // (the same plastic as the whole: the sleeper at the join not in both)

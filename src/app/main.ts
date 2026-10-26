@@ -2,7 +2,7 @@
 // 3D piece on the right, rebuilt in a worker as you edit.
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
-import { BANK_MAX, type BankRamps, type Design, type DRoute, type DSeg, OPTION_DEFAULTS, type PieceOptions, RAIL_DEFAULTS, TEMPLATE_GROUPS, TEMPLATES, type Trackwork, endOf, freeName, isMono } from './design';
+import { BANK_MAX, type BankRamps, type Design, type DRoute, type DSeg, OPTION_DEFAULTS, type PieceOptions, RAIL_DEFAULTS, TEMPLATE_GROUPS, TEMPLATES, type Trackwork, endOf, freeName, isMono, upgradeDesign } from './design';
 import { TrackCanvas, type OverlayItem, leverSide, leverSlides, typingIn } from './canvas';
 import { describe } from './planner';
 import { legoParts, type Piece } from './build';
@@ -19,7 +19,7 @@ let design: Design = load() ?? { version: 1, gaugeStuds: 4, routes: [] };
 const history: string[] = [JSON.stringify(design)], future: string[] = [];
 
 function load(): Design | undefined {
-  try { const s = localStorage.getItem(STORE); return s ? JSON.parse(s) as Design : undefined; } catch { return undefined; }
+  try { const s = localStorage.getItem(STORE); return s ? upgradeDesign(JSON.parse(s) as Design) : undefined; } catch { return undefined; }
 }
 function save() { try { localStorage.setItem(STORE, JSON.stringify(design)); } catch { /* storage off: fine */ } }
 
@@ -686,8 +686,9 @@ $('load').addEventListener('click', () => loadInput.click());
 loadInput.addEventListener('change', async () => {
   const f = loadInput.files?.[0]; if (!f) return;
   try {
-    const d = JSON.parse(await f.text()) as Design;
-    if (!d || !Array.isArray(d.routes)) throw new Error("it isn't a track design (.btd.json)");
+    const d0 = JSON.parse(await f.text()) as Design;
+    if (!d0 || !Array.isArray(d0.routes)) throw new Error("it isn't a track design (.btd.json)");
+    const d = upgradeDesign(d0);
     d.version = 1; if (!Number.isFinite(d.gaugeStuds)) d.gaugeStuds = 4;
     design = d; replaced(); framed = false; changed(true); canvas.fit();
   } catch (err) { setStatus('', `Couldn't open ${f.name}: ${err instanceof Error ? err.message : err}`); }
@@ -972,8 +973,6 @@ interface OptField {
   rerender?: boolean;
   /** why it can't be changed now (another setting rules it out): shown greyed out with this reason; undefined: it can */
   off?: (c: OptCtx) => string | undefined;
-  /** (older form) changeable only when this says so */
-  when?: (c: OptCtx) => boolean;
   /** its default, where it isn't in OPTION_DEFAULTS */
   def?: string | number | boolean;
   get?: () => string | number | boolean; set?: (v: string | number | boolean) => void;
@@ -983,6 +982,10 @@ interface OptSection { title: string; switches?: boolean; /** only for one kind 
 const noBuf = () => (design.routes.some((r) => r.startEnd === 'buffer' || r.endEnd === 'buffer') ? undefined : 'no route ends in a buffer stop (set Starts in / Ends in on a route card)');
 /** (the banked curves' settings: locked till a curve has a bank) */
 const noBank = () => (design.routes.some((r) => r.segs.some((sg) => sg.kind === 'curve' && (sg.bank ?? 0) > 0)) ? undefined : 'no curve is banked: give one a bank on its route card (Shape)');
+/** (settings for the tines mechanism only) */
+const onlyTines = (c: OptCtx) => (c.fdb ? 'only with Mechanism: Under the bed, on spring tines' : undefined);
+/** (settings for joints with rail tongues only) */
+const noTongues = (c: OptCtx) => (c.o.joint === 'butt' || c.o.joint === 'flataxle' ? 'Parts join with is Straight cuts: no rail tongues' : undefined);
 const OPTION_FORM: OptSection[] = [
   { title: 'Track', kind: 'train', fields: [
     { key: 'gaugeStuds', label: 'Gauge, studs', step: 1, min: 2, max: 10, rerender: true, help: 'Studs between the rails. LEGO track is 4.',
@@ -1012,8 +1015,8 @@ const OPTION_FORM: OptSection[] = [
       { v: 'baseplate', t: 'The baseplate grid', tip: 'The sockets and tubes line up with the baseplate\'s studs, so the track clicks onto it.' },
       { v: 'track', t: 'The track itself', tip: 'Hollow with anti-stud tubes in rows along the track, turned with it, like LEGO track\'s underside: for track laid off the grid, at an angle, or on other parts\' studs.',
         con: 'On a baseplate it only clicks on where the track happens to line up with the grid.' }] },
-    { key: 'grip', label: 'Grip on the baseplate', off: (c) => (c.ballast && c.o.bottomStyle === 'float' ? 'Ballast underside is Flat, so nothing grips' : !c.ballast && c.o.undersideGrid === 'track' ? 'Underside lined up with the track: tubes all along it, as LEGO track' : undefined),
-      def: 'edges', get: () => design.grip ?? 'edges', set: (v) => { design.grip = v as Design['grip']; }, choices: [
+    { key: 'grip', label: 'Grip on the baseplate', off: (c) => (c.ballast && c.o.bottomStyle === 'float' ? 'Ballast underside is Flat, so nothing grips' : !c.ballast && c.o.undersideGrid === 'track' && c.switches === false ? 'Underside lined up with the track: tubes all along it, as LEGO track (it\'s for switches, and there are none)' : undefined), help: 'Switches always; track and crossings with Underside lined up with: The baseplate grid, or with ballast.',
+      choices: [
         { v: 'edges', t: 'Along the edges', tip: 'Like a LEGO plate: tubes grip along the edges and every 4 studs (green circles on the plan). Firm, and comes off again.' },
         { v: 'all', t: 'Every stud', tip: 'A socket on every stud.', con: 'Grips very hard: can be difficult to pull off.' }] },
     { key: 'trackBallast', label: 'Track and ballast printed', off: (c) => (c.ballast ? undefined : 'only with ballast'), choices: [
@@ -1028,8 +1031,7 @@ const OPTION_FORM: OptSection[] = [
     { key: 'mechStyle', label: 'Mechanism', choices: [
       { v: 'plates', t: 'Blades on top, on pins', tip: 'Each blade sits on a plate on top of the bed and turns on a pin. Everything goes in from above.' },
       { v: 'tines', t: 'Under the bed, on spring tines', tip: 'The points sit in pockets under the bed on springy tines. They go in from below.' }] },
-    { key: 'pointsPieces', label: 'Points printed as', off: (c) => (c.fdb ? 'only with Mechanism: Under the bed, on spring tines' : undefined),
-      def: '1', get: () => String(design.pointsPieces ?? 1), set: (v) => { design.pointsPieces = Number(v) as 1 | 2; }, choices: [
+    { key: 'pointsPieces', label: 'Points printed as', numeric: true, off: onlyTines, choices: [
         { v: '1', t: 'One part', tip: 'Both blades on one pivot.' },
         { v: '2', t: 'Two parts', tip: 'Each blade on its own pivot and spring.' }] },
     { key: 'bladeHold', label: 'Blades held down by', off: (c) => (c.fdb ? undefined : 'only with Mechanism: Blades on top, on pins'), choices: [
@@ -1039,16 +1041,16 @@ const OPTION_FORM: OptSection[] = [
       { v: 'simple', t: 'Simple', tip: 'Each blade is its rail, cut off along the rail it closes against.' },
       { v: 'prototype', t: 'Realistic (planed, tucked under the rail)', tip: 'Blades planed to a point and tucked under the stock rail head, so flanges can\'t catch them.',
         con: 'Fit the blades swung open, then close them. The stock rail head is thinner along the points.' }] },
-    { key: 'pointsModule', label: 'Points go in', off: (c) => (c.fdb ? 'only with Mechanism: Under the bed, on spring tines' : undefined), choices: [
+    { key: 'pointsModule', label: 'Points go in', off: onlyTines, choices: [
       { v: 'built-in', t: 'From below', tip: 'The pockets open through the bottom. Fit the points before putting the track on the baseplate.' },
       { v: 'layers', t: 'From above, under a lid', tip: 'A lower layer holds the moving parts; the deck with the rails clips on top with studs.',
         no: (c) => (c.ballast ? undefined : 'it needs ballast, so the points go in from below') }] },
     { key: 'pointThrow', label: 'Blade throw, mm', step: 0.25, min: 2, max: 6, help: 'How far the blade tips move.' },
     { key: 'pointClearance', label: 'Clearance, mm', step: 0.05, min: 0.1, max: 0.8, help: 'Gap round the moving parts.' },
     { key: 'springPreload', label: 'Spring preload, mm', step: 0.25, min: 0, max: 3, help: 'How far past closed the springs push the blades, to hold them shut.' },
-    { key: 'springThickness', label: 'Spring thickness, mm', step: 0.05, min: 0.5, max: 2, off: (c) => (c.fdb ? 'only with Mechanism: Under the bed, on spring tines' : undefined), help: 'Thickness of the spring tines.' },
-    { key: 'springLength', label: 'Spring length, mm', step: 1, min: 15, max: 80, off: (c) => (c.fdb ? 'only with Mechanism: Under the bed, on spring tines' : undefined), help: 'Length of the spring tines. Each lever can also be dragged along on the plan.' },
-    { key: 'bladeDiscD', label: 'Pivot disc diameter, mm', step: 1, min: 10, max: 24, off: (c) => (c.fdb ? 'only with Mechanism: Under the bed, on spring tines' : undefined), help: 'The disc the points pivot on. Bigger is steadier but needs more room under the bed.' },
+    { key: 'springThickness', label: 'Spring thickness, mm', step: 0.05, min: 0.5, max: 2, off: onlyTines, help: 'Thickness of the spring tines.' },
+    { key: 'springLength', label: 'Spring length, mm', step: 1, min: 15, max: 80, off: onlyTines, help: 'Length of the spring tines. Each lever can also be dragged along on the plan.' },
+    { key: 'bladeDiscD', label: 'Pivot disc diameter, mm', step: 1, min: 10, max: 24, off: onlyTines, help: 'The disc the points pivot on. Bigger is steadier but needs more room under the bed.' },
   ] },
   { title: 'Switches: throw', kind: 'train', switches: true, fields: [
     { key: 'throwStyle', label: 'Throw', choices: [
@@ -1104,11 +1106,11 @@ const OPTION_FORM: OptSection[] = [
       { v: '0', t: 'No' }, { v: '16', t: '16 x 16 studs' }, { v: '32', t: '32 x 32 studs' }, { v: '48', t: '48 x 48 studs' }, { v: '64', t: '64 x 64 studs' }, { v: '96', t: '96 x 96 studs' }] },
     { key: 'baseplateX', label: 'Baseplate corner x, studs', step: 1, off: (c) => ((c.o.baseplate ?? 0) > 0 ? undefined : 'Cut at baseplate edges is No'), help: 'Where a baseplate corner is on the grid.' },
     { key: 'baseplateY', label: 'Baseplate corner y, studs', step: 1, off: (c) => ((c.o.baseplate ?? 0) > 0 ? undefined : 'Cut at baseplate edges is No'), help: 'Where a baseplate corner is on the grid.' },
-    { key: 'splitTrack', label: 'Long track cut into', def: OPTION_DEFAULTS.splitTrack, get: () => (design.options?.joint === 'ends' ? 'lengths' : design.options?.splitTrack ?? OPTION_DEFAULTS.splitTrack ?? 'bed'), set: (v) => { const { joint, ...rest } = design.options ?? {}; design.options = { ...rest, ...(joint && joint !== 'ends' && { joint }), splitTrack: v as 'bed' | 'lengths' }; }, choices: [
+    { key: 'splitTrack', label: 'Long track cut into', def: OPTION_DEFAULTS.splitTrack, choices: [
       { v: 'bed', t: 'Parts that fill the print bed', tip: 'Cut along straight lines where the bed needs it; the parts join as set in Parts join with.' },
       { v: 'lengths', t: 'Track pieces, cut across the track', tip: 'Each track cut square to itself into pieces with ordinary end connectors, like LEGO track. Switches and crossings stay whole.', con: 'More parts, and a cut only where the track is clear of other tracks.' }] },
-    { key: 'pieceLengthStuds', label: 'Piece length, studs', step: 4, min: 0, max: 64, def: 16, get: () => design.options?.pieceLengthStuds ?? 16, off: (c) => (c.o.splitTrack === 'lengths' || c.o.joint === 'ends' ? undefined : 'only with Long track cut into: Track pieces'), help: 'LEGO straights are 16. 0: as long as fits the print bed. A longer piece than the bed takes: as long as fits.' },
-    { key: 'legoTrack', label: 'Plain straights', off: (c) => (c.o.splitTrack !== 'lengths' && c.o.joint !== 'ends' ? 'only with Long track cut into: Track pieces' : design.gaugeStuds !== 4 ? 'LEGO track is 4 studs between the rails: the gauge isn\'t 4' : undefined), choices: [
+    { key: 'pieceLengthStuds', label: 'Piece length, studs', step: 4, min: 0, max: 64, off: (c) => (c.o.splitTrack === 'lengths' ? undefined : 'only with Long track cut into: Track pieces'), help: 'LEGO straights are 16. 0: as long as fits the print bed. A longer piece than the bed takes: as long as fits.' },
+    { key: 'legoTrack', label: 'Plain track', help: 'Bought straights are 16 studs, whatever Piece length is.', off: (c) => (c.o.splitTrack !== 'lengths' ? 'only with Long track cut into: Track pieces' : design.gaugeStuds !== 4 ? 'LEGO track is 4 studs between the rails: the gauge isn\'t 4' : undefined), choices: [
       { v: 'lego', t: 'Bought track', tip: 'Plain track bought, not printed: each 16-stud straight is LEGO\'s (53401), with ballast on LEGO plates under it (6 x 16 and two 2 x 16, two more 6 x 16 for the buddy layer); on track without ballast, R40 curves are LEGO\'s (53400) and R56 to R120 curves BrickTracks\' (injection moulded, 11.25° each). They\'re in the parts list (toolbar), not the STL download.', con: 'Their sleepers and underside are theirs, not as set here. Curves with ballast are still printed.' },
       { v: 'print', t: 'Printed', tip: 'Every piece printed, as set here.', con: 'More to print.' }] },
     { key: 'joint', label: 'Parts join with', help: 'How parts cut for the print bed or at baseplate edges join. With Long track cut into: Track pieces, plain track joins with its own end connectors; this is for the switches and crossings too big for the bed.', choices: [
@@ -1116,12 +1118,9 @@ const OPTION_FORM: OptSection[] = [
       { v: 'dovetail', t: 'Rail tongues + dovetails', tip: 'Stronger. Slides together from above.' },
       { v: 'butt', t: 'Straight cuts', tip: 'Nothing joins them; the baseplate holds them in line.' },
       { v: 'flataxle', t: 'Straight cuts + LEGO axles', tip: 'Cut straight, rails and all (no tongues), pinned with LEGO cross axles across each cut (Axle length).', no: (c) => (c.ballast ? undefined : 'needs ballast (track alone is too thin): straight cuts with nothing joining them') },
-      { v: 'axle', t: 'Rail tongues + LEGO axles', tip: 'A cross-axle hole across each cut, for a 4-stud axle.', no: (c) => (c.ballast ? undefined : 'needs ballast (track alone is too thin): peg and clip is used instead') }] },
-          { key: 'axleStuds', label: 'Axle length, studs', step: 2, min: 2, max: 8, off: (c) => (c.o.joint === 'axle' || c.o.joint === 'flataxle' || c.o.cutRails === 'flat' ? undefined : 'only with Parts join with: LEGO axles'), help: 'The LEGO cross axles that pin the parts together across a cut: half of each axle in each part. 2: a 2-stud axle (3704), 4: a 4-stud axle (3705).' },
-    { key: 'cutRails', label: 'Rails at cuts', off: (c) => (c.o.joint === 'butt' || c.o.joint === 'flataxle' ? 'Parts join with is Straight cuts' : undefined), choices: [
-      { v: 'tongues', t: 'Interlocking tongues', tip: 'Like LEGO track ends.', con: 'The tongues overhang, so they print with supports.' },
-      { v: 'flat', t: 'Cut flat', tip: 'Nothing overhangs, no supports.', con: 'Only the bed joint and the baseplate keep the rails in line.' }] },
-    { key: 'tongueRails', label: 'Tongues on', def: 'all', get: () => design.options?.tongueRails ?? 'all', off: (c) => (c.o.joint === 'butt' || c.o.joint === 'flataxle' ? 'Parts join with is Straight cuts' : c.o.cutRails === 'flat' ? 'Rails at cuts is Cut flat' : undefined), choices: [
+      { v: 'axle', t: 'Rail tongues + LEGO axles', tip: 'A cross-axle hole across each cut (Axle length).', no: (c) => (c.ballast ? undefined : 'needs ballast (track alone is too thin): peg and clip is used instead') }] },
+    { key: 'axleStuds', label: 'Axle length, studs', step: 2, min: 2, max: 8, off: (c) => (c.o.joint === 'axle' || c.o.joint === 'flataxle' ? undefined : 'only with Parts join with: LEGO axles'), help: 'The LEGO cross axles that pin the parts together across a cut: half of each axle in each part. 2: a 2-stud axle (3704), 4: a 4-stud axle (3705).' },
+    { key: 'tongueRails', label: 'Tongues on', off: noTongues, choices: [
       { v: 'all', t: 'Every rail a cut crosses', tip: 'Each rail gets interlocking tongues where it\'s cut, slanted ones too.' },
       { v: 'square', t: 'Only rails crossing the cut square', tip: 'The track the cut crosses squarely gets LEGO track-end tongues; rails crossing it at an angle (a branch\'s) are cut flat, as plate-style large switches are split.',
         con: 'The slanted rails rely on the square ones and the bed joint to stay in line.' }] },
@@ -1129,7 +1128,7 @@ const OPTION_FORM: OptSection[] = [
       { v: 'off', t: 'Taken off', tip: 'No stud is cut in half: one a cut would go through is left off, on both parts.', con: 'A stud missing here and there along each cut.' },
       { v: 'whole', t: 'Whole on one part', tip: 'Each one whole on the part its middle is on, standing a little over the next part\'s edge.', con: 'Those studs overhang the joint: printed on the edge, they can snap off.' },
       { v: 'split', t: 'Cut in half', tip: 'Cut straight through with the rest.', con: 'Half studs either side of the joint: a brick won\'t sit on them.' }] },
-    { key: 'endSupports', label: 'Supports under rail ends', check: true, help: 'Breakaway supports under the rail-end tongues. Off: leave it to your slicer.' },
+    { key: 'endSupports', label: 'Supports under rail ends', check: true, off: noTongues, help: 'Breakaway supports under the rail-end tongues. Off: leave it to your slicer.' },
   ] },
   { title: 'Monorail', kind: 'monorail', fields: [
     { key: 'monoEndStuds', label: 'Studs at the ends', off: noMono, choices: [
@@ -1175,7 +1174,7 @@ function refreshRoutes() {
   if (sig !== branchSig) { branchSig = sig; render(); }
 }
 function refreshOptions() {
-  if (JSON.stringify([design.options, design.grip, design.pointsPieces, design.gaugeStuds, switchesNow(), noMono()]) !== optSig) renderOptions();
+  if (JSON.stringify([design.options, design.gaugeStuds, switchesNow(), noMono()]) !== optSig) renderOptions();
 }
 /** Switches in the design, as last built (undefined: not built yet). */
 function switchesNow() {
@@ -1188,7 +1187,7 @@ const openSecs: Set<string> = (() => { try { const v = JSON.parse(localStorage.g
 const keepSecs = () => { try { localStorage.setItem('btd-settings-open', JSON.stringify([...openSecs])); } catch { /* (not kept) */ } };
 let optQuery = '';
 /** The settings whose choices have example pictures (public/options/<key>-<value>.webp, made by scripts/option-pictures.mts). */
-const PICTURED = new Set(['joint', 'cutRails', 'tongueRails', 'sleepers', 'curveStuds', 'ballast', 'bottomStyle', 'grip', 'undersideGrid', 'splitTrack', 'mechStyle', 'bladeHold', 'bladeStyle', 'throwStyle', 'bufferStyle', 'monoEndStuds']);
+const PICTURED = new Set(['joint', 'tongueRails', 'sleepers', 'curveStuds', 'ballast', 'bottomStyle', 'grip', 'undersideGrid', 'splitTrack', 'mechStyle', 'bladeHold', 'bladeStyle', 'throwStyle', 'bufferStyle', 'monoEndStuds']);
 /** A setting's choices side by side in a modal: each one's picture, what it does, its drawback, and a button to use it. */
 function showChoices(f: OptField, cur: string, def: string, c: OptCtx, off: string | undefined, use: (v: string) => void) {
   const modal = $('choices'), body = $('choices-body');
@@ -1218,7 +1217,7 @@ function renderOptions() {
   const body = $('options-body'), scroll = $('options').scrollTop;
   const o = { ...OPTION_DEFAULTS, ...design.options } as PieceOptions;
   const c: OptCtx = { o, ballast: o.ballast !== 'none', fdb: o.mechStyle !== 'tines', switches: switchesNow() };
-  optSig = JSON.stringify([design.options, design.grip, design.pointsPieces, design.gaugeStuds, c.switches, noMono()]);
+  optSig = JSON.stringify([design.options, design.gaugeStuds, c.switches, noMono()]);
   body.replaceChildren();
   const setOpt = (f: OptField, v: string | number | boolean) => {
     if (f.set) f.set(v); else design.options = { ...design.options, [f.key]: v };
@@ -1254,7 +1253,7 @@ function renderOptions() {
       const cur = f.get ? f.get() : (o as unknown as Record<string, string | number | boolean>)[f.key];
       const def = f.def ?? (OPTION_DEFAULTS as unknown as Record<string, string | number | boolean>)[f.key];
       // (can't be changed now: greyed out, and why, exactly)
-      const off = (absent ? absentWhy : undefined) ?? f.off?.(c) ?? (f.when && !f.when(c) ? 'Not used with the settings above' : undefined);
+      const off = (absent ? absentWhy : undefined) ?? f.off?.(c);
       const wrap = document.createElement('div'); wrap.className = off ? 'opt off' : 'opt';
       const note = (txt: string, cls = 'desc') => { const d = document.createElement('small'); d.className = cls; d.textContent = txt; wrap.append(d); };
       if (f.choices) {
@@ -1307,7 +1306,7 @@ function renderOptions() {
     det.append(box); body.append(det);
   }
   if (words.length && !shown) { const nm = document.createElement('div'); nm.className = 'nomatch'; nm.textContent = `No setting matches “${optQuery}”.`; body.append(nm); }
-  const reset = btn('Reset to defaults', () => { design.options = {}; delete design.grip; delete design.pointsPieces; renderOptions(); }, 'Every piece setting back to its default (Undo brings them back; the gauge stays)');
+  const reset = btn('Reset to defaults', () => { design.options = {}; renderOptions(); }, 'Every piece setting back to its default (Undo brings them back; the gauge stays)');
   reset.classList.add('reset'); body.append(reset);
   $('options').scrollTop = scroll;
   $('settings-fold').textContent = OPTION_FORM.some((sec) => openSecs.has(sec.title)) ? 'Fold all' : 'Open all';

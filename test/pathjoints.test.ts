@@ -44,7 +44,7 @@ describe('stepped cuts are joined', { timeout: 120000 }, () => {
 describe('a crossover cut to a small bed', { timeout: 300000 }, () => {
   it('fits the bed, its parts go together, and no cut crosses a slider', async () => {
     const w = await kernel();
-    const b = buildDesign(w, { ...crossover, options: { printBedX: 128, printBedY: 128, ballast: 'buddy', cutRails: 'flat' } });
+    const b = buildDesign(w, { ...crossover, options: { printBedX: 128, printBedY: 128, ballast: 'buddy', joint: 'flataxle' } });
     expect(b.info.warnings).toEqual([]);
     const man = (p: { positions: Float32Array }) => {
       const P = p.positions, mesh = new w.Mesh({ numProp: 3, vertProperties: new Float32Array(P), triVerts: new Uint32Array(P.length / 3).map((_, i) => i) });

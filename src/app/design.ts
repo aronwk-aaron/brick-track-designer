@@ -57,10 +57,6 @@ export interface Design {
   version: 1; gaugeStuds: number; routes: DRoute[];
   /** The design's name: the file names it saves and downloads under. */
   name?: string;
-  /** Underside: hollow with anti-stud tubes at the edges and every 4 studs (default), or a square socket at every stud. */
-  grip?: 'edges' | 'all';
-  /** Switches' points: one part (both blades on one pivot) or two (each blade on its own, as the plate-style). */
-  pointsPieces?: 1 | 2;
   /** The rest of the piece options (switch.scad's), each left out = its default. */
   options?: Partial<PieceOptions>;
   /** Hand edits to the trackwork the app works out, by where each item is (its middle, mm, "x,y"). */
@@ -98,16 +94,18 @@ export interface PieceOptions {
   baseplate: number;
   /** Where a baseplate's corner is, studs (the plate grid's offset). */
   baseplateX: number; baseplateY: number;
-  /** How parts cut for the bed or the baseplates join: 'lego' rail-end tongues with a peg and C-clip (as LEGO track); 'dovetail' rail tongues with dovetails through the bed; 'butt' straight cuts, held only by the baseplate under them; 'ends' separate pieces joined by ordinary track ends, cut only where the tracks are clear of each other (the plate-style way). */
-  joint?: 'lego' | 'dovetail' | 'butt' | 'ends' | 'axle' | 'flataxle';
+  /** How parts cut for the bed or the baseplates join: 'lego' rail-end tongues with a peg and C-clip (as LEGO track); 'dovetail' rail tongues with dovetails through the bed; 'axle' rail tongues with LEGO cross axles across the cut; 'flataxle' cut straight, rails and all, pinned with LEGO axles; 'butt' straight cuts, held only by the baseplate under them. */
+  joint?: 'lego' | 'dovetail' | 'butt' | 'axle' | 'flataxle';
+  /** Underside: hollow with anti-stud tubes at the edges and every 4 studs (default), or a square socket at every stud. */
+  grip?: 'edges' | 'all';
+  /** Switches' points: one part (both blades on one pivot) or two (each blade on its own, as the plate-style). */
+  pointsPieces?: 1 | 2;
   /** (prototype) The points: built into the one piece, their pockets through to the bottom (switch.scad's); on a solid floor, the pockets stopping on it ('floor'); or the piece in layers stacked from the top (the lower layer with the moving parts' pockets, the deck with the bed and rails over it, held by studs; needs ballast). */
   pointsModule?: 'built-in' | 'layers';
   /** Breakaway print supports under the rail-end tongues at each end (off: the slicer supports them). */
   endSupports?: boolean;
   /** The studs on the sleepers: on the baseplate's grid, or in rows following the track (as the OpenSCAD curves). */
   curveStuds?: 'grid' | 'follow';
-  /** Where a part is cut: the rails with interlocking tongues (as LEGO track), or cut flat across (no overhangs, no supports to print). */
-  cutRails?: 'tongues' | 'flat';
   /** The throw: 'bracket' (the plate-style: the lever on its own 3 x 3 stud bracket, on studs on the arm), 'built-in' (the ears part of the arm) or 'stand' (a switch stand, a ground throw as Caboose Industries': a handle swung over on an eccentric, locked at each end; plate-style points). */
   throwStyle?: 'bracket' | 'built-in' | 'stand';
   /** (plate-style points) What holds the points, and what a train trailing through them does: 'detent' (the lever's click), 'overcentre' (Peco's V spring: they snap over and stay), 'springback' (a spring switch: the blades give way and spring back). */
@@ -168,9 +166,25 @@ export interface PieceOptions {
   /** Banked curves: the shortest ramp from level to the full bank, studs (curves.scad's superelevation_ramp_studs), lengthened to keep the outer rail's climb within 1 in bankClimb; ramps on the straights either side ('straight') or inside the curve ('curve', as curves.scad's pieces). */
   bankRampStuds?: number; bankClimb?: number; bankRampAt?: 'straight' | 'curve';
 }
+/**
+ * A design saved by an older version, in today's terms (a copy; the design
+ * itself is left alone): the old joint 'ends' is Long track cut into: Track
+ * pieces; the old Rails at cuts: Cut flat is Straight cuts + LEGO axles
+ * (it pinned every joint with axles, or nothing where they didn't fit); and
+ * the grip and points parts, once kept on the design, are piece options.
+ */
+export function upgradeDesign(d0: Design): Design {
+  const { grip, pointsPieces, ...d } = d0 as Design & { grip?: PieceOptions['grip']; pointsPieces?: PieceOptions['pointsPieces'] };
+  const o = d.options as (Omit<Partial<PieceOptions>, 'joint'> & { joint?: string; cutRails?: string }) | undefined;
+  if (grip === undefined && pointsPieces === undefined && (!o || (o.joint !== 'ends' && o.cutRails === undefined))) return d0;
+  const { cutRails, joint, ...rest } = o ?? {};
+  const j = joint === 'ends' ? undefined : joint as PieceOptions['joint'];
+  return { ...d, options: { ...(grip && { grip }), ...(pointsPieces && { pointsPieces }), ...rest, ...(joint === 'ends' && { splitTrack: 'lengths' as const }),
+    ...(cutRails === 'flat' && j !== 'butt' ? { joint: 'flataxle' as const } : j && { joint: j }) } };
+}
 export const OPTION_DEFAULTS: PieceOptions = {
   throwSide: 'auto', leverOffset: 8, pointThrow: 3, pointClearance: 0.3, springPreload: 1, springThickness: 0.9, springLength: 40,
-  flangeway: 3, flangewayDepth: 3, checkRailLen: 30, checkRailW: 1, checkRailFlare: 1.5, printBedX: 256, printBedY: 256, baseplate: 0, baseplateX: 0, baseplateY: 0, ballast: 'none', bottomStyle: 'antistud', joint: 'lego', pointsModule: 'built-in', endSupports: true, cutRails: 'tongues', throwStyle: 'built-in', mechStyle: 'plates', curveStuds: 'follow',
+  flangeway: 3, flangewayDepth: 3, checkRailLen: 30, checkRailW: 1, checkRailFlare: 1.5, printBedX: 256, printBedY: 256, baseplate: 0, baseplateX: 0, baseplateY: 0, ballast: 'none', bottomStyle: 'antistud', joint: 'lego', pointsModule: 'built-in', endSupports: true, tongueRails: 'all', grip: 'edges', pointsPieces: 1, throwStyle: 'built-in', mechStyle: 'plates', curveStuds: 'follow',
   throwAction: 'detent', bladeStyle: 'simple', sleepers: 'sleepers', undersideGrid: 'track', splitTrack: 'lengths', pieceLengthStuds: 16, studsAtCuts: 'off', legoTrack: 'lego', axleStuds: 2, sleeperWidthStuds: 2, sleeperGapStuds: 2, studFit: 0.18, antistudFit: 0.06,
   bladeDiscD: 14, throwBallast: false, axleHoles: false, pegOnBallast: false,
   bufferStyle: 'frame', bufferPostPlates: 8, bufferBeamBottom: 2, bufferBeamTop: 12, bufferPinHoles: true,

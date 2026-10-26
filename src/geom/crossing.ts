@@ -8,7 +8,7 @@ import type { Pose, Route } from '../route/route';
 import { hasRoll, railPoint, routeLat, routeLength, routePose, routeRoll, routeSOf } from '../route/route';
 import { solve, type Solution, type SolverOptions, SOLVER_DEFAULTS } from '../route/solver';
 import { Scad, T, R, type CS, type Man, type Vec2 } from './scad';
-import { type Bank, bankPoint, sweepRoute } from './sweep';
+import { type Bank, bankPoint, sweepRoute, trackBank } from './sweep';
 import { hollowGrid } from './underside';
 import { type ExtraBuilt, extraRails } from './extrarails';
 import { DEFAULTS, PLATE_H, RAIL_PROFILE, STUD, Track, type TrackOptions } from './track';
@@ -75,7 +75,6 @@ const atPose = (m: Man, p: [number, number, number]) => T(R(m, [0, 0, p[2]]), [p
 // the gap opened under the raised side filled, and kept above z = 0: the
 // ballast's lower layers and the underside stay flat on the baseplate.
 // (A route's roll comes from its segments: see route.ts.)
-const bankAt = (g: number): Bank => ({ pivotX: g, pivotZ: PLATE_H });
 /** A shape in a route end's frame turned by roll degrees about the bank's pivot (as sweepRoute turns the track there). */
 const bankTurn = (m: Man, b: Bank, roll: number): Man => {
   if (Math.abs(roll) < 1e-12) return m;
@@ -179,7 +178,7 @@ export function crossingPiece(s: Scad, routes: Route[], o: CrossingOptions = CRO
   // depth below the rail top up, swept along the whole route.
   const bands = routes.map((rt) => sweepRoute(s,
     rect(g - HEAD_HW - o.flangeway, g - HEAD_HW, RAIL_TOP - o.flangewayDepth, RAIL_TOP + 1)
-      .add(rect(-g + HEAD_HW, -g + HEAD_HW + o.flangeway, RAIL_TOP - o.flangewayDepth, RAIL_TOP + 1)), rt, 0, Infinity, bankAt(c.sleeperLen / 2)));
+      .add(rect(-g + HEAD_HW, -g + HEAD_HW + o.flangeway, RAIL_TOP - o.flangewayDepth, RAIL_TOP + 1)), rt, 0, Infinity, trackBank(c.sleeperLen)));
   // (only the routes near enough to cut each other: on a big layout, every
   // route against every other is most of the work)
   const boxes = routes.map((rt) => {
@@ -291,13 +290,13 @@ export function crossingPiece(s: Scad, routes: Route[], o: CrossingOptions = CRO
         bufS && bufDepth !== undefined && atPose(box(bufDepth, -1), p0), bufE && bufDepth !== undefined && atPose(box(bufDepth, -bufDepth), p1)];
     };
     const rails = s.difference(s.union([-g, g].map((x) =>
-      sweepRoute(s, s.polygon(RAIL_PROFILE.map(([px, py]) => [px + x, py + PLATE_H] as Vec2)), rt, 0, Infinity, bankAt(c.sleeperLen / 2)))), endBoxes(END, BUFFER_RAIL_END));
+      sweepRoute(s, s.polygon(RAIL_PROFILE.map(([px, py]) => [px + x, py + PLATE_H] as Vec2)), rt, 0, Infinity, trackBank(c.sleeperLen)))), endBoxes(END, BUFFER_RAIL_END));
     const checks = sol.checkRails.filter((cr) => cr.route === i)
-      .map((cr) => sweepRoute(s, rect(cr.offset, cr.offset + cr.width, PLATE_H - 0.01, RAIL_TOP), rt, cr.s0, cr.s1, bankAt(c.sleeperLen / 2)));
+      .map((cr) => sweepRoute(s, rect(cr.offset, cr.offset + cr.width, PLATE_H - 0.01, RAIL_TOP), rt, cr.s0, cr.s1, trackBank(c.sleeperLen)));
     const railsAll = s.difference(s.union([rails, ...checks]), [...othersBands(i), ...nearCuts(i, x.railCuts?.get(i) ?? [])]);
     parts.push(hasRoll(rt) ? aboveZ(s, railsAll, 0) : railsAll); // (banked: the rails' feet, run down through the bed, turned, kept above its bottom)
     const banked = hasRoll(rt), roll0 = banked ? routeRoll(rt, 0) : 0, roll1 = banked ? routeRoll(rt, L) : 0;
-    const bedAlong = (a = 0, b = Infinity) => (banked ? bankedBed(s, rt, bankAt(c.sleeperLen / 2), c.sleeperLen / 2, onBallast ? -1 : 0, a, b) : sweepRoute(s, rect(-c.sleeperLen / 2, c.sleeperLen / 2, 0, PLATE_H), rt, a, b));
+    const bedAlong = (a = 0, b = Infinity) => (banked ? bankedBed(s, rt, trackBank(c.sleeperLen), c.sleeperLen / 2, onBallast ? -1 : 0, a, b) : sweepRoute(s, rect(-c.sleeperLen / 2, c.sleeperLen / 2, 0, PLATE_H), rt, a, b));
     // Track bed under the route (with sleepers: only where it needs it, sleepers elsewhere).
     if (!sleepered) parts.push(s.difference(bedAlong(), endBoxes(BED_END)));
     else {
@@ -329,15 +328,15 @@ export function crossingPiece(s: Scad, routes: Route[], o: CrossingOptions = CRO
       const half = c.sleeperLen / 2, at = atAll.filter((v) => { const P = routePose(rt, v); return !Array.from({ length: 17 }, (_, k) => -half + (k * half) / 8).some((o2) => onOtherTie(i, P, o2)); });
       for (const v of at) { tiesBuilt.push({ i, P: routePose(rt, v), lo: -half, hi: half }); sleeperAt.push({ i, v, lo: -half, hi: half }); }
       // (banked: each sleeper turned by the roll at it)
-      if (at.length) parts.push(s.union(at.map((v) => { const P = routePose(rt, v), sl = t.sleeper(true, ex?.postOk(P)); return atPose(banked ? bankedSleeper(s, sl, bankAt(c.sleeperLen / 2), routeRoll(rt, v), c.sleeperLen, c.sleeperW) : sl, P); })));
+      if (at.length) parts.push(s.union(at.map((v) => { const P = routePose(rt, v), sl = t.sleeper(true, ex?.postOk(P)); return atPose(banked ? bankedSleeper(s, sl, trackBank(c.sleeperLen), routeRoll(rt, v), c.sleeperLen, c.sleeperW) : sl, P); })));
     }
     // End connectors and breakaway supports, at both ends.
     // (on ballast: no peg and clip, no stud recesses, as the switches')
     const peg = !onBallast || !!o.pegOnBallast || alone;
     // (at a banked end, a route left banked to its end: turned with the bed)
     const conn0 = T(t.fullEndpoint(peg, !onBallast, ex?.xfs[0], ex?.guardX), [0, 4, 0]), conn1 = T(R(t.fullEndpoint(peg, !onBallast, ex?.xfs[1], ex?.guardX), [0, 0, 180]), [0, -4, 0]);
-    if (!inStart) parts.push(atPose(roll0 ? bankedEnd(s, conn0, bankAt(c.sleeperLen / 2), roll0, c.sleeperLen, true) : conn0, p0));
-    if (!inEnd) parts.push(atPose(roll1 ? bankedEnd(s, conn1, bankAt(c.sleeperLen / 2), roll1, c.sleeperLen, false) : conn1, p1));
+    if (!inStart) parts.push(atPose(roll0 ? bankedEnd(s, conn0, trackBank(c.sleeperLen), roll0, c.sleeperLen, true) : conn0, p0));
+    if (!inEnd) parts.push(atPose(roll1 ? bankedEnd(s, conn1, trackBank(c.sleeperLen), roll1, c.sleeperLen, false) : conn1, p1));
     // (buffer stops, in their end's frame; the peg and clip above the bed on ballast held up by breakaway supports)
     if (bufS) parts.push(atPose(R(bufferStop(t, o.buffer ?? BUFFER_DEFAULTS, onBallast), [0, 0, 180]), p0));
     if (bufE) parts.push(atPose(bufferStop(t, o.buffer ?? BUFFER_DEFAULTS, onBallast), p1));
@@ -348,8 +347,8 @@ export function crossingPiece(s: Scad, routes: Route[], o: CrossingOptions = CRO
     }
     if (o.supports) {
       const zs = bottomZ - 0.02;
-      if (!inStart) parts.push(atPose(roll0 ? s.union([bankedSupports(s, (z) => t.startRailSupports(z, ex?.xfs[0]), bankAt(c.sleeperLen / 2), roll0, zs), t.supportFooting(zs, 0, -1)]) : s.union([t.startRailSupports(zs, ex?.xfs[0]), t.supportFooting(zs, 0, -1)]), p0));
-      if (!inEnd) parts.push(atPose(roll1 ? s.union([bankedSupports(s, (z) => t.endRailSupports(z, ex?.xfs[1]), bankAt(c.sleeperLen / 2), roll1, zs), t.supportFooting(zs, 0, +1)]) : s.union([t.endRailSupports(zs, ex?.xfs[1]), t.supportFooting(zs, 0, +1)]), p1));
+      if (!inStart) parts.push(atPose(roll0 ? s.union([bankedSupports(s, (z) => t.startRailSupports(z, ex?.xfs[0]), trackBank(c.sleeperLen), roll0, zs), t.supportFooting(zs, 0, -1)]) : s.union([t.startRailSupports(zs, ex?.xfs[0]), t.supportFooting(zs, 0, -1)]), p0));
+      if (!inEnd) parts.push(atPose(roll1 ? s.union([bankedSupports(s, (z) => t.endRailSupports(z, ex?.xfs[1]), trackBank(c.sleeperLen), roll1, zs), t.supportFooting(zs, 0, +1)]) : s.union([t.endRailSupports(zs, ex?.xfs[1]), t.supportFooting(zs, 0, +1)]), p1));
     }
     if (ex?.solid) parts.push(banked ? aboveZ(s, ex.solid, 0) : ex.solid); // (banked: turned with the track, kept above the bed's bottom)
   });
@@ -401,7 +400,7 @@ export function crossingPiece(s: Scad, routes: Route[], o: CrossingOptions = CRO
     }
   }
   const anyBank = routes.some(hasRoll), bedStud = t.stud(c.postD, c.postH);
-  const bedStuds = studPts.length ? s.union(studPts.map(([px, py]) => (anyBank && bankedStud(routes, bankAt(c.sleeperLen / 2), c.sleeperLen / 2, [px, py], PLATE_H - 0.2, bedStud)) || T(t.stud(c.postD, c.postH), [px, py, PLATE_H - 0.2]))) : undefined;
+  const bedStuds = studPts.length ? s.union(studPts.map(([px, py]) => (anyBank && bankedStud(routes, trackBank(c.sleeperLen), c.sleeperLen / 2, [px, py], PLATE_H - 0.2, bedStud)) || T(t.stud(c.postD, c.postH), [px, py, PLATE_H - 0.2]))) : undefined;
   const body = s.union([...parts, ...(x.adds ?? []), bedStuds]);
   if (onBallast) return withAxleHoles(ballastPiece());
 
@@ -421,7 +420,7 @@ export function crossingPiece(s: Scad, routes: Route[], o: CrossingOptions = CRO
   const cavH = o.studH + 0.21;
   const socket = (x: number, y: number) => T(R(t.studSocket(cavH), [0, 0, p0[2]]), [x, y, -0.01]);
   // (banked: the underside's hollows and sockets kept 0.8 mm under the bed's turned top, which comes down on the inner side)
-  const roofed = (ms: Man[]) => (anyBank ? [s.difference(s.union(ms), [bankedRoof(s, routes, bankAt(c.sleeperLen / 2), c.sleeperLen / 2 + 1, 0.8)])] : ms);
+  const roofed = (ms: Man[]) => (anyBank ? [s.difference(s.union(ms), [bankedRoof(s, routes, trackBank(c.sleeperLen), c.sleeperLen / 2 + 1, 0.8)])] : ms);
   if (o.grip === 'all' && o.undersideGrid !== 'track') return s.difference(body, [...roofed(spots.map(({ x, y }) => socket(x, y))), ...(x.cuts ?? [])]);
   // 'edges': hollow like a LEGO plate, a rim round each route's bed (not
   // under the end connectors), with anti-stud tubes between the studs that
@@ -664,14 +663,12 @@ export function crossingPiece(s: Scad, routes: Route[], o: CrossingOptions = CRO
       ]);
       const cav = outline.offset(-RIM, 'Miter', 1000), cavH = o.studH + 0.2;
       const bb = outline.bounds(), gp = x.gridPose ?? routePose(routes[0], 0), hd = (gp[2] * Math.PI) / 180;
-      const reach2 = Math.ceil((Math.hypot(bb.max[0] - bb.min[0], bb.max[1] - bb.min[1]) + Math.hypot(bb.min[0] - gp[0], bb.min[1] - gp[1])) / STUD) + 2;
       const wd = (lx: number, ly: number): [number, number] => [gp[0] + lx * Math.cos(hd) - ly * Math.sin(hd), gp[1] + lx * Math.sin(hd) + ly * Math.cos(hd)];
       // (only the grid spots over the outline's box)
       const toG = (q: [number, number]) => { const dx = q[0] - gp[0], dy = q[1] - gp[1]; return [(dx * Math.cos(hd) + dy * Math.sin(hd)) / STUD, (-dx * Math.sin(hd) + dy * Math.cos(hd)) / STUD]; };
       const cs = [toG([bb.min[0], bb.min[1]]), toG([bb.max[0], bb.min[1]]), toG([bb.min[0], bb.max[1]]), toG([bb.max[0], bb.max[1]])];
       const i0 = Math.floor(Math.min(...cs.map((q) => q[0]))) - 2, i1 = Math.ceil(Math.max(...cs.map((q) => q[0]))) + 1;
       const j0 = Math.floor(Math.min(...cs.map((q) => q[1]))) - 2, j1 = Math.ceil(Math.max(...cs.map((q) => q[1]))) + 1;
-      void reach2;
       const hg = hollowGrid(s, t, cav, wd, i0, i1, j0, j1, o.grip);
       grips?.push(...hg.grips);
       const under = T(s.extrude(hg.cut, cavH + 0.01), [0, 0, bottomZ - 0.01]);

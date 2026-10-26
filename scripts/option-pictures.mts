@@ -30,13 +30,12 @@ const cross = TEMPLATES['90° crossing'].routes, bend = [{ name: 'A', x: 0, y: 0
 /** explode: each part after the first moved this far along y (mm; less than 0: back), so the joints between them show */
 const specs: { key: string; values: string[]; design: (v: string) => unknown; pick?: RegExp; cam: Cam; explode?: number }[] = [
   { key: 'joint', values: ['lego', 'dovetail', 'butt', 'axle'], design: (v) => D([st(32), st(32, { name: 'B', x: 16 })], { ballast: 'buddy', printBedX: 160, printBedY: 160, joint: v }), pick: /^track[12]$/, explode: -24, cam: { dir: '0.8,-0.6,1', r: 170, at: cutGap } },
-  { key: 'cutRails', values: ['tongues', 'flat'], design: (v) => D([st(32), st(32, { name: 'B', x: 16 })], { printBedX: 160, printBedY: 160, cutRails: v }), pick: /^track[12]$/, explode: -24, cam: { dir: '0.8,-0.6,1', r: 170, at: cutGap } },
   { key: 'tongueRails', values: ['all', 'square'], design: (v) => D(TEMPLATES['22.5° crossing'].routes, { printBedX: 150, printBedY: 150, tongueRails: v }), pick: /^track2$/, cam: { dir: '0.5,-1,0.8', r: 170, at: faceOf } },
   { key: 'sleepers', values: ['bed', 'sleepers'], design: (v) => D(cross, { sleepers: v }), cam: { dir: '1,-0.8,1', dist: 2.0 } },
   { key: 'curveStuds', values: ['grid', 'follow'], design: (v) => D(curve, { curveStuds: v }), cam: { dir: '0.25,-0.45,1', dist: 2.0 } },
   { key: 'ballast', values: ['none', 'ballast', 'buddy'], design: (v) => D([st(16)], { ballast: v }), cam: { dir: '1,-1.2,0.6', dist: 2.0 } },
   { key: 'bottomStyle', values: ['antistud', 'float'], design: (v) => D([st(16)], { ballast: 'ballast', bottomStyle: v }), cam: under },
-  { key: 'grip', values: ['edges', 'all'], design: (v) => D([st(16)], {}, { grip: v }), cam: under },
+  { key: 'grip', values: ['edges', 'all'], design: (v) => D([st(16)], { grip: v }), cam: under },
   { key: 'undersideGrid', values: ['baseplate', 'track'], design: (v) => D([st(12, { heading: 17 })], { undersideGrid: v }), cam: { dir: '0.5,-0.6,-1', r: 230, at: (ps) => { const b = box(ps); return [(b[0] + b[3]) / 2, (b[1] + b[4]) / 2, 0]; } } },
   { key: 'splitTrack', values: ['bed', 'lengths'], design: (v) => D(bend, { printBedX: 200, printBedY: 200, splitTrack: v }), cam: { dir: '0.15,-0.3,1', dist: 2.0 } },
   { key: 'mechStyle', values: ['plates', 'tines'], design: (v) => D(sw, { mechStyle: v }), cam: toe },

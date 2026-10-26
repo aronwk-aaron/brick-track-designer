@@ -49,10 +49,10 @@ export function jointKit(s: Scad, t: Track, bz: number) {
   // bottom up; 0.15 mm clear all round
   const tail = (grow: number) => T(s.extrude(s.polygon([[-2.2 - grow, 0.01], [2.2 + grow, 0.01], [3.6 + grow, -4.5 - grow], [-3.6 - grow, -4.5 - grow]]), PLATE_H - bz + (grow ? 2 : 0)), [0, 0, bz - (grow ? 1 : 0)]);
   // axle (joint 'axle'): a LEGO cross-axle hole across the cut, half the
-  // axle's length deep each side (Track axleStuds: 4 unless set), in the solid
+  // axle's length deep each side (Track axleStuds), in the solid
   // between the underside's hollow and the top of the bed, for an axle to pin
   // the parts together; 0.1 mm over a LEGO axle's 4.8 x 1.8 cross
-  const axleHalf = ((t.o.axleStuds ?? 4) * 8) / 2;
+  const axleHalf = ((t.o.axleStuds ?? 2) * 8) / 2;
   const axleZ = (bz + t.o.studH + 0.2 + PLATE_H) / 2, axleFits = PLATE_H - (bz + t.o.studH + 0.2) >= 5.4;
   const axleHole = () => {
     const cross = s.w.CrossSection.union([s.square([4.9, 1.9], true), s.square([1.9, 4.9], true)]);
