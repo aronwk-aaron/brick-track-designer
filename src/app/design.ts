@@ -113,7 +113,7 @@ export interface PieceOptions {
   /** (plate-style points) What holds the points, and what a train trailing through them does: 'detent' (the lever's click), 'overcentre' (Peco's V spring: they snap over and stay), 'springback' (a spring switch: the blades give way and spring back). */
   throwAction?: 'detent' | 'overcentre' | 'springback';
   /** (plate-style points) The blades: 'simple', or 'prototype' (planed to a point, tight under the stock rail's undercut head, the tie bar at the points). */
-  bladeStyle?: 'simple' | 'prototype';
+  bladeStyle?: 'simple' | 'prototype' | 'sprung';
   /** What keeps each blade's plate on its pin: a snap lip on the pin, or a little bracket over the plate pegged into the bed. */
   bladeHold?: 'lip' | 'bracket';
   /** The points' mechanism: 'tines' (switch.scad's: under the bed, from below) or 'plates' (each blade on a plate on top of the bed on a pin, a slider bar through the bed; the blades go in from above). */

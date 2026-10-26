@@ -41,7 +41,7 @@ const specs: { key: string; values: string[]; design: (v: string) => unknown; pi
   { key: 'mechStyle', values: ['plates', 'tines'], design: (v) => D(sw, { mechStyle: v }), cam: toe },
   { key: 'pointBlades', values: ['2', '1'], design: (v) => D(sw, { pointBlades: Number(v) }), cam: toe },
   { key: 'bladeHold', values: ['lip', 'bracket'], design: (v) => D(sw, { bladeHold: v }), cam: toe },
-  { key: 'bladeStyle', values: ['simple', 'prototype'], design: (v) => D(sw, { bladeStyle: v }), cam: toe },
+  { key: 'bladeStyle', values: ['simple', 'prototype', 'sprung'], design: (v) => D(sw, { bladeStyle: v, ballast: 'ballast' }), cam: toe },
   { key: 'throwStyle', values: ['built-in', 'bracket', 'stand'], design: (v) => D(sw, { throwStyle: v }), cam: throwCam },
   { key: 'bufferStyle', values: ['frame', 'blocks'], design: (v) => D([st(16, { endEnd: 'buffer' })], { ballast: 'ballast', bufferStyle: v }), cam: { dir: '0.9,-1,0.7', r: 150, at: () => [0, 116, 12] } },
   { key: 'monoEndStuds', values: ['side', 'top', 'none'], design: (v) => D([st(8, { system: 'monorail' })], { monoEndStuds: v }), cam: { dir: '1,-1,0.8', r: 100, at: () => [0, 4, 7] } },

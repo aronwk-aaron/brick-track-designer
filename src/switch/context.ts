@@ -46,8 +46,8 @@ export interface SwitchParams {
   throwAction?: 'detent' | 'overcentre' | 'springback';
   /** (the plate-style points) The throw as a switch stand (a ground throw, Caboose Industries' way): a handle swung over on an eccentric in the slider's yoke, locked past dead centre at each end. */
   throwStand?: boolean;
-  /** (the plate-style points) The blades: 'simple' (as before) or 'prototype' (planed to a point and laid tight under the stock rail's undercut head, the tie bar at the points). */
-  bladeStyle?: 'simple' | 'prototype';
+  /** (the plate-style points) The blades: 'simple' (as before), 'prototype' (planed to a point and laid tight under the stock rail's undercut head, the tie bar at the points) or 'sprung' (as the sprung blades' 2-05-025: a 3 mm plate with a flat top, on a LEGO stud, the spring two beams in a pocket underneath with built-in supports; the slider at the points). */
+  bladeStyle?: 'simple' | 'prototype' | 'sprung';
   /** (the plate-style points) What keeps each blade's plate on its pin: 'lip' (a snap lip on the pin) or 'bracket' (a little bracket on the bed over the plate round the pin, pegged in: the reference points' way). */
   bladeHold?: 'lip' | 'bracket';
   /** (the plate-style points) Blades per set: 2 (both move), or 1 (a single-point switch, as a tram's: only the blade on the more curved route moves; the other side's rail is fixed, from where it's a flangeway clear of its stock rail). A three-way keeps both. */
@@ -180,7 +180,7 @@ export function pointsSet(routes: Route[], ps: PointsSet, p: SwitchParams, defau
   // (prototype blades: the tie bar at the points, as a switch's head rod is: on the first stud line where the
   // throw arm clears the end connector (half its width past it) and its post has plate round it)
   const fdbYSimple = Math.max(toeY + 8, Math.min(fdbPivotY - 8, Math.round((fdbPivotY - 0.6 * (fdbPivotY - toeY) - 4) / 8) * 8 + 4));
-  const fdbY = p.bladeStyle === 'prototype' && p.mechStyle === 'plates'
+  const fdbY = (p.bladeStyle === 'prototype' || (p.bladeStyle === 'sprung' && p.generateBallast)) && p.mechStyle === 'plates'
     // (and with Peco's spring, room for its pin on the toe's side, past the plates' start)
     ? Math.min(fdbYSimple, Math.ceil((Math.max(toeY + 8, 8 + g.armW / 2, p.throwAction === 'overcentre' ? 8 + 12 + 4 : 0) - 4) / 8 - 1e-6) * 8 + 4) : fdbYSimple;
   const fdbTravel = p.pointThrow * (fdbPivotY - fdbY) / Math.max(1, fdbPivotY - toeY) + p.springPreload;
