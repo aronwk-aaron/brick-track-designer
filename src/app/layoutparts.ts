@@ -1,5 +1,5 @@
-// A design as parts for a layout designer (BlueBrick and the collaborative
-// layout designer built on it): one library part per printed track part, as
+// A design as parts for a layout designer (BlueBrick and the Collaborative
+// Brick Layout Designer built on it): one library part per printed track part, as
 // built and cut to the print bed (the moving parts drawn on the part they sit
 // in), each a top-down picture at 8 px a stud with its connection points
 // where the track leaves it, and a set placing them all as designed.
@@ -320,25 +320,30 @@ export const README = (name: string, folder: string, prefix: string, setId: stri
 ${'='.repeat(name.length + 14)}
 
 Made with Brick Track Designer. The folder "${folder}" is a parts library for
-the collaborative layout designer (and BlueBrick): one part for each printed
-track part of the design, as cut for the print bed (the points, throws and
-levers drawn on the part they go in), each with its connection points where
-the track leaves it, so they snap together and onto other track. The set
-"${setId}" puts all of them down as designed.
+the Collaborative Brick Layout Designer (and BlueBrick): one part for each
+printed track part of the design, as cut for the print bed (the points,
+throws and levers drawn on the part they go in), each with its connection
+points where the track leaves it, so they snap together and onto other track.
+The set "${setId}" puts all of them down as designed.
 
-Collaborative layout designer
-  1. Unzip this somewhere to keep it (the folder must stay where it is).
-  2. Tools > Parts > Parts Folders..., Add..., choose the "${folder}" folder
-     (or the folder it is in), OK.
-  3. The parts are in the Parts panel under the category "${folder}".
+Collaborative Brick Layout Designer (desktop 1.4.0 or later)
+  1. Tools > Parts > Add Parts from a Zip..., and choose this zip: it's
+     unpacked into the imports folder and the parts reloaded.
+     (Or unzip it somewhere to keep it, then Tools > Parts > Parts
+     Folders..., Add..., choose the "${folder}" folder, OK.)
+  2. The parts are in the Parts panel under the category "${folder}".
      Drag "${name} (all ... parts, as designed)" onto the map for the whole
      design, or the parts one at a time.
-  After exporting again (the design changed), unzip over the old folder and
-  use Tools > Parts > Reload Parts: maps using the parts show the new ones.
+  After exporting again (the design changed), add the new zip the same way
+  (or unzip over the old folder and use Tools > Parts > Reload Parts): maps
+  using the parts show the new ones.
   Sharing through a server: "Upload to server..." (the server window's Parts
-  tab) sends only the parts in the layout designer's own imports folder, not
-  other parts folders, and not sets: to share the parts, unzip the folder
-  into that imports folder instead.
+  tab) sends these parts from whichever parts folder they're in, and the set
+  too where the server takes sets; the web version places the set as one
+  group.
+  Checking the joins: bld-render --check-connections <this zip> lists the
+  parts' connection points that pair up, the open ends, and any that nearly
+  meet but don't.
 
 BlueBrick
   Copy the "${folder}" folder into BlueBrick's "parts" folder (beside
