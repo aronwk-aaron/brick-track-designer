@@ -20,7 +20,12 @@ export type RoutePiece = [number, number, number];
  * as fit room, even. plates: the baseplates' grid (their size and corner, mm): a joint too where a plain stretch
  * crosses a baseplate's edge (on the whole stud nearest), so its pieces sit on one baseplate each, not cut again there.
  */
-export function planSections(routes: Route[], splits: Split[], half: number, room: number, minPart = 40, exact = 0, plates?: { size: number; x: number; y: number }) {
+/**
+ * std: the radii (mm) of curves made as track pieces of their own (LEGO's R40, BrickTracks' curves) and each piece's
+ * angle: then each plain stretch is cut where its own pieces would join, each segment on from its start (a straight
+ * every exact, such a curve every piece's angle), so its pieces can be those parts.
+ */
+export function planSections(routes: Route[], splits: Split[], half: number, room: number, minPart = 40, exact = 0, plates?: { size: number; x: number; y: number }, std?: Map<number, number>) {
   const boxes = routes.map((rt) => {
     const L = routeLength(rt), n = Math.max(1, Math.ceil(L / 8)), b = [Infinity, Infinity, -Infinity, -Infinity];
     for (let k = 0; k <= n; k++) { const p = routePose(rt, (L * k) / n); b[0] = Math.min(b[0], p[0]); b[1] = Math.min(b[1], p[1]); b[2] = Math.max(b[2], p[0]); b[3] = Math.max(b[3], p[1]); }
@@ -67,7 +72,23 @@ export function planSections(routes: Route[], splits: Split[], half: number, roo
           if (exact > 0) for (let c2 = lo + exact; c2 < hi - minPart / 2; c2 += exact) cuts.push(c2);
           else { const k = Math.max(1, Math.ceil((hi - lo) / room)); for (let m = 1; m < k; m++) cuts.push(Math.round((lo + ((hi - lo) * m) / k) / step) * step); }
         };
-        if (exact > 0 && !edges.length) { if (a > minPart) cuts.push(a); for (let c2 = Math.ceil((a + 1e-6) / exact) * exact; c2 < b - 1e-6; c2 += exact) cuts.push(c2); if (b < L - minPart) cuts.push(b); }
+        // (standard pieces: where each segment's own pieces join, within the stretch)
+        const natural = std && exact > 0 ? (() => {
+          const at: number[] = [];
+          let s0 = 0;
+          for (const sg of rt.segments) {
+            const len = sg.kind === 'straight' ? sg.length : (Math.abs(sg.angle) * Math.PI * sg.radius) / 180;
+            const r = sg.kind === 'arc' ? [...std.keys()].find((k2) => Math.abs(k2 - sg.radius) < 0.01) : undefined;
+            const each = r !== undefined ? (std.get(r)! * Math.PI * r) / 180 : exact;
+            at.push(s0);
+            for (let c2 = s0 + each; c2 < s0 + len - 1e-6; c2 += each) at.push(c2);
+            s0 += len;
+          }
+          return at;
+        })() : undefined;
+        // (a and b cuts only where points or a crossing end the stretch, not at the route's own ends' margins)
+        if (natural) { if (a > minPart + step) cuts.push(a); for (const c2 of natural) if (c2 > a + 1e-6 && c2 < b - 1e-6) cuts.push(c2); if (b < L - minPart - step) cuts.push(b); }
+        else if (exact > 0 && !edges.length) { if (a > minPart) cuts.push(a); for (let c2 = Math.ceil((a + 1e-6) / exact) * exact; c2 < b - 1e-6; c2 += exact) cuts.push(c2); if (b < L - minPart) cuts.push(b); }
         else if (!edges.length) for (let m = 0; m <= n; m++) cuts.push(Math.round((a + (inner * m) / n) / step) * step);
         else {
           if (a > minPart) cuts.push(a);

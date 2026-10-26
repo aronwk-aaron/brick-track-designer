@@ -50,7 +50,19 @@ export interface Piece {
 }
 
 /** A LEGO part (BrickLink's number and name) and how many. */
-export interface LegoPart { part: string; name: string; qty: number }
+export interface LegoPart { part: string; name: string; qty: number; /** where it's bought, if not a LEGO part (BrickLink's wanted list leaves it out) */ shop?: 'bricktracks' }
+
+/** Curves made as track pieces of their own: radius (mm) to each piece's angle: LEGO's R40, BrickTracks' R56 to R120 (injection moulded). */
+export const STD_CURVES = new Map<number, number>([[40 * 8, 22.5], [56 * 8, 11.25], [72 * 8, 11.25], [88 * 8, 11.25], [104 * 8, 11.25], [120 * 8, 11.25]]);
+
+/** A plain curve piece that is a bought track piece (or a few of them): LEGO's R40 (53400), or a BrickTracks curve. */
+export function stdCurve(radius: number, angle: number): LegoPart[] | undefined {
+  const r = [...STD_CURVES.keys()].find((k) => Math.abs(k - radius) < 0.01);
+  if (r === undefined) return undefined;
+  const step = STD_CURVES.get(r)!, n = Math.round(Math.abs(angle) / step);
+  if (n < 1 || Math.abs(Math.abs(angle) - n * step) > 0.01) return undefined;
+  return r === 320 ? [{ part: '53400', name: 'Train, Track Plastic Curve (R40)', qty: n }] : [{ part: `BrickTracks R${r / 8}`, name: `BrickTracks R${r / 8} curve (11.25°)`, qty: n, shop: 'bricktracks' }];
+}
 
 /** The LEGO parts for a plain 16-stud straight: LEGO's track, and under it the ballast's layers as plates (10 studs wide, and 12 more for the buddy layer). */
 export function legoStraight(ballast: string | undefined): LegoPart[] {
@@ -756,7 +768,10 @@ function buildOne(w: Wasm, design: Design, report: (what: string, frac: number) 
     // (pieces of the length set, if they fit the bed; else as long as fits)
     const ex = exact > 0 && exact <= room ? exact : 0;
     const plates = bp ? { size: bp, x: (o.baseplateX ?? 0) * 8, y: (o.baseplateY ?? 0) * 8 } : undefined;
-    const plan = cached(`secplan:${key}:${room}:${bandHalf}:${ex}:${JSON.stringify(plates)}`, () => planSections(all, solSplits, bandHalf, room, 40, ex, plates));
+    // (bought pieces on: plain stretches cut where LEGO's straights, and on track without ballast its R40 curves and
+    // BrickTracks' curves, would join, so those pieces are them)
+    const std = (o.legoTrack ?? 'lego') === 'lego' && design.gaugeStuds === 4 ? (o.ballast === 'none' ? STD_CURVES : new Map<number, number>()) : undefined;
+    const plan = cached(`secplan:${key}:${room}:${bandHalf}:${ex}:${JSON.stringify(plates)}:${JSON.stringify(std && [...std])}`, () => planSections(all, solSplits, bandHalf, room, 40, ex, plates, std));
     const gridPose = routePose(all[0], 0);
     steps += plan.sections.length;
     let n = 0;
@@ -836,10 +851,11 @@ function buildOne(w: Wasm, design: Design, report: (what: string, frac: number) 
       const secInner = dropInner(rts);
       // (a plain 16-stud straight, ordinary ends both sides: LEGO's own track, not printed, with LEGO plates for the ballast)
       const sg0 = rts.length === 1 ? rts[0].segments : [];
-      const lego = (o.legoTrack ?? 'lego') === 'lego' && design.gaugeStuds === 4 && !mine.length && !cChecks.length && sg0.length === 1 && sg0[0].kind === 'straight'
-        && Math.abs(sg0[0].length - 16 * 8) < 0.01 && !sg0[0].roll && !rts[0].extra && !secInner.size
-        && ![routePose(rts[0], 0), routePose(rts[0], routeLength(rts[0]))].some((e) => bufs.some((b) => Math.hypot(b[0] - e[0], b[1] - e[1]) < 1))
-        ? legoStraight(o.ballast) : undefined;
+      const plain = (o.legoTrack ?? 'lego') === 'lego' && design.gaugeStuds === 4 && !mine.length && !cChecks.length && sg0.length === 1 && !sg0[0].roll && !rts[0].extra && !secInner.size
+        && ![routePose(rts[0], 0), routePose(rts[0], routeLength(rts[0]))].some((e) => bufs.some((b) => Math.hypot(b[0] - e[0], b[1] - e[1]) < 1));
+      // (a curve only on track without ballast: no LEGO plates make a curve's ballast)
+      const lego = !plain ? undefined : sg0[0].kind === 'straight' ? (Math.abs(sg0[0].length - 16 * 8) < 0.01 ? legoStraight(o.ballast) : undefined)
+        : o.ballast === 'none' ? stdCurve(sg0[0].radius, sg0[0].angle) : undefined;
       // (keyed by what it's built from, as the tiles are)
       const sb = routesBox(rts, bandHalf + 8);
       // (a section many print beds big, a whole yard's throat: built in blocks as a big layout cut to fill the bed is,
@@ -896,7 +912,7 @@ function buildOne(w: Wasm, design: Design, report: (what: string, frac: number) 
       }
       overlay.grips.push(...part.grips);
       for (const b2 of part.ms) {
-        pieces.push({ name: lego ? `lego-straight${++n}` : b2.id ? `${name}${b2.id}` : `${name}${++n}`, color: lego ? 0x8e9cab : 0x6f7780, positions: b2.positions.slice(), stl: b2.stl.slice(), ...(b2.supports && !lego && { supports: b2.supports.slice() }), ...(lego && { lego }) });
+        pieces.push({ name: lego ? `track-bought-${lego[0].part.replace(/\s+/g, '')}-${++n}` : b2.id ? `${name}${b2.id}` : `${name}${++n}`, color: lego ? 0x8e9cab : 0x6f7780, positions: b2.positions.slice(), stl: b2.stl.slice(), ...(b2.supports && !lego && { supports: b2.supports.slice() }), ...(lego && { lego }) });
         if (!lego) volume += b2.volume;
         if (!b2.fits) bedWarnings.add(`some sections don't fit the ${o.printBedX} x ${o.printBedY} print bed: there's nowhere left to cut them`);
       }

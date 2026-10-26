@@ -347,7 +347,7 @@ function updateExports() {
   const why = building ? 'Wait for the build to finish' : !pieces.length ? 'Nothing built yet' : stale ? 'The 3D view is out of date: rebuild first' : '';
   const tips: Record<string, string> = {
     'export-stl': 'Download the parts for printing as STL (a zip when there are several)',
-    'export-lego': 'Download the LEGO parts list (a CSV, and a BrickLink wanted list to upload): the plain straights built as LEGO track, their ballast as LEGO plates',
+    'export-lego': 'Download the parts to buy (a CSV, and a BrickLink wanted list of the LEGO ones): plain track as LEGO straights and R40 curves or BrickTracks curves, the straights\' ballast as LEGO plates',
     'export-layout': 'Download a parts library for the layout designer (a zip): one part per printed track part, each with its picture and connection points, and a set of them all as designed. Help says how to load it',
   };
   for (const id of ['export-stl', 'export-layout', 'export-lego']) {
@@ -413,7 +413,7 @@ function onBuilt(e: MessageEvent) {
   const i = d.info;
   const trackwork = [i.switches && plural(i.switches, 'switch', 'switches'), i.crossings && plural(i.crossings, 'rail crossing'), i.checkRails && plural(i.checkRails, 'check rail')].filter(Boolean).join(', ');
   const nLego = pieces.filter((p) => p.lego).length;
-  setStatus(`${trackwork ? `${trackwork} · ` : ''}${plural(i.pieces - nLego, 'part')} to print${nLego ? ` · ${plural(nLego, 'LEGO straight')}` : ''} · ${i.size.map((v: number) => v.toFixed(0)).join(' × ')} mm · ${(i.volume / 1000).toFixed(1)} cm³ · built in ${(i.ms / 1000).toFixed(1)} s`,
+  setStatus(`${trackwork ? `${trackwork} · ` : ''}${plural(i.pieces - nLego, 'part')} to print${nLego ? ` · ${plural(nLego, 'bought track piece')}` : ''} · ${i.size.map((v: number) => v.toFixed(0)).join(' × ')} mm · ${(i.volume / 1000).toFixed(1)} cm³ · built in ${(i.ms / 1000).toFixed(1)} s`,
     (i.warnings as string[]).join('; '), false, true);
 }
 worker = newWorker();
@@ -659,8 +659,8 @@ $('export-lego').addEventListener('click', () => {
   if (!pieces.length || building || stale) return;
   const parts = legoParts(pieces);
   if (!parts.length) return;
-  const csv = ['Part,Name,Quantity', ...parts.map((p) => `${p.part},"${p.name}",${p.qty}`)].join('\n');
-  const xml = `<INVENTORY>\n${parts.map((p) => `  <ITEM><ITEMTYPE>P</ITEMTYPE><ITEMID>${p.part}</ITEMID><COLOR>85</COLOR><MINQTY>${p.qty}</MINQTY></ITEM>`).join('\n')}\n</INVENTORY>\n`;
+  const csv = ['Part,Name,Quantity,From', ...parts.map((p) => `${p.part},"${p.name}",${p.qty},${p.shop === 'bricktracks' ? 'BrickTracks' : 'LEGO (BrickLink)'}`)].join('\n');
+  const xml = `<INVENTORY>\n${parts.filter((p) => !p.shop).map((p) => `  <ITEM><ITEMTYPE>P</ITEMTYPE><ITEMID>${p.part}</ITEMID><COLOR>85</COLOR><MINQTY>${p.qty}</MINQTY></ITEM>`).join('\n')}\n</INVENTORY>\n`;
   const enc = new TextEncoder();
   download(new Blob([zip([{ name: `${fileBase()}-lego-parts.csv`, data: enc.encode(csv) }, { name: `${fileBase()}-bricklink-wanted-list.xml`, data: enc.encode(xml) }]) as BlobPart], { type: 'application/zip' }), `${fileBase()}-lego-parts.zip`);
 });
@@ -1109,7 +1109,7 @@ const OPTION_FORM: OptSection[] = [
       { v: 'lengths', t: 'Track pieces, cut across the track', tip: 'Each track cut square to itself into pieces with ordinary end connectors, like LEGO track. Switches and crossings stay whole.', con: 'More parts, and a cut only where the track is clear of other tracks.' }] },
     { key: 'pieceLengthStuds', label: 'Piece length, studs', step: 4, min: 0, max: 64, def: 16, get: () => design.options?.pieceLengthStuds ?? 16, off: (c) => (c.o.splitTrack === 'lengths' || c.o.joint === 'ends' ? undefined : 'only with Long track cut into: Track pieces'), help: 'LEGO straights are 16. 0: as long as fits the print bed. A longer piece than the bed takes: as long as fits.' },
     { key: 'legoTrack', label: 'Plain straights', off: (c) => (c.o.splitTrack !== 'lengths' && c.o.joint !== 'ends' ? 'only with Long track cut into: Track pieces' : design.gaugeStuds !== 4 ? 'LEGO track is 4 studs between the rails: the gauge isn\'t 4' : undefined), choices: [
-      { v: 'lego', t: 'LEGO track', tip: 'Each plain 16-stud straight piece is LEGO\'s own straight (53401), not printed; with ballast, LEGO plates under it (6 x 16 and two 2 x 16, two more 6 x 16 for the buddy layer). They\'re in the LEGO parts list (toolbar), not the STL download.', con: 'Its sleepers and underside are LEGO\'s, not as set here.' },
+      { v: 'lego', t: 'Bought track', tip: 'Plain track bought, not printed: each 16-stud straight is LEGO\'s (53401), with ballast on LEGO plates under it (6 x 16 and two 2 x 16, two more 6 x 16 for the buddy layer); on track without ballast, R40 curves are LEGO\'s (53400) and R56 to R120 curves BrickTracks\' (injection moulded, 11.25° each). They\'re in the parts list (toolbar), not the STL download.', con: 'Their sleepers and underside are theirs, not as set here. Curves with ballast are still printed.' },
       { v: 'print', t: 'Printed', tip: 'Every piece printed, as set here.', con: 'More to print.' }] },
     { key: 'joint', label: 'Parts join with', help: 'How parts cut for the print bed or at baseplate edges join. With Long track cut into: Track pieces, plain track joins with its own end connectors; this is for the switches and crossings too big for the bed.', choices: [
       { v: 'lego', t: 'Rail tongues + peg and clip', tip: 'Like LEGO track ends.' },
