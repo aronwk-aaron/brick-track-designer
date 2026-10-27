@@ -185,10 +185,10 @@ export function networkSplits(s: Scad, routes: Route[], sol: Solution, p: BasePa
     // (only where the track across them doesn't leave this very route at other points just before, facing the same
     // way: a tandem's first branch over its second points is a warning, as before)
     const tandem = nearby(gr).some((r) => sol.splits.some((o) => o.routes.includes(r) && o.routes.includes(i) && !!o.merge === !!sp.merge && near(toeOf(o), toeOf(sp), 240)));
-    // (first, blades on top of the plain shape, where the chosen one's wider plate doesn't fit between its rails)
-    if (fdb && !three && !tandem && blockedOf(plan) && p.bladeStyle && p.bladeStyle !== 'simple') {
+    // (first, rigid blades on top, where the chosen shape's wider plate doesn't fit between its rails: a tandem's too)
+    if (fdb && !three && blockedOf(plan) && p.bladeStyle && p.bladeStyle !== 'simple') {
       const p1 = { ...p, bladeStyle: 'simple' as const }, plan1 = switchPlan(rts, [used], p1, 1, foreign);
-      if (blockedOf(plan1) === false) { pp = p1; plan = plan1; const w1 = "some points' blades are the plain shape: the chosen shape's plate doesn't fit between the rails there (a double slip's)"; if (!warnings.includes(w1)) warnings.push(w1); }
+      if (blockedOf(plan1) === false) { pp = p1; plan = plan1; const w1 = "some points' blades are rigid: the chosen shape's plate doesn't fit between the rails there (a double slip's or a tandem's)"; if (!warnings.includes(w1)) warnings.push(w1); }
     }
     if (fdb && !three && !tandem && blockedOf(plan)) {
       const p2 = { ...p, mechStyle: 'tines' as const }, plan2 = switchPlan(rts, [used], p2, 1, foreign);

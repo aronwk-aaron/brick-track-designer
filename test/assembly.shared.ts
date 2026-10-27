@@ -42,9 +42,10 @@ describe('every switch can be put together', { timeout: 120000 }, () => {
       const fromTop = d.options?.pointsModule === 'layers', bladesTop = d.options?.mechStyle !== 'tines';
       const problems: string[] = [];
       for (const p of b.pieces.filter((q) => /points|throw|lever|bracket/.test(q.name))) {
-        // (each moving part one piece)
-        const m = man(p);
-        if (m.decompose().length !== 1) problems.push(`${p.name} is in ${m.decompose().length} pieces`);
+        // (each moving part one piece, but for break-out supports inside it: the sprung blades' in its spring pocket)
+        const m = man(p), bodies = m.decompose().sort((x, y) => y.volume() - x.volume()), bb = bodies[0].boundingBox();
+        const inside = (q: typeof m) => { const c = q.boundingBox(); return [0, 1, 2].every((k) => c.min[k] >= bb.min[k] - 1e-3 && c.max[k] <= bb.max[k] + 1e-3); };
+        if (!bodies.slice(1).every(inside)) problems.push(`${p.name} is in ${bodies.length} pieces`);
         // (the plate-style slider goes in from the top and along its tunnel: checked below; its blades go on after it, from above)
         if (bladesTop && /throw/.test(p.name)) continue;
         const dir = /lever|bracket/.test(p.name) || fromTop || bladesTop ? 1 : -1;
@@ -79,16 +80,35 @@ describe('every switch can be put together', { timeout: 120000 }, () => {
         }
       }
       // (the blades, Peco's spring and the plate-style slider print without supports: nothing as printed faces down,
-      // steeper than 45 degrees, above the first layer; a teardrop's 45 is fine)
+      // steeper than 45 degrees, above the first layer with nothing under it. Held: the part's own break-out supports
+      // within 0.45 below (the sprung blades' spring pocket), a slope of 45 degrees or less, a bridge (held both sides, 10 or
+      // less across). Sampled over each face, not just its middle)
       if (bladesTop) for (const p of b.pieces.filter((q) => /points|throw/.test(q.name) && !/lever|bracket/.test(q.name))) {
         const dv = new DataView(p.stl.buffer, p.stl.byteOffset), n = dv.getUint32(80, true);
         const at = (i: number, k: number, j: number) => dv.getFloat32(84 + i * 50 + 12 + k * 12 + j * 4, true);
         let zmin = Infinity, area = 0;
         for (let i = 0; i < n; i++) for (let k = 0; k < 3; k++) zmin = Math.min(zmin, at(i, k, 2));
+        const P = new Float32Array(n * 9);
+        for (let i = 0; i < n; i++) for (let k = 0; k < 3; k++) for (let j = 0; j < 3; j++) P[i * 9 + k * 3 + j] = at(i, k, j);
+        const mesh = new w.Mesh({ numProp: 3, vertProperties: P, triVerts: new Uint32Array(n * 3).map((_, i) => i) }); mesh.merge();
+        const solid = new w.Manifold(mesh), below = new Map<number, ReturnType<typeof solid.slice>>();
+        const has = (x: number, y: number, z: number) => {
+          const key = Math.round(z * 20); if (!below.has(key)) below.set(key, solid.slice(key / 20));
+          return below.get(key)!.intersect(w.CrossSection.square([0.2, 0.2], true).translate([x, y])).area() > 0.001;
+        };
+        const D = [[1, 0], [0, 1], [0.7, 0.7], [0.7, -0.7]] as const, span = Array.from({ length: 10 }, (_, k) => 0.5 * (k + 1));
+        const held = (x: number, y: number, z: number) => has(x, y, z - 0.45)
+          || D.some(([dx, dy]) => [1, -1].some((sg) => [0.3, 0.5].some((d) => has(x + sg * dx * d, y + sg * dy * d, z - 0.3))))
+          || D.some(([dx, dy]) => [1, -1].every((sg) => span.some((d) => has(x + sg * dx * d, y + sg * dy * d, z - 0.3))));
+        const WT = [[1 / 3, 1 / 3, 1 / 3], [0.7, 0.15, 0.15], [0.15, 0.7, 0.15], [0.15, 0.15, 0.7], [0.45, 0.45, 0.1], [0.1, 0.45, 0.45], [0.45, 0.1, 0.45]];
         for (let i = 0; i < n; i++) {
           const u = [0, 1, 2].map((j) => at(i, 1, j) - at(i, 0, j)), v = [0, 1, 2].map((j) => at(i, 2, j) - at(i, 0, j));
           const nz = u[0] * v[1] - u[1] * v[0], L = Math.hypot(u[1] * v[2] - u[2] * v[1], u[2] * v[0] - u[0] * v[2], nz);
-          if (L > 1e-9 && nz / L < -0.75 && (at(i, 0, 2) + at(i, 1, 2) + at(i, 2, 2)) / 3 > zmin + 0.05) area += L / 2;
+          if (!(L > 1e-9 && nz / L < -0.75)) continue;
+          for (const wt of WT) {
+            const c = [0, 1, 2].map((j) => wt[0] * at(i, 0, j) + wt[1] * at(i, 1, j) + wt[2] * at(i, 2, j));
+            if (c[2] > zmin + 0.05 && !held(c[0], c[1], c[2])) area += L / 2 / WT.length;
+          }
         }
         if (area > 1) problems.push(`${p.name} has ${area.toFixed(1)} mm2 hanging as printed`);
       }

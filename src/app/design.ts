@@ -110,9 +110,9 @@ export interface PieceOptions {
   curveStuds?: 'grid' | 'follow';
   /** The throw: 'bracket' (the plate-style: the lever on its own 3 x 3 stud bracket, on studs on the arm), 'built-in' (the ears part of the arm) or 'stand' (a switch stand, a ground throw as Caboose Industries': a handle swung over on an eccentric, locked at each end; plate-style points). */
   throwStyle?: 'bracket' | 'built-in' | 'stand';
-  /** (plate-style points) What holds the points, and what a train trailing through them does: 'detent' (the lever's click), 'overcentre' (Peco's V spring: they snap over and stay), 'springback' (a spring switch: the blades give way and spring back). */
-  throwAction?: 'detent' | 'overcentre' | 'springback';
-  /** (plate-style points) The blades: 'simple', or 'prototype' (planed to a point, tight under the stock rail's undercut head, the tie bar at the points). */
+  /** (plate-style points) What holds the points, and what a train trailing through them does: 'detent' (the lever's click), 'overcentre' (Peco's V spring: they snap over and stay). (the sprung blades spring back on their own.) */
+  throwAction?: 'detent' | 'overcentre';
+  /** (plate-style points) The blades: 'sprung' (as the sprung blades': a spring in each, so trains can trail through), 'simple' (rigid: the slider's post in a plain hole, no spring), or 'prototype' (rigid, planed to a point, tight under the stock rail's undercut head, the tie bar at the points). */
   bladeStyle?: 'simple' | 'prototype' | 'sprung';
   /** What keeps each blade's plate on its pin: a snap lip on the pin, or a little bracket over the plate pegged into the bed. */
   bladeHold?: 'lip' | 'bracket';
@@ -173,21 +173,24 @@ export interface PieceOptions {
  * itself is left alone): the old joint 'ends' is Long track cut into: Track
  * pieces; the old Rails at cuts: Cut flat is Straight cuts + LEGO axles
  * (it pinned every joint with axles, or nothing where they didn't fit); and
- * the grip and points parts, once kept on the design, are piece options.
+ * the grip and points parts, once kept on the design, are piece options; and
+ * the spring-back blades (their tongues too thin to print) are the sprung blades', which
+ * spring back on their own.
  */
 export function upgradeDesign(d0: Design): Design {
   const { grip, pointsPieces, ...d } = d0 as Design & { grip?: PieceOptions['grip']; pointsPieces?: PieceOptions['pointsPieces'] };
   const o = d.options as (Omit<Partial<PieceOptions>, 'joint'> & { joint?: string; cutRails?: string }) | undefined;
-  if (grip === undefined && pointsPieces === undefined && (!o || (o.joint !== 'ends' && o.cutRails === undefined))) return d0;
+  if (grip === undefined && pointsPieces === undefined && (!o || (o.joint !== 'ends' && o.cutRails === undefined && (o as { throwAction?: string }).throwAction !== 'springback'))) return d0;
   const { cutRails, joint, ...rest } = o ?? {};
   const j = joint === 'ends' ? undefined : joint as PieceOptions['joint'];
   return { ...d, options: { ...(grip && { grip }), ...(pointsPieces && { pointsPieces }), ...rest, ...(joint === 'ends' && { splitTrack: 'lengths' as const }),
-    ...(cutRails === 'flat' && j !== 'butt' ? { joint: 'flataxle' as const } : j && { joint: j }) } };
+    ...(cutRails === 'flat' && j !== 'butt' ? { joint: 'flataxle' as const } : j && { joint: j }),
+    ...((rest as { throwAction?: string }).throwAction === 'springback' && { throwAction: 'detent' as const, bladeStyle: 'sprung' as const }) } };
 }
 export const OPTION_DEFAULTS: PieceOptions = {
   throwSide: 'auto', leverOffset: 8, pointThrow: 3, pointClearance: 0.3, springPreload: 1, springThickness: 0.9, springLength: 40,
   flangeway: 3, flangewayDepth: 3, checkRailLen: 30, checkRailW: 1, checkRailFlare: 1.5, printBedX: 256, printBedY: 256, baseplate: 0, baseplateX: 0, baseplateY: 0, ballast: 'none', bottomStyle: 'antistud', joint: 'lego', pointsModule: 'built-in', endSupports: true, tongueRails: 'all', grip: 'edges', pointsPieces: 1, pointBlades: 2, throwStyle: 'built-in', mechStyle: 'plates', curveStuds: 'follow',
-  throwAction: 'detent', bladeStyle: 'simple', sleepers: 'sleepers', undersideGrid: 'track', splitTrack: 'lengths', pieceLengthStuds: 16, studsAtCuts: 'off', legoTrack: 'lego', axleStuds: 2, sleeperWidthStuds: 2, sleeperGapStuds: 2, studFit: 0.18, antistudFit: 0.06,
+  throwAction: 'detent', bladeStyle: 'sprung', sleepers: 'sleepers', undersideGrid: 'track', splitTrack: 'lengths', pieceLengthStuds: 16, studsAtCuts: 'off', legoTrack: 'lego', axleStuds: 2, sleeperWidthStuds: 2, sleeperGapStuds: 2, studFit: 0.18, antistudFit: 0.06,
   bladeDiscD: 14, throwBallast: false, axleHoles: false, pegOnBallast: false,
   bufferStyle: 'frame', bufferPostPlates: 8, bufferBeamBottom: 2, bufferBeamTop: 12, bufferPinHoles: true,
   trackBallast: 'together', trackFitTol: 0.2, labelText: '', labelSize: true, labelGauge: false, labelParts: true,
@@ -360,7 +363,7 @@ const SLIP_LEAD = 40 * sin(22.5) - (40 * (1 - cos(22.5))) / tan(22.5);
 export const TEMPLATE_GROUPS: [string, string[]][] = [
   ['Crossings', ['90° crossing', '22.5° crossing', 'Double slip (22.5°)', 'Crossing on a curve']],
   ['Switches', ['Left switch (LEGO)', 'Right switch (LEGO)', 'Wye switch', 'Three-way switch (one throw)', 'Three-way switch (tandem, two throws)']],
-  ['Layouts', ['Oval (LEGO R40)', 'Crossover (R40)', 'Scissors crossover (R56)', 'Yard ladder (R40)', 'Wye with a crossover']],
+  ['Layouts', ['Oval (LEGO R40)', 'Crossover (R40)', 'Scissors crossover (R56)', 'Yard ladder (R40)', 'Wye with a crossover', 'Double-track return loop (turning right)', 'Double-track return loop (turning left)']],
   ['Features', ['Siding ending in a buffer stop', 'Bridge with guard rails', 'Dual gauge track', 'Banked curve', 'Crossing on sleepers']],
   ['Monorail', ['Monorail oval on supports', 'Monorail ramp (as LEGO\'s)', 'Monorail switch (experimental)', 'Monorail level crossing (experimental)']],
 ];
@@ -406,8 +409,9 @@ export const TEMPLATES: Record<string, Design> = {
     { name: 'Left', x: 0, y: 0, heading: 0, segs: [{ kind: 'curve', radius: 40, angle: 22.5 }, { kind: 'straight', studs: 14 }] },
     { name: 'Right', x: 0, y: 0, heading: 0, segs: [{ kind: 'curve', radius: 40, angle: -22.5 }, { kind: 'straight', studs: 14 }] },
   ] },
-  // (the first branch's rail runs on through the second points: their blades' plates are cut clear of it, the pin moved in)
-  'Three-way switch (tandem, two throws)': { version: 1, gaugeStuds: 4, routes: [
+  // (the first branch's rail runs on through the second points: their blades' plates are cut clear of it, the pin moved in;
+  // rigid blades: the sprung blades' plate, wider for its springs, doesn't fit there)
+  'Three-way switch (tandem, two throws)': { version: 1, gaugeStuds: 4, options: { bladeStyle: 'simple' }, routes: [
     { name: 'Straight', x: 0, y: 0, heading: 0, segs: [{ kind: 'straight', studs: 36 }] },
     { name: 'Left', x: 0, y: 0, heading: 0, segs: [{ kind: 'curve', radius: 40, angle: 22.5 }, { kind: 'straight', studs: 23 }] },
     { name: 'Right', x: 0, y: 8, heading: 0, segs: [{ kind: 'curve', radius: 40, angle: -22.5 }, { kind: 'straight', studs: 14 }] },
@@ -421,6 +425,12 @@ export const TEMPLATES: Record<string, Design> = {
   'Scissors crossover (R56)': { version: 1, gaugeStuds: 4, routes: [{name: 'A', x: 0, y: 0, heading: 0, segs: [{kind: 'straight', studs: 90}]}, {name: 'B', x: 16, y: 0, heading: 0, segs: [{kind: 'straight', studs: 90}]}, {name: 'AB', x: 0, y: 16, heading: 0, segs: [{kind: 'curve', radius: 56, angle: -31.002719}, {kind: 'curve', radius: 56, angle: 31.002719}]}, {name: 'BA', x: 16, y: 16, heading: 0, segs: [{kind: 'curve', radius: 56, angle: 31.002719}, {kind: 'curve', radius: 56, angle: -31.002719}]}] },
   'Yard ladder (R40)': { version: 1, gaugeStuds: 4, routes: [{name: 'Main', x: 0, y: -8, heading: 0, segs: [{kind: 'straight', studs: 194.052048}]}, {name: 'Ladder', x: 0, y: 0, heading: 0, segs: [{kind: 'curve', radius: 40, angle: -22.5}, {kind: 'straight', studs: 141.517055}]}, {name: 'Y1', x: 12.955181, y: 39.233069, heading: -22.5, segs: [{kind: 'curve', radius: 40, angle: 22.5}, {kind: 'straight', studs: 40}]}, {name: 'Y2', x: 28.955181, y: 77.860486, heading: -22.5, segs: [{kind: 'curve', radius: 40, angle: 22.5}, {kind: 'straight', studs: 32}]}, {name: 'Y3', x: 44.955181, y: 116.487903, heading: -22.5, segs: [{kind: 'curve', radius: 40, angle: 22.5}, {kind: 'straight', studs: 24}]}] },
   'Wye with a crossover': { version: 1, gaugeStuds: 4, routes: [{name: 'In', x: 8, y: -16, heading: 0, segs: [{kind: 'straight', studs: 16}]}, {name: 'WL', x: 8, y: 0, heading: 0, segs: [{kind: 'curve', radius: 72, angle: 19.188136}, {kind: 'curve', radius: 72, angle: -19.188136}, {kind: 'straight', studs: 81.96969}]}, {name: 'WR', x: 8, y: 0, heading: 0, segs: [{kind: 'curve', radius: 72, angle: -19.188136}, {kind: 'curve', radius: 72, angle: 19.188136}, {kind: 'straight', studs: 81.96969}]}, {name: 'X', x: 0, y: 55.328638, heading: 0, segs: [{kind: 'curve', radius: 72, angle: -27.266044}, {kind: 'curve', radius: 72, angle: 27.266044}]}, {name: 'ML', x: 0, y: 129.298328, heading: 0, segs: [{kind: 'curve', radius: 72, angle: -19.188136}, {kind: 'curve', radius: 72, angle: 19.188136}]}, {name: 'MR', x: 16, y: 129.298328, heading: 0, segs: [{kind: 'curve', radius: 72, angle: 19.188136}, {kind: 'curve', radius: 72, angle: -19.188136}]}, {name: 'Out', x: 8, y: 176.626967, heading: 0, segs: [{kind: 'straight', studs: 16}]}] },
+  // (a double track's two lines joined by a loop at R104 and R120 with a passing loop in it, as the reference: the
+  // left-hand line's switch splits it to the loop's two tracks; they come back together at the far switch and
+  // return as the right-hand line. The loop turns 244.6 degrees, its two switches R104 22.6 degrees, as one 16-stud
+  // shift each; one turning each way, mirror images)
+  'Double-track return loop (turning right)': { version: 1, gaugeStuds: 4, routes: [{name: 'Loop', x: 0, y: 0, heading: 0, segs: [{kind: 'straight', studs: 264}, {kind: 'curve', radius: 120, angle: -244.585379}, {kind: 'straight', studs: 106.433078}, {kind: 'curve', radius: 104, angle: 64.585379}, {kind: 'straight', studs: 16}]}, {name: 'Inner', x: 0, y: 24, heading: 0, segs: [{kind: 'curve', radius: 104, angle: -22.619865}, {kind: 'curve', radius: 104, angle: 22.619865}, {kind: 'straight', studs: 160}, {kind: 'curve', radius: 104, angle: -244.585379}, {kind: 'straight', studs: 10.433078}, {kind: 'curve', radius: 104, angle: 22.619865}, {kind: 'curve', radius: 104, angle: -22.619865}]}] },
+  'Double-track return loop (turning left)': { version: 1, gaugeStuds: 4, routes: [{name: 'Loop', x: 0, y: 0, heading: 0, segs: [{kind: 'straight', studs: 264}, {kind: 'curve', radius: 120, angle: 244.585379}, {kind: 'straight', studs: 106.433078}, {kind: 'curve', radius: 104, angle: -64.585379}, {kind: 'straight', studs: 16}]}, {name: 'Inner', x: 0, y: 24, heading: 0, segs: [{kind: 'curve', radius: 104, angle: 22.619865}, {kind: 'curve', radius: 104, angle: -22.619865}, {kind: 'straight', studs: 160}, {kind: 'curve', radius: 104, angle: 244.585379}, {kind: 'straight', studs: 10.433078}, {kind: 'curve', radius: 104, angle: -22.619865}, {kind: 'curve', radius: 104, angle: 22.619865}]}] },
   // ---- features ----
   'Siding ending in a buffer stop': { version: 1, gaugeStuds: 4, options: { ballast: 'ballast' }, routes: [
     { name: 'Main', x: 0, y: 0, heading: 0, segs: [{ kind: 'straight', studs: 48 }] },

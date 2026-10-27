@@ -2,7 +2,7 @@
 // another route's rail runs between a set of points' stock rails, each
 // blade's plate is cut clear of it over the blade's whole swing, and its pin
 // and the slider's post are moved so there's still 2 mm of plate round the
-// pin's hole and alongside the tongue's slot; where the rail crosses a blade,
+// pin's hole and round the post's; where the rail crosses a blade,
 // or there's no such place, it's blocked (and said). The plan only: the
 // built parts are checked in complex-layouts and the assembly suites.
 import { describe, expect, it } from 'vitest';
@@ -22,19 +22,19 @@ const B: Route = { id: 'B', start: [0, 0, 0], segments: [{ kind: 'arc', radius: 
 const plan = (foreign: Route[] = []) => switchPlan([A, B], [[0, 1, 12]], p, 1, foreign);
 
 const rot = (q: Pt, c: Pt, a: number): Pt => { const r = (a * Math.PI) / 180; return [c[0] + (q[0] - c[0]) * Math.cos(r) - (q[1] - c[1]) * Math.sin(r), c[1] + (q[0] - c[0]) * Math.sin(r) + (q[1] - c[1]) * Math.cos(r)]; };
-/** The rims as the plate swings from closed to open: the least plate left round the pin's hole and round the tongue's slot (mm). */
+/** The rims as the plate swings from closed to open: the least plate left round the pin's hole and round the post's (mm). */
 function rims(f: FdbBladeLayout, b: number, three = false) {
-  const pts = f.keep.flat(), pinR = 2 + p.pointClearance, w = 1.8 + 0.7;
+  const pts = f.keep.flat(), pinR = 2 + p.pointClearance, w = 1.1 * Math.SQRT2 + p.pointClearance;
   const pin = Math.min(...pts.map((q) => Math.hypot(q[0] - f.pivot[0], q[1] - f.pivot[1]))) - pinR - f.hw;
-  let tongue = Infinity;
+  let post = Infinity;
   for (let k = 0; k <= 8; k++) {
     const a = ((b === 0 ? 1 : -1) * (three ? 2 : 1) * f.ang * k) / 8, P = rot(f.post, f.pivot, a), d0 = [f.pivot[0] - P[0], f.pivot[1] - P[1]], n = Math.hypot(d0[0], d0[1]), u = [d0[0] / n, d0[1] / n];
     for (const q of pts) {
       const d = [q[0] - P[0], q[1] - P[1]], al = d[0] * u[0] + d[1] * u[1], ac = d[0] * u[1] - d[1] * u[0];
-      tongue = Math.min(tongue, Math.hypot(Math.max(-w - al, 0, al - 9), Math.max(-w - ac, 0, ac - w)) - f.hw);
+      post = Math.min(post, Math.hypot(Math.max(-w - al, 0, al - w), Math.max(-w - ac, 0, ac - w)) - f.hw);
     }
   }
-  return { pin, tongue };
+  return { pin, post };
 }
 
 describe("the plate-style blade plates beside other track", () => {
@@ -45,7 +45,7 @@ describe("the plate-style blade plates beside other track", () => {
     }
   });
 
-  it('a rail 13 mm in from a blade, alongside it: the plate cut clear, its tongue moved in toward its rail, the rims kept', () => {
+  it('a rail 13 mm in from a blade, alongside it: the plate cut clear, its post moved in toward its rail, the rims kept', () => {
     // (a straight track whose right rail runs 13 in from blade 0, the straight route's left rail)
     const f = plan([straight('F', [-27, -40, 0])]).sets[0].fdb!;
     expect(f[0].blocked).toBeUndefined();
@@ -54,12 +54,12 @@ describe("the plate-style blade plates beside other track", () => {
     expect(f[0].pivotIn).toBe(7);
     const r = rims(f[0], 0);
     expect(r.pin).toBeGreaterThanOrEqual(2 - 1e-6);
-    expect(r.tongue).toBeGreaterThanOrEqual(2 - 1e-6);
+    expect(r.post).toBeGreaterThanOrEqual(2 - 1e-6);
     expect(f[1].blocked).toBeUndefined();
   });
 
-  it('a rail 12 mm in: no room for both rims, blocked', () => {
-    expect(plan([straight('F', [-28, -40, 0])]).sets[0].fdb![0].blocked).toMatch(/no room/);
+  it('a rail 11 mm in: no room for both rims, blocked', () => {
+    expect(plan([straight('F', [-29, -40, 0])]).sets[0].fdb![0].blocked).toMatch(/no room/);
   });
 
   it('a rail crossing the blades between toe and heel: blocked', () => {
@@ -87,7 +87,7 @@ describe("the plate-style blade plates beside other track", () => {
     for (const [b, f] of second.entries()) {
       const r = rims(f, b);
       expect(r.pin, `blade ${b} pin`).toBeGreaterThanOrEqual(2 - 1e-6);
-      expect(r.tongue, `blade ${b} tongue`).toBeGreaterThanOrEqual(2 - 1e-6);
+      expect(r.post, `blade ${b} post`).toBeGreaterThanOrEqual(2 - 1e-6);
     }
   });
 });

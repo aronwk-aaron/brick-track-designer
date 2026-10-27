@@ -1050,11 +1050,11 @@ const OPTION_FORM: OptSection[] = [
       { v: 'lip', t: 'Snap lip on the pin', tip: 'Each blade plate snaps over a lip on its pin. Nothing extra to print.', con: 'A printed lip can wear.' },
       { v: 'bracket', t: 'Small bracket over the blade', tip: 'A small bracket pegged into the bed covers each blade plate so it can\'t lift.', con: 'Two more small parts to print.' }] },
     { key: 'bladeStyle', label: 'Blade shape', off: onlyPlates, choices: [
-      { v: 'simple', t: 'Simple', tip: 'Each blade is its rail, cut off along the rail it closes against.' },
-      { v: 'prototype', t: 'Realistic (planed, tucked under the rail)', tip: 'Blades planed to a point and tucked under the stock rail head, so flanges can\'t catch them.',
-        con: 'Fit the blades swung open, then close them. The stock rail head is thinner along the points.' },
-      { v: 'sprung', t: 'sprung', tip: 'As sprung\'s blades: a 3 mm plate with a flat top on a LEGO stud, the spring two beams in a pocket underneath, with supports built in. The slider meets them at the points.',
-        con: 'Break the supports out of the pocket after printing. Nothing holds the blades down but the stud.' }] },
+      { v: 'sprung', t: 'sprung', tip: 'As sprung\'s blades: a 3 mm plate with a flat top on a LEGO stud, two leaf springs in a pocket underneath (supports built in), so a train trailing through pushes them over and they spring back. The slider meets them at the points.',
+        con: 'Break the supports out of the pocket after printing. Nothing holds the blades down but the stud.' },
+      { v: 'simple', t: 'Rigid', tip: 'Each blade on a thin plate, the slider\'s post in a plain hole: no spring.', con: 'A train trailing through the wrong way can\'t push the blades over: set the points first.' },
+      { v: 'prototype', t: 'Rigid, realistic (planed, tucked under the rail)', tip: 'Rigid blades planed to a point and tucked under the stock rail head, so flanges can\'t catch them.',
+        con: 'No spring, as Rigid. Fit the blades swung open, then close them. The stock rail head is thinner along the points.' }] },
     { key: 'pointsModule', label: 'Points go in', off: onlyTines, choices: [
       { v: 'built-in', t: 'From below', tip: 'The pockets open through the bottom. Fit the points before putting the track on the baseplate.' },
       { v: 'layers', t: 'From above, under a lid', tip: 'A lower layer holds the moving parts; the deck with the rails clips on top with studs.',
@@ -1075,9 +1075,7 @@ const OPTION_FORM: OptSection[] = [
         no: (c) => (c.fdb ? undefined : 'only with Mechanism: Blades on top, on pins') }] },
     { key: 'throwAction', label: 'Points held by', off: onlyPlates, choices: [
       { v: 'detent', t: 'Lever click', tip: 'The lever clicks into place at each end.', con: 'A train trailing through the wrong way can push the points part way and derail.' },
-      { v: 'overcentre', t: 'Over-centre spring', tip: 'A printed spring snaps the points to whichever side they\'re pushed. Trains can trail through.', con: 'The spring is light (about 0.3 N) and depends on print accuracy. Not on three-ways or with a switch stand.' },
-      { v: 'springback', t: 'Spring-back', tip: 'The blades give way for a trailing train and spring back after it. Use with the switch stand.', con: 'Wider blade plates and a lighter hold on the closed blade.',
-        no: (c) => (c.o.bladeStyle === 'sprung' ? 'sprung blades spring back already (their beams): the lever click is used' : undefined) }] },
+      { v: 'overcentre', t: 'Over-centre spring', tip: 'A printed spring snaps the points to whichever side they\'re pushed. Trains can trail through.', con: 'The spring is light (about 0.3 N) and depends on print accuracy. Not on three-ways or with a switch stand.' }] },
     { key: 'throwSide', label: 'Lever side', help: 'For every switch, unless set on the branch route\'s card or dragged on the plan.', choices: [
       { v: 'auto', t: 'Auto', tip: 'On the side the branch leaves (a three-way: right).' },
       { v: 'left', t: 'Left', tip: 'Left, facing along the points from the toe.' },

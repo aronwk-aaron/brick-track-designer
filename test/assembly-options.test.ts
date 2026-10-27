@@ -7,13 +7,13 @@ import { assemblySuite, crossover } from './assembly.shared';
 const cases: [string, Design][] = [
   ['left switch, switch stand', { ...TEMPLATES['Left switch (LEGO)'], options: { throwStyle: 'stand' } }],
   ['left switch, over-centre spring', { ...TEMPLATES['Left switch (LEGO)'], options: { throwAction: 'overcentre' } }],
-  ['left switch, spring-back points on a stand', { ...TEMPLATES['Left switch (LEGO)'], options: { throwAction: 'springback', throwStyle: 'stand' } }],
+  ['left switch, sprung blades (spring back on their own) on a stand', { ...TEMPLATES['Left switch (LEGO)'], options: { bladeStyle: 'sprung', throwStyle: 'stand' } }],
   ['left switch, prototype blades', { ...TEMPLATES['Left switch (LEGO)'], options: { bladeStyle: 'prototype' } }],
   ['left switch, prototype blades and over-centre spring', { ...TEMPLATES['Left switch (LEGO)'], options: { bladeStyle: 'prototype', throwAction: 'overcentre' } }],
   ['wye on ballast, stand and prototype blades', { ...TEMPLATES['Wye switch'], options: { ballast: 'buddy', throwStyle: 'stand', bladeStyle: 'prototype' } }],
   ['crossover, over-centre spring and prototype blades', { ...crossover, options: { throwAction: 'overcentre', bladeStyle: 'prototype' } }],
-  ['crossover, spring-back points on stands', { ...crossover, options: { throwAction: 'springback', throwStyle: 'stand' } }],
-  ['left switch with everything, cut to a 128 bed', { ...TEMPLATES['Left switch (LEGO)'], options: { printBedX: 128, printBedY: 128, throwAction: 'springback', throwStyle: 'stand', bladeStyle: 'prototype' } }],
+  ['crossover, sprung blades on stands', { ...crossover, options: { bladeStyle: 'sprung', throwStyle: 'stand' } }],
+  ['left switch with everything, cut to a 128 bed', { ...TEMPLATES['Left switch (LEGO)'], options: { printBedX: 128, printBedY: 128, throwAction: 'overcentre', bladeStyle: 'prototype' } }],
   // (the blades held down by little brackets over their plates, pegged into the bed)
   ['left switch, blades held by brackets', { ...TEMPLATES['Left switch (LEGO)'], options: { bladeHold: 'bracket' } }],
   ['crossover on ballast, blades held by brackets', { ...crossover, options: { ballast: 'buddy', bladeHold: 'bracket' } }],

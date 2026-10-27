@@ -39,11 +39,9 @@ export interface SwitchParams {
    * through them the wrong way does: 'detent' (the lever's click, as before);
    * 'overcentre' (Peco's V spring between the bed and the slider: the points
    * snap to either side, a train trailing through pushes them over and they
-   * stay); 'springback' (a spring switch: each blade's tongue a long spring,
-   * the throw locked, so the blades give way to a trailing train and spring
-   * back after it).
+   * stay). (the sprung blades spring back on their own, their springs in them.)
    */
-  throwAction?: 'detent' | 'overcentre' | 'springback';
+  throwAction?: 'detent' | 'overcentre';
   /** (the plate-style points) The throw as a switch stand (a ground throw, Caboose Industries' way): a handle swung over on an eccentric in the slider's yoke, locked past dead centre at each end. */
   throwStand?: boolean;
   /** (the plate-style points) The blades: 'simple' (as before), 'prototype' (planed to a point and laid tight under the stock rail's undercut head, the tie bar at the points) or 'sprung' (as the sprung blades' 2-05-025: a 3 mm plate with a flat top, on a LEGO stud, the spring two beams in a pocket underneath with built-in supports; the slider at the points). */
@@ -203,7 +201,7 @@ export function pointsSet(routes: Route[], ps: PointsSet, p: SwitchParams, defau
   const throwTravel = (tineLen - g.postL / 2) * rad(throwAng);
   // (the plate-style: the slider's post meets each blade 0.6 of the way from its
   // pin to its toe, on a stud of the frame's grid; its travel opens the
-  // blade by the throw there, plus the preload its tongue takes)
+  // blade by the throw there, plus the preload (the sprung blades' springs take it))
   const fdbPivotY = railPoint(ra, sHeel - 4, -G)[1];
   // (prototype blades: the tie bar at the points, as a switch's head rod is: on the first stud line where the
   // throw arm clears the end connector (half its width past it) and its post has plate round it)
