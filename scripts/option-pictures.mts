@@ -9,7 +9,7 @@ const { kernel } = await import(`${root}src/geom/kernel.ts`);
 const { buildDesign } = await import(`${root}src/app/build.ts`);
 const { TEMPLATES } = await import(`${root}src/app/design.ts`);
 const PORT = process.env.PORT ?? '5204', only = process.argv[2];
-type P = { name: string; positions: Float32Array };
+type P = { name: string; positions: Float32Array; lego?: { shop?: string }[] };
 /** r: the camera's distance (mm, for close-ups); else dist: times the model's size (the whole model in view) */
 type Cam = { dir: string; r?: number; dist?: number; at?: (ps: P[]) => [number, number, number] };
 // (a joint example needs two tracks: one long track alone is built as separate lengths, each with its own track ends, never cut)
@@ -28,7 +28,7 @@ const under: Cam = { dir: '0.6,-0.7,-1', dist: 2.0 };
 // between straights for where long track is cut and for anything that follows the track)
 const cross = TEMPLATES['90° crossing'].routes, bend = [{ name: 'A', x: 0, y: 0, heading: 0, segs: [{ kind: 'straight', studs: 24 }, { kind: 'curve', radius: 40, angle: 90 }, { kind: 'straight', studs: 24 }] }];
 /** explode: each part after the first moved this far along y (mm; less than 0: back), so the joints between them show */
-const specs: { key: string; values: string[]; design: (v: string) => unknown; pick?: RegExp; cam: Cam; explode?: number }[] = [
+const specs: { key: string; values: string[]; design: (v: string) => unknown; pick?: RegExp; cam: Cam; explode?: number; tint?: (p: P) => string }[] = [
   { key: 'joint', values: ['lego', 'dovetail', 'butt', 'flataxle', 'axle'], design: (v) => D([st(32), st(32, { name: 'B', x: 16 })], { ballast: 'buddy', printBedX: 160, printBedY: 160, splitTrack: 'bed', legoTrack: 'print', joint: v }), pick: /^track[12]$/, explode: -24, cam: { dir: '0.8,-0.6,1', r: 170, at: cutGap } },
   { key: 'tongueRails', values: ['all', 'square'], design: (v) => D(TEMPLATES['22.5° crossing'].routes, { printBedX: 150, printBedY: 150, tongueRails: v }), pick: /^track2$/, cam: { dir: '0.5,-1,0.8', r: 170, at: faceOf } },
   { key: 'sleepers', values: ['bed', 'sleepers'], design: (v) => D(cross, { sleepers: v }), cam: { dir: '1,-0.8,1', dist: 2.0 } },
@@ -44,6 +44,9 @@ const specs: { key: string; values: string[]; design: (v: string) => unknown; pi
   { key: 'bladeHold', values: ['lip', 'bracket'], design: (v) => D(sw, { bladeHold: v, bladeStyle: 'simple' }), cam: toe },
   { key: 'bladeStyle', values: ['simple', 'prototype', 'sprung'], design: (v) => D(sw, { bladeStyle: v, ballast: 'ballast' }), cam: toe },
   { key: 'throwStyle', values: ['built-in', 'bracket', 'stand'], design: (v) => D(sw, { throwStyle: v }), cam: throwCam },
+  // (bought or printed: a straight, LEGO's R40 curve and a BrickTracks R104 one; printed blue, LEGO's light grey, BrickTracks' dark grey)
+  { key: 'legoTrack', values: ['lego', 'lego-only', 'print'], design: (v) => D([{ name: 'A', x: 0, y: 0, heading: 0, segs: [{ kind: 'straight', studs: 16 }, { kind: 'curve', radius: 40, angle: 22.5 }, { kind: 'curve', radius: 104, angle: 11.25 }] }], { legoTrack: v }),
+    tint: (p) => (!p.lego ? '4f78a8' : p.lego.some((l) => l.shop) ? '55595e' : 'b4b8bc'), cam: { dir: '0.15,-0.35,1', dist: 2.2 } },
   { key: 'bufferStyle', values: ['frame', 'blocks'], design: (v) => D([st(16, { endEnd: 'buffer' })], { ballast: 'ballast', bufferStyle: v }), cam: { dir: '0.9,-1,0.7', r: 150, at: () => [0, 116, 12] } },
   { key: 'monoEndStuds', values: ['side', 'top', 'none'], design: (v) => D([st(8, { system: 'monorail' })], { monoEndStuds: v }), cam: { dir: '1,-1,0.8', r: 100, at: () => [0, 4, 7] } },
 ];
@@ -76,7 +79,7 @@ for (const sp of specs) {
       writeFileSync(`${root}public/_opt/${k}.stl`, buf); return `/_opt/${k}.stl`;
     });
     const at = sp.cam.at?.(ps);
-    await page.goto(`http://localhost:${PORT}/scripts/option-shot.html?w=1280&h=840&stl=${urls.join(',')}&dir=${sp.cam.dir}${sp.cam.r ? `&r=${sp.cam.r}` : `&dist=${sp.cam.dist ?? 1}`}${at ? `&at=${at.join(',')}` : ''}&n=${Date.now()}`);
+    await page.goto(`http://localhost:${PORT}/scripts/option-shot.html?w=1280&h=840&stl=${urls.join(',')}${sp.tint ? `&col=${ps.map(sp.tint).join(',')}` : ''}&dir=${sp.cam.dir}${sp.cam.r ? `&r=${sp.cam.r}` : `&dist=${sp.cam.dist ?? 1}`}${at ? `&at=${at.join(',')}` : ''}&n=${Date.now()}`);
     await page.waitForFunction(() => document.title === 'done', null, { timeout: 60000 });
     // (a PNG with a clear background, then a small WebP with its transparency: the picture on the page's own background)
     const png = `${root}public/_opt/shot.png`;
