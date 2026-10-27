@@ -13,7 +13,7 @@ build says so).
 | `bladeStyle` (Points: *Blades*) | **`sprung`**, `simple` (rigid), `prototype` (rigid) | `sprung` |
 
 The defaults build what was built before, apart from two fixes to faults the
-new checks found (see the end), and the blades: the sprung blades' are the default now
+new checks found (see the end), and the blades: sprung ones are the default now
 (2026-10-27), and the spring-back points are gone (section 2).
 
 Colours: grey track, blue blades, orange slider (the tie bar / throw rod),
@@ -72,15 +72,15 @@ pocket), `left-2-overcentre-print.png` (the spring as printed, free and
 straight), `left-2-overcentre-section-throw.png` (cross-section along the
 slider).
 
-## 2. Blades: the sprung blades' (default) or rigid
+## 2. Blades: sprung (default) or rigid
 
 The spring-back points (`throwAction: 'springback'`) are gone (2026-10-27):
 each blade's long, slim tongue was the spring, and its walls were too thin
 to print; they snapped off. The ordinary tongue round the post is gone too,
 for the same reason. Old
-designs with spring-back points open with the sprung blades.
+designs with spring-back points open with sprung blades.
 
-**the sprung blades' (`bladeStyle: 'sprung'`, the default).** Each blade is a 3 mm plate
+**Sprung (`bladeStyle: 'sprung'`, the default).** Each blade is a 3 mm plate
 on a LEGO stud at its heel, with its rail on top. Underneath, a pocket holds
 two leaf-spring beams, rooted in the plate, with the slider's post between
 them. The beams take the preload and give way to a trailing train's wheels.
@@ -90,7 +90,7 @@ degrees clear of the rail's foot, so nothing overhangs as printed.
 
 **Rigid (`bladeStyle: 'simple'`, and `'prototype'`).** The slider's post sits
 in a plain hole in the plate: no spring, no preload. The plate is narrower, so
-rigid blades fit where the sprung blades' don't. A double slip's or a tandem's points
+rigid blades fit where sprung ones don't. A double slip's or a tandem's points
 fall back to them, with a warning, and the tandem three-way template uses them.
 
 **Pros (sprung):** a trailing train pushes the blades over without damage;
@@ -98,7 +98,7 @@ they hold against the stock rail. **Cons:** a wider plate; the supports to
 break out. **Pros (rigid):** simplest; fits tight places. **Cons:** no give: a
 train trailing through the wrong way is stopped.
 
-Images: `left-1-current-*` (the sprung blades', the default; `-blades.png` is a plan
+Images: `left-1-current-*` (sprung, the default; `-blades.png` is a plan
 close-up), `left-3-rigid-stand-close.png`, `-exploded.png`, `-plan.png`,
 `-stand.png`, `left-3-rigid-blades.png` (plan close-up), and
 `crossover-3-rigid-stand-*`.

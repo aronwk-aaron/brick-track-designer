@@ -486,7 +486,7 @@ scene.add(group);
 // What the 3D view shows (Track, Points, Throws, Levers buttons), remembered.
 const shown = new Set(['track', 'points', 'throw', 'lever', 'supports']);
 try { const v = localStorage.getItem('btd-shown'); if (v) { shown.clear(); for (const k of JSON.parse(v) as string[]) shown.add(k); } } catch { /* fine */ }
-const kindOf = (name: string) => (/lid/.test(name) ? 'cassette' : /holddown/.test(name) ? 'hold' : /bracket/.test(name) ? 'bracket' : /lever/.test(name) ? 'lever' : /throw/.test(name) ? 'throw' : /points/.test(name) ? 'points' : 'track');
+const kindOf = (name: string) => (/lid/.test(name) ? 'cassette' : /bracket/.test(name) ? 'bracket' : /lever/.test(name) ? 'lever' : /throw/.test(name) ? 'throw' : /points/.test(name) ? 'points' : 'track');
 let meshKinds: string[] = [];
 // Exploded view: each part pulled out from the middle (the moving parts lifted too), to see where they separate.
 let meshCentres: THREE.Vector3[] = [];
@@ -516,7 +516,7 @@ function applyExplode() {
   });
 }
 explodeEl.addEventListener('input', applyExplode);
-const showKind = (k: string) => (k === 'cassette' ? 'track' : k === 'bracket' ? 'lever' : k === 'hold' ? 'points' : k);
+const showKind = (k: string) => (k === 'cassette' ? 'track' : k === 'bracket' ? 'lever' : k);
 function applyShown() {
   redraw3d();
   meshes.forEach((m, k) => { m.visible = shown.has(showKind(meshKinds[k])); const sp = m.getObjectByName('supports'); if (sp) sp.visible = shown.has('supports'); });
@@ -1078,11 +1078,8 @@ const OPTION_FORM: OptSection[] = [
       { v: '2', t: 'Two', tip: 'Both blades move, as LEGO and most model switches.' },
       { v: '1', t: 'One (single point)', tip: 'Only the blade on the curved side moves; the other rail is fixed, with a flangeway beside its stock rail, as a tram\'s single-point switch.',
         con: 'The one blade steers both ways: a wheel can pick the wrong way if the wheels are loose. Three-ways keep both blades.' }] },
-    { key: 'bladeHold', label: 'Blades held down by', off: (c) => onlyPlates(c) ?? (c.o.bladeStyle === 'sprung' ? 'Blade shape is sprung: they sit on studs' : undefined), choices: [
-      { v: 'lip', t: 'Snap lip on the pin', tip: 'Each blade plate snaps over a lip on its pin. Nothing extra to print.', con: 'A printed lip can wear.' },
-      { v: 'bracket', t: 'Small bracket over the blade', tip: 'A small bracket pegged into the bed covers each blade plate so it can\'t lift.', con: 'Two more small parts to print.' }] },
     { key: 'bladeStyle', label: 'Blade shape', off: onlyPlates, choices: [
-      { v: 'sprung', t: 'sprung', tip: 'As sprung\'s blades: a 3 mm plate with a flat top on a LEGO stud, two leaf springs in a pocket underneath (supports built in), so a train trailing through pushes them over and they spring back. The slider meets them at the points.',
+      { v: 'sprung', t: 'Sprung', tip: 'A 3 mm plate with a flat top on a LEGO stud, two leaf springs in a pocket underneath (supports built in), so a train trailing through pushes them over and they spring back. The slider meets them at the points.',
         con: 'Break the supports out of the pocket after printing. Nothing holds the blades down but the stud.' },
       { v: 'simple', t: 'Rigid', tip: 'Each blade on a thin plate, the slider\'s post in a plain hole: no spring.', con: 'A train trailing through the wrong way can\'t push the blades over: set the points first.' },
       { v: 'prototype', t: 'Rigid, realistic (planed, tucked under the rail)', tip: 'Rigid blades planed to a point and tucked under the stock rail head, so flanges can\'t catch them.',
@@ -1233,7 +1230,7 @@ const openSecs: Set<string> = (() => { try { const v = JSON.parse(localStorage.g
 const keepSecs = () => { try { localStorage.setItem('btd-settings-open', JSON.stringify([...openSecs])); } catch { /* (not kept) */ } };
 let optQuery = '';
 /** The settings whose choices have example pictures (public/options/<key>-<value>.webp, made by scripts/option-pictures.mts). */
-const PICTURED = new Set(['joint', 'pointBlades', 'tongueRails', 'sleepers', 'curveStuds', 'ballast', 'bottomStyle', 'grip', 'undersideGrid', 'splitTrack', 'mechStyle', 'bladeHold', 'bladeStyle', 'throwStyle', 'bufferStyle', 'monoEndStuds', 'legoTrack']);
+const PICTURED = new Set(['joint', 'pointBlades', 'tongueRails', 'sleepers', 'curveStuds', 'ballast', 'bottomStyle', 'grip', 'undersideGrid', 'splitTrack', 'mechStyle', 'bladeStyle', 'throwStyle', 'bufferStyle', 'monoEndStuds', 'legoTrack']);
 /** A setting's choices side by side in a modal: each one's picture, what it does, its drawback, and a button to use it. */
 function showChoices(f: OptField, cur: string, def: string, c: OptCtx, off: string | undefined, use: (v: string) => void) {
   const modal = $('choices'), body = $('choices-body');

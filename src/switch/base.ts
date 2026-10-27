@@ -14,7 +14,7 @@ import { sweepRoute } from '../geom/sweep';
 import { ANTISTUD_FIT, hollowGrid, type Spot, studSpots, TUBE_OD } from '../geom/underside';
 import { DEFAULTS as TRACK_DEFAULTS, getSocketShape, scadParity, PLATE_H, RAIL_PROFILE, STUD, Track } from '../geom/track';
 import { couplerSupports, trackSeat } from '../geom/extras';
-import { D4_SLIDER, type FdbBladeLayout, fourDLow, HEAD_HW, type Notch, pointsSet, type PointsSetValues, STAND, SWITCH_DEFAULTS, type SwitchParams, switchGlobals } from './context';
+import { SPRUNG_SLIDER, type FdbBladeLayout, sprungLow, HEAD_HW, type Notch, pointsSet, type PointsSetValues, STAND, SWITCH_DEFAULTS, type SwitchParams, switchGlobals } from './context';
 
 export interface BaseParams extends SwitchParams {
   flangeway: number;        // 3
@@ -92,7 +92,7 @@ const frags = (r: number) => Math.ceil(Math.max(Math.min(360 / 12, (r * 2 * Math
 // (the plate's sizes; see switchGeometry's plate-style section)
 const FDB = { plateT: 1.6, plateW: 10, pivotIn: 7, pinD: 4, discR: 5, postD: 2.2, rodW: 4 };
 /**
- * the sprung blades (bladeStyle 'sprung', as their 2-05-025): the plate 3 mm
+ * the sprung blades (bladeStyle 'sprung'): the plate 3 mm
  * thick with a flat, closed top, turning on a LEGO stud (a blind hole
  * underneath); the spring two beams in a pocket underneath, rooted at its heel
  * end, the slider's post between their free ends; either side of them solid
@@ -100,23 +100,23 @@ const FDB = { plateT: 1.6, plateW: 10, pivotIn: 7, pinD: 4, discR: 5, postD: 2.2
  * the beams, broken out after. (The plate's width counts from the blade's
  * inner face: 15.9 in all, as theirs.) The bed is at the sleepers' top: on
  * ballast as always, on track alone lowered to it, the slider then in a
- * groove through the bed between the underside's stud rows (D4_SLIDER).
+ * groove through the bed between the underside's stud rows (SPRUNG_SLIDER).
  */
-const D4 = { plateT: 3.0, plateW: 13.4, holeD: 4.85, holeDepth: 2.2, pocketH: 1.8, beamW: 1.2, beamH: 1.4, supportGap: 0.2, slit: 0.3, root: 34.5, past: 4 };
+const SPRUNG = { plateT: 3.0, plateW: 13.4, holeD: 4.85, holeDepth: 2.2, pocketH: 1.8, beamW: 1.2, beamH: 1.4, supportGap: 0.2, slit: 0.3, root: 34.5, past: 4 };
 /** sprung blades. */
-const fdbFourD = (p: { bladeStyle?: string; generateBallast?: boolean; mechStyle?: string }) => p.bladeStyle === 'sprung' && p.mechStyle === 'plates';
+const fdbSprung = (p: { bladeStyle?: string; generateBallast?: boolean; mechStyle?: string }) => p.bladeStyle === 'sprung' && p.mechStyle === 'plates';
 /** The plate's thickness. */
-const fdbPlateT = (p: { bladeStyle?: string; generateBallast?: boolean; mechStyle?: string }) => (fdbFourD(p) ? D4.plateT : FDB.plateT);
+const fdbPlateT = (p: { bladeStyle?: string; generateBallast?: boolean; mechStyle?: string }) => (fdbSprung(p) ? SPRUNG.plateT : FDB.plateT);
 /** (sprung blades) The beams' gap (the post between them) and how far each side the pocket reaches from the post. */
-const d4Gap = () => FDB.postD + 0.1;
-const d4Half = (give: number) => d4Gap() / 2 + D4.beamW + give + 0.6;
-/** (sprung blades) The spring's length, kept short of the stud's hole with 3 mm of plate between (a short blade's: theirs is long enough not to come near it). */
-const d4Root = (root: number, f: { pivot: Pt; post: Pt }) => Math.min(root, Math.hypot(f.pivot[0] - f.post[0], f.pivot[1] - f.post[1]) - D4.holeD / 2 - 3);
+const sprungGap = () => FDB.postD + 0.1;
+const sprungHalf = (give: number) => sprungGap() / 2 + SPRUNG.beamW + give + 0.6;
+/** (sprung blades) The spring's length, kept short of the stud's hole with 3 mm of plate between (a short blade's: a long one's doesn't come near it). */
+const sprungRoot = (root: number, f: { pivot: Pt; post: Pt }) => Math.min(root, Math.hypot(f.pivot[0] - f.post[0], f.pivot[1] - f.post[1]) - SPRUNG.holeD / 2 - 3);
 /** How much plate there must be round the pin's hole and round the post's (or the sprung blades' spring pocket) (mm). */
 const FDB_RIM = 2;
 type SetLike = PointsSetValues & { three?: { S: Route; L: Route; R: Route; half: number } };
 /** A blade plate's width. */
-const fdbPlateW = (p: BaseParams) => (fdbFourD(p) ? D4.plateW : FDB.plateW);
+const fdbPlateW = (p: BaseParams) => (fdbSprung(p) ? SPRUNG.plateW : FDB.plateW);
 /** (rigid blades) The post's hole: how far the plate reaches round it, past the post's teardrop (1.2 of wall: three lines of a 0.4 nozzle). */
 const rigidHole = (c: number) => (FDB.postD / 2) * Math.SQRT2 + c;
 /** The rail's half-width (its section's widest) between heights z0 and z1. */
@@ -140,7 +140,7 @@ const unit = (v: Pt): Pt => mul(v, 1 / norm(v));
  * clear of that rail (its width at the plate, the clearance and the blade's
  * whole swing; switchGeometry does the cut), and the pin and the post moved
  * so there's still FDB_RIM of plate round the pin's hole and round the
- * post's hole (or the sprung blades' pocket): the post first toward the blade's rail
+ * post's hole (or the spring's pocket): the post first toward the blade's rail
  * (the hole stays clear of the rail on the plate), then the
  * pin toward the rail (as near as its snap lip clears the rail on the
  * plate), then along toward the toe (a shorter plate: the blade's heel end
@@ -151,7 +151,7 @@ const unit = (v: Pt): Pt => mul(v, 1 / norm(v));
  */
 function fdbLayout(v: SetLike, p: BaseParams, rails: [Route, number, number][]): FdbBladeLayout[] {
   const g = switchGlobals(p), G = g.G, c = p.pointClearance, pre = p.springPreload;
-  const z0 = g.bedTop + c, z1 = z0 + fdbPlateT(p), railTop = PLATE_H + 6.4, fourD = fdbFourD(p);
+  const z0 = g.bedTop + c, z1 = z0 + fdbPlateT(p), railTop = PLATE_H + 6.4, sprung = fdbSprung(p);
   const hw = railHalfW(z0, z1) + c, hwBar = railHalfW(z1, railTop) + c;
   const own = v.three ? [v.three.S, v.three.L, v.three.R] : [v.ra, v.rb];
   // (the other rails near the points, as runs of points 0.5 apart; not where one runs along one of the set's own rails)
@@ -183,7 +183,7 @@ function fdbLayout(v: SetLike, p: BaseParams, rails: [Route, number, number][]):
       return { pivot, tip, ang, post, open: b === 0 ? 0 : -n3 * ang, pivotIn: pin, postIn, shift, keep, hw, ...(notches.length && { notches }) };
     };
     const notches = v.notches?.[b] ?? [];
-    let rootNow = D4.root;
+    let rootNow = SPRUNG.root;
     const f0 = make(0, FDB.pivotIn, postIn0);
     if (!pts.length) return f0;
     const angles = (f: { ang: number }) => Array.from({ length: 9 }, (_, k) => (dir * n3 * f.ang * k) / 8);
@@ -201,10 +201,10 @@ function fdbLayout(v: SetLike, p: BaseParams, rails: [Route, number, number][]):
       }));
     };
     if (!barOk(f0)) return { ...f0, blocked: 'it crosses the blade' };
-    // the post's hole (or the sprung blades' pocket), along u from the post toward the pin and across it: [a0, a1, c0, c1]
+    // the post's hole (or the spring's pocket), along u from the post toward the pin and across it: [a0, a1, c0, c1]
     const slotBox = (f: ReturnType<typeof make>): [number, number, number, number] => {
-      // (sprung: the spring's pocket, from just past the post toward the toe back to the beams' roots)
-      if (fourD) { const h = d4Half((f.ang * n3 * Math.PI / 180) * norm(sub(f.post, f.pivot)) + pre); return [-D4.past, d4Root(rootNow, f), -h, h]; }
+      // (sprung blades: the spring's pocket, from just past the post toward the toe back to the beams' roots)
+      if (sprung) { const h = sprungHalf((f.ang * n3 * Math.PI / 180) * norm(sub(f.post, f.pivot)) + pre); return [-SPRUNG.past, sprungRoot(rootNow, f), -h, h]; }
       // (rigid: only the post's hole, with its rim)
       const w = rigidHole(c);
       return [-w, w, -w, w];
@@ -213,7 +213,7 @@ function fdbLayout(v: SetLike, p: BaseParams, rails: [Route, number, number][]):
       const d = sub(q, at), a = d[0] * u[0] + d[1] * u[1], cc = d[0] * u[1] - d[1] * u[0];
       return Math.hypot(Math.max(bx[0] - a, 0, a - bx[1]), Math.max(bx[2] - cc, 0, cc - bx[3]));
     };
-    const pinR = (fourD ? D4.holeD : FDB.pinD) / 2 + c;
+    const pinR = (sprung ? SPRUNG.holeD : FDB.pinD) / 2 + c;
     const pinOk = (f: ReturnType<typeof make>) => near(f.pivot, 30).every((q) => norm(sub(q, f.pivot)) >= pinR + FDB_RIM + hw);
     const postOk = (f: ReturnType<typeof make>) => {
       const bx = slotBox(f);
@@ -223,20 +223,20 @@ function fdbLayout(v: SetLike, p: BaseParams, rails: [Route, number, number][]):
       return angles(f).every((a) => { const P = rotAbout(f.post, f.pivot, a), U = unit(sub(f.pivot, P)); return qs.every((q) => boxDist(q, P, U, bx) >= FDB_RIM + hw); });
     };
     // (the pin's snap lip clear of the blade's rail on the plate)
-    const minPin = HEAD_HW + (fourD ? D4.holeD : FDB.pinD) / 2 + 2 * c + 0.15 + 0.2;
-    // (the sprung blades' spring as theirs, 34.5 long; where other track running past leaves no room for it, shorter (stiffer))
-    for (const root of fourD ? [D4.root, 28, 22] : [0]) {
+    const minPin = HEAD_HW + (sprung ? SPRUNG.holeD : FDB.pinD) / 2 + 2 * c + 0.15 + 0.2;
+    // (the spring 34.5 long, as the reference's; where other track running past leaves no room for it, shorter (stiffer))
+    for (const root of sprung ? [SPRUNG.root, 28, 22] : [0]) {
       rootNow = root;
       for (let shift = 0; shift <= 40; shift += 1) {
         for (let pin = FDB.pivotIn; pin >= minPin - 1e-9; pin -= 0.25) {
           if (!pinOk(make(shift, pin, postIn0))) continue;
           for (let pi = postIn0; pi >= HEAD_HW + 0.5 - 1e-9; pi -= 0.25) {
-            const f = { ...make(shift, pin, pi), ...(fourD && root !== D4.root && { root }) };
+            const f = { ...make(shift, pin, pi), ...(sprung && root !== SPRUNG.root && { root }) };
             if (!postOk(f) || ((shift || pin !== FDB.pivotIn || pi !== postIn0) && !barOk(f))) continue;
             return shift ? { ...f, stockKeep: stockBehind(f), stockHw: hw } : f;
           }
         }
-        if (sOf(rt, railPoint(rt, v.sHeel - 4 - shift, o)) - sPost < (fourD ? root : rigidHole(c)) + pinR + FDB_RIM) break;
+        if (sOf(rt, railPoint(rt, v.sHeel - 4 - shift, o)) - sPost < (sprung ? root : rigidHole(c)) + pinR + FDB_RIM) break;
       }
     }
     return { ...f0, blocked: "there's no room for plate round its pin and its post" };
@@ -323,8 +323,8 @@ function bladeCrossings(rt: Route, o: number, sToe: number, sHeel: number, rails
 /** Everything switch.scad works out before building: routes, sets, frogs, check rails, ties, cuts. */
 /** foreign: other track running past, in this frame (a network's routes that aren't the switch's): the plate-style blade plates keep clear of its rails. */
 export function switchPlan(routes: Route[], specs: SetSpec[], p: BaseParams = BASE_DEFAULTS, defaultThrowDir = 1, foreign: Route[] = []) {
-  // (rigid blades (the plate-style's, not the sprung blades'): no spring, so nothing to preload: the post sits in its hole)
-  if (p.mechStyle === 'plates' && !fdbFourD(p)) p = { ...p, springPreload: 0 };
+  // (rigid blades (not the sprung ones): no spring, so nothing to preload: the post sits in its hole)
+  if (p.mechStyle === 'plates' && !fdbSprung(p)) p = { ...p, springPreload: 0 };
   // (a three-way's slider goes twice as far: a longer lever driver keeps its
   // swing small enough, under 17 degrees, for the fork to hold the tip)
   for (const ps of specs)
@@ -647,13 +647,12 @@ export function switchGeometry(s: Scad, plan: SwitchPlan, extraCuts: Man[] = [])
   const fdb = p.mechStyle === 'plates';
   /** The blades that move (a single-point switch's one; else both). */
   const blades = (v: SetV) => [0, 1].filter((b) => b !== v.fixed);
-  /** the sprung blades (D4): no bracket to hold them down; they sit on studs. */
-  const fourD = fdbFourD(p);
-  /** The slider bar's width: with sprung blades on track alone narrower, to pass between the underside's stud rows (D4_SLIDER). */
-  const rodW = fourDLow(p) ? D4_SLIDER.rodW : FDB.rodW;
-  const holdOn = fdb && p.bladeHold === 'bracket' && !fourD;
+  /** the sprung blades (SPRUNG): no bracket to hold them down; they sit on studs. */
+  const sprung = fdbSprung(p);
+  /** The slider bar's width: with sprung blades on track alone narrower, to pass between the underside's stud rows (SPRUNG_SLIDER). */
+  const rodW = sprungLow(p) ? SPRUNG_SLIDER.rodW : FDB.rodW;
   /** The blade plates' thickness; where the slider's posts reach up to (into the post's hole, or the sprung blades' spring pocket). */
-  const plateT = fdbPlateT(p), postTop = bedTop + c + (fourD ? D4.pocketH - 0.3 : FDB.plateT - 0.2);
+  const plateT = fdbPlateT(p), postTop = bedTop + c + (sprung ? SPRUNG.pocketH - 0.3 : FDB.plateT - 0.2);
   const stockFootCut = (v: SetV) => fdb ? s.union([]) : s.union([0, 1].map((b) => {
     const side = bSide(b), face = bO(b) + side * HEAD_HW;
     return sweep(sq([10, bedTop + 3 - floorZ], [side > 0 ? face : face - 10, floorZ]), bOther(v, b), v.sToe - 2, v.sHeel + g.discR);
@@ -1035,7 +1034,7 @@ export function switchGeometry(s: Scad, plan: SwitchPlan, extraCuts: Man[] = [])
   // ---------- the plate-style points (mechStyle 'plates') ----------
   // Each blade on its own plate lying on top of the bed, turning on a pin
   // at its heel; the slider's post, a bar in a slot through the bed under
-  // the plates that the lever drives, goes up into each plate: the sprung blades'
+  // the plates that the lever drives, goes up into each plate: sprung blades have
   // leaf springs under it (they take the preload), or a plain hole (rigid).
   // Everything goes in from above.
   // Fitted to the routes as drawn: each blade is its route's rail.
@@ -1081,9 +1080,9 @@ export function switchGeometry(s: Scad, plan: SwitchPlan, extraCuts: Man[] = [])
     const outer = edge(protoOn ? -HEAD_HW - PROTO.cut - 0.5 : -HEAD_HW), inner = innerEdge.map((q, k) => { const t = Math.min(1, k / kFull); const e = outer[k]; return [e[0] + (q[0] - e[0]) * (0.35 + 0.65 * t), e[1] + (q[1] - e[1]) * (0.35 + 0.65 * t)] as Vec2; });
     let plate = W.CrossSection.union([s.polygon([...outer, ...inner.reverse()]), circle(FDB.discR, 40, fb.pivot)]);
     // (rigid: the post in a plain hole, no spring: its teardrop wherever it is to the plate as the blade swings, the
-    // plate's full width round it (FDB_RIM's wall); the sprung blades': the top flat and closed, the spring and the stud's hole
+    // plate's full width round it (FDB_RIM's wall); sprung blades: the top flat and closed, the spring and the stud's hole
     // underneath: fdbBladePart)
-    if (!fourD) {
+    if (!sprung) {
       const sw = (v.three ? 2 : 1) * fb.ang * (b === 0 ? 1 : -1), hole = W.CrossSection.union(Array.from({ length: 5 }, (_, k) => fdbPost2d([0, 0], c + 0.1).rotate(-fb.open - (sw * k) / 4).translate(fb.post as Vec2)));
       plate = plate.subtract(hole).subtract(circle((FDB.pinD + 2 * c) / 2, 24, fb.pivot));
     }
@@ -1105,9 +1104,9 @@ export function switchGeometry(s: Scad, plan: SwitchPlan, extraCuts: Man[] = [])
     // (with ballast the stock rail's foot flares out above the bed, and the plate is kept off it: there the
     // rail's lower outer corner is bevelled at 45 degrees, from the plate's edge up, so it prints)
     // (how far the stock rail reaches out over the plate's height, past its head)
-    // (the sprung blades': the rail all on its plate, and the plate cut round the stock rail's foot as it is (a little bridge over
+    // (sprung blades: the rail all on its plate, and the plate cut round the stock rail's foot as it is (a little bridge over
     // it), not bevelled off it: their 3 mm plate is up the foot's height, and the bevel left the rail over nothing)
-    const flareW = !fourD && z0 < PLATE_H + 2.0 ? rail2d(0).intersect(sq([20, z1 - z0], [-10, z0])).bounds().max[0] - HEAD_HW : 0;
+    const flareW = !sprung && z0 < PLATE_H + 2.0 ? rail2d(0).intersect(sq([20, z1 - z0], [-10, z0])).bounds().max[0] - HEAD_HW : 0;
     const bevel = (q: Vec2[]) => s.polygon(sideS > 0 ? q : q.map(([x, y]) => [2 * face - x, y] as Vec2).reverse());
     const offStock = keep ?? sweep(flareW ? bevel([[face + flareW, z0 - 1], [face + flareW, z1], [face, z1 + flareW], [face, z1 + 40], [face + 30, z1 + 40], [face + 30, z0 - 1]])
       : sq([30, 40], [sideS > 0 ? face : face - 30, z0 - 1]), bOther(v, b), 0, v.sHeel + 5);
@@ -1124,13 +1123,13 @@ export function switchGeometry(s: Scad, plan: SwitchPlan, extraCuts: Man[] = [])
     const offEdge = (s0: number) => sweep(sq([30, 40], [sideS > 0 ? face + flareW : face - 30 - flareW, z0 - 1]), bOther(v, b), s0, v.sHeel + 5);
     // (the keep less the stock rail's side of that edge, past the undercut's end: one cut, no seam where the two meet)
     const plateOff = protoOn ? (flareW ? s.difference(keep!, [sweep(sq([30, 40], [sideS > 0 ? face + flareW - 30 : face - flareW, z0 - 1]), bOther(v, b), protoPlaneEnd(v, b), v.sHeel + 5)]) : keep!) : offEdge(0);
-    // (and clear of the stock rail's actual shape, foot and all; the prototype's undercut: the keep above. the sprung blades'
+    // (and clear of the stock rail's actual shape, foot and all; the prototype's undercut: the keep above. Sprung blades'
     // plate, cut round the foot: its 45-degree shadow up toward the rail too, so the plate's edge doesn't overhang it as printed)
     const stock2d = rail2d(oStock).offset(c, 'Miter', 1000);
-    const stock = protoOn ? s.union([]) : sweep(fourD ? shadow45(stock2d, -sideS, 3) : stock2d, bOther(v, b), 0, v.sHeel + 10);
+    const stock = protoOn ? s.union([]) : sweep(sprung ? shadow45(stock2d, -sideS, 3) : stock2d, bOther(v, b), 0, v.sHeel + 10);
     const plate2d = fdbPlate2d(v, b);
     let plate = s.difference(s.intersection(s.intersection(T(s.extrude(plate2d, plateT), [0, 0, z0]), plateOff), cube([400, 400, 50], [-200, y0, z0 - 10])), [stock]);
-    if (fourD) plate = d4Underside(v, b, plate, plate2d, z0, (m) => s.difference(s.intersection(m, plateOff), [stock]));
+    if (sprung) plate = sprungUnderside(v, b, plate, plate2d, z0, (m) => s.difference(s.intersection(m, plateOff), [stock]));
     // (the rail no further toward the toe than its plate goes: clear of the end connector, as the plate is)
     return rot3(s.union([plate, s.intersection(bar, cube([400, 400, 50], [-200, y0, z0 - 10]))]), fb.pivot, fb.open);
   };
@@ -1141,21 +1140,21 @@ export function switchGeometry(s: Scad, plan: SwitchPlan, extraCuts: Man[] = [])
    * supports for its roof (0.2 under it, a slit off the beams and in off the
    * pocket's sides, to break out after printing).
    */
-  const d4Underside = (v: SetV, b: number, plate: Man, plate2d: CS, z0: number, clip: (m: Man) => Man): Man => {
+  const sprungUnderside = (v: SetV, b: number, plate: Man, plate2d: CS, z0: number, clip: (m: Man) => Man): Man => {
     const fb = fdbBlades(v)[b], d = sub(fb.pivot, fb.post), u = mul(d, 1 / norm(d)), nn: Pt = [u[1], -u[0]];
     const at = (a: number, c2: number): Vec2 => add(add(fb.post, mul(u, a)), mul(nn, c2)) as Vec2;
     const box = (a0: number, a1: number, c0: number, c1: number) => s.polygon([at(a0, c0), at(a1, c0), at(a1, c1), at(a0, c1)]);
-    const give = rad(fb.ang * (v.three ? 2 : 1)) * norm(d) + p.springPreload, h = d4Half(give), g2 = d4Gap() / 2;
+    const give = rad(fb.ang * (v.three ? 2 : 1)) * norm(d) + p.springPreload, h = sprungHalf(give), g2 = sprungGap() / 2;
     // (the pocket inside the plate: a rim of at least 1 all round)
-    const root = d4Root(fb.root ?? D4.root, fb), pocket = box(-D4.past, root, -h, h).intersect(plate2d.offset(-1, 'Miter', 1000));
+    const root = sprungRoot(fb.root ?? SPRUNG.root, fb), pocket = box(-SPRUNG.past, root, -h, h).intersect(plate2d.offset(-1, 'Miter', 1000));
     // (rooted in the pocket's heel-end wall: on into it, so each is one with the plate)
-    const beams = W.CrossSection.union([box(-D4.past + 1, root + 0.8, g2, g2 + D4.beamW), box(-D4.past + 1, root + 0.8, -g2 - D4.beamW, -g2)]).intersect(plate2d.offset(-1, 'Miter', 1000));
-    const supports = pocket.offset(-0.9, 'Miter', 1000).subtract(W.CrossSection.union([beams, box(-D4.past, root, -g2, g2)]).offset(D4.slit, 'Miter', 1000));
-    const hole = T(s.cylinder(D4.holeDepth + 1, D4.holeD / 2, D4.holeD / 2, 40), [fb.pivot[0], fb.pivot[1], z0 - 1]);
+    const beams = W.CrossSection.union([box(-SPRUNG.past + 1, root + 0.8, g2, g2 + SPRUNG.beamW), box(-SPRUNG.past + 1, root + 0.8, -g2 - SPRUNG.beamW, -g2)]).intersect(plate2d.offset(-1, 'Miter', 1000));
+    const supports = pocket.offset(-0.9, 'Miter', 1000).subtract(W.CrossSection.union([beams, box(-SPRUNG.past, root, -g2, g2)]).offset(SPRUNG.slit, 'Miter', 1000));
+    const hole = T(s.cylinder(SPRUNG.holeDepth + 1, SPRUNG.holeD / 2, SPRUNG.holeD / 2, 40), [fb.pivot[0], fb.pivot[1], z0 - 1]);
     return s.union([
-      s.difference(plate, [T(s.extrude(pocket, D4.pocketH + 1), [0, 0, z0 - 1]), hole]),
-      clip(T(s.extrude(beams, D4.beamH), [0, 0, z0])),
-      ...(supports.area() > 1 ? [clip(T(s.extrude(supports, D4.pocketH - D4.supportGap), [0, 0, z0]))] : []),
+      s.difference(plate, [T(s.extrude(pocket, SPRUNG.pocketH + 1), [0, 0, z0 - 1]), hole]),
+      clip(T(s.extrude(beams, SPRUNG.beamH), [0, 0, z0])),
+      ...(supports.area() > 1 ? [clip(T(s.extrude(supports, SPRUNG.pocketH - SPRUNG.supportGap), [0, 0, z0]))] : []),
     ]);
   };
 
@@ -1241,7 +1240,7 @@ export function switchGeometry(s: Scad, plan: SwitchPlan, extraCuts: Man[] = [])
   };
   /** Cut from the bed: the slider's tunnel (floored) and its posts' groove. */
   const fdbPockets = (v: SetV) => s.union([T(s.extrude(fdbSlot2d(v, 0), g.layerTop + c - fdbFloor()), [0, 0, fdbFloor()]), fdbGroove(v),
-    ...(ocOn(v) ? [ocPocket(v)] : []), ...(protoOn ? [protoUndercut(v)] : []), ...(holdOn ? [holdHoles(v)] : [])]);
+    ...(ocOn(v) ? [ocPocket(v)] : []), ...(protoOn ? [protoUndercut(v)] : [])]);
   /** The slider bar: posts up into the blades, the fork for the lever's tip at its end. */
   const fdbSlider = (v: SetV) => {
     const z0 = g.layerZ0, z1 = g.layerTop;
@@ -1281,55 +1280,21 @@ export function switchGeometry(s: Scad, plan: SwitchPlan, extraCuts: Man[] = [])
    * along the groove, between the stud rows, a solid post as wide as an
    * anti-stud tube, up to the bed, the groove cut down through it. Its floor
    * is under the bar, its sides joined to the bed; it clears a baseplate's
-   * studs as a tube does. (the sprung blades' groove has a floor along most of it.)
+   * studs as a tube does. (The reference's groove has a floor along most of it.)
    */
   const fdbRests = (v: SetV): Man | undefined => {
-    if (!fourDLow(p)) return undefined;
+    if (!sprungLow(p)) return undefined;
     const bb = fdbSlot2d(v, 0).bounds(), out: CS[] = [];
     for (let x = Math.ceil((bb.min[0] + 2) / STUD) * STUD; x <= bb.max[0] - 2 + 1e-9; x += STUD) out.push(circle((TUBE_OD - (p.antistudFit ?? ANTISTUD_FIT)) / 2, 24, [x, v.throwY]));
     return out.length ? s.difference(s.extrude(W.CrossSection.union(out), bedTop), [pointsPockets(v), throwChannel(v)]) : undefined;
   };
   /** The pins the blades turn on, standing on the bed. */
   // (each with a little snap lip over the plate, so the blade stays on: the plate's hole squeezes past it)
-  const fdbPins = (v: SetV) => s.union([...fdbBlades(v).filter((_, b) => b !== v.fixed).flatMap((f) => fourD
-    // (the sprung blades': a LEGO stud, the plate's hole over it)
+  const fdbPins = (v: SetV) => s.union([...fdbBlades(v).filter((_, b) => b !== v.fixed).flatMap((f) => sprung
+    // (sprung blades: a LEGO stud, the plate's hole over it)
     ? [T(s.cylinder(p.studH + 0.01, t.o.studD / 2, t.o.studD / 2, 40), [f.pivot[0], f.pivot[1], bedTop - 0.01])]
-    : holdOn
-    // (held down by a bracket: the pin plain, up through the bracket's top to locate it)
-    ? [T(s.cylinder(c + FDB.plateT + c + HOLD.t, FDB.pinD / 2, FDB.pinD / 2, 24), [f.pivot[0], f.pivot[1], bedTop - 0.01])]
     : [T(s.cylinder(c + FDB.plateT + 0.8, FDB.pinD / 2, FDB.pinD / 2, 24), [f.pivot[0], f.pivot[1], bedTop - 0.01]),
       T(s.cylinder(0.7, FDB.pinD / 2 + c + 0.15, FDB.pinD / 2, 24), [f.pivot[0], f.pivot[1], bedTop + c + FDB.plateT + 0.1])]), ...(ocOn(v) ? ocPins(v) : [])]);
-
-  // ---------- the blades held down by brackets (bladeHold 'bracket') ----------
-  // As the reference points have it: by each blade's pin a little bracket on
-  // the bed, its top over the plate round the pin (a clearance above it), on
-  // two feet beside the plate's disc (inward of its rail, and toward the heel),
-  // each pegged into a hole in the bed. The plate turns under it and can't
-  // lift off its pin. Printed upside down, its top on the bed: nothing hangs.
-  const HOLD = { t: 1.6, foot: 3.6, peg: 2.2, pegL: 1.6 };
-  /** A blade's bracket's plan: its top, its feet and their pegs' centres, in the set's frame. */
-  const holdPlan = (v: SetV, b: number) => {
-    const f = fdbBlades(v)[b], rt = bRt(v, b), o = bO(b);
-    const toRail = sub(f.pivot, railPoint(rt, sOf(rt, f.pivot), o)), n = unit(toRail), u = unit(sub(f.tip, f.pivot));
-    // (its top round the pin clear of the blade's rail on the plate, as the blade swings too)
-    const rTop = Math.min(FDB.discR + 1.5, norm(toRail) - HEAD_HW - c - 0.6);
-    const off = FDB.discR + c + 0.6 + HOLD.foot / 2;
-    const feet = [add(f.pivot, mul(n, off)) as Pt, add(f.pivot, mul(u, -off)) as Pt];
-    const sq2 = (q: Pt, w: number) => W.CrossSection.square([w, w], true).rotate((Math.atan2(u[1], u[0]) * 180) / Math.PI).translate(q as Vec2);
-    const top = W.CrossSection.hull([circle(rTop, 32, f.pivot), ...feet.map((q) => sq2(q, HOLD.foot))]);
-    return { f, feet, top, foot: (q: Pt) => sq2(q, HOLD.foot) };
-  };
-  /** A bracket as assembled: over its blade's plate, on its feet, pegs down into the bed; a hole for the pin. */
-  const holdPart = (v: SetV, b: number) => {
-    const h = holdPlan(v, b), z0 = bedTop + c + plateT + c, z1 = z0 + HOLD.t;
-    return s.difference(s.union([
-      T(s.extrude(h.top, HOLD.t), [0, 0, z0]),
-      ...h.feet.map((q) => T(s.extrude(h.foot(q), z0 - bedTop + 0.01), [0, 0, bedTop])),
-      ...h.feet.map((q) => T(s.cylinder(HOLD.pegL + 0.01, HOLD.peg / 2, HOLD.peg / 2, 20), [q[0], q[1], bedTop - HOLD.pegL])),
-    ]), [T(s.cylinder(z1 - bedTop + 2, FDB.pinD / 2 + c / 2, FDB.pinD / 2 + c / 2, 24), [h.f.pivot[0], h.f.pivot[1], bedTop - 1])]);
-  };
-  /** The holes in the bed the brackets' pegs go in (snug: 0.05 over). */
-  const holdHoles = (v: SetV) => s.union(blades(v).flatMap((b) => holdPlan(v, b).feet.map((q) => T(s.cylinder(HOLD.pegL + 0.3 + 0.01, HOLD.peg / 2 - 0.05 + 0.1, HOLD.peg / 2 - 0.05 + 0.1, 20), [q[0], q[1], bedTop - HOLD.pegL - 0.3]))));
 
   // ---------- Peco's over-centre spring (throwAction 'overcentre') ----------
   // Peco's turnouts hold their blades with a V spring between the base and
@@ -1854,9 +1819,6 @@ export function switchGeometry(s: Scad, plan: SwitchPlan, extraCuts: Man[] = [])
     pointsPart: (k = 0) => pointsPart(sets[k]),
     /** The points' parts: one, or one per blade (pointsPieces 2). */
     pointsParts: (k = 0) => (fdb ? blades(sets[k]).map((b) => fdbBladePart(sets[k], b)) : units(sets[k]).map((u) => unitPart(sets[k], u))),
-    /** (bladeHold 'bracket') The brackets holding the blades down, as assembled; and one as printed (upside down, its top on the bed). */
-    holdParts: (k = 0) => (holdOn ? blades(sets[k]).map((b) => holdPart(sets[k], b)) : []),
-    holdPrint: (m: Man) => { const r = R(m, [180, 0, 0]), bb = r.boundingBox(); return T(r, [-(bb.min[0] + bb.max[0]) / 2, -(bb.min[1] + bb.max[1]) / 2, -bb.min[2]]); },
     /** Each points part's pivot and swing (to turn it to the left-hand route). */
     pointsUnits: (k = 0) => units(sets[k]).map((u) => ({ pivot: u.pivot, swing: u.swing })),
     throwPart: (k = 0) => throwPart(sets[k]),

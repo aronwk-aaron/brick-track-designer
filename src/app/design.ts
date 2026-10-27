@@ -112,10 +112,8 @@ export interface PieceOptions {
   throwStyle?: 'bracket' | 'built-in' | 'stand';
   /** (plate-style points) What holds the points, and what a train trailing through them does: 'detent' (the lever's click), 'overcentre' (Peco's V spring: they snap over and stay). (the sprung blades spring back on their own.) */
   throwAction?: 'detent' | 'overcentre';
-  /** (plate-style points) The blades: 'sprung' (as the sprung blades': a spring in each, so trains can trail through), 'simple' (rigid: the slider's post in a plain hole, no spring), or 'prototype' (rigid, planed to a point, tight under the stock rail's undercut head, the tie bar at the points). */
+  /** (plate-style points) The blades: 'sprung' (a spring in each, so trains can trail through), 'simple' (rigid: the slider's post in a plain hole, no spring), or 'prototype' (rigid, planed to a point, tight under the stock rail's undercut head, the tie bar at the points). */
   bladeStyle?: 'simple' | 'prototype' | 'sprung';
-  /** What keeps each blade's plate on its pin: a snap lip on the pin, or a little bracket over the plate pegged into the bed. */
-  bladeHold?: 'lip' | 'bracket';
   /** The points' mechanism: 'tines' (switch.scad's: under the bed, from below) or 'plates' (each blade on a plate on top of the bed on a pin, a slider bar through the bed; the blades go in from above). */
   mechStyle?: 'tines' | 'plates';
   /** Ballast under the track: none, ballast, or ballast with the wider buddy layer under it. */
@@ -174,17 +172,21 @@ export interface PieceOptions {
  * pieces; the old Rails at cuts: Cut flat is Straight cuts + LEGO axles
  * (it pinned every joint with axles, or nothing where they didn't fit); and
  * the grip and points parts, once kept on the design, are piece options; and
- * the spring-back blades (their tongues too thin to print) are the sprung blades', which
- * spring back on their own.
+ * the spring-back blades (their tongues too thin to print) are sprung ones,
+ * which spring back on their own (leaf springs under the plate).
  */
 export function upgradeDesign(d0: Design): Design {
   const { grip, pointsPieces, ...d } = d0 as Design & { grip?: PieceOptions['grip']; pointsPieces?: PieceOptions['pointsPieces'] };
   const o = d.options as (Omit<Partial<PieceOptions>, 'joint'> & { joint?: string; cutRails?: string }) | undefined;
-  if (grip === undefined && pointsPieces === undefined && (!o || (o.joint !== 'ends' && o.cutRails === undefined && (o as { throwAction?: string }).throwAction !== 'springback'))) return d0;
-  const { cutRails, joint, ...rest } = o ?? {};
+  // (a blade shape no longer offered: sprung; the blades' hold-down setting, gone: the sprung blades' lip holds them)
+  const blade = (o as { bladeStyle?: string } | undefined)?.bladeStyle, oldBlade = blade !== undefined && !['simple', 'prototype', 'sprung'].includes(blade);
+  const oldHold = !!o && 'bladeHold' in o;
+  if (grip === undefined && pointsPieces === undefined && !oldBlade && !oldHold && (!o || (o.joint !== 'ends' && o.cutRails === undefined && (o as { throwAction?: string }).throwAction !== 'springback'))) return d0;
+  const { cutRails, joint, bladeHold: _h, ...rest } = (o ?? {}) as typeof o & { bladeHold?: string };
   const j = joint === 'ends' ? undefined : joint as PieceOptions['joint'];
   return { ...d, options: { ...(grip && { grip }), ...(pointsPieces && { pointsPieces }), ...rest, ...(joint === 'ends' && { splitTrack: 'lengths' as const }),
     ...(cutRails === 'flat' && j !== 'butt' ? { joint: 'flataxle' as const } : j && { joint: j }),
+    ...(oldBlade && { bladeStyle: 'sprung' as const }),
     ...((rest as { throwAction?: string }).throwAction === 'springback' && { throwAction: 'detent' as const, bladeStyle: 'sprung' as const }) } };
 }
 export const OPTION_DEFAULTS: PieceOptions = {
@@ -425,7 +427,7 @@ export const TEMPLATES: Record<string, Design> = {
   'Double crossover (R56)': { version: 1, gaugeStuds: 4, routes: [{name: 'A', x: 0, y: 0, heading: 0, segs: [{kind: 'straight', studs: 90}]}, {name: 'B', x: 16, y: 0, heading: 0, segs: [{kind: 'straight', studs: 90}]}, {name: 'AB', x: 0, y: 16, heading: 0, segs: [{kind: 'curve', radius: 56, angle: -31.002719}, {kind: 'curve', radius: 56, angle: 31.002719}]}, {name: 'BA', x: 16, y: 16, heading: 0, segs: [{kind: 'curve', radius: 56, angle: 31.002719}, {kind: 'curve', radius: 56, angle: -31.002719}]}] },
   'Yard ladder (R40)': { version: 1, gaugeStuds: 4, routes: [{name: 'Main', x: 0, y: -8, heading: 0, segs: [{kind: 'straight', studs: 194.052048}]}, {name: 'Ladder', x: 0, y: 0, heading: 0, segs: [{kind: 'curve', radius: 40, angle: -22.5}, {kind: 'straight', studs: 141.517055}]}, {name: 'Y1', x: 12.955181, y: 39.233069, heading: -22.5, segs: [{kind: 'curve', radius: 40, angle: 22.5}, {kind: 'straight', studs: 40}]}, {name: 'Y2', x: 28.955181, y: 77.860486, heading: -22.5, segs: [{kind: 'curve', radius: 40, angle: 22.5}, {kind: 'straight', studs: 32}]}, {name: 'Y3', x: 44.955181, y: 116.487903, heading: -22.5, segs: [{kind: 'curve', radius: 40, angle: 22.5}, {kind: 'straight', studs: 24}]}] },
   'Wye with a crossover': { version: 1, gaugeStuds: 4, routes: [{name: 'In', x: 8, y: -16, heading: 0, segs: [{kind: 'straight', studs: 16}]}, {name: 'WL', x: 8, y: 0, heading: 0, segs: [{kind: 'curve', radius: 72, angle: 19.188136}, {kind: 'curve', radius: 72, angle: -19.188136}, {kind: 'straight', studs: 81.96969}]}, {name: 'WR', x: 8, y: 0, heading: 0, segs: [{kind: 'curve', radius: 72, angle: -19.188136}, {kind: 'curve', radius: 72, angle: 19.188136}, {kind: 'straight', studs: 81.96969}]}, {name: 'X', x: 0, y: 55.328638, heading: 0, segs: [{kind: 'curve', radius: 72, angle: -27.266044}, {kind: 'curve', radius: 72, angle: 27.266044}]}, {name: 'ML', x: 0, y: 129.298328, heading: 0, segs: [{kind: 'curve', radius: 72, angle: -19.188136}, {kind: 'curve', radius: 72, angle: 19.188136}]}, {name: 'MR', x: 16, y: 129.298328, heading: 0, segs: [{kind: 'curve', radius: 72, angle: 19.188136}, {kind: 'curve', radius: 72, angle: -19.188136}]}, {name: 'Out', x: 8, y: 176.626967, heading: 0, segs: [{kind: 'straight', studs: 16}]}] },
-  // (a double track's two lines joined by a loop at R104 and R120 with a passing loop in it, as the reference: the
+  // (a double track's two lines joined by a loop at R104 and R120 with a passing loop in it, as the reference parts': the
   // left-hand line's switch splits it to the loop's two tracks; they come back together at the far switch and
   // return as the right-hand line. The loop turns 244.6 degrees, its two switches R104 22.6 degrees, as one 16-stud
   // shift each; one turning each way, mirror images)

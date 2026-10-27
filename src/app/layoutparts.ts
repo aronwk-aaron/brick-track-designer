@@ -45,7 +45,7 @@ export interface LayoutPart {
 export interface LayoutExport { folder: string; prefix: string; parts: LayoutPart[]; setId: string; files: { name: string; data: Uint8Array }[] }
 
 /** A moving part (drawn on the track part it sits in, not a layout part of its own). */
-export const isMovingPart = (name: string) => /lid|holddown|bracket|lever|throw|points|spring/.test(name);
+export const isMovingPart = (name: string) => /lid|bracket|lever|throw|points|spring/.test(name);
 
 /** A name as it may go in a library key (letters, digits, - and _). */
 export const keyName = (s: string) => s.trim().replace(/[^A-Za-z0-9_-]+/g, '_').replace(/^_+|_+$/g, '') || 'track';

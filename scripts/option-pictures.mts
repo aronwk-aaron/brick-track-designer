@@ -40,8 +40,6 @@ const specs: { key: string; values: string[]; design: (v: string) => unknown; pi
   { key: 'splitTrack', values: ['bed', 'lengths'], design: (v) => D(bend, { printBedX: 200, printBedY: 200, splitTrack: v }), cam: { dir: '0.15,-0.3,1', dist: 2.0 } },
   { key: 'mechStyle', values: ['plates', 'tines'], design: (v) => D(sw, { mechStyle: v }), cam: toe },
   { key: 'pointBlades', values: ['2', '1'], design: (v) => D(sw, { pointBlades: Number(v) }), cam: toe },
-  // (rigid blades: the sprung blades', the default, sit on studs and aren't held down)
-  { key: 'bladeHold', values: ['lip', 'bracket'], design: (v) => D(sw, { bladeHold: v, bladeStyle: 'simple' }), cam: toe },
   { key: 'bladeStyle', values: ['simple', 'prototype', 'sprung'], design: (v) => D(sw, { bladeStyle: v, ballast: 'ballast' }), cam: toe },
   { key: 'throwStyle', values: ['built-in', 'bracket', 'stand'], design: (v) => D(sw, { throwStyle: v }), cam: throwCam },
   // (bought or printed: a straight, LEGO's R40 curve and a BrickTracks R104 one; printed blue, LEGO's light grey, BrickTracks' dark grey)

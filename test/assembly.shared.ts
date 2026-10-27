@@ -42,7 +42,7 @@ describe('every switch can be put together', { timeout: 120000 }, () => {
       const fromTop = d.options?.pointsModule === 'layers', bladesTop = d.options?.mechStyle !== 'tines';
       const problems: string[] = [];
       for (const p of b.pieces.filter((q) => /points|throw|lever|bracket/.test(q.name))) {
-        // (each moving part one piece, but for break-out supports inside it: the sprung blades' in its spring pocket)
+        // (each moving part one piece, but for break-out supports inside it: the sprung blades', in the spring pocket)
         const m = man(p), bodies = m.decompose().sort((x, y) => y.volume() - x.volume()), bb = bodies[0].boundingBox();
         const inside = (q: typeof m) => { const c = q.boundingBox(); return [0, 1, 2].every((k) => c.min[k] >= bb.min[k] - 1e-3 && c.max[k] <= bb.max[k] + 1e-3); };
         if (!bodies.slice(1).every(inside)) problems.push(`${p.name} is in ${bodies.length} pieces`);

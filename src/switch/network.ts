@@ -250,7 +250,6 @@ export function networkSplits(s: Scad, routes: Route[], sol: Solution, p: BasePa
     const turns = gm.pointsTurns(0);
     pts.forEach((m, k) => moving.push({ name: `${tag}${pts.length > 1 ? (k === 0 ? '-a' : '-b') : ''}`, color: 0x4682b4, local: m, world: place(m, P),
       ...(turns?.[k] && { turn: { at: poseToWorld(P, turns[k].at), by: turns[k].by, swing: turns[k].swing } }) }));
-    gm.holdParts(0).forEach((m, k) => moving.push({ name: `${tag}-holddown-${k === 0 ? 'a' : 'b'}`, color: 0x4682b4, local: gm.holdPrint(m), world: place(m, P) }));
     // (Peco's spring: printed flat and straight, as assembled squeezed between its pins)
     const spr = gm.springPart(0), sprP = gm.springPrint(0);
     if (spr && sprP) moving.push({ name: `${tag}-spring`, color: 0xc0392b, local: sprP, world: place(spr, P) });

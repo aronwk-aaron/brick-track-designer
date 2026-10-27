@@ -1,9 +1,9 @@
-// the sprung blades (bladeStyle 'sprung', switch/base.ts D4): each blade a 3 mm
+// the sprung blades (bladeStyle 'sprung', switch/base.ts SPRUNG): each blade a 3 mm
 // plate on a stud with its rail on top, the spring's pocket underneath with
 // its two beams and the supports for its roof (separate bits, broken out
 // after printing). Clear of the base closed and open. On track alone too:
 // the bed at the sleepers' top, the slider in a groove through it between
-// the underside's stud rows (context.ts D4_SLIDER), clear of the base both ways.
+// the underside's stud rows (context.ts SPRUNG_SLIDER), clear of the base both ways.
 import { describe, expect, it } from 'vitest';
 import type { Route } from '../src/route/route';
 import { BASE_DEFAULTS, switchGeometry, switchPlan } from '../src/switch/base';

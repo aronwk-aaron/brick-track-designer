@@ -479,7 +479,7 @@ function switchParams(o: PieceOptions, gaugeStuds: number, alone: boolean) {
     // (a floor under the moving parts only with the lid over them: otherwise they go in from below, through their pockets)
     ...(o.pointsModule === 'layers' && o.ballast !== 'none' && { mechFloor: 1.2 }), endSupports: o.endSupports !== false,
     throwModule: o.throwStyle === 'bracket', mechStyle: (o.mechStyle === 'tines' ? 'tines' : 'plates') as 'tines' | 'plates', // (anything else, an older name included: the default)
-    throwStand: o.throwStyle === 'stand', throwAction: o.throwAction ?? 'detent', bladeStyle: o.bladeStyle ?? 'simple', bladeHold: o.bladeHold ?? 'lip',
+    throwStand: o.throwStyle === 'stand', throwAction: o.throwAction ?? 'detent', bladeStyle: o.bladeStyle ?? 'simple',
     ...(alone && { ballastOnly: o.trackFitTol ?? 0.2 }) };
 }
 type SwitchParams = ReturnType<typeof switchParams>;
@@ -1070,7 +1070,7 @@ function buildSwitches(b: PieceBuild, switches: ReturnType<typeof planPieces>['s
     const gm = cached(`sw:${JSON.stringify({ routes: sw.routes, sets: sw.sets, params, cl, tw: b.grooveEdits })}`, () => {
       const g = switchGeometry(scad, sw.plan, frameCuts);
       return { bases: g.basePieces(), whole: g.base(), grips: g.grips, sets: sw.sets.map((_, k) => ({ thr: g.throwPart(k), thrPrint: g.throwPrint(k), pp: g.pointsParts(k), print: g.leverPrint(k), lever: g.leverPart(k), bracket: params.throwModule ? g.bracketPart(k) : undefined,
-        spring: g.springPart(k), springPrint: g.springPrint(k), turns: g.pointsTurns(k), hold: g.holdParts(k).map((m) => ({ m, print: g.holdPrint(m) })) })) };
+        spring: g.springPart(k), springPrint: g.springPrint(k), turns: g.pointsTurns(k) })) };
     });
     const bases = gm.bases;
     // (its tubes, for the plan's grip marks, in the design's frame)
@@ -1086,12 +1086,11 @@ function buildSwitches(b: PieceBuild, switches: ReturnType<typeof planPieces>['s
       const lm = labelled(b, m, sw.plan.routes, bases.length > 1 ? undefined : switchSize(sw.plan.routes), bases.length > 1 ? `${j + 1}` : undefined);
       add(b, bases.length > 1 ? `${tag}-base${j + 1}` : `${tag}-base`, TRACK_COLOR, lm, place(lm, sw.pose));
     });
-    gm.sets.forEach(({ thr, thrPrint, pp, print, lever, bracket, spring, springPrint, turns, hold }, k) => {
+    gm.sets.forEach(({ thr, thrPrint, pp, print, lever, bracket, spring, springPrint, turns }, k) => {
       const sfx = sw.sets.length > 1 ? `${k + 1}` : '';
       if (bracket) add(b, `${tag}-bracket${sfx}`, 0x8a8f99, bracket, place(bracket, sw.pose));
       const turnOf = (j: number): Piece['turn'] => { const t2 = turns?.[j]; return t2 && { at: poseToWorld(sw.pose, t2.at), by: t2.by, swing: t2.swing }; };
       pp.forEach((pts, j) => add(b, `${tag}-points${sfx}${pp.length > 1 ? (j === 0 ? '-a' : '-b') : ''}`, 0x4682b4, pts, place(pts, sw.pose), turnOf(j)));
-      for (const [j, h] of hold.entries()) add(b, `${tag}-points${sfx}-holddown-${j === 0 ? 'a' : 'b'}`, 0x4682b4, h.print, place(h.m, sw.pose));
       // (Peco's spring: printed flat and straight, as assembled squeezed between its pins)
       if (spring && springPrint) add(b, `${tag}-points${sfx}-spring`, 0xc0392b, springPrint, place(spring, sw.pose));
       add(b, `${tag}-throw${sfx}`, 0xe8892b, thrPrint, place(thr, sw.pose));

@@ -44,10 +44,8 @@ export interface SwitchParams {
   throwAction?: 'detent' | 'overcentre';
   /** (the plate-style points) The throw as a switch stand (a ground throw, Caboose Industries' way): a handle swung over on an eccentric in the slider's yoke, locked past dead centre at each end. */
   throwStand?: boolean;
-  /** (the plate-style points) The blades: 'simple' (as before), 'prototype' (planed to a point and laid tight under the stock rail's undercut head, the tie bar at the points) or 'sprung' (as the sprung blades' 2-05-025: a 3 mm plate with a flat top, on a LEGO stud, the spring two beams in a pocket underneath with built-in supports; the slider at the points). */
+  /** (the plate-style points) The blades: 'simple' (as before), 'prototype' (planed to a point and laid tight under the stock rail's undercut head, the tie bar at the points) or 'sprung' (leaf springs under the plate, a stud for its pivot). */
   bladeStyle?: 'simple' | 'prototype' | 'sprung';
-  /** (the plate-style points) What keeps each blade's plate on its pin: 'lip' (a snap lip on the pin) or 'bracket' (a little bracket on the bed over the plate round the pin, pegged in: the reference points' way). */
-  bladeHold?: 'lip' | 'bracket';
   /** (the plate-style points) Blades per set: 2 (both move), or 1 (a single-point switch, as a tram's: only the blade on the more curved route moves; the other side's rail is fixed, from where it's a flangeway clear of its stock rail). A three-way keeps both. */
   pointBlades?: 1 | 2;
   /** (the plate-style points) The slider moved along this many studs from where it'd be (toward the heel: +), to keep its lever out of the way of other track or another lever. */
@@ -80,7 +78,7 @@ export const HEAD_HW = 1.25;
 export const STUD = 8;
 
 /**
- * (sprung blades, track alone) The slider as the sprung blades' 2-05-012 runs in their
+ * (sprung blades, track alone) The slider as the reference's runs in its
  * base 2-04-033: a bar 1.6 thick, its top 0.2 under the bed's top, in a
  * groove open at the top, the bed at the sleepers' top. Their bar is 5 wide in
  * a 5.6 groove on a stud line, floored over the studs; here it goes between
@@ -88,11 +86,11 @@ export const STUD = 8;
  * groove, so the track still sits on the studs. Its floor (over the
  * underside's hollow, posts at the stud corners: base.ts fdbRests) is c under
  * the bar (the clearance round every moving part), so 2.1 under the bed's
- * top, not the sprung blades' 1.8 (their bar lies on it).
+ * top, not the reference's 1.8 (its bar lies on it).
  */
-export const D4_SLIDER = { barH: 1.6, under: 0.2, rodW: 2.4 };
-/** sprung blades on track alone: the bed at the sleepers' top, the slider in a groove through it (D4_SLIDER). */
-export const fourDLow = (p: { bladeStyle?: string; generateBallast?: boolean; mechStyle?: string }) => p.bladeStyle === 'sprung' && p.mechStyle === 'plates' && !p.generateBallast;
+export const SPRUNG_SLIDER = { barH: 1.6, under: 0.2, rodW: 2.4 };
+/** sprung blades on track alone: the bed at the sleepers' top, the slider in a groove through it (SPRUNG_SLIDER). */
+export const sprungLow = (p: { bladeStyle?: string; generateBallast?: boolean; mechStyle?: string }) => p.bladeStyle === 'sprung' && p.mechStyle === 'plates' && !p.generateBallast;
 
 /** Values for the whole switch (not per set). */
 import { scadParity as scadParityNow } from '../geom/track';
@@ -111,12 +109,12 @@ export function switchGlobals(p: SwitchParams) {
   const bottomCavity = p.studH + 0.2;
   // (with an anti-stud underside, or none at all, the parts sit above a baseplate's studs)
   // (the plate-style slider runs in a tunnel with a floor: room for one (0.6) under it)
-  const fdb = p.mechStyle === 'plates', low = fourDLow(p);
-  // (sprung blades on track alone: the bar in its groove from the bed's top down, between the underside's stud rows: D4_SLIDER)
-  const layerZ0 = low ? PLATE_H - D4_SLIDER.under - D4_SLIDER.barH
+  const fdb = p.mechStyle === 'plates', low = sprungLow(p);
+  // (sprung blades on track alone: the bar in its groove from the bed's top down, between the underside's stud rows: SPRUNG_SLIDER)
+  const layerZ0 = low ? PLATE_H - SPRUNG_SLIDER.under - SPRUNG_SLIDER.barH
     : pieceBottomZ + (antistud || !ballast ? bottomCavity : 0) + (p.mechFloor ?? (fdb ? (ballast ? 1.2 : 0.9) : 0.2));
   // (the plate-style: the slider bar in the bed under the blade plates: 2.4 tall, 2 without ballast, where the bed's thinner)
-  const layerTop = layerZ0 + (low ? D4_SLIDER.barH : fdb ? (ballast ? 2.4 : 2) : 1.4);
+  const layerTop = layerZ0 + (low ? SPRUNG_SLIDER.barH : fdb ? (ballast ? 2.4 : 2) : 1.4);
   const cavityTop = layerTop + p.pointClearance;
   const bedTop = ballast || low ? PLATE_H : Math.max(PLATE_H, cavityTop + 0.8);
   const leverTipD = 4.5, leverBossD = 5;
@@ -153,7 +151,7 @@ export interface FdbBladeLayout {
   keep: Pt[][]; hw: number; stockKeep?: Pt[]; stockHw?: number; blocked?: string;
   /** Another track's rails crossing the blade near its pin, where it hardly moves (a double slip's obtuse crossing): the blade notched there for their flanges, as a frog. */
   notches?: Notch[];
-  /** (sprung blades) the spring's beams' length, where shorter than theirs (other track running past) */
+  /** (sprung blades) the spring's beams' length, where shorter than the full 34.5 (other track running past) */
   root?: number;
 }
 
@@ -207,7 +205,7 @@ export function pointsSet(routes: Route[], ps: PointsSet, p: SwitchParams, defau
   // throw arm clears the end connector (half its width past it) and its post has plate round it)
   const fdbYSimple = Math.max(toeY + 8, Math.min(fdbPivotY - 8, Math.round((fdbPivotY - 0.6 * (fdbPivotY - toeY) - 4) / 8) * 8 + 4));
   // (sprung blades on track alone: between two stud lines, where the slider's groove clears a baseplate's studs)
-  const low = fourDLow(p), half = low ? 0 : 4;
+  const low = sprungLow(p), half = low ? 0 : 4;
   const fdbY0 = (p.bladeStyle === 'prototype' || p.bladeStyle === 'sprung') && p.mechStyle === 'plates'
     // (and with Peco's spring, room for its pin on the toe's side, past the plates' start)
     ? Math.min(low ? Math.max(toeY + 8, Math.min(fdbPivotY - 8, Math.round((fdbPivotY - 0.6 * (fdbPivotY - toeY)) / 8) * 8)) : fdbYSimple,
