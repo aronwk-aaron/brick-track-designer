@@ -11,10 +11,10 @@ import type { Pose, Pt, Route } from '../route/route';
 import { railPoint, routeLat, routeLength, routePose, routeSOf, segStarts } from '../route/route';
 import { M, R, T, type CS, type Man, type Scad, type Vec2, type Vec3 } from '../geom/scad';
 import { sweepRoute } from '../geom/sweep';
-import { hollowGrid, type Spot, studSpots } from '../geom/underside';
+import { ANTISTUD_FIT, hollowGrid, type Spot, studSpots, TUBE_OD } from '../geom/underside';
 import { DEFAULTS as TRACK_DEFAULTS, getSocketShape, scadParity, PLATE_H, RAIL_PROFILE, STUD, Track } from '../geom/track';
 import { couplerSupports, trackSeat } from '../geom/extras';
-import { type FdbBladeLayout, HEAD_HW, type Notch, pointsSet, type PointsSetValues, STAND, type SwitchParams, switchGlobals } from './context';
+import { D4_SLIDER, type FdbBladeLayout, fourDLow, HEAD_HW, type Notch, pointsSet, type PointsSetValues, STAND, type SwitchParams, switchGlobals } from './context';
 
 export interface BaseParams extends SwitchParams {
   flangeway: number;        // 3
@@ -103,11 +103,13 @@ const SB = { plateW: 14, len: 21, beamW: 1.4, padWall: 0.9 };
  * end, the slider's post between their free ends; either side of them solid
  * supports for the pocket's roof while printing, 0.2 under it and a slit off
  * the beams, broken out after. (The plate's width counts from the blade's
- * inner face: 15.9 in all, as theirs.)
+ * inner face: 15.9 in all, as theirs.) The bed is at the sleepers' top: on
+ * ballast as always, on track alone lowered to it, the slider then in a
+ * groove through the bed between the underside's stud rows (D4_SLIDER).
  */
 const D4 = { plateT: 3.0, plateW: 13.4, holeD: 4.85, holeDepth: 2.2, pocketH: 1.8, beamW: 1.2, beamH: 1.4, supportGap: 0.2, slit: 0.3, root: 34.5, past: 4 };
-/** sprung blades: on ballast only, where the bed is at the sleepers' top (track alone, it's raised over the slider's tunnel: no room for the 3 mm plate under a blade). */
-const fdbFourD = (p: { bladeStyle?: string; generateBallast?: boolean; mechStyle?: string }) => p.bladeStyle === 'sprung' && !!p.generateBallast && p.mechStyle === 'plates';
+/** sprung blades. */
+const fdbFourD = (p: { bladeStyle?: string; generateBallast?: boolean; mechStyle?: string }) => p.bladeStyle === 'sprung' && p.mechStyle === 'plates';
 /** The plate's thickness. */
 const fdbPlateT = (p: { bladeStyle?: string; generateBallast?: boolean; mechStyle?: string }) => (fdbFourD(p) ? D4.plateT : FDB.plateT);
 /** (sprung blades) The beams' gap (the post between them) and how far each side the pocket reaches from the post. */
@@ -522,7 +524,6 @@ export function switchPlan(routes: Route[], specs: SetSpec[], p: BaseParams = BA
     if (p.throwStand && sets.some((v) => 'three' in v))
       notes.push("a switch stand locks at its two ends: a three-way's middle (straight) position is with the handle upright, not locked");
   }
-  if (p.bladeStyle === 'sprung' && p.mechStyle === 'plates' && !p.generateBallast) notes.push("sprung blades need ballast (track alone, the bed is raised over the slider: no room for their 3 mm plate): simple blades are used");
   if (p.pointBlades === 1 && p.mechStyle === 'plates' && sets.some((v) => 'three' in v)) notes.push("a three-way's points keep both blades: one blade can't steer three ways");
   if (!planOk(baseCuts)) warnings.push(`the switch doesn't fit the ${p.printBedX} x ${p.printBedY} print bed even when split across: it may be too wide`);
   const bySetY = [...sets].sort((a, b) => a.toeY - b.toeY);
@@ -650,6 +651,8 @@ export function switchGeometry(s: Scad, plan: SwitchPlan, extraCuts: Man[] = [])
   const blades = (v: SetV) => [0, 1].filter((b) => b !== v.fixed);
   /** the sprung blades (D4): no bracket to hold them down; they sit on studs. */
   const fourD = fdbFourD(p);
+  /** The slider bar's width: with sprung blades on track alone narrower, to pass between the underside's stud rows (D4_SLIDER). */
+  const rodW = fourDLow(p) ? D4_SLIDER.rodW : FDB.rodW;
   const holdOn = fdb && p.bladeHold === 'bracket' && !fourD;
   /** The blade plates' thickness; where the slider's posts reach up to (into the tongue's slot, or the sprung blades' spring pocket). */
   const plateT = fdbPlateT(p), postTop = bedTop + c + (fourD ? D4.pocketH - 0.3 : FDB.plateT - 0.2);
@@ -1263,7 +1266,7 @@ export function switchGeometry(s: Scad, plan: SwitchPlan, extraCuts: Man[] = [])
     const x0 = Math.min(...xs) - v.leverTravel - 4, x1 = Math.max(...xs) + v.leverTravel + 4;
     const [m0, m1] = fdbMouth(v), a = Math.max(x0, Math.min(x1, v.throwDir > 0 ? m1 : m0));
     const lo = v.throwDir > 0 ? x0 : a, hi = v.throwDir > 0 ? a : x1;
-    return sq([hi - lo, FDB.rodW + 2 * (c + m)], [lo, v.throwY - FDB.rodW / 2 - c - m]);
+    return sq([hi - lo, rodW + 2 * (c + m)], [lo, v.throwY - rodW / 2 - c - m]);
   };
   /** The posts' groove up through the bed's top, from their travel out to the lever's opening. */
   const fdbGroove = (v: SetV) => {
@@ -1282,7 +1285,7 @@ export function switchGeometry(s: Scad, plan: SwitchPlan, extraCuts: Man[] = [])
     ...(ocOn(v) ? [ocPocket(v)] : []), ...(protoOn ? [protoUndercut(v)] : []), ...(holdOn ? [holdHoles(v)] : [])]);
   /** The slider bar: posts up into the blades' tongues, the fork for the lever's tip at its end. */
   const fdbSlider = (v: SetV) => {
-    const z0 = g.layerZ0, z1 = g.layerTop, rodW = FDB.rodW;
+    const z0 = g.layerZ0, z1 = g.layerTop;
     const xs = [...fdbPostAt(v).map((q) => q[0]), v.forkX], x0 = Math.min(...xs) - 3, x1 = Math.max(...xs) + forkHw;
     const slotW = g.leverTipD + 2 * c, m = v.forkMouthHw;
     // (the posts up into the blades' tongues, to just under the plates' tops)
@@ -1310,6 +1313,20 @@ export function switchGeometry(s: Scad, plan: SwitchPlan, extraCuts: Man[] = [])
     // (and the posts' groove: the arm's top is over it too)
     return s.union([T(s.extrude(fdbSlot2d(v, 0), g.layerTop + c - fdbFloor()), [0, 0, fdbFloor()]), cube([g1 - g0, wf, 30], [g0, v.throwY - wf / 2, fdbFloor()]), fdbGroove(v),
       ...(v.stand ? [standPocket(v)] : [])]);
+  };
+  /**
+   * (sprung blades on track alone) What the slider's bar rests on over the
+   * underside's hollow (its groove goes down into it): at each stud corner
+   * along the groove, between the stud rows, a solid post as wide as an
+   * anti-stud tube, up to the bed, the groove cut down through it. Its floor
+   * is under the bar, its sides joined to the bed; it clears a baseplate's
+   * studs as a tube does. (the sprung blades' groove has a floor along most of it.)
+   */
+  const fdbRests = (v: SetV): Man | undefined => {
+    if (!fourDLow(p)) return undefined;
+    const bb = fdbSlot2d(v, 0).bounds(), out: CS[] = [];
+    for (let x = Math.ceil((bb.min[0] + 2) / STUD) * STUD; x <= bb.max[0] - 2 + 1e-9; x += STUD) out.push(circle((TUBE_OD - (p.antistudFit ?? ANTISTUD_FIT)) / 2, 24, [x, v.throwY]));
+    return out.length ? s.difference(s.extrude(W.CrossSection.union(out), bedTop), [pointsPockets(v), throwChannel(v)]) : undefined;
   };
   /** The pins the blades turn on, standing on the bed. */
   // (each with a little snap lip over the plate, so the blade stays on: the plate's hole squeezes past it)
@@ -1535,7 +1552,7 @@ export function switchGeometry(s: Scad, plan: SwitchPlan, extraCuts: Man[] = [])
   const standY = (v: SetV): [number, number, number] => {
     void v;
     // (the eccentric out to the channel's side less the clearance: the +y ear stands beside the channel)
-    return [-FDB.rodW / 2 - c - STAND.handleT, -FDB.rodW / 2 - c, leverT() / 2];
+    return [-rodW / 2 - c - STAND.handleT, -rodW / 2 - c, leverT() / 2];
   };
   /** Where the eccentric is at rest (the right-hand route's), turned from straight out (+x): past dead centre, low. */
   const standRest = 180 + STAND.overDeg;
@@ -1781,10 +1798,13 @@ export function switchGeometry(s: Scad, plan: SwitchPlan, extraCuts: Man[] = [])
     grips.length = 0; grips.push(...keep.filter((q) => q.tube).map((q) => q.c));
     tubes = keep.length ? s.difference(s.extrude(W.CrossSection.union(keep.map((q) => q.cs)), PLATE_H), [...sets.map(pointsPockets), ...sets.map(throwChannel)]) : undefined;
   }
-  if (parts) { parts.body = body; if (tubes) parts.tubes = tubes; }
+  // (and what the slider's bar rests on, with sprung blades on track alone)
+  const rests = sets.map(fdbRests).filter((m): m is Man => !!m);
+  if (parts) { parts.body = body; if (tubes) parts.tubes = tubes; if (rests.length) parts.rests = s.union(rests); }
   return s.union([
     body,
     tubes,
+    ...rests,
     ...(p.endSupports === false ? [] : [t.startRailSupports(supportZ), t.supportFooting(supportZ, 0, -1),
       ...plan.endPoses.map((e) => atPose(s.union([t.endRailSupports(supportZ), t.supportFooting(supportZ, 0, +1)]), e))]),
   ]);
@@ -1858,6 +1878,8 @@ export function switchGeometry(s: Scad, plan: SwitchPlan, extraCuts: Man[] = [])
     return {
       // (the plate-style blades' pins on it too: a network's piece left them out)
       bed: fdb ? s.union([pointsBed(v), fdbPins(v)]) : pointsBed(v), pockets: pointsPockets(v), stockCut: stockFootCut(v), arm: throwArm(v), channel: throwChannel(v),
+      // (sprung blades on track alone: what the slider rests on, added after the underside's cut)
+      rests: fdbRests(v),
       // (throw_ballast: the ballast's steps round the arm, and their outermost outline, for the underside)
       steps: throwSteps(k), stepRect: plan.setData[k].steps?.rect(plan.setData[k].steps!.buddy ? 1 : 0),
       bladeRails: [

@@ -79,6 +79,21 @@ export const PLATE_H = 3.2;
 export const HEAD_HW = 1.25;
 export const STUD = 8;
 
+/**
+ * (sprung blades, track alone) The slider as the sprung blades' 2-05-012 runs in their
+ * base 2-04-033: a bar 1.6 thick, its top 0.2 under the bed's top, in a
+ * groove open at the top, the bed at the sleepers' top. Their bar is 5 wide in
+ * a 5.6 groove on a stud line, floored over the studs; here it goes between
+ * two rows of a baseplate's studs instead (3.2 apart): 2.4 wide, in a 3.0
+ * groove, so the track still sits on the studs. Its floor (over the
+ * underside's hollow, posts at the stud corners: base.ts fdbRests) is c under
+ * the bar (the clearance round every moving part), so 2.1 under the bed's
+ * top, not the sprung blades' 1.8 (their bar lies on it).
+ */
+export const D4_SLIDER = { barH: 1.6, under: 0.2, rodW: 2.4 };
+/** sprung blades on track alone: the bed at the sleepers' top, the slider in a groove through it (D4_SLIDER). */
+export const fourDLow = (p: { bladeStyle?: string; generateBallast?: boolean; mechStyle?: string }) => p.bladeStyle === 'sprung' && p.mechStyle === 'plates' && !p.generateBallast;
+
 /** Values for the whole switch (not per set). */
 import { scadParity as scadParityNow } from '../geom/track';
 
@@ -96,12 +111,14 @@ export function switchGlobals(p: SwitchParams) {
   const bottomCavity = p.studH + 0.2;
   // (with an anti-stud underside, or none at all, the parts sit above a baseplate's studs)
   // (the plate-style slider runs in a tunnel with a floor: room for one (0.6) under it)
-  const fdb = p.mechStyle === 'plates';
-  const layerZ0 = pieceBottomZ + (antistud || !ballast ? bottomCavity : 0) + (p.mechFloor ?? (fdb ? (ballast ? 1.2 : 0.9) : 0.2));
+  const fdb = p.mechStyle === 'plates', low = fourDLow(p);
+  // (sprung blades on track alone: the bar in its groove from the bed's top down, between the underside's stud rows: D4_SLIDER)
+  const layerZ0 = low ? PLATE_H - D4_SLIDER.under - D4_SLIDER.barH
+    : pieceBottomZ + (antistud || !ballast ? bottomCavity : 0) + (p.mechFloor ?? (fdb ? (ballast ? 1.2 : 0.9) : 0.2));
   // (the plate-style: the slider bar in the bed under the blade plates: 2.4 tall, 2 without ballast, where the bed's thinner)
-  const layerTop = layerZ0 + (fdb ? (ballast ? 2.4 : 2) : 1.4);
+  const layerTop = layerZ0 + (low ? D4_SLIDER.barH : fdb ? (ballast ? 2.4 : 2) : 1.4);
   const cavityTop = layerTop + p.pointClearance;
-  const bedTop = ballast ? PLATE_H : Math.max(PLATE_H, cavityTop + 0.8);
+  const bedTop = ballast || low ? PLATE_H : Math.max(PLATE_H, cavityTop + 0.8);
   const leverTipD = 4.5, leverBossD = 5;
   const leverTipLow = layerZ0 + 0.6 + p.pointClearance + leverTipD / 2;
   // (on a bracket the pivot is a plate higher: over the arm's top, its studs and the bracket's plate)
@@ -114,7 +131,9 @@ export function switchGlobals(p: SwitchParams) {
     leverTipD, leverBossD, leverTipLow, leverPz, leverDa, bladeNeed,
     discR: p.bladeDiscD / 2, pivotPinD: 3, pivotPinUp: 0.5, heelBarW: 4,
     postW: 1.2, postL: 3, tineGap: 1.2 + 0.3, throwRodW: 3,
-    leverBossLen: 3, leverDrvW: 1.2, leverEarT: 2, leverBumpR: 5, forkWall: 1.2, armW: 3 * STUD,
+    leverBossLen: 3, leverDrvW: 1.2, leverEarT: 2, leverBumpR: 5, forkWall: 1.2,
+    // (sprung blades on track alone: 4 studs wide, so its sides fall between stud rows, as the slider's line down its middle does)
+    armW: (low ? 4 : 3) * STUD,
   };
 }
 export type SwitchGlobals = ReturnType<typeof switchGlobals>;
@@ -185,9 +204,12 @@ export function pointsSet(routes: Route[], ps: PointsSet, p: SwitchParams, defau
   // (prototype blades: the tie bar at the points, as a switch's head rod is: on the first stud line where the
   // throw arm clears the end connector (half its width past it) and its post has plate round it)
   const fdbYSimple = Math.max(toeY + 8, Math.min(fdbPivotY - 8, Math.round((fdbPivotY - 0.6 * (fdbPivotY - toeY) - 4) / 8) * 8 + 4));
-  const fdbY = (p.bladeStyle === 'prototype' || (p.bladeStyle === 'sprung' && p.generateBallast)) && p.mechStyle === 'plates'
+  // (sprung blades on track alone: between two stud lines, where the slider's groove clears a baseplate's studs)
+  const low = fourDLow(p), half = low ? 0 : 4;
+  const fdbY = (p.bladeStyle === 'prototype' || p.bladeStyle === 'sprung') && p.mechStyle === 'plates'
     // (and with Peco's spring, room for its pin on the toe's side, past the plates' start)
-    ? Math.min(fdbYSimple, Math.ceil((Math.max(toeY + 8, 8 + g.armW / 2, p.throwAction === 'overcentre' ? 8 + 12 + 4 : 0) - 4) / 8 - 1e-6) * 8 + 4) : fdbYSimple;
+    ? Math.min(low ? Math.max(toeY + 8, Math.min(fdbPivotY - 8, Math.round((fdbPivotY - 0.6 * (fdbPivotY - toeY)) / 8) * 8)) : fdbYSimple,
+      Math.ceil((Math.max(toeY + 8, 8 + g.armW / 2, p.throwAction === 'overcentre' ? 8 + 12 + 4 : 0) - half) / 8 - 1e-6) * 8 + half) : fdbYSimple;
   const fdbTravel = p.pointThrow * (fdbPivotY - fdbY) / Math.max(1, fdbPivotY - toeY) + p.springPreload;
   const leverTravel = over.leverTravel ?? (p.mechStyle === 'plates' ? fdbTravel : throwTravel + 2 * p.springPreload);
   const postX = [tineTip[0] - p.springPreload];
