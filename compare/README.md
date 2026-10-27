@@ -9,11 +9,12 @@ build says so).
 | Option (Piece options) | Values | Default |
 |---|---|---|
 | `throwStyle` (Throw: *Lever or stand*) | `built-in`, `bracket`, **`stand`** (new) | `built-in` |
-| `throwAction` (Throw: *Points held by*) | `detent`, `overcentre`, `springback` | `detent` |
-| `bladeStyle` (Points: *Blades*) | `simple`, `prototype` | `simple` |
+| `throwAction` (Throw: *Points held by*) | `detent`, `overcentre` | `detent` |
+| `bladeStyle` (Points: *Blades*) | **`sprung`**, `simple` (rigid), `prototype` (rigid) | `sprung` |
 
 The defaults build what was built before, apart from two fixes to faults the
-new checks found (see the end).
+new checks found (see the end), and the blades: the sprung blades' are the default now
+(2026-10-27), and the spring-back points are gone (section 2).
 
 Colours: grey track, blue blades, orange slider (the tie bar / throw rod),
 gold lever or stand handle, red Peco spring.
@@ -71,46 +72,36 @@ pocket), `left-2-overcentre-print.png` (the spring as printed, free and
 straight), `left-2-overcentre-section-throw.png` (cross-section along the
 slider).
 
-## 2. Spring-back points (`throwAction: 'springback'`)
+## 2. Blades: the sprung blades' (default) or rigid
 
-**Reference.** In a spring switch the switch stand stays where it's set. A
-spring (in the prototype, a spring housing in the connecting rod, often with
-an oil buffer/dashpot) lets a trailing train force the points over, then
-returns them after it.
+The spring-back points (`throwAction: 'springback'`) are gone (2026-10-27):
+each blade's long, slim tongue was the spring, and its walls were too thin
+to print; they snapped off. The ordinary tongue round the post is gone too,
+for the same reason. Old
+designs with spring-back points open with the sprung blades.
 
-**Here.** Each blade's tongue (the plate-style flexure, which the slider's post
-sits in) becomes the spring. It's long (21 mm) and slim (1.4 mm), in a
-wider plate (14 mm or more, narrowing back to 10 mm past the tongue's root,
-where the rails close in). It can give the whole throw where the post meets
-it plus the preload, at 1.3–1.5% strain. For the Left switch it holds the
-closed blade with about 0.4 N and pushes back with about 1.1 N fully
-trailed. The slot is cut to the swept shape and is wider on the side toward
-the rail, which gives preload plus throw (2.3 mm the other way). The post's
-hole is wide enough for the tongue tip to turn.
+**the sprung blades' (`bladeStyle: 'sprung'`, the default).** Each blade is a 3 mm plate
+on a LEGO stud at its heel, with its rail on top. Underneath, a pocket holds
+two leaf-spring beams, rooted in the plate, with the slider's post between
+them. The beams take the preload and give way to a trailing train's wheels.
+The pocket's roof prints over supports built into it (0.2 mm under it), which
+break out after printing. By the stock rail the plate's edge slopes at 45
+degrees clear of the rail's foot, so nothing overhangs as printed.
 
-**Use it with the switch stand**, which locks the throw. With a lever, the
-lever's click can't hold the slider against the blades' springs, and the
-build warns about that (`left-3b-springback-lever-*.png` shows that
-combination).
+**Rigid (`bladeStyle: 'simple'`, and `'prototype'`).** The slider's post sits
+in a plain hole in the plate: no spring, no preload. The plate is narrower, so
+rigid blades fit where the sprung blades' don't. A double slip's or a tandem's points
+fall back to them, with a warning, and the tandem three-way template uses them.
 
-**Prints.** Blades print flat as before. The tongue bends in the plate's
-plane, along its layers.
+**Pros (sprung):** a trailing train pushes the blades over without damage;
+they hold against the stock rail. **Cons:** a wider plate; the supports to
+break out. **Pros (rigid):** simplest; fits tight places. **Cons:** no give: a
+train trailing through the wrong way is stopped.
 
-**Where it differs from the prototype.**
-- One spring per blade, in the blade's own tongue, instead of one spring in
-  the throw rod. Both blades still move together: a trailing train's wheels
-  push one blade open and the other shut.
-- No dashpot, so the blades snap back between wheelsets.
-
-**Pros:** a true spring switch with the stand; no extra parts.
-**Cons:** wider blade plates; a lighter hold on the closed blade (about 0.4 N);
-not on three-ways (their blades go twice as far, and tongues that gave that
-much wouldn't fit between them), where they keep the ordinary tongues
-(noted).
-
-Images: `left-3-springback-stand-close.png`, `-exploded.png`, `-plan.png`,
-`-stand.png`, `left-3-springback-tongues.png` (plan close-up of the long
-tongues and their slots).
+Images: `left-1-current-*` (the sprung blades', the default; `-blades.png` is a plan
+close-up), `left-3-rigid-stand-close.png`, `-exploded.png`, `-plan.png`,
+`-stand.png`, `left-3-rigid-blades.png` (plan close-up), and
+`crossover-3-rigid-stand-*`.
 
 ## 3. Prototype blades (`bladeStyle: 'prototype'`)
 
@@ -187,7 +178,7 @@ the over-dead-centre eccentric alone, not a separate latch. The handle is
 short (12 mm) to stay clear of the stock rail when it lies toward the track.
 
 **Pros:** positive lock; low profile (about 15 mm tall vs the lever's 35 mm);
-needed for spring-back points. **Cons:** a train trailing through a locked
+works with either blade. **Cons:** a train trailing through a locked
 (non-spring) switch is stopped and derails, as with a real hand-thrown
 switch; a three-way's middle position is with the handle upright, unlocked
 (noted); plate-style points only.
@@ -198,11 +189,11 @@ Images: `left-4-stand-close.png`, `-exploded.png`, `-plan.png`, `-stand.png`
 
 ## Combined, and the network piece
 
-- `left-6-all-prototype-*.png`: prototype blades, spring-back tongues and the
-  switch stand together, a prototype spring switch (`-whole.png` is the
-  whole switch from above; compare `left-1-current-whole.png`).
+- `left-6-all-prototype-*.png`: prototype blades and the switch stand
+  together (`-whole.png` is the whole switch from above; compare
+  `left-1-current-whole.png`).
 - `crossover-1-current-*`, `crossover-2-overcentre-prototype-*`,
-  `crossover-3-springback-stand-prototype-*` (`-close`, `-exploded`,
+  `crossover-3-rigid-stand-*` (`-close`, `-exploded`,
   `-plan`): the same options in a network piece.
 - `left-1-current-*`: today's default, for comparison (`-section-throw.png`
   is along the slider with the lever).
