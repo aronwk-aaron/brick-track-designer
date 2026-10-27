@@ -31,6 +31,17 @@ describe("the sprung blades", () => {
     }
   }, 120000);
 
+  it('a short blade (R40): the spring rooted in the plate (one body with it), its pocket short of the stud hole', async () => {
+    const B40: Route = { id: 'B', start: [0, 0, 0], segments: [{ kind: 'arc', radius: 320, angle: 22.5 }, { kind: 'straight', length: 150 }] };
+    const plan = switchPlan([{ ...A, segments: [{ kind: 'straight', length: 300 }] }, B40], [[0, 1, 12]], { ...p, generateBallast: false }, 1), s = new Scad(await kernel()), gm = switchGeometry(s, plan);
+    for (const m of gm.pointsParts(0)) {
+      expect(m.decompose().length).toBe(3);                      // the blade with its beams, and the two supports
+      const bb = m.boundingBox(), cut = m.slice(bb.min[2] + 0.5).toPolygons() as number[][][];
+      // (no hole round the stud's that runs into the pocket: the stud's hole is a closed circle on its own)
+      expect(cut.length).toBeGreaterThan(3);
+    }
+  }, 120000);
+
   it('track alone: the bed at the sleepers\' top, a 3 mm plate under a 3.1 rail; blades and slider clear of the base both ways', async () => {
     const q = { ...p, generateBallast: false };
     const plan = switchPlan([A, B], [[0, 1, 12]], q, 1), s = new Scad(await kernel()), gm = switchGeometry(s, plan), base = gm.base();
