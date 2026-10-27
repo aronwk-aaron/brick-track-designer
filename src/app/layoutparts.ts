@@ -144,7 +144,10 @@ const ptAt = (rt: Route, s: number): [number, number] => { const p = routePose(r
 export function layoutParts(design: Design, pieces: PieceLike[], name = design.name || 'track-piece'): LayoutExport {
   const folder = name.replace(/[\\/:*?"<>|]+/g, '-').trim() || 'track-piece';
   const prefix = keyName(name);
-  const track = pieces.filter((p) => !isMovingPart(p.name)), moving = pieces.filter((p) => isMovingPart(p.name));
+  // (a ballast piece printed apart, under its track or a bought curve, drawn on the part above it as the moving parts
+  // are: one part there for the track's connections, not two over each other)
+  const onPart = (n: string) => isMovingPart(n) || /-ballast$/.test(n);
+  const track = pieces.filter((p) => !onPart(p.name)), moving = pieces.filter((p) => onPart(p.name));
   if (!track.length) throw new Error('nothing built to export');
   const box3 = (ps: Float32Array) => {
     const b = [Infinity, Infinity, Infinity, -Infinity, -Infinity, -Infinity];
@@ -284,6 +287,7 @@ export function partXml(p: LayoutPart, sortingKey: string): string {
 \t<Description>
 \t\t<en>${esc(p.description)}</en>
 \t</Description>
+\t<NotListedInLibrary>true</NotListedInLibrary>
 \t<SortingKey>${esc(sortingKey)}</SortingKey>
 ${n ? `\t<ConnexionList>\n${cs}\t</ConnexionList>\n` : ''}</part>
 `;
@@ -331,9 +335,10 @@ Collaborative Brick Layout Designer (desktop 1.4.0 or later)
      unpacked into the imports folder and the parts reloaded.
      (Or unzip it somewhere to keep it, then Tools > Parts > Parts
      Folders..., Add..., choose the "${folder}" folder, OK.)
-  2. The parts are in the Parts panel under the category "${folder}".
-     Drag "${name} (all ... parts, as designed)" onto the map for the whole
-     design, or the parts one at a time.
+  2. The set is in the Parts panel under the category "${folder}": drag
+     "${name} (all ... parts, as designed)" onto the map. The pieces are
+     hidden in the parts library (they only make sense in their set): place
+     the whole set, then Ungroup it to move them one at a time.
   After exporting again (the design changed), add the new zip the same way
   (or unzip over the old folder and use Tools > Parts > Reload Parts): maps
   using the parts show the new ones.

@@ -80,6 +80,8 @@ const parseSet = (x: ReturnType<typeof layoutParts>) => {
   const g = parseXml(new TextDecoder().decode(f.data));
   expect(g.name).toBe('group');
   expect(kid(g, 'CanUngroup').text).toBe('true');
+  // (the set listed in the parts library; its pieces hidden there, BlueBrick's NotListedInLibrary)
+  expect(g.kids.some((k) => k.name === 'NotListedInLibrary')).toBe(false);
   return kid(g, 'SubPartList').kids.map((s) => ({ id: s.attrs.id, x: num(kid(s, 'position'), 'x'), y: num(kid(s, 'position'), 'y'), angle: num(s, 'angle') }));
 };
 const parsePart = (x: ReturnType<typeof layoutParts>, id: string) => {
@@ -87,6 +89,8 @@ const parsePart = (x: ReturnType<typeof layoutParts>, id: string) => {
   const p = parseXml(new TextDecoder().decode(f.data));
   expect(p.name).toBe('part');
   expect(kid(kid(p, 'Description'), 'en').text.length).toBeGreaterThan(0);
+  expect(kid(p, 'NotListedInLibrary').text).toBe('true');
+  expect(p.kids[p.kids.findIndex((k) => k.name === 'Description') + 1].name).toBe('NotListedInLibrary');
   const list = p.kids.find((k) => k.name === 'ConnexionList')?.kids ?? [];
   return list.map((c, k) => {
     expect(c.name).toBe('connexion');
@@ -136,6 +140,7 @@ describe('layout parts', { timeout: 120000 }, () => {
     const names = x.files.map((f) => f.name);
     for (const p of x.parts) expect(names).toEqual(expect.arrayContaining([`Long run/${p.id}.xml`, `Long run/${p.id}.gif`]));
     expect(names).toEqual(expect.arrayContaining(['Long run/Long_run.whole.set.xml', 'Long run/_partlist.txt', 'Long run/config/About.txt', 'README.txt']));
+    expect(new TextDecoder().decode(x.files.find((q) => q.name === 'README.txt')!.data)).toMatch(/hidden in the parts library/);
     for (const p of x.parts) {
       // the picture: the part's box at 8 px a stud, see-through round the track
       const g = readGif(p.gif);
@@ -156,6 +161,16 @@ describe('layout parts', { timeout: 120000 }, () => {
     expect(s.angle).toBeCloseTo(90, 3); expect(e.angle).toBeCloseTo(-90, 3);
     // each part: two connections, at its ends
     for (const p of x.parts) expect(parsePart(x, p.id)).toHaveLength(2);
+  });
+  it('bought curves on printed ballast: one part per curve (its ballast drawn on it), joined end to end', async () => {
+    const d: Design = { version: 1, gaugeStuds: 4, name: 'Curves', options: { ballast: 'ballast', splitTrack: 'lengths', legoTrack: 'lego' }, routes: [{ name: 'A', x: 0, y: 0, heading: 0, segs: [{ kind: 'curve', radius: 40, angle: 45 }] }] };
+    const b = buildDesign(await kernel(), d);
+    expect(b.pieces.filter((p) => /-ballast$/.test(p.name))).toHaveLength(2);
+    const x = layoutParts(d, b.pieces, d.name);
+    expect(x.parts).toHaveLength(2);
+    const { pairs, free } = pairUp(connectionsInSet(x));
+    expect(pairs).toHaveLength(1);
+    expect(free).toHaveLength(2);
   });
   it('a switch: one part (its moving parts drawn on it) with three ends, in the library\'s frame', async () => {
     const d: Design = { ...structuredClone(TEMPLATES['Left switch (LEGO)']), options: { printBedX: 500, printBedY: 500 } };
