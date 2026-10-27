@@ -152,10 +152,15 @@ export function joinedEnds(routes: Route[]): Set<string> {
  * by whole studs, so on a straight that starts on the stud grid their posts are
  * on it too.
  */
-export function sleeperSpots(L: number, in0: boolean, in1: boolean, gapStuds: number, wStuds: number): number[] {
+export function sleeperSpots(L: number, in0: boolean, in1: boolean, gapStuds: number, wStuds: number, curved = false): number[] {
   const sp = gapStuds + wStuds, ja = in0 ? sp / 2 : 1 + gapStuds + wStuds / 2, jb = in1 ? sp / 2 : 1 + gapStuds + wStuds / 2;
   const jMax = L / STUD - jb;
   if (jMax < ja - 1e-9) return [];
+  // (a curve: off the stud grid anyway, so spread evenly from end to end, as many as come nearest the gap set (a
+  // BrickTracks R120 piece, 23.6 studs: 5 sleepers 3.9 apart, not 4 at 4 and the 3.6 left over at one end))
+  const nc = Math.max(1, Math.round((jMax - ja) / sp) + 1);
+  if (curved && nc > 1 && (jMax - ja) / (nc - 1) >= wStuds + 1) return Array.from({ length: nc }, (_, k) => (ja + (k * (jMax - ja)) / (nc - 1)) * STUD);
+  if (curved && nc === 1) return [((ja + jMax) / 2) * STUD];
   const n = Math.floor((jMax - ja) / sp + 1e-9) + 1, j0 = ja + Math.floor(((jMax - ja) - (n - 1) * sp) / 2 + 1e-9);
   return Array.from({ length: n }, (_, k) => (j0 + k * sp) * STUD);
 }
@@ -308,7 +313,8 @@ export function crossingPiece(s: Scad, routes: Route[], o: CrossingOptions = CRO
       // plain track built in lengths, each a piece of its own, LEGO's way; then each piece's own, from its connectors)
       const in0 = x.innerEnds?.has(`${i}:start`) ?? false, in1 = x.innerEnds?.has(`${i}:end`) ?? false, wf = rt.sleeperFrame;
       const f = wf && (in0 || wf.s0 < 0.01) && (in1 || wf.s0 + L > wf.L - 0.01) ? wf : { s0: 0, L, in0, in1 };
-      const spotsAll = sleeperSpots(f.L, f.in0, f.in1, o.sleeperGapStuds ?? 2, o.sleeperWidthStuds).map((v) => v - f.s0).filter((v) => v >= 0 && v <= L && !inZone(i, v));
+      const curved = f !== wf && rt.segments.every((sg) => sg.kind === 'arc');
+      const spotsAll = sleeperSpots(f.L, f.in0, f.in1, o.sleeperGapStuds ?? 2, o.sleeperWidthStuds, curved).map((v) => v - f.s0).filter((v) => v >= 0 && v <= L && !inZone(i, v));
       const atAll = spotsAll.filter((v) => !inTie(i, v));
       // (long ties: square to this route, out under the tracks beside it; clear of every end connector)
       for (const v of spotsAll.filter((v2) => inTie(i, v2))) {

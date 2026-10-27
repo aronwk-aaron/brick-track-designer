@@ -927,7 +927,7 @@ export class TrackCanvas {
         const gapS = op.sleeperGapStuds ?? 2, sw = op.sleeperWidthStuds ?? 2, half = g + 1.5;
         toRoutes(d).forEach((rt, i) => {
           if (isMono(d.routes[i]) || !rt.segments.length) return;
-          for (const sAt of sleeperSpots(routeLength(rt), false, false, gapS, sw)) {
+          for (const sAt of sleeperSpots(routeLength(rt), false, false, gapS, sw, rt.segments.every((sg) => sg.kind === 'arc'))) {
             const p = routePose(rt, sAt), h = (p[2] * Math.PI) / 180, rx = Math.cos(h), ry = Math.sin(h), x = p[0] / MM, y = p[1] / MM;
             line([[x - rx * half, y - ry * half], [x + rx * half, y + ry * half]], 'rgba(140,128,110,0.42)', sw * this.scale);
           }
