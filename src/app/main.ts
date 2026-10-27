@@ -1040,7 +1040,7 @@ const OPTION_FORM: OptSection[] = [
       { v: '2', t: 'Two', tip: 'Both blades move, as LEGO and most model switches.' },
       { v: '1', t: 'One (single point)', tip: 'Only the blade on the curved side moves; the other rail is fixed, with a flangeway beside its stock rail, as a tram\'s single-point switch.',
         con: 'The one blade steers both ways: a wheel can pick the wrong way if the wheels are loose. Three-ways keep both blades.' }] },
-    { key: 'bladeHold', label: 'Blades held down by', off: (c) => onlyPlates(c) ?? (c.o.bladeStyle === 'sprung' && c.ballast ? 'Blade shape is sprung: they sit on studs' : undefined), choices: [
+    { key: 'bladeHold', label: 'Blades held down by', off: (c) => onlyPlates(c) ?? (c.o.bladeStyle === 'sprung' ? 'Blade shape is sprung: they sit on studs' : undefined), choices: [
       { v: 'lip', t: 'Snap lip on the pin', tip: 'Each blade plate snaps over a lip on its pin. Nothing extra to print.', con: 'A printed lip can wear.' },
       { v: 'bracket', t: 'Small bracket over the blade', tip: 'A small bracket pegged into the bed covers each blade plate so it can\'t lift.', con: 'Two more small parts to print.' }] },
     { key: 'bladeStyle', label: 'Blade shape', off: onlyPlates, choices: [
@@ -1048,7 +1048,7 @@ const OPTION_FORM: OptSection[] = [
       { v: 'prototype', t: 'Realistic (planed, tucked under the rail)', tip: 'Blades planed to a point and tucked under the stock rail head, so flanges can\'t catch them.',
         con: 'Fit the blades swung open, then close them. The stock rail head is thinner along the points.' },
       { v: 'sprung', t: 'sprung', tip: 'As sprung\'s blades: a 3 mm plate with a flat top on a LEGO stud, the spring two beams in a pocket underneath, with supports built in. The slider meets them at the points.',
-        con: 'Break the supports out of the pocket after printing. Nothing holds the blades down but the stud.', no: (c) => (c.ballast ? undefined : 'needs ballast (track alone, the bed is raised over the slider): simple blades are used') }] },
+        con: 'Break the supports out of the pocket after printing. Nothing holds the blades down but the stud.' }] },
     { key: 'pointsModule', label: 'Points go in', off: onlyTines, choices: [
       { v: 'built-in', t: 'From below', tip: 'The pockets open through the bottom. Fit the points before putting the track on the baseplate.' },
       { v: 'layers', t: 'From above, under a lid', tip: 'A lower layer holds the moving parts; the deck with the rails clips on top with studs.',
@@ -1071,7 +1071,7 @@ const OPTION_FORM: OptSection[] = [
       { v: 'detent', t: 'Lever click', tip: 'The lever clicks into place at each end.', con: 'A train trailing through the wrong way can push the points part way and derail.' },
       { v: 'overcentre', t: 'Over-centre spring', tip: 'A printed spring snaps the points to whichever side they\'re pushed. Trains can trail through.', con: 'The spring is light (about 0.3 N) and depends on print accuracy. Not on three-ways or with a switch stand.' },
       { v: 'springback', t: 'Spring-back', tip: 'The blades give way for a trailing train and spring back after it. Use with the switch stand.', con: 'Wider blade plates and a lighter hold on the closed blade.',
-        no: (c) => (c.o.bladeStyle === 'sprung' && c.ballast ? 'sprung blades spring back already (their beams): the lever click is used' : undefined) }] },
+        no: (c) => (c.o.bladeStyle === 'sprung' ? 'sprung blades spring back already (their beams): the lever click is used' : undefined) }] },
     { key: 'throwSide', label: 'Lever side', help: 'For every switch, unless set on the branch route\'s card or dragged on the plan.', choices: [
       { v: 'auto', t: 'Auto', tip: 'On the side the branch leaves (a three-way: right).' },
       { v: 'left', t: 'Left', tip: 'Left, facing along the points from the toe.' },

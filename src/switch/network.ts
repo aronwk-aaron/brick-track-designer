@@ -28,6 +28,8 @@ export interface SplitParts {
   /** the points' frame (at the split, heading the way the routes part), and its set's values in it (where the lever is) */
   frame: Pose; set: SwitchPlan['sets'][number];
   adds: Man[]; cuts: Man[];
+  /** (sprung blades on track alone) added after the underside's cut: what the slider rests on over the hollow */
+  rests?: Man;
   /** cut from every route's rails (the planed stock feet) */
   stock: Man;
   /** cut from one route's rails (by route index): the rails the blades replace */
@@ -235,6 +237,7 @@ export function networkSplits(s: Scad, routes: Route[], sol: Solution, p: BasePa
       key: JSON.stringify({ rts, used, p: pp, P, routes: [i, j, j2], end, n, of: groups.length }),
       toe: [P[0], P[1]], frame: P, set: plan.sets[0], src: gr.main,
       adds: [place(mech.bed, P), place(mech.arm, P), ...mech.steps.map((m) => place(m, P))], cuts: [place(mech.pockets, P), place(mech.channel, P)],
+      ...(mech.rests && { rests: place(mech.rests, P) }),
       ...(mech.stepRect && { stepRect: mech.stepRect }),
       stock: place(mech.stockCut, P),
       bladeCuts: mech.bladeRails.map(([rt, cut]) => [worldOf(rt), place(cut, P)] as [number, Man]),
@@ -261,12 +264,16 @@ export function networkBody(s: Scad, routes: Route[], sol: Solution, copt: Cross
   for (const [i, ms] of railCuts) railCuts.set(i, ms.filter(ok));
   // (the throw arms hollow underneath with tubes, like the bed: out to the stud line past the lever)
   const hollows = splits.map((sp) => {
-    const v = sp.set, xEnd = v.leverX + v.throwDir * 10, xOut = v.throwDir * Math.ceil((v.throwDir * xEnd) / 8 - 1e-6) * 8, hw = 12;
+    const v = sp.set, xEnd = v.leverX + v.throwDir * 10, xOut = v.throwDir * Math.ceil((v.throwDir * xEnd) / 8 - 1e-6) * 8, hw = (v.armRect[3] - v.armRect[2]) / 2;
     return { P: sp.frame, r: [Math.min(v.throwStockX, xOut), Math.max(v.throwStockX, xOut), v.throwY - hw, v.throwY + hw] as [number, number, number, number] };
   });
   // (and the steps round them, on ballast)
   for (const sp of splits) if (sp.stepRect) hollows.push({ P: sp.frame, r: sp.stepRect });
-  return crossingPiece(s, routes, copt, sol, grips, { railCuts, innerEnds, adds: adds.filter(ok), cuts: [...cuts, ...(more.cuts ?? [])].filter(ok), gridPose: more.gridPose, hollows, bedAt: more.bedAt });
+  const body = crossingPiece(s, routes, copt, sol, grips, { railCuts, innerEnds, adds: adds.filter(ok), cuts: [...cuts, ...(more.cuts ?? [])].filter(ok), gridPose: more.gridPose, hollows, bedAt: more.bedAt });
+  // (sprung blades on track alone: what the sliders rest on, after the underside's cut; on the stud corners of each
+  // points set's own frame, so in line with the piece's underside where that frame is on its grid)
+  const rests = splits.flatMap((sp) => (sp.rests && ok(sp.rests) ? [sp.rests] : []));
+  return rests.length ? s.union([body, ...rests]) : body;
 }
 
 export function networkPiece(s: Scad, routes: Route[], sol: Solution, p: BaseParams, copt: CrossingOptions, grips?: [number, number][],
