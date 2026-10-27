@@ -189,6 +189,7 @@ function fdbLayout(v: SetLike, p: BaseParams, rails: [Route, number, number][], 
       return { pivot, tip, ang, post, open: b === 0 ? 0 : -n3 * ang, pivotIn: pin, postIn, shift, keep, hw, ...(notches.length && { notches }) };
     };
     const notches = v.notches?.[b] ?? [];
+    let rootNow = D4.root;
     const f0 = make(0, FDB.pivotIn, postIn0);
     if (!pts.length) return f0;
     const angles = (f: { ang: number }) => Array.from({ length: 9 }, (_, k) => (dir * n3 * f.ang * k) / 8);
@@ -213,7 +214,7 @@ function fdbLayout(v: SetLike, p: BaseParams, rails: [Route, number, number][], 
         return [-w, SB.len + 3, -w, w];
       }
       // (sprung: the spring's pocket, from just past the post toward the toe back to the beams' roots)
-      if (fourD) { const h = d4Half((f.ang * n3 * Math.PI / 180) * norm(sub(f.post, f.pivot)) + pre); return [-D4.past, D4.root, -h, h]; }
+      if (fourD) { const h = d4Half((f.ang * n3 * Math.PI / 180) * norm(sub(f.post, f.pivot)) + pre); return [-D4.past, rootNow, -h, h]; }
       const w = FDB.tongueW / 2 + FDB.slotW;
       return [-w, FDB.tongueL, -w, w];
     };
@@ -232,16 +233,20 @@ function fdbLayout(v: SetLike, p: BaseParams, rails: [Route, number, number][], 
     };
     // (the pin's snap lip clear of the blade's rail on the plate)
     const minPin = HEAD_HW + (fourD ? D4.holeD : FDB.pinD) / 2 + 2 * c + 0.15 + 0.2;
-    for (let shift = 0; shift <= 40; shift += 1) {
-      for (let pin = FDB.pivotIn; pin >= minPin - 1e-9; pin -= 0.25) {
-        if (!pinOk(make(shift, pin, postIn0))) continue;
-        for (let pi = postIn0; pi >= HEAD_HW + 0.5 - 1e-9; pi -= 0.25) {
-          const f = make(shift, pin, pi);
-          if (!tongueOk(f) || ((shift || pin !== FDB.pivotIn || pi !== postIn0) && !barOk(f))) continue;
-          return shift ? { ...f, stockKeep: stockBehind(f), stockHw: hw } : f;
+    // (the sprung blades' spring as theirs, 34.5 long; where other track running past leaves no room for it, shorter (stiffer))
+    for (const root of fourD ? [D4.root, 28, 22] : [0]) {
+      rootNow = root;
+      for (let shift = 0; shift <= 40; shift += 1) {
+        for (let pin = FDB.pivotIn; pin >= minPin - 1e-9; pin -= 0.25) {
+          if (!pinOk(make(shift, pin, postIn0))) continue;
+          for (let pi = postIn0; pi >= HEAD_HW + 0.5 - 1e-9; pi -= 0.25) {
+            const f = { ...make(shift, pin, pi), ...(fourD && root !== D4.root && { root }) };
+            if (!tongueOk(f) || ((shift || pin !== FDB.pivotIn || pi !== postIn0) && !barOk(f))) continue;
+            return shift ? { ...f, stockKeep: stockBehind(f), stockHw: hw } : f;
+          }
         }
+        if (sOf(rt, railPoint(rt, v.sHeel - 4 - shift, o)) - sPost < (fourD ? root : FDB.tongueL) + pinR + FDB_RIM) break;
       }
-      if (sOf(rt, railPoint(rt, v.sHeel - 4 - shift, o)) - sPost < (fourD ? D4.root : FDB.tongueL) + pinR + FDB_RIM) break;
     }
     return { ...f0, blocked: "there's no room for plate round its pin and its tongue" };
   }
@@ -1186,9 +1191,9 @@ export function switchGeometry(s: Scad, plan: SwitchPlan, extraCuts: Man[] = [])
     const box = (a0: number, a1: number, c0: number, c1: number) => s.polygon([at(a0, c0), at(a1, c0), at(a1, c1), at(a0, c1)]);
     const give = rad(fb.ang * (v.three ? 2 : 1)) * norm(d) + p.springPreload, h = d4Half(give), g2 = d4Gap() / 2;
     // (the pocket inside the plate: a rim of at least 1 all round)
-    const pocket = box(-D4.past, D4.root, -h, h).intersect(plate2d.offset(-1, 'Miter', 1000));
-    const beams = W.CrossSection.union([box(-D4.past + 1, D4.root + 0.5, g2, g2 + D4.beamW), box(-D4.past + 1, D4.root + 0.5, -g2 - D4.beamW, -g2)]).intersect(pocket.offset(0.01, 'Miter', 1000));
-    const supports = pocket.offset(-0.9, 'Miter', 1000).subtract(W.CrossSection.union([beams, box(-D4.past, D4.root, -g2, g2)]).offset(D4.slit, 'Miter', 1000));
+    const root = fb.root ?? D4.root, pocket = box(-D4.past, root, -h, h).intersect(plate2d.offset(-1, 'Miter', 1000));
+    const beams = W.CrossSection.union([box(-D4.past + 1, root + 0.5, g2, g2 + D4.beamW), box(-D4.past + 1, root + 0.5, -g2 - D4.beamW, -g2)]).intersect(pocket.offset(0.01, 'Miter', 1000));
+    const supports = pocket.offset(-0.9, 'Miter', 1000).subtract(W.CrossSection.union([beams, box(-D4.past, root, -g2, g2)]).offset(D4.slit, 'Miter', 1000));
     const hole = T(s.cylinder(D4.holeDepth + 1, D4.holeD / 2, D4.holeD / 2, 40), [fb.pivot[0], fb.pivot[1], z0 - 1]);
     return s.union([
       s.difference(plate, [T(s.extrude(pocket, D4.pocketH + 1), [0, 0, z0 - 1]), hole]),

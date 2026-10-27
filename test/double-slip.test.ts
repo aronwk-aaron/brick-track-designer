@@ -9,11 +9,13 @@ import { buildDesign } from '../src/app/build';
 import { TEMPLATES } from '../src/app/design';
 
 describe('double slip', () => {
-  for (const [name, more, note] of [['two blades a set: on tines', {}, true], ['one blade a set (single point): on top', { pointBlades: 1 as const }, false]] as const)
+  for (const [name, more, note] of [['two blades a set: on tines', {}, true], ['one blade a set (single point): on top', { pointBlades: 1 as const }, false],
+    ['sprung blades on ballast: the plain shape in the slip (their plate doesn\'t fit)', { pointBlades: 1 as const, bladeStyle: 'sprung' as const, ballast: 'ballast' as const }, false]] as const)
     it(`${name}: four sets of points, nothing in the track`, async () => {
       const w = await kernel(), b = buildDesign(w, { ...TEMPLATES['Double slip (22.5°)'], options: { printBedX: 2000, printBedY: 2000, ...more } });
       expect(b.overlay.issues).toEqual([]);
       expect(b.info.warnings.some((x) => /built on tines under the bed, the blades notched/.test(x))).toBe(note);
+      if ('bladeStyle' in more) expect(b.info.warnings.some((x) => /blades are the plain shape/.test(x))).toBe(true);
       const man = (P: Float32Array) => { const mesh = new w.Mesh({ numProp: 3, vertProperties: new Float32Array(P), triVerts: new Uint32Array(P.length / 3).map((_, i) => i) }); mesh.merge(); return new w.Manifold(mesh); };
       const track = w.Manifold.union(b.pieces.filter((p) => !/points|throw|lever/.test(p.name)).map((p) => man(p.positions)));
       const moving = b.pieces.filter((p) => /points/.test(p.name));

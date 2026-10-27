@@ -155,6 +155,8 @@ export interface FdbBladeLayout {
   keep: Pt[][]; hw: number; stockKeep?: Pt[]; stockHw?: number; blocked?: string;
   /** Another track's rails crossing the blade near its pin, where it hardly moves (a double slip's obtuse crossing): the blade notched there for their flanges, as a frog. */
   notches?: Notch[];
+  /** (sprung blades) the spring's beams' length, where shorter than theirs (other track running past) */
+  root?: number;
 }
 
 /** Another track's rail across a blade near its heel (a double slip's obtuse crossing): the rail, where along it and where it crosses; how far along it it's within the blade's width. */
