@@ -142,9 +142,10 @@ export function networkSplits(s: Scad, routes: Route[], sol: Solution, p: BasePa
     const left = sp.routes.map((r, n) => (sp.merge ? sp.spans[n][0] : routeLength(routes[r]) - sp.spans[n][1]));
     if (Math.min(...left) < 24) warnings.push(`a track ends in the points at ${studsAt(gr.main)}: carry it on past the frog`);
   }
-  const built: SplitParts[] = [];
-  for (const gr of groups) {
-    const sp = sol.splits[gr.main], n = built.length;
+  // (each points set planned first; then the levers placed, the most hemmed in first, so one with few clear spots isn't
+  // left with none by its neighbours; then built in the design's order)
+  const preps = groups.map((gr) => {
+    const sp = sol.splits[gr.main];
     const [i, j] = sp.routes, j2 = gr.kids.length ? sol.splits[gr.kids[0]].routes[1] : -1;
     // the points' frame: at the split, looking the way the routes part
     const dirOf = (r: number) => (sp.merge ? reversedRoute(routes[r]) : routes[r]);
@@ -170,12 +171,14 @@ export function networkSplits(s: Scad, routes: Route[], sol: Solution, p: BasePa
     const ed = throwEdit([P[0], P[1]]);
     const ownR = ed?.side ?? routes[j].throwSide;
     const own = ownR && ownR !== 'auto' ? ownR : p.throwSide;
-    let tside = own === 'left' ? -1 : own === 'right' ? 1 : three ? 1 : bRight ? -1 : 1;
-    let over: SetOver = { ...(ed?.leverOffset !== undefined && { leverOffset: ed.leverOffset }), ...(ed?.springLength !== undefined && { springLength: ed.springLength }) };
-    const spec = (o: typeof over): SetSpec => (three ? [0, 2, 2 + toeShift([P[0], P[1]]), tside, 1, o] : [0, 1, 2 + lead + toeShift([P[0], P[1]]), tside, undefined, o]);
+    const tside = own === 'left' ? -1 : own === 'right' ? 1 : three ? 1 : bRight ? -1 : 1;
+    const over: SetOver = { ...(ed?.leverOffset !== undefined && { leverOffset: ed.leverOffset }), ...(ed?.springLength !== undefined && { springLength: ed.springLength }) };
+    const specOf = (o: SetOver, ts: number): SetSpec => (three ? [0, 2, 2 + toeShift([P[0], P[1]]), ts, 1, o] : [0, 1, 2 + lead + toeShift([P[0], P[1]]), ts, undefined, o]);
+    const spec = (o: SetOver) => specOf(o, tside);
     // (the other track near the points, in their frame; with two branches one side not built as a three-way, the other branch too)
     const foreign = [...nearby(gr), ...(C && !three ? [j2] : [])].map((r) => ({ ...routes[r], start: toFrame(P, routes[r].start) }));
-    let pp = p, used = spec(over), plan = switchPlan(rts, [used], pp, 1, foreign);
+    const used = spec(over);
+    let pp = p, plan = switchPlan(rts, [used], pp, 1, foreign);
     const blockedOf = (pl: SwitchPlan) => (pl.p.mechStyle === 'plates' ? !!pl.sets[0].fdb?.some((f, b) => f.blocked && b !== pl.sets[0].fixed) : three ? undefined : pl.sets[0].crossBlocked);
     // (a double slip's points: other track's rails cross the blades' plates near the heels. Under the bed, on tines,
     // nothing of the points is on the bed but the blades, notched where those rails cross them)
@@ -191,33 +194,51 @@ export function networkSplits(s: Scad, routes: Route[], sol: Solution, p: BasePa
       const p2 = { ...p, mechStyle: 'tines' as const }, plan2 = switchPlan(rts, [used], p2, 1, foreign);
       if (blockedOf(plan2) === false) { pp = p2; plan = plan2; { const w2 = "a double slip's points are built on tines under the bed, the blades notched for the other track's flanges: blades on top don't fit between its rails"; if (!warnings.includes(w2)) warnings.push(w2); } }
     }
+    return { gr, sp, i, j, j2, P, A, B, rts, three, own, ed, foreign, blockedOf, specOf, st: { tside, over, used, plan, pp } };
+  });
+  /** How many places a points set's lever has clear of trains on other track (its side or the other, its slider moved along). */
+  const room = (q: (typeof preps)[number]) => {
+    const { own, rts, foreign, P, blockedOf, specOf, st } = q;
+    if (blockedOf(st.plan)) return Infinity;
+    const sides = own === 'left' || own === 'right' ? [st.tside] : [st.tside, -st.tside], shifts = st.pp.mechStyle === 'plates' ? [0, 1, -1, 2, -2, 3, -3, 4, -4, 5, -5] : [0];
+    let k = 0;
+    for (const sh of shifts) for (const sd of sides) { const pl = switchPlan(rts, [specOf({ ...st.over, ...(sh && { throwShift: sh }) }, sd)], st.pp, 1, foreign); if (!blockedOf(pl) && inWay(pl, foreign, P) !== 'train') k++; }
+    return k;
+  };
+  const placeLever = (q: (typeof preps)[number]) => {
+    const { gr, own, ed, rts, foreign, P, blockedOf, specOf, st } = q;
     // (the lever and its arm clear of other track, where a train running on it would hit them: on the other side if
     // that's clear and the side wasn't set by hand; else said)
     // (or, with blades on top, the slider moved along a stud or two)
     // (not for points already said to be blocked: moving their lever won't help them)
-    const why0 = blockedOf(plan) ? undefined : inWay(plan, foreign, P);
+    const why0 = blockedOf(st.plan) ? undefined : inWay(st.plan, foreign, P);
     if (why0) {
-      const sides = own === 'left' || own === 'right' ? [tside] : [tside, -tside], shifts = pp.mechStyle === 'plates' ? [0, 1, -1, 2, -2, 3, -3, 4, -4, 5, -5] : [0];
-      const t0 = tside, base = over;
+      const sides = own === 'left' || own === 'right' ? [st.tside] : [st.tside, -st.tside], shifts = st.pp.mechStyle === 'plates' ? [0, 1, -1, 2, -2, 3, -3, 4, -4, 5, -5] : [0];
+      const t0 = st.tside, base = st.over;
       let found = false;
       for (const sh of shifts) for (const sd of sides) {
         if (found || (sh === 0 && sd === t0)) continue;
-        tside = sd; over = { ...base, ...(sh && { throwShift: sh }) };
-        const pl = switchPlan(rts, [spec(over)], pp, 1, foreign);
-        if (!blockedOf(pl) && !inWay(pl, foreign, P)) { used = spec(over); plan = pl; found = true; }
+        const o2 = { ...base, ...(sh && { throwShift: sh }) }, pl = switchPlan(rts, [specOf(o2, sd)], st.pp, 1, foreign);
+        if (!blockedOf(pl) && !inWay(pl, foreign, P)) { st.tside = sd; st.over = o2; st.used = specOf(o2, sd); st.plan = pl; found = true; }
       }
       if (!found) {
-        tside = t0; over = base;
         warnings.push(why0 === 'train' ? `the lever of the points at ${studsAt(gr.main)} is in the way of a train on another track: set its side on the route card, or move the points`
           : `the lever of the points at ${studsAt(gr.main)} is on another points' lever: set its side on the route card, or move the points`);
       }
     }
     // (the lever on a stud of the design's grid, unless moved by hand)
     if (gridLevers && !(ed?.leverOffset !== undefined && ed?.springLength !== undefined)) {
-      const g2 = gridLever(P, plan.sets[0], ed ?? {});
-      if (g2.leverOffset !== undefined) { used = spec({ ...over, ...g2 }); plan = switchPlan(rts, [used], pp, 1, foreign); }
+      const g2 = gridLever(P, st.plan.sets[0], ed ?? {});
+      if (g2.leverOffset !== undefined) { st.used = specOf({ ...st.over, ...g2 }, st.tside); st.plan = switchPlan(rts, [st.used], st.pp, 1, foreign); }
     }
-    arms.push(armOf(plan, P));
+    arms.push(armOf(st.plan, P));
+  };
+  // (only where some are in another's way does the order matter: then the ones with the fewest clear places first)
+  const rooms = preps.map((q) => (inWay(q.st.plan, q.foreign, q.P) ? room(q) : Infinity));
+  preps.map((_, k) => k).sort((a, b) => rooms[a] - rooms[b]).forEach((k) => placeLever(preps[k]));
+  const built: SplitParts[] = [];
+  for (const [n, q] of preps.entries()) {
+    const { gr, sp, i, j, j2, P, A, B, rts, blockedOf } = q, { used, plan, pp } = q.st;
     throughWarnings(gr, blockedOf(plan));
     warnings.push(...plan.warnings.filter((w) => !/print bed/.test(w)), ...plan.notes.filter((w) => !warnings.includes(w)));
     const gm = switchGeometry(s, plan), mech = gm.mech(0);
