@@ -6,7 +6,7 @@
 // The joints (jointKit, railCrossings, pickSpots) are shared with the stepped
 // cuts along the stud grid (pathsplit.ts, via pathJoints).
 import { clipNear, M, R, T, type CS, type Man, type Scad } from './scad';
-import { arena, flat } from './kernel';
+import { flat } from './kernel';
 import { PLATE_H, type Track } from './track';
 import type { Route } from '../route/route';
 import { railPoint, routeLat, routeLength, routePose } from '../route/route';
@@ -25,8 +25,6 @@ const SMALL_CELL = 2000;
 const LOOK_CLOSER = 20000;
 /** (mm3, mm) A loose chunk of bed: more than a breakaway support (a rail end's or a footing, a few hundred mm3), less than a whole track's part, and taller than a support. */
 const CHUNK_MIN = 400, CHUNK_MAX = 4000, CHUNK_H = 3.4;
-/** (triangles) Only a part with fewer is remade as a copy of its own (kernel.ts flat): remaking a big one from its mesh took minutes. */
-const FLAT_TRIS = 200000;
 /** (mm) Couplers (and axles) at least this far apart along a cut. */
 const COUPLER_GAP = 16;
 /** (mm) Couplers this far clear of the rails crossing a cut: their tongue joints' columns go down through the bed there. */
@@ -255,105 +253,77 @@ export function cutPiece(s: Scad, t: Track, body: Man, routes: Route[], lines: C
     ...f.couplers.flatMap((u) => kit.couplerCut(f.kind).map((m) => f.place(m, u))),
   ]).map((m) => ({ m, bb: m.boundingBox() }));
 
-  // cells: by which side of each line a point is
-  // cut the piece by each line in turn, keeping the parts that hold any of it
-  // (each cut's leftovers, and the parts before it, let go as it goes, each part a solid of its own (kernel.ts flat):
-  // on a small bed a big piece has many cuts, and every stage of it kept to the end ran the kernel out of memory)
-  let parts: Man[] = [body];
-  // (a part wholly to one side of a line (its box clear of it, and of a comb's fingers) is left as it is: splitting
-  // it there gave it back whole, at the cost of a boolean and a copy of the whole part, for every line)
-  const boxes = new Map<Man, { min: number[]; max: number[] }>();
-  const across = (f: typeof frames[number], m: Man) => {
-    let bb = boxes.get(m);
-    if (!bb) { bb = m.boundingBox(); boxes.set(m, bb); }
-    const reach = f.L.comb ? 8.2 : 0.01, c = f.n[0] * f.L.p[0] + f.n[1] * f.L.p[1];
-    let lo = Infinity, hi = -Infinity;
-    for (const x of [bb.min[0], bb.max[0]]) for (const y of [bb.min[1], bb.max[1]]) { const v = f.n[0] * x + f.n[1] * y - c; lo = Math.min(lo, v); hi = Math.max(hi, v); }
-    return lo < reach && hi > -reach;
-  };
   // the cells, each the piece within one region the lines cut the plane into (convex: each the box round it clipped
   // by one side of every line), each from the whole piece at once. (A line at a time, each cut made from the last one's
-  // parts: on a big piece the second cut, and any copy of a part, took many minutes.) With a comb cut, a line at a time.
-  if (frames.every((f) => !f.L.comb)) {
-    type Poly = [number, number][];
-    const fb2 = body.boundingBox(), big2 = 50;
-    let regions: Poly[] = [[[fb2.min[0] - big2, fb2.min[1] - big2], [fb2.max[0] + big2, fb2.min[1] - big2], [fb2.max[0] + big2, fb2.max[1] + big2], [fb2.min[0] - big2, fb2.max[1] + big2]]];
-    const clip = (poly: Poly, n: [number, number], c: number, sgn: number): Poly => {
-      const out: Poly = [], v = (q: [number, number]) => sgn * (n[0] * q[0] + n[1] * q[1] - c);
-      poly.forEach((q, k) => {
-        const r = poly[(k + 1) % poly.length], a2 = v(q), b2 = v(r);
-        if (a2 >= 0) out.push(q);
-        if ((a2 >= 0) !== (b2 >= 0)) { const t2 = a2 / (a2 - b2); out.push([q[0] + (r[0] - q[0]) * t2, q[1] + (r[1] - q[1]) * t2]); }
-      });
-      return out;
-    };
-    const area2 = (p: Poly) => Math.abs(p.reduce((t2, q, k) => { const r = p[(k + 1) % p.length]; return t2 + q[0] * r[1] - r[0] * q[1]; }, 0) / 2);
-    for (const f of frames) {
-      const n: [number, number] = [f.n[0], f.n[1]], c = f.n[0] * f.L.p[0] + f.n[1] * f.L.p[1];
-      regions = regions.flatMap((p) => [clip(p, n, c, 1), clip(p, n, c, -1)].filter((q) => q.length >= 3 && area2(q) > 1));
-    }
-    const prism = (p: Poly) => T(s.extrude(s.polygon(p), 1000), [0, 0, -500]);
-    const cellOf = (p: Poly) => { const m2 = s.intersection(body, prism(p)); return m2.volume() > 1e-6 ? flat(s.w, m2) : undefined; };
-    let cellsR = regions.map((p) => ({ p, m: cellOf(p) })).filter((r): r is { p: Poly; m: Man } => !!r.m);
-    // (a cell under 2000 mm3, a corner the lines just clip (where two meet by the track's edge, a stud or two of bed),
-    // or with a small piece of bed on its own in it: kept with the cell beside it across one line, if that still fits
-    // the bed (fits). Cut off, it was dropped and left a notch, or went in with the next part as if a loose support)
-    const small = (m2: Man) => m2.volume() <= SMALL_CELL || (m2.volume() < LOOK_CLOSER && (() => { const bs = m2.decompose(); return bs.length > 1 && bs.some(chunk); })());
-    // (each small cell tried once since the last merge: one that can't be merged goes to the end)
-    const tried = new Set<typeof cellsR[number]>();
-    for (;;) {
-      const k = cellsR.findIndex((r) => !tried.has(r) && small(r.m));
-      if (k < 0) break;
-      // (its neighbours: the cells sharing a stretch of edge with it, the one it shares most with first)
-      const shared = (p: Poly, q: Poly) => s.polygon(p).offset(0.5, 'Miter', 4).intersect(s.polygon(q)).area();
-      const nb = cellsR.map((r, j) => ({ j, a: j === k ? 0 : shared(cellsR[k].p, r.p) })).filter((x) => x.a > 1).sort((x, y) => y.a - x.a);
-      let merged = false;
-      for (const { j } of nb) {
-        const m2 = flat(s.w, s.union([cellsR[k].m, cellsR[j].m]));
-        if (fits && !fits(m2)) continue;
-        const u = s.w.CrossSection.union([s.polygon(cellsR[k].p), s.polygon(cellsR[j].p)]).toPolygons() as Poly[];
-        cellsR = cellsR.filter((_, i) => i !== k && i !== j).concat([{ p: u[0], m: m2 }]);
-        merged = true;
-        tried.clear();
-        break;
-      }
-      if (!merged) { const keep = cellsR[k]; tried.add(keep); cellsR = cellsR.filter((_, i) => i !== k).concat([keep]); }
-    }
-    parts = cellsR.map((r) => r.m);
-  } else {
+  // parts: on a big piece the second cut, and any copy of a part, took many minutes.) Each cell keeps its outline (p),
+  // to find its neighbours.
+  type Poly = [number, number][];
+  const big2 = 50;
+  let regions: Poly[] = [[[fb.min[0] - big2, fb.min[1] - big2], [fb.max[0] + big2, fb.min[1] - big2], [fb.max[0] + big2, fb.max[1] + big2], [fb.min[0] - big2, fb.max[1] + big2]]];
+  const clip = (poly: Poly, n: [number, number], c: number, sgn: number): Poly => {
+    const out: Poly = [], v = (q: [number, number]) => sgn * (n[0] * q[0] + n[1] * q[1] - c);
+    poly.forEach((q, k) => {
+      const r = poly[(k + 1) % poly.length], a2 = v(q), b2 = v(r);
+      if (a2 >= 0) out.push(q);
+      if ((a2 >= 0) !== (b2 >= 0)) { const t2 = a2 / (a2 - b2); out.push([q[0] + (r[0] - q[0]) * t2, q[1] + (r[1] - q[1]) * t2]); }
+    });
+    return out;
+  };
+  const area2 = (p: Poly) => Math.abs(p.reduce((t2, q, k) => { const r = p[(k + 1) % p.length]; return t2 + q[0] * r[1] - r[0] * q[1]; }, 0) / 2);
   for (const f of frames) {
-    const prev = parts;
-    // (a side under 2000 mm3, a corner the line just clips (where two cut lines meet by the track's edge, a stud or two
-    // of bed) or a sliver of print supports: not cut off there, the part kept whole across the line, if it still fits
-    // the bed (fits). Cut off, it was dropped and left a notch)
-    parts = arena(s.w, () => prev.flatMap((m) => {
-      if (!across(f, m)) return [m];
-      const cs = (f.L.comb ? combSplit(f, m) : m.splitByPlane([f.n[0], f.n[1], 0], f.n[0] * f.L.p[0] + f.n[1] * f.L.p[1])).filter((c) => c.volume() > 1e-6);
-      // (nor where it'd leave one, a corner of bed cut off on its own between two lines: it went in with the part beside
-      // it as if a loose support. Only a small side looked at: taking a big one apart took minutes)
-      // (a copy of its own (kernel.ts flat) only of a small part: remaking a big one from its mesh took minutes)
-      const fl = cs.map((c) => (c.numTri() < FLAT_TRIS ? flat(s.w, c) : c));
-      return (!fits || fits(m)) && (cs.some((c) => c.volume() <= SMALL_CELL) || fl.some((c) => { if (c.volume() > LOOK_CLOSER) return false; const bs = c.decompose(); return bs.length > 1 && bs.some(chunk); })) ? [flat(s.w, m)] : fl;
-    }), (r) => r);
-    for (const m of prev) if (m !== body && !parts.includes(m) && !(m as unknown as { isDeleted(): boolean }).isDeleted()) m.delete();
+    if (f.L.comb) continue;
+    const n: [number, number] = [f.n[0], f.n[1]], c = f.n[0] * f.L.p[0] + f.n[1] * f.L.p[1];
+    regions = regions.flatMap((p) => [clip(p, n, c, 1), clip(p, n, c, -1)].filter((q) => q.length >= 3 && area2(q) > 1));
   }
-  }
-  parts = parts.map((m) => {
-    const bb = m.boundingBox(), near = removals.filter(({ bb: r }) => r.min[0] <= bb.max[0] && r.max[0] >= bb.min[0] && r.min[1] <= bb.max[1] && r.max[1] >= bb.min[1]).map(({ m: r }) => r);
-    return near.length ? s.difference(m, near) : m;
-  });
-  // (rather than a plane: the far side's fingers, 16 mm wide and reaching
-  // 8 mm either side of the line, their faces on the stud grid; 0.1 mm clear)
-  function combSplit(f: typeof frames[number], m: Man): Man[] {
-    const bb = m.boundingBox(), reachU = Math.hypot(bb.max[0] - bb.min[0], bb.max[1] - bb.min[1]) + Math.hypot(bb.min[0] - f.L.p[0], bb.min[1] - f.L.p[1]) + 32;
-    // (the finger edges at multiples of 16 along the line from the grid's origin: the line's point is on the grid)
-    const u0 = -Math.ceil(reachU / 16) * 16, pts: [number, number][] = [[u0, 2000]];
+  const prism = (p: CS) => T(s.extrude(p, 1000), [0, 0, -500]);
+  const cellOf = (p: CS) => { const m2 = s.intersection(body, prism(p)); return m2.volume() > 1e-6 ? flat(s.w, m2) : undefined; };
+  type Cell = { p: CS; m: Man };
+  const keep = (r: { p: CS; m?: Man }): r is Cell => !!r.m;
+  let cellsR = regions.map((q) => { const p = s.polygon(q); return { p, m: cellOf(p) }; }).filter(keep);
+  // then each comb cut through the cells it crosses: the far side's fingers, 16 mm wide and reaching 8 mm either
+  // side of the line, their faces on the stud grid (the line's point is on it); 0.1 mm clear
+  for (const f of frames) {
+    if (!f.L.comb) continue;
+    const reachU = Math.max(...[fb.min[0], fb.max[0]].flatMap((x) => [fb.min[1], fb.max[1]].map((y) => Math.hypot(x - f.L.p[0], y - f.L.p[1])))) + 32;
+    const u0 = -Math.ceil(reachU / 16) * 16, pts: Poly = [[u0, 2000]];
     for (let u = u0, k = Math.round(u0 / 16); u < -u0; u += 16, k++) { const y = ((k % 2) + 2) % 2 === 0 ? 8 : -8; pts.push([u, y], [u + 16, y]); }
     pts.push([-u0, 2000]);
-    const far2d = (grow: number) => s.polygon(pts).offset(grow, 'Miter', 10);
-    const prism = (grow: number) => f.place(T(s.extrude(far2d(grow), 400), [0, 0, -200]), 0);
-    return [s.intersection(m, prism(0)), s.difference(m, [prism(0.1)])];
+    const far = (grow: number) => s.polygon(pts).offset(grow, 'Miter', 10).rotate(f.phi).translate(f.L.p);
+    const far0 = far(0), far1 = far(0.1);
+    cellsR = cellsR.flatMap((r) => {
+      const a = r.p.intersect(far0), b = r.p.subtract(far1);
+      if (a.area() <= 1 || b.area() <= 1) return [r];
+      return [{ p: a, m: cellOf(a) }, { p: b, m: cellOf(b) }].filter(keep);
+    });
   }
+  // (a cell under 2000 mm3, a corner the lines just clip (where two meet by the track's edge, a stud or two of bed),
+  // or with a small piece of bed on its own in it: kept with the cell beside it across one line, if that still fits
+  // the bed (fits). Cut off, it was dropped and left a notch, or went in with the next part as if a loose support)
+  const small = (m2: Man) => m2.volume() <= SMALL_CELL || (m2.volume() < LOOK_CLOSER && (() => { const bs = m2.decompose(); return bs.length > 1 && bs.some(chunk); })());
+  // (each small cell tried once since the last merge: one that can't be merged goes to the end)
+  const tried = new Set<Cell>();
+  for (;;) {
+    const k = cellsR.findIndex((r) => !tried.has(r) && small(r.m));
+    if (k < 0) break;
+    // (its neighbours: the cells sharing a stretch of edge with it, the one it shares most with first)
+    const shared = (p: CS, q: CS) => p.offset(0.5, 'Miter', 4).intersect(q).area();
+    const nb = cellsR.map((r, j) => ({ j, a: j === k ? 0 : shared(cellsR[k].p, r.p) })).filter((x) => x.a > 1).sort((x, y) => y.a - x.a);
+    let merged = false;
+    for (const { j } of nb) {
+      const m2 = flat(s.w, s.union([cellsR[k].m, cellsR[j].m]));
+      if (fits && !fits(m2)) continue;
+      const u = s.w.CrossSection.union([cellsR[k].p, cellsR[j].p]);
+      cellsR = cellsR.filter((_, i) => i !== k && i !== j).concat([{ p: u, m: m2 }]);
+      merged = true;
+      tried.clear();
+      break;
+    }
+    if (!merged) { const kept = cellsR[k]; tried.add(kept); cellsR = cellsR.filter((_, i) => i !== k).concat([kept]); }
+  }
+  const parts = cellsR.map((r) => {
+    const m = r.m, bb = m.boundingBox(), near = removals.filter(({ bb: q }) => q.min[0] <= bb.max[0] && q.max[0] >= bb.min[0] && q.min[1] <= bb.max[1] && q.max[1] >= bb.min[1]).map(({ m: q }) => q);
+    return near.length ? s.difference(m, near) : m;
+  });
   const cells: Man[] = [];
   for (const cell of parts) {
     // which side of each line the cell is on (from a point of it off the line), and its joints on the lines it meets
