@@ -2,4 +2,4 @@
 import { describe } from 'vitest';
 import { templatesBuild } from './templates.shared';
 
-describe('templates: layouts', { timeout: 600000 }, () => templatesBuild(['Layouts'], ['Oval (LEGO R40)', 'Crossover (R40)', 'Scissors crossover (R56)']));
+describe('templates: layouts', { timeout: 600000 }, () => templatesBuild(['Layouts'], ['Oval (LEGO R40)', 'Crossover (R40)', 'Double crossover (R56)']));

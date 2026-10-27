@@ -1,7 +1,7 @@
 {
  "version": 1,
  "gaugeStuds": 4,
- "name": "scissors-r40",
+ "name": "double-crossover-r104",
  "routes": [
   {
    "name": "A",
@@ -11,7 +11,7 @@
    "segs": [
     {
      "kind": "straight",
-     "studs": 80
+     "studs": 112
     }
    ]
   },
@@ -23,7 +23,7 @@
    "segs": [
     {
      "kind": "straight",
-     "studs": 80
+     "studs": 112
     }
    ]
   },
@@ -35,13 +35,13 @@
    "segs": [
     {
      "kind": "curve",
-     "radius": 40,
-     "angle": -36.869898
+     "radius": 104,
+     "angle": -22.619865
     },
     {
      "kind": "curve",
-     "radius": 40,
-     "angle": 36.869898
+     "radius": 104,
+     "angle": 22.619865
     }
    ]
   },
@@ -53,13 +53,13 @@
    "segs": [
     {
      "kind": "curve",
-     "radius": 40,
-     "angle": 36.869898
+     "radius": 104,
+     "angle": 22.619865
     },
     {
      "kind": "curve",
-     "radius": 40,
-     "angle": -36.869898
+     "radius": 104,
+     "angle": -22.619865
     }
    ]
   }

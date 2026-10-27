@@ -15,8 +15,8 @@ const toes = (d: Design) => {
 
 describe('routes drawn either way round', () => {
   it('a double crossover with one track and both crossovers drawn backwards: all four points', () => {
-    expect(toes(fixture('scissors-r56-reversed'))).toEqual(toes(fixture('scissors-r56')));
-    expect(toes(fixture('scissors-r56'))).toHaveLength(4);
+    expect(toes(fixture('double-crossover-r56-reversed'))).toEqual(toes(fixture('double-crossover-r56')));
+    expect(toes(fixture('double-crossover-r56'))).toHaveLength(4);
   });
   it('a ladder with its main line and some yard tracks drawn backwards: the same points', () => {
     expect(toes(fixture('ladder-r40-reversed'))).toEqual(toes(fixture('ladder-r40')));

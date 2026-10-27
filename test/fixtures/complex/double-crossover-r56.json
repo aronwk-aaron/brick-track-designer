@@ -1,7 +1,7 @@
 {
  "version": 1,
  "gaugeStuds": 4,
- "name": "scissors-r200",
+ "name": "double-crossover-r56",
  "routes": [
   {
    "name": "A",
@@ -11,7 +11,7 @@
    "segs": [
     {
      "kind": "straight",
-     "studs": 145
+     "studs": 90
     }
    ]
   },
@@ -23,7 +23,7 @@
    "segs": [
     {
      "kind": "straight",
-     "studs": 145
+     "studs": 90
     }
    ]
   },
@@ -35,13 +35,13 @@
    "segs": [
     {
      "kind": "curve",
-     "radius": 200,
-     "angle": -16.260205
+     "radius": 56,
+     "angle": -31.002719
     },
     {
      "kind": "curve",
-     "radius": 200,
-     "angle": 16.260205
+     "radius": 56,
+     "angle": 31.002719
     }
    ]
   },
@@ -53,13 +53,13 @@
    "segs": [
     {
      "kind": "curve",
-     "radius": 200,
-     "angle": 16.260205
+     "radius": 56,
+     "angle": 31.002719
     },
     {
      "kind": "curve",
-     "radius": 200,
-     "angle": -16.260205
+     "radius": 56,
+     "angle": -31.002719
     }
    ]
   }

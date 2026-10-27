@@ -1,7 +1,7 @@
 {
  "version": 1,
  "gaugeStuds": 4,
- "name": "scissors-r56-buddy",
+ "name": "double-crossover-r40",
  "routes": [
   {
    "name": "A",
@@ -11,7 +11,7 @@
    "segs": [
     {
      "kind": "straight",
-     "studs": 90
+     "studs": 80
     }
    ]
   },
@@ -23,7 +23,7 @@
    "segs": [
     {
      "kind": "straight",
-     "studs": 90
+     "studs": 80
     }
    ]
   },
@@ -35,13 +35,13 @@
    "segs": [
     {
      "kind": "curve",
-     "radius": 56,
-     "angle": -31.002719
+     "radius": 40,
+     "angle": -36.869898
     },
     {
      "kind": "curve",
-     "radius": 56,
-     "angle": 31.002719
+     "radius": 40,
+     "angle": 36.869898
     }
    ]
   },
@@ -53,18 +53,16 @@
    "segs": [
     {
      "kind": "curve",
-     "radius": 56,
-     "angle": 31.002719
+     "radius": 40,
+     "angle": 36.869898
     },
     {
      "kind": "curve",
-     "radius": 56,
-     "angle": -31.002719
+     "radius": 40,
+     "angle": -36.869898
     }
    ]
   }
  ],
- "options": {
-  "ballast": "buddy"
- }
+ "options": {}
 }

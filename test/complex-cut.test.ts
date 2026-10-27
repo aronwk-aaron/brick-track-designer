@@ -4,7 +4,7 @@
 import { complexSuite, fixture } from './complex.shared';
 
 complexSuite([
-  ['a double crossover on 32-stud baseplates, a 128 bed', fixture('scissors-r56-128-plates')],
+  ['a double crossover on 32-stud baseplates, a 128 bed', fixture('double-crossover-r56-128-plates')],
   ['two crossovers, one each way, on 48-stud baseplates', fixture('two-crossovers-plates')],
   ['Aaron\'s three tracks with crossovers and three-ways, on a 128 bed, rail-end tongues', fixture('aaron3-tongues'), [], {}, false, true],
 ]);

@@ -29,10 +29,10 @@ const sLen = (R: number, off = 16) => 2 * R * Math.sin(rad(sAng(R, off)));
 
 const save = (d: Design) => { writeFileSync(`${OUT}${d.name}.json`, JSON.stringify(d, null, 1) + '\n'); console.log(d.name); };
 
-// ---- double crossovers (scissors) at several radii: two S-curves crossing in the middle ----
+// ---- double crossovers (also called scissors crossovers) at several radii: two S-curves crossing in the middle ----
 for (const R of [40, 56, 72, 104, 200]) {
   const L = sLen(R), y0 = 16, len = Math.ceil(L + 32);
-  save(design(`scissors-r${R}`, [
+  save(design(`double-crossover-r${R}`, [
     rt('A', 0, 0, 0, [st(len)]), rt('B', 16, 0, 0, [st(len)]),
     sCurve('AB', 0, y0, R, 16), sCurve('BA', 16, y0, R, -16),
   ]));
@@ -41,10 +41,10 @@ for (const R of [40, 56, 72, 104, 200]) {
 {
   const R = 56, L = sLen(R), len = Math.ceil(L + 32);
   const rs = [rt('A', 0, 0, 0, [st(len)]), rt('B', 16, 0, 0, [st(len)]), sCurve('AB', 0, 16, R, 16), sCurve('BA', 16, 16, R, -16)];
-  save(design('scissors-r56-buddy', rs, { ballast: 'buddy' }));
-  save(design('scissors-r56-128-plates', rs, { ballast: 'buddy', printBedX: 128, printBedY: 128, baseplate: 32 }));
+  save(design('double-crossover-r56-buddy', rs, { ballast: 'buddy' }));
+  save(design('double-crossover-r56-128-plates', rs, { ballast: 'buddy', printBedX: 128, printBedY: 128, baseplate: 32 }));
   // drawn the other way: both crossovers from their far ends, one main track backwards
-  save(design('scissors-r56-reversed', [rt('A', 0, 0, 0, [st(len)]), rev(rt('B', 16, 0, 0, [st(len)])), rev(sCurve('AB', 0, 16, R, 16)), rev(sCurve('BA', 16, 16, R, -16))]));
+  save(design('double-crossover-r56-reversed', [rt('A', 0, 0, 0, [st(len)]), rev(rt('B', 16, 0, 0, [st(len)])), rev(sCurve('AB', 0, 16, R, 16)), rev(sCurve('BA', 16, 16, R, -16))]));
 }
 
 // ---- a ladder: a diagonal off the main line, yard tracks leaving it one after another ----
