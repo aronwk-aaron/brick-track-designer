@@ -41,6 +41,12 @@ describe('the app\'s defaults: like LEGO track', { timeout: 300000 }, () => {
       expect(count(b, '53401')).toBe(2);
       expect(count(b, '53400')).toBe(4);
       expect(count(b, 'BrickTracks R104')).toBe(4);
+      // (LEGO's only: the R104 curves printed; Printed: nothing bought)
+      const bl = buildDesign(w, { ...d('none'), options: { ballast: 'none', legoTrack: 'lego-only' } as Design['options'] });
+      expect([count(bl, '53401'), count(bl, '53400'), count(bl, 'BrickTracks R104')]).toEqual([2, 4, 0]);
+      expect(bl.pieces.filter((p) => !p.lego && p.name.startsWith('track')).length).toBeGreaterThan(0);
+      const bp = buildDesign(w, { ...d('none'), options: { ballast: 'none', legoTrack: 'print' } as Design['options'] });
+      expect(bp.pieces.filter((p) => p.lego)).toHaveLength(0);
       // (with ballast: each curve bought, and a printed ballast piece for it, clear of it; on the buddy layer, the buddy in it)
       const bb = buildDesign(w, d('buddy'));
       expect(bb.info.warnings).toEqual([]);

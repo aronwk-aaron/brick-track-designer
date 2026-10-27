@@ -119,6 +119,8 @@ export class TrackCanvas {
   settled() { this.leverPending = undefined; }
   /** A trackwork item to pick out (hovered in the Trackwork panel). */
   highlight: string | undefined;
+  /** A route's straight or curve to pick out (hovered in its card's Shape): [route, piece]. */
+  highlightSeg: [number, number] | undefined;
   /** Show where the underside grips (only when not gripping everywhere). */
   showGrips = true;
   /** Plan layers turned off from the legend: grooves, checks, crossings, ballast, baseplate, points, levers, grips. */
@@ -1023,6 +1025,16 @@ export class TrackCanvas {
         c.fillStyle = '#e02828'; c.beginPath(); c.arc(sx + r * 0.7071, sy - r * 0.7071, 9, 0, 2 * Math.PI); c.fill();
         c.fillStyle = '#fff'; c.font = '700 13px system-ui, sans-serif'; c.textAlign = 'center'; c.fillText('!', sx + r * 0.7071, sy - r * 0.7071 + 4.5); c.textAlign = 'left';
         if (this.mouse) { const [mx, my] = this.toScreen(this.mouse[0], this.mouse[1]); if (Math.hypot(mx - sx, my - sy) < r + 10) tag(mx, my, is.text, '#c01d1d'); }
+      }
+      // the straight or curve picked out in a route card's Shape: along its centre line, as wide as the track
+      if (this.highlightSeg) {
+        const [ri, k] = this.highlightSeg, rt = toRoutes(d)[ri];
+        if (rt && rt.segments[k]) {
+          const lenOf = (sg: (typeof rt.segments)[number]) => (sg.kind === 'straight' ? sg.length : (Math.abs(sg.angle) * Math.PI * sg.radius) / 180);
+          const s0 = rt.segments.slice(0, k).reduce((t, sg) => t + lenOf(sg), 0), s1 = s0 + lenOf(rt.segments[k]), n = Math.max(2, Math.ceil((s1 - s0) / 4));
+          const pts = Array.from({ length: n + 1 }, (_, j) => { const q = routePose(rt, s0 + ((s1 - s0) * j) / n); return [q[0] / MM, q[1] / MM] as [number, number]; });
+          line(pts, 'rgba(240,180,0,0.55)', Math.max(4, (2 * g + 2) * this.scale));
+        }
       }
       // the trackwork item picked out in the Trackwork panel
       const hi = this.overlay.items?.find((it) => it.key === this.highlight);

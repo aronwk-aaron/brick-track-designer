@@ -164,6 +164,8 @@ const openCards = new Set<number>();
 const openParts: Set<string> = (() => { try { const v = JSON.parse(localStorage.getItem('btd-card-parts') ?? 'null'); if (Array.isArray(v)) return new Set<string>(v); } catch { /* (none kept) */ } return new Set(['Shape']); })();
 const keepParts = () => { try { localStorage.setItem('btd-card-parts', JSON.stringify([...openParts])); } catch { /* (not kept) */ } };
 function render() {
+  // (the rows go: no piece left picked out by one that's gone)
+  canvas.highlightSeg = undefined;
   routesEl.replaceChildren();
   $('routes-title').textContent = design.routes.length ? `Routes (${design.routes.length})` : 'Routes';
   $('empty').hidden = design.routes.length > 0;
@@ -238,7 +240,13 @@ function render() {
       if (isMono(r) && r.monoHeight === undefined) { const n4 = document.createElement('small'); n4.className = 'desc'; n4.textContent = 'End height: locked until Height is set.'; n4.style.color = 'var(--warn)'; place.append(n4); }
       if (!isMono(r)) { const n3 = document.createElement('small'); n3.className = 'desc'; n3.textContent = 'Locked: monorail only.'; n3.style.color = 'var(--warn)'; n3.style.fontWeight = '600'; place.append(n3); }
     }
-    r.segs.forEach((_, k) => shape.append(segRow(r, k)));
+    r.segs.forEach((_, k) => {
+      const row = segRow(r, k);
+      // (hovered: that straight or curve picked out on the plan)
+      row.addEventListener('mouseenter', () => { canvas.highlightSeg = [i, k]; canvas.draw(); });
+      row.addEventListener('mouseleave', () => { canvas.highlightSeg = undefined; canvas.draw(); });
+      shape.append(row);
+    });
     const ends = part('Ends', [r.startEnd, r.endEnd].includes('buffer') ? 'buffer stop' : '');
     // (each end: an ordinary end connector, or a buffer stop)
     for (const [prop, label] of [['startEnd', 'Starts in'], ['endEnd', 'Ends in']] as const) {
@@ -1148,8 +1156,9 @@ const OPTION_FORM: OptSection[] = [
       { v: 'lengths', t: 'Track pieces, cut across the track', tip: 'Each track cut square to itself into pieces with ordinary end connectors, like LEGO track. Switches and crossings stay whole.', con: 'More parts, and a cut only where the track is clear of other tracks.' }] },
     { key: 'pieceLengthStuds', label: 'Piece length, studs', step: 4, min: 0, max: 64, off: (c) => (c.o.splitTrack === 'lengths' ? undefined : 'only with Long track cut into: Track pieces'), help: 'LEGO straights are 16. 0: as long as fits the print bed. A longer piece than the bed takes: as long as fits.' },
     { key: 'legoTrack', label: 'Plain track', help: 'Bought straights are 16 studs, whatever Piece length is.', off: (c) => (c.o.splitTrack !== 'lengths' ? 'only with Long track cut into: Track pieces' : design.gaugeStuds !== 4 ? 'LEGO track is 4 studs between the rails: the gauge isn\'t 4' : undefined), choices: [
-      { v: 'lego', t: 'Bought track', tip: 'Plain track bought, not printed: each 16-stud straight is LEGO\'s (53401), with ballast on LEGO plates under it (6 x 16 and two 2 x 16, two more 6 x 16 for the buddy layer); R40 curves are LEGO\'s (53400) and R56 to R120 curves BrickTracks\' (injection moulded, 11.25° each), with ballast on a printed ballast piece (…-ballast, with the buddy layer if set) they drop into; with a Flat ballast underside, BrickTracks\' curves on BrickTracks\' own ballast and buddy, bought too. Bought parts are in the parts list (toolbar), not the STL download.', con: 'Their sleepers and underside are theirs, not as set here.' },
-      { v: 'print', t: 'Printed', tip: 'Every piece printed, as set here.', con: 'More to print.' }] },
+      { v: 'lego', t: 'Bought: LEGO\'s and BrickTracks\'', tip: 'Plain track bought, not printed: each 16-stud straight is LEGO\'s (53401), with ballast on LEGO plates under it (6 x 16 and two 2 x 16, two more 6 x 16 for the buddy layer); R40 curves are LEGO\'s (53400) and R56 to R120 curves BrickTracks\' (injection moulded, 11.25° each), with ballast on a printed ballast piece (…-ballast, with the buddy layer if set) they drop into; with a Flat ballast underside, BrickTracks\' curves on BrickTracks\' own ballast and buddy, bought too. Bought parts are in the parts list (toolbar), not the STL download.', con: 'Their sleepers and underside are theirs, not as set here.' },
+      { v: 'lego-only', t: 'Bought: LEGO\'s only', tip: 'LEGO\'s straights (53401) and R40 curves (53400) bought, as Bought track; every other piece printed, BrickTracks\' radii (R56 to R120) too.', con: 'Their sleepers and underside are theirs, not as set here.' },
+      { v: 'print', t: 'Printed', tip: 'Every piece printed, as set here: nothing bought.', con: 'More to print.' }] },
     { key: 'joint', label: 'Parts join with', help: 'How parts cut for the print bed or at baseplate edges join. With Long track cut into: Track pieces, plain track joins with its own end connectors; this is for the switches and crossings too big for the bed.', choices: [
       { v: 'lego', t: 'Rail tongues + peg and clip', tip: 'Like LEGO track ends.' },
       { v: 'dovetail', t: 'Rail tongues + dovetails', tip: 'Stronger. Slides together from above.' },

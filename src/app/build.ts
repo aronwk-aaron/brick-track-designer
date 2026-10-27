@@ -818,7 +818,9 @@ function sectioned(b: PieceBuild, name: string, all: Route[], checks: CheckRail[
   const plates = bp ? { size: bp, x: (o.baseplateX ?? 0) * 8, y: (o.baseplateY ?? 0) * 8 } : undefined;
   // (bought pieces on: plain stretches cut where LEGO's straights, its R40 curves and BrickTracks' curves would join,
   // so those pieces are them; on ballast, a curve's ballast printed alone under it)
-  const std = (o.legoTrack ?? 'lego') === 'lego' && b.gaugeStuds === 4 ? STD_CURVES : undefined;
+  // ('lego-only': LEGO's straights and R40 curves bought, BrickTracks' radii printed)
+  const bought = (o.legoTrack ?? 'lego') !== 'print' && b.gaugeStuds === 4, legoOnly = o.legoTrack === 'lego-only';
+  const std = bought ? (legoOnly ? new Map([[40 * 8, STD_CURVES.get(40 * 8)!]]) : STD_CURVES) : undefined;
   const plan = cached(`secplan:${key}:${room}:${bandHalf}:${ex}:${JSON.stringify(plates)}:${JSON.stringify(std && [...std])}`, () => planSections(all, solSplits, bandHalf, room, 40, ex, plates, std));
   const gridPose = routePose(all[0], 0);
   b.prog.steps += plan.sections.length;
@@ -899,12 +901,12 @@ function sectioned(b: PieceBuild, name: string, all: Route[], checks: CheckRail[
     const secInner = b.dropInner(rts);
     // (a plain 16-stud straight, ordinary ends both sides: LEGO's own track, not printed, with LEGO plates for the ballast)
     const sg0 = rts.length === 1 ? rts[0].segments : [];
-    const plain = (o.legoTrack ?? 'lego') === 'lego' && b.gaugeStuds === 4 && !mine.length && !cChecks.length && sg0.length === 1 && !sg0[0].roll && !rts[0].extra && !secInner.size
+    const plain = bought && !mine.length && !cChecks.length && sg0.length === 1 && !sg0[0].roll && !rts[0].extra && !secInner.size
       && ![routePose(rts[0], 0), routePose(rts[0], routeLength(rts[0]))].some((e) => b.bufs.some((bq) => Math.hypot(bq[0] - e[0], bq[1] - e[1]) < 1));
     // (a curve: LEGO's or BrickTracks' track; with ballast, no LEGO plates make a curve's, so its ballast is printed
     // alone (with the buddy layer if set), with a seat the bought curve drops into. BrickTracks' curves on a flat
     // underside: BrickTracks' own ballast and buddy, bought too (theirs float on the studs, they don't grip them))
-    const curve = !plain || sg0[0].kind !== 'arc' ? undefined : stdCurve(sg0[0].radius, sg0[0].angle);
+    const curve = !plain || sg0[0].kind !== 'arc' ? undefined : (() => { const cv = stdCurve(sg0[0].radius, sg0[0].angle); return cv && (!legoOnly || !cv[0].shop) ? cv : undefined; })();
     const btBallast = !!curve && o.ballast !== 'none' && o.bottomStyle === 'float' && curve[0].shop === 'bricktracks';
     const lego = !plain ? undefined : sg0[0].kind === 'straight' ? (Math.abs(sg0[0].length - 16 * 8) < 0.01 ? legoStraight(o.ballast) : undefined)
       : curve && (btBallast ? [...curve, ...brickTracksBallast(curve, o.ballast)] : curve);

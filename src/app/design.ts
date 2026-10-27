@@ -132,8 +132,8 @@ export interface PieceOptions {
   splitTrack?: 'bed' | 'lengths'; pieceLengthStuds?: number;
   /** A stud a cut between parts goes through: taken off ('off'), given whole to the part its middle is on, over the next part's edge ('whole'), or cut through, half on each ('split'). */
   studsAtCuts?: 'off' | 'whole' | 'split';
-  /** With track pieces: a plain 16-stud straight as LEGO's own track (53401) and, with ballast, LEGO plates under it, not printed ('lego'), or every piece printed ('print'). */
-  legoTrack?: 'lego' | 'print';
+  /** With track pieces: plain track bought, not printed: LEGO's straights (53401, with ballast on LEGO plates) and curves, R40 LEGO's (53400), R56 to R120 BrickTracks' ('lego'); only LEGO's, BrickTracks' radii printed ('lego-only'); or every piece printed ('print'). */
+  legoTrack?: 'lego' | 'lego-only' | 'print';
   /** Parts joined with LEGO axles: the axles' length, studs (half in each part). */
   axleStuds?: number;
   /** Rail tongues at a cut: on every rail it crosses, or only on rails crossing it square (the others cut flat), as plate-style large switches are split. */
