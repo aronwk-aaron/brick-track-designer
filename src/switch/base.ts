@@ -14,7 +14,7 @@ import { sweepRoute } from '../geom/sweep';
 import { ANTISTUD_FIT, hollowGrid, type Spot, studSpots, TUBE_OD } from '../geom/underside';
 import { DEFAULTS as TRACK_DEFAULTS, getSocketShape, scadParity, PLATE_H, RAIL_PROFILE, STUD, Track } from '../geom/track';
 import { couplerSupports, trackSeat } from '../geom/extras';
-import { D4_SLIDER, type FdbBladeLayout, fourDLow, HEAD_HW, type Notch, pointsSet, type PointsSetValues, STAND, type SwitchParams, switchGlobals } from './context';
+import { D4_SLIDER, type FdbBladeLayout, fourDLow, HEAD_HW, type Notch, pointsSet, type PointsSetValues, STAND, SWITCH_DEFAULTS, type SwitchParams, switchGlobals } from './context';
 
 export interface BaseParams extends SwitchParams {
   flangeway: number;        // 3
@@ -35,9 +35,9 @@ export interface BaseParams extends SwitchParams {
   throwSide?: 'auto' | 'left' | 'right';
 }
 
+/** switch.scad's defaults (its points on tines: the app's own defaults, design.ts OPTION_DEFAULTS, are the plate-style's). */
 export const BASE_DEFAULTS: BaseParams = {
-  gaugeStuds: 4, pointThrow: 3, pointClearance: 0.3, springPreload: 1, springThickness: 0.9,
-  springLength: 40, bladeDiscD: 14, leverOffset: 8, studH: 1.8, generateBallast: false,
+  ...SWITCH_DEFAULTS,
   flangeway: 3, flangewayDepth: 3, checkRailLen: 30, checkRailW: 1, checkRailFlare: 1.5,
   printBedX: 256, printBedY: 256, studGrip: 'edges', pointsPieces: 1,
 };

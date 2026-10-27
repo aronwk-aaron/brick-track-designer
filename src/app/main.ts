@@ -984,6 +984,12 @@ const noBuf = () => (design.routes.some((r) => r.startEnd === 'buffer' || r.endE
 const noBank = () => (design.routes.some((r) => r.segs.some((sg) => sg.kind === 'curve' && (sg.bank ?? 0) > 0)) ? undefined : 'no curve is banked: give one a bank on its route card (Shape)');
 /** (settings for the tines mechanism only) */
 const onlyTines = (c: OptCtx) => (c.fdb ? 'only with Mechanism: Under the bed, on spring tines' : undefined);
+/** A length kept in mm, shown and set in studs (lengths are studs to the user; fits and clearances stay mm). */
+const inStuds = (key: keyof PieceOptions): Pick<OptField, 'get' | 'set' | 'def'> => ({
+  def: (OPTION_DEFAULTS[key] as number) / 8,
+  get: () => Math.round((((design.options?.[key] as number | undefined) ?? (OPTION_DEFAULTS[key] as number)) / 8) * 100) / 100,
+  set: (v) => { design.options = { ...design.options, [key]: Number(v) * 8 }; },
+});
 /** (settings for the blades-on-top mechanism only) */
 const onlyPlates = (c: OptCtx) => (c.fdb ? undefined : 'only with Mechanism: Blades on top, on pins');
 /** (settings for joints with rail tongues only) */
@@ -1057,7 +1063,7 @@ const OPTION_FORM: OptSection[] = [
     { key: 'pointClearance', label: 'Clearance, mm', step: 0.05, min: 0.1, max: 0.8, help: 'Gap round the moving parts.' },
     { key: 'springPreload', label: 'Spring preload, mm', step: 0.25, min: 0, max: 3, help: 'How far past closed the springs push the blades, to hold them shut.' },
     { key: 'springThickness', label: 'Spring thickness, mm', step: 0.05, min: 0.5, max: 2, off: onlyTines, help: 'Thickness of the spring tines.' },
-    { key: 'springLength', label: 'Spring length, mm', step: 1, min: 15, max: 80, off: onlyTines, help: 'Length of the spring tines. Each lever can also be dragged along on the plan.' },
+    { key: 'springLength', label: 'Spring length, studs', step: 0.25, min: 2, max: 10, ...inStuds('springLength'), off: onlyTines, help: 'Length of the spring tines. Each lever can also be dragged along on the plan.' },
     { key: 'bladeDiscD', label: 'Pivot disc diameter, mm', step: 1, min: 10, max: 24, off: onlyTines, help: 'The disc the points pivot on. Bigger is steadier but needs more room under the bed.' },
   ] },
   { title: 'Switches: throw', kind: 'train', switches: true, fields: [
@@ -1076,7 +1082,7 @@ const OPTION_FORM: OptSection[] = [
       { v: 'auto', t: 'Auto', tip: 'On the side the branch leaves (a three-way: right).' },
       { v: 'left', t: 'Left', tip: 'Left, facing along the points from the toe.' },
       { v: 'right', t: 'Right', tip: 'Right, facing along the points from the toe.' }] },
-    { key: 'leverOffset', label: 'Lever distance from track, mm', step: 1, min: -24, max: 30, help: 'How far past the sleeper ends. Each lever can also be dragged on the plan.' },
+    { key: 'leverOffset', label: 'Lever distance from track, studs', step: 0.25, min: -3, max: 4, ...inStuds('leverOffset'), help: 'How far past the sleeper ends. Each lever can also be dragged on the plan.' },
     { key: 'throwBallast', label: 'Ballast round the lever', check: true, off: (c) => (c.ballast ? undefined : 'only with ballast'), help: 'The ballast steps continue round the lever arm, so the lever stands on ballast.' },
   ] },
   { title: 'Buffer stops', kind: 'train', fields: [
@@ -1102,7 +1108,7 @@ const OPTION_FORM: OptSection[] = [
     { key: 'bankClimb', label: 'Steepest climb of the outer rail, 1 in', off: noBank, step: 10, min: 20, max: 1000, help: 'The outer rail rises at most 1 mm in this many, at the ramp\'s steepest (its middle). 100 is a gentle model railway run-off; full-size railways use 400 or more. Where there isn\'t room for a ramp that gentle, the build warns and rings the place on the plan.' },
   ] },
   { title: 'Check rails and flangeways', kind: 'train', fields: [
-    { key: 'checkRailLen', label: 'Check rail length, mm', step: 2, min: 10, max: 80 },
+    { key: 'checkRailLen', label: 'Check rail length, studs', step: 0.25, min: 1.25, max: 10, ...inStuds('checkRailLen') },
     { key: 'checkRailW', label: 'Check rail width, mm', step: 0.1, min: 1, max: 3 },
     { key: 'checkRailFlare', label: 'Check rail end flare, mm', step: 0.25, min: 0, max: 4, help: 'How far the ends bend out to guide the flanges in.' },
     { key: 'flangeway', label: 'Flangeway width, mm', step: 0.1, min: 1, max: 4 },
@@ -1413,7 +1419,7 @@ function renderTrackwork(list: TwItem[]) {
             const drop = (cur.drop ?? []).filter((d2) => d2 !== id).concat(v ? [] : [id]);
             edit('points', key, { drop: drop.length ? drop : undefined });
           });
-          if (st.state === 'built') { const i = num(cur.toe ?? 0, (v) => edit('points', key, { toe: v }), 1); row.append(field('Moved along, mm', i)); }
+          if (st.state === 'built') { const i = num((cur.toe ?? 0) / 8, (v) => edit('points', key, { toe: v * 8 }), 0.125); row.append(field('Moved along, studs', i)); }
         }
       }
     }
@@ -1427,19 +1433,21 @@ function renderTrackwork(list: TwItem[]) {
       const cur = ((design.trackwork?.[kind] ?? {}) as Record<string, Record<string, number | boolean | string>>)[it.key] ?? {}, ed = editedOf(kind, it.key);
       if (!show(ed)) return;
       let sub: string;
-      if (kind === 'throw' && it.lever) { const ls = leverSide(design, it as unknown as OverlayItem, (canvas.overlay?.items ?? [])); sub = `${ls.side} · ${it.lever.leverOffset.toFixed(0)} mm out`; }
+      if (kind === 'throw' && it.lever) { const ls = leverSide(design, it as unknown as OverlayItem, (canvas.overlay?.items ?? [])); sub = `${ls.side} · ${(it.lever.leverOffset / 8).toFixed(2).replace(/\.?0+$/, '')} studs out`; }
       else sub = [it.len ? `${it.len.toFixed(1)} mm` : '', it.off ? 'taken out' : '', cur.d0 ? `start ${Number(cur.d0) > 0 ? '+' : ''}${cur.d0}` : '', cur.d1 ? `end ${Number(cur.d1) > 0 ? '+' : ''}${cur.d1}` : '', cur.shift ? `moved ${cur.shift}` : ''].filter(Boolean).join(' · ');
       const row = item(g, it.key, `${names[kind][1]} ${n + 1}`, sub, ed, kind);
-      const numField = (label: string, prop: string, step: number, min?: number) => {
-        const i = num((cur[prop] as number) ?? 0, (v) => edit(kind, it.key, { [prop]: min === undefined ? v : Math.max(min, v) }), step);
+      // (studs: the value kept in mm, shown and set in studs)
+      const numField = (label: string, prop: string, step: number, min?: number, studs = false) => {
+        const k = studs ? 8 : 1;
+        const i = num(((cur[prop] as number) ?? 0) / k, (v) => edit(kind, it.key, { [prop]: min === undefined ? v * k : Math.max(min, v * k) }), step);
         if (min !== undefined) i.min = String(min);
         row.append(field(label, i));
       };
       if (kind === 'check') {
-        numField('Longer at the start, mm', 'd0', 1); numField('Longer at the end, mm', 'd1', 1); numField('Moved in from the rail, mm', 'shift', 0.1);
+        numField('Longer at the start, studs', 'd0', 0.125, undefined, true); numField('Longer at the end, studs', 'd1', 0.125, undefined, true); numField('Moved in from the rail, mm', 'shift', 0.1);
         check(row, 'Take it out', !!cur.off, (v) => edit(kind, it.key, { off: v }));
       } else if (kind === 'groove') {
-        numField('Longer at the start, mm', 'd0', 1, 0); numField('Longer at the end, mm', 'd1', 1, 0);
+        numField('Longer at the start, studs', 'd0', 0.125, 0, true); numField('Longer at the end, studs', 'd1', 0.125, 0, true);
       } else if (kind === 'throw' && it.lever) {
         // (drag the lever on the plan, or set it here; Auto: as the route or the options say)
         const lv = it.lever, ls = leverSide(design, it as unknown as OverlayItem, (canvas.overlay?.items ?? []));
@@ -1455,11 +1463,11 @@ function renderTrackwork(list: TwItem[]) {
           changed(true);
         });
         const sf = field('Side', side); sf.classList.add('stack'); row.append(sf);
-        const out = num(lv.leverOffset, (v) => edit('throw', it.key, { leverOffset: Math.max(0, v) }), 1); out.min = '0';
-        row.append(field('Out past the track, mm', out));
+        const out = num(lv.leverOffset / 8, (v) => edit('throw', it.key, { leverOffset: Math.max(0, v * 8) }), 0.125); out.min = '0';
+        row.append(field('Out past the track, studs', out));
         if (leverSlides(design)) {
-          const tine = num(lv.springLength, (v) => edit('throw', it.key, { springLength: Math.min(lv.maxTine, Math.max(16, v)) }), 1); tine.min = '16'; tine.max = String(Math.floor(lv.maxTine));
-          row.append(field('Spring tines (shorter: the lever nearer the heel), mm', tine));
+          const tine = num(lv.springLength / 8, (v) => edit('throw', it.key, { springLength: Math.min(lv.maxTine, Math.max(16, v * 8)) }), 0.125); tine.min = '2'; tine.max = String(Math.floor(lv.maxTine / 8 * 8) / 8);
+          row.append(field('Spring tines (shorter: the lever nearer the heel), studs', tine));
         }
       }
     });
