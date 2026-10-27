@@ -132,6 +132,33 @@ function railHalfW(z0: number, z1: number) {
   return m;
 }
 const unit = (v: Pt): Pt => mul(v, 1 / norm(v));
+/** Where each slider post is as modelled (blade 0 closed, pressed by the preload): the moving blades', or all: where both would be. */
+function fdbPostsOf(v: SetLike, p: BaseParams, all = false): Pt[] {
+  return v.fdb!.flatMap((f, b) => { const q = rotAbout(f.post, f.pivot, f.open); return all || b !== v.fixed ? [[q[0] - (b === 0 ? p.springPreload : 0), q[1]] as Pt] : []; });
+}
+/** (the slider in two parts) the pegs' size, how far the posts' piece reaches past a post, its least length, the pegs' offset across the bar (their teardrop's tip toward -y) */
+const SPLIT = { pegD: 1.4, past: 0.4, minLen: 6, pegY: 0.2 };
+/**
+ * (blades on top, the throw arm under other track: network.ts moves a boxed-in
+ * lever out past it) The slider in two parts, so nothing of it need pass under
+ * that track but a plain bar in a closed tunnel. The bar, with the fork, goes in
+ * first, from the lever's end as the whole slider does; its end under the posts
+ * is a tongue half its height. Then a short piece carrying the posts drops in
+ * from above at the points, through an opening there only, onto the tongue,
+ * pegged down into it. Where they are, along the slider (x, the set's frame):
+ * the piece [a, b]; the opening [o0, o1] (the piece over its travel, and the
+ * clearance), its half-width hw; the posts.
+ */
+function fdbSplit(v: SetLike, p: BaseParams) {
+  const c = p.pointClearance, rodW = sprungLow(p) ? SPRUNG_SLIDER.rodW : FDB.rodW, posts = fdbPostsOf(v, p);
+  // (Peco's spring's post, between where both blades' would be, on it too)
+  const oc = p.throwAction === 'overcentre' && !v.three && !v.stand ? fdbPostsOf(v, p, true) : [];
+  const xs = [...posts, ...(oc.length ? [[(oc[0][0] + oc[1][0]) / 2, 0] as Pt] : [])].map((q) => q[0]), r = FDB.postD / 2 + SPLIT.past;
+  let a = Math.min(...xs) - r, b = Math.max(...xs) + r;
+  // (long enough to handle; longer away from the lever, the stock rail being on its side)
+  if (b - a < SPLIT.minLen) { if (v.throwDir > 0) a = b - SPLIT.minLen; else b = a + SPLIT.minLen; }
+  return { a, b, o0: a - c, o1: b + v.leverTravel + c, hw: rodW / 2 + c, posts, rodW };
+}
 /**
  * Each of a set's plate-style blades laid out: its pin 7 in from its rail at the
  * heel, the slider's post halfway across its plate, unless another route's
@@ -545,6 +572,31 @@ export function switchPlan(routes: Route[], specs: SetSpec[], p: BaseParams = BA
       // (a network's piece says it in its own words, where the points are)
       if (why && !foreign.length) warnings.push(`another route's rail runs between a set of points' stock rails (a tandem's first branch through its second points), and ${why}: move the second points further along, or use 'tines' points`);
     });
+  }
+  // (a set's arm under other track, past its stock rail (network.ts moves a boxed-in lever out past it): the slider
+  // goes under that track in a closed tunnel, the bed's top no higher than its sleepers'; with blades on top in two
+  // parts (fdbSplit), the posts' opening clear of every rail. Else it can't: its tunnel or groove would cut the rails)
+  const footHw = 3.9 + p.pointClearance;
+  const railIn = (rails: [Route, number, number][], x0: number, x1: number, y0: number, y1: number) => rails.some(([rt, o, s0]) => {
+    for (let t = Math.max(0, s0), L = routeLength(rt); t <= L; t += 0.5) {
+      const q = railPoint(rt, t, o);
+      if (Math.hypot(Math.max(x0 - q[0], 0, q[0] - x1), Math.max(y0 - q[1], 0, q[1] - y1)) < footHw) return true;
+    }
+    return false;
+  });
+  const fRails: [Route, number, number][] = foreign.flatMap((rt) => [[rt, -G, 0], [rt, G, 0]] as [Route, number, number][]);
+  for (const v of sets as SetLike[]) {
+    const xIn = v.throwStockX + v.throwDir * 2 * 3.9, xOut = v.leverX + v.throwDir * 10;
+    v.under = fRails.length > 0 && railIn(fRails, Math.min(xIn, xOut), Math.max(xIn, xOut), v.throwY - 3, v.throwY + 3);
+    if (!v.under) continue;
+    const roof = g.bedTop <= PLATE_H + 1e-6 && g.cavityTop <= g.bedTop - 0.3;
+    if (p.mechStyle !== 'plates' || !roof) { v.underOk = roof; continue; }
+    const sp = fdbSplit(v, p), own = v.three ? [v.three.S, v.three.L, v.three.R] : [v.ra, v.rb];
+    // (the stock rails, a single-point switch's fixed rail, and the rest)
+    const rails: [Route, number, number][] = [...own.flatMap((rt) => [[rt, -G, v.sHeel], [rt, G, v.sHeel]] as [Route, number, number][]),
+      [v.three ? v.three.L : v.rb, -G, 0], [v.three ? v.three.R : v.ra, G, 0],
+      ...(v.fixed !== undefined ? [[v.fixed === 0 ? v.ra : v.rb, v.fixed === 0 ? -G : G, v.sMate!] as [Route, number, number]] : []), ...railsNear(v)];
+    v.underOk = !railIn(rails, sp.o0, sp.o1, v.throwY - sp.hw, v.throwY + sp.hw);
   }
   return {
     warnings, notes,
@@ -1210,7 +1262,11 @@ export function switchGeometry(s: Scad, plan: SwitchPlan, extraCuts: Man[] = [])
   /** A post's section at q (with m round it): a teardrop pointed to -y. */
   const fdbPost2d = (q: Pt, m: number) => W.CrossSection.hull([circle(FDB.postD / 2 + m, 24, q), circle(0.05 + m, 8, [q[0], q[1] - (FDB.postD / 2) * Math.SQRT2])]);
   /** Where each post is as modelled (blade 0 closed, pressed by the preload): the moving blades', or all: where both would be. */
-  const fdbPostAt = (v: SetV, all = false) => fdbBlades(v).flatMap((f, b) => { const q = rotAbout(f.post, f.pivot, f.open); return all || b !== v.fixed ? [[q[0] - (b === 0 ? p.springPreload : 0), q[1]] as Pt] : []; });
+  const fdbPostAt = (v: SetV, all = false) => fdbPostsOf(v, p, all);
+  /** The slider in two parts (fdbSplit): where its arm runs under other track, and it can. */
+  const split = (v: SetV) => fdb && v.under && v.underOk;
+  /** (the slider in two parts) a peg's section at q (with m round it): a teardrop pointed to -y, as the posts'. */
+  const peg2d = (q: Pt, m: number) => W.CrossSection.hull([circle(SPLIT.pegD / 2 + m, 20, q), circle(0.05 + m, 8, [q[0], q[1] - (SPLIT.pegD / 2) * Math.SQRT2 - m * (Math.SQRT2 - 1)])]);
   /** The lever's opening through the arm, in x: over the fork's travel, and on toward the arm's end, short of it. */
   const fdbMouth = (v: SetV) => {
     const f0 = Math.min(v.forkX - forkHw, v.forkX + v.leverTravel + forkHw) - c - 1, f1 = Math.max(v.forkX - forkHw, v.forkX + v.leverTravel + forkHw) + c + 1;
@@ -1220,7 +1276,7 @@ export function switchGeometry(s: Scad, plan: SwitchPlan, extraCuts: Man[] = [])
   const fdbFloor = () => g.layerZ0 - c;
   /** The slider's footprint: its travel, from the far post out to the lever's opening. */
   const fdbSlot2d = (v: SetV, m: number) => {
-    const xs = [...fdbPostAt(v).map((q) => q[0]), v.forkX, ...fdbMouth(v)];
+    const xs = [...fdbPostAt(v).map((q) => q[0]), v.forkX, ...fdbMouth(v), ...(split(v) ? [fdbSplit(v, p).a, fdbSplit(v, p).b] : [])];
     const x0 = Math.min(...xs) - v.leverTravel - 4, x1 = Math.max(...xs) + v.leverTravel + 4;
     const [m0, m1] = fdbMouth(v), a = Math.max(x0, Math.min(x1, v.throwDir > 0 ? m1 : m0));
     const lo = v.throwDir > 0 ? x0 : a, hi = v.throwDir > 0 ? a : x1;
@@ -1228,6 +1284,8 @@ export function switchGeometry(s: Scad, plan: SwitchPlan, extraCuts: Man[] = [])
   };
   /** The posts' groove up through the bed's top, from their travel out to the lever's opening. */
   const fdbGroove = (v: SetV) => {
+    // (the slider in two parts: open only where the posts' piece goes in, at the points, as wide as the bar; up past the posts' tops)
+    if (split(v)) { const sp = fdbSplit(v, p); return cube([sp.o1 - sp.o0, 2 * sp.hw, postTop + 0.4 - g.layerTop + 0.01], [sp.o0, v.throwY - sp.hw, g.layerTop - 0.01]); }
     const qs = fdbPostAt(v), T2 = v.leverTravel + 1, [m0, m1] = fdbMouth(v), mouth = (m0 + m1) / 2;
     // (wide enough for the posts wherever they are as the blades swing: their y moves a little)
     const dy = Math.max(0, ...fdbBlades(v).filter((_, b) => b !== v.fixed).flatMap((f) => [f.open, f.open === 0 ? f.ang : 0].map((a) => Math.abs(rotAbout(f.post, f.pivot, a)[1] - v.throwY)))) + 0.2;
@@ -1250,8 +1308,15 @@ export function switchGeometry(s: Scad, plan: SwitchPlan, extraCuts: Man[] = [])
     // a teardrop's tip past a narrow bar's side (the sprung blades' on track alone) would leave the bar hanging over the bed)
     const band = sq([1000, rodW], [-500, v.throwY - rodW / 2]);
     const posts = fdbPostAt(v).map((q) => T(s.extrude(fdbPost2d(q, 0).intersect(band), postTop - z1 + 0.01), [0, 0, z1 - 0.01]));
-    const body = s.union([cube([x1 - x0, rodW, z1 - z0], [x0, v.throwY - rodW / 2, z0]), ...posts, ...fdbSliderExtra(v),
-      cube([2 * forkHw, rodW, v.forkTop - z0], [v.forkX - forkHw, v.throwY - rodW / 2, z0])]);
+    const fork = cube([2 * forkHw, rodW, v.forkTop - z0], [v.forkX - forkHw, v.throwY - rodW / 2, z0]);
+    let body: Man;
+    if (split(v)) {
+      // (in two parts: the bar, its end under the posts' piece a tongue half its height, with a hole for each peg)
+      const sp = fdbSplit(v, p), zm = (z0 + z1) / 2, k = v.throwDir > 0 ? sp.b + c : sp.a - c;
+      const [f0, f1] = v.throwDir > 0 ? [k, x1] : [x0, k], [t0, t1] = v.throwDir > 0 ? [Math.min(x0, sp.a), k + 0.01] : [k - 0.01, Math.max(x1, sp.b)];
+      const holes = sp.posts.map((q) => T(s.extrude(peg2d([q[0], v.throwY + SPLIT.pegY], c), zm - z0 + 0.02), [0, 0, z0 - 0.01]));
+      body = s.difference(s.union([cube([f1 - f0, rodW, z1 - z0], [f0, v.throwY - rodW / 2, z0]), cube([t1 - t0, rodW, zm - z0], [t0, v.throwY - rodW / 2, z0]), fork]), holes);
+    } else body = s.union([cube([x1 - x0, rodW, z1 - z0], [x0, v.throwY - rodW / 2, z0]), ...posts, ...fdbSliderExtra(v), fork]);
     if (v.stand) {
       // (the stand's yoke: a slot as wide as its eccentric, open at the top for it to go in, down past where it's lowest)
       const sw2 = STAND.eccD / 2 + c, bot = v.standZ - v.standE * sind(STAND.overDeg) - STAND.eccD / 2 - c;
@@ -1263,6 +1328,14 @@ export function switchGeometry(s: Scad, plan: SwitchPlan, extraCuts: Man[] = [])
       sq([2 * m, v.forkTop - v.leverTipZ + 0.01], [-m, v.leverTipZ]),
     ]);
     return s.difference(body, [T(R(T(s.extrude(slot2d, 2 * rodW), [0, 0, -rodW]), [90, 0, 0]), [v.forkX, v.throwY, 0])]);
+  };
+  /** (the slider in two parts) The piece with the posts: the bar's upper half over the tongue, a peg down into it under each post. */
+  const fdbPostPiece = (v: SetV) => {
+    const sp = fdbSplit(v, p), z0 = g.layerZ0, z1 = g.layerTop, zm = (z0 + z1) / 2;
+    const band = sq([1000, rodW], [-500, v.throwY - rodW / 2]);
+    const posts = sp.posts.map((q) => T(s.extrude(fdbPost2d(q, 0).intersect(band), postTop - z1 + 0.01), [0, 0, z1 - 0.01]));
+    const pegs = sp.posts.map((q) => T(s.extrude(peg2d([q[0], v.throwY + SPLIT.pegY], 0), zm - z0 - 0.2 + 0.01), [0, 0, z0 + 0.2]));
+    return s.union([cube([sp.b - sp.a, rodW, z1 - zm], [sp.a, v.throwY - rodW / 2, zm]), ...posts, ...pegs, ...fdbSliderExtra(v)]);
   };
   /** More on the slider: (Peco's spring) the post its spring's end goes on. */
   const fdbSliderExtra = (v: SetV): Man[] => (ocOn(v) ? [ocPost(v)] : []);
@@ -1510,8 +1583,7 @@ export function switchGeometry(s: Scad, plan: SwitchPlan, extraCuts: Man[] = [])
     return T(R(s.extrude(circle(standRootR(v) + c, 48, [v.leverX, v.standZ]), y1 - y0 + 2 * c), [90, 0, 0]), [0, v.throwY + y1 + c, 0]);
   };
   /** The throw as printed: the plate-style slider on its side (its -y face down), posts and prongs along the layers. */
-  const throwPrint = (v: SetV) => {
-    const m = throwPart(v);
+  const throwPrint = (v: SetV, m = throwPart(v)) => {
     if (!fdb) return m;
     const r = R(m, [90, 0, 0]), bb = r.boundingBox();
     return T(r, [-(bb.min[0] + bb.max[0]) / 2, -(bb.min[1] + bb.max[1]) / 2, -bb.min[2]]);
@@ -1823,6 +1895,9 @@ export function switchGeometry(s: Scad, plan: SwitchPlan, extraCuts: Man[] = [])
     pointsUnits: (k = 0) => units(sets[k]).map((u) => ({ pivot: u.pivot, swing: u.swing })),
     throwPart: (k = 0) => throwPart(sets[k]),
     throwPrint: (k = 0) => throwPrint(sets[k]),
+    /** (the slider in two parts: its arm under other track) the piece with the posts, as assembled and as printed (on its side, as the bar); else undefined. */
+    throwPostsPart: (k = 0) => (split(sets[k]) ? fdbPostPiece(sets[k]) : undefined),
+    throwPostsPrint: (k = 0) => (split(sets[k]) ? throwPrint(sets[k], fdbPostPiece(sets[k])) : undefined),
     leverPart: (k = 0) => leverPart(sets[k]),
     /** (throwAction 'overcentre') Peco's spring, as assembled and as printed; undefined without it. */
     springPart: (k = 0) => (ocOn(sets[k]) ? ocPart(sets[k]) : undefined),

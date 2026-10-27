@@ -263,6 +263,9 @@ export function pointsSet(routes: Route[], ps: PointsSet, p: SwitchParams, defau
     notches: undefined as Notch[][] | undefined, crossBlocked: false,
     /** (a single-point switch) the blade that's fixed rail instead, and where along its route that rail starts: filled in by switchPlan */
     fixed: undefined as 0 | 1 | undefined, sMate: undefined as number | undefined,
+    /** the throw arm runs under other track (its rails across the arm, past the stock rail), and whether the slider can
+     * pass under it there (a closed tunnel; with blades on top, the slider in two parts: switch/base.ts fdbSplit): filled in by switchPlan */
+    under: false, underOk: false,
   };
 }
 export type PointsSetValues = ReturnType<typeof pointsSet>;

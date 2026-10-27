@@ -1069,7 +1069,7 @@ function buildSwitches(b: PieceBuild, switches: ReturnType<typeof planPieces>['s
     const frameCuts = b.grooveCuts.map((m) => R(T(m, [-sw.pose[0], -sw.pose[1], 0]), [0, 0, -sw.pose[2]]));
     const gm = cached(`sw:${JSON.stringify({ routes: sw.routes, sets: sw.sets, params, cl, tw: b.grooveEdits })}`, () => {
       const g = switchGeometry(scad, sw.plan, frameCuts);
-      return { bases: g.basePieces(), whole: g.base(), grips: g.grips, sets: sw.sets.map((_, k) => ({ thr: g.throwPart(k), thrPrint: g.throwPrint(k), pp: g.pointsParts(k), print: g.leverPrint(k), lever: g.leverPart(k), bracket: params.throwModule ? g.bracketPart(k) : undefined,
+      return { bases: g.basePieces(), whole: g.base(), grips: g.grips, sets: sw.sets.map((_, k) => ({ thr: g.throwPart(k), thrPrint: g.throwPrint(k), thp: g.throwPostsPart(k), thpPrint: g.throwPostsPrint(k), pp: g.pointsParts(k), print: g.leverPrint(k), lever: g.leverPart(k), bracket: params.throwModule ? g.bracketPart(k) : undefined,
         spring: g.springPart(k), springPrint: g.springPrint(k), turns: g.pointsTurns(k) })) };
     });
     const bases = gm.bases;
@@ -1086,7 +1086,7 @@ function buildSwitches(b: PieceBuild, switches: ReturnType<typeof planPieces>['s
       const lm = labelled(b, m, sw.plan.routes, bases.length > 1 ? undefined : switchSize(sw.plan.routes), bases.length > 1 ? `${j + 1}` : undefined);
       add(b, bases.length > 1 ? `${tag}-base${j + 1}` : `${tag}-base`, TRACK_COLOR, lm, place(lm, sw.pose));
     });
-    gm.sets.forEach(({ thr, thrPrint, pp, print, lever, bracket, spring, springPrint, turns }, k) => {
+    gm.sets.forEach(({ thr, thrPrint, thp, thpPrint, pp, print, lever, bracket, spring, springPrint, turns }, k) => {
       const sfx = sw.sets.length > 1 ? `${k + 1}` : '';
       if (bracket) add(b, `${tag}-bracket${sfx}`, 0x8a8f99, bracket, place(bracket, sw.pose));
       const turnOf = (j: number): Piece['turn'] => { const t2 = turns?.[j]; return t2 && { at: poseToWorld(sw.pose, t2.at), by: t2.by, swing: t2.swing }; };
@@ -1094,6 +1094,7 @@ function buildSwitches(b: PieceBuild, switches: ReturnType<typeof planPieces>['s
       // (Peco's spring: printed flat and straight, as assembled squeezed between its pins)
       if (spring && springPrint) add(b, `${tag}-points${sfx}-spring`, 0xc0392b, springPrint, place(spring, sw.pose));
       add(b, `${tag}-throw${sfx}`, 0xe8892b, thrPrint, place(thr, sw.pose));
+      if (thp && thpPrint) add(b, `${tag}-throw${sfx}-posts`, 0xe8892b, thpPrint, place(thp, sw.pose));
       add(b, `${tag}-lever${sfx}`, 0xd4af37, print, place(lever, sw.pose));
     });
   });

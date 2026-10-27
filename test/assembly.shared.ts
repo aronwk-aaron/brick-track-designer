@@ -47,7 +47,8 @@ describe('every switch can be put together', { timeout: 120000 }, () => {
         const inside = (q: typeof m) => { const c = q.boundingBox(); return [0, 1, 2].every((k) => c.min[k] >= bb.min[k] - 1e-3 && c.max[k] <= bb.max[k] + 1e-3); };
         if (!bodies.slice(1).every(inside)) problems.push(`${p.name} is in ${bodies.length} pieces`);
         // (the plate-style slider goes in from the top and along its tunnel: checked below; its blades go on after it, from above)
-        if (bladesTop && /throw/.test(p.name)) continue;
+        // (in two parts, its arm under other track: the piece with the posts goes in from above, onto the bar, as the blades do)
+        if (bladesTop && /throw/.test(p.name) && !/posts/.test(p.name)) continue;
         const dir = /lever|bracket/.test(p.name) || fromTop || bladesTop ? 1 : -1;
         const blade = /points/.test(p.name) && !/throw|lever|bracket/.test(p.name);
         // (the plate-style blades each turn on a pin standing up through the hole in the plate: some of the track inside the blade's outline)
@@ -132,7 +133,17 @@ describe('every switch can be put together', { timeout: 120000 }, () => {
       // (the plate-style slider: a floor under it, nothing open underneath; it goes in from the top, down through the
       // lever's opening, and along its tunnel and the posts' groove: everything ahead of where its end is, clear
       // all the way as it slides in (the part of it still out of the tunnel is in the opening, bent up out of it))
-      if (bladesTop) for (const p of b.pieces.filter((q) => /throw/.test(q.name))) {
+      // (in two parts: the piece with the posts on the bar, pegged into it, clear of it)
+      for (const p of b.pieces.filter((q) => /throw.*posts/.test(q.name))) {
+        const m = man(p), bar = b.pieces.find((q) => q.name === p.name.replace(/-posts$/, ''));
+        if (!bar) { problems.push(`${p.name} has no bar`); continue; }
+        const mb = man(bar), v = m.intersect(mb).volume();
+        if (v > 0.01) problems.push(`${p.name} is in its bar: ${v.toFixed(2)} mm3`);
+        if (m.translate([0, 0, -0.1]).intersect(mb).volume() < 0.1) problems.push(`${p.name} doesn't sit on its bar`);
+        // (a peg in its hole: moved 1 mm any way across, it's in the bar)
+        if ([[1, 0], [-1, 0], [0, 1], [0, -1]].some(([dx, dy]) => m.translate([dx, dy, 0]).intersect(mb).volume() < 0.05)) problems.push(`${p.name} isn't pegged to its bar`);
+      }
+      if (bladesTop) for (const p of b.pieces.filter((q) => /throw/.test(q.name) && !/posts/.test(q.name))) {
         const m = man(p), bb = m.boundingBox(), len = bb.max[0] - bb.min[0];
         if (m.translate([0, 0, -1]).intersect(track).volume() < 0.5) problems.push(`${p.name} isn't floored`);
         const clear = [-1, 1].some((sg) => {
