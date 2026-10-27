@@ -5,7 +5,7 @@
 // supports at every route end, and square stud sockets on the grid of the
 // first route's start, so the piece sits on plates and baseplates.
 import type { Pose, Route } from '../route/route';
-import { hasRoll, railPoint, routeLat, routeLength, routePose, routeRoll, routeSOf } from '../route/route';
+import { hasRoll, poseToWorld, railPoint, routeLat, routeLength, routePose, routeRoll, routeSOf, worldToPose } from '../route/route';
 import { solve, type Solution, type SolverOptions, SOLVER_DEFAULTS } from '../route/solver';
 import { Scad, T, R, type CS, type Man, type Vec2 } from './scad';
 import { type Bank, bankPoint, sweepRoute, trackBank } from './sweep';
@@ -219,19 +219,16 @@ export function crossingPiece(s: Scad, routes: Route[], o: CrossingOptions = CRO
   const tiesBuilt: { i: number; P: Pose; lo: number; hi: number }[] = [];
   const served = (i: number, q: Vec2) => tiesBuilt.some((tb) => {
     if (tb.i === i) return false;
-    const dx = q[0] - tb.P[0], dy = q[1] - tb.P[1], hd = (tb.P[2] * Math.PI) / 180;
-    const across = dx * Math.cos(hd) + dy * Math.sin(hd), along = -dx * Math.sin(hd) + dy * Math.cos(hd);
+    const [across, along] = worldToPose(tb.P, q);
     return across >= tb.lo - 1 && across <= tb.hi + 1 && Math.abs(along) <= ((o.sleeperGapStuds ?? 2) + (o.sleeperWidthStuds ?? 2)) * STUD / 2 + 1;
   });
   /** (a point o across a tie at P, its middle or either edge, on another route's tie or sleeper) */
   const onOtherTie = (i: number, P: Pose, o2: number) => {
-    const hd = (P[2] * Math.PI) / 180;
     return [-c.sleeperW / 2, 0, c.sleeperW / 2].some((dy) => {
-      const q: Vec2 = [P[0] + Math.cos(hd) * o2 - Math.sin(hd) * dy, P[1] + Math.sin(hd) * o2 + Math.cos(hd) * dy];
+      const q = poseToWorld(P, [o2, dy]);
       return tiesBuilt.some((tb) => {
         if (tb.i === i) return false;
-        const dx = q[0] - tb.P[0], dy2 = q[1] - tb.P[1], h2 = (tb.P[2] * Math.PI) / 180;
-        const across = dx * Math.cos(h2) + dy2 * Math.sin(h2), along = -dx * Math.sin(h2) + dy2 * Math.cos(h2);
+        const [across, along] = worldToPose(tb.P, q);
         return across > tb.lo - 0.5 && across < tb.hi + 0.5 && Math.abs(along) < c.sleeperW / 2 + 0.5;
       });
     });
@@ -239,10 +236,10 @@ export function crossingPiece(s: Scad, routes: Route[], o: CrossingOptions = CRO
   // (a point o across the tie inside an end connector's box: the end's width across, its length in from the end and
   // the tie's half-width more)
   const inEndBox = (P: Pose, o2: number) => {
-    const hd = (P[2] * Math.PI) / 180;
+    const q = poseToWorld(P, [o2, 0]);
     return tieEnds.some((e) => {
-      const dx = P[0] + Math.cos(hd) * o2 - e[0], dy = P[1] + Math.sin(hd) * o2 - e[1], he = (e[2] * Math.PI) / 180;
-      return Math.abs(dx * Math.cos(he) + dy * Math.sin(he)) < c.sleeperLen / 2 + 2 && Math.abs(-dx * Math.sin(he) + dy * Math.cos(he)) < c.sleeperW / 2 + BED_END + 2;
+      const [across, along] = worldToPose(e, q);
+      return Math.abs(across) < c.sleeperLen / 2 + 2 && Math.abs(along) < c.sleeperW / 2 + BED_END + 2;
     });
   };
   /** (route i's tie at P, its reach cut back short of any end connector or other route's tie out to the side; undefined: one is under its own track) */
@@ -310,7 +307,7 @@ export function crossingPiece(s: Scad, routes: Route[], o: CrossingOptions = CRO
       const atAll = spotsAll.filter((v) => !inTie(i, v));
       // (long ties: square to this route, out under the tracks beside it; clear of every end connector)
       for (const v of spotsAll.filter((v2) => inTie(i, v2))) {
-        const P = routePose(rt, v), hd = (P[2] * Math.PI) / 180, n2: Vec2 = [Math.cos(hd), Math.sin(hd)], al: Vec2 = [-Math.sin(hd), Math.cos(hd)];
+        const P = routePose(rt, v);
         if (served(i, [P[0], P[1]])) continue;
         const span = tieClear(i, P, ...longTie(i, v));
         if (!span) continue;
@@ -321,7 +318,7 @@ export function crossingPiece(s: Scad, routes: Route[], o: CrossingOptions = CRO
         const nW = o.sleeperWidthStuds ?? 2;
         for (let r = 0; r < nW; r++) for (let lt = span[0] + STUD / 2; lt <= span[1] - STUD / 2 + 1e-9; lt += STUD) {
           const dy = (r - (nW - 1) / 2) * STUD;
-          tieStuds.push([P[0] + n2[0] * lt + al[0] * dy, P[1] + n2[1] * lt + al[1] * dy]);
+          tieStuds.push(poseToWorld(P, [lt, dy]));
         }
       }
       // (its own sleepers, but none on another route's tie or sleeper)
@@ -360,7 +357,7 @@ export function crossingPiece(s: Scad, routes: Route[], o: CrossingOptions = CRO
   const bufPoses = routes.flatMap((rt, i) => [bufEnd(i, 'start') && reversePose(routePose(rt, 0)), bufEnd(i, 'end') && routePose(rt, routeLength(rt))]).filter((e): e is Pose => !!e);
   const studPts: [number, number][] = [];
   {
-    const gp = x.gridPose ?? routePose(routes[0], 0), hd = (gp[2] * Math.PI) / 180, clearR = c.postD / 2 + HEAD_HW + 0.6;
+    const gp = x.gridPose ?? routePose(routes[0], 0), clearR = c.postD / 2 + HEAD_HW + 0.6;
     const bb0 = parts.length ? s.union(parts).boundingBox() : { min: [0, 0, 0], max: [0, 0, 0] };
     const reachS = Math.ceil((Math.hypot(bb0.max[0] - bb0.min[0], bb0.max[1] - bb0.min[1]) + Math.hypot(bb0.min[0] - gp[0], bb0.min[1] - gp[1])) / STUD) + 2;
     const ends = routes.flatMap((rt, i) => [!x.innerEnds?.has(`${i}:start`) && routePose(rt, 0), !x.innerEnds?.has(`${i}:end`) && routePose(rt, routeLength(rt))]).filter((e): e is Pose => !!e);
@@ -371,8 +368,7 @@ export function crossingPiece(s: Scad, routes: Route[], o: CrossingOptions = CRO
       for (let lt = 4; lt <= c.sleeperLen / 2; lt += STUD) lats.push(lt, -lt);
       for (let sAt = 4; sAt <= L - 4 + 1e-9; sAt += STUD) for (const lt of lats) spots.push(railPoint(rt, sAt, lt) as [number, number]);
     } else for (let i = -reachS; i <= reachS; i++) for (let j = -reachS; j <= reachS; j++) {
-      const lx = 4 + i * STUD, ly = 4 + j * STUD;
-      spots.push([gp[0] + lx * Math.cos(hd) - ly * Math.sin(hd), gp[1] + lx * Math.sin(hd) + ly * Math.cos(hd)]);
+      spots.push(poseToWorld(gp, [4 + i * STUD, 4 + j * STUD]));
     }
     const onTie = new Set<[number, number]>(tieStuds as [number, number][]);
     spots.push(...(tieStuds as [number, number][]));
@@ -387,9 +383,9 @@ export function crossingPiece(s: Scad, routes: Route[], o: CrossingOptions = CRO
       // (and of the guard rails and third rails)
       if (extras.some((ex) => ex && !ex.clearOf(q))) continue;
       // (clear of the end connectors: 8 mm in from each end)
-      if (ends.some((e) => { const dx = q[0] - e[0], dy = q[1] - e[1]; return Math.hypot(dx, dy) < c.sleeperLen && Math.abs(-dx * Math.sin((e[2] * Math.PI) / 180) + dy * Math.cos((e[2] * Math.PI) / 180)) < 10; })) continue;
+      if (ends.some((e) => Math.hypot(q[0] - e[0], q[1] - e[1]) < c.sleeperLen && Math.abs(worldToPose(e, q)[1]) < 10)) continue;
       if (addBoxes.some((bb) => q[0] > bb.min[0] - 3 && q[0] < bb.max[0] + 3 && q[1] > bb.min[1] - 3 && q[1] < bb.max[1] + 3)) continue;
-      if (bufPoses.some((e) => inBufferPost(t, toLocal(e, q), c.postD / 2 + 0.6, (o.buffer ?? BUFFER_DEFAULTS).style ?? 'frame'))) continue;
+      if (bufPoses.some((e) => inBufferPost(t, worldToPose(e, q), c.postD / 2 + 0.6, (o.buffer ?? BUFFER_DEFAULTS).style ?? 'frame'))) continue;
       // (and of the check rails)
       if (sol.checkRails.some((cr) => {
         const rt = routes[cr.route], lat = routeLat(rt, q), mid = cr.offset + cr.width / 2;
@@ -407,9 +403,9 @@ export function crossingPiece(s: Scad, routes: Route[], o: CrossingOptions = CRO
   // The underside, on the stud grid of the first route's start (spots at
   // 4 + 8k across and along in that frame, as on a straight).
   const box = body.boundingBox();
-  const p0 = x.gridPose ?? routePose(routes[0], 0), h = (p0[2] * Math.PI) / 180;
+  const p0 = x.gridPose ?? routePose(routes[0], 0);
   const reach = Math.ceil((Math.hypot(box.max[0] - box.min[0], box.max[1] - box.min[1]) + Math.hypot(box.min[0] - p0[0], box.min[1] - p0[1])) / STUD) + 2;
-  const world = (lx: number, ly: number): [number, number] => [p0[0] + lx * Math.cos(h) - ly * Math.sin(h), p0[1] + lx * Math.sin(h) + ly * Math.cos(h)];
+  const world = (lx: number, ly: number) => poseToWorld(p0, [lx, ly]);
   const spots: { i: number; j: number; x: number; y: number }[] = [];
   for (let i = -reach; i <= reach; i++)
     for (let j = -reach; j <= reach; j++) {
@@ -455,8 +451,7 @@ export function crossingPiece(s: Scad, routes: Route[], o: CrossingOptions = CRO
   const extra = (x.hollows ?? []).map(({ P, r }) => ({ P, r: [r[0] + WALL, r[1] - WALL, r[2] + WALL, r[3] - WALL] as const }))
     .filter(({ r }) => r[1] > r[0] && r[3] > r[2]);
   const inExtra = (pt: [number, number], m: number) => extra.some(({ P, r }) => {
-    const dx = pt[0] - P[0], dy = pt[1] - P[1], hd = (P[2] * Math.PI) / 180;
-    const lx = dx * Math.cos(hd) + dy * Math.sin(hd), ly = -dx * Math.sin(hd) + dy * Math.cos(hd);
+    const [lx, ly] = worldToPose(P, pt);
     return lx >= r[0] + m && lx <= r[1] - m && ly >= r[2] + m && ly <= r[3] - m;
   });
   for (const { P, r } of extra) beds.push(s.w.CrossSection.square([r[1] - r[0], r[3] - r[2]]).translate([r[0], r[2]]).rotate(P[2]).translate([P[0], P[1]]));
@@ -483,7 +478,7 @@ export function crossingPiece(s: Scad, routes: Route[], o: CrossingOptions = CRO
     // a socket at each stud)
     const nW = o.sleeperWidthStuds ?? 2, socksT: Man[] = [];
     for (const { i, v, lo, hi } of sleeperAt) {
-      const P = routePose(routes[i], v), toW = (lx: number, ly: number): Vec2 => { const h2 = (P[2] * Math.PI) / 180; return [P[0] + lx * Math.cos(h2) - ly * Math.sin(h2), P[1] + lx * Math.sin(h2) + ly * Math.cos(h2)]; };
+      const P = routePose(routes[i], v), toW = (lx: number, ly: number) => poseToWorld(P, [lx, ly]);
       if (nW >= 2) {
         const ha = (nW * STUD) / 2 - WALL;
         beds.push(s.w.CrossSection.square([hi - lo - 2 * WALL, 2 * ha]).translate([lo + WALL, -ha]).rotate(P[2]).translate([P[0], P[1]]));
@@ -527,9 +522,8 @@ export function crossingPiece(s: Scad, routes: Route[], o: CrossingOptions = CRO
         // and clear of both ends' connectors (measured along each end's frame)
         const L = routeLength(rt);
         return [routePose(rt, 0), routePose(rt, L)].every((e, k) => {
-          const dx = pt[0] - e[0], dy = pt[1] - e[1];
-          if (Math.hypot(dx, dy) > c.sleeperLen + 2 * STUD) return true;
-          const hd = (e[2] * Math.PI) / 180, along = (-dx * Math.sin(hd) + dy * Math.cos(hd)) * (k ? -1 : 1);
+          if (Math.hypot(pt[0] - e[0], pt[1] - e[1]) > c.sleeperLen + 2 * STUD) return true;
+          const along = worldToPose(e, pt)[1] * (k ? -1 : 1);
           return along >= (bufEnd(ri, k ? 'end' : 'start') ? WALL : BED_END + WALL) + m;
         });
       });
@@ -585,8 +579,7 @@ export function crossingPiece(s: Scad, routes: Route[], o: CrossingOptions = CRO
       const near = routes.some((r2, j) => meets(r2, j) && steep(r2))
         || addBb.some((bb) => q[0] > bb.min[0] - c.sleeperLen / 2 && q[0] < bb.max[0] + c.sleeperLen / 2 && q[1] > bb.min[1] - c.sleeperLen / 2 && q[1] < bb.max[1] + c.sleeperLen / 2)
         || hol.some(({ P, r }) => {
-          const dx = q[0] - P[0], dy = q[1] - P[1], hd = (P[2] * Math.PI) / 180;
-          const lx = dx * Math.cos(hd) + dy * Math.sin(hd), ly = -dx * Math.sin(hd) + dy * Math.cos(hd), m = c.sleeperLen / 2;
+          const [lx, ly] = worldToPose(P, q), m = c.sleeperLen / 2;
           return lx >= r[0] - m && lx <= r[1] + m && ly >= r[2] - m && ly <= r[3] + m;
         });
       // (and across each cut line, the joint's room either side: a cut in a gap had nothing but the rails to join)
@@ -662,10 +655,10 @@ export function crossingPiece(s: Scad, routes: Route[], o: CrossingOptions = CRO
         ...(x.hollows ?? []).map(({ P, r }) => s.w.CrossSection.square([r[1] - r[0], r[3] - r[2]]).translate([r[0], r[2]]).rotate(P[2]).translate([P[0], P[1]])),
       ]);
       const cav = outline.offset(-RIM, 'Miter', 1000), cavH = o.studH + 0.2;
-      const bb = outline.bounds(), gp = x.gridPose ?? routePose(routes[0], 0), hd = (gp[2] * Math.PI) / 180;
-      const wd = (lx: number, ly: number): [number, number] => [gp[0] + lx * Math.cos(hd) - ly * Math.sin(hd), gp[1] + lx * Math.sin(hd) + ly * Math.cos(hd)];
+      const bb = outline.bounds(), gp = x.gridPose ?? routePose(routes[0], 0);
+      const wd = (lx: number, ly: number) => poseToWorld(gp, [lx, ly]);
       // (only the grid spots over the outline's box)
-      const toG = (q: [number, number]) => { const dx = q[0] - gp[0], dy = q[1] - gp[1]; return [(dx * Math.cos(hd) + dy * Math.sin(hd)) / STUD, (-dx * Math.sin(hd) + dy * Math.cos(hd)) / STUD]; };
+      const toG = (q: [number, number]) => worldToPose(gp, q).map((v) => v / STUD);
       const cs = [toG([bb.min[0], bb.min[1]]), toG([bb.max[0], bb.min[1]]), toG([bb.min[0], bb.max[1]]), toG([bb.max[0], bb.max[1]])];
       const i0 = Math.floor(Math.min(...cs.map((q) => q[0]))) - 2, i1 = Math.ceil(Math.max(...cs.map((q) => q[0]))) + 1;
       const j0 = Math.floor(Math.min(...cs.map((q) => q[1]))) - 2, j1 = Math.ceil(Math.max(...cs.map((q) => q[1]))) + 1;
@@ -691,8 +684,3 @@ export function crossingPiece(s: Scad, routes: Route[], o: CrossingOptions = CRO
 
 /** A pose turned round (the same place, heading the other way). */
 const reversePose = (p: Pose): Pose => [p[0], p[1], p[2] + 180];
-/** A point in a pose's frame (+y along its heading). */
-const toLocal = (e: Pose, q: [number, number]): [number, number] => {
-  const dx = q[0] - e[0], dy = q[1] - e[1], h = (e[2] * Math.PI) / 180;
-  return [dx * Math.cos(h) + dy * Math.sin(h), -dx * Math.sin(h) + dy * Math.cos(h)];
-};

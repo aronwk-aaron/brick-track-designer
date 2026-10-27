@@ -3,6 +3,7 @@
 // the studs, with anti-stud tubes along the piece's edges and every 4 studs
 // and thin posts elsewhere; loose recesses for studs wholly under the piece
 // but off the hollow; gripping round sockets for the rest.
+import { poseToWorld, worldToPose } from '../route/route';
 import { clipNear, T, type CS, type Man, type Scad } from './scad';
 import { getSocketShape, PLATE_H, STUD, type Track } from './track';
 
@@ -132,8 +133,8 @@ export function edgeGrip(s: Scad, t: Track, part: Man, gp: [number, number, numb
   const inner = roof.offset(-BOTTOM_WALL, 'Miter', 1000);
   // (the rim, only where it's hollow now)
   const rim = roof.subtract(inner).subtract(mid);
-  const bb = roof.bounds(), h = (gp[2] * Math.PI) / 180;
-  const toG = (x: number, y: number) => { const dx = x - gp[0], dy = y - gp[1]; return [(dx * Math.cos(h) + dy * Math.sin(h)) / STUD, (-dx * Math.sin(h) + dy * Math.cos(h)) / STUD]; };
+  const bb = roof.bounds();
+  const toG = (x: number, y: number) => worldToPose(gp, [x, y]).map((v) => v / STUD);
   const cs = [toG(bb.min[0], bb.min[1]), toG(bb.max[0], bb.min[1]), toG(bb.min[0], bb.max[1]), toG(bb.max[0], bb.max[1])];
   const i0 = Math.floor(Math.min(...cs.map((q) => q[0]))) - 1, i1 = Math.ceil(Math.max(...cs.map((q) => q[0]))) + 1;
   const j0 = Math.floor(Math.min(...cs.map((q) => q[1]))) - 1, j1 = Math.ceil(Math.max(...cs.map((q) => q[1]))) + 1;
@@ -141,7 +142,7 @@ export function edgeGrip(s: Scad, t: Track, part: Man, gp: [number, number, numb
   // (each test against the outlines near the spot only: clipNear)
   const nearInner = clipNear(W, inner, 4), nearRoof = clipNear(W, roof, 10.5), nearMid = clipNear(W, mid, 4);
   for (let i = i0; i <= i1; i++) for (let j = j0; j <= j1; j++) {
-    const lx = i * STUD, ly = j * STUD, q: [number, number] = [gp[0] + lx * Math.cos(h) - ly * Math.sin(h), gp[1] + lx * Math.sin(h) + ly * Math.cos(h)];
+    const q = poseToWorld(gp, [i * STUD, j * STUD]);
     // (a stud in from the edge: the tube under the roof and clear of the rim, but within 10 mm of the outline)
     if (q[0] < bb.min[0] - 10 || q[0] > bb.max[0] + 10 || q[1] < bb.min[1] - 10 || q[1] > bb.max[1] + 10) continue; // (nowhere near it: the first test fails)
     if (W.CrossSection.circle(TUBE_OD / 2 + 0.2, 24).translate(q).subtract(nearInner(q)).area() > 0.01) continue;

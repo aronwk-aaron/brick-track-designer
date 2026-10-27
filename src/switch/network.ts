@@ -9,7 +9,7 @@
 import { type CrossingOptions, crossingPiece } from '../geom/crossing';
 import { R, T, type Man, type Scad } from '../geom/scad';
 import type { Pose, Route } from '../route/route';
-import { railPoint, routeLat, routeLength, routePose, routeSOf } from '../route/route';
+import { poseToWorld, railPoint, routeLat, routeLength, routePose, routeSOf } from '../route/route';
 import type { Solution } from '../route/solver';
 import { reversedRoute } from './reverse';
 import { type BaseParams, type SetSpec, switchGeometry, switchPlan, type SwitchPlan } from './base';
@@ -192,9 +192,9 @@ export function networkSplits(s: Scad, routes: Route[], sol: Solution, p: BasePa
     const moving: NetworkPart[] = [];
     const tag = `points${groups.length > 1 ? n + 1 : ''}`;
     const pts = gm.pointsParts(0);
-    const turns = gm.pointsTurns(0), cz = Math.cos((P[2] * Math.PI) / 180), sz = Math.sin((P[2] * Math.PI) / 180);
+    const turns = gm.pointsTurns(0);
     pts.forEach((m, k) => moving.push({ name: `${tag}${pts.length > 1 ? (k === 0 ? '-a' : '-b') : ''}`, color: 0x4682b4, local: m, world: place(m, P),
-      ...(turns?.[k] && { turn: { at: [P[0] + turns[k].at[0] * cz - turns[k].at[1] * sz, P[1] + turns[k].at[0] * sz + turns[k].at[1] * cz] as [number, number], by: turns[k].by, swing: turns[k].swing } }) }));
+      ...(turns?.[k] && { turn: { at: poseToWorld(P, turns[k].at), by: turns[k].by, swing: turns[k].swing } }) }));
     gm.holdParts(0).forEach((m, k) => moving.push({ name: `${tag}-holddown-${k === 0 ? 'a' : 'b'}`, color: 0x4682b4, local: gm.holdPrint(m), world: place(m, P) }));
     // (Peco's spring: printed flat and straight, as assembled squeezed between its pins)
     const spr = gm.springPart(0), sprP = gm.springPrint(0);

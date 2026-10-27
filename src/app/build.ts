@@ -11,7 +11,7 @@ import { arena, flat, type Wasm } from '../geom/kernel';
 import { stlBytes } from '../geom/stl';
 import { splitSelfCrossing } from '../route/selfcross';
 import { FORCE_ANGLE, FORCE_LAT, solve, type SplitEdits } from '../route/solver';
-import { hasRoll, railPoint, routeLat, routeLength, routePose, routeRoll, routeSOf, type Pose } from '../route/route';
+import { hasRoll, poseToWorld, railPoint, routeLat, routeLength, routePose, routeRoll, routeSOf, type Pose } from '../route/route';
 import { reversedRoute } from '../switch/reverse';
 import { BASE_DEFAULTS, switchGeometry } from '../switch/base';
 import { switchGlobals } from '../switch/context';
@@ -428,8 +428,7 @@ function buildOne(w: Wasm, design: Design, report: (what: string, frac: number) 
   /** A points set's lever on the plan (it can be dragged there). */
   const leverItem = (key: string, P: Pose, v: { throwDir: number; leverX: number; throwY: number; throwStockX: number; throwEdgeX: number; leverMinD: number; tineLen: number; pivotPt: [number, number];
     ra: Route; rb: Route; sHeel: number; three?: { S: Route }; fdb?: { pivot: [number, number] }[] }) => {
-    const ca = Math.cos((P[2] * Math.PI) / 180), sa = Math.sin((P[2] * Math.PI) / 180);
-    const wd = (x: number, y: number): [number, number] => [P[0] + x * ca - y * sa, P[1] + x * sa + y * ca];
+    const wd = (x: number, y: number) => poseToWorld(P, [x, y]);
     const ed = tw.throw?.[key];
     // (pts: the arm's outline, as built: from the stock rail out to the stud line past the lever, 3 studs wide)
     const xOut = v.throwDir * Math.ceil((v.throwDir * (v.leverX + v.throwDir * 10)) / 8 - 1e-6) * 8, hw = 12;
@@ -1019,8 +1018,7 @@ function buildOne(w: Wasm, design: Design, report: (what: string, frac: number) 
   if (!network) pc.switches.forEach((sw) => {
     sw.sets.forEach((_, k) => leverItem(keyOf(sw.setAts[k]), sw.pose, sw.plan.sets[k]));
     // its check rails, with the hand edits (keyed where they are in the design)
-    const ca = Math.cos((sw.pose[2] * Math.PI) / 180), sa = Math.sin((sw.pose[2] * Math.PI) / 180);
-    const toWorld = (q: [number, number]): [number, number] => [sw.pose[0] + q[0] * ca - q[1] * sa, sw.pose[1] + q[0] * sa + q[1] * ca];
+    const toWorld = (q: [number, number]) => poseToWorld(sw.pose, q);
     const cl = sw.plan.checkList, kept: typeof cl = [];
     for (const cr of cl) {
       const rt = sw.plan.routes[cr[0]], w2 = o.checkRailW / 2;
@@ -1105,8 +1103,7 @@ function buildOne(w: Wasm, design: Design, report: (what: string, frac: number) 
     });
     const bases = gm.bases;
     // (its tubes, for the plan's grip marks, in the design's frame)
-    const cz = Math.cos((sw.pose[2] * Math.PI) / 180), sz = Math.sin((sw.pose[2] * Math.PI) / 180);
-    for (const [x, y] of gm.grips) overlay.grips.push([sw.pose[0] + x * cz - y * sz, sw.pose[1] + x * sz + y * cz]);
+    for (const q of gm.grips) overlay.grips.push(poseToWorld(sw.pose, q));
     if (layered) {
       // (prototype) in two layers: the lower one and the deck, each cut for the bed on its own
       const lids = sw.sets.map((_, k) => ({ P: sw.pose, rects: lidRects(sw.plan.routes, sw.plan.sets[k]) }));
@@ -1121,8 +1118,7 @@ function buildOne(w: Wasm, design: Design, report: (what: string, frac: number) 
     gm.sets.forEach(({ thr, thrPrint, pp, print, lever, bracket, spring, springPrint, turns, hold }, k) => {
       const sfx = sw.sets.length > 1 ? `${k + 1}` : '';
       if (bracket) add(`${tag}-bracket${sfx}`, 0x8a8f99, bracket, place(bracket, sw.pose));
-      const cz2 = Math.cos((sw.pose[2] * Math.PI) / 180), sz2 = Math.sin((sw.pose[2] * Math.PI) / 180);
-      const turnOf = (j: number): Piece['turn'] => { const t2 = turns?.[j]; return t2 && { at: [sw.pose[0] + t2.at[0] * cz2 - t2.at[1] * sz2, sw.pose[1] + t2.at[0] * sz2 + t2.at[1] * cz2], by: t2.by, swing: t2.swing }; };
+      const turnOf = (j: number): Piece['turn'] => { const t2 = turns?.[j]; return t2 && { at: poseToWorld(sw.pose, t2.at), by: t2.by, swing: t2.swing }; };
       pp.forEach((pts, j) => add(`${tag}-points${sfx}${pp.length > 1 ? (j === 0 ? '-a' : '-b') : ''}`, 0x4682b4, pts, place(pts, sw.pose), turnOf(j)));
       for (const [j, h] of hold.entries()) add(`${tag}-points${sfx}-holddown-${j === 0 ? 'a' : 'b'}`, 0x4682b4, h.print, place(h.m, sw.pose));
       // (Peco's spring: printed flat and straight, as assembled squeezed between its pins)

@@ -9,7 +9,7 @@
 // a track alongside) they're left out: the OpenSCAD files have no such case,
 // and a third rail across another track would need flangeways of its own.
 import type { ExtraRails, Route, RouteEnds } from '../route/route';
-import { railPoint, routeLat, routeLength, routePose } from '../route/route';
+import { poseToWorld, railPoint, routeLat, routeLength, routePose } from '../route/route';
 import { R, T, type Man, type Scad, type Vec2 } from './scad';
 import { segDist } from './pathsplit';
 import { bankAlong, sweepRoute, trackBank } from './sweep';
@@ -204,8 +204,7 @@ export function extraRails(s: Scad, t: Track, routes: Route[], i: number, inStar
     },
     postOk: (P) => (p) => {
       if (Math.abs(p[0]) < c.railOffset && ((x.guard && Math.abs(Math.abs(p[0]) - gr) < guardClr) || (dualOn && Math.abs(p[0] - dir * dualXd) < dualClr))) return false;
-      const h = (P[2] * Math.PI) / 180;
-      return out.clearOf([P[0] + p[0] * Math.cos(h) - p[1] * Math.sin(h), P[1] + p[0] * Math.sin(h) + p[1] * Math.cos(h)]);
+      return out.clearOf(poseToWorld(P, p));
     },
   };
   return out;

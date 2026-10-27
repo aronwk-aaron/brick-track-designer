@@ -109,6 +109,17 @@ const deg = (r: number) => (r * 180) / Math.PI;
 const sind = (d: number) => Math.sin(rad(d));
 const cosd = (d: number) => Math.cos(rad(d));
 
+/** A point given across (x, + = right) and along (y, ahead) a pose, in world coordinates. */
+export function poseToWorld(P: Pose, q: Pt): Pt {
+  const c = cosd(P[2]), s = sind(P[2]);
+  return [P[0] + q[0] * c - q[1] * s, P[1] + q[0] * s + q[1] * c];
+}
+/** A world point as across (x, + = right) and along (y, ahead) a pose. */
+export function worldToPose(P: Pose, q: Pt): Pt {
+  const dx = q[0] - P[0], dy = q[1] - P[1], c = cosd(P[2]), s = sind(P[2]);
+  return [dx * c + dy * s, -dx * s + dy * c];
+}
+
 export const segLength = (sg: Segment) => (sg.kind === 'straight' ? sg.length : (Math.abs(sg.angle) * Math.PI * sg.radius) / 180);
 export const routeLength = (rt: Route) => rt.segments.reduce((a, sg) => a + segLength(sg), 0);
 

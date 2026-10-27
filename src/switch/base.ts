@@ -8,7 +8,7 @@
 // Units: mm and degrees, switch.scad's frame (the routes start at the origin
 // heading +y). Routes are right to left, as switch.scad's `routes`.
 import type { Pose, Pt, Route } from '../route/route';
-import { railPoint, routeLat, routeLength, routePose, routeSOf, segStarts } from '../route/route';
+import { railPoint, routeLat, routeLength, routePose, routeSOf, segStarts, worldToPose } from '../route/route';
 import { M, R, T, type CS, type Man, type Scad, type Vec2, type Vec3 } from '../geom/scad';
 import { sweepRoute } from '../geom/sweep';
 import { hollowGrid, type Spot, studSpots } from '../geom/underside';
@@ -82,10 +82,7 @@ function railCross(rt: Route, o: number, yc: number): [number, number] {
   return [railPoint(rt, mid, o)[0], routePose(rt, mid)[2]];
 }
 /** p in a pose's frame: [offset right of it, distance ahead of it] (local_of). */
-const localOf = (pose: Pose, p: Pt): Pt => {
-  const dx = p[0] - pose[0], dy = p[1] - pose[1];
-  return [dx * cosd(pose[2]) + dy * sind(pose[2]), -dx * sind(pose[2]) + dy * cosd(pose[2])];
-};
+const localOf = worldToPose;
 /** OpenSCAD's round(): halves away from zero (Math.round takes -0.5 to 0). */
 const roundScad = (x: number) => Math.sign(x) * Math.round(Math.abs(x));
 /** OpenSCAD's fragment count for a radius with $fn = 0, $fa = 12, $fs = 2. */
@@ -1642,7 +1639,6 @@ export function switchGeometry(s: Scad, plan: SwitchPlan, extraCuts: Man[] = [])
     const longSpans = plan.longTieYs.map((y) => { const sp = plan.longTieSpan(y); return sp && [y, sp[0], sp[1]] as const; }).filter((x): x is readonly [number, number, number] => !!x);
     const routeZoneS = (i: number) => (plan.routeTieList[i].length ? Math.min(...plan.routeTieList[i]) - sleeperW / 2 - 2 * STUD : 1e9);
     const zonePoses = routes.map((rt, i) => (routeZoneS(i) < 1e8 ? routePose(rt, routeZoneS(i)) : undefined));
-    const local = (pose: Pose, q: Pt): Pt => { const dx = q[0] - pose[0], dy = q[1] - pose[1]; return [dx * cosd(pose[2]) + dy * sind(pose[2]), -dx * sind(pose[2]) + dy * cosd(pose[2])]; };
     const inOuterStrip = (q: Pt) => routes.some((rt, i) => {
       const out = (i === 0 ? 1 : -1) * routeLat(rt, q);
       return curved[i] && (i === 0 || i === nRoutes - 1) && out > G + 3.9 && plan.latOthers(i, q) > g.ballastTopW / 2;
@@ -1650,7 +1646,7 @@ export function switchGeometry(s: Scad, plan: SwitchPlan, extraCuts: Man[] = [])
     const inRouteZone = (q: Pt, m = 0, only = -1) => {
       for (let i = 0; i < nRoutes; i++) {
         const zp = zonePoses[i];
-        if ((only < 0 || only === i) && zp && local(zp, q)[1] >= -m && Math.abs(routeLat(routes[i], q)) <= g.ballastTopW / 2 + m) return i;
+        if ((only < 0 || only === i) && zp && worldToPose(zp, q)[1] >= -m && Math.abs(routeLat(routes[i], q)) <= g.ballastTopW / 2 + m) return i;
       }
       return -1;
     };
@@ -1665,8 +1661,8 @@ export function switchGeometry(s: Scad, plan: SwitchPlan, extraCuts: Man[] = [])
       if (Math.min(...lats.flatMap((l) => [-G, G].map((o) => Math.abs(l - o)))) < 3.9 + r) return false;
       if (plan.nearCheckRail(q, lats, r)) return false;
       if (longSpans.some((tt) => Math.abs(q[1] - tt[0]) < sleeperW / 2 + r && q[0] > tt[1] - r && q[0] < tt[2] + r) && !plan.inEndKeepout(q)) return false;
-      if (tiePoses.some((tp) => { const l = local(tp, q); return Math.abs(l[1]) < sleeperW / 2 + r && Math.abs(l[0]) < sleeperLen / 2 + r; })) return false;
-      return !plan.endPoses.some((e) => { const l = local(e, q); return l[1] > -8 - r && Math.abs(l[0]) < sleeperLen / 2 + r; });
+      if (tiePoses.some((tp) => { const l = worldToPose(tp, q); return Math.abs(l[1]) < sleeperW / 2 + r && Math.abs(l[0]) < sleeperLen / 2 + r; })) return false;
+      return !plan.endPoses.some((e) => { const l = worldToPose(e, q); return l[1] > -8 - r && Math.abs(l[0]) < sleeperLen / 2 + r; });
     };
     const offsAll = [-1, 1].map((k) => k * (sleeperLen / 2 - 4)).concat(tc.betweenRailsRaw);
     const zonePts: Pt[] = [];

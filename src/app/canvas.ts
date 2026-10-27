@@ -8,7 +8,7 @@
 // zooms.
 import { type Design, type DRoute, type DSeg, freeName, isMono, toRoutes } from './design';
 import { sleeperSpots } from '../geom/crossing';
-import { routeLength, routePose } from '../route/route';
+import { poseToWorld, routeLength, routePose, worldToPose } from '../route/route';
 import { describe, follow, plan, planAnyway, planAuto, planFreeTurning, planToPose, reversed, trace as traceRaw, type Pose } from './planner';
 
 // Track outlines traced once and kept (they're in studs, the same at any
@@ -183,30 +183,27 @@ export class TrackCanvas {
   }
   /** Move a lever to (near) w, studs: its side, how far out and how far along, as the switch allows. */
   private dragLever(w: [number, number]) {
-    const ld = this.leverDrag!, lv = ld.it.lever!, [fx, fy, fh] = lv.frame, h = (fh * Math.PI) / 180;
+    const ld = this.leverDrag!, lv = ld.it.lever!;
     // (snapped to a stud of the design's grid, so the arm sits square on the
     // studs: the track's centre lines run between studs, so studs are at
     // 4 + 8k mm; then held to where the switch lets the lever go)
     const snapL = (q: [number, number]): [number, number] => {
-      const sx = Math.round((q[0] - 4) / MM) * MM + 4, sy = Math.round((q[1] - 4) / MM) * MM + 4, dx = sx - fx, dy = sy - fy;
-      return [dx * Math.cos(h) + dy * Math.sin(h), -dx * Math.sin(h) + dy * Math.cos(h)];
+      return worldToPose(lv.frame, [Math.round((q[0] - 4) / MM) * MM + 4, Math.round((q[1] - 4) / MM) * MM + 4]);
     };
     let [lx, ly] = snapL([w[0] * MM, w[1] * MM]);
     const side = lx >= 0 ? 1 : -1;
     // (no nearer the track than the lever can go: out a stud at a time till it's clear)
     for (let k = 0; k < 12 && Math.abs(lx) < Math.max(lv.edge, lv.minD) - 0.01; k++) {
-      const wx = fx + (lx + side * MM) * Math.cos(h) - ly * Math.sin(h), wy = fy + (lx + side * MM) * Math.sin(h) + ly * Math.cos(h);
-      [lx, ly] = snapL([wx, wy]);
+      [lx, ly] = snapL(poseToWorld(lv.frame, [lx + side * MM, ly]));
     }
     const leverOffset = Math.max(0, Math.min(80, Math.round((Math.abs(lx) - lv.edge) * 100) / 100));
     const d = this.host.design(), tw = (d.trackwork ??= {}), group = (tw.throw ??= {});
     const was = JSON.stringify(group[ld.it.key] ?? {});
-    const wd = (x: number, y: number): [number, number] => [fx + x * Math.cos(h) - y * Math.sin(h), fy + x * Math.sin(h) + y * Math.cos(h)];
+    const wd = (x: number, y: number) => poseToWorld(lv.frame, [x, y]);
     let y: number;
     if (!leverSlides(d)) {
       // (the plate-style points: the slider bar meets the blades where it must, so the lever stays level with it: across and out only)
-      const ax = ld.it.at[0] - fx, ay = ld.it.at[1] - fy;
-      y = -ax * Math.sin(h) + ay * Math.cos(h);
+      y = worldToPose(lv.frame, ld.it.at)[1];
       group[ld.it.key] = { side: side > 0 ? 'right' : 'left', leverOffset };
     } else {
       // (along: a stud at a time back into the tines' reach)
