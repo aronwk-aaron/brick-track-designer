@@ -4,7 +4,7 @@
 // base is clear of every other track's (never through points, frogs or
 // crossings), plain stretches in lengths that fit the print bed.
 import type { Route } from '../route/route';
-import { routeLat, routeLength, routePose, railPoint } from '../route/route';
+import { routeLat, routeLength, routePose, routesBox, railPoint } from '../route/route';
 import type { Split } from '../route/solver';
 
 /** A piece of one route: [route, from, to] (arc lengths). */
@@ -26,11 +26,7 @@ export type RoutePiece = [number, number, number];
  * every exact, such a curve every piece's angle), so its pieces can be those parts.
  */
 export function planSections(routes: Route[], splits: Split[], half: number, room: number, minPart = 40, exact = 0, plates?: { size: number; x: number; y: number }, std?: Map<number, number>) {
-  const boxes = routes.map((rt) => {
-    const L = routeLength(rt), n = Math.max(1, Math.ceil(L / 8)), b = [Infinity, Infinity, -Infinity, -Infinity];
-    for (let k = 0; k <= n; k++) { const p = routePose(rt, (L * k) / n); b[0] = Math.min(b[0], p[0]); b[1] = Math.min(b[1], p[1]); b[2] = Math.max(b[2], p[0]); b[3] = Math.max(b[3], p[1]); }
-    return [b[0] - half - 16, b[1] - half - 16, b[2] + half + 16, b[3] + half + 16];
-  });
+  const boxes = routes.map((rt) => routesBox([rt], half + 16, 8));
   const inBox = (j: number, q: [number, number]) => q[0] >= boxes[j][0] && q[0] <= boxes[j][2] && q[1] >= boxes[j][1] && q[1] <= boxes[j][3];
   // the points' stretches (and a connector's length past them), where no cut goes
   const busy = routes.map(() => [] as [number, number][]);

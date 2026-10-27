@@ -9,7 +9,7 @@
 // a track alongside) they're left out: the OpenSCAD files have no such case,
 // and a third rail across another track would need flangeways of its own.
 import type { ExtraRails, Route, RouteEnds } from '../route/route';
-import { poseToWorld, railPoint, routeLat, routeLength, routePose } from '../route/route';
+import { poseToWorld, railPoint, routeLat, routeLength, routePose, routesBox } from '../route/route';
 import { R, T, type Man, type Scad, type Vec2 } from './scad';
 import { segDist } from './pathsplit';
 import { bankAlong, sweepRoute, trackBank } from './sweep';
@@ -33,12 +33,7 @@ export const hasExtraRails = (x: ExtraRails | undefined, gaugeStuds: number) => 
  */
 export function clearStretches(routes: Route[], i: number, sleeperLen: number, step = 2): [number, number][] {
   const rt = routes[i], L = routeLength(rt), n = Math.max(1, Math.ceil(L / step));
-  const boxes = routes.map((r2, j) => {
-    if (j === i) return undefined;
-    const L2 = routeLength(r2), m = Math.max(1, Math.ceil(L2 / 8)), b = [Infinity, Infinity, -Infinity, -Infinity];
-    for (let k = 0; k <= m; k++) { const p = routePose(r2, (L2 * k) / m); b[0] = Math.min(b[0], p[0]); b[1] = Math.min(b[1], p[1]); b[2] = Math.max(b[2], p[0]); b[3] = Math.max(b[3], p[1]); }
-    return b.map((v, k) => v + (k < 2 ? -1 : 1) * (sleeperLen + 8));
-  });
+  const boxes = routes.map((r2, j) => (j === i ? undefined : routesBox([r2], sleeperLen + 8, 8)));
   const out: [number, number][] = [];
   let a = -1;
   for (let k = 0; k <= n; k++) {

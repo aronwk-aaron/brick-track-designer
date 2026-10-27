@@ -136,6 +136,19 @@ export function poseAfter(p: Pose, sg: Segment): Pose {
   return [cx + sn * r * cosd(p[2] + a), cy + sn * r * sind(p[2] + a), p[2] + a];
 }
 
+/** The box round some routes' centre lines (sampled every step mm), grown by pad: [x0, y0, x1, y1]. */
+export function routesBox(routes: Route[], pad: number, step = 4): [number, number, number, number] {
+  const b: [number, number, number, number] = [Infinity, Infinity, -Infinity, -Infinity];
+  for (const rt of routes) {
+    const L = routeLength(rt), n = Math.max(1, Math.ceil(L / step));
+    for (let k = 0; k <= n; k++) {
+      const p = routePose(rt, (L * k) / n);
+      b[0] = Math.min(b[0], p[0]); b[1] = Math.min(b[1], p[1]); b[2] = Math.max(b[2], p[0]); b[3] = Math.max(b[3], p[1]);
+    }
+  }
+  return [b[0] - pad, b[1] - pad, b[2] + pad, b[3] + pad];
+}
+
 /** Arc length at the start of each segment. */
 export function segStarts(rt: Route): number[] {
   const out: number[] = [];

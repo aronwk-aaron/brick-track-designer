@@ -5,7 +5,7 @@
 // supports at every route end, and square stud sockets on the grid of the
 // first route's start, so the piece sits on plates and baseplates.
 import type { Pose, Route } from '../route/route';
-import { hasRoll, poseToWorld, railPoint, routeLat, routeLength, routePose, routeRoll, routeSOf, worldToPose } from '../route/route';
+import { hasRoll, poseToWorld, railPoint, routeLat, routeLength, routePose, routeRoll, routesBox, routeSOf, worldToPose } from '../route/route';
 import { solve, type Solution, type SolverOptions, SOLVER_DEFAULTS } from '../route/solver';
 import { Scad, T, R, type CS, type Man, type Vec2 } from './scad';
 import { type Bank, bankPoint, sweepRoute, trackBank } from './sweep';
@@ -181,11 +181,7 @@ export function crossingPiece(s: Scad, routes: Route[], o: CrossingOptions = CRO
       .add(rect(-g + HEAD_HW, -g + HEAD_HW + o.flangeway, RAIL_TOP - o.flangewayDepth, RAIL_TOP + 1)), rt, 0, Infinity, trackBank(c.sleeperLen)));
   // (only the routes near enough to cut each other: on a big layout, every
   // route against every other is most of the work)
-  const boxes = routes.map((rt) => {
-    const L = routeLength(rt), n = Math.max(1, Math.ceil(L / 4)), b = [Infinity, Infinity, -Infinity, -Infinity], pad = c.sleeperLen / 2 + 4;
-    for (let k = 0; k <= n; k++) { const p = routePose(rt, (L * k) / n); b[0] = Math.min(b[0], p[0] - pad); b[1] = Math.min(b[1], p[1] - pad); b[2] = Math.max(b[2], p[0] + pad); b[3] = Math.max(b[3], p[1] + pad); }
-    return b;
-  });
+  const boxes = routes.map((rt) => routesBox([rt], c.sleeperLen / 2 + 4));
   const meet = (a: number[], b: number[]) => a[0] <= b[2] && b[0] <= a[2] && a[1] <= b[3] && b[1] <= a[3];
   const othersBands = (i: number) => bands.filter((_, j) => j !== i && meet(boxes[i], boxes[j]));
   const nearCuts = (i: number, ms: Man[]) => ms.filter((m) => { const bb = m.boundingBox(); return meet(boxes[i], [bb.min[0], bb.min[1], bb.max[0], bb.max[1]]); });
