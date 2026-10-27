@@ -51,7 +51,7 @@ export const BASE_DEFAULTS: BaseParams = {
  * the switch's.
  */
 export type SetSpec = [number, number, number, number?, number?, SetOver?];
-export interface SetOver { leverOffset?: number; springLength?: number }
+export interface SetOver { leverOffset?: number; springLength?: number; throwShift?: number }
 
 // Two-piece points (and a three-way's): each blade's pivot level with its
 // heel, so no part of the blade swings out past it into the stock rail, and

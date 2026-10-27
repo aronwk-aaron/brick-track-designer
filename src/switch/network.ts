@@ -7,12 +7,13 @@
 // This is how switches that cross other track or each other (a crossover)
 // come out as one piece.
 import { type CrossingOptions, crossingPiece } from '../geom/crossing';
+import { segDist } from '../geom/pathsplit';
 import { R, T, type Man, type Scad } from '../geom/scad';
 import type { Pose, Route } from '../route/route';
 import { railPoint, routeLat, routeLength, routePose, routeSOf } from '../route/route';
 import type { Solution } from '../route/solver';
 import { reversedRoute } from './reverse';
-import { type BaseParams, type SetSpec, switchGeometry, switchPlan, type SwitchPlan } from './base';
+import { type BaseParams, type SetOver, type SetSpec, switchGeometry, switchPlan, type SwitchPlan } from './base';
 import { gridLever, sharedLead, subRoute, type ThrowEdit, toFrame } from './pieces';
 
 export interface NetworkPart { name: string; color: number; local: Man; world: Man; turn?: { at: [number, number]; by: number; swing?: number } }
@@ -81,16 +82,30 @@ export function networkSplits(s: Scad, routes: Route[], sol: Solution, p: BasePa
   };
   /** Half a LEGO train's width (6 studs) past its track's centre line, and a little room: what a lever keeps clear of (mm). */
   const TRAIN_HW = 26;
-  /** Whether a points set's lever (standing up past the rails, its knob some 8 across) is where a train on other track (foreign, in the points' frame) would hit it. The arm under it is low, as sleepers are: trains pass over that. */
-  const inWay = (pl: SwitchPlan, foreign: Route[]) => {
-    const d = pl.setData[0], lever: [number, number] = [d.leverX, d.throwY];
-    return foreign.some((rt) => {
+  /** The levers' arms placed so far (in the design's frame, from the stock rail out past the lever): another lever's
+   * arm, 3 studs wide, kept clear of (with a little room). */
+  const arms: [[number, number], [number, number]][] = [];
+  const ARM_GAP = 12 + 12 + 4;
+  const armOf = (pl: SwitchPlan, P: Pose): [[number, number], [number, number]] => {
+    const d = pl.setData[0], h = (P[2] * Math.PI) / 180, w2 = (x: number): [number, number] => [P[0] + x * Math.cos(h) - d.throwY * Math.sin(h), P[1] + x * Math.sin(h) + d.throwY * Math.cos(h)];
+    return [w2(d.armX0), w2(d.armX1)];
+  };
+  const segGap = (a: [[number, number], [number, number]], b: [[number, number], [number, number]]) => {
+    const cross = (p: [number, number], q: [number, number], r: [number, number]) => (q[0] - p[0]) * (r[1] - p[1]) - (q[1] - p[1]) * (r[0] - p[0]);
+    if (Math.sign(cross(a[0], a[1], b[0])) !== Math.sign(cross(a[0], a[1], b[1])) && Math.sign(cross(b[0], b[1], a[0])) !== Math.sign(cross(b[0], b[1], a[1]))) return 0;
+    return Math.min(segDist(a[0], b[0], b[1]), segDist(a[1], b[0], b[1]), segDist(b[0], a[0], a[1]), segDist(b[1], a[0], a[1]));
+  };
+  /** Whether a points set's lever (standing up past the rails, its knob some 8 across) is where a train on other track (foreign, in the points' frame) would hit it, or its arm too near another's. The arm under it is low, as sleepers are: trains pass over that. */
+  const inWay = (pl: SwitchPlan, foreign: Route[], P: Pose): 'train' | 'lever' | undefined => {
+    const d = pl.setData[0], lever: [number, number] = [d.leverX, d.throwY], arm = armOf(pl, P);
+    if (foreign.some((rt) => {
       for (let t = 0; t <= routeLength(rt); t += 2) {
         const q = routePose(rt, t);
         if (Math.hypot(q[0] - lever[0], q[1] - lever[1]) < TRAIN_HW + 8) return true;
       }
       return false;
-    });
+    })) return 'train';
+    return arms.some((q) => segGap(q, arm) < ARM_GAP) ? 'lever' : undefined;
   };
   const studsAt = (k: number) => { const q = toeOf(sol.splits[k]); return `${(q[0] / 8).toFixed(0)}, ${(q[1] / 8).toFixed(0)} (studs)`; };
   // (the plate-style blade plates are cut clear of other track running past, their pins and posts moved to keep them strong
@@ -154,7 +169,7 @@ export function networkSplits(s: Scad, routes: Route[], sol: Solution, p: BasePa
     const ownR = ed?.side ?? routes[j].throwSide;
     const own = ownR && ownR !== 'auto' ? ownR : p.throwSide;
     let tside = own === 'left' ? -1 : own === 'right' ? 1 : three ? 1 : bRight ? -1 : 1;
-    const over = { ...(ed?.leverOffset !== undefined && { leverOffset: ed.leverOffset }), ...(ed?.springLength !== undefined && { springLength: ed.springLength }) };
+    let over: SetOver = { ...(ed?.leverOffset !== undefined && { leverOffset: ed.leverOffset }), ...(ed?.springLength !== undefined && { springLength: ed.springLength }) };
     const spec = (o: typeof over): SetSpec => (three ? [0, 2, 2 + toeShift([P[0], P[1]]), tside, 1, o] : [0, 1, 2 + lead + toeShift([P[0], P[1]]), tside, undefined, o]);
     // (the other track near the points, in their frame; with two branches one side not built as a three-way, the other branch too)
     const foreign = [...nearby(gr), ...(C && !three ? [j2] : [])].map((r) => ({ ...routes[r], start: toFrame(P, routes[r].start) }));
@@ -171,19 +186,31 @@ export function networkSplits(s: Scad, routes: Route[], sol: Solution, p: BasePa
     }
     // (the lever and its arm clear of other track, where a train running on it would hit them: on the other side if
     // that's clear and the side wasn't set by hand; else said)
-    if (inWay(plan, foreign)) {
-      const flipped = own === 'left' || own === 'right' ? undefined : (tside = -tside, switchPlan(rts, [spec(over)], pp, 1, foreign));
-      if (flipped && !inWay(flipped, foreign)) { used = spec(over); plan = flipped; }
-      else {
-        if (flipped) tside = -tside;
-        warnings.push(`the lever of the points at ${studsAt(gr.main)} is in the way of a train on another track: drag it along, or set its side on the route card`);
+    // (or, with blades on top, the slider moved along a stud or two)
+    // (not for points already said to be blocked: moving their lever won't help them)
+    const why0 = blockedOf(plan) ? undefined : inWay(plan, foreign, P);
+    if (why0) {
+      const sides = own === 'left' || own === 'right' ? [tside] : [tside, -tside], shifts = pp.mechStyle === 'plates' ? [0, 1, -1, 2, -2, 3, -3, 4, -4, 5, -5] : [0];
+      const t0 = tside, base = over;
+      let found = false;
+      for (const sh of shifts) for (const sd of sides) {
+        if (found || (sh === 0 && sd === t0)) continue;
+        tside = sd; over = { ...base, ...(sh && { throwShift: sh }) };
+        const pl = switchPlan(rts, [spec(over)], pp, 1, foreign);
+        if (!blockedOf(pl) && !inWay(pl, foreign, P)) { used = spec(over); plan = pl; found = true; }
+      }
+      if (!found) {
+        tside = t0; over = base;
+        warnings.push(why0 === 'train' ? `the lever of the points at ${studsAt(gr.main)} is in the way of a train on another track: set its side on the route card, or move the points`
+          : `the lever of the points at ${studsAt(gr.main)} is on another points' lever: set its side on the route card, or move the points`);
       }
     }
     // (the lever on a stud of the design's grid, unless moved by hand)
     if (gridLevers && !(ed?.leverOffset !== undefined && ed?.springLength !== undefined)) {
       const g2 = gridLever(P, plan.sets[0], ed ?? {});
-      if (g2.leverOffset !== undefined) { used = spec(g2); plan = switchPlan(rts, [used], pp, 1, foreign); }
+      if (g2.leverOffset !== undefined) { used = spec({ ...over, ...g2 }); plan = switchPlan(rts, [used], pp, 1, foreign); }
     }
+    arms.push(armOf(plan, P));
     throughWarnings(gr, blockedOf(plan));
     warnings.push(...plan.warnings.filter((w) => !/print bed/.test(w)), ...plan.notes.filter((w) => !warnings.includes(w)));
     const gm = switchGeometry(s, plan), mech = gm.mech(0);

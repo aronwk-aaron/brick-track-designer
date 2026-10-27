@@ -18,6 +18,8 @@ export interface CrossingOptions extends TrackOptions {
   flangeway: number;       // 3 (LEGO drawing)
   flangewayDepth: number;  // 3, down from the rail top
   checkRailW: number;      // 1
+  /** The check rails' ends flared away from the rail they guard by this much over their last 4 mm (as the switches' are), mm; 0: square. */
+  checkRailFlare?: number;
   supports: boolean;       // breakaway print supports at the route ends
   /**
    * Underside: 'edges' is hollow like a LEGO plate, with anti-stud tubes that
@@ -291,8 +293,15 @@ export function crossingPiece(s: Scad, routes: Route[], o: CrossingOptions = CRO
     };
     const rails = s.difference(s.union([-g, g].map((x) =>
       sweepRoute(s, s.polygon(RAIL_PROFILE.map(([px, py]) => [px + x, py + PLATE_H] as Vec2)), rt, 0, Infinity, trackBank(c.sleeperLen)))), endBoxes(END, BUFFER_RAIL_END));
-    const checks = sol.checkRails.filter((cr) => cr.route === i)
-      .map((cr) => sweepRoute(s, rect(cr.offset, cr.offset + cr.width, PLATE_H - 0.01, RAIL_TOP), rt, cr.s0, cr.s1, trackBank(c.sleeperLen)));
+    // (each end flared away from the rail it guards, so a flange coming in is led into the gap, as the switches' are)
+    const fl = 4, flare = o.checkRailFlare ?? 1.5;
+    const checks = sol.checkRails.filter((cr) => cr.route === i).flatMap((cr) => {
+      const sec = (x: number) => rect(cr.offset + x, cr.offset + cr.width + x, PLATE_H - 0.01, RAIL_TOP), away = -cr.side * flare, bk = trackBank(c.sleeperLen);
+      if (!flare || cr.s1 - cr.s0 < 3 * fl) return [sweepRoute(s, sec(0), rt, cr.s0, cr.s1, bk)];
+      const slice = (a: number, x: number) => sweepRoute(s, sec(x), rt, a - 0.05, a + 0.05, bk);
+      return [sweepRoute(s, sec(0), rt, cr.s0 + fl, cr.s1 - fl, bk),
+        s.w.Manifold.hull([slice(cr.s0 + 0.05, away), slice(cr.s0 + fl, 0)]), s.w.Manifold.hull([slice(cr.s1 - fl, 0), slice(cr.s1 - 0.05, away)])];
+    });
     const railsAll = s.difference(s.union([rails, ...checks]), [...othersBands(i), ...nearCuts(i, x.railCuts?.get(i) ?? [])]);
     parts.push(hasRoll(rt) ? aboveZ(s, railsAll, 0) : railsAll); // (banked: the rails' feet, run down through the bed, turned, kept above its bottom)
     const banked = hasRoll(rt), roll0 = banked ? routeRoll(rt, 0) : 0, roll1 = banked ? routeRoll(rt, L) : 0;

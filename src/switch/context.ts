@@ -52,6 +52,8 @@ export interface SwitchParams {
   bladeHold?: 'lip' | 'bracket';
   /** (the plate-style points) Blades per set: 2 (both move), or 1 (a single-point switch, as a tram's: only the blade on the more curved route moves; the other side's rail is fixed, from where it's a flangeway clear of its stock rail). A three-way keeps both. */
   pointBlades?: 1 | 2;
+  /** (the plate-style points) The slider moved along this many studs from where it'd be (toward the heel: +), to keep its lever out of the way of other track or another lever. */
+  throwShift?: number;
   /** (switch.scad's throw_ballast) On ballast: the ballast's steps carried on round the lever's arm, with studs. */
   throwBallast?: boolean;
   /** (clip_and_peg_on_ballast) On ballast: the end connectors keep their snap peg and C-clip. */
@@ -185,9 +187,10 @@ export function pointsSet(routes: Route[], ps: PointsSet, p: SwitchParams, defau
   // (prototype blades: the tie bar at the points, as a switch's head rod is: on the first stud line where the
   // throw arm clears the end connector (half its width past it) and its post has plate round it)
   const fdbYSimple = Math.max(toeY + 8, Math.min(fdbPivotY - 8, Math.round((fdbPivotY - 0.6 * (fdbPivotY - toeY) - 4) / 8) * 8 + 4));
-  const fdbY = (p.bladeStyle === 'prototype' || (p.bladeStyle === 'sprung' && p.generateBallast)) && p.mechStyle === 'plates'
+  const fdbY0 = (p.bladeStyle === 'prototype' || (p.bladeStyle === 'sprung' && p.generateBallast)) && p.mechStyle === 'plates'
     // (and with Peco's spring, room for its pin on the toe's side, past the plates' start)
     ? Math.min(fdbYSimple, Math.ceil((Math.max(toeY + 8, 8 + g.armW / 2, p.throwAction === 'overcentre' ? 8 + 12 + 4 : 0) - 4) / 8 - 1e-6) * 8 + 4) : fdbYSimple;
+  const fdbY = Math.max(toeY + 8, Math.min(fdbPivotY - 8, fdbY0 + 8 * (p.throwShift ?? 0)));
   const fdbTravel = p.pointThrow * (fdbPivotY - fdbY) / Math.max(1, fdbPivotY - toeY) + p.springPreload;
   const leverTravel = over.leverTravel ?? (p.mechStyle === 'plates' ? fdbTravel : throwTravel + 2 * p.springPreload);
   const postX = [tineTip[0] - p.springPreload];

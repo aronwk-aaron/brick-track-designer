@@ -427,7 +427,7 @@ function buildOne(w: Wasm, design: Design, report: (what: string, frac: number) 
   const throwEdit = (q: [number, number]) => tw.throw?.[keyOf(q)];
   /** A points set's lever on the plan (it can be dragged there). */
   const leverItem = (key: string, P: Pose, v: { throwDir: number; leverX: number; throwY: number; throwStockX: number; throwEdgeX: number; leverMinD: number; tineLen: number; pivotPt: [number, number];
-    ra: Route; rb: Route; sHeel: number; three?: { S: Route }; fdb?: { pivot: [number, number] }[] }) => {
+    ra: Route; rb: Route; sHeel: number; leverTravel: number; fixed?: number; three?: { S: Route }; fdb?: { pivot: [number, number]; post: [number, number] }[] }) => {
     const ca = Math.cos((P[2] * Math.PI) / 180), sa = Math.sin((P[2] * Math.PI) / 180);
     const wd = (x: number, y: number): [number, number] => [P[0] + x * ca - y * sa, P[1] + x * sa + y * ca];
     const ed = tw.throw?.[key];
@@ -438,10 +438,14 @@ function buildOne(w: Wasm, design: Design, report: (what: string, frac: number) 
     // opening), nor the pins the blades turn on (and a little bed round them); under the loose blades is fine)
     if (fdbPoints) {
       const G = track.c.railOffset, keep = (q: [number, number], r: number): Keep => [q[0], q[1], r, r];
-      for (let x = v.throwStockX - v.throwDir * (2 * G + 16); v.throwDir * (x - v.throwStockX) < 0; x += v.throwDir * 4) pointsAvoid.push(keep(wd(x, v.throwY), 6.5));
+      // (the tunnel's far end: past the far post by the slider's travel, and its wall (base.ts fdbSlot2d); as far as
+      // past the far rail where the plan doesn't say: a cut can go close by it, between a double slip's points)
+      const posts = (v.fdb ?? []).filter((_, b) => b !== v.fixed).map((f) => f.post[0]);
+      const far = posts.length ? (v.throwDir > 0 ? Math.min(...posts) : Math.max(...posts)) - v.throwDir * (v.leverTravel + 6) : v.throwStockX - v.throwDir * (2 * G + 16);
+      for (let x = far; v.throwDir * (x - v.throwStockX) < 0; x += v.throwDir * 4) pointsAvoid.push(keep(wd(x, v.throwY), 6.5));
       for (let x = v.throwStockX; v.throwDir * x <= v.throwDir * xOut + 1e-9; x += v.throwDir * 4) pointsAvoid.push(keep(wd(x, v.throwY), hw + 1));
       // (where the plan put them: moved, clear of other track running past)
-      for (const b of [0, 1]) { const q = v.fdb?.[b].pivot ?? railPoint(v.three ? v.three.S : b === 0 ? v.ra : v.rb, v.sHeel - 4, (b === 0 ? 1 : -1) * (7 - G)); pointsAvoid.push(keep(wd(q[0], q[1]), 6)); }
+      for (const b of [0, 1]) if (b !== v.fixed) { const q = v.fdb?.[b].pivot ?? railPoint(v.three ? v.three.S : b === 0 ? v.ra : v.rb, v.sHeel - 4, (b === 0 ? 1 : -1) * (7 - G)); pointsAvoid.push(keep(wd(q[0], q[1]), 6)); }
     }
     items.push({ kind: 'throw', key, at: wd(v.leverX, v.throwY), pts: [wd(v.throwStockX, v.throwY - hw), wd(xOut, v.throwY - hw), wd(xOut, v.throwY + hw), wd(v.throwStockX, v.throwY + hw)],
       lever: { frame: P, side: v.throwDir, stockX: Math.abs(v.throwStockX), edge: Math.abs(v.throwEdgeX), minD: Math.abs(v.leverMinD), pivotY: v.pivotPt[1], maxTine: v.pivotPt[1] - 12.5,
@@ -639,8 +643,11 @@ function buildOne(w: Wasm, design: Design, report: (what: string, frac: number) 
       let got = win[0] <= win[1] ? attempt(() => pathSplit(scad, m, pieceRoutes, track.c.railOffset, [...pointsAvoid, ...holes], axis, at, { join, window: win })) : undefined;
       // (no way within it: anywhere near the middle, as before)
       if (!got) got = attempt(() => pathSplit(scad, m, pieceRoutes, track.c.railOffset, [...pointsAvoid, ...holes], axis, lo + ext / 2, { join }));
+      // (nor at all that way: split the other way first, across its middle, and each half again (a crowded middle, its
+      // levers side by side, cut into four))
+      if (!got) { const ax2 = (1 - axis) as 0 | 1, lo2 = bb.min[ax2], ext2 = bb.max[ax2] - lo2; got = attempt(() => pathSplit(scad, m, pieceRoutes, track.c.railOffset, [...pointsAvoid, ...holes], ax2, lo2 + ext2 / 2, { join })); }
       if (!got) return [m];
-      for (const r of got.runs) if (r.d[axis] === 0) cutAt[axis].push(r.p[axis]);
+      for (const r of got.runs) for (const ax of [0, 1] as const) if (r.d[ax] === 0) cutAt[ax].push(r.p[ax]);
       holes.push(...got.holes);
       return got.parts.flatMap((p) => arena(w, () => fitAll(p, depth + 1), (r) => r));
     };
@@ -999,7 +1006,7 @@ function buildOne(w: Wasm, design: Design, report: (what: string, frac: number) 
   // (long track in pieces cut square across it, each end an ordinary connector, as LEGO track: Long track cut into)
   const inLengths = o.splitTrack === 'lengths';
   const sleepered = o.sleepers === 'sleepers' && o.ballast === 'none';
-  const copt = { ...CROSSING_DEFAULTS, gaugeStuds: design.gaugeStuds, grip: o.grip ?? 'edges', flangeway: o.flangeway, flangewayDepth: o.flangewayDepth, checkRailW: o.checkRailW,
+  const copt = { ...CROSSING_DEFAULTS, gaugeStuds: design.gaugeStuds, grip: o.grip ?? 'edges', flangeway: o.flangeway, flangewayDepth: o.flangewayDepth, checkRailW: o.checkRailW, checkRailFlare: o.checkRailFlare,
     ballast: o.ballast, bottomStyle: o.bottomStyle, supports: o.endSupports !== false, curveStuds: o.curveStuds,
     studFit: o.studFit, antistudFit: o.antistudFit, sleepers: o.sleepers, undersideGrid: o.ballast === 'none' ? o.undersideGrid : undefined, sleeperWidthStuds: o.sleeperWidthStuds, sleeperGapStuds: o.sleeperGapStuds,
     // (only what's set: the defaults' build, and its cache keys, as before)

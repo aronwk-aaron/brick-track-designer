@@ -76,7 +76,11 @@ export function pathSplit(s: Scad, m: Man, routes: Route[], railG: number, avoid
   // were nothing there to cut)
   // (as slices a few heights up it, together: projecting a whole yard's piece took minutes; these are at the bottom,
   // through the ballast's steps and the bed, and its top)
-  const floor = s.w.CrossSection.union([0.3, 1.5, 3.0, 4.5, 6].map((dz) => bb.min[2] + dz).filter((z) => z < bb.max[2]).map((z) => m.slice(z)));
+  // (and on up it every 3 mm: a part joined only higher up (a lever's arm over the ballast, ties over a gap) looked
+  // to have a gap there, and the path ran down it, cutting nothing)
+  const zs = [0.3, 1.5, 3.0, 4.5, 6].map((dz) => bb.min[2] + dz);
+  for (let z = bb.min[2] + 9; z < bb.max[2] - 0.3; z += 3) zs.push(z);
+  const floor = s.w.CrossSection.union(zs.filter((z) => z < bb.max[2]).map((z) => m.slice(z)));
   const x0 = Math.floor(bb.min[0] / STEP) * STEP - STEP, x1 = Math.ceil(bb.max[0] / STEP) * STEP + STEP;
   const y0 = Math.floor(bb.min[1] / STEP) * STEP - STEP, y1 = Math.ceil(bb.max[1] / STEP) * STEP + STEP;
   const nx = Math.round((x1 - x0) / STEP) + 1, ny = Math.round((y1 - y0) / STEP) + 1;
@@ -103,7 +107,14 @@ export function pathSplit(s: Scad, m: Man, routes: Route[], railG: number, avoid
       const a = area(pl);
       if (a >= 0 || -a > 400) continue; // (an outline, or the hollow)
       const xs = pl.map((q) => q[0]), ys = pl.map((q) => q[1]), cx = (Math.min(...xs) + Math.max(...xs)) / 2, cy = (Math.min(...ys) + Math.max(...ys)) / 2;
-      holes.push([cx, cy, Math.hypot(Math.max(...xs) - Math.min(...xs), Math.max(...ys) - Math.min(...ys)) / 2 + 3]);
+      const r = Math.hypot(Math.max(...xs) - Math.min(...xs), Math.max(...ys) - Math.min(...ys)) / 2;
+      // (a long thin one, a groove or a slot: kept clear of along its outline, not as one circle round all of it, which
+      // shut a cut out of everywhere near it)
+      if (r <= 8) holes.push([cx, cy, r + 3]);
+      else pl.forEach((q, k) => {
+        const q2 = pl[(k + 1) % pl.length], n = Math.max(1, Math.ceil(Math.hypot(q2[0] - q[0], q2[1] - q[1]) / 4));
+        for (let t = 0; t < n; t++) holes.push([q[0] + ((q2[0] - q[0]) * t) / n, q[1] + ((q2[1] - q[1]) * t) / n, 3]);
+      });
     }
   }
   const thick = new Uint8Array(nx * ny);
