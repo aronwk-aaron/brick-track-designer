@@ -19,6 +19,26 @@ export interface CutLine { p: [number, number]; d: [number, number]; span?: [num
 
 const deg = (r: number) => (r * 180) / Math.PI;
 
+/** (mm3) A cell or side this small (a corner the lines just clip, a stud or two of bed) is kept with the part beside it. */
+const SMALL_CELL = 2000;
+/** (mm3) Only a part under this is taken apart to look for a loose chunk in it: taking a big one apart took minutes. */
+const LOOK_CLOSER = 20000;
+/** (mm3, mm) A loose chunk of bed: more than a breakaway support (a rail end's or a footing, a few hundred mm3), less than a whole track's part, and taller than a support. */
+const CHUNK_MIN = 400, CHUNK_MAX = 4000, CHUNK_H = 3.4;
+/** (triangles) Only a part with fewer is remade as a copy of its own (kernel.ts flat): remaking a big one from its mesh took minutes. */
+const FLAT_TRIS = 200000;
+/** (mm) Couplers (and axles) at least this far apart along a cut. */
+const COUPLER_GAP = 16;
+/** (mm) Couplers this far clear of the rails crossing a cut: their tongue joints' columns go down through the bed there. */
+const RAIL_CLEAR = 9;
+/** (mm) More axles in a straight cut while a gap between them is over this (10 studs); in a stepped cut, while one can go this far from the rest. */
+const AXLE_GAP = 80, AXLE_GAP_PATH = 64;
+/** At most this many axles across a cut. */
+const MAX_AXLES = 6;
+
+/** A small piece of bed on its own (CHUNK_MIN etc.). */
+const chunk = (b: Man) => { const v = b.volume(), bb = b.boundingBox(); return v > CHUNK_MIN && v < CHUNK_MAX && bb.max[2] - bb.min[2] > CHUNK_H; };
+
 /** A cut's frame: u along d from p, v across it (+v: the far side, n, d turned left); place: a joint part made in the frame (the cut along x, the far side +y) put at u. */
 export function cutFrame(p: [number, number], d: [number, number]) {
   const n: [number, number] = [-d[1], d[0]];
@@ -125,7 +145,7 @@ export function pickSpots(lo: number, hi: number, ok: (u: number) => boolean): n
     if (!run.length) return;
     const mid = (run[0] + run[run.length - 1]) / 2, got: number[] = [];
     for (const u of [...run].sort((a, b) => Math.abs(a - mid) - Math.abs(b - mid)))
-      if (got.length < 3 && got.every((g2) => Math.abs(g2 - u) >= 16)) got.push(u);
+      if (got.length < 3 && got.every((g2) => Math.abs(g2 - u) >= COUPLER_GAP)) got.push(u);
     out.push(...got); run = [];
   };
   for (let u = lo; u <= hi; u += 0.5) { if (ok(u)) run.push(u); else flush(); }
@@ -149,10 +169,10 @@ export function spreadSpots(lo: number, hi: number, ok: (u: number) => boolean, 
     const got = cand.length > 1 && cand[cand.length - 1] - cand[0] >= 8 ? [cand[0], cand[cand.length - 1]] : [cand[Math.floor(cand.length / 2)]];
     for (;;) {
       got.sort((a, b) => a - b);
-      let gi = -1, gw = 80;
+      let gi = -1, gw = AXLE_GAP;
       for (let i = 0; i + 1 < got.length; i++) if (got[i + 1] - got[i] > gw) { gw = got[i + 1] - got[i]; gi = i; }
-      if (gi < 0 || got.length >= 6) break;
-      const mid = (got[gi] + got[gi + 1]) / 2, best = cand.filter((u) => u - got[gi] >= 16 && got[gi + 1] - u >= 16).sort((a, b) => Math.abs(a - mid) - Math.abs(b - mid))[0];
+      if (gi < 0 || got.length >= MAX_AXLES) break;
+      const mid = (got[gi] + got[gi + 1]) / 2, best = cand.filter((u) => u - got[gi] >= COUPLER_GAP && got[gi + 1] - u >= COUPLER_GAP).sort((a, b) => Math.abs(a - mid) - Math.abs(b - mid))[0];
       if (best === undefined) break;
       got.push(best);
     }
@@ -222,10 +242,10 @@ export function cutPiece(s: Scad, t: Track, body: Man, routes: Route[], lines: C
     const couplers = L.comb || kind === 'butt' ? [] : kind === 'axle'
       // (an axle anywhere there's solid all along it: in the ballast between tracks too, not only by a track)
       // (and 9 mm clear of the rails crossing the cut: their tongue joints' columns go down through the bed there)
-      ? spreadSpots(lo, hi, (u) => us.every((r) => Math.abs(u - r) >= 9) && floorAt(s, strip, f.at(u, 2.5), 2.5) && floorAt(s, strip, f.at(u, -2.5), 2.5) && axleOk(u), breaks, kit.couplerReach('axle')[0] + kit.couplerReach('axle')[1] + 2)
-      : pickSpots(lo, hi, (u) => onBed(u) && us.every((r) => Math.abs(u - r) >= 9));
+      ? spreadSpots(lo, hi, (u) => us.every((r) => Math.abs(u - r) >= RAIL_CLEAR) && floorAt(s, strip, f.at(u, 2.5), 2.5) && floorAt(s, strip, f.at(u, -2.5), 2.5) && axleOk(u), breaks, kit.couplerReach('axle')[0] + kit.couplerReach('axle')[1] + 2)
+      : pickSpots(lo, hi, (u) => onBed(u) && us.every((r) => Math.abs(u - r) >= RAIL_CLEAR));
     if (holes && kind === 'axle') for (const u of couplers) for (let o = -kit.axleHalf; o <= kit.axleHalf + 1e-9; o += 4) holes.push([...f.at(u, o), 4]);
-    return { L, ...f, rails, couplers, kind: kit.kindOf(L.joint ?? joint, flatRails), tongues: kit.tongues(L.joint ?? joint, flatRails) };
+    return { L, ...f, rails, couplers, kind, tongues: kit.tongues(L.joint ?? joint, flatRails) };
   });
 
   // material removed at every cut: the rails round each joint, the notches and sockets on the far side (taken off each
@@ -234,13 +254,12 @@ export function cutPiece(s: Scad, t: Track, body: Man, routes: Route[], lines: C
     ...(f.tongues ? f.rails.filter(tongued).map((r) => f.place(kit.tongueCut(r), r[0])) : []),
     ...f.couplers.flatMap((u) => kit.couplerCut(f.kind).map((m) => f.place(m, u))),
   ]).map((m) => ({ m, bb: m.boundingBox() }));
-  const cutBody = body;
 
   // cells: by which side of each line a point is
   // cut the piece by each line in turn, keeping the parts that hold any of it
   // (each cut's leftovers, and the parts before it, let go as it goes, each part a solid of its own (kernel.ts flat):
   // on a small bed a big piece has many cuts, and every stage of it kept to the end ran the kernel out of memory)
-  let parts: Man[] = [cutBody];
+  let parts: Man[] = [body];
   // (a part wholly to one side of a line (its box clear of it, and of a comb's fingers) is left as it is: splitting
   // it there gave it back whole, at the cost of a boolean and a copy of the whole part, for every line)
   const boxes = new Map<Man, { min: number[]; max: number[] }>();
@@ -274,17 +293,16 @@ export function cutPiece(s: Scad, t: Track, body: Man, routes: Route[], lines: C
       regions = regions.flatMap((p) => [clip(p, n, c, 1), clip(p, n, c, -1)].filter((q) => q.length >= 3 && area2(q) > 1));
     }
     const prism = (p: Poly) => T(s.extrude(s.polygon(p), 1000), [0, 0, -500]);
-    const cellOf = (p: Poly) => { const m2 = s.intersection(cutBody, prism(p)); return m2.volume() > 1e-6 ? flat(s.w, m2) : undefined; };
+    const cellOf = (p: Poly) => { const m2 = s.intersection(body, prism(p)); return m2.volume() > 1e-6 ? flat(s.w, m2) : undefined; };
     let cellsR = regions.map((p) => ({ p, m: cellOf(p) })).filter((r): r is { p: Poly; m: Man } => !!r.m);
-    // (a small piece of bed on its own: not a breakaway support (thin, a rail end's or a footing, a few hundred mm3), nor
-    // a whole track's part (a cell can hold parts of two tracks side by side))
-    const chunk = (b2: Man) => { const v = b2.volume(), bb = b2.boundingBox(); return v > 400 && v < 4000 && bb.max[2] - bb.min[2] > 3.4; };
     // (a cell under 2000 mm3, a corner the lines just clip (where two meet by the track's edge, a stud or two of bed),
     // or with a small piece of bed on its own in it: kept with the cell beside it across one line, if that still fits
     // the bed (fits). Cut off, it was dropped and left a notch, or went in with the next part as if a loose support)
-    const small = (m2: Man) => m2.volume() <= 2000 || (m2.volume() < 20000 && (() => { const bs = m2.decompose(); return bs.length > 1 && bs.some(chunk); })());
-    for (let guard = 0; guard < 20; guard++) {
-      const k = cellsR.findIndex((r) => small(r.m));
+    const small = (m2: Man) => m2.volume() <= SMALL_CELL || (m2.volume() < LOOK_CLOSER && (() => { const bs = m2.decompose(); return bs.length > 1 && bs.some(chunk); })());
+    // (each small cell tried once since the last merge: one that can't be merged goes to the end)
+    const tried = new Set<typeof cellsR[number]>();
+    for (;;) {
+      const k = cellsR.findIndex((r) => !tried.has(r) && small(r.m));
       if (k < 0) break;
       // (its neighbours: the cells sharing a stretch of edge with it, the one it shares most with first)
       const shared = (p: Poly, q: Poly) => s.polygon(p).offset(0.5, 'Miter', 4).intersect(s.polygon(q)).area();
@@ -296,9 +314,10 @@ export function cutPiece(s: Scad, t: Track, body: Man, routes: Route[], lines: C
         const u = s.w.CrossSection.union([s.polygon(cellsR[k].p), s.polygon(cellsR[j].p)]).toPolygons() as Poly[];
         cellsR = cellsR.filter((_, i) => i !== k && i !== j).concat([{ p: u[0], m: m2 }]);
         merged = true;
+        tried.clear();
         break;
       }
-      if (!merged) { const keep = cellsR[k]; cellsR = cellsR.filter((_, i) => i !== k).concat([{ ...keep, m: keep.m }]); if (guard > 10) break; }
+      if (!merged) { const keep = cellsR[k]; tried.add(keep); cellsR = cellsR.filter((_, i) => i !== k).concat([keep]); }
     }
     parts = cellsR.map((r) => r.m);
   } else {
@@ -310,14 +329,11 @@ export function cutPiece(s: Scad, t: Track, body: Man, routes: Route[], lines: C
     parts = arena(s.w, () => prev.flatMap((m) => {
       if (!across(f, m)) return [m];
       const cs = (f.L.comb ? combSplit(f, m) : m.splitByPlane([f.n[0], f.n[1], 0], f.n[0] * f.L.p[0] + f.n[1] * f.L.p[1])).filter((c) => c.volume() > 1e-6);
-      // (a small piece of bed on its own: not a breakaway support (thin, a rail end's or a footing, a few hundred mm3),
-      // nor a whole track's part (a side can hold parts of two tracks side by side))
-      const chunk = (b: Man) => { const v = b.volume(), bb = b.boundingBox(); return v > 400 && v < 4000 && bb.max[2] - bb.min[2] > 3.4; };
       // (nor where it'd leave one, a corner of bed cut off on its own between two lines: it went in with the part beside
       // it as if a loose support. Only a small side looked at: taking a big one apart took minutes)
       // (a copy of its own (kernel.ts flat) only of a small part: remaking a big one from its mesh took minutes)
-      const fl = cs.map((c) => (c.numTri() < 200000 ? flat(s.w, c) : c));
-      return (!fits || fits(m)) && (cs.some((c) => c.volume() <= 2000) || fl.some((c) => { if (c.volume() > 20000) return false; const bs = c.decompose(); return bs.length > 1 && bs.some(chunk); })) ? [flat(s.w, m)] : fl;
+      const fl = cs.map((c) => (c.numTri() < FLAT_TRIS ? flat(s.w, c) : c));
+      return (!fits || fits(m)) && (cs.some((c) => c.volume() <= SMALL_CELL) || fl.some((c) => { if (c.volume() > LOOK_CLOSER) return false; const bs = c.decompose(); return bs.length > 1 && bs.some(chunk); })) ? [flat(s.w, m)] : fl;
     }), (r) => r);
     for (const m of prev) if (m !== body && !parts.includes(m) && !(m as unknown as { isDeleted(): boolean }).isDeleted()) m.delete();
   }
@@ -439,7 +455,7 @@ export function pathJoints(s: Scad, t: Track, body: Man, routes: Route[], runs: 
     const cand: [number, number, [number, number]][] = [];
     fs.forEach((f, k) => {
       // (anywhere there's solid all along it: in the ballast between tracks too, not only by a track)
-      const ok = (u: number) => clear(k, u, ra, rn0, rn1) && railPts.every((p) => Math.hypot(p[0] - f.at(u)[0], p[1] - f.at(u)[1]) >= 9)
+      const ok = (u: number) => clear(k, u, ra, rn0, rn1) && railPts.every((p) => Math.hypot(p[0] - f.at(u)[0], p[1] - f.at(u)[1]) >= RAIL_CLEAR)
         && floorAt(s, floor, f.at(u, 2.5), 2.5) && floorAt(s, floor, f.at(u, -2.5), 2.5) && solids.every((sl) => filled(sl, k, u, ra + wall, rn0 + wall, rn1 + wall));
       for (let u = 0; u <= f.len + 1e-9; u += 1) if (ok(u)) cand.push([k, u, f.at(u)]);
     });
@@ -449,8 +465,8 @@ export function pathJoints(s: Scad, t: Track, body: Man, routes: Route[], runs: 
       let best: [number, number] = [0, 0], bd = -1;
       for (let i = 0; i < cand.length; i++) for (let j = i + 1; j < cand.length; j++) { const dd = dist(cand[i][2], cand[j][2]); if (dd > bd) { bd = dd; best = [i, j]; } }
       taken.push(cand[best[0]]); if (bd >= 8) taken.push(cand[best[1]]);
-      while (taken.length < 6) {
-        let pick = -1, pd = 64;
+      while (taken.length < MAX_AXLES) {
+        let pick = -1, pd = AXLE_GAP_PATH;
         cand.forEach((c, i) => { const dd = Math.min(...taken.map((t2) => dist(t2[2], c[2]))); if (dd > pd) { pd = dd; pick = i; } });
         if (pick < 0) break;
         taken.push(cand[pick]);
@@ -460,13 +476,13 @@ export function pathJoints(s: Scad, t: Track, body: Man, routes: Route[], runs: 
   } else if (kind !== 'butt') fs.forEach((f, k) => {
     const ok = (u: number) => {
       const q = f.at(u);
-      return railPts.every((p) => Math.hypot(p[0] - q[0], p[1] - q[1]) >= 9) && clear(k, u, ra, rn0, rn1)
+      return railPts.every((p) => Math.hypot(p[0] - q[0], p[1] - q[1]) >= RAIL_CLEAR) && clear(k, u, ra, rn0, rn1)
         && routes.some((rt) => Math.abs(routeLat(rt, q)) <= half - 5) && floorAt(s, nearOf(floor)(f.at(u, 2.5)), f.at(u, 2.5), 2.5) && floorAt(s, nearOf(floor)(f.at(u, -2.5)), f.at(u, -2.5), 2.5)
         && solids.every((sl) => filled(sl, k, u, ra + wall, rn0 + wall, rn1 + wall));
     };
     for (const u of pickSpots(0, f.len, ok)) {
       const q = f.at(u);
-      if (got.some((p) => Math.hypot(p[0] - q[0], p[1] - q[1]) < 16)) continue;
+      if (got.some((p) => Math.hypot(p[0] - q[0], p[1] - q[1]) < COUPLER_GAP)) continue;
       place(k, u);
     }
   });

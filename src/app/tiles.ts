@@ -5,24 +5,13 @@
 // an edit rebuilds only the tiles it touches.
 import type { CheckRail } from '../route/solver';
 import type { Route } from '../route/route';
-import { routeLength, routePose } from '../route/route';
+import { routeLength, routePose, routesBox } from '../route/route';
 import { subRoute } from '../switch/pieces';
 import type { Keep } from '../geom/pathsplit';
 
 export type Rect = [number, number, number, number]; // x0, y0, x1, y1
 
-/** The box round some routes' centre lines, grown by pad. */
-export function routesBox(routes: Route[], pad: number): Rect {
-  const b: Rect = [Infinity, Infinity, -Infinity, -Infinity];
-  for (const rt of routes) {
-    const L = routeLength(rt), n = Math.max(1, Math.ceil(L / 4));
-    for (let k = 0; k <= n; k++) {
-      const p = routePose(rt, (L * k) / n);
-      b[0] = Math.min(b[0], p[0]); b[1] = Math.min(b[1], p[1]); b[2] = Math.max(b[2], p[0]); b[3] = Math.max(b[3], p[1]);
-    }
-  }
-  return [b[0] - pad, b[1] - pad, b[2] + pad, b[3] + pad];
-}
+export { routesBox };
 
 export interface CutPlan { xs: number[]; ys: number[]; why: 'bed' | 'baseplate'; /** which of them are baseplate edges (always joined with peg and clip) */ edges?: Set<number>; /** which run along the track: interlocking fingers (the plate-style) */ combs?: Set<number> }
 

@@ -9,7 +9,7 @@ import { sweepRoute } from '../geom/sweep';
 import { stlBytes } from '../geom/stl';
 import { MONO, MONO_DEFAULTS, Mono, type MonoOptions, rackGaps, type RackGap, SUPPORT_DEFAULTS, type SupportOptions, placeAt, subOf, supportHeight, supportPart, underLabel } from '../geom/monorail';
 import { monoSwitch, type SwitchPlan, planSwitch } from '../geom/monoswitch';
-import { routeLat, routeLength, routePose, routeSOf, segLength, segStarts, type Pose, type Route } from '../route/route';
+import { poseToWorld, routeLat, routeLength, routePose, routeSOf, segLength, segStarts, type Pose, type Route } from '../route/route';
 import { reversedRoute } from '../switch/reverse';
 import { type PieceOptions } from './design';
 import type { Piece } from './build';
@@ -509,8 +509,7 @@ export function buildMonorail(w: Wasm, routes: Route[], o: Partial<PieceOptions>
   const slopeAt = (ci: number, sv: number) => (zAt(ci, sv + 1) - zAt(ci, sv - 1)) / 2;
   const supPoses: { P: Pose; h: number; slope?: number }[] = sups.map((q) => ({ P: routePose(chains[q.c].route, q.s), h: zAt(q.c, q.s), slope: slopeAt(q.c, q.s) }));
   if (every) for (const sw of switches) for (const e of sw.plan.ends) {
-    const c = Math.cos((sw.P[2] * Math.PI) / 180), s = Math.sin((sw.P[2] * Math.PI) / 180);
-    supPoses.push({ P: [sw.P[0] + e[0] * c - e[1] * s, sw.P[1] + e[0] * s + e[1] * c, sw.P[2] + e[2]], h: sw.elev });
+    supPoses.push({ P: [...poseToWorld(sw.P, [e[0], e[1]]), sw.P[2] + e[2]], h: sw.elev });
   }
   const seen: Pose[] = [];
   if (supPoses.length) {

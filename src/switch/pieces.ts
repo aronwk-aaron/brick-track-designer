@@ -5,12 +5,12 @@
 // fixed trackwork piece (crossings and plain track).
 import type { Pose, Pt, Route, Segment } from '../route/route';
 import type { SetOver } from './base';
-import { rollPart, routeLat, routeLength, routePose, routeSOf, segLength, segStarts, subExtra } from '../route/route';
+import { poseToWorld, rollPart, routeLat, routeLength, routePose, routeSOf, segLength, segStarts, subExtra, worldToPose } from '../route/route';
 import type { Split } from '../route/solver';
 import { type BaseParams, BASE_DEFAULTS, type SetSpec, switchPlan, type SwitchPlan } from './base';
 
 const rad = (d: number) => (d * Math.PI) / 180;
-const sind = (d: number) => Math.sin(rad(d)), cosd = (d: number) => Math.cos(rad(d));
+const cosd = (d: number) => Math.cos(rad(d));
 
 /** The part of segment sg from l0 to l1 along it. */
 function part(sg: Segment, l0: number, l1: number): Segment {
@@ -31,8 +31,7 @@ export function subRoute(rt: Route, s0: number, s1: number, id = rt.id): Route {
 }
 /** A pose in frame P's coordinates (P at the origin heading +y). */
 export function toFrame(P: Pose, q: Pose): Pose {
-  const dx = q[0] - P[0], dy = q[1] - P[1];
-  return [dx * cosd(P[2]) + dy * sind(P[2]), -dx * sind(P[2]) + dy * cosd(P[2]), q[2] - P[2]];
+  return [...worldToPose(P, [q[0], q[1]]), q[2] - P[2]];
 }
 
 /** Arc length where a route's centre line reaches y (it heads up the frame). */
@@ -63,9 +62,8 @@ export interface SwitchPiece {
  * it would be, in frame P. keep: the settings already chosen by hand.
  */
 export function gridLever(P: Pose, v: { leverX: number; throwY: number; throwEdgeX: number; leverMinD: number; throwDir: number; pivotPt: [number, number] }, keep: ThrowEdit = {}): SetOver {
-  const ca = cosd(P[2]), sa = Math.sin((P[2] * Math.PI) / 180);
-  const toW = (x: number, y: number): [number, number] => [P[0] + x * ca - y * sa, P[1] + x * sa + y * ca];
-  const toL = (q: [number, number]): [number, number] => { const dx = q[0] - P[0], dy = q[1] - P[1]; return [dx * ca + dy * sa, -dx * sa + dy * ca]; };
+  const toW = (x: number, y: number) => poseToWorld(P, [x, y]);
+  const toL = (q: [number, number]) => worldToPose(P, q);
   const snap = (q: [number, number]): [number, number] => [Math.round((q[0] - 4) / 8) * 8 + 4, Math.round((q[1] - 4) / 8) * 8 + 4];
   const edge = Math.abs(v.throwEdgeX), minD = Math.abs(v.leverMinD), maxTine = v.pivotPt[1] - 12.5;
   let best: SetOver | undefined, bestD = Infinity;

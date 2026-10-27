@@ -109,6 +109,17 @@ const deg = (r: number) => (r * 180) / Math.PI;
 const sind = (d: number) => Math.sin(rad(d));
 const cosd = (d: number) => Math.cos(rad(d));
 
+/** A point given across (x, + = right) and along (y, ahead) a pose, in world coordinates. */
+export function poseToWorld(P: Pose, q: Pt): Pt {
+  const c = cosd(P[2]), s = sind(P[2]);
+  return [P[0] + q[0] * c - q[1] * s, P[1] + q[0] * s + q[1] * c];
+}
+/** A world point as across (x, + = right) and along (y, ahead) a pose. */
+export function worldToPose(P: Pose, q: Pt): Pt {
+  const dx = q[0] - P[0], dy = q[1] - P[1], c = cosd(P[2]), s = sind(P[2]);
+  return [dx * c + dy * s, -dx * s + dy * c];
+}
+
 export const segLength = (sg: Segment) => (sg.kind === 'straight' ? sg.length : (Math.abs(sg.angle) * Math.PI * sg.radius) / 180);
 export const routeLength = (rt: Route) => rt.segments.reduce((a, sg) => a + segLength(sg), 0);
 
@@ -123,6 +134,19 @@ export function poseAfter(p: Pose, sg: Segment): Pose {
   const r = sg.radius, a = sg.angle, sn = Math.sign(a);
   const cx = p[0] - sn * r * cosd(p[2]), cy = p[1] - sn * r * sind(p[2]);
   return [cx + sn * r * cosd(p[2] + a), cy + sn * r * sind(p[2] + a), p[2] + a];
+}
+
+/** The box round some routes' centre lines (sampled every step mm), grown by pad: [x0, y0, x1, y1]. */
+export function routesBox(routes: Route[], pad: number, step = 4): [number, number, number, number] {
+  const b: [number, number, number, number] = [Infinity, Infinity, -Infinity, -Infinity];
+  for (const rt of routes) {
+    const L = routeLength(rt), n = Math.max(1, Math.ceil(L / step));
+    for (let k = 0; k <= n; k++) {
+      const p = routePose(rt, (L * k) / n);
+      b[0] = Math.min(b[0], p[0]); b[1] = Math.min(b[1], p[1]); b[2] = Math.max(b[2], p[0]); b[3] = Math.max(b[3], p[1]);
+    }
+  }
+  return [b[0] - pad, b[1] - pad, b[2] + pad, b[3] + pad];
 }
 
 /** Arc length at the start of each segment. */

@@ -12,7 +12,7 @@ import type { Wasm } from './kernel';
 import { M, R, T, type CS, type Man, type Scad, type Vec2 } from './scad';
 import { arcSegments, sweepRoute } from './sweep';
 import { sizeForCap, textOutline, textWidth } from './labels';
-import { routeLength, routePose, segLength, segStarts, type Pose, type Route } from '../route/route';
+import { poseToWorld, routeLength, routePose, segLength, segStarts, type Pose, type Route } from '../route/route';
 
 /** The monorail settings (monorail_lib.scad's Details). */
 export interface MonoOptions {
@@ -50,8 +50,6 @@ export const MONO = {
   fn: 32,
 };
 
-const rad = (d: number) => (d * Math.PI) / 180;
-
 /** A rack gap: where it is along the route (s, centre line), and on which flank (+1 right, -1 left). */
 export interface RackGap { s: number; side: 1 | -1 }
 
@@ -83,10 +81,7 @@ export function rackGaps(rt: Route, closed = false): RackGap[] {
 }
 
 /** A pose's frame: local (x right, y ahead) to the design's x, y. */
-export const frameAt = (P: Pose) => {
-  const c = Math.cos(rad(P[2])), s = Math.sin(rad(P[2]));
-  return (q: Vec2): Vec2 => [P[0] + q[0] * c - q[1] * s, P[1] + q[0] * s + q[1] * c];
-};
+export const frameAt = (P: Pose) => (q: Vec2): Vec2 => poseToWorld(P, q);
 /** A solid made in a pose's frame, placed there. */
 export const placeAt = (m: Man, P: Pose) => T(R(m, [0, 0, P[2]]), [P[0], P[1], 0]);
 
