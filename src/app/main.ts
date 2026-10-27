@@ -5,7 +5,7 @@ import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { BANK_MAX, type BankRamps, type Design, type DRoute, type DSeg, OPTION_DEFAULTS, type PieceOptions, RAIL_DEFAULTS, TEMPLATE_GROUPS, TEMPLATES, type Trackwork, endOf, freeName, isMono, upgradeDesign } from './design';
 import { TrackCanvas, type OverlayItem, leverSide, leverSlides, typingIn } from './canvas';
 import { describe } from './planner';
-import { legoParts, type Piece } from './build';
+import { type LegoPart, legoParts, type Piece } from './build';
 import { zip } from '../geom/zip';
 import { layoutParts } from './layoutparts';
 
@@ -348,9 +348,10 @@ function updateExports() {
   const tips: Record<string, string> = {
     'export-stl': 'Download the parts for printing as STL (a zip when there are several)',
     'export-lego': 'Download the parts to buy (a CSV, and a BrickLink wanted list of the LEGO ones): plain track as LEGO straights and R40 curves or BrickTracks curves, the straights\' ballast as LEGO plates',
+    'parts-open': 'The parts list: what to buy (plain track as LEGO straights and R40 curves or BrickTracks curves, the straights\' ballast as LEGO plates) and what to print',
     'export-layout': 'Download a parts library for the layout designer (a zip): one part per printed track part, each with its picture and connection points, and a set of them all as designed. Help says how to load it',
   };
-  for (const id of ['export-stl', 'export-layout', 'export-lego']) {
+  for (const id of ['export-stl', 'export-layout', 'export-lego', 'parts-open']) {
     const b = $<HTMLButtonElement>(id), none = id === 'export-lego' ? !legoParts(pieces).length : id === 'export-stl' ? !pieces.some((p) => !p.lego) : false;
     b.disabled = !!why || none;
     b.title = why ? `${why}` : none ? (id === 'export-lego' ? 'No LEGO parts: every piece is printed (Settings: Plain straights)' : 'Nothing to print: every piece is LEGO\'s own') : tips[id];
@@ -664,6 +665,29 @@ $('export-lego').addEventListener('click', () => {
   const enc = new TextEncoder();
   download(new Blob([zip([{ name: `${fileBase()}-lego-parts.csv`, data: enc.encode(csv) }, { name: `${fileBase()}-bricklink-wanted-list.xml`, data: enc.encode(xml) }]) as BlobPart], { type: 'application/zip' }), `${fileBase()}-lego-parts.zip`);
 });
+// The parts list, on screen: what to buy (as the download has it) and what to print, by kind.
+const partsDlg = $<HTMLDialogElement>('parts-dlg');
+const esc = (t: string) => t.replace(/[&<>"]/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[ch]!);
+$('parts-open').addEventListener('click', () => {
+  if (!pieces.length || building || stale) return;
+  const buy = legoParts(pieces), printed = pieces.filter((p) => !p.lego);
+  // (printed parts by kind: their names without the numbers, as track, track-ballast, points-a)
+  const kinds = new Map<string, number>();
+  for (const p of printed) { const k = p.name.replace(/\d+(-\d+)*/g, '').replace(/--+/g, '-').replace(/^-|-$/g, '') || p.name; kinds.set(k, (kinds.get(k) ?? 0) + 1); }
+  const from = (p: LegoPart) => (p.shop === 'bricktracks' ? 'BrickTracks' : 'LEGO (BrickLink)');
+  $('parts-body').innerHTML = [
+    '<h3>To buy</h3>',
+    buy.length ? `<table><tr><th class="n">Qty</th><th>Part</th><th>Name</th><th>From</th></tr>${[...buy].sort((a, b) => from(a).localeCompare(from(b)) || b.qty - a.qty).map((p) => `<tr><td class="n">${p.qty}</td><td>${esc(p.part)}</td><td>${esc(p.name)}</td><td>${from(p)}</td></tr>`).join('')}</table>`
+      : '<p>Nothing: every piece is printed (Settings: Plain track).</p>',
+    '<h3>To print</h3>',
+    printed.length ? `<table><tr><th class="n">Qty</th><th>Part</th></tr>${[...kinds].sort((a, b) => b[1] - a[1]).map(([k, n]) => `<tr><td class="n">${n}</td><td>${esc(k)}</td></tr>`).join('')}</table><p>${printed.length} part${printed.length === 1 ? '' : 's'} in all: the STL download has them.</p>`
+      : '<p>Nothing: every piece is bought.</p>',
+  ].join('');
+  $<HTMLButtonElement>('export-lego').disabled = !buy.length;
+  partsDlg.showModal();
+});
+$('parts-close').addEventListener('click', () => partsDlg.close());
+partsDlg.addEventListener('click', (e) => { if (e.target === partsDlg) partsDlg.close(); });
 // The parts as a parts library for the layout designer (layoutparts.ts): a zip of the library's folder and a README.
 $('export-layout').addEventListener('click', () => {
   if (!pieces.length || building || stale) return;
@@ -1124,7 +1148,7 @@ const OPTION_FORM: OptSection[] = [
       { v: 'lengths', t: 'Track pieces, cut across the track', tip: 'Each track cut square to itself into pieces with ordinary end connectors, like LEGO track. Switches and crossings stay whole.', con: 'More parts, and a cut only where the track is clear of other tracks.' }] },
     { key: 'pieceLengthStuds', label: 'Piece length, studs', step: 4, min: 0, max: 64, off: (c) => (c.o.splitTrack === 'lengths' ? undefined : 'only with Long track cut into: Track pieces'), help: 'LEGO straights are 16. 0: as long as fits the print bed. A longer piece than the bed takes: as long as fits.' },
     { key: 'legoTrack', label: 'Plain track', help: 'Bought straights are 16 studs, whatever Piece length is.', off: (c) => (c.o.splitTrack !== 'lengths' ? 'only with Long track cut into: Track pieces' : design.gaugeStuds !== 4 ? 'LEGO track is 4 studs between the rails: the gauge isn\'t 4' : undefined), choices: [
-      { v: 'lego', t: 'Bought track', tip: 'Plain track bought, not printed: each 16-stud straight is LEGO\'s (53401), with ballast on LEGO plates under it (6 x 16 and two 2 x 16, two more 6 x 16 for the buddy layer); on track without ballast, R40 curves are LEGO\'s (53400) and R56 to R120 curves BrickTracks\' (injection moulded, 11.25° each). They\'re in the parts list (toolbar), not the STL download.', con: 'Their sleepers and underside are theirs, not as set here. Curves with ballast are still printed.' },
+      { v: 'lego', t: 'Bought track', tip: 'Plain track bought, not printed: each 16-stud straight is LEGO\'s (53401), with ballast on LEGO plates under it (6 x 16 and two 2 x 16, two more 6 x 16 for the buddy layer); R40 curves are LEGO\'s (53400) and R56 to R120 curves BrickTracks\' (injection moulded, 11.25° each), with ballast on a printed ballast piece (…-ballast, with the buddy layer if set) they drop into; with a Flat ballast underside, BrickTracks\' curves on BrickTracks\' own ballast and buddy, bought too. Bought parts are in the parts list (toolbar), not the STL download.', con: 'Their sleepers and underside are theirs, not as set here.' },
       { v: 'print', t: 'Printed', tip: 'Every piece printed, as set here.', con: 'More to print.' }] },
     { key: 'joint', label: 'Parts join with', help: 'How parts cut for the print bed or at baseplate edges join. With Long track cut into: Track pieces, plain track joins with its own end connectors; this is for the switches and crossings too big for the bed.', choices: [
       { v: 'lego', t: 'Rail tongues + peg and clip', tip: 'Like LEGO track ends.' },

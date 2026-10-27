@@ -156,11 +156,11 @@ export function sleeperSpots(L: number, in0: boolean, in1: boolean, gapStuds: nu
   const sp = gapStuds + wStuds, ja = in0 ? sp / 2 : 1 + gapStuds + wStuds / 2, jb = in1 ? sp / 2 : 1 + gapStuds + wStuds / 2;
   const jMax = L / STUD - jb;
   if (jMax < ja - 1e-9) return [];
-  // (a curve: off the stud grid anyway, so spread evenly from end to end, as many as come nearest the gap set (a
-  // BrickTracks R120 piece, 23.6 studs: 5 sleepers 3.9 apart, not 4 at 4 and the 3.6 left over at one end))
-  const nc = Math.max(1, Math.round((jMax - ja) / sp) + 1);
-  if (curved && nc > 1 && (jMax - ja) / (nc - 1) >= wStuds + 1) return Array.from({ length: nc }, (_, k) => (ja + (k * (jMax - ja)) / (nc - 1)) * STUD);
-  if (curved && nc === 1) return [((ja + jMax) / 2) * STUD];
+  // (a curve with connectors both ends: off the stud grid anyway, so the arc split evenly from end to end, as many
+  // gaps as come nearest the gap set (curves.scad's sleeper_angles, as LEGO's R40 and BrickTracks' curves: a
+  // BrickTracks R120 piece, 23.6 studs, 6 gaps of 3.9, not 4 at 4 and the 3.6 left over at one end))
+  const g = Math.round(L / STUD / sp);
+  if (curved && !in0 && !in1 && g >= 2 && L / STUD / g >= wStuds + 1) return Array.from({ length: g - 1 }, (_, k) => ((k + 1) * L) / g);
   const n = Math.floor((jMax - ja) / sp + 1e-9) + 1, j0 = ja + Math.floor(((jMax - ja) - (n - 1) * sp) / 2 + 1e-9);
   return Array.from({ length: n }, (_, k) => (j0 + k * sp) * STUD);
 }

@@ -64,6 +64,13 @@ export function stdCurve(radius: number, angle: number): LegoPart[] | undefined 
   return r === 320 ? [{ part: '53400', name: 'Train, Track Plastic Curve (R40)', qty: n }] : [{ part: `BrickTracks R${r / 8}`, name: `BrickTracks R${r / 8} curve (11.25°)`, qty: n, shop: 'bricktracks' }];
 }
 
+/** BrickTracks' own ballast for one of their curves (R56 to R120), and the buddy layer under it: for a flat underside (theirs rests on the studs, not gripping them). */
+export function brickTracksBallast(curve: LegoPart[], ballast: string | undefined): LegoPart[] {
+  const r = curve[0].part.replace(/^BrickTracks /, ''), qty = curve[0].qty;
+  return [{ part: `BrickTracks ${r} ballast`, name: `BrickTracks ${r} ballast (11.25°)`, qty, shop: 'bricktracks' },
+    ...(ballast === 'buddy' ? [{ part: `BrickTracks ${r} buddy`, name: `BrickTracks ${r} ballast buddy (11.25°)`, qty, shop: 'bricktracks' as const }] : [])];
+}
+
 /** The LEGO parts for a plain 16-stud straight: LEGO's track, and under it the ballast's layers as plates (10 studs wide, and 12 more for the buddy layer). */
 export function legoStraight(ballast: string | undefined): LegoPart[] {
   const out: LegoPart[] = [{ part: '53401', name: 'Train, Track Plastic Straight (16 studs)', qty: 1 }];
@@ -809,9 +816,9 @@ function sectioned(b: PieceBuild, name: string, all: Route[], checks: CheckRail[
   // (pieces of the length set, if they fit the bed; else as long as fits)
   const ex = exact > 0 && exact <= room ? exact : 0;
   const plates = bp ? { size: bp, x: (o.baseplateX ?? 0) * 8, y: (o.baseplateY ?? 0) * 8 } : undefined;
-  // (bought pieces on: plain stretches cut where LEGO's straights, and on track without ballast its R40 curves and
-  // BrickTracks' curves, would join, so those pieces are them)
-  const std = (o.legoTrack ?? 'lego') === 'lego' && b.gaugeStuds === 4 ? (o.ballast === 'none' ? STD_CURVES : new Map<number, number>()) : undefined;
+  // (bought pieces on: plain stretches cut where LEGO's straights, its R40 curves and BrickTracks' curves would join,
+  // so those pieces are them; on ballast, a curve's ballast printed alone under it)
+  const std = (o.legoTrack ?? 'lego') === 'lego' && b.gaugeStuds === 4 ? STD_CURVES : undefined;
   const plan = cached(`secplan:${key}:${room}:${bandHalf}:${ex}:${JSON.stringify(plates)}:${JSON.stringify(std && [...std])}`, () => planSections(all, solSplits, bandHalf, room, 40, ex, plates, std));
   const gridPose = routePose(all[0], 0);
   b.prog.steps += plan.sections.length;
@@ -894,9 +901,14 @@ function sectioned(b: PieceBuild, name: string, all: Route[], checks: CheckRail[
     const sg0 = rts.length === 1 ? rts[0].segments : [];
     const plain = (o.legoTrack ?? 'lego') === 'lego' && b.gaugeStuds === 4 && !mine.length && !cChecks.length && sg0.length === 1 && !sg0[0].roll && !rts[0].extra && !secInner.size
       && ![routePose(rts[0], 0), routePose(rts[0], routeLength(rts[0]))].some((e) => b.bufs.some((bq) => Math.hypot(bq[0] - e[0], bq[1] - e[1]) < 1));
-    // (a curve only on track without ballast: no LEGO plates make a curve's ballast)
+    // (a curve: LEGO's or BrickTracks' track; with ballast, no LEGO plates make a curve's, so its ballast is printed
+    // alone (with the buddy layer if set), with a seat the bought curve drops into. BrickTracks' curves on a flat
+    // underside: BrickTracks' own ballast and buddy, bought too (theirs float on the studs, they don't grip them))
+    const curve = !plain || sg0[0].kind !== 'arc' ? undefined : stdCurve(sg0[0].radius, sg0[0].angle);
+    const btBallast = !!curve && o.ballast !== 'none' && o.bottomStyle === 'float' && curve[0].shop === 'bricktracks';
     const lego = !plain ? undefined : sg0[0].kind === 'straight' ? (Math.abs(sg0[0].length - 16 * 8) < 0.01 ? legoStraight(o.ballast) : undefined)
-      : o.ballast === 'none' ? stdCurve(sg0[0].radius, sg0[0].angle) : undefined;
+      : curve && (btBallast ? [...curve, ...brickTracksBallast(curve, o.ballast)] : curve);
+    const seated = !!curve && o.ballast !== 'none' && !btBallast;
     // (keyed by what it's built from, as the tiles are)
     const sb = routesBox(rts, bandHalf + 8);
     // (a section many print beds big, a whole yard's throat: built in blocks as a big layout cut to fill the bed is,
@@ -904,13 +916,19 @@ function sectioned(b: PieceBuild, name: string, all: Route[], checks: CheckRail[
     if ((sb[2] - sb[0]) * (sb[3] - sb[1]) > 8 * o.printBedX * o.printBedY && tiled(b, name, rts, cChecks, mine, copt)) return;
     const zs = cx.zones.filter((z) => z.box[2] >= sb[0] && z.box[0] <= sb[2] && z.box[3] >= sb[1] && z.box[1] <= sb[3]).map((z) => [z.rt.id, z.s0, z.s1, z.box]);
     const sk = `sec:${JSON.stringify({ rts, cChecks, m: mine.map((x) => [x.key, x.inner, x.bladeCuts.map(([i]) => i)]), copt, g: b.grooveCuts.length ? b.grooveEdits : 0, di: [...secInner],
-      gp: gridPose, bp, bxy: [o.baseplateX, o.baseplateY], joint: o.joint, bed: [o.printBedX, o.printBedY], zs, ...(b.labelOn && { lab: [o.labelText, o.labelSize, o.labelGauge, o.labelParts] }) })}`;
-    let part: { ms: (Baked & { id?: string })[]; grips: [number, number][] };
+      gp: gridPose, bp, bxy: [o.baseplateX, o.baseplateY], joint: o.joint, ...(seated && { seat: o.trackFitTol ?? 0.2 }), bed: [o.printBedX, o.printBedY], zs, ...(b.labelOn && { lab: [o.labelText, o.labelSize, o.labelGauge, o.labelParts] }) })}`;
+    let part: { ms: (Baked & { id?: string; bought?: boolean })[]; grips: [number, number][] };
     const cost = rts.reduce((t, rt) => t + routeLength(rt), 0) + 400 * mine.length;
     try { part = b.job(sk, cost, () => arena(w, () => {
       const grips: [number, number][] = [];
       const cuts = b.grooveCuts.filter((m) => { const bb = m.boundingBox(); return rts.some((rt) => { const b2 = routesBox([rt], bandHalf + 8); return bb.max[0] >= b2[0] && bb.min[0] <= b2[2] && bb.max[1] >= b2[1] && bb.min[1] <= b2[3]; }); });
       const buildBody = (bedAt?: { p: [number, number]; d: [number, number]; len?: number }[]) => { grips.length = 0; return networkBody(scad, rts, { crossings: [], grooves: [], splits: [], checkRails: cChecks }, copt, mine, grips, { cuts, gridPose, innerEnds: secInner, ...(bedAt && { bedAt }) }); };
+      // (a bought curve on ballast: the curve as bought (LEGO's sleepers, as both make theirs), and the ballast printed alone, seated for it)
+      if (seated) {
+        const asBought = { ...copt, sleepers: 'sleepers' as const, sleeperGapStuds: 2, sleeperWidthStuds: 2 }, at = (c: typeof copt) => networkBody(scad, rts, { crossings: [], grooves: [], splits: [], checkRails: [] }, c, [], grips, { gridPose, innerEnds: secInner });
+        const tr = at({ ...asBought, ballast: 'none' }), bal = at({ ...asBought, ballastOnly: o.trackFitTol ?? 0.2, supports: false });
+        return { ms: [{ ...bake(b, tr), bought: true }, { ...bake(b, labelled(b, bal, rts, sizeOf(rts), `${si + 1}`)), ...(b.labelOn && { id: `${si + 1}` }) }], grips };
+      }
       let body = buildBody();
       if (body.numTri() === 0) return { ms: [], grips };
       // (and where it crosses a baseplate edge, cut there with peg and clip: a plain piece of one track already ends at
@@ -951,8 +969,10 @@ function sectioned(b: PieceBuild, name: string, all: Route[], checks: CheckRail[
     }
     b.overlay.grips.push(...part.grips);
     for (const b2 of part.ms) {
-      b.pieces.push({ name: lego ? `track-bought-${lego[0].part.replace(/\s+/g, '')}-${++n}` : b2.id ? `${name}${b2.id}` : `${name}${++n}`, color: lego ? 0x8e9cab : TRACK_COLOR, positions: b2.positions.slice(), stl: b2.stl.slice(), ...(b2.supports && !lego && { supports: b2.supports.slice() }), ...(lego && { lego }) });
-      if (!lego) b.volume += b2.volume;
+      // (a seated curve's ballast: printed, named for the curve it's under)
+      const bought = seated ? b2.bought : !!lego;
+      b.pieces.push({ name: bought ? `track-bought-${lego![0].part.replace(/\s+/g, '')}-${++n}` : seated ? `${name}${b2.id ?? ++n}-ballast` : b2.id ? `${name}${b2.id}` : `${name}${++n}`, color: bought ? 0x8e9cab : TRACK_COLOR, positions: b2.positions.slice(), stl: b2.stl.slice(), ...(b2.supports && !bought && { supports: b2.supports.slice() }), ...(bought && { lego }) });
+      if (!bought) b.volume += b2.volume;
       if (!b2.fits) b.bedWarnings.add(`some sections don't fit the ${o.printBedX} x ${o.printBedY} print bed: there's nowhere left to cut them`);
     }
   });
@@ -1002,7 +1022,7 @@ function tiled(b: PieceBuild, name: string, all: Route[], checks: CheckRail[], s
     const zs = cx.zones.filter((z) => z.box[2] >= R[0] - MARGIN && z.box[0] <= R[2] + MARGIN && z.box[3] >= R[1] - MARGIN && z.box[1] <= R[3] + MARGIN).map((z) => [z.rt.id, z.s0, z.s1, z.box]);
     const tk = `tile:${JSON.stringify({ r: cr.routes, c: cr.checks, i: [...tileInner], R, lines, near: tileSplits.map((sp) => [sp.key, sp.inner, sp.bladeCuts.map(([i]) => i)]),
       copt, joint: o.joint, tongueRails: o.tongueRails, g: b.grooveCuts.length ? b.grooveEdits : 0, gp: gridPose, bed: [o.printBedX, o.printBedY], zs, ...(b.labelOn && { lab: [o.labelText, o.labelSize, o.labelGauge, o.labelParts] }) })}`;
-    let part: { ms: (Baked & { id?: string })[]; grips: [number, number][] };
+    let part: { ms: (Baked & { id?: string; bought?: boolean })[]; grips: [number, number][] };
     // (how long it takes, about: its track, and points most of all)
     const cost = cr.routes.reduce((t, rt) => t + routeLength(rt), 0) + 400 * near.length;
     try { part = b.job(tk, cost, () => arena(w, () => {

@@ -30,7 +30,7 @@ describe('the app\'s defaults: like LEGO track', { timeout: 300000 }, () => {
       expect(tr).toHaveLength(0);
     } finally { Object.assign(OPTION_DEFAULTS, saved); }
   });
-  it('without ballast, R40 curves as LEGO\'s and R104 curves as BrickTracks\', a piece each; with ballast, curves printed', async () => {
+  it('R40 curves as LEGO\'s and R104 curves as BrickTracks\', a piece each; with ballast, the curves still bought, their ballast printed (seated for them), or on a flat underside BrickTracks\' own', async () => {
     const saved = { ...OPTION_DEFAULTS };
     Object.assign(OPTION_DEFAULTS, APP);
     try {
@@ -41,9 +41,27 @@ describe('the app\'s defaults: like LEGO track', { timeout: 300000 }, () => {
       expect(count(b, '53401')).toBe(2);
       expect(count(b, '53400')).toBe(4);
       expect(count(b, 'BrickTracks R104')).toBe(4);
-      const bb = buildDesign(w, d('ballast'));
+      // (with ballast: each curve bought, and a printed ballast piece for it, clear of it; on the buddy layer, the buddy in it)
+      const bb = buildDesign(w, d('buddy'));
+      expect(bb.info.warnings).toEqual([]);
       expect(count(bb, '53401')).toBe(2);
-      expect(count(bb, '53400') + count(bb, 'BrickTracks R104')).toBe(0);
+      expect(count(bb, '53400')).toBe(4);
+      expect(count(bb, 'BrickTracks R104')).toBe(4);
+      const seats = bb.pieces.filter((p) => /-ballast$/.test(p.name));
+      expect(seats).toHaveLength(8);
+      const man = (p: (typeof bb.pieces)[number]) => { const m = new w.Mesh({ numProp: 3, vertProperties: new Float32Array(p.positions), triVerts: new Uint32Array(p.positions.length / 3).map((_, i) => i) }); m.merge(); return new w.Manifold(m); };
+      const bought = bb.pieces.filter((p) => p.lego?.some((l) => l.part !== '53401')).map(man);
+      for (const p of seats) {
+        const m = man(p);
+        expect(m.decompose()).toHaveLength(1);
+        expect(m.boundingBox().min[2]).toBeCloseTo(-6.4, 1);         // ballast and buddy, 3.2 each
+        for (const t of bought) expect(t.intersect(m).volume()).toBeLessThan(0.01);
+      }
+      // (a flat underside: BrickTracks' curves on BrickTracks' own ballast and buddy; LEGO's R40 still on printed ballast)
+      const bf = buildDesign(w, { ...d('buddy'), options: { ballast: 'buddy', bottomStyle: 'float' } as Design['options'] });
+      expect(count(bf, 'BrickTracks R104 ballast')).toBe(4);
+      expect(count(bf, 'BrickTracks R104 buddy')).toBe(4);
+      expect(bf.pieces.filter((p) => /-ballast$/.test(p.name))).toHaveLength(4);
     } finally { Object.assign(OPTION_DEFAULTS, saved); }
   });
 });
