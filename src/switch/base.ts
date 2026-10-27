@@ -1075,7 +1075,8 @@ export function switchGeometry(s: Scad, plan: SwitchPlan, extraCuts: Man[] = [])
   const fdbPlate2d = (v: SetV, b: number) => {
     const rt = bRt(v, b), o = bO(b), side = bSide(b), fb = fdbBlades(v)[b];
     // (on to where the blade's rail ends at the heel: under all of it)
-    const n = 24, s0 = v.sToe + 2, s1 = v.sHeel - c;
+    // (from just before the toe: the rail's point on plate to its end, nothing of it out over nothing as printed)
+    const n = 24, s0 = v.sToe - 1, s1 = v.sHeel - c;
     const edge = (off: number) => Array.from({ length: n + 1 }, (_, k) => railPoint(rt, s0 + ((s1 - s0) * k) / n, o + side * off) as Vec2);
     // (from the blade bar's inner face inward; tapering to the toe)
     // (tapering toward the toe, to full width before the slider's post: the tongue's slot in the full plate)
@@ -1156,7 +1157,9 @@ export function switchGeometry(s: Scad, plan: SwitchPlan, extraCuts: Man[] = [])
     // (with ballast the stock rail's foot flares out above the bed, and the plate is kept off it: there the
     // rail's lower outer corner is bevelled at 45 degrees, from the plate's edge up, so it prints)
     // (how far the stock rail reaches out over the plate's height, past its head)
-    const flareW = z0 < PLATE_H + 2.0 ? rail2d(0).intersect(sq([20, z1 - z0], [-10, z0])).bounds().max[0] - HEAD_HW : 0;
+    // (the sprung blades': the rail all on its plate, and the plate cut round the stock rail's foot as it is (a little bridge over
+    // it), not bevelled off it: their 3 mm plate is up the foot's height, and the bevel left the rail over nothing)
+    const flareW = !fourD && z0 < PLATE_H + 2.0 ? rail2d(0).intersect(sq([20, z1 - z0], [-10, z0])).bounds().max[0] - HEAD_HW : 0;
     const bevel = (q: Vec2[]) => s.polygon(sideS > 0 ? q : q.map(([x, y]) => [2 * face - x, y] as Vec2).reverse());
     const offStock = keep ?? sweep(flareW ? bevel([[face + flareW, z0 - 1], [face + flareW, z1], [face, z1 + flareW], [face, z1 + 40], [face + 30, z1 + 40], [face + 30, z0 - 1]])
       : sq([30, 40], [sideS > 0 ? face : face - 30, z0 - 1]), bOther(v, b), 0, v.sHeel + 5);
@@ -1178,7 +1181,8 @@ export function switchGeometry(s: Scad, plan: SwitchPlan, extraCuts: Man[] = [])
     const plate2d = fdbPlate2d(v, b);
     let plate = s.difference(s.intersection(s.intersection(T(s.extrude(plate2d, plateT), [0, 0, z0]), plateOff), cube([400, 400, 50], [-200, y0, z0 - 10])), [stock]);
     if (fourD) plate = d4Underside(v, b, plate, plate2d, z0, (m) => s.difference(s.intersection(m, plateOff), [stock]));
-    return rot3(s.union([plate, bar]), fb.pivot, fb.open);
+    // (the rail no further toward the toe than its plate goes: clear of the end connector, as the plate is)
+    return rot3(s.union([plate, s.intersection(bar, cube([400, 400, 50], [-200, y0, z0 - 10]))]), fb.pivot, fb.open);
   };
   /**
    * (sprung blades) Under the plate: the stud's blind hole at the pin, and the
