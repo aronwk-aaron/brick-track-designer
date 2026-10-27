@@ -72,6 +72,14 @@ describe('guard rails and dual gauge', { timeout: 60000 }, () => {
     }
   });
 
+  it('guard rails running on through both ends (a bridge\'s middle piece): each end\'s supports break away, none joined to the part', async () => {
+    const rt = toRoutes(design({ guardRails: true, guardRailEnds: 'none', segs: [{ kind: 'straight', studs: 16 }] }))[0];
+    const { m } = await piece([rt], { supports: true });
+    // (the part, and each end's supports on their own: none of the guard rails' reaching in under the C-clip)
+    const vs = m.decompose().map((b) => b.volume()).sort((a, b) => b - a);
+    expect(vs).toHaveLength(3);
+    for (const v of vs.slice(1)) expect(v).toBeLessThan(400);
+  });
   it('a curve with guard rails, both kinds of end: one body, studs clear', async () => {
     for (const ends of ['none', 'both'] as const) {
       const d = design({ segs: [{ kind: 'curve', radius: 40, angle: 22.5 }], guardRails: true, guardRailEnds: ends });

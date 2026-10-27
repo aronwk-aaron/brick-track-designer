@@ -355,8 +355,11 @@ export function crossingPiece(s: Scad, routes: Route[], o: CrossingOptions = CRO
     }
     if (o.supports) {
       const zs = bottomZ - 0.02;
-      if (!inStart) parts.push(atPose(roll0 ? s.union([bankedSupports(s, (z) => t.startRailSupports(z, ex?.xfs[0]), trackBank(c.sleeperLen), roll0, zs), t.supportFooting(zs, 0, -1)]) : s.union([t.startRailSupports(zs, ex?.xfs[0]), t.supportFooting(zs, 0, -1)]), p0));
-      if (!inEnd) parts.push(atPose(roll1 ? s.union([bankedSupports(s, (z) => t.endRailSupports(z, ex?.xfs[1]), trackBank(c.sleeperLen), roll1, zs), t.supportFooting(zs, 0, +1)]) : s.union([t.endRailSupports(zs, ex?.xfs[1]), t.supportFooting(zs, 0, +1)]), p1));
+      // (no support under an extra rail's end (a guard rail's, between the running rails) over the C-clip: the clip holds
+      // it up, and its support reached in under the clip and printed as one with the part, not broken away)
+      const offClip = (xfs?: number[]) => xfs?.filter((xf) => !(c.hasCoupler && xf > 0 && Math.abs(xf - c.couplerX) < 6.8));
+      if (!inStart) parts.push(atPose(roll0 ? s.union([bankedSupports(s, (z) => t.startRailSupports(z, offClip(ex?.xfs[0])), trackBank(c.sleeperLen), roll0, zs), t.supportFooting(zs, 0, -1)]) : s.union([t.startRailSupports(zs, offClip(ex?.xfs[0])), t.supportFooting(zs, 0, -1)]), p0));
+      if (!inEnd) parts.push(atPose(roll1 ? s.union([bankedSupports(s, (z) => t.endRailSupports(z, offClip(ex?.xfs[1])), trackBank(c.sleeperLen), roll1, zs), t.supportFooting(zs, 0, +1)]) : s.union([t.endRailSupports(zs, offClip(ex?.xfs[1])), t.supportFooting(zs, 0, +1)]), p1));
     }
     if (ex?.solid) parts.push(banked ? aboveZ(s, ex.solid, 0) : ex.solid); // (banked: turned with the track, kept above the bed's bottom)
   });
