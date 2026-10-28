@@ -16,7 +16,7 @@ import { reversedRoute } from './reverse';
 import { type BaseParams, type SetOver, type SetSpec, switchGeometry, switchPlan, type SwitchPlan } from './base';
 import { gridLever, sharedLead, subRoute, type ThrowEdit, toFrame } from './pieces';
 
-export interface NetworkPart { name: string; color: number; local: Man; world: Man; turn?: { at: [number, number]; by: number; swing?: number } }
+export interface NetworkPart { name: string; color: number; local: Man; world: Man; turn?: { at: [number, number]; by: number; swing?: number; tilt?: [[number, number], [number, number]] } }
 
 const LOCAL_LEN = 400; // (how much of each route the points' frame looks at)
 
@@ -256,7 +256,7 @@ export function networkSplits(s: Scad, routes: Route[], sol: Solution, p: BasePa
     const pts = gm.pointsParts(0);
     const turns = gm.pointsTurns(0);
     pts.forEach((m, k) => moving.push({ name: `${tag}${pts.length > 1 ? (k === 0 ? '-a' : '-b') : ''}`, color: 0x4682b4, local: m, world: place(m, P),
-      ...(turns?.[k] && { turn: { at: poseToWorld(P, turns[k].at), by: turns[k].by, swing: turns[k].swing } }) }));
+      ...(turns?.[k] && { turn: { at: poseToWorld(P, turns[k].at), by: turns[k].by, swing: turns[k].swing, ...(turns[k].tilt && { tilt: turns[k].tilt!.map((q) => poseToWorld(P, q)) as [[number, number], [number, number]] }) } }) }));
     // (Peco's spring: printed flat and straight, as assembled squeezed between its pins)
     const spr = gm.springPart(0), sprP = gm.springPrint(0);
     if (spr && sprP) moving.push({ name: `${tag}-spring`, color: 0xc0392b, local: sprP, world: place(spr, P) });

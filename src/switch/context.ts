@@ -153,6 +153,8 @@ export interface FdbBladeLayout {
   notches?: Notch[];
   /** (sprung blades) the spring's beams' length, where shorter than the full 34.5 (other track running past) */
   root?: number;
+  /** (sprung blades) a lip on the bed over the plate's front holds it down (switch/base.ts LIP); false where other track's too close for one */
+  lip?: boolean;
 }
 
 /** Another track's rail across a blade near its heel (a double slip's obtuse crossing): the rail, where along it and where it crosses; how far along it it's within the blade's width. */

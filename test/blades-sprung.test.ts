@@ -4,12 +4,16 @@
 // after printing). Clear of the base closed and open. On track alone too:
 // the bed at the sleepers' top, the slider in a groove through it between
 // the underside's stud rows (context.ts SPRUNG_SLIDER), clear of the base both ways.
+// A lip on the bed over each plate's front holds it down (base.ts LIP), as the
+// reference switch's: clear of the plate closed and open, the plate's front
+// bevelled under it; the blade goes in tilted under it (assembly.shared.ts).
 import { describe, expect, it } from 'vitest';
 import type { Route } from '../src/route/route';
-import { BASE_DEFAULTS, switchGeometry, switchPlan } from '../src/switch/base';
+import { BASE_DEFAULTS, sprungLipFits, switchGeometry, switchPlan } from '../src/switch/base';
 import { kernel } from '../src/geom/kernel';
 import { type Man, R, Scad, T } from '../src/geom/scad';
-import { PLATE_H } from '../src/switch/context';
+import { HEAD_HW, PLATE_H } from '../src/switch/context';
+import { hanging } from './assembly.shared';
 
 const A: Route = { id: 'A', start: [0, 0, 0], segments: [{ kind: 'straight', length: 500 }] };
 const B: Route = { id: 'B', start: [0, 0, 0], segments: [{ kind: 'arc', radius: 832, angle: 22.5 }, { kind: 'straight', length: 150 }] };
@@ -67,5 +71,51 @@ describe("the sprung blades", () => {
     for (let x = Math.floor(tb.min[0] / 8) * 8 - 4; x <= tb.max[0] + v.leverTravel + 4; x += 8)
       for (let y = Math.floor(tb.min[1] / 8) * 8 - 4; y <= tb.max[1] + 4; y += 8) studs.push(T(s.cylinder(1.8, 2.4, 2.4, 24), [x, y, 0]));
     for (const dx of [0, v.leverTravel]) expect(s.intersection(T(thr, [dx, 0, 0]), s.union(studs)).volume()).toBeLessThan(1e-3);
+  }, 120000);
+
+  for (const gb of [true, false]) it(`${gb ? 'on ballast' : 'track alone'}: a lip over each plate's front, closed and open, clear of it; the front can't lift; under the wheels' flanges; prints`, async () => {
+    const q = { ...p, generateBallast: gb };
+    const plan = switchPlan([A, B], [[0, 1, 12]], q, 1), w = await kernel(), s = new Scad(w), gm = switchGeometry(s, plan), base = gm.base();
+    expect(plan.sets[0].fdb!.map((f) => f.lip)).toEqual([true, true]);
+    expect(plan.notes.join(' ')).not.toMatch(/lip/);
+    const parts = gm.pointsParts(0), turns = gm.pointsTurns(0)!, railTop = PLATE_H + 6.4, c = q.pointClearance;
+    for (const [k, m] of parts.entries()) {
+      const t2 = turns[k], ends = t2.tilt!, yF = Math.min(ends[0][1], ends[1][1]);
+      // (the plate's first 3 mm, where the lip is over it)
+      const front = m.intersect(s.cube([400, 3 + Math.abs(ends[0][1] - ends[1][1]), 30]).translate([-200, yF - 1, -10]));
+      for (const a of [0, t2.swing]) {
+        const turn = (x: Man) => T(R(T(x, [-t2.at[0], -t2.at[1], 0]), [0, 0, a]), [t2.at[0], t2.at[1], 0]);
+        expect(s.intersection(turn(m), base).volume()).toBeLessThan(1e-3);
+        // (room to move: free a little way up; then held, the lip over it)
+        expect(s.intersection(T(turn(front), [0, 0, 0.25]), base).volume()).toBeLessThan(1e-3);
+        expect(s.intersection(T(turn(front), [0, 0, 1.2]), base).volume()).toBeGreaterThan(0.5);
+      }
+      // (the lip: in front of the plate and over it, from its stock rail's head in; its top under a wheel's flange, the
+      // flangeway's depth below the rail's top; nothing in it hanging as printed)
+      const xs = ends.map((e) => e[0]), side = k === 0 ? 1 : -1, xStock = side * -plan.G + side * (HEAD_HW + 0.1);
+      const x0 = side > 0 ? xStock : Math.min(...xs) - 1, x1 = side > 0 ? Math.max(...xs) + 1 : xStock;
+      const lip = base.intersect(s.cube([x1 - x0, 8, 20]).translate([x0, yF - 5, plan.g.bedTop + 0.01]));
+      const bb = lip.boundingBox();
+      expect(bb.max[2]).toBeLessThanOrEqual(railTop - q.flangewayDepth - 0.2 + 1e-6);
+      expect(bb.max[2]).toBeGreaterThan(plan.g.bedTop + c + 2.5);
+      expect(bb.max[1]).toBeGreaterThan(yF + 1.5);                // (over the plate's bevel)
+      expect(hanging(w, base.intersect(s.cube([x1 - x0, 8, 20]).translate([x0, yF - 5, plan.g.bedTop - 0.5])))).toBeLessThan(0.5);
+    }
+  }, 240000);
+
+  it('single point: the moving blade has its lip, the fixed rail none; other track too near a front: no lip', async () => {
+    const plan1 = switchPlan([A, B], [[0, 1, 12]], { ...p, pointBlades: 1 }, 1), v = plan1.sets[0];
+    expect(v.fdb!.map((f, b) => (b === v.fixed ? undefined : f.lip))).toEqual(v.fixed === 0 ? [undefined, true] : [true, undefined]);
+    const gm = switchGeometry(new Scad(await kernel()), plan1);
+    expect(gm.pointsTurns(0)!.map((t2) => !!t2.tilt)).toEqual([true]);
+    // (another track's rail just past a plate's front: no room for the lip. Other track that near a sprung blade's plate
+    // leaves it rigid for now (fdbLayout), so asked of the lip on its own: a rail across 5 past the front, then 30)
+    const plan2 = switchPlan([A, B], [[0, 1, 12]], p, 1), v2 = plan2.sets[0], f = v2.fdb![0];
+    const across = (y: number) => ({ ...f, keep: [Array.from({ length: 21 }, (_, k) => [-40 + 4 * k, y] as [number, number])] });
+    expect(sprungLipFits(v2, 0, p, across(11 - 5))).toBe(false);
+    expect(sprungLipFits(v2, 0, p, across(11 - 30))).toBe(true);
+    // (and so built: none, and a note)
+    v2.fdb![0].lip = false;
+    expect(switchGeometry(new Scad(await kernel()), plan2).pointsTurns(0)!.map((t2) => !!t2.tilt)).toEqual([false, true]);
   }, 120000);
 });

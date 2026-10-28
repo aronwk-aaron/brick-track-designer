@@ -13,6 +13,10 @@ const cases: [string, Design][] = [
   ['wye on ballast, stand and prototype blades', { ...TEMPLATES['Wye switch'], options: { ballast: 'buddy', throwStyle: 'stand', bladeStyle: 'prototype' } }],
   ['crossover, over-centre spring and prototype blades', { ...crossover, options: { throwAction: 'overcentre', bladeStyle: 'prototype' } }],
   ['crossover, sprung blades on stands', { ...crossover, options: { bladeStyle: 'sprung', throwStyle: 'stand' } }],
+  // (sprung blades: a lip over each plate's front; each blade goes in tilted, its front under the lip)
+  ['left switch, sprung blades', { ...TEMPLATES['Left switch (LEGO)'], options: { bladeStyle: 'sprung' } }],
+  ['wye on ballast, sprung blades', { ...TEMPLATES['Wye switch'], options: { ballast: 'buddy', bladeStyle: 'sprung' } }],
+  ['left switch, one sprung blade', { ...TEMPLATES['Left switch (LEGO)'], options: { bladeStyle: 'sprung', pointBlades: 1 } }],
   ['left switch with everything, cut to a 128 bed', { ...TEMPLATES['Left switch (LEGO)'], options: { printBedX: 128, printBedY: 128, throwAction: 'overcentre', bladeStyle: 'prototype' } }],
   // (the blades held down by little brackets over their plates, pegged into the bed)
 ];

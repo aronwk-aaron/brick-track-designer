@@ -43,8 +43,9 @@ export interface Piece {
   name: string; color: number; positions: Float32Array; stl: Uint8Array;
   /** its breakaway print supports (the small loose bits printed with it), apart, for the view to show or hide */
   supports?: Float32Array;
-  /** (the plate-style blades) the pin it turns on, as assembled, and how far to turn it there to open it (degrees): it goes on open */
-  turn?: { at: [number, number]; by: number; swing?: number };
+  /** (the plate-style blades) the pin it turns on, as assembled, and how far to turn it there to open it (degrees): it goes on open.
+   * tilt (sprung blades with a lip): the ends of the plate's front's bottom edge, which goes in first, tilted under the lip */
+  turn?: { at: [number, number]; by: number; swing?: number; tilt?: [[number, number], [number, number]] };
   /** LEGO parts this piece is (a plain straight as LEGO's own track, its ballast as plates): not printed, in the LEGO parts list */
   lego?: LegoPart[];
 }
@@ -1089,7 +1090,7 @@ function buildSwitches(b: PieceBuild, switches: ReturnType<typeof planPieces>['s
     gm.sets.forEach(({ thr, thrPrint, thp, thpPrint, pp, print, lever, bracket, spring, springPrint, turns }, k) => {
       const sfx = sw.sets.length > 1 ? `${k + 1}` : '';
       if (bracket) add(b, `${tag}-bracket${sfx}`, 0x8a8f99, bracket, place(bracket, sw.pose));
-      const turnOf = (j: number): Piece['turn'] => { const t2 = turns?.[j]; return t2 && { at: poseToWorld(sw.pose, t2.at), by: t2.by, swing: t2.swing }; };
+      const turnOf = (j: number): Piece['turn'] => { const t2 = turns?.[j]; return t2 && { at: poseToWorld(sw.pose, t2.at), by: t2.by, swing: t2.swing, ...(t2.tilt && { tilt: t2.tilt.map((q) => poseToWorld(sw.pose, q)) as [[number, number], [number, number]] }) }; };
       pp.forEach((pts, j) => add(b, `${tag}-points${sfx}${pp.length > 1 ? (j === 0 ? '-a' : '-b') : ''}`, 0x4682b4, pts, place(pts, sw.pose), turnOf(j)));
       // (Peco's spring: printed flat and straight, as assembled squeezed between its pins)
       if (spring && springPrint) add(b, `${tag}-points${sfx}-spring`, 0xc0392b, springPrint, place(spring, sw.pose));

@@ -1,5 +1,6 @@
 // Templates in the Templates list build, with the app's own defaults (setup-defaults.ts APP_DEFAULTS): no warnings but
-// the experimental notes. (Split over files by group: the kernel wears out after a few big builds in one worker.)
+// the experimental notes, and the double slip's that its sprung blades have no lips (no room: the other sets' blades).
+// (Split over files by group: the kernel wears out after a few big builds in one worker.)
 import { expect, it } from 'vitest';
 import { kernel } from '../src/geom/kernel';
 import { buildDesign } from '../src/app/build';
@@ -15,7 +16,7 @@ export function templatesBuild(groups: string[], only?: string[]) {
     try {
       const b = buildDesign(await kernel(), structuredClone(TEMPLATES[name]));
       expect(b.pieces.length).toBeGreaterThan(0);
-      expect(b.info.warnings.filter((w) => !/experimental/.test(w))).toEqual([]);
+      expect(b.info.warnings.filter((w) => !/experimental/.test(w) && !(/Double slip/.test(name) && /has no lip/.test(w)))).toEqual([]);
     } finally { Object.assign(OPTION_DEFAULTS, saved); }
   });
 }
