@@ -214,7 +214,7 @@ function fdbSplit(v: SetLike, p: BaseParams) {
  * place for the pin and the post keeps the plate whole, it's blocked: left
  * as it was (and said).
  */
-function fdbLayout(v: SetLike, p: BaseParams, rails: [Route, number, number][]): FdbBladeLayout[] {
+function fdbLayout(v: SetLike, p: BaseParams, rails: [Route, number, number][], plates: Pt[][] = []): FdbBladeLayout[] {
   const g = switchGlobals(p), G = g.G, c = p.pointClearance, pre = p.springPreload;
   const z0 = g.bedTop + c, z1 = z0 + fdbPlateT(p), railTop = PLATE_H + 6.4, sprung = fdbSprung(p);
   const hw = railHalfW(z0, z1) + c, hwBar = railHalfW(z1, railTop) + c;
@@ -231,7 +231,12 @@ function fdbLayout(v: SetLike, p: BaseParams, rails: [Route, number, number][]):
     }
     flush();
   }
-  const pts = keep.flat(), n3 = v.three ? 2 : 1, plateW = fdbPlateW(p), postIn0 = plateW / 2 + HEAD_HW;
+  // (other points' blade plates beside these (a slip's, the next set's): where they may be, swept over their swing and the
+  // room shared out between them (network.ts); the plate cut clear of it by the clearance as of a rail, its edges as points
+  // 0.5 apart, each its own half-width: c)
+  const pp = plates.flatMap((ring) => ring.flatMap((q, k) => { const e = ring[(k + 1) % ring.length], n = Math.max(1, Math.ceil(norm(sub(e, q)) / 0.5)); return Array.from({ length: n }, (_, j) => add(q, mul(sub(e, q), j / n)) as Pt); }));
+  const fromPlate = new Set(pp), hwOf = (q: Pt) => (fromPlate.has(q) ? c : hw), inPlates = (q: Pt) => plates.length > 0 && windingIn(plates, q);
+  const pts = [...keep.flat(), ...pp], n3 = v.three ? 2 : 1, plateW = fdbPlateW(p), postIn0 = plateW / 2 + HEAD_HW;
   return [0, 1].map((b) => blade(b));
   function blade(b: number): FdbBladeLayout {
     const rt = v.three ? v.three.S : b === 0 ? v.ra : v.rb, o = b === 0 ? -G : +G, side = b === 0 ? 1 : -1;
@@ -245,7 +250,7 @@ function fdbLayout(v: SetLike, p: BaseParams, rails: [Route, number, number][]):
       const ang = shift === 0 && pin === FDB.pivotIn ? (p.pointThrow / norm(sub(tip, pivot))) * (180 / Math.PI)
         : ((v.fdbTravel - pre) / Math.max(1, Math.abs(pivot[1] - post[1]))) * (180 / Math.PI);
       // (a three-way's other blade is open twice as far: the middle has both open by the throw)
-      return { pivot, tip, ang, post, open: b === 0 ? 0 : -n3 * ang, pivotIn: pin, postIn, shift, keep, hw, ...(notches.length && { notches }) };
+      return { pivot, tip, ang, post, open: b === 0 ? 0 : -n3 * ang, pivotIn: pin, postIn, shift, keep, hw, ...(notches.length && { notches }), ...(plates.length && { plates }) };
     };
     const notches = v.notches?.[b] ?? [];
     let rootNow = SPRUNG.root;
@@ -260,7 +265,7 @@ function fdbLayout(v: SetLike, p: BaseParams, rails: [Route, number, number][]):
       const cand = [...pts.filter((q) => !notches.some((nt) => norm(sub(q, nt.at)) < nt.reach)), ...stockBehind(f)].filter((q) => Math.abs(routeLat(rt, q) - o) < HEAD_HW + hwBar + 12);
       return angles(f).every((a) => cand.every((q) => {
         const q2 = rotAbout(q, f.pivot, -a);
-        if (Math.abs(routeLat(rt, q2) - o) >= HEAD_HW + hwBar) return true;
+        if (Math.abs(routeLat(rt, q2) - o) >= HEAD_HW + (fromPlate.has(q) ? c : hwBar)) return true;
         const sq = sOf(rt, q2);
         return sq < v.sToe || sq > v.sHeel - c;
       }));
@@ -281,7 +286,7 @@ function fdbLayout(v: SetLike, p: BaseParams, rails: [Route, number, number][]):
       return Math.hypot(Math.max(bx[0] - a, 0, a - bx[1]), Math.max(bx[2] - cc, 0, cc - bx[3]));
     };
     const pinR = (sprung ? SPRUNG.holeD : FDB.pinD) / 2 + c;
-    const pinOk = (f: ReturnType<typeof make>) => near(f.pivot, 30).every((q) => norm(sub(q, f.pivot)) >= pinR + FDB_RIM + hw);
+    const pinOk = (f: ReturnType<typeof make>) => !inPlates(f.pivot) && near(f.pivot, 30).every((q) => norm(sub(q, f.pivot)) >= pinR + FDB_RIM + hwOf(q));
     // (other track's rails: the plate's cut clear of each by hw (fdbKeep2d). Rigid blades' hole goes through the plate:
     // FDB_RIM of plate round it. Sprung blades' pocket is under the plate's closed top, the rail beside the plate, not
     // over it: only its wall to the cut edge (and a little for the swing's and the rail's steps))
@@ -291,7 +296,7 @@ function fdbLayout(v: SetLike, p: BaseParams, rails: [Route, number, number][]):
       // (the slot clear of the blade's rail on the plate, and of the pin's hole)
       if (f.postIn - (side > 0 ? -bx[2] : bx[3]) < HEAD_HW + 0.5 || boxDist(f.pivot, f.post, unit(sub(f.pivot, f.post)), bx) < pinR + FDB_RIM) return false;
       const qs = near(f.post, 45);
-      return angles(f).every((a) => { const P = rotAbout(f.post, f.pivot, a), U = unit(sub(f.pivot, P)); return qs.every((q) => boxDist(q, P, U, bx) >= rim + hw); });
+      return angles(f).every((a) => { const P = rotAbout(f.post, f.pivot, a), U = unit(sub(f.pivot, P)); return !inPlates(P) && qs.every((q) => boxDist(q, P, U, bx) >= rim + hwOf(q)); });
     };
     // (the pin's snap lip clear of the blade's rail on the plate)
     const minPin = HEAD_HW + (sprung ? SPRUNG.holeD : FDB.pinD) / 2 + 2 * c + 0.15 + 0.2;
@@ -338,7 +343,60 @@ export function sprungLipFits(v: SetLike, b: number, p: BaseParams, f: FdbBladeL
   const m = f.hw + 2 * HEAD_HW + fdbPlateW(p) + 0.5;
   // (the stock rail's line on back past the route's start: across it, as railPoint's offsets, + right)
   const onStock = (q: Pt) => Math.abs((q[0] - sx) * cosd(sh) + (q[1] - sy) * sind(sh) - (b === 0 ? -G : +G)) < 1 && (q[0] - sx) * -sind(sh) + (q[1] - sy) * cosd(sh) < 0;
-  return f.keep.flat().every((q) => onStock(q) || Math.hypot(Math.max(x0 - q[0], 0, q[0] - x1), Math.max(y0 - q[1], 0, q[1] - y1)) >= m);
+  if (!f.keep.flat().every((q) => onStock(q) || Math.hypot(Math.max(x0 - q[0], 0, q[0] - x1), Math.max(y0 - q[1], 0, q[1] - y1)) >= m)) return false;
+  // (and clear of other points' blade plates beside it (f.plates): by the clearance, none of it in them)
+  const pl = f.plates ?? [];
+  return !pl.length || (pl.every((ring) => ring.every((q, k) => segBoxDist(q, ring[(k + 1) % ring.length], x0, x1, y0, y1) >= c))
+    && !windingIn(pl, [(x0 + x1) / 2, (y0 + y1) / 2]));
+}
+/** (fdbLayout with other points' plates beside the set) Its layouts, by the keep-out they were worked out against. */
+const fdbMemo = new WeakMap<Pt[][], Map<string, FdbBladeLayout[]>>();
+/** Whether q is inside the region the rings make (non-zero winding: holes go the other way round). */
+function windingIn(rings: Pt[][], q: Pt) {
+  let w = 0;
+  for (const r of rings) r.forEach((a, k) => {
+    const b = r[(k + 1) % r.length], cr = (b[0] - a[0]) * (q[1] - a[1]) - (q[0] - a[0]) * (b[1] - a[1]);
+    if (a[1] <= q[1]) { if (b[1] > q[1] && cr > 0) w++; } else if (b[1] <= q[1] && cr < 0) w--;
+  });
+  return w !== 0;
+}
+/** The least distance between the segment ab and the box [x0, x1] by [y0, y1] (0 where they meet). */
+function segBoxDist(a: Pt, b: Pt, x0: number, x1: number, y0: number, y1: number) {
+  const n = Math.max(1, Math.ceil(norm(sub(b, a)) / 0.25));
+  return Math.min(...Array.from({ length: n + 1 }, (_, j) => { const q = add(a, mul(sub(b, a), j / n)); return Math.hypot(Math.max(x0 - q[0], 0, q[0] - x1), Math.max(y0 - q[1], 0, q[1] - y1)); }));
+}
+/**
+ * (blades on plates, in networks) Where a set's moving blades' plates may be, in its frame: each plate's outline as drawn
+ * (fdbPlate2d's, before any cut) and the disc round its pin, turned over its whole swing, closed to open; and the lip over
+ * its front on the bed, where it has one. With each blade's rail (toe to heel), turned the same: the neighbouring
+ * points share out the room between their plates by how near it is to each one's rails (network.ts).
+ */
+export function fdbFootprint(plan: SwitchPlan): { plates: Pt[][]; rails: Pt[][] } {
+  const p = plan.p, v = plan.sets[0] as SetLike, out = { plates: [] as Pt[][], rails: [] as Pt[][] };
+  if (p.mechStyle !== 'plates' || !v.fdb) return out;
+  const G = switchGlobals(p).G, c = p.pointClearance, n3 = v.three ? 2 : 1, L = lipOf(p);
+  v.fdb.forEach((f, b) => {
+    if (b === v.fixed) return;
+    const rt = v.three ? v.three.S : b === 0 ? v.ra : v.rb, o = b === 0 ? -G : +G, side = b === 0 ? 1 : -1;
+    const n = 24, s0 = v.sToe - 1, s1 = v.sHeel - c, kFull = Math.max(1, Math.min(6, Math.floor(((sOf(rt, f.post) - 5 - s0) / (s1 - s0)) * n)));
+    const outOff = p.bladeStyle === 'prototype' ? -HEAD_HW - 1.3 : -HEAD_HW, inOff = HEAD_HW + fdbPlateW(p);
+    const ss = Array.from({ length: n + 1 }, (_, k) => s0 + ((s1 - s0) * k) / n);
+    const outer = ss.map((sv) => railPoint(rt, sv, o + side * outOff));
+    const inner = ss.map((sv, k) => { const e = outer[k], q = railPoint(rt, sv, o + side * inOff), t = 0.35 + 0.65 * Math.min(1, k / kFull); return add(e, mul(sub(q, e), t)) as Pt; });
+    const plate: Pt[] = [...outer, ...inner.reverse()], disc = Array.from({ length: 24 }, (_, k) => add(f.pivot, [FDB.discR * Math.cos((k * Math.PI) / 12), FDB.discR * Math.sin((k * Math.PI) / 12)]) as Pt);
+    const rail = ss.map((sv) => railPoint(rt, sv, o));
+    const sw = n3 * f.ang * side, m = Math.max(2, Math.ceil(Math.abs(sw) / 0.5));
+    for (let k = 0; k <= m; k++) {
+      const a = (sw * k) / m, turn = (ring: Pt[]) => ring.map((q) => rotAbout(q, f.pivot, a));
+      out.plates.push(turn(plate), turn(disc));
+      out.rails.push(turn(rail));
+    }
+    if (f.lip) {
+      const { yF, xStock, xIn } = sprungFront(v, b, p, f), x0 = Math.min(xStock, xIn + side), x1 = Math.max(xStock, xIn + side), y0 = yF - c - L.thick, y1 = yF + L.run;
+      out.plates.push([[x0, y0], [x1, y0], [x1, y1], [x0, y1]]);
+    }
+  });
+  return out;
 }
 
 /**
@@ -420,7 +478,7 @@ function bladeCrossings(rt: Route, o: number, sToe: number, sHeel: number, rails
 
 /** Everything switch.scad works out before building: routes, sets, frogs, check rails, ties, cuts. */
 /** foreign: other track running past, in this frame (a network's routes that aren't the switch's): the plate-style blade plates keep clear of its rails. */
-export function switchPlan(routes: Route[], specs: SetSpec[], p: BaseParams = BASE_DEFAULTS, defaultThrowDir = 1, foreign: Route[] = []) {
+export function switchPlan(routes: Route[], specs: SetSpec[], p: BaseParams = BASE_DEFAULTS, defaultThrowDir = 1, foreign: Route[] = [], keepOut: Pt[][] = []) {
   // (rigid blades (not the sprung ones): no spring, so nothing to preload: the post sits in its hole)
   if (p.mechStyle === 'plates' && !fdbSprung(p)) p = { ...p, springPreload: 0 };
   // (a three-way's slider goes twice as far: a longer lever driver keeps its
@@ -641,7 +699,14 @@ export function switchPlan(routes: Route[], specs: SetSpec[], p: BaseParams = BA
     const lipOff = fdbLipOn(p) && !fdbSprung(p) && p.bladeStyle !== 'prototype' && g.bedTop + p.pointClearance < PLATE_H + 2.0, lipOn = fdbLipOn(p) && !lipOff;
     (sets as SetLike[]).forEach((v) => {
       const rails = railsNear(v);
-      v.fdb = fdbLayout(v, p, rails);
+      // (with other points' plates beside them, the same layout asked for again and again as network.ts tries the lever's
+      // places (its offset changes nothing here): worked out once)
+      if (keepOut.length) {
+        const memo = fdbMemo.get(keepOut) ?? new Map<string, FdbBladeLayout[]>(), key = JSON.stringify([v.sToe, v.sHeel, v.throwY, v.fdbTravel, v.toeY, v.pointsEndY, v.fixed, v.notches, p, routes.map((r) => [r.start, r.segments])]);
+        if (!memo.has(key)) memo.set(key, fdbLayout(v, p, rails, keepOut));
+        fdbMemo.set(keepOut, memo);
+        v.fdb = memo.get(key)!.map((f) => ({ ...f }));
+      } else v.fdb = fdbLayout(v, p, rails, keepOut);
       const why = v.fdb.find((f, b) => f.blocked && b !== v.fixed)?.blocked;
       // (a network's piece says it in its own words, where the points are)
       if (why && !foreign.length) warnings.push(`another route's rail runs between a set of points' stock rails (a tandem's first branch through its second points), and ${why}: move the second points further along, or use 'tines' points`);
@@ -1184,13 +1249,15 @@ export function switchGeometry(s: Scad, plan: SwitchPlan, extraCuts: Man[] = [])
    * toward the toe, the stock rail past it), wherever they are to the plate as it swings from closed to open. */
   const fdbKeep2d = (v: SetV, b: number): CS | undefined => {
     const f = fdbBlades(v)[b];
-    if (f.blocked || (!f.keep.length && !f.stockKeep)) return undefined;
+    if (f.blocked || (!f.keep.length && !f.stockKeep && !f.plates)) return undefined;
     const strip = (run: Pt[], hw: number) => {
       const nrm = run.map((q, k) => { const d = unit(sub(run[Math.min(run.length - 1, k + 1)], run[Math.max(0, k - 1)])); return [-d[1], d[0]] as Pt; });
       return s.polygon([...run.map((q, k) => add(q, mul(nrm[k], hw)) as Vec2), ...run.map((q, k) => sub(q, mul(nrm[k], hw)) as Vec2).reverse()]);
     };
     const dir = b === 0 ? 1 : -1, sw = (v.three ? 2 : 1) * f.ang, n = Math.max(2, Math.ceil(sw / 0.4));
     const runs = f.keep.map((r) => strip(r, f.hw + 0.05)), stock = f.stockKeep && strip(f.stockKeep, f.stockHw! + 0.05), parts: CS[] = [];
+    // (other points' blade plates beside it: by the clearance)
+    if (f.plates) runs.push(s.polygon(f.plates as Vec2[][]).offset(c + 0.05, 'Round', 2, 24));
     // (the plate turned by a is clear of K where the plate is clear of K turned back by a)
     for (let k = 0; k <= n; k++) {
       const a = (-dir * sw * k) / n;

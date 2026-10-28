@@ -157,6 +157,8 @@ export interface FdbBladeLayout {
   root?: number;
   /** (sprung blades, or rigid ones with bladeLip 'front') a lip on the bed over the plate's front holds it down (switch/base.ts LIP, LIP_RIGID); false where other track's too close for one */
   lip?: boolean;
+  /** (in networks) where other points' blade plates beside it may be (a slip's, the next set's), as rings (non-zero winding): its plate cut clear of them by the clearance (switch/network.ts shares the room out) */
+  plates?: Pt[][];
 }
 
 /** Another track's rail across a blade near its heel (a double slip's obtuse crossing): the rail, where along it and where it crosses; how far along it it's within the blade's width. */
