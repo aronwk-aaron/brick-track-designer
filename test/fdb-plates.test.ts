@@ -3,8 +3,11 @@
 // blade's plate is cut clear of it over the blade's whole swing, and its pin
 // and the slider's post are moved so there's still 2 mm of plate round the
 // pin's hole and round the post's; where the rail crosses a blade,
-// or there's no such place, it's blocked (and said). The plan only: the
-// built parts are checked in complex-layouts and the assembly suites.
+// or there's no such place, it's blocked (and said). Sprung blades: their
+// spring's pocket is under the plate's closed top, so it needs only its wall
+// (1.2) to the plate's cut edge, the beams and their room inside; where even
+// that doesn't fit, blocked (networks then take rigid blades). The plan only:
+// the built parts are checked in blades-sprung, complex-layouts and the assembly suites.
 import { describe, expect, it } from 'vitest';
 import type { FdbBladeLayout } from '../src/switch/context';
 import { type Pose, type Pt, railPoint, type Route } from '../src/route/route';
@@ -35,6 +38,23 @@ function rims(f: FdbBladeLayout, b: number, three = false) {
     }
   }
   return { pin, post };
+}
+/** (sprung blades) The same: the least plate left round the stud's hole, and between the other rail's cut and what the
+ * spring's pocket must hold (the beams, the outer one's room to give by the preload, the inner one's 0.6) (mm). */
+function sprungRims(f: FdbBladeLayout, b: number, q: BaseParams) {
+  const pts = f.keep.flat(), side = b === 0 ? 1 : -1, g = 1.15 + 1.2 + 0.6, out = g + q.springPreload;
+  const pin = Math.min(...pts.map((r) => Math.hypot(r[0] - f.pivot[0], r[1] - f.pivot[1]))) - 4.85 / 2 - q.pointClearance - f.hw;
+  const root = Math.min(f.root ?? 34.5, Math.hypot(f.pivot[0] - f.post[0], f.pivot[1] - f.post[1]) - 4.85 / 2 - 3);
+  const c0 = side > 0 ? -out : -g, c1 = side > 0 ? g : out;
+  let wall = Infinity;
+  for (let k = 0; k <= 8; k++) {
+    const a = (side * f.ang * k) / 8, P = rot(f.post, f.pivot, a), d0 = [f.pivot[0] - P[0], f.pivot[1] - P[1]], n = Math.hypot(d0[0], d0[1]), u = [d0[0] / n, d0[1] / n];
+    for (const r of pts) {
+      const d = [r[0] - P[0], r[1] - P[1]], al = d[0] * u[0] + d[1] * u[1], ac = d[0] * u[1] - d[1] * u[0];
+      wall = Math.min(wall, Math.hypot(Math.max(-4 - al, 0, al - root), Math.max(c0 - ac, 0, ac - c1)) - f.hw);
+    }
+  }
+  return { pin, wall, outer: f.postIn - out };
 }
 
 describe("the plate-style blade plates beside other track", () => {
@@ -70,6 +90,31 @@ describe("the plate-style blade plates beside other track", () => {
       expect(plan([fr]).sets[0].fdb!.some((f) => /crosses the blade/.test(f.blocked ?? '')), `heading ${h}`).toBe(true);
     }
   });
+
+  for (const gb of [false, true]) {
+    const q: BaseParams = { ...p, bladeStyle: 'sprung', generateBallast: gb }, at = gb ? 'on ballast' : 'track alone';
+    const sprungPlan = (dist: number) => switchPlan([A, B], [[0, 1, 12]], q, 1, [straight('F', [dist - 40, -40, 0])]);
+    it(`sprung blades, ${at}: a rail 21 mm in from a blade, alongside it: nothing moved (it was blocked: the pocket taken for an open hole)`, () => {
+      const f = sprungPlan(21).sets[0].fdb!;
+      expect(f[0].blocked).toBeUndefined();
+      expect(f[0].keep.length).toBeGreaterThan(0);
+      expect([f[0].pivotIn, f[0].postIn, f[0].shift]).toEqual([7, 7.95, 0]);
+    });
+    it(`sprung blades, ${at}: a rail 18 mm in: the post moved in toward its rail, the pocket's wall and the stud's rim kept`, () => {
+      const f = sprungPlan(18).sets[0].fdb!;
+      expect(f[0].blocked).toBeUndefined();
+      expect(f[0].postIn).toBeLessThan(7.95);
+      const r = sprungRims(f[0], 0, q);
+      expect(r.wall).toBeGreaterThanOrEqual(1.2);
+      expect(r.pin).toBeGreaterThanOrEqual(2 - 1e-6);
+      expect(r.outer).toBeGreaterThanOrEqual(1.25 + 0.5 - 1e-6);   // (clear of the blade's rail's outer edge, the stock rail's foot under it)
+      expect(f[1].blocked).toBeUndefined();
+    });
+    it(`sprung blades, ${at}: a rail 14 mm in: no room for the pocket and its walls, blocked (rigid blades fit)`, () => {
+      expect(sprungPlan(14).sets[0].fdb![0].blocked).toMatch(/no room/);
+      expect(switchPlan([A, B], [[0, 1, 12]], { ...q, bladeStyle: 'simple' }, 1, [straight('F', [14 - 40, -40, 0])]).sets[0].fdb![0].blocked).toBeUndefined();
+    });
+  }
 
   it("the tandem three-way template: the first branch's rail through the second points, their plates cut clear and a pin moved in", () => {
     const d = TEMPLATES['Three-way switch (tandem, two throws)'];

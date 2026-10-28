@@ -97,12 +97,13 @@ const FDB = { plateT: 1.6, plateW: 10, pivotIn: 7, pinD: 4, discR: 5, postD: 2.2
  * underneath); the spring two beams in a pocket underneath, rooted at its heel
  * end, the slider's post between their free ends; either side of them solid
  * supports for the pocket's roof while printing, 0.2 under it and a slit off
- * the beams, broken out after. (The plate's width counts from the blade's
- * inner face: 15.9 in all, as theirs.) The bed is at the sleepers' top: on
+ * the beams, broken out after. The pocket kept wall (1.2: three lines of a
+ * 0.4 nozzle) in from the plate's edges, where it's cut clear of other track
+ * too. (The plate's width counts from the blade's inner face: 15.9 in all, as theirs.) The bed is at the sleepers' top: on
  * ballast as always, on track alone lowered to it, the slider then in a
  * groove through the bed between the underside's stud rows (SPRUNG_SLIDER).
  */
-const SPRUNG = { plateT: 3.0, plateW: 13.4, holeD: 4.85, holeDepth: 2.2, pocketH: 1.8, beamW: 1.2, beamH: 1.4, supportGap: 0.2, slit: 0.3, root: 34.5, past: 4 };
+const SPRUNG = { plateT: 3.0, plateW: 13.4, holeD: 4.85, holeDepth: 2.2, pocketH: 1.8, beamW: 1.2, beamH: 1.4, supportGap: 0.2, slit: 0.3, root: 34.5, past: 4, wall: 1.2 };
 /**
  * (sprung blades) The lip that holds the plate's front down, as the
  * reference switch's: a wall across the track just past the plate's front
@@ -142,9 +143,13 @@ const fdbPlateT = (p: { bladeStyle?: string; generateBallast?: boolean; mechStyl
 /** (sprung blades) The beams' gap (the post between them) and how far each side the pocket reaches from the post. */
 const sprungGap = () => FDB.postD + 0.1;
 const sprungHalf = (give: number) => sprungGap() / 2 + SPRUNG.beamW + give + 0.6;
+/** (sprung blades) How far the pocket must reach at least each side of the post, out (toward the blade's rail) and in: the
+ * beams, and room past them to give. The post stays where it is on the plate as it swings; closed, the slider goes on by
+ * the preload, pressing the outer beam out by that. The inner beam only pushes the blade open, free: 0.6 past it. */
+const sprungNeed = (pre: number) => ({ out: sprungHalf(pre), in: sprungHalf(0) });
 /** (sprung blades) The spring's length, kept short of the stud's hole with 3 mm of plate between (a short blade's: a long one's doesn't come near it). */
 const sprungRoot = (root: number, f: { pivot: Pt; post: Pt }) => Math.min(root, Math.hypot(f.pivot[0] - f.post[0], f.pivot[1] - f.post[1]) - SPRUNG.holeD / 2 - 3);
-/** How much plate there must be round the pin's hole and round the post's (or the sprung blades' spring pocket) (mm). */
+/** How much plate there must be round the pin's hole and round the post's (rigid blades) (mm). */
 const FDB_RIM = 2;
 type SetLike = PointsSetValues & { three?: { S: Route; L: Route; R: Route; half: number } };
 /** A blade plate's width. */
@@ -199,9 +204,10 @@ function fdbSplit(v: SetLike, p: BaseParams) {
  * clear of that rail (its width at the plate, the clearance and the blade's
  * whole swing; switchGeometry does the cut), and the pin and the post moved
  * so there's still FDB_RIM of plate round the pin's hole and round the
- * post's hole (or the spring's pocket): the post first toward the blade's rail
- * (the hole stays clear of the rail on the plate), then the
- * pin toward the rail (as near as its snap lip clears the rail on the
+ * post's hole (sprung blades: the spring's pocket, under the plate's closed
+ * top, its wall to the cut edge, the beams and their room inside): the
+ * post first toward the blade's rail (the hole stays clear of the rail on
+ * the plate), then the pin toward the rail (as near as its snap lip clears the rail on the
  * plate), then along toward the toe (a shorter plate: the blade's heel end
  * swings out a little past it as the blade opens, clear of the stock rail).
  * Where the other rail crosses the blade's own rail (as it swings), or no
@@ -262,8 +268,10 @@ function fdbLayout(v: SetLike, p: BaseParams, rails: [Route, number, number][]):
     if (!barOk(f0)) return { ...f0, blocked: 'it crosses the blade' };
     // the post's hole (or the spring's pocket), along u from the post toward the pin and across it: [a0, a1, c0, c1]
     const slotBox = (f: ReturnType<typeof make>): [number, number, number, number] => {
-      // (sprung blades: the spring's pocket, from just past the post toward the toe back to the beams' roots)
-      if (sprung) { const h = sprungHalf((f.ang * n3 * Math.PI / 180) * norm(sub(f.post, f.pivot)) + pre); return [-SPRUNG.past, sprungRoot(rootNow, f), -h, h]; }
+      // (sprung blades: the spring's pocket, from just past the post toward the toe back to the beams' roots; as wide as
+      // the beams need: drawn wider, it's cut back to keep its wall (sprungUnderside))
+      // (+ across: blade 0's inward)
+      if (sprung) { const h = sprungNeed(pre); return [-SPRUNG.past, sprungRoot(rootNow, f), side > 0 ? -h.out : -h.in, side > 0 ? h.in : h.out]; }
       // (rigid: only the post's hole, with its rim)
       const w = rigidHole(c);
       return [-w, w, -w, w];
@@ -274,12 +282,16 @@ function fdbLayout(v: SetLike, p: BaseParams, rails: [Route, number, number][]):
     };
     const pinR = (sprung ? SPRUNG.holeD : FDB.pinD) / 2 + c;
     const pinOk = (f: ReturnType<typeof make>) => near(f.pivot, 30).every((q) => norm(sub(q, f.pivot)) >= pinR + FDB_RIM + hw);
+    // (other track's rails: the plate's cut clear of each by hw (fdbKeep2d). Rigid blades' hole goes through the plate:
+    // FDB_RIM of plate round it. Sprung blades' pocket is under the plate's closed top, the rail beside the plate, not
+    // over it: only its wall to the cut edge (and a little for the swing's and the rail's steps))
+    const rim = sprung ? SPRUNG.wall + 0.3 : FDB_RIM;
     const postOk = (f: ReturnType<typeof make>) => {
       const bx = slotBox(f);
       // (the slot clear of the blade's rail on the plate, and of the pin's hole)
-      if (f.postIn + bx[2] < HEAD_HW + 0.5 || boxDist(f.pivot, f.post, unit(sub(f.pivot, f.post)), bx) < pinR + FDB_RIM) return false;
+      if (f.postIn - (side > 0 ? -bx[2] : bx[3]) < HEAD_HW + 0.5 || boxDist(f.pivot, f.post, unit(sub(f.pivot, f.post)), bx) < pinR + FDB_RIM) return false;
       const qs = near(f.post, 45);
-      return angles(f).every((a) => { const P = rotAbout(f.post, f.pivot, a), U = unit(sub(f.pivot, P)); return qs.every((q) => boxDist(q, P, U, bx) >= FDB_RIM + hw); });
+      return angles(f).every((a) => { const P = rotAbout(f.post, f.pivot, a), U = unit(sub(f.pivot, P)); return qs.every((q) => boxDist(q, P, U, bx) >= rim + hw); });
     };
     // (the pin's snap lip clear of the blade's rail on the plate)
     const minPin = HEAD_HW + (sprung ? SPRUNG.holeD : FDB.pinD) / 2 + 2 * c + 0.15 + 0.2;
@@ -1273,10 +1285,11 @@ export function switchGeometry(s: Scad, plan: SwitchPlan, extraCuts: Man[] = [])
     const at = (a: number, c2: number): Vec2 => add(add(fb.post, mul(u, a)), mul(nn, c2)) as Vec2;
     const box = (a0: number, a1: number, c0: number, c1: number) => s.polygon([at(a0, c0), at(a1, c0), at(a1, c1), at(a0, c1)]);
     const give = rad(fb.ang * (v.three ? 2 : 1)) * norm(d) + p.springPreload, h = sprungHalf(give), g2 = sprungGap() / 2;
-    // (the pocket inside the plate: a rim of at least 1 all round)
-    const root = sprungRoot(fb.root ?? SPRUNG.root, fb), pocket = box(-SPRUNG.past, root, -h, h).intersect(plate2d.offset(-1, 'Miter', 1000));
+    // (the pocket inside the plate, its wall all round: also where the plate's cut clear of other track (fdbLayout keeps
+    // the beams and their room inside that))
+    const root = sprungRoot(fb.root ?? SPRUNG.root, fb), pocket = box(-SPRUNG.past, root, -h, h).intersect(plate2d.offset(-SPRUNG.wall, 'Miter', 1000));
     // (rooted in the pocket's heel-end wall: on into it, so each is one with the plate)
-    const beams = W.CrossSection.union([box(-SPRUNG.past + 1, root + 0.8, g2, g2 + SPRUNG.beamW), box(-SPRUNG.past + 1, root + 0.8, -g2 - SPRUNG.beamW, -g2)]).intersect(plate2d.offset(-1, 'Miter', 1000));
+    const beams = W.CrossSection.union([box(-SPRUNG.past + 1, root + 0.8, g2, g2 + SPRUNG.beamW), box(-SPRUNG.past + 1, root + 0.8, -g2 - SPRUNG.beamW, -g2)]).intersect(plate2d.offset(-SPRUNG.wall, 'Miter', 1000));
     const supports = pocket.offset(-0.9, 'Miter', 1000).subtract(W.CrossSection.union([beams, box(-SPRUNG.past, root, -g2, g2)]).offset(SPRUNG.slit, 'Miter', 1000));
     const hole = T(s.cylinder(SPRUNG.holeDepth + 1, SPRUNG.holeD / 2, SPRUNG.holeD / 2, 40), [fb.pivot[0], fb.pivot[1], z0 - 1]);
     return s.union([

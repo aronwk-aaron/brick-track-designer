@@ -7,6 +7,8 @@
 // A lip on the bed over each plate's front holds it down (base.ts LIP), as the
 // reference switch's: clear of the plate closed and open, the plate's front
 // bevelled under it; the blade goes in tilted under it (assembly.shared.ts).
+// Beside other track: the plate cut clear of its rail, the pocket keeping
+// its wall to the cut, the beams whole in it (fdb-plates has the plan's numbers).
 import { describe, expect, it } from 'vitest';
 import type { Route } from '../src/route/route';
 import { BASE_DEFAULTS, sprungLipFits, switchGeometry, switchPlan } from '../src/switch/base';
@@ -108,8 +110,8 @@ describe("the sprung blades", () => {
     expect(v.fdb!.map((f, b) => (b === v.fixed ? undefined : f.lip))).toEqual(v.fixed === 0 ? [undefined, true] : [true, undefined]);
     const gm = switchGeometry(new Scad(await kernel()), plan1);
     expect(gm.pointsTurns(0)!.map((t2) => !!t2.tilt)).toEqual([true]);
-    // (another track's rail just past a plate's front: no room for the lip. Other track that near a sprung blade's plate
-    // leaves it rigid for now (fdbLayout), so asked of the lip on its own: a rail across 5 past the front, then 30)
+    // (another track's rail just past a plate's front: no room for the lip. Asked of the lip on its own: a rail across 5
+    // past the front, then 30)
     const plan2 = switchPlan([A, B], [[0, 1, 12]], p, 1), v2 = plan2.sets[0], f = v2.fdb![0];
     const across = (y: number) => ({ ...f, keep: [Array.from({ length: 21 }, (_, k) => [-40 + 4 * k, y] as [number, number])] });
     expect(sprungLipFits(v2, 0, p, across(11 - 5))).toBe(false);
@@ -117,5 +119,35 @@ describe("the sprung blades", () => {
     // (and so built: none, and a note)
     v2.fdb![0].lip = false;
     expect(switchGeometry(new Scad(await kernel()), plan2).pointsTurns(0)!.map((t2) => !!t2.tilt)).toEqual([false, true]);
+  }, 120000);
+
+  for (const gb of [false, true]) it(`${gb ? 'on ballast' : 'track alone'}: a rail running alongside 18 mm in: sprung, the plate cut clear of it closed and open, the pocket's wall kept, the beams whole; clear of the base`, async () => {
+    // (the R40 switch; a straight track whose right rail runs 18 in from blade 0, the straight route's left rail)
+    const A40: Route = { ...A, segments: [{ kind: 'straight', length: 300 }] }, B40: Route = { id: 'B', start: [0, 0, 0], segments: [{ kind: 'arc', radius: 320, angle: 22.5 }, { kind: 'straight', length: 150 }] };
+    const q = { ...p, generateBallast: gb }, F: Route = { id: 'F', start: [18 - 40, -40, 0], segments: [{ kind: 'straight', length: 300 }] };
+    const plan = switchPlan([A40, B40], [[0, 1, 12]], q, 1, [F]), f = plan.sets[0].fdb![0];
+    expect(f.blocked).toBeUndefined();
+    expect(f.keep.length).toBeGreaterThan(0);
+    const w = await kernel(), s = new Scad(w), gm = switchGeometry(s, plan), base = gm.base(), parts = gm.pointsParts(0), turns = gm.pointsTurns(0)!;
+    const m = parts[0], t2 = turns[0], z0 = m.boundingBox().min[2], xr = 18 - 20;
+    // (the other rail: its foot's half-width at the plate's height, 3, and the clearance)
+    const rail = s.cube([2 * (3 + q.pointClearance), 400, 20]).translate([xr - 3 - q.pointClearance, -100, z0 - 5]);
+    for (const [k, mk] of parts.entries()) for (const a of [0, turns[k].swing]) {
+      const at = T(R(T(mk, [-turns[k].at[0], -turns[k].at[1], 0]), [0, 0, a]), [turns[k].at[0], turns[k].at[1], 0]);
+      expect(s.intersection(at, base).volume()).toBeLessThan(1e-3);
+      if (k === 0) expect(s.intersection(at, rail).volume()).toBeLessThan(1e-3);
+    }
+    expect(m.decompose().length).toBeGreaterThanOrEqual(2);    // (the blade, and the supports in its pocket)
+    // (the pocket, at its middle's height: what's open there under the plate's top; on the other rail's side of the post,
+    // at least the wall in from the plate's cut edge. Toward its own rail the pocket opens, as always, onto the cut round
+    // the stock rail's foot)
+    const top = m.slice(z0 + 2.6), mid = m.slice(z0 + 0.9), inner = top.offset(-1.2 + 0.02, 'Miter', 1000);
+    const pocket = top.subtract(mid).intersect(s.square([40, 200]).translate([f.post[0], -50]));
+    expect(pocket.area()).toBeGreaterThan(20);                 // (round the inner beam and its support, half the post's slot)
+    expect(pocket.subtract(inner).area()).toBeLessThan(0.01);
+    // (the beams there, either side of the post, as long as the spring)
+    const beams = mid.intersect(s.square([2.2 + 2 * 1.2, 12]).translate([f.post[0] - 1.1 - 1.2, f.post[1] + 6]));
+    expect(beams.area()).toBeGreaterThan(2 * 1.2 * 12 * 0.7);
+    expect(t2.swing).toBeGreaterThan(0);
   }, 120000);
 });

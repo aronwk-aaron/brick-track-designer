@@ -146,6 +146,7 @@ export function networkSplits(s: Scad, routes: Route[], sol: Solution, p: BasePa
   }
   // (each points set planned first; then the levers placed, the most hemmed in first, so one with few clear spots isn't
   // left with none by its neighbours; then built in the design's order)
+  const rigidAt: string[] = [];
   const preps = groups.map((gr) => {
     const sp = sol.splits[gr.main];
     const [i, j] = sp.routes, j2 = gr.kids.length ? sol.splits[gr.kids[0]].routes[1] : -1;
@@ -187,10 +188,11 @@ export function networkSplits(s: Scad, routes: Route[], sol: Solution, p: BasePa
     // (only where the track across them doesn't leave this very route at other points just before, facing the same
     // way: a tandem's first branch over its second points is a warning, as before)
     const tandem = nearby(gr).some((r) => sol.splits.some((o) => o.routes.includes(r) && o.routes.includes(i) && !!o.merge === !!sp.merge && near(toeOf(o), toeOf(sp), 240)));
-    // (first, rigid blades on top, where the chosen shape's wider plate doesn't fit between its rails: a tandem's too)
+    // (first, rigid blades on top, where the chosen shape's plate, with its spring's pocket and the pocket's walls, doesn't
+    // fit beside other track's rails running between its stock rails (fdbLayout): a double slip's, a tandem's; said, where)
     if (fdb && !three && blockedOf(plan) && p.bladeStyle && p.bladeStyle !== 'simple') {
       const p1 = { ...p, bladeStyle: 'simple' as const }, plan1 = switchPlan(rts, [used], p1, 1, foreign);
-      if (blockedOf(plan1) === false) { pp = p1; plan = plan1; const w1 = "some points' blades are rigid: the chosen shape's plate doesn't fit between the rails there (a double slip's or a tandem's)"; if (!warnings.includes(w1)) warnings.push(w1); }
+      if (blockedOf(plan1) === false) { pp = p1; plan = plan1; rigidAt.push(studsAt(gr.main)); }
     }
     if (fdb && !three && !tandem && blockedOf(plan)) {
       const p2 = { ...p, mechStyle: 'tines' as const }, plan2 = switchPlan(rts, [used], p2, 1, foreign);
@@ -198,6 +200,7 @@ export function networkSplits(s: Scad, routes: Route[], sol: Solution, p: BasePa
     }
     return { gr, sp, i, j, j2, P, A, B, rts, three, own, ed, foreign, blockedOf, specOf, st: { tside, over, used, plan, pp } };
   });
+  if (rigidAt.length) warnings.push(`some points' blades are rigid: the chosen shape's plate doesn't fit beside the other track's rails there, at ${rigidAt.slice(0, 4).join('; ')}${rigidAt.length > 4 ? ' …' : ''}`);
   /** How many places a points set's lever has clear of trains on other track (its side or the other, its slider moved along). */
   const room = (q: (typeof preps)[number]) => {
     const { own, rts, foreign, P, blockedOf, specOf, st } = q;
