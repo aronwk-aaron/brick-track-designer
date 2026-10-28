@@ -17,6 +17,11 @@ const cases: [string, Design][] = [
   ['left switch, sprung blades', { ...TEMPLATES['Left switch (LEGO)'], options: { bladeStyle: 'sprung' } }],
   ['wye on ballast, sprung blades', { ...TEMPLATES['Wye switch'], options: { ballast: 'buddy', bladeStyle: 'sprung' } }],
   ['left switch, one sprung blade', { ...TEMPLATES['Left switch (LEGO)'], options: { bladeStyle: 'sprung', pointBlades: 1 } }],
+  // (rigid blades held down by a lip over the front, as the sprung: each goes in tilted under it, the pin plain; prototype
+  // ones open, then swung shut. Not rigid ones on ballast: their plates are a sliver at the front, and keep the pin's snap lip)
+  ['left switch, rigid blades, lip over the front', { ...TEMPLATES['Left switch (LEGO)'], options: { bladeStyle: 'simple', bladeLip: 'front' } }],
+  ['crossover on ballast, prototype blades, lip over the front', { ...crossover, options: { ballast: 'ballast', bladeStyle: 'prototype', bladeLip: 'front' } }],
+  ['left switch, prototype blades, lip over the front', { ...TEMPLATES['Left switch (LEGO)'], options: { bladeStyle: 'prototype', bladeLip: 'front' } }],
   ['left switch with everything, cut to a 128 bed', { ...TEMPLATES['Left switch (LEGO)'], options: { printBedX: 128, printBedY: 128, throwAction: 'overcentre', bladeStyle: 'prototype' } }],
   // (the blades held down by little brackets over their plates, pegged into the bed)
 ];

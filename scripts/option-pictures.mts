@@ -41,6 +41,8 @@ const specs: { key: string; values: string[]; design: (v: string) => unknown; pi
   { key: 'mechStyle', values: ['plates', 'tines'], design: (v) => D(sw, { mechStyle: v }), cam: toe },
   { key: 'pointBlades', values: ['2', '1'], design: (v) => D(sw, { pointBlades: Number(v) }), cam: toe },
   { key: 'bladeStyle', values: ['simple', 'prototype', 'sprung'], design: (v) => D(sw, { bladeStyle: v, ballast: 'ballast' }), cam: toe },
+  // (close on the blade's front, where the lip is, and its heel's pin in the distance)
+  { key: 'bladeLip', values: ['pin', 'front'], design: (v) => D(sw, { bladeStyle: 'simple', bladeLip: v }), cam: { dir: '1,-1.1,1', r: 80, at: () => [-14, 22, 7] } },
   { key: 'throwStyle', values: ['built-in', 'bracket', 'stand'], design: (v) => D(sw, { throwStyle: v }), cam: throwCam },
   // (bought or printed: a straight, LEGO's R40 curve and a BrickTracks R104 one; printed blue, LEGO's light grey, BrickTracks' dark grey)
   { key: 'legoTrack', values: ['lego', 'lego-only', 'print'], design: (v) => D([{ name: 'A', x: 0, y: 0, heading: 0, segs: [{ kind: 'straight', studs: 16 }, { kind: 'curve', radius: 40, angle: 22.5 }, { kind: 'curve', radius: 104, angle: 11.25 }] }], { legoTrack: v }),

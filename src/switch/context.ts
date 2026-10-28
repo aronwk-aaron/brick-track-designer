@@ -46,6 +46,8 @@ export interface SwitchParams {
   throwStand?: boolean;
   /** (the plate-style points) The blades: 'simple' (as before), 'prototype' (planed to a point and laid tight under the stock rail's undercut head, the tie bar at the points) or 'sprung' (leaf springs under the plate, a stud for its pivot). */
   bladeStyle?: 'simple' | 'prototype' | 'sprung';
+  /** (the plate-style points, rigid blades) What holds each blade down: 'pin' (a snap lip on its pin, as before) or 'front' (a lip on the bed over its plate's front, as the sprung blades', and a plain pin). The sprung blades always have the lip. */
+  bladeLip?: 'pin' | 'front';
   /** (the plate-style points) Blades per set: 2 (both move), or 1 (a single-point switch, as a tram's: only the blade on the more curved route moves; the other side's rail is fixed, from where it's a flangeway clear of its stock rail). A three-way keeps both. */
   pointBlades?: 1 | 2;
   /** (the plate-style points) The slider moved along this many studs from where it'd be (toward the heel: +), to keep its lever out of the way of other track or another lever. */
@@ -153,7 +155,7 @@ export interface FdbBladeLayout {
   notches?: Notch[];
   /** (sprung blades) the spring's beams' length, where shorter than the full 34.5 (other track running past) */
   root?: number;
-  /** (sprung blades) a lip on the bed over the plate's front holds it down (switch/base.ts LIP); false where other track's too close for one */
+  /** (sprung blades, or rigid ones with bladeLip 'front') a lip on the bed over the plate's front holds it down (switch/base.ts LIP, LIP_RIGID); false where other track's too close for one */
   lip?: boolean;
 }
 

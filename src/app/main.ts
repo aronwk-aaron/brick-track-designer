@@ -1080,10 +1080,16 @@ const OPTION_FORM: OptSection[] = [
         con: 'The one blade steers both ways: a wheel can pick the wrong way if the wheels are loose. Three-ways keep both blades.' }] },
     { key: 'bladeStyle', label: 'Blade shape', off: onlyPlates, choices: [
       { v: 'sprung', t: 'Sprung', tip: 'A 3 mm plate with a flat top on a LEGO stud, two leaf springs in a pocket underneath (supports built in), so a train trailing through pushes them over and they spring back. The slider meets them at the points.',
-        con: 'Break the supports out of the pocket after printing. Nothing holds the blades down but the stud.' },
+        con: 'Break the supports out of the pocket after printing.' },
       { v: 'simple', t: 'Rigid', tip: 'Each blade on a thin plate, the slider\'s post in a plain hole: no spring.', con: 'A train trailing through the wrong way can\'t push the blades over: set the points first.' },
       { v: 'prototype', t: 'Rigid, realistic (planed, tucked under the rail)', tip: 'Rigid blades planed to a point and tucked under the stock rail head, so flanges can\'t catch them.',
         con: 'No spring, as Rigid. Fit the blades swung open, then close them. The stock rail head is thinner along the points.' }] },
+    { key: 'bladeLip', label: 'Blades held down by', off: (c) => onlyPlates(c) ?? (c.o.bladeStyle === 'sprung' ? 'Blade shape is Sprung: it always has the front lip' : undefined), choices: [
+      { v: 'pin', t: 'Snap lip on the pin', tip: 'A small lip on top of each blade\'s pin. The blade\'s hole snaps down over it.',
+        con: 'Only the heel is held. The point can lift a little, where a flange can catch it.' },
+      { v: 'front', t: 'Lip over the front', tip: 'A low lip on the track leans over each blade\'s front, as on Sprung blades, so the point can\'t lift. The pin is plain. Fit each blade front first, tilted under the lip, then lower it onto its pin.',
+        con: 'Each blade\'s rail starts a little further back (its front is bevelled under the lip). Where other track runs too close to a blade\'s front, that blade keeps the snap lip.',
+        no: (c) => (c.ballast && c.o.bladeStyle === 'simple' ? 'on ballast a Rigid blade\'s plate is kept off the stock rail\'s foot, so its front is too narrow to hold (Rigid, realistic works)' : undefined) }] },
     { key: 'pointsModule', label: 'Points go in', off: onlyTines, choices: [
       { v: 'built-in', t: 'From below', tip: 'The pockets open through the bottom. Fit the points before putting the track on the baseplate.' },
       { v: 'layers', t: 'From above, under a lid', tip: 'A lower layer holds the moving parts; the deck with the rails clips on top with studs.',
@@ -1230,7 +1236,7 @@ const openSecs: Set<string> = (() => { try { const v = JSON.parse(localStorage.g
 const keepSecs = () => { try { localStorage.setItem('btd-settings-open', JSON.stringify([...openSecs])); } catch { /* (not kept) */ } };
 let optQuery = '';
 /** The settings whose choices have example pictures (public/options/<key>-<value>.webp, made by scripts/option-pictures.mts). */
-const PICTURED = new Set(['joint', 'pointBlades', 'tongueRails', 'sleepers', 'curveStuds', 'ballast', 'bottomStyle', 'grip', 'undersideGrid', 'splitTrack', 'mechStyle', 'bladeStyle', 'throwStyle', 'bufferStyle', 'monoEndStuds', 'legoTrack']);
+const PICTURED = new Set(['joint', 'pointBlades', 'tongueRails', 'sleepers', 'curveStuds', 'ballast', 'bottomStyle', 'grip', 'undersideGrid', 'splitTrack', 'mechStyle', 'bladeStyle', 'bladeLip', 'throwStyle', 'bufferStyle', 'monoEndStuds', 'legoTrack']);
 /** A setting's choices side by side in a modal: each one's picture, what it does, its drawback, and a button to use it. */
 function showChoices(f: OptField, cur: string, def: string, c: OptCtx, off: string | undefined, use: (v: string) => void) {
   const modal = $('choices'), body = $('choices-body');

@@ -118,9 +118,11 @@ describe('every switch can be put together', { timeout: 120000 }, () => {
         // behind the lip, pushed in under it, the heel lowered onto its stud. Here the rail on past its heel is on the same
         // part, so its heel goes in over that rail's end: taken out the other way, tipped up about its front's bottom edge
         // till its heel's 2.5 up, off its stud; drawn back 0.5 (as far as the gap to that rail); tipped on up till its
-        // heel's 6.5 up, over the rail; drawn back out from under the lip; lifted)
-        if (bad && p.turn?.tilt) {
-          const [[ax, ay], [bx, by]] = p.turn.tilt, [cx, cy] = p.turn.at, zE = m.boundingBox().min[2];
+        // heel's 6.5 up, over the rail; drawn back out from under the lip (up to 3); lifted)
+        // (rigid blades with the lip over the front: the same, the pin plain. A prototype blade, tucked under the stock rail's
+        // head closed, goes in so open (the slider at the other end, as above), then swung shut)
+        const tiltIn = (m0: typeof m, tilt: [[number, number], [number, number]], withSlider = true) => {
+          const [[ax, ay], [bx, by]] = tilt, [cx, cy] = p.turn!.at, zE = m0.boundingBox().min[2];
           const phi = Math.atan2(by - ay, bx - ax) * 180 / Math.PI, mx = (ax + bx) / 2, my = (ay + by) / 2;
           const hl = Math.hypot(cx - mx, cy - my), hx = (cx - mx) / hl, hy = (cy - my) / hl;
           // (the heel's side of the edge, in its frame: rising is turning that way about it)
@@ -129,11 +131,20 @@ describe('every switch can be put together', { timeout: 120000 }, () => {
           const path: [number, number][] = [[0, 0], [2.5, 0], [2.5, 0.5], [6.5, 0.5], [6.5, 3]], poses: (typeof m)[] = [];
           for (let k = 1; k < path.length; k++) for (let j = 1; j <= 5; j++) {
             const r = path[k - 1][0] + ((path[k][0] - path[k - 1][0]) * j) / 5, d = path[k - 1][1] + ((path[k][1] - path[k - 1][1]) * j) / 5;
-            poses.push(tip(m, r).translate([hx * d, hy * d, 0]));
+            poses.push(tip(m0, r).translate([hx * d, hy * d, 0]));
           }
-          const hit = poses.findIndex((q) => into(q) > 0.5);
-          if (hit < 0 && !lift(poses[poses.length - 1])) bad = '';
-          else bad += ` (and tilted in under its lip: ${hit < 0 ? 'lifting out' : `pose ${hit}`})`;
+          // (drawn back only as far as it must be: lifted out from the first pose of the last leg it comes out from; a rigid
+          // prototype blade's post near its front leaves it about 1 to go)
+          const hit = poses.findIndex((q) => into(q, withSlider) > 0.5), last = hit < 0 ? poses.length : hit;
+          for (let k = poses.length - 5; k < last; k++) if (!lift(poses[k], withSlider)) return '';
+          return hit < 0 ? 'lifting out' : `pose ${hit}`;
+        };
+        if (bad && p.turn?.tilt) {
+          const t2 = p.turn, [cx, cy] = t2.at, why = tiltIn(m, t2.tilt!);
+          const turnQ = ([x, y]: [number, number]): [number, number] => { const a = t2.by * Math.PI / 180; return [cx + (x - cx) * Math.cos(a) - (y - cy) * Math.sin(a), cy + (x - cx) * Math.sin(a) + (y - cy) * Math.cos(a)]; };
+          const whyOpen = why && t2.by !== 0 ? tiltIn(m.translate([-cx, -cy, 0]).rotate([0, 0, t2.by]).translate([cx, cy, 0]), [turnQ(t2.tilt![0]), turnQ(t2.tilt![1])], false) : why;
+          if (!why || !whyOpen) bad = '';
+          else bad += ` (and tilted in under its lip: ${why}${t2.by !== 0 ? `; open: ${whyOpen}` : ''})`;
         }
         if (bad) problems.push(bad);
         // (and swung to its other end, it's clear of the track)

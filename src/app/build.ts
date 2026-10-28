@@ -44,7 +44,7 @@ export interface Piece {
   /** its breakaway print supports (the small loose bits printed with it), apart, for the view to show or hide */
   supports?: Float32Array;
   /** (the plate-style blades) the pin it turns on, as assembled, and how far to turn it there to open it (degrees): it goes on open.
-   * tilt (sprung blades with a lip): the ends of the plate's front's bottom edge, which goes in first, tilted under the lip */
+   * tilt (blades with a lip over the front): the ends of the plate's front's bottom edge, which goes in first, tilted under the lip */
   turn?: { at: [number, number]; by: number; swing?: number; tilt?: [[number, number], [number, number]] };
   /** LEGO parts this piece is (a plain straight as LEGO's own track, its ballast as plates): not printed, in the LEGO parts list */
   lego?: LegoPart[];
@@ -481,6 +481,7 @@ function switchParams(o: PieceOptions, gaugeStuds: number, alone: boolean) {
     ...(o.pointsModule === 'layers' && o.ballast !== 'none' && { mechFloor: 1.2 }), endSupports: o.endSupports !== false,
     throwModule: o.throwStyle === 'bracket', mechStyle: (o.mechStyle === 'tines' ? 'tines' : 'plates') as 'tines' | 'plates', // (anything else, an older name included: the default)
     throwStand: o.throwStyle === 'stand', throwAction: o.throwAction ?? 'detent', bladeStyle: o.bladeStyle ?? 'simple',
+    bladeLip: o.bladeLip === 'front' ? 'front' as const : 'pin' as const, // (unset, an older design: the snap lip on the pin)
     ...(alone && { ballastOnly: o.trackFitTol ?? 0.2 }) };
 }
 type SwitchParams = ReturnType<typeof switchParams>;

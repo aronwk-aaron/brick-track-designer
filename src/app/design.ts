@@ -114,6 +114,8 @@ export interface PieceOptions {
   throwAction?: 'detent' | 'overcentre';
   /** (plate-style points) The blades: 'sprung' (a spring in each, so trains can trail through), 'simple' (rigid: the slider's post in a plain hole, no spring), or 'prototype' (rigid, planed to a point, tight under the stock rail's undercut head, the tie bar at the points). */
   bladeStyle?: 'simple' | 'prototype' | 'sprung';
+  /** (plate-style points, rigid blades) What holds each blade down: 'pin' (a snap lip on its pin) or 'front' (a lip on the bed over its plate's front, as the sprung blades', and a plain pin). */
+  bladeLip?: 'pin' | 'front';
   /** The points' mechanism: 'tines' (switch.scad's: under the bed, from below) or 'plates' (each blade on a plate on top of the bed on a pin, a slider bar through the bed; the blades go in from above). */
   mechStyle?: 'tines' | 'plates';
   /** Ballast under the track: none, ballast, or ballast with the wider buddy layer under it. */
@@ -192,7 +194,7 @@ export function upgradeDesign(d0: Design): Design {
 export const OPTION_DEFAULTS: PieceOptions = {
   throwSide: 'auto', leverOffset: 8, pointThrow: 3, pointClearance: 0.3, springPreload: 1, springThickness: 0.9, springLength: 40,
   flangeway: 3, flangewayDepth: 3, checkRailLen: 30, checkRailW: 1, checkRailFlare: 1.5, printBedX: 256, printBedY: 256, baseplate: 0, baseplateX: 0, baseplateY: 0, ballast: 'none', bottomStyle: 'antistud', joint: 'lego', pointsModule: 'built-in', endSupports: true, tongueRails: 'all', grip: 'edges', pointsPieces: 1, pointBlades: 2, throwStyle: 'built-in', mechStyle: 'plates', curveStuds: 'follow',
-  throwAction: 'detent', bladeStyle: 'sprung', sleepers: 'sleepers', undersideGrid: 'track', splitTrack: 'lengths', pieceLengthStuds: 16, studsAtCuts: 'off', legoTrack: 'lego', axleStuds: 2, sleeperWidthStuds: 2, sleeperGapStuds: 2, studFit: 0.18, antistudFit: 0.06,
+  throwAction: 'detent', bladeStyle: 'sprung', bladeLip: 'pin', sleepers: 'sleepers', undersideGrid: 'track', splitTrack: 'lengths', pieceLengthStuds: 16, studsAtCuts: 'off', legoTrack: 'lego', axleStuds: 2, sleeperWidthStuds: 2, sleeperGapStuds: 2, studFit: 0.18, antistudFit: 0.06,
   bladeDiscD: 14, throwBallast: false, axleHoles: false, pegOnBallast: false,
   bufferStyle: 'frame', bufferPostPlates: 8, bufferBeamBottom: 2, bufferBeamTop: 12, bufferPinHoles: true,
   trackBallast: 'together', trackFitTol: 0.2, labelText: '', labelSize: true, labelGauge: false, labelParts: true,

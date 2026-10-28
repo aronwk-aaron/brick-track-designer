@@ -114,8 +114,29 @@ const SPRUNG = { plateT: 3.0, plateW: 13.4, holeD: 4.85, holeDepth: 2.2, pocketH
  * (run and end: the bevel; thick: the wall along the track; below: its top under the plate's top)
  */
 const LIP = { run: 2.4, end: 0.6, thick: 2.0, below: 0.2 };
+/**
+ * (rigid blades with the front lip, bladeLip 'front') The same lip over their
+ * 1.6 plate. The front holds where the lip's underside reaches over the
+ * bevel, in plan: run - below - c * sqrt 2 (the gap's c, across the 45 degree
+ * faces), less up to 0.3 more where the lip clears the front as it swings
+ * (its ends move along the track a little about the pin); that must be more
+ * than the plate's play back along its pin (c), or the plate slides back from
+ * under it. The sprung's sizes leave 1.78 (c 0.3). Here a run of 1.0 (end 0.6,
+ * below 0.2) would leave 0.38, under the play once swung; so the bevel 1.4
+ * back, its end 0.2 (one layer), the lip's top 0.1 under the plate's top (on
+ * a 0.2 layer where the plate's top isn't): 0.88, 0.58 past the play, and
+ * still 0.28 at the lip's ends. (No flange near it: wheels already pass over
+ * the plate's top.) With it the pin is plain (a snap lip would catch as the
+ * blade goes in tilted, as the sprung), 0.4 over the plate.
+ * (Not on ballast with the simple blades: switchPlan's lipOff.)
+ */
+const LIP_RIGID = { run: 1.4, end: 0.2, thick: 2.0, below: 0.1 };
 /** sprung blades. */
 const fdbSprung = (p: { bladeStyle?: string; generateBallast?: boolean; mechStyle?: string }) => p.bladeStyle === 'sprung' && p.mechStyle === 'plates';
+/** A lip over the blades' fronts: the sprung blades', or the rigid ones' with bladeLip 'front' (where other track leaves room: FdbBladeLayout's lip). */
+const fdbLipOn = (p: { bladeStyle?: string; mechStyle?: string; bladeLip?: string }) => p.mechStyle === 'plates' && (p.bladeStyle === 'sprung' || p.bladeLip === 'front');
+/** The lip's and the plate front's bevel's sizes, for the plate's thickness. */
+const lipOf = (p: { bladeStyle?: string; mechStyle?: string }) => (fdbSprung(p) ? LIP : LIP_RIGID);
 /** The plate's thickness. */
 const fdbPlateT = (p: { bladeStyle?: string; generateBallast?: boolean; mechStyle?: string }) => (fdbSprung(p) ? SPRUNG.plateT : FDB.plateT);
 /** (sprung blades) The beams' gap (the post between them) and how far each side the pocket reaches from the post. */
@@ -281,7 +302,7 @@ function fdbLayout(v: SetLike, p: BaseParams, rails: [Route, number, number][]):
   }
 }
 
-/** (sprung blades) Where a blade's plate front is, closed (y), and how far in its front edge reaches, closed or open (the plate tapering to its toe, as switchGeometry's fdbPlate2d). */
+/** (sprung blades, or rigid ones with the front lip) Where a blade's plate front is, closed (y), and how far in its front edge reaches, closed or open (the plate tapering to its toe, as switchGeometry's fdbPlate2d). */
 function sprungFront(v: SetLike, b: number, p: BaseParams, f: FdbBladeLayout) {
   const G = switchGlobals(p).G, c = p.pointClearance, yF = Math.max(v.toeY - 1, 8 + c);
   const rt = v.three ? v.three.S : b === 0 ? v.ra : v.rb, o = b === 0 ? -G : +G, side = b === 0 ? 1 : -1;
@@ -293,15 +314,15 @@ function sprungFront(v: SetLike, b: number, p: BaseParams, f: FdbBladeLayout) {
   return { yF, side, xStock: railCross(stockRt, o, yF)[0], xIn: side > 0 ? Math.max(inner[0], rotAbout(inner, f.pivot, sw)[0]) : Math.min(inner[0], rotAbout(inner, f.pivot, sw)[0]) };
 }
 /**
- * (sprung blades) Whether the lip over a blade's front is clear of other track's rails (f.keep): its footprint, from the
+ * (sprung blades, or rigid ones with the front lip) Whether the lip over a blade's front is clear of other track's rails (f.keep): its footprint, from the
  * stock rail in past the plate open, clear of each by its half-width and a blade's plate (such a rail may be a blade
  * itself, its plate beside it: a double slip's, the next set's). Not the track joined on at the switch's end: its rail
  * carrying on from the stock rail's.
  */
 export function sprungLipFits(v: SetLike, b: number, p: BaseParams, f: FdbBladeLayout) {
-  const c = p.pointClearance, { yF, side, xStock, xIn } = sprungFront(v, b, p, f), G = switchGlobals(p).G;
+  const c = p.pointClearance, { yF, side, xStock, xIn } = sprungFront(v, b, p, f), G = switchGlobals(p).G, L = lipOf(p);
   const stockRt = v.three ? (b === 0 ? v.three.L : v.three.R) : b === 0 ? v.rb : v.ra, [sx, sy, sh] = routePose(stockRt, 0);
-  const x0 = Math.min(xStock, xIn + side), x1 = Math.max(xStock, xIn + side), y0 = yF - c - LIP.thick, y1 = yF + LIP.run;
+  const x0 = Math.min(xStock, xIn + side), x1 = Math.max(xStock, xIn + side), y0 = yF - c - L.thick, y1 = yF + L.run;
   const m = f.hw + 2 * HEAD_HW + fdbPlateW(p) + 0.5;
   // (the stock rail's line on back past the route's start: across it, as railPoint's offsets, + right)
   const onStock = (q: Pt) => Math.abs((q[0] - sx) * cosd(sh) + (q[1] - sy) * sind(sh) - (b === 0 ? -G : +G)) < 1 && (q[0] - sx) * -sind(sh) + (q[1] - sy) * cosd(sh) < 0;
@@ -603,17 +624,22 @@ export function switchPlan(routes: Route[], specs: SetSpec[], p: BaseParams = BA
     v.notches = cr.map((x) => x.notches); v.crossBlocked = cr.some((x) => x.blocked);
   }
   if (p.mechStyle === 'plates') {
+    // (a lip over the blades' fronts: rigid ones on ballast (simple, not prototype) have none, their plates kept off the
+    // stock rail's foot at the front (fdbBladePart's flare), down to a sliver there with nothing for it to hold)
+    const lipOff = fdbLipOn(p) && !fdbSprung(p) && p.bladeStyle !== 'prototype' && g.bedTop + p.pointClearance < PLATE_H + 2.0, lipOn = fdbLipOn(p) && !lipOff;
     (sets as SetLike[]).forEach((v) => {
       const rails = railsNear(v);
       v.fdb = fdbLayout(v, p, rails);
       const why = v.fdb.find((f, b) => f.blocked && b !== v.fixed)?.blocked;
       // (a network's piece says it in its own words, where the points are)
       if (why && !foreign.length) warnings.push(`another route's rail runs between a set of points' stock rails (a tandem's first branch through its second points), and ${why}: move the second points further along, or use 'tines' points`);
-      // (sprung blades: the lip over each moving plate's front, unless other track's rail runs too near it)
-      if (fdbSprung(p)) v.fdb.forEach((f, b) => { if (b !== v.fixed && !f.blocked) f.lip = sprungLipFits(v, b, p, f); });
+      // (sprung blades, or rigid ones with bladeLip 'front': the lip over each moving plate's front, unless other track's rail runs too near it)
+      if (lipOn) v.fdb.forEach((f, b) => { if (b !== v.fixed && !f.blocked) f.lip = sprungLipFits(v, b, p, f); });
     });
+    if (lipOff) notes.push("rigid blades on ballast have no lip over the front: their plates are kept off the stock rail's foot, too narrow at the front to hold (their pins keep the snap lip)");
     if (sets.some((v) => v.fdb!.some((f) => f.lip === false)))
-      notes.push("a sprung blade's front has no lip to hold it down: another track's rail runs too near it");
+      notes.push(fdbSprung(p) ? "a sprung blade's front has no lip to hold it down: another track's rail runs too near it"
+        : "a blade's front has no lip to hold it down: another track's rail runs too near it (its pin keeps its snap lip)");
   }
   // (a set's arm under other track, past its stock rail (network.ts moves a boxed-in lever out past it): the slider
   // goes under that track in a closed tunnel, the bed's top no higher than its sleepers'; with blades on top in two
@@ -743,6 +769,8 @@ export function switchGeometry(s: Scad, plan: SwitchPlan, extraCuts: Man[] = [])
   const blades = (v: SetV) => [0, 1].filter((b) => b !== v.fixed);
   /** the sprung blades (SPRUNG): no bracket to hold them down; they sit on studs. */
   const sprung = fdbSprung(p);
+  /** a lip over the blades' fronts (sprung, or bladeLip 'front'), and its sizes (LIP, LIP_RIGID) */
+  const lipOn = fdbLipOn(p), LP = lipOf(p);
   /** The slider bar's width: with sprung blades on track alone narrower, to pass between the underside's stud rows (SPRUNG_SLIDER). */
   const rodW = sprungLow(p) ? SPRUNG_SLIDER.rodW : FDB.rodW;
   /** The blade plates' thickness; where the slider's posts reach up to (into the post's hole, or the sprung blades' spring pocket). */
@@ -864,8 +892,8 @@ export function switchGeometry(s: Scad, plan: SwitchPlan, extraCuts: Man[] = [])
   };
   const pointsBed = (v: SetV) => {
     const ov = sleeperLen / 2 - G;
-    // (sprung blades: on under their lips, past the plates' fronts)
-    const lipY = fdb && v.fdb!.some((f) => f.lip) ? Math.max(v.toeY - 1, 8 + c) - c - LIP.thick - 0.5 : Infinity;
+    // (blades with a lip over the front: on under their lips, past the plates' fronts)
+    const lipY = fdb && v.fdb!.some((f) => f.lip) ? Math.max(v.toeY - 1, 8 + c) - c - LP.thick - 0.5 : Infinity;
     const y0 = Math.min(lipY, v.toeY > 20 ? v.toeY - 2 : Math.min(v.toeY - 2, 7.9)), y1 = v.pointsEndY;
     const thin = (x: number) => sq([0.01, bedTop], [x, 0]);
     return s.intersection(
@@ -1226,12 +1254,12 @@ export function switchGeometry(s: Scad, plan: SwitchPlan, extraCuts: Man[] = [])
     const plate2d = fdbPlate2d(v, b);
     let plate = s.difference(s.intersection(s.intersection(T(s.extrude(plate2d, plateT), [0, 0, z0]), plateOff), cube([400, 400, 50], [-200, y0, z0 - 10])), [stock]);
     if (sprung) plate = sprungUnderside(v, b, plate, plate2d, z0, (m) => s.difference(s.intersection(m, plateOff), [stock]));
-    // (sprung blades: the front bevelled at 45 degrees for the lip over it (LIP), as the reference's, lip or not; the rail
-    // starting where the bevel does)
-    const yF = sprung ? lipFront(v, b, plate2d).yF : y0;
-    if (sprung) plate = s.difference(plate, [W.Manifold.hull([-200, 200].flatMap((x) => [[x, yF - 5, z0 + LIP.end - 5], [x, yF + LIP.run, z1], [x, yF + LIP.run, z1 + 5], [x, yF - 5, z1 + 5]] as Vec3[]))]);
+    // (sprung blades, lip or not, and rigid ones with a lip: the front bevelled at 45 degrees for the lip over it (LIP,
+    // LIP_RIGID), as the reference's; the rail starting where the bevel does)
+    const bev = sprung || (lipOn && !!fb.lip), yF = bev ? lipFront(v, b, plate2d).yF : y0;
+    if (bev) plate = s.difference(plate, [W.Manifold.hull([-200, 200].flatMap((x) => [[x, yF - 5, z0 + LP.end - 5], [x, yF + LP.run, z1], [x, yF + LP.run, z1 + 5], [x, yF - 5, z1 + 5]] as Vec3[]))]);
     // (the rail no further toward the toe than its plate goes: clear of the end connector, as the plate is)
-    return rot3(s.union([plate, s.intersection(bar, cube([400, 400, 50], [-200, sprung ? yF + LIP.run : y0, z0 - 10]))]), fb.pivot, fb.open);
+    return rot3(s.union([plate, s.intersection(bar, cube([400, 400, 50], [-200, bev ? yF + LP.run : y0, z0 - 10]))]), fb.pivot, fb.open);
   };
   /**
    * (sprung blades) Under the plate: the stud's blind hole at the pin, and the
@@ -1345,8 +1373,9 @@ export function switchGeometry(s: Scad, plan: SwitchPlan, extraCuts: Man[] = [])
     return T(s.extrude(groove, top - g.layerTop + 0.01), [0, 0, g.layerTop - 0.01]);
   };
   /** Cut from the bed: the slider's tunnel (floored) and its posts' groove. */
-  const fdbPockets = (v: SetV) => s.union([T(s.extrude(fdbSlot2d(v, 0), g.layerTop + c - fdbFloor()), [0, 0, fdbFloor()]), fdbGroove(v),
-    ...(ocOn(v) ? [ocPocket(v)] : []), ...(protoOn ? [protoUndercut(v)] : [])]);
+  // (undercut false: without the prototype blades' undercut, for the lips over their fronts: in front of the plates, where no blade goes)
+  const fdbPockets = (v: SetV, undercut = true) => s.union([T(s.extrude(fdbSlot2d(v, 0), g.layerTop + c - fdbFloor()), [0, 0, fdbFloor()]), fdbGroove(v),
+    ...(ocOn(v) ? [ocPocket(v)] : []), ...(protoOn && undercut ? [protoUndercut(v)] : [])]);
   /** The slider bar: posts up into the blades, the fork for the lever's tip at its end. */
   const fdbSlider = (v: SetV) => {
     const z0 = g.layerZ0, z1 = g.layerTop;
@@ -1409,37 +1438,39 @@ export function switchGeometry(s: Scad, plan: SwitchPlan, extraCuts: Man[] = [])
     for (let x = Math.ceil((bb.min[0] + 2) / STUD) * STUD; x <= bb.max[0] - 2 + 1e-9; x += STUD) out.push(circle((TUBE_OD - (p.antistudFit ?? ANTISTUD_FIT)) / 2, 24, [x, v.throwY]));
     return out.length ? s.difference(s.extrude(W.CrossSection.union(out), bedTop), [pointsPockets(v), throwChannel(v)]) : undefined;
   };
-  /** (sprung blades) A blade's plate front, closed: where it is (y) and its two ends (x), from the plate's outline. */
+  /** (blades with a lip over the front) A blade's plate front, closed: where it is (y) and its two ends (x), from the plate's outline. */
   const lipFront = (v: SetV, b: number, plate2d = fdbPlate2d(v, b)) => {
     // (cut off clear of the end connector (fdbBladePart), or where its outline starts)
     const yF = Math.max(v.toeY - 1, 8 + c, plate2d.bounds().min[1]), fr = plate2d.intersect(sq([400, 0.5], [-200, yF])).bounds();
     return { yF, xa: fr.min[0], xb: fr.max[0] };
   };
   /**
-   * (sprung blades) The lip over a blade's front (LIP), standing on the bed:
+   * (sprung blades, or rigid ones with bladeLip 'front') The lip over a blade's front (LIP, LIP_RIGID), standing on the bed:
    * across from its stock rail to past the plate's front edge open, by 1;
    * the plate clear under it all the way from closed to open (the lip as for
    * the plate closed, turned with it, taken where it is all of those).
    */
   const sprungLip = (v: SetV, b: number): Man => {
-    const fb = fdbBlades(v)[b], z0 = bedTop + c, zt = z0 + plateT - LIP.below, { yF, xa, xb } = lipFront(v, b);
+    const fb = fdbBlades(v)[b], z0 = bedTop + c, zt = z0 + plateT - LP.below, { yF, xa, xb } = lipFront(v, b);
     const side = bSide(b), sw = (v.three ? 2 : 1) * fb.ang * side, n = 4, turns = Array.from({ length: n + 1 }, (_, k) => (sw * k) / n);
     const xIn = (side > 0 ? Math.max : Math.min)(...turns.flatMap((a) => [xa, xb].map((x) => rotAbout([x, yF], fb.pivot, a)[0]))) + side;
     const xS = plan.railCross(bOther(v, b), bO(b), yF)[0], x0 = Math.min(xS, xIn), x1 = Math.max(xS, xIn);
     // (in y and z: the foot from the bed up, c off the plate's end, to where the underside starts, c off the bevel; leaning back to the top)
-    const yf = yF - c, zf = z0 + LIP.end + c * (Math.SQRT2 - 1), h = zt - zf;
+    const yf = yF - c, zf = z0 + LP.end + c * (Math.SQRT2 - 1), h = zt - zf;
     const prism = (q: [number, number][]) => W.Manifold.hull([x0 - 4, x1 + 4].flatMap((x) => q.map(([y, z]) => [x, y, z] as Vec3)));
-    const lip0 = s.union([prism([[yf, bedTop - 0.01], [yf, zf], [yf - LIP.thick, zf], [yf - LIP.thick, bedTop - 0.01]]),
-      prism([[yf, zf], [yf + h, zt], [yf - LIP.thick + h, zt], [yf - LIP.thick, zf]])]);
+    const lip0 = s.union([prism([[yf, bedTop - 0.01], [yf, zf], [yf - LP.thick, zf], [yf - LP.thick, bedTop - 0.01]]),
+      prism([[yf, zf], [yf + h, zt], [yf - LP.thick + h, zt], [yf - LP.thick, zf]])]);
     return s.intersection(turns.map((a) => rot3(lip0, fb.pivot, a)).reduce((m, q) => m.intersect(q)), cube([x1 - x0, 400, 50], [x0, -200, bedTop - 1]));
   };
-  /** (sprung blades) The lips over the moving blades' fronts (where other track leaves room: the plan's lip, switchPlan). */
-  const fdbLips = (v: SetV): Man[] => (sprung ? blades(v).filter((b) => fdbBlades(v)[b].lip).map((b) => s.difference(sprungLip(v, b), [pointsPockets(v)])) : []);
+  /** (sprung blades, or rigid ones with bladeLip 'front') The lips over the moving blades' fronts (where other track leaves room: the plan's lip, switchPlan). */
+  const fdbLips = (v: SetV): Man[] => (lipOn ? blades(v).filter((b) => fdbBlades(v)[b].lip).map((b) => s.difference(sprungLip(v, b), [fdbPockets(v, false)])) : []);
   /** The pins the blades turn on, standing on the bed. */
   // (each with a little snap lip over the plate, so the blade stays on: the plate's hole squeezes past it)
   const fdbPins = (v: SetV) => s.union([...fdbBlades(v).filter((_, b) => b !== v.fixed).flatMap((f) => sprung
     // (sprung blades: a LEGO stud, the plate's hole over it)
     ? [T(s.cylinder(p.studH + 0.01, t.o.studD / 2, t.o.studD / 2, 40), [f.pivot[0], f.pivot[1], bedTop - 0.01])]
+    // (rigid blades with the lip over the front (LIP_RIGID): a plain pin, 0.4 over the plate; it goes in tilted, under the lip)
+    : f.lip ? [T(s.cylinder(c + FDB.plateT + 0.4, FDB.pinD / 2, FDB.pinD / 2, 24), [f.pivot[0], f.pivot[1], bedTop - 0.01])]
     : [T(s.cylinder(c + FDB.plateT + 0.8, FDB.pinD / 2, FDB.pinD / 2, 24), [f.pivot[0], f.pivot[1], bedTop - 0.01]),
       T(s.cylinder(0.7, FDB.pinD / 2 + c + 0.15, FDB.pinD / 2, 24), [f.pivot[0], f.pivot[1], bedTop + c + FDB.plateT + 0.1])]), ...(ocOn(v) ? ocPins(v) : []), ...fdbLips(v)]);
 
@@ -1978,7 +2009,7 @@ export function switchGeometry(s: Scad, plan: SwitchPlan, extraCuts: Man[] = [])
     springPrint: (k = 0) => (ocOn(sets[k]) ? ocPrint(sets[k]) : undefined),
     /**
      * Each points part's pin (where it turns), how far to turn it from as assembled to open it (blade 0 is closed as assembled), and to its
-     * other end (the plate-style blades; else undefined). tilt (sprung blades with a lip): the ends of the plate's front's bottom edge as
+     * other end (the plate-style blades; else undefined). tilt (blades with a lip over the front): the ends of the plate's front's bottom edge as
      * assembled, which goes in first, under the lip.
      */
     pointsTurns: (k = 0) => (fdb ? blades(sets[k]).map((b) => {
