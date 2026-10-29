@@ -110,12 +110,13 @@ export function endAxleHoles(t: Track): Man {
   return t.s.union(xs.map((x) => T(R(technicHole(t.s), [90, 0, 0]), [x, 4, -0.8])));
 }
 
-/** coupler_supports(z0): breakaway supports under the snap peg and C-clip tab, from z0 up to z = 0 (full_endpoint's frame). */
+/** coupler_supports(z0): breakaway supports under the snap peg and C-clip tab, from z0 up to 0.2 under them (the end connector's frame). */
 export function couplerSupports(t: Track, z0: number): Man | undefined {
   if (!t.c.hasCoupler) return undefined;
+  // (0.2 short of the peg and clip: touching, they printed as one with the part, not broken away)
   return t.s.union([
-    T(t.railSupport(3, -z0, false), [-t.c.couplerX - 1.5, -5, z0]),
-    T(t.railSupport(8, -z0, false), [t.c.couplerX - 4, -5, z0]),
+    T(t.railSupport(3, -z0 - 0.2, false), [-t.c.couplerX - 1.5, -5, z0]),
+    T(t.railSupport(8, -z0 - 0.2, false), [t.c.couplerX - 4, -5, z0]),
   ]);
 }
 

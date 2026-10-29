@@ -58,6 +58,8 @@ describe('the OpenSCAD extras', { timeout: 120000 }, () => {
     expect(vol(base) - vol(holes)).toBeLessThan(4 * 16 * 10);
     // (the peg, the clip and their breakaway supports, at both ends)
     expect(vol(peg)).toBeGreaterThan(vol(base) + 20);
+    // (those supports break away: apart from the part, shown as supports)
+    expect(peg.pieces.every((p) => (p.supports?.length ?? 0) > 0)).toBe(true);
     // (no holes without the buddy, as straight.scad's)
     expect(vol(buildDesign(w, straight(16, {}, { ballast: 'ballast', axleHoles: true })))).toBeCloseTo(vol(buildDesign(w, straight(16, {}, { ballast: 'ballast' }))), 3);
   });
