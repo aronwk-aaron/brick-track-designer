@@ -90,11 +90,11 @@ describe('switches bought as track pieces, as plain track is', { timeout: 600000
       const w = await kernel();
       for (const ballast of ['ballast', 'buddy'] as const) {
         const b = buildDesign(w, withOpts(TEMPLATES['Left switch (LEGO)'], { ballast }));
-        // (its ballast one part, as the switch is: longer than the 256 mm bed)
-        expect(b.info.warnings).toEqual(["a bought switch's ballast (one part, as the switch is) doesn't fit the 256 x 256 print bed"]);
+        expect(b.info.warnings).toEqual([]);
         expect(count(b, '53407')).toBe(1);
+        // (one part, as the switch is; longer than the 256 mm bed, in two, cut across between its sleepers)
         const seats = printed(b);
-        expect(seats.length).toBe(1);
+        expect(seats.length).toBe(2);
         for (const p of seats) expect(p.name).toMatch(/^switch-ballast\d*$/);
         const man = (p: Built['pieces'][number]) => { const m = new w.Mesh({ numProp: 3, vertProperties: new Float32Array(p.positions), triVerts: new Uint32Array(p.positions.length / 3).map((_, i) => i) }); m.merge(); return new w.Manifold(m); };
         const sw = man(b.pieces.find((p) => p.lego)!);
@@ -107,6 +107,25 @@ describe('switches bought as track pieces, as plain track is', { timeout: 600000
           expect(m.boundingBox().max[2]).toBeCloseTo(3.2, 1);
         }
       }
+    } finally { Object.assign(OPTION_DEFAULTS, saved); }
+  });
+  it('Bought track\'s ballast: Together, as before: under pieces side by side in one, cut for the bed', async () => {
+    const saved = { ...OPTION_DEFAULTS };
+    Object.assign(OPTION_DEFAULTS, APP);
+    try {
+      const w = await kernel();
+      const d: Design = { version: 1, gaugeStuds: 4, options: { ballast: 'ballast' } as Design['options'], routes: [
+        { name: 'A', x: 0, y: 0, heading: 0, segs: [{ kind: 'straight', studs: 8 }, { kind: 'straight', studs: 4 }] },
+        { name: 'B', x: 9, y: 0, heading: 0, segs: [{ kind: 'straight', studs: 8 }, { kind: 'straight', studs: 4 }] },
+      ] };
+      const each = buildDesign(w, d), together = buildDesign(w, withOpts(d, { boughtBallast: 'together' }));
+      expect([each.info.warnings, together.info.warnings]).toEqual([[], []]);
+      // (BrickTracks' 1/2 and 1/4 straights, two tracks 9 studs apart, their ballast meeting: 4 ballast parts, or one)
+      expect(printed(each)).toHaveLength(4);
+      expect(printed(together)).toHaveLength(1);
+      const sw = buildDesign(w, withOpts(TEMPLATES['Left switch (LEGO)'], { ballast: 'ballast', boughtBallast: 'together' }));
+      expect(sw.info.warnings).toEqual([]);
+      expect(printed(sw).length).toBeGreaterThan(1);
     } finally { Object.assign(OPTION_DEFAULTS, saved); }
   });
 });

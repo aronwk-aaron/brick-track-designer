@@ -137,6 +137,8 @@ export interface PieceOptions {
   studsAtCuts?: 'off' | 'whole' | 'split';
   /** With track pieces: plain track bought, not printed: LEGO's straights (53401, with ballast on LEGO plates) and curves, R40 LEGO's (53400), R56 to R120 BrickTracks' ('lego'); only LEGO's, BrickTracks' radii printed ('lego-only'); or every piece printed ('print'). */
   legoTrack?: 'lego' | 'lego-only' | 'print';
+  /** Bought track's printed ballast: a part for each bought piece, whole as it is (a switch's over-long one in two, between its sleepers); or 'together', one under the pieces side by side, cut for the bed and at table seams. */
+  boughtBallast?: 'each' | 'together';
   /** Parts joined with LEGO axles: the axles' length, studs (half in each part). */
   axleStuds?: number;
   /** Rail tongues at a cut: on every rail it crosses, or only on rails crossing it square (the others cut flat), as plate-style large switches are split. */
