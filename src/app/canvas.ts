@@ -6,6 +6,7 @@
 // branches off it (a switch). Select mode picks a track to edit or delete.
 // Drag with the right or middle button (or Space + drag) to pan; the wheel
 // zooms.
+import { TABLE_COLORS, tableOutline } from './tables';
 import { type Design, type DRoute, type DSeg, freeName, isMono, toRoutes } from './design';
 import { sleeperSpots } from '../geom/crossing';
 import { poseToWorld, routeLength, routePose, worldToPose } from '../route/route';
@@ -826,6 +827,18 @@ export class TrackCanvas {
       c.stroke();
     }
     const d = this.host.design(), g = (d.gaugeStuds + 1) / 2;
+    // the tables, under everything: each filled in its colour, outlined, named
+    if (d.tables?.length && !this.hidden.has('tables')) d.tables.forEach((t, k) => {
+      const pts = tableOutline(t);
+      if (pts.length < 3) return;
+      c.beginPath(); pts.forEach(([x, y], i) => { const [sx, sy] = this.toScreen(x, y); if (i) c.lineTo(sx, sy); else c.moveTo(sx, sy); }); c.closePath();
+      c.globalAlpha = 0.4; c.fillStyle = t.color ?? TABLE_COLORS[k % TABLE_COLORS.length]; c.fill(); c.globalAlpha = 1;
+      c.strokeStyle = 'rgba(40,40,40,0.55)'; c.lineWidth = 1.5; c.stroke();
+      if (t.name) {
+        const m = pts.reduce((a, p) => [a[0] + p[0] / pts.length, a[1] + p[1] / pts.length], [0, 0]), [sx, sy] = this.toScreen(m[0], m[1]);
+        c.fillStyle = 'rgba(30,30,30,0.7)'; c.font = '12px system-ui, sans-serif'; c.textAlign = 'center'; c.fillText(t.name, sx, sy); c.textAlign = 'start';
+      }
+    });
     // baseplate edges, where the track is cut (Piece options)
     const bpS = d.options?.baseplate ?? 0;
     if (bpS > 0 && !this.hidden.has('baseplate')) {

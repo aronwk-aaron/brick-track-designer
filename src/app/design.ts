@@ -1,5 +1,6 @@
 // The editor's document: routes in studs and degrees, as people enter them,
 // and their conversion to the solver's routes in mm.
+import type { Table } from './tables';
 import type { ExtraRails, Roll, Route, RouteEnds, Segment } from '../route/route';
 import { routeLength, routePose } from '../route/route';
 
@@ -61,6 +62,8 @@ export interface Design {
   options?: Partial<PieceOptions>;
   /** Hand edits to the trackwork the app works out, by where each item is (its middle, mm, "x,y"). */
   trackwork?: Trackwork;
+  /** The tables (modules) the layout is laid across, studs: the track's cut where they meet (tables.ts). */
+  tables?: Table[];
 }
 
 /** Hand edits: check rails lengthened (+) or shortened (-) at each end, moved, or taken out; flangeway cuts lengthened; points moved along, taken out or forced; levers moved. */
@@ -361,6 +364,27 @@ const sin = (d: number) => Math.sin((d * Math.PI) / 180), cos = (d: number) => M
 const tan = (d: number) => sin(d) / cos(d);
 /** (a double slip's R40 slip road at 22.5 degrees, tangent to both tracks) how far before the crossing it leaves one track, studs */
 const SLIP_LEAD = 40 * sin(22.5) - (40 * (1 - cos(22.5))) / tan(22.5);
+/** The short straight on BrickTracks' R104 switch's branch and their R104B curve, studs (boughtswitch.ts BT_LEAD). */
+const BT_LEAD_STUDS = (8 - 104 * (1 - cos(22.5))) / sin(22.5);
+/** The return loop of BrickTracks' and LEGO's track (TEMPLATES), turning right (1) or left (-1). */
+function bricktracksLoop(turn: number): Design {
+  const S = (studs: number) => ({ kind: 'straight' as const, studs }), C = (radius: number, angle: number) => ({ kind: 'curve' as const, radius, angle: -turn * angle });
+  const L = BT_LEAD_STUDS;
+  // (its tables, as the reference plan's: two straight ones 32 studs wide up the double track, the loop on curved ones
+  // round its centre (120, 240), 96 to 128 studs out, the last a quarter and a half (to where the tracks run straight),
+  // and one shaped round the far switch; mirrored for a loop turning left)
+  const X = (x: number) => turn * x, A = (a: number) => (turn > 0 ? a : 180 - a);
+  const arc = (name: string, color: string, a0: number, a1: number): Table => ({ name, color, shape: 'arc', cx: X(120), cy: 240, r0: 96, r1: 128, a0: Math.min(A(a0), A(a1)), a1: Math.max(A(a0), A(a1)) });
+  const rect = (name: string, color: string, y: number, h: number): Table => ({ name, color, shape: 'rect', x: turn > 0 ? -8 : -24, y, w: 32, h });
+  const c = (a: number, r: number): [number, number] => [X(120 + r * Math.cos((a * Math.PI) / 180)), 240 + r * Math.sin((a * Math.PI) / 180)];
+  const d = (p: [number, number], t: number): [number, number] => [p[0] - X(t * cos(22.5)), p[1] - t * sin(22.5)];
+  const tables: Table[] = [rect('A', '#f26b3a', -48, 128), rect('B', '#f5e050', 80, 160), arc('C', '#3fbf6a', 135, 180), arc('D', '#2fa654', 90, 135), arc('E', '#1f8f45', 45, 90), arc('F', '#16703a', 0, 45),
+    arc('G', '#22aee8', -67.5, 0), { name: 'H', color: turn > 0 ? '#e8322f' : '#a3246a', shape: 'poly', pts: [c(-67.5, 96), d(c(-67.5, 96), 50), [X(24), 59.25], [X(24), 0], d(c(-67.5, 128), 70), c(-67.5, 128)] }];
+  return { version: 1, gaugeStuds: 4, options: { ballast: 'ballast' }, tables, trackwork: { points: { [`${turn * 405},583`]: { force: true } } }, routes: [
+    { name: 'Loop', x: 0, y: -48, heading: 0, segs: [S(48), S(40), S(8), S(192), C(120, 247.5), S(80), S(8), S(L), C(104, -22.5), S(1.6), C(104, -11.25), S(4), S(1.6), C(104, -33.75), S(1.6), S(8), S(32)] },
+    { name: 'Passing loop', x: 0, y: 0, heading: 0, segs: [C(104, 22.5), S(L), S(L), C(104, -11.25), C(104, -11.25), S(160), C(104, 247.5), S(48), S(1.6), C(104, -11.25), C(104, -11.25), S(L), S(1.6), S(40)] },
+  ] };
+}
 
 /** Starting points for a design. */
 /** The Templates list's groups (in order), each its templates by name. */
@@ -404,14 +428,14 @@ export const TEMPLATES: Record<string, Design> = {
     { name: 'Straight', x: 0, y: 0, heading: 0, segs: [{ kind: 'straight', studs: 32 }] },
     { name: 'Branch', x: 0, y: 0, heading: 0, segs: [{ kind: 'curve', radius: 40, angle: -36.8699 }, { kind: 'curve', radius: 40, angle: 14.3699 }] },
   ] },
-  // (BrickTracks' R104 switch: 40 studs, the branch an R104 curve of 22.5 degrees)
+  // (BrickTracks' R104 switch: 40 studs, the branch an R104 curve of 22.5 degrees and a short straight, ending 40 on and 8 over)
   'Left switch (BrickTracks R104)': { version: 1, gaugeStuds: 4, routes: [
     { name: 'Straight', x: 0, y: 0, heading: 0, segs: [{ kind: 'straight', studs: 40 }] },
-    { name: 'Branch', x: 0, y: 0, heading: 0, segs: [{ kind: 'curve', radius: 104, angle: 22.5 }] },
+    { name: 'Branch', x: 0, y: 0, heading: 0, segs: [{ kind: 'curve', radius: 104, angle: 22.5 }, { kind: 'straight', studs: BT_LEAD_STUDS }] },
   ] },
   'Right switch (BrickTracks R104)': { version: 1, gaugeStuds: 4, routes: [
     { name: 'Straight', x: 0, y: 0, heading: 0, segs: [{ kind: 'straight', studs: 40 }] },
-    { name: 'Branch', x: 0, y: 0, heading: 0, segs: [{ kind: 'curve', radius: 104, angle: -22.5 }] },
+    { name: 'Branch', x: 0, y: 0, heading: 0, segs: [{ kind: 'curve', radius: 104, angle: -22.5 }, { kind: 'straight', studs: BT_LEAD_STUDS }] },
   ] },
   'Wye switch': { version: 1, gaugeStuds: 4, routes: [
     { name: 'Left', x: 0, y: 0, heading: 0, segs: [{ kind: 'curve', radius: 40, angle: 22.5 }, { kind: 'straight', studs: 16 }] },
@@ -438,12 +462,14 @@ export const TEMPLATES: Record<string, Design> = {
   'Double crossover (R56)': { version: 1, gaugeStuds: 4, routes: [{name: 'A', x: 0, y: 0, heading: 0, segs: [{kind: 'straight', studs: 90}]}, {name: 'B', x: 16, y: 0, heading: 0, segs: [{kind: 'straight', studs: 90}]}, {name: 'AB', x: 0, y: 16, heading: 0, segs: [{kind: 'curve', radius: 56, angle: -31.002719}, {kind: 'curve', radius: 56, angle: 31.002719}]}, {name: 'BA', x: 16, y: 16, heading: 0, segs: [{kind: 'curve', radius: 56, angle: 31.002719}, {kind: 'curve', radius: 56, angle: -31.002719}]}] },
   'Yard ladder (R40)': { version: 1, gaugeStuds: 4, routes: [{name: 'Main', x: 0, y: -8, heading: 0, segs: [{kind: 'straight', studs: 194.052048}]}, {name: 'Ladder', x: 0, y: 0, heading: 0, segs: [{kind: 'curve', radius: 40, angle: -22.5}, {kind: 'straight', studs: 141.517055}]}, {name: 'Y1', x: 12.955181, y: 39.233069, heading: -22.5, segs: [{kind: 'curve', radius: 40, angle: 22.5}, {kind: 'straight', studs: 40}]}, {name: 'Y2', x: 28.955181, y: 77.860486, heading: -22.5, segs: [{kind: 'curve', radius: 40, angle: 22.5}, {kind: 'straight', studs: 32}]}, {name: 'Y3', x: 44.955181, y: 116.487903, heading: -22.5, segs: [{kind: 'curve', radius: 40, angle: 22.5}, {kind: 'straight', studs: 24}]}] },
   'Wye with a crossover': { version: 1, gaugeStuds: 4, routes: [{name: 'In', x: 8, y: -16, heading: 0, segs: [{kind: 'straight', studs: 16}]}, {name: 'WL', x: 8, y: 0, heading: 0, segs: [{kind: 'curve', radius: 72, angle: 19.188136}, {kind: 'curve', radius: 72, angle: -19.188136}, {kind: 'straight', studs: 81.96969}]}, {name: 'WR', x: 8, y: 0, heading: 0, segs: [{kind: 'curve', radius: 72, angle: -19.188136}, {kind: 'curve', radius: 72, angle: 19.188136}, {kind: 'straight', studs: 81.96969}]}, {name: 'X', x: 0, y: 55.328638, heading: 0, segs: [{kind: 'curve', radius: 72, angle: -27.266044}, {kind: 'curve', radius: 72, angle: 27.266044}]}, {name: 'ML', x: 0, y: 129.298328, heading: 0, segs: [{kind: 'curve', radius: 72, angle: -19.188136}, {kind: 'curve', radius: 72, angle: 19.188136}]}, {name: 'MR', x: 16, y: 129.298328, heading: 0, segs: [{kind: 'curve', radius: 72, angle: 19.188136}, {kind: 'curve', radius: 72, angle: -19.188136}]}, {name: 'Out', x: 8, y: 176.626967, heading: 0, segs: [{kind: 'straight', studs: 16}]}] },
-  // (a double track's two lines joined by a loop at R104 and R120 with a passing loop in it, as the reference parts': the
-  // left-hand line's switch splits it to the loop's two tracks; they come back together at the far switch and
-  // return as the right-hand line. The loop turns 244.6 degrees, its two switches R104 22.6 degrees, as one 16-stud
-  // shift each; one turning each way, mirror images)
-  'Double-track return loop (turning right)': { version: 1, gaugeStuds: 4, routes: [{name: 'Loop', x: 0, y: 0, heading: 0, segs: [{kind: 'straight', studs: 264}, {kind: 'curve', radius: 120, angle: -244.585379}, {kind: 'straight', studs: 106.433078}, {kind: 'curve', radius: 104, angle: 64.585379}, {kind: 'straight', studs: 16}]}, {name: 'Inner', x: 0, y: 24, heading: 0, segs: [{kind: 'curve', radius: 104, angle: -22.619865}, {kind: 'curve', radius: 104, angle: 22.619865}, {kind: 'straight', studs: 160}, {kind: 'curve', radius: 104, angle: -244.585379}, {kind: 'straight', studs: 10.433078}, {kind: 'curve', radius: 104, angle: 22.619865}, {kind: 'curve', radius: 104, angle: -22.619865}]}] },
-  'Double-track return loop (turning left)': { version: 1, gaugeStuds: 4, routes: [{name: 'Loop', x: 0, y: 0, heading: 0, segs: [{kind: 'straight', studs: 264}, {kind: 'curve', radius: 120, angle: 244.585379}, {kind: 'straight', studs: 106.433078}, {kind: 'curve', radius: 104, angle: -64.585379}, {kind: 'straight', studs: 16}]}, {name: 'Inner', x: 0, y: 24, heading: 0, segs: [{kind: 'curve', radius: 104, angle: 22.619865}, {kind: 'curve', radius: 104, angle: -22.619865}, {kind: 'straight', studs: 160}, {kind: 'curve', radius: 104, angle: 244.585379}, {kind: 'straight', studs: 10.433078}, {kind: 'curve', radius: 104, angle: -22.619865}, {kind: 'curve', radius: 104, angle: 22.619865}]}] },
+  // (a double track's two lines joined by a loop with a passing loop in it, all of it bought track (as the reference
+  // plan's): LEGO's 16-stud straights; BrickTracks' R104 switches, R104 and R120 curves (the loop turns 247.5 degrees,
+  // 22 of each), R104B siding curves after the switches, and their 1/2, 1/4 and 1/10 straights. The line in runs up the
+  // left track to the first switch: on along the outer track (R120), or through the switch's branch and an R104B and an
+  // R104, 16 studs over, the inner one (R104); the two meet at the far switch (forced: their pieces meet it 0.04 mm off,
+  // as real track does), which returns as the right-hand line, ending 16 studs over. One turning each way, mirror images)
+  'Double-track return loop (turning right)': bricktracksLoop(1),
+  'Double-track return loop (turning left)': bricktracksLoop(-1),
   // ---- features ----
   'Siding ending in a buffer stop': { version: 1, gaugeStuds: 4, options: { ballast: 'ballast' }, routes: [
     { name: 'Main', x: 0, y: 0, heading: 0, segs: [{ kind: 'straight', studs: 48 }] },

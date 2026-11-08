@@ -216,11 +216,37 @@ function startPoses(rt: Route): Pose[] {
 
 /** Arc length along a route of the point on its centre line level with pt (route_s_of). */
 export function routeSOf(rt: Route, pt: Pt, lo = 0, hi = -1, n = 40): number {
+  // (the whole route: the nearest point on it, segment by segment, as a route that turns back on itself (a loop) has no
+  // one way ahead to search by)
+  if (lo === 0 && hi < 0) return nearestS(rt, pt);
   const h = hi < 0 ? routeLength(rt) : hi, mid = (lo + h) / 2;
   if (n === 0) return mid;
   const p = routePose(rt, mid);
   const ahead = (pt[0] - p[0]) * -sind(p[2]) + (pt[1] - p[1]) * cosd(p[2]);
   return ahead > 0 ? routeSOf(rt, pt, mid, h, n - 1) : routeSOf(rt, pt, lo, mid, n - 1);
+}
+
+/** The arc length of the point on a route's centre line nearest pt. */
+function nearestS(rt: Route, pt: Pt): number {
+  const sp = startPoses(rt);
+  let best = 0, bd = Infinity, s0 = 0;
+  rt.segments.forEach((sg, i) => {
+    const p0 = sp[i], len = segLength(sg);
+    const dx = pt[0] - p0[0], dy = pt[1] - p0[1];
+    const lx = dx * cosd(p0[2]) + dy * sind(p0[2]), ly = -dx * sind(p0[2]) + dy * cosd(p0[2]);
+    let l: number;
+    if (sg.kind === 'straight') l = ly;
+    else {
+      const r = sg.radius, phi = sg.angle > 0 ? Math.atan2(ly, lx + r) : Math.atan2(ly, r - lx);
+      // (the far side of the circle: its nearer end)
+      l = phi < -Math.PI / 2 ? 0 : phi * r;
+    }
+    l = Math.min(len, Math.max(0, l));
+    const q = poseAfter(p0, subSeg(sg, l)), d = Math.hypot(q[0] - pt[0], q[1] - pt[1]);
+    if (d < bd - 1e-9) { bd = d; best = s0 + l; }
+    s0 += len;
+  });
+  return best;
 }
 
 /** A route's rail at offset o, sampled every step mm: [s, x, y] points. */

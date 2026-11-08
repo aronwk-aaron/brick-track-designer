@@ -25,7 +25,16 @@ export type RoutePiece = [number, number, number];
  * angle: then each plain stretch is cut where its own pieces would join, each segment on from its start (a straight
  * every exact, such a curve every piece's angle), so its pieces can be those parts.
  */
-export function planSections(routes: Route[], splits: Split[], half: number, room: number, minPart = 40, exact = 0, plates?: { size: number; x: number; y: number }, std?: Map<number, number>) {
+/**
+ * stdStraights: the lengths (mm) of straights that are track pieces of their own (bought): a stretch cut to one of those
+ * may be shorter than minPart (a BrickTracks 1/10 straight, 1.6 studs). With std, plain track is cut where its pieces
+ * join even beside other track (where its base meets another's: built with it, but still those pieces), clear of the
+ * points and where tracks cross. lead: the short straight on a BrickTracks R104B curve (mm): one piece with the curve
+ * beside it, not cut from it.
+ */
+export function planSections(routes: Route[], splits: Split[], half: number, room: number, minPart = 40, exact = 0, plates?: { size: number; x: number; y: number }, std?: Map<number, number>, stdStraights: number[] = [], lead = 0, seamOf?: (q: [number, number]) => number) {
+  /** where a table seam crosses the track: cut there ('cut'), or not, through points or a crossing ('blocked'); 'split': cut, but between its pieces' joints (a bought piece printed in two) */
+  const seams: { at: [number, number]; kind: 'blocked' | 'split' }[] = [];
   const boxes = routes.map((rt) => routesBox([rt], half + 16, 8));
   const inBox = (j: number, q: [number, number]) => q[0] >= boxes[j][0] && q[0] <= boxes[j][2] && q[1] >= boxes[j][1] && q[1] <= boxes[j][3];
   // the points' stretches (and a connector's length past them), where no cut goes
@@ -41,9 +50,41 @@ export function planSections(routes: Route[], splits: Split[], half: number, roo
     }
     return true;
   };
+  // (where another track crosses this one, or runs within a few studs of it, at s: no joint between pieces there)
+  const nearCross = (i: number, s: number) => {
+    for (let ds = -24; ds <= 24; ds += 8) {
+      const q = railPoint(routes[i], s + ds, 0);
+      for (let j = 0; j < routes.length; j++) if (j !== i && inBox(j, q) && Math.abs(routeLat(routes[j], q)) < 24) return true;
+    }
+    return false;
+  };
   const pieces: RoutePiece[] = [];
   routes.forEach((rt, i) => {
     const L = routeLength(rt), step = 8, cuts: number[] = [];
+    // (its pieces' joints, when they're track pieces of their own (std): each segment on from its start, a straight every
+    // exact, such a curve every piece's angle)
+    const nat = new Set<number>();
+    if (std && exact > 0) {
+      let s0 = 0;
+      const isLead = (k: number) => { const g = rt.segments[k]; return !!g && lead > 0 && g.kind === 'straight' && Math.abs(g.length - lead) < 0.01; };
+      const isR104 = (k: number) => { const g = rt.segments[k]; return !!g && g.kind === 'arc' && Math.abs(g.radius - 104 * 8) < 0.01; };
+      rt.segments.forEach((sg, k) => {
+        const len = sg.kind === 'straight' ? sg.length : (Math.abs(sg.angle) * Math.PI * sg.radius) / 180;
+        const r = sg.kind === 'arc' ? [...std.keys()].find((k2) => Math.abs(k2 - sg.radius) < 0.01) : undefined;
+        const each = r !== undefined ? (std.get(r)! * Math.PI * r) / 180 : exact;
+        // (an R104B: its short straight and the curve beside it one piece)
+        const joined = (isLead(k) && isR104(k - 1)) || (isR104(k) && isLead(k - 1));
+        for (let c2 = s0; c2 < s0 + len - 1e-6; c2 += each) if (c2 > 1e-6 && !(c2 === s0 && joined)) nat.add(c2);
+        s0 += len;
+      });
+    }
+    // (a stretch from a to b that's one straight piece of its own)
+    const stdPiece = (a: number, b: number) => {
+      if (!stdStraights.some((l) => Math.abs(b - a - l) < 0.01)) return false;
+      let s0 = 0;
+      for (const sg of rt.segments) { const len = sg.kind === 'straight' ? sg.length : (Math.abs(sg.angle) * Math.PI * sg.radius) / 180; if (a >= s0 - 1e-6 && b <= s0 + len + 1e-6) return sg.kind === 'straight'; s0 += len; }
+      return false;
+    };
     // free stretches along it (on the stud grid from its start)
     const ok: boolean[] = [];
     for (let s = 0; s <= L; s += step) ok.push(free(i, s));
@@ -83,7 +124,8 @@ export function planSections(routes: Route[], splits: Split[], half: number, roo
           return at;
         })() : undefined;
         // (a and b cuts only where points or a crossing end the stretch, not at the route's own ends' margins)
-        if (natural) { if (a > minPart + step) cuts.push(a); for (const c2 of natural) if (c2 > a + 1e-6 && c2 < b - 1e-6) cuts.push(c2); if (b < L - minPart - step) cuts.push(b); }
+        // (only where its pieces join: beside the points or other track too (below), so what's built with them is whole pieces)
+        if (natural) { for (const c2 of natural) if (c2 > a + 1e-6 && c2 < b - 1e-6) cuts.push(c2); }
         else if (exact > 0 && !edges.length) { if (a > minPart) cuts.push(a); for (let c2 = Math.ceil((a + 1e-6) / exact) * exact; c2 < b - 1e-6; c2 += exact) cuts.push(c2); if (b < L - minPart) cuts.push(b); }
         else if (!edges.length) for (let m = 0; m <= n; m++) cuts.push(Math.round((a + (inner * m) / n) / step) * step);
         else {
@@ -95,9 +137,33 @@ export function planSections(routes: Route[], splits: Split[], half: number, roo
       }
       k = e + 1;
     }
-    const cs = [...new Set(cuts)].filter((c) => c >= minPart && c <= L - minPart).sort((p, q) => p - q);
+    // (and its pieces' joints beside other track too, clear of the points and of track crossing it)
+    for (const c2 of nat) if (!busy[i].some(([a, b]) => c2 >= a && c2 <= b) && !nearCross(i, c2)) cuts.push(c2);
+    // (and where it crosses a table's seam: there exactly (on its pieces' joint, if that's within 3 mm: tables don't meet
+    // that exactly, nor bought track lie on them so), unless
+    // that's in points or a crossing; the pieces either side may be short, as a joint's can)
+    const seamAt = new Set<number>();
+    if (seamOf) {
+      const at = (sv: number) => { const q = routePose(rt, sv); return seamOf([q[0], q[1]]); };
+      for (let s2 = 2; s2 <= L; s2 += 2) {
+        if (at(s2 - 2) === at(s2)) continue;
+        let lo = s2 - 2, hi = s2;
+        for (let k = 0; k < 30; k++) { const m = (lo + hi) / 2; if (at(m) === at(lo)) lo = m; else hi = m; }
+        const q = routePose(rt, hi), pt: [number, number] = [q[0], q[1]];
+        if (hi < 1 || hi > L - 1) continue;
+        if (busy[i].some(([a, b]) => hi >= a && hi <= b) || nearCross(i, hi)) { seams.push({ at: pt, kind: 'blocked' }); continue; }
+        const j = [...nat].find((c2) => Math.abs(c2 - hi) < 3);
+        if (j !== undefined) { cuts.push(j); seamAt.add(j); continue; }
+        nat.add(hi); cuts.push(hi); seamAt.add(hi);
+        if (std && exact > 0) seams.push({ at: pt, kind: 'split' });
+      }
+    }
+    const cs = [...new Set(cuts)].filter((c) => (c >= minPart && c <= L - minPart) || (nat.has(c) && c > 1 && c < L - 1)).sort((p, q) => p - q);
     let s0 = 0;
-    for (const c of cs) { if (c - s0 >= minPart) { pieces.push([i, s0, c]); s0 = c; } }
+    const mine0 = pieces.length;
+    for (const c of cs) { if (c - s0 >= minPart || (nat.has(c) && (stdPiece(s0, c) || seamAt.has(c) || seamAt.has(s0)))) { pieces.push([i, s0, c]); s0 = c; } }
+    // (a last stretch too short to be a piece, and not one of its own: on the one before)
+    if (L - s0 < minPart && !stdPiece(s0, L) && !seamAt.has(s0) && pieces.length > mine0) s0 = pieces.pop()![1];
     pieces.push([i, s0, L]);
   });
   // sections: pieces whose bases overlap (union-find)
@@ -125,5 +191,5 @@ export function planSections(routes: Route[], splits: Split[], half: number, roo
   }
   const groups = new Map<number, number[]>();
   pieces.forEach((_, k) => { const g = find(k); if (!groups.has(g)) groups.set(g, []); groups.get(g)!.push(k); });
-  return { pieces, sections: [...groups.values()] };
+  return { pieces, sections: [...groups.values()], seams };
 }

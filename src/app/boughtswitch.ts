@@ -41,14 +41,22 @@ export const LEGO_SWITCH: SwitchKind = {
 };
 
 /**
+ * The short straight on BrickTracks' R104 pieces that makes them meet the stud grid (mm): their switch's branch an R104
+ * curve of 22.5 degrees and then this, ending 40 studs on and 8 over (the BlueBrick library's 40 x 8); their R104B
+ * "siding" curve this and then an R104 curve of 11.25, so the switch, an R104B and an R104 make a parallel track 16 studs
+ * over and 80 on.
+ */
+export const BT_LEAD = ((8 - 104 * (1 - Math.cos(Math.PI / 8))) / Math.sin(Math.PI / 8)) * 8;
+
+/**
  * BrickTracks' R104 switch (their R104 switch track kit: a left and a right): 40 studs straight, the branch an R104
- * curve of 22.5 degrees. Its switch stand clips to either side, 4.5 studs from the toe, 3 studs wide, 7 out.
+ * curve of 22.5 degrees and BT_LEAD on. Its switch stand clips to either side, 4.5 studs from the toe, 3 studs wide, 7 out.
  */
 export const BRICKTRACKS_SWITCH: SwitchKind = {
   left: { part: 'BrickTracks R104 switch left', name: 'BrickTracks R104 switch, left (in their R104 switch track kit)', qty: 1, shop: 'bricktracks' },
   right: { part: 'BrickTracks R104 switch right', name: 'BrickTracks R104 switch, right (in their R104 switch track kit)', qty: 1, shop: 'bricktracks' },
   straight: 40 * 8,
-  branch: [{ kind: 'arc', radius: 104 * 8, angle: 22.5 }],
+  branch: [{ kind: 'arc', radius: 104 * 8, angle: 22.5 }, { kind: 'straight', length: BT_LEAD }],
   extras: [[-80, -24, 24, 48], [24, 80, 24, 48]],
   sleeper: 64,
 };
@@ -134,8 +142,21 @@ export function findBoughtSwitches(routes: Route[], splits: Split[], kinds: Swit
     }
     return false;
   });
+  // (its ends on the routes where their pieces join, if that's within a hair: forced points' legs meet a route a hair off,
+  // and a sliver of track left over there is no piece of anything)
+  for (const b of found) b.covers = b.covers.map(([r, s0, s1]) => [r, snap(routes[r], s0), snap(routes[r], s1)]);
   const overlaps = (a: BoughtSwitch, b: BoughtSwitch) => a.covers.some(([r, s0, s1]) => b.covers.some(([r2, t0, t1]) => r === r2 && s0 < t1 - 1e-6 && t0 < s1 - 1e-6));
   return found.filter((b) => !clash(b) && !found.some((c) => c !== b && overlaps(b, c)));
+}
+
+/** s, moved onto the joint between two of the route's segments (or its end) if one is within 0.6 mm. */
+function snap(rt: Route, s: number): number {
+  let at = 0;
+  for (const sg of [...rt.segments, undefined]) {
+    if (Math.abs(at - s) < 0.6) return at;
+    if (sg) at += sg.kind === 'straight' ? sg.length : (Math.abs(sg.angle) * Math.PI * sg.radius) / 180;
+  }
+  return s;
 }
 
 /** The routes with the bought switches' stretches cut out: each route in the pieces either side (the first keeps its id). */

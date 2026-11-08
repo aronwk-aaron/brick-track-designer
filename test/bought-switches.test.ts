@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { buildDesign } from '../src/app/build';
 import { type Design, OPTION_DEFAULTS, type PieceOptions, TEMPLATES, toRoutes } from '../src/app/design';
 import { kernel } from '../src/geom/kernel';
+import { BT_LEAD } from '../src/app/boughtswitch';
 import { routeLength, routePose } from '../src/route/route';
 
 const APP = (globalThis as { APP_DEFAULTS?: PieceOptions }).APP_DEFAULTS!;
@@ -57,7 +58,7 @@ describe('switches bought as track pieces, as plain track is', { timeout: 600000
       const w = await kernel();
       const d: Design = { version: 1, gaugeStuds: 4, routes: [
         { name: 'Straight', x: 0, y: 0, heading: 0, segs: [{ kind: 'straight', studs: 40 }] },
-        { name: 'Branch', x: 0, y: 0, heading: 0, segs: [{ kind: 'curve', radius: 104, angle: -22.5 }] },
+        { name: 'Branch', x: 0, y: 0, heading: 0, segs: [{ kind: 'curve', radius: 104, angle: -22.5 }, { kind: 'straight', studs: BT_LEAD / 8 }] },
       ] };
       const b = buildDesign(w, d);
       expect(b.info.warnings).toEqual([]);

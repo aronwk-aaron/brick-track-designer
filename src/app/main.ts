@@ -6,6 +6,7 @@ import { BANK_MAX, type BankRamps, type Design, type DRoute, type DSeg, OPTION_D
 import { TrackCanvas, type OverlayItem, leverSide, leverSlides, typingIn } from './canvas';
 import { describe } from './planner';
 import { BRICKTRACKS_COLOR, LEGO_COLOR, type LegoPart, legoParts, type Piece } from './build';
+import { TABLE_COLORS, type Table } from './tables';
 import { zip } from '../geom/zip';
 import { layoutParts } from './layoutparts';
 
@@ -163,7 +164,57 @@ const openCards = new Set<number>();
 /** The route cards' sections open (by title), the same for every card, remembered in this browser. */
 const openParts: Set<string> = (() => { try { const v = JSON.parse(localStorage.getItem('btd-card-parts') ?? 'null'); if (Array.isArray(v)) return new Set<string>(v); } catch { /* (none kept) */ } return new Set(['Shape']); })();
 const keepParts = () => { try { localStorage.setItem('btd-card-parts', JSON.stringify([...openParts])); } catch { /* (not kept) */ } };
+// ---------- the tables ----------
+/** The Tables panel: each table's name, colour and shape in studs, to change; buttons to add one of each kind. */
+function renderTables() {
+  const body = $('tables-body'), ts = design.tables ?? [];
+  $('tables-count').textContent = ts.length ? ` (${ts.length})` : '';
+  body.replaceChildren();
+  const bar = document.createElement('div'); bar.className = 'tbar';
+  // (a new table: among the tracks' starts (or at the origin), on the 8-stud grid)
+  const at = (): [number, number] => {
+    const rs = design.routes;
+    if (!rs.length) return [0, 0];
+    const xs = rs.map((r) => r.x), ys = rs.map((r) => r.y);
+    return [Math.round((Math.min(...xs) + Math.max(...xs)) / 16) * 8, Math.round((Math.min(...ys) + Math.max(...ys)) / 16) * 8];
+  };
+  const add = (t: Table) => { design.tables = [...ts, { name: `Table ${ts.length + 1}`, color: TABLE_COLORS[ts.length % TABLE_COLORS.length], ...t }]; };
+  bar.append(
+    btn('+ Rectangle', () => { const [x, y] = at(); add({ shape: 'rect', x: x - 16, y: y - 32, w: 32, h: 64 }); }, 'Add a rectangular table, 32 x 64 studs'),
+    btn('+ Curved', () => { const [x, y] = at(); add({ shape: 'arc', cx: x, cy: y, r0: 32, r1: 64, a0: 0, a1: 90 }); }, 'Add a curved table: a quarter ring, radius 32 to 64 studs round a centre'),
+    btn('+ Any shape', () => { const [x, y] = at(); add({ shape: 'poly', pts: [[x - 16, y - 16], [x + 16, y - 16], [x + 24, y + 16], [x - 16, y + 16]] }); }, 'Add a table of any shape: its corners in studs'));
+  body.append(bar);
+  if (!ts.length) { const p = document.createElement('div'); p.className = 'tnote'; p.textContent = 'No tables. With tables, the track is cut where one meets the next: plain track at an ordinary track end; bought track\'s printed ballast along the seam. Only with Long track cut into: Track pieces.'; body.append(p); }
+  ts.forEach((t, k) => {
+    const card = document.createElement('div'); card.className = 'tcard';
+    const head = document.createElement('div'); head.className = 'thead';
+    const name = document.createElement('input'); name.type = 'text'; name.value = t.name ?? ''; name.placeholder = `Table ${k + 1}`;
+    name.addEventListener('change', () => { t.name = name.value; changed(); });
+    const col = document.createElement('input'); col.type = 'color'; col.value = t.color ?? TABLE_COLORS[k % TABLE_COLORS.length]; col.title = 'Its colour on the plan';
+    col.addEventListener('input', () => { t.color = col.value; changed(false, true, false); });
+    head.append(col, name, btn('✕', () => { design.tables = ts.filter((x) => x !== t); if (!design.tables.length) delete design.tables; }, 'Remove this table'));
+    const f = document.createElement('div'); f.className = 'tfields';
+    const n = (label: string, v: number, set: (x: number) => void, step = 1) => f.append(field(label, num(v, set, step)));
+    if (t.shape === 'rect') { n('x', t.x, (v) => { t.x = v; }); n('y', t.y, (v) => { t.y = v; }); n('width', t.w, (v) => { t.w = Math.max(1, v); }); n('length', t.h, (v) => { t.h = Math.max(1, v); }); }
+    else if (t.shape === 'arc') {
+      n('centre x', t.cx, (v) => { t.cx = v; }); n('centre y', t.cy, (v) => { t.cy = v; });
+      n('inner radius', t.r0, (v) => { t.r0 = Math.max(0, v); }, 8); n('outer radius', t.r1, (v) => { t.r1 = Math.max(0, v); }, 8);
+      n('from °', t.a0, (v) => { t.a0 = v; }, 11.25); n('to °', t.a1, (v) => { t.a1 = v; }, 11.25);
+    } else {
+      const ta = document.createElement('textarea'); ta.rows = 2; ta.value = t.pts.map((p) => `${+p[0].toFixed(3)}, ${+p[1].toFixed(3)}`).join('; ');
+      ta.title = 'Its corners in studs, x, y each, in order round it, separated by ;';
+      ta.addEventListener('change', () => { const pts = ta.value.split(';').map((v) => v.split(',').map(Number)).filter((v) => v.length === 2 && v.every(Number.isFinite)) as [number, number][]; if (pts.length >= 3) { t.pts = pts; changed(true); } });
+      f.append(field('corners (x, y; …)', ta));
+    }
+    const note = document.createElement('div'); note.className = 'tnote';
+    note.textContent = t.shape === 'rect' ? 'Studs: its corner (x, y), width (x) and length (y).' : t.shape === 'arc' ? 'Studs: round its centre, from the inner radius to the outer, between two angles (0° along x, counterclockwise). A centre on a curve\'s centre puts the seams square across the track.' : '';
+    card.append(head, f, ...(note.textContent ? [note] : []));
+    body.append(card);
+  });
+}
+
 function render() {
+  renderTables();
   // (the rows go: no piece left picked out by one that's gone)
   canvas.highlightSeg = undefined;
   routesEl.replaceChildren();
@@ -659,6 +710,7 @@ function updateLegend() {
   const show = (id: string, on: boolean) => { const el = document.getElementById(id); if (el) el.hidden = !on; };
   show('legend-ballast', (design.options?.ballast ?? 'none') !== 'none');
   show('legend-baseplate', (design.options?.baseplate ?? 0) > 0);
+  show('legend-tables', !!design.tables?.length);
   show('legend-grooves', !!o?.grooves.length); show('legend-checks', !!o?.checkRails.length); show('legend-crossings', !!o?.crossings.length);
   show('legend-points', its.some((it) => it.kind === 'points' && !it.off && !it.cand));
   show('legend-points-off', its.some((it) => it.kind === 'points' && it.off));
@@ -1183,7 +1235,7 @@ const OPTION_FORM: OptSection[] = [
       { v: 'lengths', t: 'Track pieces, cut across the track', tip: 'Each track cut square to itself into pieces with ordinary end connectors, like LEGO track. Switches and crossings stay whole.', con: 'More parts, and a cut only where the track is clear of other tracks.' }] },
     { key: 'pieceLengthStuds', label: 'Piece length, studs', step: 4, min: 0, max: 64, off: (c) => (c.o.splitTrack === 'lengths' ? undefined : 'only with Long track cut into: Track pieces'), help: 'LEGO straights are 16. 0: as long as fits the print bed. A longer piece than the bed takes: as long as fits.' },
     { key: 'legoTrack', label: 'Bought track', help: 'Plain track and switches bought where they\'re the same as LEGO\'s or BrickTracks\'. Bought straights are 16 studs, whatever Piece length is. In the 3D view LEGO\'s are green, BrickTracks\' purple (Bought hides them). Pictures: printed blue, LEGO\'s light grey, BrickTracks\' dark grey.', off: (c) => (c.o.splitTrack !== 'lengths' ? 'only with Long track cut into: Track pieces' : design.gaugeStuds !== 4 ? 'LEGO track is 4 studs between the rails: the gauge isn\'t 4' : undefined), choices: [
-      { v: 'lego', t: 'Bought: LEGO\'s and BrickTracks\'', tip: 'Plain track bought, not printed: each 16-stud straight is LEGO\'s (53401), with ballast on LEGO plates under it (6 x 16 and two 2 x 16, two more 6 x 16 for the buddy layer); R40 curves are LEGO\'s (53400) and R56 to R120 curves BrickTracks\' (injection moulded, 11.25° each), with ballast on a printed ballast piece (…-ballast, with the buddy layer if set) they drop into; with a Flat ballast underside, BrickTracks\' curves on BrickTracks\' own ballast and buddy, bought too. Switches too, where they\'re exactly theirs with no other track over them: LEGO\'s (53407 left, 53404 right: 32 studs, as the LEGO switch templates) and BrickTracks\' R104 (40 studs, an R104 curve of 22.5°); on ballast, a printed ballast piece (switch-ballast) with a seat for it. Bought parts are in the parts list (toolbar), not the STL download.', con: 'Their sleepers and underside are theirs, not as set here.' },
+      { v: 'lego', t: 'Bought: LEGO\'s and BrickTracks\'', tip: 'Plain track bought, not printed: each 16-stud straight is LEGO\'s (53401), with ballast on LEGO plates under it (6 x 16 and two 2 x 16, two more 6 x 16 for the buddy layer); R40 curves are LEGO\'s (53400) and R56 to R120 curves BrickTracks\' (injection moulded, 11.25° each), with ballast on a printed ballast piece (…-ballast, with the buddy layer if set) they drop into; with a Flat ballast underside, BrickTracks\' curves on BrickTracks\' own ballast and buddy, bought too. BrickTracks\' 1/2, 1/4 and 1/10 straights (8, 4 and 1.6 studs) and their R104B siding curve too. Switches too, where they\'re exactly theirs with no other track over them: LEGO\'s (53407 left, 53404 right: 32 studs, as the LEGO switch templates) and BrickTracks\' R104 (40 studs; the branch an R104 curve of 22.5° ending 8 studs over); on ballast, a printed ballast piece (switch-ballast) the switch sits down into. Bought pieces side by side (beside a switch, a passing loop) are all bought, their ballast printed in one piece under them. Bought parts are in the parts list (toolbar), not the STL download.', con: 'Their sleepers and underside are theirs, not as set here.' },
       { v: 'lego-only', t: 'Bought: LEGO\'s only', tip: 'LEGO\'s straights (53401), R40 curves (53400) and switches (53407, 53404) bought, as Bought: LEGO\'s and BrickTracks\'; every other piece printed, BrickTracks\' curves and switches too.', con: 'Their sleepers and underside are theirs, not as set here.' },
       { v: 'print', t: 'Printed', tip: 'Every piece printed, as set here: nothing bought.', con: 'More to print.' }] },
     { key: 'joint', label: 'Parts join with', help: 'How parts cut for the print bed or at baseplate edges join. With Long track cut into: Track pieces, plain track joins with its own end connectors; this is for the switches and crossings too big for the bed.', choices: [
