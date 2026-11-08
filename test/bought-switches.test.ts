@@ -90,11 +90,11 @@ describe('switches bought as track pieces, as plain track is', { timeout: 600000
       const w = await kernel();
       for (const ballast of ['ballast', 'buddy'] as const) {
         const b = buildDesign(w, withOpts(TEMPLATES['Left switch (LEGO)'], { ballast }));
-        expect(b.info.warnings).toEqual([]);
+        // (its ballast one part, as the switch is: longer than the 256 mm bed)
+        expect(b.info.warnings).toEqual(["a bought switch's ballast (one part, as the switch is) doesn't fit the 256 x 256 print bed"]);
         expect(count(b, '53407')).toBe(1);
-        // (cut for the print bed: the switch is longer than it)
         const seats = printed(b);
-        expect(seats.length).toBeGreaterThan(0);
+        expect(seats.length).toBe(1);
         for (const p of seats) expect(p.name).toMatch(/^switch-ballast\d*$/);
         const man = (p: Built['pieces'][number]) => { const m = new w.Mesh({ numProp: 3, vertProperties: new Float32Array(p.positions), triVerts: new Uint32Array(p.positions.length / 3).map((_, i) => i) }); m.merge(); return new w.Manifold(m); };
         const sw = man(b.pieces.find((p) => p.lego)!);
