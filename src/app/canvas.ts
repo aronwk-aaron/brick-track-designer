@@ -833,10 +833,10 @@ export class TrackCanvas {
       if (pts.length < 3) return;
       c.beginPath(); pts.forEach(([x, y], i) => { const [sx, sy] = this.toScreen(x, y); if (i) c.lineTo(sx, sy); else c.moveTo(sx, sy); }); c.closePath();
       c.globalAlpha = 0.4; c.fillStyle = t.color ?? TABLE_COLORS[k % TABLE_COLORS.length]; c.fill(); c.globalAlpha = 1;
-      c.strokeStyle = 'rgba(40,40,40,0.55)'; c.lineWidth = 1.5; c.stroke();
+      c.strokeStyle = ink.rail; c.lineWidth = 1.5; c.stroke();
       if (t.name) {
         const m = pts.reduce((a, p) => [a[0] + p[0] / pts.length, a[1] + p[1] / pts.length], [0, 0]), [sx, sy] = this.toScreen(m[0], m[1]);
-        c.fillStyle = 'rgba(30,30,30,0.7)'; c.font = '12px system-ui, sans-serif'; c.textAlign = 'center'; c.fillText(t.name, sx, sy); c.textAlign = 'start';
+        c.fillStyle = ink.label; c.font = '12px system-ui, sans-serif'; c.textAlign = 'center'; c.fillText(t.name, sx, sy); c.textAlign = 'start';
       }
     });
     // baseplate edges, where the track is cut (Piece options)

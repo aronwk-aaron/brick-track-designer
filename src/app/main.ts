@@ -184,6 +184,7 @@ function renderTables() {
     btn('+ Curved', () => { const [x, y] = at(); add({ shape: 'arc', cx: x, cy: y, r0: 32, r1: 64, a0: 0, a1: 90 }); }, 'Add a curved table: a quarter ring, radius 32 to 64 studs round a centre'),
     btn('+ Any shape', () => { const [x, y] = at(); add({ shape: 'poly', pts: [[x - 16, y - 16], [x + 16, y - 16], [x + 24, y + 16], [x - 16, y + 16]] }); }, 'Add a table of any shape: its corners in studs'));
   body.append(bar);
+  if (ts.length && (design.options?.splitTrack ?? OPTION_DEFAULTS.splitTrack) !== 'lengths') { const p = document.createElement('div'); p.className = 'tnote'; p.style.color = 'var(--warn, #c0392b)'; p.textContent = 'Not used now: tables cut the track only with Long track cut into: Track pieces (Settings › Print bed and cutting into parts).'; body.append(p); }
   if (!ts.length) { const p = document.createElement('div'); p.className = 'tnote'; p.textContent = 'No tables. With tables, the track is cut where one meets the next: plain track at an ordinary track end; bought track\'s printed ballast along the seam. Only with Long track cut into: Track pieces.'; body.append(p); }
   ts.forEach((t, k) => {
     const card = document.createElement('div'); card.className = 'tcard';
@@ -203,11 +204,17 @@ function renderTables() {
     } else {
       const ta = document.createElement('textarea'); ta.rows = 2; ta.value = t.pts.map((p) => `${+p[0].toFixed(3)}, ${+p[1].toFixed(3)}`).join('; ');
       ta.title = 'Its corners in studs, x, y each, in order round it, separated by ;';
-      ta.addEventListener('change', () => { const pts = ta.value.split(';').map((v) => v.split(',').map(Number)).filter((v) => v.length === 2 && v.every(Number.isFinite)) as [number, number][]; if (pts.length >= 3) { t.pts = pts; changed(true); } });
-      f.append(field('corners (x, y; …)', ta));
+      const bad = document.createElement('div'); bad.className = 'tnote'; bad.style.color = 'var(--warn, #c0392b)';
+      ta.addEventListener('change', () => {
+        const parts = ta.value.split(';').map((v) => v.trim()).filter(Boolean), pts = parts.map((v) => v.split(',').map((x) => Number(x.trim())));
+        const wrong = parts.filter((_, k) => pts[k].length !== 2 || !pts[k].every(Number.isFinite));
+        bad.textContent = wrong.length ? `Not x, y: ${wrong.slice(0, 3).join('; ')}. Kept the corners as they were.` : pts.length < 3 ? 'It needs 3 corners at least. Kept the corners as they were.' : '';
+        if (!bad.textContent) { t.pts = pts as [number, number][]; changed(true); }
+      });
+      f.append(field('corners (x, y; …)', ta), bad);
     }
     const note = document.createElement('div'); note.className = 'tnote';
-    note.textContent = t.shape === 'rect' ? 'Studs: its corner (x, y), width (x) and length (y).' : t.shape === 'arc' ? 'Studs: round its centre, from the inner radius to the outer, between two angles (0° along x, counterclockwise). A centre on a curve\'s centre puts the seams square across the track.' : '';
+    note.textContent = t.shape === 'rect' ? 'Studs: its corner (x, y), width (x) and length (y).' : t.shape === 'arc' ? 'Studs: round its centre, from the inner radius to the outer. Angles: 0° points right (+x), 90° up (+y), counterclockwise (not a route\'s heading, where 0° is up). A centre on a curve\'s centre puts the seams square across the track.' : '';
     card.append(head, f, ...(note.textContent ? [note] : []));
     body.append(card);
   });
@@ -1237,8 +1244,8 @@ const OPTION_FORM: OptSection[] = [
       { v: 'split', t: 'Cut in half', tip: 'Cut straight through with the rest.', con: 'Half studs either side of the joint: a brick won\'t sit on them.' }] },
   ] },
   { title: 'Bought track', kind: 'train', fields: [
-    { key: 'legoTrack', label: 'Bought track', help: 'Plain track and switches bought where they\'re the same as LEGO\'s or BrickTracks\'. Bought straights are 16 studs, whatever Piece length is. In the 3D view LEGO\'s are green, BrickTracks\' purple (Bought hides them). Pictures: printed blue, LEGO\'s light grey, BrickTracks\' dark grey.', off: (c) => (c.o.splitTrack !== 'lengths' ? 'only with Long track cut into: Track pieces' : design.gaugeStuds !== 4 ? 'LEGO track is 4 studs between the rails: the gauge isn\'t 4' : undefined), choices: [
-      { v: 'lego', t: 'Bought: LEGO\'s and BrickTracks\'', tip: 'Plain track bought, not printed: each 16-stud straight is LEGO\'s (53401), with ballast on LEGO plates under it (6 x 16 and two 2 x 16, two more 6 x 16 for the buddy layer); R40 curves are LEGO\'s (53400) and R56 to R120 curves BrickTracks\' (injection moulded, 11.25° each), with ballast on a printed ballast piece (…-ballast, with the buddy layer if set) they drop into; with a Flat ballast underside, BrickTracks\' curves on BrickTracks\' own ballast and buddy, bought too. BrickTracks\' 1/2, 1/4 and 1/10 straights (8, 4 and 1.6 studs) and their R104B siding curve too. Switches too, where they\'re exactly theirs with no other track over them: LEGO\'s (53407 left, 53404 right: 32 studs, as the LEGO switch templates) and BrickTracks\' R104 (40 studs; the branch an R104 curve of 22.5° ending 8 studs over); on ballast, a printed ballast piece (switch-ballast) the switch sits down into. Bought pieces side by side (beside a switch, a passing loop) are all bought, their ballast printed in one piece under them. Bought parts are in the parts list (toolbar), not the STL download.', con: 'Their sleepers and underside are theirs, not as set here.' },
+    { key: 'legoTrack', label: 'Bought track', help: 'Track bought, not printed, wherever it\'s exactly a piece LEGO or BrickTracks sell. Bought parts are in the parts list (toolbar), not the STL download. In the 3D view and the pictures: LEGO\'s green, BrickTracks\' purple.', off: (c) => (c.o.splitTrack !== 'lengths' ? 'only with Long track cut into: Track pieces' : design.gaugeStuds !== 4 ? 'LEGO track is 4 studs between the rails: the gauge isn\'t 4' : undefined), choices: [
+      { v: 'lego', t: 'Bought: LEGO\'s and BrickTracks\'', tip: 'Bought: LEGO\'s 16-stud straights (53401, ballast on LEGO plates), R40 curves (53400) and switches (53407, 53404); BrickTracks\' R56 to R120 curves, R104B curve, 1/2, 1/4 and 1/10 straights and R104 switches. On ballast, a printed ballast piece each drops into (see Bought track\'s ballast); on a Flat ballast underside, BrickTracks\' curves on their own ballast and buddy. Pieces only where they fit exactly, with no other track over them.', con: 'Their sleepers and underside are theirs, not as set here.' },
       { v: 'lego-only', t: 'Bought: LEGO\'s only', tip: 'LEGO\'s straights (53401), R40 curves (53400) and switches (53407, 53404) bought, as Bought: LEGO\'s and BrickTracks\'; every other piece printed, BrickTracks\' curves and switches too.', con: 'Their sleepers and underside are theirs, not as set here.' },
       { v: 'print', t: 'Printed', tip: 'Every piece printed, as set here: nothing bought.', con: 'More to print.' }] },
     { key: 'boughtBallast', label: 'Bought track\'s ballast', get: () => design.options?.boughtBallast ?? 'each', set: (v) => { design.options = { ...design.options, boughtBallast: v as 'each' | 'together' }; }, def: 'each',

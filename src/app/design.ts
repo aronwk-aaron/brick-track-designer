@@ -451,11 +451,12 @@ export const TEMPLATES: Record<string, Design> = {
   ] },
   // Switches: LEGO's (R40, out to 36.87 degrees and back to 22.5, so one more
   // R40 curve makes a parallel track 16 studs over), a wye and a three-way.
-  'Left switch (LEGO)': { version: 1, gaugeStuds: 4, routes: [
+  // (printed: as bought they're LEGO's own switch, nothing to print)
+  'Left switch (LEGO)': { version: 1, gaugeStuds: 4, options: { legoTrack: 'print' }, routes: [
     { name: 'Straight', x: 0, y: 0, heading: 0, segs: [{ kind: 'straight', studs: 32 }] },
     { name: 'Branch', x: 0, y: 0, heading: 0, segs: [{ kind: 'curve', radius: 40, angle: 36.8699 }, { kind: 'curve', radius: 40, angle: -14.3699 }] },
   ] },
-  'Right switch (LEGO)': { version: 1, gaugeStuds: 4, routes: [
+  'Right switch (LEGO)': { version: 1, gaugeStuds: 4, options: { legoTrack: 'print' }, routes: [
     { name: 'Straight', x: 0, y: 0, heading: 0, segs: [{ kind: 'straight', studs: 32 }] },
     { name: 'Branch', x: 0, y: 0, heading: 0, segs: [{ kind: 'curve', radius: 40, angle: -36.8699 }, { kind: 'curve', radius: 40, angle: 14.3699 }] },
   ] },

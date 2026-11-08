@@ -12,12 +12,13 @@ const printed = (b: Built) => b.pieces.filter((p) => !p.lego);
 const withOpts = (d: Design, o: Partial<PieceOptions>): Design => ({ ...d, options: { ...d.options, ...o } as Design['options'] });
 
 describe('switches bought as track pieces, as plain track is', { timeout: 600000 }, () => {
-  it('LEGO\'s switch points (the LEGO templates): bought, nothing printed; Printed: built as a switch', async () => {
+  it('LEGO\'s switch points (the LEGO templates, set to buy): bought, nothing printed; as the templates are, Printed: built as a switch', async () => {
     const saved = { ...OPTION_DEFAULTS };
     Object.assign(OPTION_DEFAULTS, APP);
     try {
       const w = await kernel();
-      const l = buildDesign(w, TEMPLATES['Left switch (LEGO)']), r = buildDesign(w, TEMPLATES['Right switch (LEGO)']);
+      // (the templates print theirs: bought, set so)
+      const l = buildDesign(w, withOpts(TEMPLATES['Left switch (LEGO)'], { legoTrack: 'lego' })), r = buildDesign(w, withOpts(TEMPLATES['Right switch (LEGO)'], { legoTrack: 'lego' }));
       expect(l.info.warnings).toEqual([]);
       expect([count(l, '53407'), count(l, '53404'), printed(l).length]).toEqual([1, 0, 0]);
       expect([count(r, '53407'), count(r, '53404'), printed(r).length]).toEqual([0, 1, 0]);
@@ -89,7 +90,7 @@ describe('switches bought as track pieces, as plain track is', { timeout: 600000
     try {
       const w = await kernel();
       for (const ballast of ['ballast', 'buddy'] as const) {
-        const b = buildDesign(w, withOpts(TEMPLATES['Left switch (LEGO)'], { ballast }));
+        const b = buildDesign(w, withOpts(TEMPLATES['Left switch (LEGO)'], { ballast, legoTrack: 'lego' }));
         expect(b.info.warnings).toEqual([]);
         expect(count(b, '53407')).toBe(1);
         // (one part, as the switch is; longer than the 256 mm bed, in two, cut across between its sleepers)
@@ -123,7 +124,7 @@ describe('switches bought as track pieces, as plain track is', { timeout: 600000
       // (BrickTracks' 1/2 and 1/4 straights, two tracks 9 studs apart, their ballast meeting: 4 ballast parts, or one)
       expect(printed(each)).toHaveLength(4);
       expect(printed(together)).toHaveLength(1);
-      const sw = buildDesign(w, withOpts(TEMPLATES['Left switch (LEGO)'], { ballast: 'ballast', boughtBallast: 'together' }));
+      const sw = buildDesign(w, withOpts(TEMPLATES['Left switch (LEGO)'], { ballast: 'ballast', boughtBallast: 'together', legoTrack: 'lego' }));
       expect(sw.info.warnings).toEqual([]);
       expect(printed(sw).length).toBeGreaterThan(1);
     } finally { Object.assign(OPTION_DEFAULTS, saved); }
