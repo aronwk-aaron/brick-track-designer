@@ -367,23 +367,52 @@ const SLIP_LEAD = 40 * sin(22.5) - (40 * (1 - cos(22.5))) / tan(22.5);
 /** The short straight on BrickTracks' R104 switch's branch and their R104B curve, studs (boughtswitch.ts BT_LEAD). */
 const BT_LEAD_STUDS = (8 - 104 * (1 - cos(22.5))) / sin(22.5);
 /** The return loop of BrickTracks' and LEGO's track (TEMPLATES), turning right (1) or left (-1). */
+/** An outline without its points along straight stretches (each within 0.01 stud of the line past it). */
+function straightened(pts: [number, number][]): [number, number][] {
+  const out: [number, number][] = [];
+  for (const p of pts) {
+    while (out.length >= 2) {
+      const [a, b] = [out[out.length - 2], out[out.length - 1]], l = Math.hypot(p[0] - a[0], p[1] - a[1]);
+      if (l > 1e-9 && Math.abs((p[0] - a[0]) * (b[1] - a[1]) - (p[1] - a[1]) * (b[0] - a[0])) / l < 0.01) out.pop(); else break;
+    }
+    out.push(p);
+  }
+  return out;
+}
 function bricktracksLoop(turn: number): Design {
   const S = (studs: number) => ({ kind: 'straight' as const, studs }), C = (radius: number, angle: number) => ({ kind: 'curve' as const, radius, angle: -turn * angle });
   const L = BT_LEAD_STUDS;
-  // (its tables, as the reference plan's: two straight ones 32 studs wide up the double track, the loop on curved ones
-  // round its centre (120, 240), 96 to 128 studs out, the last a quarter and a half (to where the tracks run straight),
-  // and one shaped round the far switch; mirrored for a loop turning left)
-  const X = (x: number) => turn * x, A = (a: number) => (turn > 0 ? a : 180 - a);
-  const arc = (name: string, color: string, a0: number, a1: number): Table => ({ name, color, shape: 'arc', cx: X(120), cy: 240, r0: 96, r1: 128, a0: Math.min(A(a0), A(a1)), a1: Math.max(A(a0), A(a1)) });
-  const rect = (name: string, color: string, y: number, h: number): Table => ({ name, color, shape: 'rect', x: turn > 0 ? -8 : -24, y, w: 32, h });
-  const c = (a: number, r: number): [number, number] => [X(120 + r * Math.cos((a * Math.PI) / 180)), 240 + r * Math.sin((a * Math.PI) / 180)];
-  const d = (p: [number, number], t: number): [number, number] => [p[0] - X(t * cos(22.5)), p[1] - t * sin(22.5)];
-  const tables: Table[] = [rect('A', '#f26b3a', -48, 128), rect('B', '#f5e050', 80, 160), arc('C', '#3fbf6a', 135, 180), arc('D', '#2fa654', 90, 135), arc('E', '#1f8f45', 45, 90), arc('F', '#16703a', 0, 45),
-    arc('G', '#22aee8', -67.5, 0), { name: 'H', color: turn > 0 ? '#e8322f' : '#a3246a', shape: 'poly', pts: [c(-67.5, 96), d(c(-67.5, 96), 50), [X(24), 59.25], [X(24), 0], d(c(-67.5, 128), 70), c(-67.5, 128)] }];
-  return { version: 1, gaugeStuds: 4, options: { ballast: 'ballast' }, tables, trackwork: { points: { [`${turn * 405},583`]: { force: true } } }, routes: [
+  const d: Design = { version: 1, gaugeStuds: 4, options: { ballast: 'buddy' }, trackwork: { points: { [`${turn * 405},583`]: { force: true } } }, routes: [
     { name: 'Loop', x: 0, y: -48, heading: 0, segs: [S(48), S(40), S(8), S(192), C(120, 247.5), S(80), S(8), S(L), C(104, -22.5), S(1.6), C(104, -11.25), S(4), S(1.6), C(104, -33.75), S(1.6), S(8), S(32)] },
     { name: 'Passing loop', x: 0, y: 0, heading: 0, segs: [C(104, 22.5), S(L), S(L), C(104, -11.25), C(104, -11.25), S(160), C(104, 247.5), S(48), S(1.6), C(104, -11.25), C(104, -11.25), S(L), S(1.6), S(40)] },
   ] };
+  // (its tables, as the reference plan's, each reaching 8 studs past the tracks: two straight ones up the double track, 32
+  // studs wide; the loop on curved ones round its centre (120, 240), 96 to 128 studs out, a quarter each and the last
+  // three eighths (to where the tracks run straight); and one round the far switch, its sides 8 studs out from the
+  // tracks, from the last curved one to the first straight one. Mirrored for a loop turning left)
+  const X = (x: number) => turn * x, A = (a: number) => (turn > 0 ? a : 180 - a);
+  const arc = (name: string, color: string, a0: number, a1: number): Table => ({ name, color, shape: 'arc', cx: X(120), cy: 240, r0: 96, r1: 128, a0: Math.min(A(a0), A(a1)), a1: Math.max(A(a0), A(a1)) });
+  const rect = (name: string, color: string, y: number, h: number): Table => ({ name, color, shape: 'rect', x: turn > 0 ? -8 : -24, y, w: 32, h });
+  const [loop, pass] = toRoutes(d), segEnd = (rt: Route, n: number) => rt.segments.slice(0, n).reduce((t, g) => t + (g.kind === 'straight' ? g.length : (Math.abs(g.angle) * Math.PI * g.radius) / 180), 0);
+  // (a side of a stretch of track, 8 studs out (+ right), from s0 to s1, studs, up to where it meets the straight tables' edge)
+  const side = (rt: Route, s0: number, s1: number, o: number) => {
+    const out: [number, number][] = [], n = Math.ceil(Math.abs(s1 - s0) / 16);
+    for (let k = 0; k <= n; k++) {
+      const p = routePose(rt, s0 + ((s1 - s0) * k) / n), r = (p[2] * Math.PI) / 180, q: [number, number] = [(p[0] + o * Math.cos(r)) / 8, (p[1] + o * Math.sin(r)) / 8];
+      const last = out[out.length - 1];
+      if (last && turn * q[0] < 24) { const t = (24 - turn * last[0]) / (turn * q[0] - turn * last[0]); out.push([X(24), last[1] + t * (q[1] - last[1])]); break; }
+      out.push(q);
+    }
+    return out;
+  };
+  const a0L = segEnd(loop, 5), a0P = segEnd(pass, 7), endP = routeLength(pass), toe = routePose(pass, endP);
+  // (where the passing loop ends on the line: the far switch's toe)
+  let sToe = 0, best = Infinity;
+  for (let sv = a0L; sv < routeLength(loop); sv += 0.5) { const p = routePose(loop, sv), dd = Math.hypot(p[0] - toe[0], p[1] - toe[1]); if (dd < best) { best = dd; sToe = sv; } }
+  const outer = side(loop, a0L, routeLength(loop), -turn * 64), inner = [...side(pass, a0P, endP, turn * 64), ...side(loop, sToe, routeLength(loop), turn * 64)];
+  const tables: Table[] = [rect('A', '#f39a2b', -48, 128), rect('B', '#f5e050', 80, 160), arc('C', '#3fbf6a', 135, 180), arc('D', '#2fa654', 90, 135), arc('E', '#1f8f45', 45, 90), arc('F', '#16703a', 0, 45),
+    arc('G', '#22aee8', -67.5, 0), { name: 'H', color: turn > 0 ? '#d7263d' : '#a3246a', shape: 'poly', pts: straightened([...outer, ...inner.reverse()]).map(([x, y]) => [Math.round(x * 100) / 100, Math.round(y * 100) / 100]) }];
+  return { ...d, tables };
 }
 
 /** Starting points for a design. */
