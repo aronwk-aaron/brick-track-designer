@@ -989,7 +989,7 @@ function sectioned(b: PieceBuild, name: string, all: Route[], checks: CheckRail[
     if ((sb[2] - sb[0]) * (sb[3] - sb[1]) > 8 * o.printBedX * o.printBedY && tiled(b, name, rts, cChecks, mine, copt)) return;
     const zs = cx.zones.filter((z) => z.box[2] >= sb[0] && z.box[0] <= sb[2] && z.box[3] >= sb[1] && z.box[1] <= sb[3]).map((z) => [z.rt.id, z.s0, z.s1, z.box]);
     const sk = `sec:${JSON.stringify({ rts, cChecks, m: mine.map((x) => [x.key, x.inner, x.bladeCuts.map(([i]) => i)]), copt, g: b.grooveCuts.length ? b.grooveEdits : 0, di: [...secInner],
-      gp: gridPose, bp, bxy: [o.baseplateX, o.baseplateY], joint: o.joint, ...(apart && { seat: o.trackFitTol ?? 0.2, seated, sw: b.boughtSw.map((bs) => bs.legs), bb: o.boughtBallast }), bed: [o.printBedX, o.printBedY], zs, ...(b.labelOn && { lab: [o.labelText, o.labelSize, o.labelGauge, o.labelParts] }) })}`;
+      gp: gridPose, bp, bxy: [o.baseplateX, o.baseplateY], joint: o.joint, ...(apart && { seat: o.trackFitTol ?? 0.2, seated, bb: o.boughtBallast }), ...(b.boughtSw.length && o.ballast !== 'none' && { sw: b.boughtSw.map((bs) => bs.legs) }), bed: [o.printBedX, o.printBedY], zs, ...(b.labelOn && { lab: [o.labelText, o.labelSize, o.labelGauge, o.labelParts] }) })}`;
     let part: { ms: (Baked & { id?: string; lego?: LegoPart[] })[]; grips: [number, number][] };
     const cost = rts.reduce((t, rt) => t + routeLength(rt), 0) + 400 * mine.length;
     try { part = b.job(sk, cost, () => arena(w, () => {
@@ -1030,6 +1030,11 @@ function sectioned(b: PieceBuild, name: string, all: Route[], checks: CheckRail[
         return { ms, grips };
       }
       let body = buildBody();
+      // (on ballast, its ballast clear of a bought switch's beside it, which is a part of its own: up to the sleepers' top)
+      if (o.ballast !== 'none' && b.boughtSw.length) {
+        const keep = switchKeepOut(b, routesBox(rts, bandHalf + 64));
+        if (keep) body = scad.difference(body, [scad.intersection(keep, T(scad.cube([1e5, 1e5, 100]), [-5e4, -5e4, -100 + PLATE_H + 0.01]))]);
+      }
       if (body.numTri() === 0) return { ms: [], grips };
       // (and where it crosses a baseplate edge, cut there with peg and clip: a plain piece of one track already ends at
       // the edges it crosses, planSections)
@@ -1276,7 +1281,14 @@ function boughtSwitches(b: PieceBuild, bought: BoughtSwitch[], copt: typeof CROS
       if (!onBallast) return { view, bal: [] as Baked[] };
       const cs = w.CrossSection.union([under, ...fp.extras.map((pts) => scad.polygon(pts))]).offset(tol, 'Miter', 2);
       const none = { crossings: [], grooves: [], splits: [], checkRails: [] };
-      const m = crossingPiece(scad, bs.legs, { ...copt, ballastOnly: tol, supports: false, buffers: undefined }, none, undefined, { gridPose, seat: scad.extrude(cs, 200) });
+      let m = crossingPiece(scad, bs.legs, { ...copt, ballastOnly: tol, supports: false, buffers: undefined }, none, undefined, { gridPose, seat: scad.extrude(cs, 200) });
+      // (a pad under what of the switch reaches out past its ballast (LEGO's lever housing), from the ballast's bottom up
+      // to the switch's: it stands on something)
+      if (fp.pads.length && m.numTri() > 0) {
+        const bb = m.boundingBox(), outline = scad.extrude(m.project(), 400).translate([0, 0, -200]);
+        const pad = scad.difference(T(scad.extrude(w.CrossSection.union(fp.pads.map((pts) => scad.polygon(pts))), -bb.min[2]), [0, 0, bb.min[2]]), [outline]);
+        if (pad.numTri() > 0) m = scad.union([m, pad]);
+      }
       // (one part, whole, as the switch is; longer than the bed, in two, cut straight across it where the cut crosses
       // least of its underside (between its sleepers), each half fitting the bed: they butt together on the baseplate)
       if (m.numTri() === 0) return { view, bal: [] as Baked[] };

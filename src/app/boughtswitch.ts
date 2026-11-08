@@ -24,6 +24,8 @@ export interface SwitchKind {
   underside: [number, number][][];
   /** what else needs room beside it, in the toe's frame (x across, + right; y along), turning left: the switch stand's spots */
   extras: [number, number, number, number][];
+  /** what of it reaches out past its ballast and needs something under it (the same frame): LEGO's lever housing */
+  pads?: [number, number, number, number][];
 }
 
 /**
@@ -39,6 +41,7 @@ export const LEGO_SWITCH: SwitchKind = {
   branch: [{ kind: 'arc', radius: 40 * 8, angle: 36.8699 }, { kind: 'arc', radius: 40 * 8, angle: -14.3699 }],
   underside: LEGO_SWITCH_FOOTPRINT,
   extras: [],
+  pads: [[-80.25, 32, 16.15, 40.15]],
 };
 
 /**
@@ -127,11 +130,17 @@ export function findBoughtSwitches(routes: Route[], splits: Split[], kinds: Swit
   // (nothing else on it: another track's centre line nearer a leg's than two bases' reach, beside it (not just meeting
   // it at the toe, nor running on from its ends, where the tracks part), and none overlapping another)
   const ends = (b: BoughtSwitch) => [b.toe, ...b.legs.map((l) => routePose(l, routeLength(l)))];
+  const boxOf = (pts: Pose[], pad: number) => [Math.min(...pts.map((p) => p[0])) - pad, Math.min(...pts.map((p) => p[1])) - pad, Math.max(...pts.map((p) => p[0])) + pad, Math.max(...pts.map((p) => p[1])) + pad];
+  const along = (rt: Route) => { const L = routeLength(rt), n = Math.max(2, Math.ceil(L / 32)); return Array.from({ length: n + 1 }, (_, k) => routePose(rt, (L * k) / n)); };
   const clash = (b: BoughtSwitch) => routes.some((rt, r) => {
+    // (only track near it: a big layout's every route against every switch, sample by sample, was slow)
+    const lb = boxOf(b.legs.flatMap(along), 2 * half), rb = boxOf(along(rt), 16);
+    if (rb[0] > lb[2] || rb[2] < lb[0] || rb[1] > lb[3] || rb[3] < lb[1]) return false;
     const L = routeLength(rt), mine = b.covers.filter((c) => c[0] === r);
     for (let s = 0; s <= L; s += 4) {
       if (mine.some(([, a, c]) => s >= a - 1e-6 && s <= c + 1e-6)) continue;
       const q = routePose(rt, s);
+      if (q[0] < lb[0] || q[0] > lb[2] || q[1] < lb[1] || q[1] > lb[3]) continue;
       if (ends(b).some((e) => Math.hypot(e[0] - q[0], e[1] - q[1]) < 16)) continue;
       for (const lg of b.legs) {
         const LL = routeLength(lg);
@@ -176,8 +185,9 @@ export function cutOut(routes: Route[], bought: BoughtSwitch[]): Route[] {
 }
 
 /** Its footprint in plan (mm): its underside's outlines and the holes in them (even-odd: the seat its ballast leaves it), and its extras (the switch stand's spots). */
-export function footprint(b: BoughtSwitch): { underside: [number, number][][]; extras: [number, number][][] } {
+export function footprint(b: BoughtSwitch): { underside: [number, number][][]; extras: [number, number][][]; pads: [number, number][][] } {
   const flip = b.hand === 'left' ? 1 : -1, at = (q: [number, number]) => poseToWorld(b.toe, [flip * q[0], q[1]]);
   const rects = b.kind.extras.map(([x0, x1, y0, y1]) => ([[x0, y0], [x1, y0], [x1, y1], [x0, y1]] as [number, number][]).map(at));
-  return { underside: b.kind.underside.map((poly) => poly.map(at)), extras: rects };
+  const pads = (b.kind.pads ?? []).map(([x0, x1, y0, y1]) => ([[x0, y0], [x1, y0], [x1, y1], [x0, y1]] as [number, number][]).map(at));
+  return { underside: b.kind.underside.map((poly) => poly.map(at)), extras: rects, pads };
 }
