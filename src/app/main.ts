@@ -5,7 +5,7 @@ import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { BANK_MAX, type BankRamps, type Design, type DRoute, type DSeg, OPTION_DEFAULTS, type PieceOptions, RAIL_DEFAULTS, TEMPLATE_GROUPS, TEMPLATES, type Trackwork, endOf, freeName, isMono, upgradeDesign } from './design';
 import { TrackCanvas, type OverlayItem, leverSide, leverSlides, typingIn } from './canvas';
 import { describe } from './planner';
-import { BRICKTRACKS_COLOR, LEGO_COLOR, type LegoPart, legoParts, type Piece } from './build';
+import { BRICKTRACKS_COLOR, gradeOf, LEGO_COLOR, type LegoPart, legoParts, type Piece } from './build';
 import { TABLE_COLORS, type Table, tableAt } from './tables';
 import { zip } from '../geom/zip';
 import { layoutParts } from './layoutparts';
@@ -257,7 +257,7 @@ function render() {
       const b2 = document.createElement('div'); d2.append(s2, b2); body.append(d2); return b2;
     };
     const shape = part('Shape', `${r.segs.length} piece${r.segs.length === 1 ? '' : 's'}`);
-    const place = part('Place', `${r.x}, ${r.y} · ${r.heading}°${isMono(r) ? ` · monorail${r.monoHeight !== undefined ? ` · ${r.monoHeight}${r.monoHeightEnd !== undefined && r.monoHeightEnd !== r.monoHeight ? `→${r.monoHeightEnd}` : ''} plates up` : ''}` : ''}`);
+    const place = part('Place', `${r.x}, ${r.y} · ${r.heading}°${isMono(r) ? ' · monorail' : ''}${r.monoHeight !== undefined ? ` · ${r.monoHeight}${r.monoHeightEnd !== undefined && r.monoHeightEnd !== r.monoHeight ? `→${r.monoHeightEnd}` : ''} plates up` : ''}`);
     const name = document.createElement('input'); name.value = r.name; name.type = 'text';
     // (routes are known by their names, in the trackwork and the switches: no two the same)
     name.addEventListener('change', () => {
@@ -284,19 +284,25 @@ function render() {
       // (monorail: the beam's height off the baseplate, in plates; empty: the supports' height in Settings, or on the baseplate)
       const hi = document.createElement('input'); hi.type = 'number'; hi.step = '1'; hi.min = '0'; hi.max = '60';
       hi.value = r.monoHeight === undefined ? '' : String(r.monoHeight); hi.placeholder = 'auto';
-      hi.disabled = !isMono(r);
-      hi.title = isMono(r) ? 'The beam\'s height off the baseplate in plates (3.2 mm). Empty: the supports\' height (Settings › Monorail), or on the baseplate. Raise it to pass over train track or another monorail (5 plates clear of a beam, more over track).' : 'Locked: monorail only';
+      hi.title = isMono(r) ? 'The beam\'s height off the baseplate in plates (3.2 mm). Empty: the supports\' height (Settings › Monorail), or on the baseplate. Raise it to pass over train track or another monorail (5 plates clear of a beam, more over track).'
+        : 'Train track: its height off the baseplate at its start, in plates (3.2 mm), on risers (LEGO 2 x 8 bricks and plates, in the parts list). The pieces are printed level and laid on them. Empty: on the baseplate.';
       hi.addEventListener('change', () => { const n = Math.round(Number(hi.value)); if (hi.value.trim() === '' || !Number.isFinite(n)) delete r.monoHeight; else r.monoHeight = Math.min(60, Math.max(0, n)); changed(true); });
       place.append(field(isMono(r) && r.monoHeightEnd !== undefined ? 'Start height, plates' : 'Height, plates', hi));
       // (a ramp: its height at its end; empty: level)
       const he = document.createElement('input'); he.type = 'number'; he.step = '1'; he.min = '0'; he.max = '60';
       he.value = r.monoHeightEnd === undefined ? '' : String(r.monoHeightEnd); he.placeholder = 'level';
-      he.disabled = !isMono(r) || r.monoHeight === undefined;
-      he.title = !isMono(r) ? 'Locked: monorail only' : r.monoHeight === undefined ? 'Locked: set its Height first' : 'Its height at its end, in plates: it ramps from its start height to this, easing in and out (level at both ends). Empty: level. It may be as steep as LEGO\'s monorail ramps (21° at the steepest): those rise 5 bricks over each 32-stud piece.';
+      he.disabled = r.monoHeight === undefined;
+      he.title = r.monoHeight === undefined ? 'Locked: set its Height first' : !isMono(r) ? 'Train track: its height at its end, in plates: an even grade from its start height to this. The standard is 2.5% (a plate a 16-stud straight; a whole turn of R40 rises 15.7 plates, R104 40.8). Empty: level.' : 'Its height at its end, in plates: it ramps from its start height to this, easing in and out (level at both ends). Empty: level. It may be as steep as LEGO\'s monorail ramps (21° at the steepest): those rise 5 bricks over each 32-stud piece.';
       he.addEventListener('change', () => { const n = Math.round(Number(he.value)); if (he.value.trim() === '' || !Number.isFinite(n)) delete r.monoHeightEnd; else r.monoHeightEnd = Math.min(60, Math.max(0, n)); changed(true); });
-      place.append(field('End height, plates (a ramp)', he));
-      if (isMono(r) && r.monoHeight === undefined) { const n4 = document.createElement('small'); n4.className = 'desc'; n4.textContent = 'End height: locked until Height is set.'; n4.style.color = 'var(--warn)'; place.append(n4); }
-      if (!isMono(r)) { const n3 = document.createElement('small'); n3.className = 'desc'; n3.textContent = 'Locked: monorail only.'; n3.style.color = 'var(--warn)'; n3.style.fontWeight = '600'; place.append(n3); }
+      place.append(field(isMono(r) ? 'End height, plates (a ramp)' : 'End height, plates (a grade)', he));
+      // (train track on a grade: how steep, against the standard 2.5%)
+      if (!isMono(r) && r.monoHeight !== undefined && r.monoHeightEnd !== undefined && r.monoHeightEnd !== r.monoHeight) {
+        const g = gradeOf(r), n5 = document.createElement('small'); n5.className = 'desc';
+        n5.textContent = `Grade ${g.toFixed(2)}%${g > 4 ? ': too steep for most LEGO trains' : g > 2.5 + 1e-6 ? ': steeper than the standard 2.5%' : ''}.`;
+        if (g > 2.5 + 1e-6) n5.style.color = 'var(--warn)';
+        place.append(n5);
+      }
+      if (r.monoHeight === undefined) { const n4 = document.createElement('small'); n4.className = 'desc'; n4.textContent = 'End height: locked until Height is set.'; n4.style.color = 'var(--warn)'; place.append(n4); }
     }
     r.segs.forEach((_, k) => {
       const row = segRow(r, k);
@@ -803,7 +809,7 @@ partsDlg.addEventListener('click', (e) => { if (e.target === partsDlg) partsDlg.
 $('export-layout').addEventListener('click', () => {
   if (!pieces.length || building || stale) return;
   try {
-    const x = layoutParts(design, pieces, fileBase());
+    const x = layoutParts(design, pieces.filter((p) => p.positions.length), fileBase());
     download(new Blob([zip(x.files) as BlobPart], { type: 'application/zip' }), `${fileBase()}-layout-parts.zip`);
   } catch (err) { setStatus(infoEl.textContent ?? '', `Couldn't make the layout parts: ${err instanceof Error ? err.message : err}`); }
 });

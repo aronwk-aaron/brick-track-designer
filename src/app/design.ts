@@ -423,7 +423,7 @@ export const TEMPLATE_GROUPS: [string, string[]][] = [
   ['Crossings', ['90° crossing', '22.5° crossing', 'Double slip (22.5°)', 'Crossing on a curve']],
   ['Switches', ['Left switch (LEGO)', 'Right switch (LEGO)', 'Left switch (BrickTracks R104)', 'Right switch (BrickTracks R104)', 'Wye switch', 'Three-way switch (one throw)', 'Three-way switch (tandem, two throws)']],
   ['Layouts', ['Oval (LEGO R40)', 'Crossover (R40)', 'Double crossover (R56)', 'Yard ladder (R40)', 'Wye with a crossover', 'Double-track return loop (turning right)', 'Double-track return loop (turning left)']],
-  ['Features', ['Siding ending in a buffer stop', 'Bridge with guard rails', 'Dual gauge track', 'Banked curve', 'Crossing on sleepers']],
+  ['Features', ['Grade up at 2.5%', 'Siding ending in a buffer stop', 'Bridge with guard rails', 'Dual gauge track', 'Banked curve', 'Crossing on sleepers']],
   ['Monorail', ['Monorail oval on supports', 'Monorail ramp (as LEGO\'s)', 'Monorail switch (experimental)', 'Monorail level crossing (experimental)']],
 ];
 export const TEMPLATES: Record<string, Design> = {
@@ -503,6 +503,12 @@ export const TEMPLATES: Record<string, Design> = {
   'Double-track return loop (turning right)': bricktracksLoop(1),
   'Double-track return loop (turning left)': bricktracksLoop(-1),
   // ---- features ----
+  // (the standard grade: a plate a 16-stud straight, on LEGO 2 x 8 risers; level either end)
+  'Grade up at 2.5%': { version: 1, gaugeStuds: 4, routes: [
+    { name: 'Low', x: 0, y: -16, heading: 0, segs: [{ kind: 'straight', studs: 16 }] },
+    { name: 'Grade', x: 0, y: 0, heading: 0, monoHeight: 0, monoHeightEnd: 6, segs: [{ kind: 'straight', studs: 96 }] },
+    { name: 'High', x: 0, y: 96, heading: 0, monoHeight: 6, monoHeightEnd: 6, segs: [{ kind: 'straight', studs: 32 }] },
+  ] },
   'Siding ending in a buffer stop': { version: 1, gaugeStuds: 4, options: { ballast: 'ballast' }, routes: [
     { name: 'Main', x: 0, y: 0, heading: 0, segs: [{ kind: 'straight', studs: 48 }] },
     { name: 'Siding', x: 0, y: 0, heading: 0, endEnd: 'buffer', segs: [{ kind: 'curve', radius: 40, angle: 22.5 }, { kind: 'curve', radius: 40, angle: -22.5 }, { kind: 'straight', studs: 24 }] },
