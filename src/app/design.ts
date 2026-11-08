@@ -366,7 +366,7 @@ const SLIP_LEAD = 40 * sin(22.5) - (40 * (1 - cos(22.5))) / tan(22.5);
 /** The Templates list's groups (in order), each its templates by name. */
 export const TEMPLATE_GROUPS: [string, string[]][] = [
   ['Crossings', ['90° crossing', '22.5° crossing', 'Double slip (22.5°)', 'Crossing on a curve']],
-  ['Switches', ['Left switch (LEGO)', 'Right switch (LEGO)', 'Wye switch', 'Three-way switch (one throw)', 'Three-way switch (tandem, two throws)']],
+  ['Switches', ['Left switch (LEGO)', 'Right switch (LEGO)', 'Left switch (BrickTracks R104)', 'Right switch (BrickTracks R104)', 'Wye switch', 'Three-way switch (one throw)', 'Three-way switch (tandem, two throws)']],
   ['Layouts', ['Oval (LEGO R40)', 'Crossover (R40)', 'Double crossover (R56)', 'Yard ladder (R40)', 'Wye with a crossover', 'Double-track return loop (turning right)', 'Double-track return loop (turning left)']],
   ['Features', ['Siding ending in a buffer stop', 'Bridge with guard rails', 'Dual gauge track', 'Banked curve', 'Crossing on sleepers']],
   ['Monorail', ['Monorail oval on supports', 'Monorail ramp (as LEGO\'s)', 'Monorail switch (experimental)', 'Monorail level crossing (experimental)']],
@@ -403,6 +403,15 @@ export const TEMPLATES: Record<string, Design> = {
   'Right switch (LEGO)': { version: 1, gaugeStuds: 4, routes: [
     { name: 'Straight', x: 0, y: 0, heading: 0, segs: [{ kind: 'straight', studs: 32 }] },
     { name: 'Branch', x: 0, y: 0, heading: 0, segs: [{ kind: 'curve', radius: 40, angle: -36.8699 }, { kind: 'curve', radius: 40, angle: 14.3699 }] },
+  ] },
+  // (BrickTracks' R104 switch: 40 studs, the branch an R104 curve of 22.5 degrees)
+  'Left switch (BrickTracks R104)': { version: 1, gaugeStuds: 4, routes: [
+    { name: 'Straight', x: 0, y: 0, heading: 0, segs: [{ kind: 'straight', studs: 40 }] },
+    { name: 'Branch', x: 0, y: 0, heading: 0, segs: [{ kind: 'curve', radius: 104, angle: 22.5 }] },
+  ] },
+  'Right switch (BrickTracks R104)': { version: 1, gaugeStuds: 4, routes: [
+    { name: 'Straight', x: 0, y: 0, heading: 0, segs: [{ kind: 'straight', studs: 40 }] },
+    { name: 'Branch', x: 0, y: 0, heading: 0, segs: [{ kind: 'curve', radius: 104, angle: -22.5 }] },
   ] },
   'Wye switch': { version: 1, gaugeStuds: 4, routes: [
     { name: 'Left', x: 0, y: 0, heading: 0, segs: [{ kind: 'curve', radius: 40, angle: 22.5 }, { kind: 'straight', studs: 16 }] },

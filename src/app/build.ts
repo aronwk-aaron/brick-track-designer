@@ -28,6 +28,7 @@ import { findStuds, wholeStuds } from '../geom/studs';
 import { bankRolls, type Design, OPTION_DEFAULTS, type PieceOptions, type Trackwork, bufferEnds, isMono, toRoutes, upgradeDesign } from './design';
 import { labelCut, labelLines } from '../geom/labels';
 import { buildMonorail, clearMonoCache } from './monobuild';
+import { BRICKTRACKS_SWITCH, type BoughtSwitch, cutOut, findBoughtSwitches, footprint, LEGO_SWITCH } from './boughtswitch';
 
 /** An item of trackwork the hand edits apply to: a check rail, a flangeway cut, a points set. */
 export interface TrackworkItem {
@@ -89,6 +90,10 @@ export function legoParts(pieces: { lego?: LegoPart[] }[]): LegoPart[] {
 
 /** The printed track's colour in the 3D view. */
 const TRACK_COLOR = 0x6f7780;
+/** Bought track's colours in the 3D view: LEGO's green, BrickTracks' purple (clear of the printed grey and the moving parts' blue, orange and gold). */
+export const LEGO_COLOR = 0x4caf50, BRICKTRACKS_COLOR = 0xa070d8;
+/** A bought piece's colour: BrickTracks' if any of it is theirs, else LEGO's. */
+export const boughtColor = (parts: LegoPart[]) => (parts.some((p) => p.shop === 'bricktracks') ? BRICKTRACKS_COLOR : LEGO_COLOR);
 
 // Pieces built before, by what they were built from: an edit rebuilds only
 // the pieces it changes (the worker keeps this between builds).
@@ -380,6 +385,16 @@ function solveTrackwork(w: Wasm, design: Design, o: PieceOptions, step: (what: s
   // (forced where a route meets another heading back along it: that route turned round, as orient() does when it's exact, and solved again)
   const flip = new Set((sol.near ?? []).filter((c) => c.opposite && c.ok && splitEdits.force!(c.at)).map((c) => c.routes[1]));
   if (flip.size) { routes = routes.map((rt, k) => (flip.has(k) ? reversedRoute(rt) : rt)); sol = solve(routes, solverOpts, splitEdits); }
+  // (switches that are bought pieces (Bought track: Bought), LEGO's or BrickTracks': cut out of the routes, the rest
+  // worked out without them, joining them at ordinary track ends; the stud grid where it was)
+  const gridPose = routePose(routes[0], 0);
+  const kinds = o.splitTrack === 'lengths' && design.gaugeStuds === 4 ? ({ lego: [LEGO_SWITCH, BRICKTRACKS_SWITCH], 'lego-only': [LEGO_SWITCH], print: [] }[o.legoTrack ?? 'lego'] ?? []) : [];
+  let bought: BoughtSwitch[] = [];
+  if (kinds.length && sol.splits.length) {
+    const sl = (design.gaugeStuds + 1) * 8 + 24, half = (o.ballast === 'buddy' ? sl + 32 : o.ballast === 'ballast' ? sl + 16 : sl) / 2;
+    bought = findBoughtSwitches(routes, sol.splits, kinds, half);
+    if (bought.length) { routes = cutOut(routes, bought); sol = solve(routes, solverOpts, splitEdits); }
+  }
   // (track only with sleepers: each route's own, so a stretch of it (cut into tiles, sections, a switch's cover) has its sleepers where the whole route has them)
   if (o.sleepers === 'sleepers' && o.ballast === 'none') {
     const j = joinedEnds(routes);
@@ -427,7 +442,7 @@ function solveTrackwork(w: Wasm, design: Design, o: PieceOptions, step: (what: s
     if (forced && !c.ok) forceWarnings.push(`points forced at ${key}: ${why}; they need it within ${FORCE_LAT} mm and ${FORCE_ANGLE}° (redraw it to start on the track): not built`);
   }
   const overlay: Overlay = { grooves: [], checkRails: [], crossings: sol.crossings.map((c) => c.point), splits: sol.splits.map(splitAt), grips: [], items, issues: [] };
-  return { routes, sol, solverOpts, tw, items, overlay, grooveCuts, forceWarnings, bankWarnings };
+  return { routes, sol, solverOpts, tw, items, overlay, grooveCuts, forceWarnings, bankWarnings, bought, gridPose };
 }
 
 /** Apply the check rail edits to a solution's check rails (in place), noting each for the Trackwork panel. */
@@ -975,7 +990,7 @@ function sectioned(b: PieceBuild, name: string, all: Route[], checks: CheckRail[
     for (const b2 of part.ms) {
       // (a seated curve's ballast: printed, named for the curve it's under)
       const bought = seated ? b2.bought : !!lego;
-      b.pieces.push({ name: bought ? `track-bought-${lego![0].part.replace(/\s+/g, '')}-${++n}` : seated ? `${name}${b2.id ?? ++n}-ballast` : b2.id ? `${name}${b2.id}` : `${name}${++n}`, color: bought ? 0x8e9cab : TRACK_COLOR, positions: b2.positions.slice(), stl: b2.stl.slice(), ...(b2.supports && !bought && { supports: b2.supports.slice() }), ...(bought && { lego }) });
+      b.pieces.push({ name: bought ? `track-bought-${lego![0].part.replace(/\s+/g, '')}-${++n}` : seated ? `${name}${b2.id ?? ++n}-ballast` : b2.id ? `${name}${b2.id}` : `${name}${++n}`, color: bought ? boughtColor(lego!) : TRACK_COLOR, positions: b2.positions.slice(), stl: b2.stl.slice(), ...(b2.supports && !bought && { supports: b2.supports.slice() }), ...(bought && { lego }) });
       if (!bought) b.volume += b2.volume;
       if (!b2.fits) b.bedWarnings.add(`some sections don't fit the ${o.printBedX} x ${o.printBedY} print bed: there's nowhere left to cut them`);
     }
@@ -1102,6 +1117,38 @@ function buildSwitches(b: PieceBuild, switches: ReturnType<typeof planPieces>['s
   });
 }
 
+/**
+ * The bought switches (boughtswitch.ts): each one as bought, not printed, in the parts list; on ballast, its ballast
+ * printed alone with a seat it drops into (its footprint: its legs' sleepers, the lever's housing or the switch stand,
+ * a little bigger all round), cut for the bed if it has to be.
+ */
+function boughtSwitches(b: PieceBuild, bought: BoughtSwitch[], copt: typeof CROSSING_DEFAULTS, gridPose: Pose) {
+  const { w, scad, o } = b;
+  const tol = o.trackFitTol ?? 0.2, onBallast = o.ballast !== 'none';
+  bought.forEach((bs, n) => {
+    b.prog.step(`Building bought switch ${n + 1} of ${bought.length}`);
+    const key = `bsw:${JSON.stringify({ legs: bs.legs, copt, gridPose, tol, onBallast, bed: [o.printBedX, o.printBedY] })}`;
+    const got = cachedData(key, () => arena(w, () => {
+      // (as bought: LEGO's sleepers, as both make theirs, track only; each leg on its own, laid over the other at the toe)
+      const asBought = { ...copt, ballast: 'none' as const, ballastOnly: undefined, sleepers: 'sleepers' as const, sleeperGapStuds: 2, sleeperWidthStuds: 2, supports: false, buffers: undefined };
+      const view = bake(b, scad.union(bs.legs.map((lg) => crossingPiece(scad, [lg], asBought, undefined, undefined, { gridPose }))));
+      if (!onBallast) return { view, bal: [] as Baked[] };
+      const cs = w.CrossSection.union(footprint(bs).map((pts) => scad.polygon(pts))).offset(tol, 'Miter', 2);
+      const none = { crossings: [], grooves: [], splits: [], checkRails: [] };
+      const m = crossingPiece(scad, bs.legs, { ...copt, ballastOnly: tol, supports: false, buffers: undefined }, none, undefined, { gridPose, seat: scad.extrude(cs, 200) });
+      const parts = b.cut.fitsBed(m) ? [m] : b.cut.whole(m, b.cut.bedCut(flat(w, m), bs.legs));
+      return { view, bal: parts.filter((p) => p.numTri() > 0).map((p) => bake(b, p)) };
+    }, () => []));
+    const tag = bought.length > 1 ? `switch${n + 1}` : 'switch';
+    b.pieces.push({ name: `switch-bought-${bs.part.part.replace(/\s+/g, '')}-${n + 1}`, color: boughtColor([bs.part]), positions: got.view.positions.slice(), stl: got.view.stl.slice(), lego: [{ ...bs.part }] });
+    got.bal.forEach((p, k) => {
+      b.pieces.push({ name: `${tag}-ballast${got.bal.length > 1 ? k + 1 : ''}`, color: TRACK_COLOR, positions: p.positions.slice(), stl: p.stl.slice() });
+      b.volume += p.volume;
+      if (!p.fits) b.bedWarnings.add(`a bought switch's ballast doesn't fit the ${o.printBedX} x ${o.printBedY} print bed: there's nowhere left to cut it`);
+    });
+  });
+}
+
 /** One build: the track with its ballast (part undefined), or, printed apart, the ballast alone with its seat ('ballast'; the track is the build without ballast). */
 function buildOne(w: Wasm, design: Design, report: (what: string, frac: number) => void, early: ((overlay: unknown) => void) | undefined, opts: { plan?: BuildJob[]; part?: 'track' | 'ballast' }) {
   const plan = opts.plan;
@@ -1114,7 +1161,7 @@ function buildOne(w: Wasm, design: Design, report: (what: string, frac: number) 
   const t0 = performance.now();
   const prog = progressOf(report);
   const o = { ...OPTION_DEFAULTS, ...design.options };
-  const { routes, sol, solverOpts, tw, items, overlay, grooveCuts, forceWarnings, bankWarnings } = solveTrackwork(w, design, o, prog.step);
+  const { routes, sol, solverOpts, tw, items, overlay, grooveCuts, forceWarnings, bankWarnings, bought, gridPose } = solveTrackwork(w, design, o, prog.step);
   const dropInner = (rts: Route[], more: Iterable<string> = []) => droppedInner(routes, sol.dropped ?? [], rts, more);
   const toeShift = (q: [number, number]) => tw.points?.[keyOf(q)]?.toe ?? 0;
   const throwEdit = (q: [number, number]) => tw.throw?.[keyOf(q)];
@@ -1255,6 +1302,7 @@ function buildOne(w: Wasm, design: Design, report: (what: string, frac: number) 
   }
   if (plan) throw PLANNED;
   buildSwitches(b, pc.switches, routes, params, layered);
+  boughtSwitches(b, bought, copt, gridPose);
   const pieces = b.pieces;
   const all = pieces.flatMap((p) => [p.positions]);
   const mn = [Infinity, Infinity, Infinity], mx = [-Infinity, -Infinity, -Infinity];

@@ -136,6 +136,8 @@ export interface CrossingExtras {
   bedAt?: { p: [number, number]; d: [number, number]; len?: number }[];
   /** where studs stand though something's added there (a throw arm under other track: that track's studs on it) */
   studsOn?: (q: [number, number]) => boolean;
+  /** (the ballast alone) the seat to cut, from the bed up, in place of the track's own outline: a bought piece's footprint */
+  seat?: Man;
 }
 
 /** Route ends that another route runs on from, end to end (a route drawn in two, the track into a wye's toe): "i:start" / "i:end". */
@@ -655,9 +657,9 @@ export function crossingPiece(s: Scad, routes: Route[], o: CrossingOptions = CRO
     // connectors' peg and clip) a little bigger all round, from the bed up; of the track only what's under the bed (the
     // points' arms) kept)
     if (alone) {
-      const own = crossingPiece(s, routes, { ...o, ballast: 'none', ballastOnly: undefined, supports: false, axleHoles: false }, sol, undefined, x0);
+      const seat = x0.seat ?? trackSeat(s, crossingPiece(s, routes, { ...o, ballast: 'none', ballastOnly: undefined, supports: false, axleHoles: false }, sol, undefined, x0), o.ballastOnly ?? 0);
       const bb = body.boundingBox(), below = s.intersection(body, T(s.cube([bb.max[0] - bb.min[0] + 2, bb.max[1] - bb.min[1] + 2, 200]), [bb.min[0] - 1, bb.min[1] - 1, -200]));
-      out = s.difference(s.union([below, ballastBody, studs]), [trackSeat(s, own, o.ballastOnly ?? 0)]);
+      out = s.difference(s.union([x0.seat ? undefined : below, ballastBody, studs]), [seat]);
     }
     if (antistud) {
       // hollow inside a rim, LEGO tubes on the stud grid (of the grid pose), a socket at every stud

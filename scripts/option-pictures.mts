@@ -44,8 +44,11 @@ const specs: { key: string; values: string[]; design: (v: string) => unknown; pi
   // (close on the blade's front, where the lip is, and its heel's pin in the distance)
   { key: 'bladeLip', values: ['pin', 'front'], design: (v) => D(sw, { bladeStyle: 'simple', bladeLip: v }), cam: { dir: '1,-1.1,1', r: 80, at: () => [-14, 22, 7] } },
   { key: 'throwStyle', values: ['built-in', 'bracket', 'stand'], design: (v) => D(sw, { throwStyle: v }), cam: throwCam },
-  // (bought or printed: a straight, LEGO's R40 curve and a BrickTracks R104 one; printed blue, LEGO's light grey, BrickTracks' dark grey)
-  { key: 'legoTrack', values: ['lego', 'lego-only', 'print'], design: (v) => D([{ name: 'A', x: 0, y: 0, heading: 0, segs: [{ kind: 'straight', studs: 16 }, { kind: 'curve', radius: 40, angle: 22.5 }, { kind: 'curve', radius: 104, angle: 11.25 }] }], { legoTrack: v }),
+  // (bought or printed: a straight, LEGO's R40 curve and a BrickTracks R104 one, and beside them LEGO's switch and BrickTracks' R104 one;
+  // printed blue, LEGO's light grey, BrickTracks' dark grey)
+  { key: 'legoTrack', values: ['lego', 'lego-only', 'print'], design: (v) => D([{ name: 'A', x: 0, y: 0, heading: 0, segs: [{ kind: 'straight', studs: 16 }, { kind: 'curve', radius: 40, angle: 22.5 }, { kind: 'curve', radius: 104, angle: 11.25 }] },
+    { name: 'S', x: 24, y: 0, heading: 0, segs: [{ kind: 'straight', studs: 32 }] }, { name: 'SB', x: 24, y: 0, heading: 0, segs: [{ kind: 'curve', radius: 40, angle: -36.8699 }, { kind: 'curve', radius: 40, angle: 14.3699 }] },
+    { name: 'R', x: 64, y: 0, heading: 0, segs: [{ kind: 'straight', studs: 40 }] }, { name: 'RB', x: 64, y: 0, heading: 0, segs: [{ kind: 'curve', radius: 104, angle: -22.5 }] }], { legoTrack: v }),
     tint: (p) => (!p.lego ? '4f78a8' : p.lego.some((l) => l.shop) ? '55595e' : 'b4b8bc'), cam: { dir: '0.15,-0.35,1', dist: 2.2 } },
   { key: 'bufferStyle', values: ['frame', 'blocks'], design: (v) => D([st(16, { endEnd: 'buffer' })], { ballast: 'ballast', bufferStyle: v }), cam: { dir: '0.9,-1,0.7', r: 150, at: () => [0, 116, 12] } },
   { key: 'monoEndStuds', values: ['side', 'top', 'none'], design: (v) => D([st(8, { system: 'monorail' })], { monoEndStuds: v }), cam: { dir: '1,-1,0.8', r: 100, at: () => [0, 4, 7] } },

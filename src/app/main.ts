@@ -43,7 +43,7 @@ const field = (label: string, ...els: HTMLElement[]) => {
 function segRow(r: DRoute, k: number): HTMLElement {
   const sg = r.segs[k], row = document.createElement('div'); row.className = 'seg';
   if (sg.kind === 'straight') row.append(field('Straight, studs', num(sg.studs, (n) => { sg.studs = n; }, 1)));
-  else row.append(field('Curve: radius, studs', (() => { const i = num(sg.radius, (n) => { const x = Math.min(1000, Math.max(24, n)); (sg as Extract<DSeg, { kind: 'curve' }>).radius = x; i.value = String(x); }, 8); i.min = '24'; i.max = '1000'; i.title = 'Radius in studs, 24 to 1000 (the OpenSCAD curves run 24 + 8k)'; return i; })()),
+  else row.append(field('Curve: radius, studs', (() => { const i = num(sg.radius, (n) => { const x = Math.min(1000, Math.max(24, n)); (sg as Extract<DSeg, { kind: 'curve' }>).radius = x; i.value = String(x); }, 8); i.min = '24'; i.max = '1000'; i.title = 'Radius in studs, 24 to 1000 (the usual curves run 24 + 8k)'; return i; })()),
     field('angle ° (+ left)', num(sg.angle, (n) => { (sg as Extract<DSeg, { kind: 'curve' }>).angle = n; }, 0.5)));
   row.append(btn('✕', () => { r.segs.splice(k, 1); }, 'Remove this segment'));
   row.append(...bankFields(sg, isMono(r)));
@@ -355,14 +355,14 @@ function updateExports() {
   const why = building ? 'Wait for the build to finish' : !pieces.length ? 'Nothing built yet' : stale ? 'The 3D view is out of date: rebuild first' : '';
   const tips: Record<string, string> = {
     'export-stl': 'Download the parts for printing as STL (a zip when there are several)',
-    'export-lego': 'Download the parts to buy (a CSV, and a BrickLink wanted list of the LEGO ones): plain track as LEGO straights and R40 curves or BrickTracks curves, the straights\' ballast as LEGO plates',
+    'export-lego': 'Download the parts to buy (a CSV, and a BrickLink wanted list of the LEGO ones): plain track as LEGO straights and R40 curves or BrickTracks curves, switches as LEGO\'s or BrickTracks\', the straights\' ballast as LEGO plates',
     'parts-open': 'The parts list: what to buy (plain track as LEGO straights and R40 curves or BrickTracks curves, the straights\' ballast as LEGO plates) and what to print',
     'export-layout': 'Download a parts library for the layout designer (a zip): one part per printed track part, each with its picture and connection points, and a set of them all as designed. Help says how to load it',
   };
   for (const id of ['export-stl', 'export-layout', 'export-lego', 'parts-open']) {
     const b = $<HTMLButtonElement>(id), none = id === 'export-lego' ? !legoParts(pieces).length : id === 'export-stl' ? !pieces.some((p) => !p.lego) : false;
     b.disabled = !!why || none;
-    b.title = why ? `${why}` : none ? (id === 'export-lego' ? 'No LEGO parts: every piece is printed (Settings: Plain straights)' : 'Nothing to print: every piece is LEGO\'s own') : tips[id];
+    b.title = why ? `${why}` : none ? (id === 'export-lego' ? 'No LEGO parts: every piece is printed (Settings: Bought track)' : 'Nothing to print: every piece is LEGO\'s own') : tips[id];
   }
 }
 
@@ -484,8 +484,9 @@ scene.add(group);
 
 /** Show the pieces as assembled: the track grey, moving parts in their colours. */
 // What the 3D view shows (Track, Points, Throws, Levers buttons), remembered.
-const shown = new Set(['track', 'points', 'throw', 'lever', 'supports']);
-try { const v = localStorage.getItem('btd-shown'); if (v) { shown.clear(); for (const k of JSON.parse(v) as string[]) shown.add(k); } } catch { /* fine */ }
+const shown = new Set(['track', 'bought', 'points', 'throw', 'lever', 'supports']);
+// (saved before there was a Bought button: bought parts shown)
+try { const v = localStorage.getItem('btd-shown'); if (v) { const ks = JSON.parse(v) as string[]; shown.clear(); for (const k of ks) shown.add(k); if (!localStorage.getItem('btd-shown-bought')) shown.add('bought'); } } catch { /* fine */ }
 const kindOf = (name: string) => (/lid/.test(name) ? 'cassette' : /bracket/.test(name) ? 'bracket' : /lever/.test(name) ? 'lever' : /throw/.test(name) ? 'throw' : /points/.test(name) ? 'points' : 'track');
 let meshKinds: string[] = [];
 // Exploded view: each part pulled out from the middle (the moving parts lifted too), to see where they separate.
@@ -498,9 +499,9 @@ function applyExplode() {
   // (track parts spread out from the middle; each moving part goes with the track part it sits in, and lifts straight up out of it)
   const boxes = meshes.map((m) => m.geometry.boundingBox!);
   const spread = (k: number) => new THREE.Vector3((meshCentres[k].x - all.x) * e * 0.5, (meshCentres[k].y - all.y) * e * 0.5, 0);
-  const trackIdx = meshKinds.map((kd, k) => (kd === 'track' ? k : -1)).filter((k) => k >= 0);
+  const trackIdx = meshKinds.map((kd, k) => (kd === 'track' || kd === 'bought' ? k : -1)).filter((k) => k >= 0);
   meshes.forEach((m, k) => {
-    if (meshKinds[k] === 'track') { m.position.copy(spread(k)); return; }
+    if (meshKinds[k] === 'track' || meshKinds[k] === 'bought') { m.position.copy(spread(k)); return; }
     const c = meshCentres[k];
     let host = trackIdx.find((t) => c.x >= boxes[t].min.x && c.x <= boxes[t].max.x && c.y >= boxes[t].min.y && c.y <= boxes[t].max.y);
     if (host === undefined) host = trackIdx.reduce((best, t) => (best < 0 || meshCentres[t].distanceTo(c) < meshCentres[best].distanceTo(c) ? t : best), -1);
@@ -530,7 +531,7 @@ function applyShown() {
 }
 document.querySelectorAll<HTMLButtonElement>('#views .show').forEach((b) => b.addEventListener('click', () => {
   const k = b.dataset.show!; if (shown.has(k)) shown.delete(k); else shown.add(k);
-  try { localStorage.setItem('btd-shown', JSON.stringify([...shown])); } catch { /* fine */ }
+  try { localStorage.setItem('btd-shown', JSON.stringify([...shown])); localStorage.setItem('btd-shown-bought', '1'); } catch { /* fine */ }
   applyShown();
 }));
 applyShown();
@@ -572,7 +573,7 @@ function showPieces(list: Piece[]) {
     group.add(m);
     return m;
   });
-  meshKinds = list.map((p) => kindOf(p.name));
+  meshKinds = list.map((p) => (p.lego ? 'bought' : kindOf(p.name)));
   meshCentres = meshes.map((m) => { m.geometry.computeBoundingBox(); return m.geometry.boundingBox!.getCenter(new THREE.Vector3()); });
   applyShown(); applyExplode();
   if (!list.length) { framed = false; lastNames = ''; lastSphere = undefined; return; } // (nothing to frame: frame the next pieces afresh)
@@ -686,7 +687,7 @@ $('parts-open').addEventListener('click', () => {
   $('parts-body').innerHTML = [
     '<h3>To buy</h3>',
     buy.length ? `<table><tr><th class="n">Qty</th><th>Part</th><th>Name</th><th>From</th></tr>${[...buy].sort((a, b) => from(a).localeCompare(from(b)) || b.qty - a.qty).map((p) => `<tr><td class="n">${p.qty}</td><td>${esc(p.part)}</td><td>${esc(p.name)}</td><td>${from(p)}</td></tr>`).join('')}</table>`
-      : '<p>Nothing: every piece is printed (Settings: Plain track).</p>',
+      : '<p>Nothing: every piece is printed (Settings: Bought track).</p>',
     '<h3>To print</h3>',
     printed.length ? `<table><tr><th class="n">Qty</th><th>Part</th></tr>${[...kinds].sort((a, b) => b[1] - a[1]).map(([k, n]) => `<tr><td class="n">${n}</td><td>${esc(k)}</td></tr>`).join('')}</table><p>${printed.length} part${printed.length === 1 ? '' : 's'} in all: the STL download has them.</p>`
       : '<p>Nothing: every piece is bought.</p>',
@@ -1158,9 +1159,9 @@ const OPTION_FORM: OptSection[] = [
       { v: 'bed', t: 'Parts that fill the print bed', tip: 'Cut along straight lines where the bed needs it; the parts join as set in Parts join with.' },
       { v: 'lengths', t: 'Track pieces, cut across the track', tip: 'Each track cut square to itself into pieces with ordinary end connectors, like LEGO track. Switches and crossings stay whole.', con: 'More parts, and a cut only where the track is clear of other tracks.' }] },
     { key: 'pieceLengthStuds', label: 'Piece length, studs', step: 4, min: 0, max: 64, off: (c) => (c.o.splitTrack === 'lengths' ? undefined : 'only with Long track cut into: Track pieces'), help: 'LEGO straights are 16. 0: as long as fits the print bed. A longer piece than the bed takes: as long as fits.' },
-    { key: 'legoTrack', label: 'Plain track', help: 'Bought straights are 16 studs, whatever Piece length is. Pictures: printed blue, LEGO\'s light grey, BrickTracks\' dark grey.', off: (c) => (c.o.splitTrack !== 'lengths' ? 'only with Long track cut into: Track pieces' : design.gaugeStuds !== 4 ? 'LEGO track is 4 studs between the rails: the gauge isn\'t 4' : undefined), choices: [
-      { v: 'lego', t: 'Bought: LEGO\'s and BrickTracks\'', tip: 'Plain track bought, not printed: each 16-stud straight is LEGO\'s (53401), with ballast on LEGO plates under it (6 x 16 and two 2 x 16, two more 6 x 16 for the buddy layer); R40 curves are LEGO\'s (53400) and R56 to R120 curves BrickTracks\' (injection moulded, 11.25° each), with ballast on a printed ballast piece (…-ballast, with the buddy layer if set) they drop into; with a Flat ballast underside, BrickTracks\' curves on BrickTracks\' own ballast and buddy, bought too. Bought parts are in the parts list (toolbar), not the STL download.', con: 'Their sleepers and underside are theirs, not as set here.' },
-      { v: 'lego-only', t: 'Bought: LEGO\'s only', tip: 'LEGO\'s straights (53401) and R40 curves (53400) bought, as Bought track; every other piece printed, BrickTracks\' radii (R56 to R120) too.', con: 'Their sleepers and underside are theirs, not as set here.' },
+    { key: 'legoTrack', label: 'Bought track', help: 'Plain track and switches bought where they\'re the same as LEGO\'s or BrickTracks\'. Bought straights are 16 studs, whatever Piece length is. In the 3D view LEGO\'s are green, BrickTracks\' purple (Bought hides them). Pictures: printed blue, LEGO\'s light grey, BrickTracks\' dark grey.', off: (c) => (c.o.splitTrack !== 'lengths' ? 'only with Long track cut into: Track pieces' : design.gaugeStuds !== 4 ? 'LEGO track is 4 studs between the rails: the gauge isn\'t 4' : undefined), choices: [
+      { v: 'lego', t: 'Bought: LEGO\'s and BrickTracks\'', tip: 'Plain track bought, not printed: each 16-stud straight is LEGO\'s (53401), with ballast on LEGO plates under it (6 x 16 and two 2 x 16, two more 6 x 16 for the buddy layer); R40 curves are LEGO\'s (53400) and R56 to R120 curves BrickTracks\' (injection moulded, 11.25° each), with ballast on a printed ballast piece (…-ballast, with the buddy layer if set) they drop into; with a Flat ballast underside, BrickTracks\' curves on BrickTracks\' own ballast and buddy, bought too. Switches too, where they\'re exactly theirs with no other track over them: LEGO\'s (53407 left, 53404 right: 32 studs, as the LEGO switch templates) and BrickTracks\' R104 (40 studs, an R104 curve of 22.5°); on ballast, a printed ballast piece (switch-ballast) with a seat for it. Bought parts are in the parts list (toolbar), not the STL download.', con: 'Their sleepers and underside are theirs, not as set here.' },
+      { v: 'lego-only', t: 'Bought: LEGO\'s only', tip: 'LEGO\'s straights (53401), R40 curves (53400) and switches (53407, 53404) bought, as Bought: LEGO\'s and BrickTracks\'; every other piece printed, BrickTracks\' curves and switches too.', con: 'Their sleepers and underside are theirs, not as set here.' },
       { v: 'print', t: 'Printed', tip: 'Every piece printed, as set here: nothing bought.', con: 'More to print.' }] },
     { key: 'joint', label: 'Parts join with', help: 'How parts cut for the print bed or at baseplate edges join. With Long track cut into: Track pieces, plain track joins with its own end connectors; this is for the switches and crossings too big for the bed.', choices: [
       { v: 'lego', t: 'Rail tongues + peg and clip', tip: 'Like LEGO track ends.' },
