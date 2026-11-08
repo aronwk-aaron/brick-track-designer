@@ -5,7 +5,7 @@ import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { BANK_MAX, type BankRamps, type Design, type DRoute, type DSeg, OPTION_DEFAULTS, type PieceOptions, RAIL_DEFAULTS, TEMPLATE_GROUPS, TEMPLATES, type Trackwork, endOf, freeName, isMono, upgradeDesign } from './design';
 import { TrackCanvas, type OverlayItem, leverSide, leverSlides, typingIn } from './canvas';
 import { describe } from './planner';
-import { type LegoPart, legoParts, type Piece } from './build';
+import { BRICKTRACKS_COLOR, LEGO_COLOR, type LegoPart, legoParts, type Piece } from './build';
 import { zip } from '../geom/zip';
 import { layoutParts } from './layoutparts';
 
@@ -517,6 +517,28 @@ function applyExplode() {
   });
 }
 explodeEl.addEventListener('input', applyExplode);
+// The 3D view's colours: what each colour of the parts shown is (only those there are).
+const COLOURS: [number, string][] = [
+  [0x6f7780, 'printed track'], [0x9aa3ad, 'printed monorail track'], [0x5a6470, 'monorail supports'], [0x4682b4, 'points (blades), monorail frame'],
+  [0xc0392b, 'points spring'], [0xe8892b, 'throw'], [0xd4af37, 'lever'], [0x8a8f99, 'throw bracket'],
+  [LEGO_COLOR, 'LEGO\'s (bought, not printed)'], [BRICKTRACKS_COLOR, 'BrickTracks\' (bought, not printed)'],
+];
+function showColours(list: Piece[]) {
+  const there = new Set(list.map((p) => p.color)), rows = $('legend3d-rows');
+  const hex = (c: number) => `#${c.toString(16).padStart(6, '0')}`;
+  const items = COLOURS.filter(([c]) => there.has(c)).map(([c, t]) => [hex(c), t]);
+  for (const c of there) if (!COLOURS.some(([k]) => k === c)) items.push([hex(c), 'other parts']);
+  if (list.some((p) => p.supports?.length)) items.push(['#e0a030', 'breakaway print supports']);
+  rows.replaceChildren(...items.map(([c, t]) => { const r = document.createElement('span'), i = document.createElement('i'); i.style.background = c; r.append(i, t); return r; }));
+  $('legend3d').hidden = !items.length;
+}
+try { $('legend3d').classList.toggle('folded', localStorage.getItem('btd-legend3d') === '0'); } catch { /* fine */ }
+$('legend3d-fold').addEventListener('click', () => {
+  const on = !$('legend3d').classList.toggle('folded');
+  $('legend3d-fold').textContent = on ? '–' : '+';
+  try { localStorage.setItem('btd-legend3d', on ? '1' : '0'); } catch { /* fine */ }
+});
+$('legend3d-fold').textContent = $('legend3d').classList.contains('folded') ? '+' : '–';
 const showKind = (k: string) => (k === 'cassette' ? 'track' : k === 'bracket' ? 'lever' : k);
 function applyShown() {
   redraw3d();
@@ -574,6 +596,7 @@ function showPieces(list: Piece[]) {
     return m;
   });
   meshKinds = list.map((p) => (p.lego ? 'bought' : kindOf(p.name)));
+  showColours(list);
   meshCentres = meshes.map((m) => { m.geometry.computeBoundingBox(); return m.geometry.boundingBox!.getCenter(new THREE.Vector3()); });
   applyShown(); applyExplode();
   if (!list.length) { framed = false; lastNames = ''; lastSphere = undefined; return; } // (nothing to frame: frame the next pieces afresh)
