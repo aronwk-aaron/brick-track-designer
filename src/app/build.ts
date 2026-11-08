@@ -1194,7 +1194,7 @@ function byTables(b: PieceBuild, m: Man): Man[] {
 
 /**
  * The bought switches (boughtswitch.ts): each one as bought, not printed, in the parts list; on ballast, its ballast
- * printed alone with a seat it drops into (its footprint: its legs' sleepers, the lever's housing or the switch stand,
+ * printed alone with a seat it drops into (its underside's footprint, ballast between its sleepers as under a curve; the switch stand's spots,
  * a little bigger all round), cut for the bed if it has to be.
  */
 function boughtSwitches(b: PieceBuild, bought: BoughtSwitch[], copt: typeof CROSSING_DEFAULTS, gridPose: Pose) {
@@ -1204,11 +1204,14 @@ function boughtSwitches(b: PieceBuild, bought: BoughtSwitch[], copt: typeof CROS
     b.prog.step(`Building bought switch ${n + 1} of ${bought.length}`);
     const key = `bsw:${JSON.stringify({ legs: bs.legs, copt, gridPose, tol, onBallast, bed: [o.printBedX, o.printBedY] })}`;
     const got = cachedData(key, () => arena(w, () => {
-      // (as bought: LEGO's sleepers, as both make theirs, track only; each leg on its own, laid over the other at the toe)
+      // (as bought: its underside's footprint as its sleepers and base, a plate thick, and each leg's rails on them)
       const asBought = { ...copt, ballast: 'none' as const, ballastOnly: undefined, sleepers: 'sleepers' as const, sleeperGapStuds: 2, sleeperWidthStuds: 2, supports: false, buffers: undefined };
-      const view = bake(b, scad.union(bs.legs.map((lg) => crossingPiece(scad, [lg], asBought, undefined, undefined, { gridPose }))));
+      const fp = footprint(bs), under = new w.CrossSection(fp.underside, 'EvenOdd');
+      const legs = scad.union(bs.legs.map((lg) => crossingPiece(scad, [lg], asBought, undefined, undefined, { gridPose }))), lb = legs.boundingBox();
+      const rails = scad.intersection(legs, T(scad.cube([lb.max[0] - lb.min[0] + 2, lb.max[1] - lb.min[1] + 2, 50]), [lb.min[0] - 1, lb.min[1] - 1, PLATE_H + 0.01]));
+      const view = bake(b, scad.union([scad.extrude(under, PLATE_H + 0.02), rails]));
       if (!onBallast) return { view, bal: [] as Baked[] };
-      const cs = w.CrossSection.union(footprint(bs).map((pts) => scad.polygon(pts))).offset(tol, 'Miter', 2);
+      const cs = w.CrossSection.union([under, ...fp.extras.map((pts) => scad.polygon(pts))]).offset(tol, 'Miter', 2);
       const none = { crossings: [], grooves: [], splits: [], checkRails: [] };
       const m = crossingPiece(scad, bs.legs, { ...copt, ballastOnly: tol, supports: false, buffers: undefined }, none, undefined, { gridPose, seat: scad.extrude(cs, 200) });
       const parts = byTables(b, m).flatMap((p) => (b.cut.fitsBed(p) ? [p] : b.cut.whole(p, b.cut.bedCut(flat(w, p), bs.legs))));

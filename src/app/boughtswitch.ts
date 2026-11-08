@@ -5,11 +5,12 @@
 // it at ordinary track ends. On ballast, its ballast is printed alone, with a
 // seat it drops into.
 import type { Pose, Route, Segment } from '../route/route';
-import { poseToWorld, railPoint, routeLength, routePose } from '../route/route';
+import { poseToWorld, routeLength, routePose } from '../route/route';
 import type { Split } from '../route/solver';
 import { reversedRoute } from '../switch/reverse';
 import { subRoute } from '../switch/pieces';
 import type { LegoPart } from './build';
+import { BRICKTRACKS_SWITCH_FOOTPRINT, LEGO_SWITCH_FOOTPRINT } from './switchfootprints';
 
 /** A switch sold as a track piece: its straight leg and (to the left) its diverging leg, from the toe. */
 export interface SwitchKind {
@@ -19,25 +20,25 @@ export interface SwitchKind {
   straight: number;
   /** the diverging leg's segments, turning left (mirrored for a right-hand one) */
   branch: Segment[];
-  /** what else is in its footprint besides the two legs' sleepers, in the toe's frame (x across, + right; y along), turning left:
-   * the lever's housing, the switch stand's spots */
+  /** its underside's footprint, turning left (switchfootprints.ts): the seat its printed ballast leaves it */
+  underside: [number, number][][];
+  /** what else needs room beside it, in the toe's frame (x across, + right; y along), turning left: the switch stand's spots */
   extras: [number, number, number, number][];
-  /** the sleepers' length (mm): the footprint's width along each leg */
-  sleeper: number;
 }
 
 /**
  * LEGO's switch points (53407 left, 53404 right; the same as the old 9 V points' shape): 32 studs straight; the branch
  * R40, out to 36.87 degrees and back to 22.5, ending 32.69 studs on and 12.96 over, so one more R40 curve makes a
- * parallel track 16 studs over. The lever's housing beside the toe, 2 to 5 studs on, out to 10 studs on the branch's side.
+ * parallel track 16 studs over. The lever's housing beside the toe, 2 to 5 studs on, out to 10 studs on the branch's side
+ * (in its footprint).
  */
 export const LEGO_SWITCH: SwitchKind = {
   left: { part: '53407', name: 'Train, Track Plastic (RC Trains) Switch Point Left', qty: 1 },
   right: { part: '53404', name: 'Train, Track Plastic (RC Trains) Switch Point Right', qty: 1 },
   straight: 32 * 8,
   branch: [{ kind: 'arc', radius: 40 * 8, angle: 36.8699 }, { kind: 'arc', radius: 40 * 8, angle: -14.3699 }],
-  extras: [[-80.25, 32, 16.15, 40.15]],
-  sleeper: 64,
+  underside: LEGO_SWITCH_FOOTPRINT,
+  extras: [],
 };
 
 /**
@@ -57,8 +58,8 @@ export const BRICKTRACKS_SWITCH: SwitchKind = {
   right: { part: 'BrickTracks R104 switch right', name: 'BrickTracks R104 switch, right (in their R104 switch track kit)', qty: 1, shop: 'bricktracks' },
   straight: 40 * 8,
   branch: [{ kind: 'arc', radius: 104 * 8, angle: 22.5 }, { kind: 'straight', length: BT_LEAD }],
+  underside: BRICKTRACKS_SWITCH_FOOTPRINT,
   extras: [[-80, -24, 24, 48], [24, 80, 24, 48]],
-  sleeper: 64,
 };
 
 /** A bought switch in a design: what it is, and its two legs from the toe (heading away from it). */
@@ -174,18 +175,9 @@ export function cutOut(routes: Route[], bought: BoughtSwitch[]): Route[] {
   return out;
 }
 
-/** Its footprint in plan, as outlines (mm): each leg's sleepers' band, and its extras (the lever housing, the stand). */
-export function footprint(b: BoughtSwitch): [number, number][][] {
-  const hw = b.kind.sleeper / 2;
-  const band = (lg: Route) => {
-    const L = routeLength(lg), n = Math.max(2, Math.ceil(L / 4));
-    const side = (o: number) => Array.from({ length: n + 1 }, (_, k) => railPoint(lg, (L * k) / n, o));
-    return [...side(-hw), ...side(hw).reverse()];
-  };
-  const flip = b.hand === 'left' ? 1 : -1;
-  const rects = b.kind.extras.map(([x0, x1, y0, y1]) => {
-    const xa = flip > 0 ? x0 : -x1, xb = flip > 0 ? x1 : -x0;
-    return ([[xa, y0], [xb, y0], [xb, y1], [xa, y1]] as [number, number][]).map((q) => poseToWorld(b.toe, q));
-  });
-  return [...b.legs.map(band), ...rects];
+/** Its footprint in plan (mm): its underside's outlines and the holes in them (even-odd: the seat its ballast leaves it), and its extras (the switch stand's spots). */
+export function footprint(b: BoughtSwitch): { underside: [number, number][][]; extras: [number, number][][] } {
+  const flip = b.hand === 'left' ? 1 : -1, at = (q: [number, number]) => poseToWorld(b.toe, [flip * q[0], q[1]]);
+  const rects = b.kind.extras.map(([x0, x1, y0, y1]) => ([[x0, y0], [x1, y0], [x1, y1], [x0, y1]] as [number, number][]).map(at));
+  return { underside: b.kind.underside.map((poly) => poly.map(at)), extras: rects };
 }

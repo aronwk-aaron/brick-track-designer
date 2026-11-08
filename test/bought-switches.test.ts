@@ -83,7 +83,7 @@ describe('switches bought as track pieces, as plain track is', { timeout: 600000
       expect(count(buildDesign(w, short), '53407')).toBe(0);
     } finally { Object.assign(OPTION_DEFAULTS, saved); }
   });
-  it('on ballast: its ballast printed alone, one piece, clear of the switch as bought', async () => {
+  it('on ballast: its ballast printed alone, seated for its underside, clear of the switch as bought', async () => {
     const saved = { ...OPTION_DEFAULTS };
     Object.assign(OPTION_DEFAULTS, APP);
     try {
@@ -103,9 +103,8 @@ describe('switches bought as track pieces, as plain track is', { timeout: 600000
           expect(m.decompose()).toHaveLength(1);
           expect(m.boundingBox().min[2]).toBeCloseTo(ballast === 'buddy' ? -6.4 : -3.2, 1);
           expect(sw.intersect(m).volume()).toBeLessThan(0.01);
-          // (a tray the switch sits in: its sleepers' band down to the bed's bottom, the studs on the step beside it)
-          expect(m.boundingBox().max[2]).toBeGreaterThan(1.5);
-          expect(m.boundingBox().max[2]).toBeLessThan(2);
+          // (up to the sleepers' top between the switch's sleepers, as under a curve)
+          expect(m.boundingBox().max[2]).toBeCloseTo(3.2, 1);
         }
       }
     } finally { Object.assign(OPTION_DEFAULTS, saved); }

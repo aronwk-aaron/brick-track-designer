@@ -550,9 +550,9 @@ function applyExplode() {
   // (track parts spread out from the middle; each moving part goes with the track part it sits in, and lifts straight up out of it)
   const boxes = meshes.map((m) => m.geometry.boundingBox!);
   const spread = (k: number) => new THREE.Vector3((meshCentres[k].x - all.x) * e * 0.5, (meshCentres[k].y - all.y) * e * 0.5, 0);
-  const trackIdx = meshKinds.map((kd, k) => (kd === 'track' || kd === 'bought' ? k : -1)).filter((k) => k >= 0);
+  const trackIdx = meshKinds.map((kd, k) => (kd === 'track' ? k : -1)).filter((k) => k >= 0);
   meshes.forEach((m, k) => {
-    if (meshKinds[k] === 'track' || meshKinds[k] === 'bought') { m.position.copy(spread(k)); return; }
+    if (meshKinds[k] === 'track') { m.position.copy(spread(k)); return; }
     const c = meshCentres[k];
     let host = trackIdx.find((t) => c.x >= boxes[t].min.x && c.x <= boxes[t].max.x && c.y >= boxes[t].min.y && c.y <= boxes[t].max.y);
     if (host === undefined) host = trackIdx.reduce((best, t) => (best < 0 || meshCentres[t].distanceTo(c) < meshCentres[best].distanceTo(c) ? t : best), -1);
@@ -562,8 +562,9 @@ function applyExplode() {
     // or with the layered points from above under the lid)
     const fdb = design.options?.mechStyle !== 'tines';
     const fromTop = design.options?.pointsModule === 'layers' && (design.options?.ballast ?? 'none') !== 'none';
-    const lift: Record<string, number> = fdb ? { throw: 35, points: 70, hold: 90, cassette: 90, bracket: 50, lever: 110 }
-      : { throw: fromTop ? 15 : -30, points: fromTop ? 25 : -18, cassette: 45, bracket: 30, lever: 60 };
+    // (bought track lifted off the printed ballast it sits in)
+    const lift: Record<string, number> = fdb ? { throw: 35, points: 70, hold: 90, cassette: 90, bracket: 50, lever: 110, bought: 40 }
+      : { throw: fromTop ? 15 : -30, points: fromTop ? 25 : -18, cassette: 45, bracket: 30, lever: 60, bought: 40 };
     m.position.set(off.x, off.y, e * (lift[meshKinds[k]] ?? 40));
   });
 }
