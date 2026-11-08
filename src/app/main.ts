@@ -6,7 +6,7 @@ import { BANK_MAX, type BankRamps, type Design, type DRoute, type DSeg, OPTION_D
 import { TrackCanvas, type OverlayItem, leverSide, leverSlides, typingIn } from './canvas';
 import { describe } from './planner';
 import { BRICKTRACKS_COLOR, LEGO_COLOR, type LegoPart, legoParts, type Piece } from './build';
-import { TABLE_COLORS, type Table } from './tables';
+import { TABLE_COLORS, type Table, tableAt } from './tables';
 import { zip } from '../geom/zip';
 import { layoutParts } from './layoutparts';
 
@@ -763,6 +763,24 @@ const esc = (t: string) => t.replace(/[&<>"]/g, (ch) => ({ '&': '&amp;', '<': '&
 $('parts-open').addEventListener('click', () => {
   if (!pieces.length || building || stale) return;
   const buy = legoParts(pieces), printed = pieces.filter((p) => !p.lego);
+  // (with tables: what goes on each, by where each part's middle is; bought and printed parts)
+  const byTable = () => {
+    const ts = design.tables ?? [];
+    if (!ts.length) return [];
+    const groups = new Map<number, Piece[]>();
+    for (const p of pieces) {
+      let x = 0, y = 0; const n = p.positions.length / 3;
+      for (let i = 0; i < p.positions.length; i += 3) { x += p.positions[i]; y += p.positions[i + 1]; }
+      const k = tableAt(ts, [x / n, y / n]);
+      if (!groups.has(k)) groups.set(k, []);
+      groups.get(k)!.push(p);
+    }
+    const name = (k: number) => (k < 0 ? 'On no table' : ts[k].name || `Table ${k + 1}`);
+    return ['<h3>By table</h3>', ...[...groups].sort((a, b) => (a[0] < 0 ? 1 : b[0] < 0 ? -1 : a[0] - b[0])).map(([k, ps]) => {
+      const bought = legoParts(ps), np = ps.filter((p) => !p.lego).length;
+      return `<p><b>${esc(name(k))}</b>: ${bought.map((p) => `${p.qty} × ${esc(p.part)}`).join(', ') || 'nothing bought'}; ${np} printed part${np === 1 ? '' : 's'}.</p>`;
+    })];
+  };
   // (printed parts by kind: their names without the numbers, as track, track-ballast, points-a)
   const kinds = new Map<string, number>();
   for (const p of printed) { const k = p.name.replace(/\d+(-\d+)*/g, '').replace(/--+/g, '-').replace(/^-|-$/g, '') || p.name; kinds.set(k, (kinds.get(k) ?? 0) + 1); }
@@ -774,6 +792,7 @@ $('parts-open').addEventListener('click', () => {
     '<h3>To print</h3>',
     printed.length ? `<table><tr><th class="n">Qty</th><th>Part</th></tr>${[...kinds].sort((a, b) => b[1] - a[1]).map(([k, n]) => `<tr><td class="n">${n}</td><td>${esc(k)}</td></tr>`).join('')}</table><p>${printed.length} part${printed.length === 1 ? '' : 's'} in all: the STL download has them.</p>`
       : '<p>Nothing: every piece is bought.</p>',
+    ...byTable(),
   ].join('');
   $<HTMLButtonElement>('export-lego').disabled = !buy.length;
   partsDlg.showModal();

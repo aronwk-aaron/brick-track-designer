@@ -53,3 +53,17 @@ export function tableSummary(t: Table): string {
   if (t.shape === 'arc') return `radius ${+t.r0.toFixed(2)} to ${+t.r1.toFixed(2)}, ${+Math.abs(t.a1 - t.a0).toFixed(2)}°`;
   return `${t.pts.length} corners`;
 }
+
+/** Where a table's handle goes (its name on the plan, to drag it by): an arc's middle, else its outline's corners' average. */
+export function tableMiddle(t: Table): [number, number] {
+  if (t.shape === 'arc') { const a = (((t.a0 + t.a1) / 2) * Math.PI) / 180, r = (t.r0 + t.r1) / 2; return [t.cx + r * Math.cos(a), t.cy + r * Math.sin(a)]; }
+  const pts = tableOutline(t);
+  return pts.reduce((m, p) => [m[0] + p[0] / pts.length, m[1] + p[1] / pts.length], [0, 0]);
+}
+
+/** A table moved by (dx, dy) studs. */
+export function movedTable(t: Table, dx: number, dy: number): Table {
+  if (t.shape === 'rect') return { ...t, x: t.x + dx, y: t.y + dy };
+  if (t.shape === 'arc') return { ...t, cx: t.cx + dx, cy: t.cy + dy };
+  return { ...t, pts: t.pts.map(([x, y]) => [x + dx, y + dy] as [number, number]) };
+}

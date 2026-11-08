@@ -6,7 +6,7 @@
 // branches off it (a switch). Select mode picks a track to edit or delete.
 // Drag with the right or middle button (or Space + drag) to pan; the wheel
 // zooms.
-import { TABLE_COLORS, tableOutline } from './tables';
+import { movedTable, type Table, TABLE_COLORS, tableMiddle, tableOutline } from './tables';
 import { type Design, type DRoute, type DSeg, freeName, isMono, toRoutes } from './design';
 import { sleeperSpots } from '../geom/crossing';
 import { poseToWorld, routeLength, routePose, worldToPose } from '../route/route';
@@ -86,6 +86,14 @@ export class TrackCanvas {
   mode: 'draw' | 'select' = 'select';
   /** Moving the selected tracks: where the press was (studs) and where they started. */
   private moving: { x: number; y: number; orig: { i: number; x: number; y: number }[]; moved: boolean } | undefined;
+  /** a table being dragged by its handle (its name, in its middle): which, where from, as it was */
+  private tableDrag: { k: number; x: number; y: number; orig: Table; moved: boolean } | undefined;
+  /** the table whose handle (its name, in its middle) is within reach of a point (studs), if any */
+  private tableHandle(w: [number, number]): number | undefined {
+    const ts = this.host.design().tables ?? [];
+    for (let k = ts.length - 1; k >= 0; k--) { const m = tableMiddle(ts[k]); if (Math.hypot(m[0] - w[0], m[1] - w[1]) < this.reach(16)) return k; }
+    return undefined;
+  }
   /** A selection box being dragged out (studs), and whether it adds to the selection. */
   private box: { x0: number; y0: number; x1: number; y1: number; add: boolean } | undefined;
   /** While drawing: the route being extended (or a new one not yet added), and where it ends. */
@@ -406,6 +414,9 @@ export class TrackCanvas {
       }
     }
     if (this.mode === 'select') {
+      // (a table's handle: drag the table about)
+      const tk = this.hidden.has('tables') ? undefined : this.tableHandle(w);
+      if (tk !== undefined) { this.tableDrag = { k: tk, x: w[0], y: w[1], orig: structuredClone(this.host.design().tables![tk]), moved: false }; return; }
       const hit = this.nearTrack(w, this.reach(18)) ?? this.onBand(w);
       // pressing on a selected track: drag the selection about
       const add = e.shiftKey || e.ctrlKey || e.metaKey;
@@ -502,6 +513,13 @@ export class TrackCanvas {
       this.dragLever([this.mouse[0] + this.leverDrag.off[0], this.mouse[1] + this.leverDrag.off[1]]);
       return this.drawSoon();
     }
+    if (this.tableDrag) {
+      const m = this.tableDrag, p = this.evWorld(e), d = this.host.design();
+      const dx = Math.round(p[0] - m.x), dy = Math.round(p[1] - m.y); // (whole studs: stays on the grid)
+      if ((dx || dy || m.moved) && d.tables?.[m.k]) { m.moved = true; d.tables[m.k] = movedTable(m.orig, dx, dy); this.host.changed(false); }
+      this.mouse = p;
+      return this.drawSoon();
+    }
     if (this.moving) {
       const m = this.moving, p = this.evWorld(e), d = this.host.design();
       const dx = Math.round(p[0] - m.x), dy = Math.round(p[1] - m.y); // (whole studs: stays on the grid)
@@ -563,6 +581,7 @@ export class TrackCanvas {
       if (moved && ld.at && ld.arm) this.leverPending = { key: ld.it.key, at: ld.at, arm: ld.arm };
       if (moved) this.host.changed(true); return this.draw();
     }
+    if (this.tableDrag) { const moved = this.tableDrag.moved; this.tableDrag = undefined; if (moved) this.host.changed(true); return this.draw(); }
     if (this.moving) { const moved = this.moving.moved; this.moving = undefined; if (moved) this.host.changed(true); return this.draw(); }
     if (this.box) {
       const b = this.box; this.box = undefined;
@@ -795,6 +814,8 @@ export class TrackCanvas {
       return st.ok ? `No points here (${why}): click to force them` : `No points here: ${why}, too far off to force (redraw it to start on the track)`;
     }
     if (this.mode === 'select') {
+      if (this.tableDrag?.moved) return 'Moving the table: let go to put it down';
+      if (this.mouse && !this.hidden.has('tables') && this.tableHandle(this.mouse) !== undefined) return 'Drag this table by its name to move it (its size and shape: the Tables panel)';
       if (hit?.end) return 'Drag this end to reshape the track';
       if (this.moving?.moved) return 'Moving: let go to put it down';
       if (this.selected !== undefined) return `${this.selection().length > 1 ? `${this.selection().length} tracks` : this.host.design().routes[this.selected]?.name ?? ''} selected · drag to move · Shift+click adds more · Delete removes`;
@@ -834,10 +855,9 @@ export class TrackCanvas {
       c.beginPath(); pts.forEach(([x, y], i) => { const [sx, sy] = this.toScreen(x, y); if (i) c.lineTo(sx, sy); else c.moveTo(sx, sy); }); c.closePath();
       c.globalAlpha = 0.4; c.fillStyle = t.color ?? TABLE_COLORS[k % TABLE_COLORS.length]; c.fill(); c.globalAlpha = 1;
       c.strokeStyle = ink.rail; c.lineWidth = 1.5; c.stroke();
-      if (t.name) {
-        const m = pts.reduce((a, p) => [a[0] + p[0] / pts.length, a[1] + p[1] / pts.length], [0, 0]), [sx, sy] = this.toScreen(m[0], m[1]);
-        c.fillStyle = ink.label; c.font = '12px system-ui, sans-serif'; c.textAlign = 'center'; c.fillText(t.name, sx, sy); c.textAlign = 'start';
-      }
+      // (its handle: its name in its middle, to drag it by)
+      const m = tableMiddle(t), [sx, sy] = this.toScreen(m[0], m[1]);
+      c.fillStyle = ink.label; c.font = '12px system-ui, sans-serif'; c.textAlign = 'center'; c.fillText(`✥ ${t.name || `Table ${k + 1}`}`, sx, sy + 4); c.textAlign = 'start';
     });
     // baseplate edges, where the track is cut (Piece options)
     const bpS = d.options?.baseplate ?? 0;
