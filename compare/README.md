@@ -9,7 +9,7 @@ build says so).
 | Option (Piece options) | Values | Default |
 |---|---|---|
 | `throwStyle` (Throw: *Lever or stand*) | `built-in`, `bracket`, **`stand`** (new) | `built-in` |
-| `throwAction` (Throw: *Points held by*) | `detent`, `overcentre` | `detent` |
+| `throwAction` (Switches: throw: *Points kept set by*) | `detent`, `overcentre` | `detent` |
 | `bladeStyle` (Points: *Blades*) | **`sprung`**, `simple` (rigid), `prototype` (rigid) | `sprung` |
 
 The defaults build what was built before, apart from two fixes to faults the

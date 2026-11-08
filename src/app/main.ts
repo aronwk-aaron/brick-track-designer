@@ -1120,11 +1120,18 @@ const OPTION_FORM: OptSection[] = [
       { v: 'grid', t: 'On the baseplate grid', tip: 'Every stud lines up with the baseplate. On curves they form a grid, not rows.' },
       { v: 'follow', t: 'In rows along the track', tip: 'Rows across the track, like LEGO track, so tiles fit across curves.', con: 'On curves the studs are off the baseplate grid.' }] },
   ] },
-  { title: 'Underside and ballast', kind: 'train', fields: [
+  { title: 'Ballast', kind: 'train', fields: [
     { key: 'ballast', label: 'Ballast', choices: [
       { v: 'none', t: 'None', tip: 'Track only, like LEGO track.' },
       { v: 'ballast', t: 'Ballast', tip: 'The track sits on a stepped ballast shoulder.' },
       { v: 'buddy', t: 'Ballast + buddy layer', tip: 'Ballast with a wider bottom layer.' }] },
+    { key: 'trackBallast', label: 'Track and ballast printed', off: (c) => (c.ballast ? undefined : 'only with ballast'), choices: [
+      { v: 'together', t: 'In one part', tip: 'Track and ballast print as one part.' },
+      { v: 'apart', t: 'Apart, the track seated in the ballast', tip: 'Track and ballast print as separate parts (…-track, …-ballast). The track drops into a seat in the ballast.',
+        con: 'Twice as many parts. The track is held only by its fit and the baseplate; with a solid bed the seat is just the ballast steps (with sleepers, each sleeper gets a pocket).' }] },
+    { key: 'trackFitTol', label: 'Track fit in the seat, mm', step: 0.05, min: 0, max: 1, off: (c) => (!c.ballast ? 'only with ballast' : c.o.trackBallast !== 'apart' ? 'Track and ballast printed is In one part' : undefined), help: 'Gap round the track in its seat.' },
+  ] },
+  { title: 'Underside', kind: 'train', fields: [
     { key: 'bottomStyle', label: 'Ballast underside', off: (c) => (c.ballast ? undefined : 'only with ballast'), choices: [
       { v: 'antistud', t: 'Anti-studs (grips the baseplate)', tip: 'Hollow with LEGO tubes, so it clicks onto the baseplate.' },
       { v: 'float', t: 'Flat', tip: 'Flat underneath. It rests on the studs without gripping.' }] },
@@ -1136,21 +1143,11 @@ const OPTION_FORM: OptSection[] = [
       choices: [
         { v: 'edges', t: 'Along the edges', tip: 'Like a LEGO plate: tubes grip along the edges and every 4 studs (green circles on the plan). Firm, and comes off again.' },
         { v: 'all', t: 'Every stud', tip: 'A socket on every stud.', con: 'Grips very hard: can be difficult to pull off.' }] },
-    { key: 'trackBallast', label: 'Track and ballast printed', off: (c) => (c.ballast ? undefined : 'only with ballast'), choices: [
-      { v: 'together', t: 'Together', tip: 'Track and ballast print as one part.' },
-      { v: 'apart', t: 'Apart', tip: 'Track and ballast print as separate parts (…-track, …-ballast). The track drops into a seat in the ballast.',
-        con: 'Twice as many parts. The track is held only by its fit and the baseplate; with a solid bed the seat is just the ballast steps (with sleepers, each sleeper gets a pocket).' }] },
-    { key: 'trackFitTol', label: 'Track fit in the seat, mm', step: 0.05, min: 0, max: 1, off: (c) => (!c.ballast ? 'only with ballast' : c.o.trackBallast !== 'apart' ? 'Track and ballast printed is Together' : undefined), help: 'Gap round the track in its seat.' },
-    { key: 'pegOnBallast', label: 'Peg and clip on ballast ends', check: true, off: (c) => (c.ballast ? undefined : 'only with ballast'), help: 'Keeps the peg and clip on the end connectors, so pieces clip together. They print on small breakaway supports. Off: the ends just butt together.' },
-    { key: 'axleHoles', label: 'LEGO axle holes through the ends', check: true, off: (c) => (c.o.ballast !== 'buddy' ? 'needs Ballast + buddy layer' : c.o.trackBallast === 'apart' ? 'not with Track and ballast printed Apart' : undefined), help: 'Cross-axle holes through each end, so a LEGO axle pins two pieces together.' },
   ] },
   { title: 'Switches: points', kind: 'train', switches: true, fields: [
     { key: 'mechStyle', label: 'Mechanism', choices: [
       { v: 'plates', t: 'Blades on top, on pins', tip: 'Each blade sits on a plate on top of the bed and turns on a pin. Everything goes in from above.' },
       { v: 'tines', t: 'Under the bed, on spring tines', tip: 'The points sit in pockets under the bed on springy tines. They go in from below.' }] },
-    { key: 'pointsPieces', label: 'Points printed as', numeric: true, off: onlyTines, choices: [
-        { v: '1', t: 'One part', tip: 'Both blades on one pivot.' },
-        { v: '2', t: 'Two parts', tip: 'Each blade on its own pivot and spring.' }] },
     { key: 'pointBlades', label: 'Moving blades', numeric: true, off: onlyPlates, choices: [
       { v: '2', t: 'Two', tip: 'Both blades move, as LEGO and most model switches.' },
       { v: '1', t: 'One (single point)', tip: 'Only the blade on the curved side moves; the other rail is fixed, with a flangeway beside its stock rail, as a tram\'s single-point switch.',
@@ -1167,13 +1164,18 @@ const OPTION_FORM: OptSection[] = [
       { v: 'front', t: 'Lip over the front', tip: 'A low lip on the track leans over each blade\'s front, as on Sprung blades, so the point can\'t lift. The pin is plain. Fit each blade front first, tilted under the lip, then lower it onto its pin.',
         con: 'Each blade\'s rail starts a little further back (its front is bevelled under the lip). Where other track runs too close to a blade\'s front, that blade keeps the snap lip.',
         no: (c) => (c.ballast && c.o.bladeStyle === 'simple' ? 'on ballast a Rigid blade\'s plate is kept off the stock rail\'s foot, so its front is too narrow to hold (Rigid, realistic works)' : undefined) }] },
+    { key: 'pointThrow', label: 'Blade throw, mm', step: 0.25, min: 2, max: 6, help: 'How far the blade tips move.' },
+    { key: 'pointClearance', label: 'Clearance, mm', step: 0.05, min: 0.1, max: 0.8, help: 'Gap round the moving parts.' },
+    { key: 'springPreload', label: 'Spring preload, mm', step: 0.25, min: 0, max: 3, help: 'How far past closed the springs push the blades, to hold them shut.' },
+  ] },
+  { title: 'Switches: tines mechanism', kind: 'train', switches: true, fields: [
+    { key: 'pointsPieces', label: 'Points printed as', numeric: true, off: onlyTines, choices: [
+        { v: '1', t: 'One part', tip: 'Both blades on one pivot.' },
+        { v: '2', t: 'Two parts', tip: 'Each blade on its own pivot and spring.' }] },
     { key: 'pointsModule', label: 'Points go in', off: onlyTines, choices: [
       { v: 'built-in', t: 'From below', tip: 'The pockets open through the bottom. Fit the points before putting the track on the baseplate.' },
       { v: 'layers', t: 'From above, under a lid', tip: 'A lower layer holds the moving parts; the deck with the rails clips on top with studs.',
         no: (c) => (c.ballast ? undefined : 'it needs ballast, so the points go in from below') }] },
-    { key: 'pointThrow', label: 'Blade throw, mm', step: 0.25, min: 2, max: 6, help: 'How far the blade tips move.' },
-    { key: 'pointClearance', label: 'Clearance, mm', step: 0.05, min: 0.1, max: 0.8, help: 'Gap round the moving parts.' },
-    { key: 'springPreload', label: 'Spring preload, mm', step: 0.25, min: 0, max: 3, help: 'How far past closed the springs push the blades, to hold them shut.' },
     { key: 'springThickness', label: 'Spring thickness, mm', step: 0.05, min: 0.5, max: 2, off: onlyTines, help: 'Thickness of the spring tines.' },
     { key: 'springLength', label: 'Spring length, studs', step: 0.25, min: 2, max: 10, ...inStuds('springLength'), off: onlyTines, help: 'Length of the spring tines. Each lever can also be dragged along on the plan.' },
     { key: 'bladeDiscD', label: 'Pivot disc diameter, mm', step: 1, min: 10, max: 24, off: onlyTines, help: 'The disc the points pivot on. Bigger is steadier but needs more room under the bed.' },
@@ -1185,7 +1187,7 @@ const OPTION_FORM: OptSection[] = [
       { v: 'stand', t: 'Switch stand (ground throw)', tip: 'A handle beside the track, like a real ground throw. It locks at each end.',
         con: 'A train trailing through against it derails unless the points spring back. A three-way\'s middle position isn\'t locked.',
         no: (c) => (c.fdb ? undefined : 'only with Mechanism: Blades on top, on pins') }] },
-    { key: 'throwAction', label: 'Points held by', off: onlyPlates, choices: [
+    { key: 'throwAction', label: 'Points kept set by', off: onlyPlates, choices: [
       { v: 'detent', t: 'Lever click', tip: 'The lever clicks into place at each end.', con: 'A train trailing through the wrong way can push the points part way and derail.' },
       { v: 'overcentre', t: 'Over-centre spring', tip: 'A printed spring snaps the points to whichever side they\'re pushed. Trains can trail through.', con: 'The spring is light (about 0.3 N) and depends on print accuracy. Not on three-ways or with a switch stand.' }] },
     { key: 'throwSide', label: 'Lever side', help: 'For every switch, unless set on the branch route\'s card or dragged on the plan.', choices: [
@@ -1194,6 +1196,20 @@ const OPTION_FORM: OptSection[] = [
       { v: 'right', t: 'Right', tip: 'Right, facing along the points from the toe.' }] },
     { key: 'leverOffset', label: 'Lever distance from track, studs', step: 0.25, min: -3, max: 4, ...inStuds('leverOffset'), help: 'How far past the sleeper ends. Each lever can also be dragged on the plan.' },
     { key: 'throwBallast', label: 'Ballast round the lever', check: true, off: (c) => (c.ballast ? undefined : 'only with ballast'), help: 'The ballast steps continue round the lever arm, so the lever stands on ballast.' },
+  ] },
+  { title: 'Check rails and flangeways', kind: 'train', fields: [
+    { key: 'checkRailLen', label: 'Check rail length, studs', step: 0.25, min: 1.25, max: 10, ...inStuds('checkRailLen') },
+    { key: 'checkRailW', label: 'Check rail width, mm', step: 0.1, min: 1, max: 3 },
+    { key: 'checkRailFlare', label: 'Check rail end flare, mm', step: 0.25, min: 0, max: 4, help: 'How far the ends bend out to guide the flanges in.' },
+    { key: 'flangeway', label: 'Flangeway width, mm', step: 0.1, min: 1, max: 4 },
+    { key: 'flangewayDepth', label: 'Flangeway depth, mm', step: 0.5, min: 1, max: 6 },
+  ] },
+  { title: 'Banked curves', kind: 'train', fields: [
+    { key: 'bankRampAt', label: 'Bank ramps', off: noBank, choices: [
+      { v: 'straight', t: 'On the track before and after', tip: 'The bank eases in on the track leading into a curve and out on the track after it, as real railways do: the curve is banked in full from end to end. With no straight there, or not enough, the ramp runs on into the curve.' },
+      { v: 'curve', t: 'Inside the curve', tip: 'The bank eases in and out inside the curve, as the plate-style banked pieces do.', con: 'The outer rail climbs while the train is already turning, and a short curve leaves little room: the ramps get steep.' }] },
+    { key: 'bankRampStuds', label: 'Shortest bank ramp, studs', off: noBank, step: 1, min: 2, max: 200, help: 'Each ramp from level to a curve\'s full bank, eased in and out (no kink in the outer rail). Made longer by itself where the outer rail would climb steeper than the limit below. 40 keeps a 3° bank under 1 in 100.' },
+    { key: 'bankClimb', label: 'Steepest climb of the outer rail, 1 in', off: noBank, step: 10, min: 20, max: 1000, help: 'The outer rail rises at most 1 mm in this many, at the ramp\'s steepest (its middle). 100 is a gentle model railway run-off; full-size railways use 400 or more. Where there isn\'t room for a ramp that gentle, the build warns and rings the place on the plan.' },
   ] },
   { title: 'Buffer stops', kind: 'train', fields: [
     { key: 'bufferStyle', label: 'Style', off: () => noBuf(), choices: [
@@ -1204,37 +1220,23 @@ const OPTION_FORM: OptSection[] = [
     { key: 'bufferBeamTop', label: 'Beam top above the rails, mm', step: 0.5, min: 4, max: 20, off: () => noBuf() },
     { key: 'bufferPinHoles', label: 'Pin holes in the posts', check: true, off: (c) => noBuf() ?? (c.o.bufferStyle === 'blocks' ? undefined : 'only with Style: Brick posts'), help: 'Holes for LEGO Technic pins at beam height: for a bumper, lights or a sign.' },
   ] },
-  { title: 'Labels', fields: [
-    { key: 'labelText', label: 'Label text', text: true, off: (c) => (design.routes.some((r) => isMono(r)) ? undefined : (c.ballast && c.o.bottomStyle === 'float' ? undefined : 'labels go only on a flat underside: set Ballast to Ballast and Ballast underside to Flat')), help: 'Engraved under each part, mirrored to read from below. Empty: no labels (monorail: the design\'s name).' },
-    { key: 'labelSize', label: 'Add the size (S16, R40 22.5°)', check: true, off: (c) => (c.ballast && c.o.bottomStyle === 'float' ? undefined : 'labels go only on a flat underside: set Ballast to Ballast and Ballast underside to Flat') ?? (c.o.labelText ? undefined : 'Label text is empty') },
-    { key: 'labelGauge', label: 'Add the gauge (Ln4)', check: true, off: (c) => (c.ballast && c.o.bottomStyle === 'float' ? undefined : 'labels go only on a flat underside: set Ballast to Ballast and Ballast underside to Flat') ?? (c.o.labelText ? undefined : 'Label text is empty') },
-    { key: 'labelParts', label: 'Number parts cut for the bed (#2)', check: true, off: (c) => (c.ballast && c.o.bottomStyle === 'float' ? undefined : 'labels go only on a flat underside: set Ballast to Ballast and Ballast underside to Flat') ?? (c.o.labelText ? undefined : 'Label text is empty'), help: 'Matches the part\'s file name.' },
-  ] },
-  { title: 'Banked curves', kind: 'train', fields: [
-    { key: 'bankRampAt', label: 'Bank ramps', off: noBank, choices: [
-      { v: 'straight', t: 'On the track before and after', tip: 'The bank eases in on the track leading into a curve and out on the track after it, as real railways do: the curve is banked in full from end to end. With no straight there, or not enough, the ramp runs on into the curve.' },
-      { v: 'curve', t: 'Inside the curve', tip: 'The bank eases in and out inside the curve, as the plate-style banked pieces do.', con: 'The outer rail climbs while the train is already turning, and a short curve leaves little room: the ramps get steep.' }] },
-    { key: 'bankRampStuds', label: 'Shortest bank ramp, studs', off: noBank, step: 1, min: 2, max: 200, help: 'Each ramp from level to a curve\'s full bank, eased in and out (no kink in the outer rail). Made longer by itself where the outer rail would climb steeper than the limit below. 40 keeps a 3° bank under 1 in 100.' },
-    { key: 'bankClimb', label: 'Steepest climb of the outer rail, 1 in', off: noBank, step: 10, min: 20, max: 1000, help: 'The outer rail rises at most 1 mm in this many, at the ramp\'s steepest (its middle). 100 is a gentle model railway run-off; full-size railways use 400 or more. Where there isn\'t room for a ramp that gentle, the build warns and rings the place on the plan.' },
-  ] },
-  { title: 'Check rails and flangeways', kind: 'train', fields: [
-    { key: 'checkRailLen', label: 'Check rail length, studs', step: 0.25, min: 1.25, max: 10, ...inStuds('checkRailLen') },
-    { key: 'checkRailW', label: 'Check rail width, mm', step: 0.1, min: 1, max: 3 },
-    { key: 'checkRailFlare', label: 'Check rail end flare, mm', step: 0.25, min: 0, max: 4, help: 'How far the ends bend out to guide the flanges in.' },
-    { key: 'flangeway', label: 'Flangeway width, mm', step: 0.1, min: 1, max: 4 },
-    { key: 'flangewayDepth', label: 'Flangeway depth, mm', step: 0.5, min: 1, max: 6 },
-  ] },
-  { title: 'Print bed and joints', fields: [
+  { title: 'Print bed and cutting into parts', fields: [
     { key: 'printBedX', label: 'Print bed width, mm', step: 1, min: 50, max: 1000 },
     { key: 'printBedY', label: 'Print bed depth, mm', step: 1, min: 50, max: 1000 },
-    { key: 'baseplate', label: 'Cut at baseplate edges', numeric: true, help: 'So every part sits on one baseplate (orange dashed lines on the plan).', choices: [
-      { v: '0', t: 'No' }, { v: '16', t: '16 x 16 studs' }, { v: '32', t: '32 x 32 studs' }, { v: '48', t: '48 x 48 studs' }, { v: '64', t: '64 x 64 studs' }, { v: '96', t: '96 x 96 studs' }] },
-    { key: 'baseplateX', label: 'Baseplate corner x, studs', step: 1, off: (c) => ((c.o.baseplate ?? 0) > 0 ? undefined : 'Cut at baseplate edges is No'), help: 'Where a baseplate corner is on the grid.' },
-    { key: 'baseplateY', label: 'Baseplate corner y, studs', step: 1, off: (c) => ((c.o.baseplate ?? 0) > 0 ? undefined : 'Cut at baseplate edges is No'), help: 'Where a baseplate corner is on the grid.' },
     { key: 'splitTrack', label: 'Long track cut into', def: OPTION_DEFAULTS.splitTrack, choices: [
       { v: 'bed', t: 'Parts that fill the print bed', tip: 'Cut along straight lines where the bed needs it; the parts join as set in Parts join with.' },
       { v: 'lengths', t: 'Track pieces, cut across the track', tip: 'Each track cut square to itself into pieces with ordinary end connectors, like LEGO track. Switches and crossings stay whole.', con: 'More parts, and a cut only where the track is clear of other tracks.' }] },
     { key: 'pieceLengthStuds', label: 'Piece length, studs', step: 4, min: 0, max: 64, off: (c) => (c.o.splitTrack === 'lengths' ? undefined : 'only with Long track cut into: Track pieces'), help: 'LEGO straights are 16. 0: as long as fits the print bed. A longer piece than the bed takes: as long as fits.' },
+    { key: 'baseplate', label: 'Cut at baseplate edges', numeric: true, help: 'So every part sits on one baseplate (orange dashed lines on the plan).', choices: [
+      { v: '0', t: 'No' }, { v: '16', t: '16 x 16 studs' }, { v: '32', t: '32 x 32 studs' }, { v: '48', t: '48 x 48 studs' }, { v: '64', t: '64 x 64 studs' }, { v: '96', t: '96 x 96 studs' }] },
+    { key: 'baseplateX', label: 'Baseplate corner x, studs', step: 1, off: (c) => ((c.o.baseplate ?? 0) > 0 ? undefined : 'Cut at baseplate edges is No'), help: 'Where a baseplate corner is on the grid.' },
+    { key: 'baseplateY', label: 'Baseplate corner y, studs', step: 1, off: (c) => ((c.o.baseplate ?? 0) > 0 ? undefined : 'Cut at baseplate edges is No'), help: 'Where a baseplate corner is on the grid.' },
+    { key: 'studsAtCuts', label: 'Studs a cut goes through', choices: [
+      { v: 'off', t: 'Taken off', tip: 'No stud is cut in half: one a cut would go through is left off, on both parts.', con: 'A stud missing here and there along each cut.' },
+      { v: 'whole', t: 'Whole on one part', tip: 'Each one whole on the part its middle is on, standing a little over the next part\'s edge.', con: 'Those studs overhang the joint: printed on the edge, they can snap off.' },
+      { v: 'split', t: 'Cut in half', tip: 'Cut straight through with the rest.', con: 'Half studs either side of the joint: a brick won\'t sit on them.' }] },
+  ] },
+  { title: 'Bought track', kind: 'train', fields: [
     { key: 'legoTrack', label: 'Bought track', help: 'Plain track and switches bought where they\'re the same as LEGO\'s or BrickTracks\'. Bought straights are 16 studs, whatever Piece length is. In the 3D view LEGO\'s are green, BrickTracks\' purple (Bought hides them). Pictures: printed blue, LEGO\'s light grey, BrickTracks\' dark grey.', off: (c) => (c.o.splitTrack !== 'lengths' ? 'only with Long track cut into: Track pieces' : design.gaugeStuds !== 4 ? 'LEGO track is 4 studs between the rails: the gauge isn\'t 4' : undefined), choices: [
       { v: 'lego', t: 'Bought: LEGO\'s and BrickTracks\'', tip: 'Plain track bought, not printed: each 16-stud straight is LEGO\'s (53401), with ballast on LEGO plates under it (6 x 16 and two 2 x 16, two more 6 x 16 for the buddy layer); R40 curves are LEGO\'s (53400) and R56 to R120 curves BrickTracks\' (injection moulded, 11.25° each), with ballast on a printed ballast piece (…-ballast, with the buddy layer if set) they drop into; with a Flat ballast underside, BrickTracks\' curves on BrickTracks\' own ballast and buddy, bought too. BrickTracks\' 1/2, 1/4 and 1/10 straights (8, 4 and 1.6 studs) and their R104B siding curve too. Switches too, where they\'re exactly theirs with no other track over them: LEGO\'s (53407 left, 53404 right: 32 studs, as the LEGO switch templates) and BrickTracks\' R104 (40 studs; the branch an R104 curve of 22.5° ending 8 studs over); on ballast, a printed ballast piece (switch-ballast) the switch sits down into. Bought pieces side by side (beside a switch, a passing loop) are all bought, their ballast printed in one piece under them. Bought parts are in the parts list (toolbar), not the STL download.', con: 'Their sleepers and underside are theirs, not as set here.' },
       { v: 'lego-only', t: 'Bought: LEGO\'s only', tip: 'LEGO\'s straights (53401), R40 curves (53400) and switches (53407, 53404) bought, as Bought: LEGO\'s and BrickTracks\'; every other piece printed, BrickTracks\' curves and switches too.', con: 'Their sleepers and underside are theirs, not as set here.' },
@@ -1243,7 +1245,9 @@ const OPTION_FORM: OptSection[] = [
       off: (c) => (c.o.ballast === 'none' ? 'only with ballast' : (c.o.legoTrack ?? 'lego') === 'print' ? 'only with Bought track: Bought' : c.o.splitTrack !== 'lengths' ? 'only with Long track cut into: Track pieces' : undefined),
       help: 'The ballast printed under bought track (curves, short straights, switches; LEGO\'s straights sit on LEGO plates).', choices: [
       { v: 'each', t: 'A part for each piece', tip: 'Each bought piece\'s ballast a part of its own, whole, as the piece is; a switch\'s too long for the bed in two, cut across between its sleepers. Where two pieces\' ballast would overlap (beside a switch), the first piece\'s.', con: 'More parts; a switch\'s may not fit a small bed.' },
-      { v: 'together', t: 'Together, cut to fit', tip: 'The ballast under pieces side by side printed in one, cut for the print bed and at the tables\' seams; a switch\'s cut for the bed too.', con: 'Its joints aren\'t where the pieces\' are.' }] },
+      { v: 'together', t: 'Shared by pieces side by side, cut to fit', tip: 'The ballast under pieces side by side printed in one, cut for the print bed and at the tables\' seams; a switch\'s cut for the bed too.', con: 'Its joints aren\'t where the pieces\' are.' }] },
+  ] },
+  { title: 'Joints', fields: [
     { key: 'joint', label: 'Parts join with', help: 'How parts cut for the print bed or at baseplate edges join. With Long track cut into: Track pieces, plain track joins with its own end connectors; this is for the switches and crossings too big for the bed.', choices: [
       { v: 'lego', t: 'Rail tongues + peg and clip', tip: 'Like LEGO track ends.' },
       { v: 'dovetail', t: 'Rail tongues + dovetails', tip: 'Stronger. Slides together from above.' },
@@ -1255,11 +1259,19 @@ const OPTION_FORM: OptSection[] = [
       { v: 'all', t: 'Every rail a cut crosses', tip: 'Each rail gets interlocking tongues where it\'s cut, slanted ones too.' },
       { v: 'square', t: 'Only rails crossing the cut square', tip: 'The track the cut crosses squarely gets LEGO track-end tongues; rails crossing it at an angle (a branch\'s) are cut flat, as plate-style large switches are split.',
         con: 'The slanted rails rely on the square ones and the bed joint to stay in line.' }] },
-    { key: 'studsAtCuts', label: 'Studs a cut goes through', choices: [
-      { v: 'off', t: 'Taken off', tip: 'No stud is cut in half: one a cut would go through is left off, on both parts.', con: 'A stud missing here and there along each cut.' },
-      { v: 'whole', t: 'Whole on one part', tip: 'Each one whole on the part its middle is on, standing a little over the next part\'s edge.', con: 'Those studs overhang the joint: printed on the edge, they can snap off.' },
-      { v: 'split', t: 'Cut in half', tip: 'Cut straight through with the rest.', con: 'Half studs either side of the joint: a brick won\'t sit on them.' }] },
     { key: 'endSupports', label: 'Supports under rail ends', check: true, off: noTongues, help: 'Breakaway supports under the rail-end tongues. Off: leave it to your slicer.' },
+    { key: 'pegOnBallast', label: 'Peg and clip on ballast ends', check: true, off: (c) => (c.ballast ? undefined : 'only with ballast'), help: 'Keeps the peg and clip on the end connectors, so pieces clip together. They print on small breakaway supports. Off: the ends just butt together.' },
+    { key: 'axleHoles', label: 'LEGO axle holes through the ends', check: true, off: (c) => (c.o.ballast !== 'buddy' ? 'needs Ballast + buddy layer' : c.o.trackBallast === 'apart' ? 'not with Track and ballast printed Apart (the track seated in the ballast)' : undefined), help: 'Cross-axle holes through each end, so a LEGO axle pins two pieces together.' },
+  ] },
+  { title: 'Labels', fields: [
+    { key: 'labelText', label: 'Label text', text: true, off: (c) => (design.routes.some((r) => isMono(r)) ? undefined : (c.ballast && c.o.bottomStyle === 'float' ? undefined : 'labels go only on a flat underside: set Ballast to Ballast and Ballast underside to Flat')), help: 'Engraved under each part, mirrored to read from below. Empty: no labels (monorail: the design\'s name).' },
+    { key: 'labelSize', label: 'Add the size (S16, R40 22.5°)', check: true, off: (c) => (c.ballast && c.o.bottomStyle === 'float' ? undefined : 'labels go only on a flat underside: set Ballast to Ballast and Ballast underside to Flat') ?? (c.o.labelText ? undefined : 'Label text is empty') },
+    { key: 'labelGauge', label: 'Add the gauge (Ln4)', check: true, off: (c) => (c.ballast && c.o.bottomStyle === 'float' ? undefined : 'labels go only on a flat underside: set Ballast to Ballast and Ballast underside to Flat') ?? (c.o.labelText ? undefined : 'Label text is empty') },
+    { key: 'labelParts', label: 'Number parts cut for the bed (#2)', check: true, off: (c) => (c.ballast && c.o.bottomStyle === 'float' ? undefined : 'labels go only on a flat underside: set Ballast to Ballast and Ballast underside to Flat') ?? (c.o.labelText ? undefined : 'Label text is empty'), help: 'Matches the part\'s file name.' },
+  ] },
+  { title: 'LEGO fit', fields: [
+    { key: 'studFit', label: 'Stud fit, mm', step: 0.01, min: -0.3, max: 0.5, help: 'Added to the 4.8 mm studs. Bigger: bricks grip tighter.' },
+    { key: 'antistudFit', label: 'Anti-stud fit, mm', step: 0.01, min: -0.3, max: 0.5, help: 'Makes the tubes underneath looser. Bigger: grips the baseplate less.' },
   ] },
   { title: 'Monorail', kind: 'monorail', fields: [
     { key: 'monoEndStuds', label: 'Studs at the ends', off: noMono, choices: [
@@ -1273,7 +1285,7 @@ const OPTION_FORM: OptSection[] = [
       { v: 'short', t: '2.2 mm', tip: 'Deep enough for a stud, with room for the axle holes above.' },
       { v: 'lego', t: '4 mm, like LEGO', tip: 'As deep as LEGO monorail track\'s anti-studs.',
         con: 'The axle holes move: side-stud and top-stud pieces then don\'t join with axles; on side-stud pieces only 0.2 mm is left between hole and anti-stud; the end notch opens into a hole.' }] },
-    { key: 'monoLabels', label: 'Engraved underneath', off: noMono, choices: [
+    { key: 'monoLabels', label: 'Monorail parts engraved with', off: noMono, choices: [
       { v: 'name', t: 'Label text and part name', tip: 'Two lines underneath, reading from below: the Label text (Labels section; empty: the design\'s name) and the part\'s name, as its file.' },
       { v: 'part', t: 'Part name', tip: 'One line underside: the part\'s name, as its file.' },
       { v: 'none', t: 'Nothing', tip: 'A plain underside.' }] },
@@ -1287,10 +1299,6 @@ const OPTION_FORM: OptSection[] = [
     { key: 'monoSupportAntistud', label: 'Support grips the baseplate', check: true, off: noSupports, help: 'Hollow under the base with LEGO tubes.' },
     { key: 'monoSupportBaseStuds', label: 'Studs round the support base', check: true, off: noSupports, help: 'Studs along the base\'s edges to build onto, like LEGO\'s supports.' },
     { key: 'monoSupportSolid', label: 'Support frame closed', check: true, off: noSupports, help: 'A full web between the legs, no openings. Stiffer; more to print.' },
-  ] },
-  { title: 'LEGO fit', fields: [
-    { key: 'studFit', label: 'Stud fit, mm', step: 0.01, min: -0.3, max: 0.5, help: 'Added to the 4.8 mm studs. Bigger: bricks grip tighter.' },
-    { key: 'antistudFit', label: 'Anti-stud fit, mm', step: 0.01, min: -0.3, max: 0.5, help: 'Makes the tubes underneath looser. Bigger: grips the baseplate less.' },
   ] },
 ];
 /** Why the monorail settings can't be changed: no monorail in the design (undefined: there is). */
