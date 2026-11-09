@@ -89,6 +89,12 @@
     aside .head h2 { font-size: 13px; margin: 0; flex: 1; }
     #routes { overflow: auto; padding: 8px; flex: 1; min-height: 120px; }
     #trackwork { border-top: 1px solid var(--line); padding: 6px 10px 10px; max-height: 60%; overflow: auto; flex: 0 1 auto; }
+    #palette { border-top: 1px solid var(--line); padding: 6px 10px 10px; max-height: 45%; overflow: auto; flex: 0 1 auto; }
+    #palette > summary { cursor: pointer; font-weight: 600; padding: 4px 0; }
+    #palette .pgroup { display: flex; flex-wrap: wrap; gap: 4px; margin: 2px 0 6px; align-items: center; } #palette .pgroup b { width: 100%; font-size: 12px; display: flex; align-items: center; gap: 6px; }
+    #palette .pgroup b i { width: 10px; height: 10px; border-radius: 2px; display: inline-block; }
+    #palette .pgroup button { height: 24px; padding: 0 8px; font-size: 12px; } #palette .ppair { display: inline-flex; } #palette .ppair button + button { margin-left: -1px; }
+    #palette .tnote { font-size: 11.5px; color: var(--muted); margin: 2px 0 6px; }
     #tables { border-top: 1px solid var(--line); padding: 6px 10px 10px; max-height: 45%; overflow: auto; flex: 0 1 auto; }
     #tables > summary { cursor: pointer; font-weight: 600; padding: 4px 0; }
     #tables .tbar { display: flex; flex-wrap: wrap; gap: 6px; margin: 4px 0 8px; } #tables .tbar button { height: 26px; padding: 0 9px; font-size: 12px; }
@@ -413,6 +419,7 @@
   <aside>
     <div class="head"><h2 id="routes-title">Routes</h2><button id="add-route" type="button" title="Add a route by numbers">+ Route</button></div>
     <div id="routes"></div>
+    <details id="palette"><summary title="Bought track pieces (LEGO&#39;s and BrickTracks&#39;), laid one at a time on the selected route&#39;s end">Parts palette</summary><div id="palette-body"></div></details>
     <details id="tables"><summary title="The tables (modules) the layout is laid across: the track is cut where they meet">Tables<span id="tables-count" class="count"></span></summary><div id="tables-body"></div></details>
     <details id="trackwork"><summary title="The check rails, flangeway cuts, points and levers the app works out, each to change by hand">Trackwork<span id="trackwork-count" class="count"></span></summary><div id="trackwork-body"></div></details>
   </aside>

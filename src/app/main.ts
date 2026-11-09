@@ -9,6 +9,7 @@ import { BRICKTRACKS_COLOR, gradeOf, LEGO_COLOR, type LegoPart, legoParts, type 
 import { TABLE_COLORS, type Table, tableAt } from './tables';
 import { zip } from '../geom/zip';
 import { layoutParts } from './layoutparts';
+import { PALETTE, placePart } from './palette';
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 const routesEl = $('routes'), infoEl = $('info'), errEl = $('error');
@@ -230,8 +231,41 @@ function renderTables() {
   });
 }
 
+// ---------- the parts palette ----------
+/** The parts palette: LEGO's and BrickTracks' track pieces, each laid on the selected route's end (a switch's branch a new
+ * route), or as a new route with none selected; the route it continues stays selected, to lay the next one on. */
+function renderPalette() {
+  const body = $('palette-body'), o = { ...OPTION_DEFAULTS, ...design.options } as PieceOptions;
+  body.replaceChildren();
+  const sel = canvas.selection().filter((i) => i < design.routes.length), at = sel.length === 1 ? sel[0] : undefined;
+  const lay = (id: string, turn = 1) => {
+    const { next } = placePart(design, id, at, turn);
+    canvas.setSelection([next]);
+  };
+  const note = (t: string, warn = false) => { const p = document.createElement('div'); p.className = 'tnote'; if (warn) p.style.color = 'var(--warn, #c0392b)'; p.textContent = t; body.append(p); };
+  note(at !== undefined ? `Laid on the end of ${design.routes[at].name || `route ${at + 1}`}.` : sel.length > 1 ? 'Several routes selected: each part starts a new route. Select one to lay parts on its end.' : 'Nothing selected: the first part starts a new route; the next go on its end.');
+  for (const maker of ['LEGO', 'BrickTracks'] as const) {
+    const g = document.createElement('div'); g.className = 'pgroup';
+    const h = document.createElement('b'), sw = document.createElement('i');
+    sw.style.background = `#${(maker === 'LEGO' ? LEGO_COLOR : BRICKTRACKS_COLOR).toString(16).padStart(6, '0')}`;
+    h.append(sw, maker); g.append(h);
+    for (const p of PALETTE.filter((q) => q.maker === maker)) {
+      if (!p.turns) { g.append(btn(p.name, () => lay(p.id), p.title)); continue; }
+      const pair = document.createElement('span'); pair.className = 'ppair';
+      pair.append(btn(`↶ ${p.name}`, () => lay(p.id, 1), `${p.title}. Turning left`), btn('↷', () => lay(p.id, -1), `${p.title}. Turning right`));
+      g.append(pair);
+    }
+    body.append(g);
+  }
+  const bought = o.legoTrack ?? 'lego';
+  if (bought === 'print') note('Bought track is set to Printed (Settings › Bought track): these are printed, not bought.', true);
+  else if (bought === 'lego-only') note('Bought track is set to LEGO\'s only (Settings › Bought track): the BrickTracks parts are printed.', true);
+  else if (o.splitTrack !== 'lengths') note('Bought only with Long track cut into: Track pieces (Settings › Print bed and cutting into parts): now they\'re printed.', true);
+  else if (design.gaugeStuds !== 4) note('Bought only at a gauge of 4 studs: now they\'re printed.', true);
+}
+
 function render() {
-  renderTables();
+  renderTables(); renderPalette();
   // (the rows go: no piece left picked out by one that's gone)
   canvas.highlightSeg = undefined;
   routesEl.replaceChildren();
