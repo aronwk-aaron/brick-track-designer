@@ -183,6 +183,16 @@ function renderTables() {
     btn('+ Rectangle', () => { const [x, y] = at(); add({ shape: 'rect', x: x - 16, y: y - 32, w: 32, h: 64 }); }, 'Add a rectangular table, 32 x 64 studs'),
     btn('+ Curved', () => { const [x, y] = at(); add({ shape: 'arc', cx: x, cy: y, r0: 32, r1: 64, a0: 0, a1: 90 }); }, 'Add a curved table: a quarter ring, radius 32 to 64 studs round a centre'),
     btn('+ Any shape', () => { const [x, y] = at(); add({ shape: 'poly', pts: [[x - 16, y - 16], [x + 16, y - 16], [x + 24, y + 16], [x - 16, y + 16]] }); }, 'Add a table of any shape: its corners in studs'));
+  // (ready-made ones: a baseplate, a straight module, a quarter-circle corner module for a curve's radius (8 studs either side of the track))
+  const presets: [string, (x: number, y: number) => Table][] = [
+    ['Baseplate, 32 × 32', (x, y) => ({ shape: 'rect', x: x - 16, y: y - 16, w: 32, h: 32 })],
+    ['Straight module, 32 × 96', (x, y) => ({ shape: 'rect', x: x - 16, y: y - 48, w: 32, h: 96 })],
+    ...[40, 56, 104, 120].map((r): [string, (x: number, y: number) => Table] => [`Corner module for R${r}, a quarter`, (x, y) => ({ shape: 'arc', cx: x, cy: y, r0: r - 8, r1: r + 8, a0: 0, a1: 90 })]),
+  ];
+  const pre = document.createElement('select'); pre.title = 'Add a ready-made table, by the tracks';
+  pre.append(new Option('+ Ready-made…', ''), ...presets.map(([n], k) => new Option(n, String(k))));
+  pre.addEventListener('change', () => { const k = Number(pre.value); if (pre.value !== '') { const [x, y] = at(); add(presets[k][1](x, y)); changed(true); } pre.value = ''; });
+  bar.append(pre);
   body.append(bar);
   if (ts.length && (design.options?.splitTrack ?? OPTION_DEFAULTS.splitTrack) !== 'lengths') { const p = document.createElement('div'); p.className = 'tnote'; p.style.color = 'var(--warn, #c0392b)'; p.textContent = 'Not used now: tables cut the track only with Long track cut into: Track pieces (Settings › Print bed and cutting into parts).'; body.append(p); }
   if (!ts.length) { const p = document.createElement('div'); p.className = 'tnote'; p.textContent = 'No tables. With tables, the track is cut where one meets the next: plain track at an ordinary track end; bought track\'s printed ballast along the seam. Only with Long track cut into: Track pieces.'; body.append(p); }
