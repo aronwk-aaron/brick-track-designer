@@ -516,8 +516,9 @@ $('rebuild').addEventListener('click', () => { stale = false; setStatus(''); req
 
 // ---------- 3D view ----------
 const view = $('view3d');
-const renderer = new THREE.WebGLRenderer({ antialias: true });
-renderer.setPixelRatio(devicePixelRatio);
+const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
+// (no more than twice the screen's pixels: a 3x phone screen drew 9 times as many as it needed)
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
 view.append(renderer.domElement);
 const scene = new THREE.Scene();
 const cssColor = (v: string, fallback: string) => getComputedStyle(document.documentElement).getPropertyValue(v).trim() || fallback;
@@ -555,6 +556,10 @@ let lastNames = '';
 const sphereOf = () => new THREE.Box3().setFromObject(group).getBoundingSphere(new THREE.Sphere());
 const group = new THREE.Group();
 scene.add(group);
+// (one material a colour, shared: a big layout's hundreds of parts drew with as many materials, each its own draw state;
+// Lambert's shading, lighter to draw than the physically based one, as these flat colours need)
+const materials = new Map<number, THREE.MeshLambertMaterial>();
+const materialOf = (color: number) => { let m = materials.get(color); if (!m) { m = new THREE.MeshLambertMaterial({ color }); materials.set(color, m); } return m; };
 
 /** Show the pieces as assembled: the track grey, moving parts in their colours. */
 // What the 3D view shows (Track, Points, Throws, Levers buttons), remembered.
@@ -652,18 +657,18 @@ function showIssues(list: { at: [number, number]; r: number }[]) {
   redraw3d();
 }
 function showPieces(list: Piece[]) {
-  for (const m of meshes) { group.remove(m); m.traverse((o) => { const mm = o as THREE.Mesh; if (mm.geometry) { mm.geometry.dispose(); (mm.material as THREE.Material).dispose(); } }); }
+  for (const m of meshes) { group.remove(m); m.traverse((o) => { const mm = o as THREE.Mesh; if (mm.geometry) mm.geometry.dispose(); }); }
   meshes = list.map((p) => {
     const geo = new THREE.BufferGeometry();
     geo.setAttribute('position', new THREE.BufferAttribute(p.positions, 3));
     geo.computeVertexNormals();
-    const m = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ color: p.color, roughness: 0.55, metalness: 0.15 }));
+    const m = new THREE.Mesh(geo, materialOf(p.color));
     // (its breakaway print supports, in their own colour, shown or hidden with the Supports button; they move with it)
     if (p.supports?.length) {
       const sg = new THREE.BufferGeometry();
       sg.setAttribute('position', new THREE.BufferAttribute(p.supports, 3));
       sg.computeVertexNormals();
-      const sm = new THREE.Mesh(sg, new THREE.MeshStandardMaterial({ color: 0xe0a030, roughness: 0.6 }));
+      const sm = new THREE.Mesh(sg, materialOf(0xe0a030));
       sm.name = 'supports';
       m.add(sm);
     }
