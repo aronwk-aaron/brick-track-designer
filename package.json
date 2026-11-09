@@ -10,6 +10,7 @@
     "typecheck": "tsc -p .",
     "lint": "eslint .",
     "test": "vitest run",
+    "test:watchdog": "node scripts/ci-tests.mjs",
     "parity": "tsx scripts/parity.ts"
   },
   "dependencies": {

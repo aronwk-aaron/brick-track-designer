@@ -58,11 +58,11 @@ jobs:
 
   test:
     # (the geometry tests build many switches, networks and big layouts:
-    # well over an hour on one runner, so spread over several; a shard with
-    # the big layouts (the return loops, the parallel builds) took near an hour)
+    # well over an hour on one runner, so spread over several; the longest
+    # shard takes about 15 minutes)
     name: Tests (${{ matrix.shard }}/10)
     runs-on: ubuntu-latest
-    timeout-minutes: 90
+    timeout-minutes: 35
     strategy:
       fail-fast: false
       matrix:
@@ -75,7 +75,10 @@ jobs:
           node-version: 24
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - run: pnpm vitest run --shard=${{ matrix.shard }}/10
+      # (stopped at 25 minutes, saying which test files hadn't finished: a build that never ends blocks vitest's own timeouts)
+      - run: node scripts/ci-tests.mjs --shard=${{ matrix.shard }}/10
+        env:
+          TEST_MINUTES: 25
 
   osv-scan:
     name: OSV-Scanner (deps + actions)
