@@ -3,7 +3,7 @@
 import wasmUrl from 'manifold-3d/manifold.wasm?url';
 import { kernel } from '../geom/kernel';
 import type { Design } from './design';
-import { PLAN_ONLY } from './build';
+import { buildDesign, PLAN_ONLY } from './build';
 import { buildShared, CANCELLED, type FromHelper, helperCount, type HelperPort } from './parallel';
 
 const post = (m: unknown, transfer: Transferable[] = []) => (self as unknown as Worker).postMessage(m, transfer);
@@ -22,8 +22,10 @@ self.onmessage = async (e: MessageEvent<{ id: number; design: Design; planOnly?:
   current = id;
   post({ id, progress: 'Starting', frac: 0 }); // (picked up: the page knows this worker isn't stuck)
   try {
+    // (only the plan's trackwork (Auto off, or the 3D view hidden): worked out here, none of the parts built, nothing shared out)
+    if (planOnly) { buildDesign(await kernel(wasmUrl), design, undefined, (early) => post({ id, early }), { planOnly: true }); return; }
     const { overlay, pieces, info } = await buildShared(await kernel(wasmUrl), design, spawn, helperCount(navigator.hardwareConcurrency),
-      (progress, frac) => post({ id, progress, frac }), (early) => { post({ id, early }); if (planOnly) throw PLAN_ONLY; }, () => current !== id);
+      (progress, frac) => post({ id, progress, frac }), (early) => post({ id, early }), () => current !== id);
     post({ id, overlay, pieces, info }, pieces.flatMap((p) => [p.positions.buffer, p.stl.buffer, ...(p.supports ? [p.supports.buffer] : [])]));
   } catch (err) {
     if (err === CANCELLED) return;

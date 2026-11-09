@@ -359,21 +359,26 @@ export function levelBankedNearOthers(routes: Route[], near: number): { routes: 
  */
 /** progress: what it's doing now (for the 3D view's status while it builds). */
 /** opts.plan: only list the jobs it'd do (buildJobs), stopping there. */
-export function buildDesign(w: Wasm, design: Design, report: (what: string, frac: number) => void = () => {}, early?: (overlay: unknown) => void, opts: { plan?: BuildJob[] } = {}) {
+/** opts.planOnly: only the plan's trackwork (the 3D view hidden, or Auto off): sent to early, then PLAN_ONLY thrown, nothing built. */
+export interface BuildOpts { plan?: BuildJob[]; planOnly?: boolean }
+export function buildDesign(w: Wasm, design: Design, report: (what: string, frac: number) => void = () => {}, early?: (overlay: unknown) => void, opts: BuildOpts = {}) {
   design = upgradeDesign(design);
   settingsKey = `${JSON.stringify([{ ...OPTION_DEFAULTS, ...design.options }, design.gaugeStuds])}|`;
   if (!design.routes.some((r) => isMono(r) && r.segs.length > 0)) return buildTrain(w, design, report, early, opts);
   const t0 = performance.now();
   const trainD: Design = { ...design, routes: design.routes.filter((r) => !isMono(r)) };
   const hasTrain = trainD.routes.some((r) => r.segs.length > 0);
-  if (opts.plan) { if (hasTrain) buildTrain(w, trainD, report, early, opts); throw PLANNED; }
-  // (the monorail's points, for the plan: sent with the train's trackwork)
   const monoRoutes = toRoutes({ ...design, routes: design.routes.filter((r) => isMono(r) && r.segs.length > 0) });
-  const share = hasTrain ? 0.7 : 0;
-  const tr = hasTrain ? buildTrain(w, trainD, (what, f) => report(what, f * share), early, opts) : undefined;
-  const overlay = tr?.overlay ?? { grooves: [], checkRails: [], crossings: [], splits: [], grips: [], items: [], issues: [] };
-  if (!tr) early?.(overlay);
   const o = { ...OPTION_DEFAULTS, ...design.options };
+  // (the monorail's points, for the plan: sent with the train's trackwork, worked out first (no parts built), so the
+  // plan has them as soon as the train's trackwork is ready)
+  const mp = early || opts.planOnly ? buildMonorail(w, monoRoutes, o, design.name, undefined, undefined, true) : undefined;
+  const withMono = (ov: unknown) => { const v = ov as Overlay; early?.({ ...v, splits: [...v.splits, ...(mp?.splits ?? [])], monoPoints: mp?.splits ?? [], issues: [...v.issues, ...(mp?.issues ?? [])] }); };
+  if (opts.plan) { if (hasTrain) buildTrain(w, trainD, report, withMono, opts); throw PLANNED; }
+  const share = hasTrain ? 0.7 : 0;
+  const tr = hasTrain ? buildTrain(w, trainD, (what, f) => report(what, f * share), withMono, opts) : undefined;
+  const overlay = tr?.overlay ?? { grooves: [], checkRails: [], crossings: [], splits: [], grips: [], items: [], issues: [] };
+  if (!tr) { withMono(overlay); if (opts.planOnly) throw PLAN_ONLY; }
   let top = 0;
   for (const p of tr?.pieces ?? []) for (let i = 2; i < p.positions.length; i += 3) top = Math.max(top, p.positions[i]);
   const sleeperLen = (design.gaugeStuds + 1) * 8 + 24, half = (o.ballast === 'buddy' ? sleeperLen + 32 : o.ballast === 'ballast' ? sleeperLen + 16 : sleeperLen) / 2;
@@ -394,7 +399,7 @@ export function buildDesign(w: Wasm, design: Design, report: (what: string, frac
 }
 
 /** The train track's build: all of a design's routes (as buildDesign passes them, the train routes only). */
-function buildTrain(w: Wasm, design: Design, report: (what: string, frac: number) => void = () => {}, early?: (overlay: unknown) => void, opts: { plan?: BuildJob[] } = {}) {
+function buildTrain(w: Wasm, design: Design, report: (what: string, frac: number) => void = () => {}, early?: (overlay: unknown) => void, opts: BuildOpts = {}) {
   return graded(w, design, buildLevel(w, design, report, early, opts));
 }
 
@@ -497,7 +502,7 @@ function graded(w: Wasm, design: Design, res: ReturnType<typeof buildLevel>): Re
 }
 
 /** The train track's build, all of it level. */
-function buildLevel(w: Wasm, design: Design, report: (what: string, frac: number) => void = () => {}, early?: (overlay: unknown) => void, opts: { plan?: BuildJob[] } = {}) {
+function buildLevel(w: Wasm, design: Design, report: (what: string, frac: number) => void = () => {}, early?: (overlay: unknown) => void, opts: BuildOpts = {}) {
   const o = { ...OPTION_DEFAULTS, ...design.options };
   if (o.trackBallast !== 'apart' || o.ballast === 'none') return buildOne(w, design, report, early, opts);
   // The track and the ballast printed apart (the OpenSCAD files' generate_track / generate_ballast): the track on its
@@ -1463,7 +1468,7 @@ function boughtSwitches(b: PieceBuild, bought: BoughtSwitch[], copt: typeof CROS
 }
 
 /** One build: the track with its ballast (part undefined), or, printed apart, the ballast alone with its seat ('ballast'; the track is the build without ballast). */
-function buildOne(w: Wasm, design: Design, report: (what: string, frac: number) => void, early: ((overlay: unknown) => void) | undefined, opts: { plan?: BuildJob[]; part?: 'track' | 'ballast' }) {
+function buildOne(w: Wasm, design: Design, report: (what: string, frac: number) => void, early: ((overlay: unknown) => void) | undefined, opts: BuildOpts & { part?: 'track' | 'ballast' }) {
   const plan = opts.plan;
   const alone = opts.part === 'ballast';
   const job = <T>(key: string, cost: number, f: () => T, none: T): T => {
@@ -1534,8 +1539,10 @@ function buildOne(w: Wasm, design: Design, report: (what: string, frac: number) 
   let net: ReturnType<typeof networkSplits> | undefined;
   if (network) {
     editChecks(items, tw, routes, sol.checkRails);
-    net = cached(`netsplits:${netKey}`, () => networkSplits(scad, routes, sol, tp, toeShift, throwEdit, true));
-    for (const sp of net.splits) lever(keyOf(sp.toe), sp.frame, sp.set);
+    // (only the plan's trackwork wanted: where the levers are, none of the points' parts built)
+    net = opts.planOnly ? cached(`netplan:${netKey}`, () => networkSplits(scad, routes, sol, tp, toeShift, throwEdit, true, true))
+      : cached(`netsplits:${netKey}`, () => networkSplits(scad, routes, sol, tp, toeShift, throwEdit, true));
+    for (const sp of net.levers) lever(keyOf(sp.toe), sp.frame, sp.set);
   }
   const rest = network ? [] : pc.rest;
   const restSol = rest.length ? solve(rest, solverOpts) : undefined;
@@ -1559,6 +1566,7 @@ function buildOne(w: Wasm, design: Design, report: (what: string, frac: number) 
   overlay.checkRails = items.filter((it) => it.kind === 'check' && !it.off).map((it) => it.pts);
   overlay.grooves = items.filter((it) => it.kind === 'groove').map((it) => it.pts);
   early?.(overlay);
+  if (opts.planOnly) throw PLAN_ONLY;
 
   if (net) {
     prog.steps = 3;

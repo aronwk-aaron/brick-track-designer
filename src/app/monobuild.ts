@@ -268,9 +268,11 @@ export interface TrainNear { routes: Route[]; half: number; top: number }
 
 /**
  * Build the monorail routes (in mm). designName: engraved under each part
- * with its own name (labels permitting).
+ * with its own name (labels permitting). pointsOnly: only as far as where
+ * its points are (splits) and what's said of the heights, for the plan; no
+ * parts built.
  */
-export function buildMonorail(w: Wasm, routes: Route[], o: Partial<PieceOptions>, designName: string | undefined, train: TrainNear | undefined, report: (what: string) => void = () => {}): MonoResult {
+export function buildMonorail(w: Wasm, routes: Route[], o: Partial<PieceOptions>, designName: string | undefined, train: TrainNear | undefined, report: (what: string) => void = () => {}, pointsOnly = false): MonoResult {
   const scad = new Scad(w), mo = monoOptions(o), so = supportOptions(o), mono = new Mono(scad, mo);
   const X = o.printBedX ?? 256, Y = o.printBedY ?? 256, grid = MONO.stud;
   const every = Math.max(0, Math.round(o.monoSupportStuds ?? 0)) * MONO.stud, elev0 = every ? supportHeight(so) : 0;
@@ -346,6 +348,7 @@ export function buildMonorail(w: Wasm, routes: Route[], o: Partial<PieceOptions>
     const elev = zAt(br.main, ms0);
     switches.push({ plan, P: Pd, elev, key: JSON.stringify({ m: main.route.segments, b: bo.route.segments, lead, travel, fit, mo, elev }) });
   }
+  if (pointsOnly) return res;
 
   // ---- level crossings: where two beams (or one coming back) cross at an angle, a piece of its own ----
   // (both beams through it, each with proper ends on its arms; each rack's ridge cut back where it's on the other beam,

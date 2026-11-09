@@ -418,7 +418,7 @@ function render() {
 const newWorker = () => { const w2 = new Worker(new URL('./worker.ts', import.meta.url), { type: 'module' }); w2.onmessage = onBuilt; return w2; };
 let worker: Worker;
 let fatalRetry = -1;
-let seq = 0, started = 0, pieces: Piece[] = [], timer: number | undefined, restartCheck: number | undefined;
+let seq = 0, seqPlanOnly = false, started = 0, pieces: Piece[] = [], timer: number | undefined, restartCheck: number | undefined;
 /** The 3D view and the downloads: building (a newer design than the pieces), out of date (stopped, or the last build failed), or up to date. */
 let building = false, stale = false;
 /** The first build of the design as last let go of (a lever dropped is held where it was put on the plan till then). */
@@ -432,6 +432,7 @@ const want3d = () => autoBuild && show3d;
 function requestBuild(force = false) {
   clearTimeout(timer);
   const id = ++seq, planOnly = !force && !want3d();
+  seqPlanOnly = planOnly;
   // (nothing to build: no need to ask the worker, which would only say so)
   if (!hasTrack()) {
     buildDone(); stale = false; pieces = []; showPieces(pieces); canvas.overlay = undefined; updateLegend(); canvas.draw(); renderTrackwork([]); refreshOptions();
@@ -439,7 +440,8 @@ function requestBuild(force = false) {
     return;
   }
   worker.postMessage({ id, design: structuredClone(design), planOnly });
-  buildStarted();
+  // (just the plan's trackwork: quick, and nothing built, so no build's progress or Stop; said quietly in the status line)
+  if (planOnly) planStarted(); else buildStarted();
   clearTimeout(restartCheck);
   restartCheck = window.setTimeout(() => {
     if (started >= id || id !== seq) return;
@@ -491,7 +493,9 @@ function changed(rerender = false, record = true, build = true) {
   if (!build) return;
   clearTimeout(timer);
   timer = window.setTimeout(requestBuild, 150);
-  building = true; updateExports();
+  // (Auto off: only the plan's updated, the 3D view out of date till Build)
+  if (want3d()) building = true; else if (pieces.length) stale = true;
+  updateExports();
 }
 
 // The build status, in the status line while it builds: what the worker is doing, and for how long.
@@ -501,6 +505,12 @@ function buildStarted() {
   $('buildstatus').hidden = false; $('build-what').textContent = 'Building…'; $('build-time').textContent = ''; $('build-bar').style.width = '0%';
   clearInterval(buildTick);
   buildTick = window.setInterval(() => { $('build-time').textContent = `${((performance.now() - buildT0) / 1000).toFixed(1)} s`; }, 100);
+}
+/** Just the plan's trackwork being worked out (Auto off, or the 3D view hidden): no build chip, a quiet word in the status line. */
+function planStarted() {
+  buildDone();
+  $('rebuild').textContent = 'Build';
+  setStatus('Updating the plan…', '', show3d);
 }
 function buildDone() { clearInterval(buildTick); $('buildstatus').hidden = true; building = false; updateExports(); }
 const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
@@ -518,7 +528,7 @@ function onBuilt(e: MessageEvent) {
     return;
   }
   if (d.progress) { $('build-what').textContent = `${d.progress}…`; $('build-bar').style.width = `${Math.round((d.frac ?? 0) * 100)}%`; return; }
-  if (d.fatal && fatalRetry !== d.id) { fatalRetry = d.id; worker.terminate(); worker = newWorker(); worker.postMessage({ id: d.id, design: structuredClone(design) }); return; }
+  if (d.fatal && fatalRetry !== d.id) { fatalRetry = d.id; worker.terminate(); worker = newWorker(); worker.postMessage({ id: d.id, design: structuredClone(design), planOnly: seqPlanOnly }); return; }
   buildDone();
   // (the plan keeps the trackwork it was sent; the 3D view the last pieces that built, greyed)
   if (d.error) { stale = pieces.length > 0; setStatus('', `Can't build this: ${d.error}${stale ? ' (the 3D view shows the last design that built)' : ''}`); return; }

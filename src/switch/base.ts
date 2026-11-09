@@ -235,7 +235,9 @@ function fdbLayout(v: SetLike, p: BaseParams, rails: [Route, number, number][], 
   // room shared out between them (network.ts); the plate cut clear of it by the clearance as of a rail, its edges as points
   // 0.5 apart, each its own half-width: c)
   const pp = plates.flatMap((ring) => ring.flatMap((q, k) => { const e = ring[(k + 1) % ring.length], n = Math.max(1, Math.ceil(norm(sub(e, q)) / 0.5)); return Array.from({ length: n }, (_, j) => add(q, mul(sub(e, q), j / n)) as Pt); }));
-  const fromPlate = new Set(pp), hwOf = (q: Pt) => (fromPlate.has(q) ? c : hw), inPlates = (q: Pt) => plates.length > 0 && windingIn(plates, q);
+  // (round the plates: outside it, in none of them)
+  const pbb = plates.flat().reduce((m, q) => [Math.min(m[0], q[0]), Math.min(m[1], q[1]), Math.max(m[2], q[0]), Math.max(m[3], q[1])], [Infinity, Infinity, -Infinity, -Infinity]);
+  const fromPlate = new Set(pp), hwOf = (q: Pt) => (fromPlate.has(q) ? c : hw), inPlates = (q: Pt) => plates.length > 0 && q[0] >= pbb[0] && q[0] <= pbb[2] && q[1] >= pbb[1] && q[1] <= pbb[3] && windingIn(plates, q);
   const pts = [...keep.flat(), ...pp], n3 = v.three ? 2 : 1, plateW = fdbPlateW(p), postIn0 = plateW / 2 + HEAD_HW;
   // (the points by where they are, in squares CELL across: what's near a place looked for only in the squares round it.
   // A double slip's search for a place for each pin and post asks a hundred thousand times, of over a thousand points)
@@ -308,8 +310,13 @@ function fdbLayout(v: SetLike, p: BaseParams, rails: [Route, number, number][], 
       const bx = slotBox(f);
       // (the slot clear of the blade's rail on the plate, and of the pin's hole)
       if (f.postIn - (side > 0 ? -bx[2] : bx[3]) < HEAD_HW + 0.5 || boxDist(f.pivot, f.post, unit(sub(f.pivot, f.post)), bx) < pinR + FDB_RIM) return false;
-      const qs = near(f.post, 45);
-      return angles(f).every((a) => { const P = rotAbout(f.post, f.pivot, a), U = unit(sub(f.pivot, P)); return !inPlates(P) && qs.every((q) => boxDist(q, P, U, bx) >= rim + hwOf(q)); });
+      // (the points within 45 of the post; of those, only the ones nearer the slot than its far corner and the most room
+      // any point needs: the rest are clear of it however it's turned)
+      const reach = Math.hypot(Math.max(Math.abs(bx[0]), Math.abs(bx[1])), Math.max(Math.abs(bx[2]), Math.abs(bx[3]))) + rim + Math.max(hw, c) + 1e-6;
+      return angles(f).every((a) => {
+        const P = rotAbout(f.post, f.pivot, a), U = unit(sub(f.pivot, P));
+        return !inPlates(P) && near(P, reach).every((q) => norm(sub(q, f.post)) >= 45 || boxDist(q, P, U, bx) >= rim + hwOf(q));
+      });
     };
     // (the pin's snap lip clear of the blade's rail on the plate)
     const minPin = HEAD_HW + (sprung ? SPRUNG.holeD : FDB.pinD) / 2 + 2 * c + 0.15 + 0.2;

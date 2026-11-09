@@ -47,9 +47,10 @@ export interface SplitParts {
 
 /** Each split's points (see SplitParts). Two branches leaving a route at
  * the same point, one each side, make one true three-way (its other splits,
- * the branches' from each other, are part of it). */
+ * the branches' from each other, are part of it). planOnly: only where
+ * their levers are (levers), for the plan; none of the parts built. */
 export function networkSplits(s: Scad, routes: Route[], sol: Solution, p: BaseParams, toeShift: (at: [number, number]) => number = () => 0,
-  throwEdit: (at: [number, number]) => ThrowEdit | undefined = () => undefined, gridLevers = false) {
+  throwEdit: (at: [number, number]) => ThrowEdit | undefined = () => undefined, gridLevers = false, planOnly = false) {
   const warnings: string[] = [];
   const place = (m: Man, P: Pose) => T(R(m, [0, 0, P[2]]), [P[0], P[1], 0]);
   // ---- which splits make a three-way ----
@@ -321,6 +322,17 @@ export function networkSplits(s: Scad, routes: Route[], sol: Solution, p: BasePa
       warnings.push(`the throws of the points at ${studsAt(preps[a].gr.main)} and ${studsAt(preps[b].gr.main)} run into each other (their sliders cross): neither can move; set Points with no room for a throw to Nail switches, or Throw to Nail switch`);
   }
   const built: SplitParts[] = [];
+  /** Each set's lever, where it is (the plan's, as built or not). */
+  const levers: { toe: [number, number]; frame: Pose; set: SwitchPlan['sets'][number] }[] = [];
+  // (planOnly: just the levers and what's said, for the plan; none of the parts built)
+  if (planOnly) {
+    for (const q of preps) {
+      throughWarnings(q.gr, q.blockedOf(q.st.plan));
+      warnings.push(...q.st.plan.warnings.filter((w) => !/print bed/.test(w)), ...q.st.plan.notes.filter((w) => !warnings.includes(w)));
+      levers.push({ toe: [q.P[0], q.P[1]], frame: q.P, set: q.st.plan.sets[0] });
+    }
+    return { splits: built, levers, warnings };
+  }
   // (each set's geometry, as built for the throws' check if its plan's the same; and the over-centre springs' pins on the
   // bed, in the design: another set's blade plate swinging over one (a double slip's sets are that close) is cut clear)
   const gms = preps.map((q) => (q.gm?.plan === q.st.plan ? q.gm.gm : switchGeometry(s, q.st.plan)));
@@ -369,6 +381,7 @@ export function networkSplits(s: Scad, routes: Route[], sol: Solution, p: BasePa
       return Math.abs(y - v0.throwY) < 12 && v0.throwDir * (x - v0.throwStockX) > 0 && v0.throwDir * (v0.leverX - x) > 14
         && rts.every((rt) => Math.abs(routeLat(rt, [x, y])) > sl + 1);
     } : undefined;
+    levers.push({ toe: [P[0], P[1]], frame: P, set: plan.sets[0] });
     built.push({
       key: JSON.stringify({ rts, used, p: pp, P, routes: [i, j, j2], end, n, of: groups.length }),
       toe: [P[0], P[1]], frame: P, set: plan.sets[0], src: gr.main,
@@ -382,7 +395,7 @@ export function networkSplits(s: Scad, routes: Route[], sol: Solution, p: BasePa
       moving,
     });
   }
-  return { splits: built, warnings };
+  return { splits: built, levers, warnings };
 }
 
 /** The piece's body with the given splits' points built in (routes and splits by the same route indices). */
