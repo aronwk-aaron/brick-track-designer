@@ -30,8 +30,6 @@ export interface OptionSpec {
   alike?: [string, string];
   /** why the values build the same in every example found (a setting that does nothing yet): not checked, but listed */
   known?: string;
-  /** (pictures only) settings more for a value, to show what it gives where the example can't (known) */
-  show?: Record<string, Record<string, unknown>>;
 }
 
 const st = (studs: number, more = {}) => ({ name: 'A', x: 0, y: 0, heading: 0, segs: [{ kind: 'straight' as const, studs }], ...more });
@@ -99,7 +97,7 @@ export const SPECS: OptionSpec[] = [
   { key: 'bladeDiscD', values: [14, 22], base: D(sw, { mechStyle: 'tines' }), cam: tinesUnder },
   // Switches: throw
   { key: 'throwStyle', values: ['built-in', 'bracket', 'stand', 'nail'], base: D(sw), cam: throwCam },
-  { key: 'boxedThrow', values: ['nail', 'slider'], base: D(sw), show: { nail: { throwStyle: 'nail' } }, cam: toe, known: 'no layout found where a throw is seen to have no room: the double slips\' middle points, whose sliders cross, aren\'t caught (their templates use Throw: Nail switch)' },
+  { key: 'boxedThrow', values: ['nail', 'slider'], base: D(TEMPLATES['Double slip (22.5°)'].routes, { pointBlades: 1 }), cam: { dir: '0.15,-0.3,1', dist: 1.3 } },
   { key: 'throwAction', values: ['detent', 'overcentre'], base: D(sw), cam: throwCam },
   { key: 'throwSide', values: ['auto', 'left', 'right'], base: D(sw), alike: ['auto', 'right'], cam: { dir: '0.2,-0.5,1', dist: 1.25 } },
   { key: 'leverOffset', values: [1, 3], base: D(sw), cam: { dir: '0.6,-0.5,1', r: 170, at: () => [30, 28, 6] } },

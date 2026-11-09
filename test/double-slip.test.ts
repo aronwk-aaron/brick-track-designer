@@ -29,7 +29,8 @@ describe('double slip', () => {
   for (const [name, more, note] of [['two blades a set: on tines', {}, true], ['one blade a set (single point): on top', { pointBlades: 1 as const }, false],
     ['sprung blades on ballast: rigid in the slip (no room for the sprung plates beside the next set\'s)', { pointBlades: 1 as const, bladeStyle: 'sprung' as const, ballast: 'ballast' as const }, false]] as const)
     it(`${name}: four sets of points, nothing in the track`, async () => {
-      const w = await kernel(), b = buildDesign(w, { ...TEMPLATES['Double slip (22.5°)'], options: { printBedX: 2000, printBedY: 2000, ...more } });
+      // (its points' sliders cross under the crossing: nail switches, as there's no room for a lever's throw; on tines, levers)
+      const w = await kernel(), b = buildDesign(w, { ...TEMPLATES['Double slip (22.5°)'], options: { printBedX: 2000, printBedY: 2000, boxedThrow: 'nail', ...more } });
       expect(b.overlay.issues).toEqual([]);
       expect(b.info.warnings.some((x) => /built on tines under the bed, the blades notched/.test(x))).toBe(note);
       if ('bladeStyle' in more) expect(b.info.warnings.some((x) => /blades are rigid.*next points' blades/.test(x))).toBe(true);
@@ -38,7 +39,8 @@ describe('double slip', () => {
       const man = (P: Float32Array) => { const mesh = new w.Mesh({ numProp: 3, vertProperties: new Float32Array(P), triVerts: new Uint32Array(P.length / 3).map((_, i) => i) }); mesh.merge(); return new w.Manifold(mesh); };
       const track = w.Manifold.union(b.pieces.filter((p) => !/points|throw|lever/.test(p.name)).map((p) => man(p.positions)));
       const moving = b.pieces.filter((p) => /points/.test(p.name));
-      expect(moving.filter((p) => /lever/.test(p.name)).length).toBe(4);
+      expect(moving.filter((p) => /-throw$/.test(p.name)).length).toBe(4);
+      expect(moving.filter((p) => /lever/.test(p.name)).length).toBe(note ? 4 : 0);
       for (const p of moving) expect(man(p.positions).intersect(track).volume(), p.name).toBeLessThan(0.5);
     }, 300000);
 

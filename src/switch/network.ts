@@ -202,7 +202,7 @@ export function networkSplits(s: Scad, routes: Route[], sol: Solution, p: BasePa
       return { pp, plan, how };
     };
     const c0 = choose([]);
-    return { gr, sp, i, j, j2, P, A, B, rts, three, own, ed, foreign, blockedOf, specOf, choose, keep: [] as Pt[][], how: c0.how, alone: !blockedOf(c0.plan), st: { tside, over, used, plan: c0.plan, pp: c0.pp } };
+    return { gr, sp, i, j, j2, P, A, B, rts, three, own, ed, foreign, blockedOf, specOf, choose, keep: [] as Pt[][], how: c0.how, gm: undefined as { plan: SwitchPlan; gm: ReturnType<typeof switchGeometry> } | undefined, alone: !blockedOf(c0.plan), st: { tside, over, used, plan: c0.plan, pp: c0.pp } };
   });
   // (blades on plates: neighbouring points' plates (a slip's, the next set's) clear of each other wherever each is between
   // closed and open, with their lips on the bed. Each set's plates as first planned, turned over their swing (fdbFootprint):
@@ -294,18 +294,60 @@ export function networkSplits(s: Scad, routes: Route[], sol: Solution, p: BasePa
   // (only where some are in another's way does the order matter: then the ones with the fewest clear places first)
   const rooms = preps.map((q) => (inWay(q.st.plan, q.foreign, q.P) ? room(q) : Infinity));
   preps.map((_, k) => k).sort((a, b) => rooms[a] - rooms[b]).forEach((k) => placeLever(preps[k]));
+  // (blades on top: two points' throws that run into each other, as a double slip's middle points' sliders cross under
+  // its crossing, can't both move: no room for a throw there. Nail switches (Points with no room for a throw), their
+  // sliders only under their own points; else said)
+  if (fdb) {
+    // (only sets with another's points near theirs; their geometry kept for building them, below)
+    const near2 = (a: Pose, b: Pose) => Math.hypot(a[0] - b[0], a[1] - b[1]) < 300;
+    const throwOf = (q: (typeof preps)[number]) => {
+      if (q.st.pp.mechStyle !== 'plates' || q.three || q.st.pp.throwNail || !preps.some((o) => o !== q && near2(o.P, q.P))) return undefined;
+      q.gm = { plan: q.st.plan, gm: switchGeometry(s, q.st.plan) };
+      return place(q.gm.gm.throwPart(0), q.P);
+    };
+    const ths = preps.map(throwOf), bbs = ths.map((m) => m?.boundingBox());
+    const clash = new Set<number>(), pairs: [number, number][] = [];
+    for (let a = 0; a < preps.length; a++) for (let b = a + 1; b < preps.length; b++) {
+      const A = bbs[a], B = bbs[b];
+      if (!A || !B || A.max[0] < B.min[0] || B.max[0] < A.min[0] || A.max[1] < B.min[1] || B.max[1] < A.min[1] || A.max[2] < B.min[2] || B.max[2] < A.min[2]) continue;
+      if (s.w.Manifold.intersection(ths[a]!, ths[b]!).volume() > 1) { clash.add(a); clash.add(b); pairs.push([a, b]); }
+    }
+    if ((p.boxedThrow ?? 'slider') === 'nail') for (const k of clash) {
+      const q = preps[k];
+      q.st.pp = { ...q.st.pp, throwNail: true };
+      q.st.plan = switchPlan(q.rts, [q.st.used], q.st.pp, 1, q.foreign, q.keep);
+    }
+    else for (const [a, b] of pairs)
+      warnings.push(`the throws of the points at ${studsAt(preps[a].gr.main)} and ${studsAt(preps[b].gr.main)} run into each other (their sliders cross): neither can move; set Points with no room for a throw to Nail switches, or Throw to Nail switch`);
+  }
   const built: SplitParts[] = [];
+  // (each set's geometry, as built for the throws' check if its plan's the same; and the over-centre springs' pins on the
+  // bed, in the design: another set's blade plate swinging over one (a double slip's sets are that close) is cut clear)
+  const gms = preps.map((q) => (q.gm?.plan === q.st.plan ? q.gm.gm : switchGeometry(s, q.st.plan)));
+  const ocPins = gms.map((gm, k) => { const o = gm.ocPinsAt(0); return o.at.map((pt) => ({ at: poseToWorld(preps[k].P, pt) as Pt, r: o.r, top: o.top })); });
+  /** A blade (local: in its set's frame) clear of the other sets' spring pins, wherever it is as it turns from closed to open. */
+  const clearOfPins = (n: number, m: Man, turn: { at: Pt; by: number } | undefined): Man => {
+    const P = preps[n].P, bb = m.boundingBox();
+    const cuts = ocPins.flatMap((pins, k) => (k === n ? [] : pins)).flatMap((pin) => {
+      const q = worldToPose(P, pin.at) as Pt;
+      if (q[0] < bb.min[0] - 30 || q[0] > bb.max[0] + 30 || q[1] < bb.min[1] - 30 || q[1] > bb.max[1] + 30) return [];
+      const r = pin.r + p.pointClearance, h = pin.top + p.pointClearance + 10;
+      const at = (t: number): Pt => { if (!turn) return q; const a = (-turn.by * t * Math.PI) / 180, dx = q[0] - turn.at[0], dy = q[1] - turn.at[1]; return [turn.at[0] + dx * Math.cos(a) - dy * Math.sin(a), turn.at[1] + dx * Math.sin(a) + dy * Math.cos(a)]; };
+      return [s.w.Manifold.hull(Array.from({ length: 7 }, (_, t) => T(s.cylinder(h, r, r, 24), [...at(t / 6), -10]))).intersect(T(s.cube([400, 400, pin.top + p.pointClearance + 10]), [q[0] - 200, q[1] - 200, -10]))];
+    });
+    return cuts.length ? s.difference(m, cuts) : m;
+  };
   for (const [n, q] of preps.entries()) {
     const { gr, sp, i, j, j2, P, A, B, rts, blockedOf } = q, { used, plan, pp } = q.st;
     throughWarnings(gr, blockedOf(plan));
     warnings.push(...plan.warnings.filter((w) => !/print bed/.test(w)), ...plan.notes.filter((w) => !warnings.includes(w)));
-    const gm = switchGeometry(s, plan), mech = gm.mech(0);
+    const gm = gms[n], mech = gm.mech(0);
     // which design route (and which way round) each frame route is
     const worldOf = (rt: Route) => (rt === A ? i : rt === B ? j : j2);
     const moving: NetworkPart[] = [];
     const tag = `points${groups.length > 1 ? n + 1 : ''}`;
-    const pts = gm.pointsParts(0);
     const turns = gm.pointsTurns(0);
+    const pts = gm.pointsParts(0).map((m, k) => clearOfPins(n, m, turns?.[k]));
     pts.forEach((m, k) => moving.push({ name: `${tag}${pts.length > 1 ? (k === 0 ? '-a' : '-b') : ''}`, color: 0x4682b4, local: m, world: place(m, P),
       ...(turns?.[k] && { turn: { at: poseToWorld(P, turns[k].at), by: turns[k].by, swing: turns[k].swing, ...(turns[k].tilt && { tilt: turns[k].tilt!.map((q) => poseToWorld(P, q)) as [[number, number], [number, number]] }) } }) }));
     // (Peco's spring: printed flat and straight, as assembled squeezed between its pins)

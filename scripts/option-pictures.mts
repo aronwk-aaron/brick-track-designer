@@ -45,10 +45,7 @@ if (process.env.DEBUG) page.on('console', (m) => console.log(m.text()));
 for (const sp of SPECS) {
   if (only && !only.split(',').includes(sp.key)) continue;
   for (const v of sp.values) {
-    const d = withValue(sp.key, sp.base, v);
-    // (what a value gives, where the example can't show it)
-    if (sp.show?.[String(v)]) d.options = { ...(d.options as object), ...sp.show[String(v)] };
-    const b = buildDesign(w, d);
+    const b = buildDesign(w, withValue(sp.key, sp.base, v));
     const ps: P[] = b.pieces.filter((p: P) => !sp.pick || sp.pick.test(p.name));
     const urls = ps.map((p, k) => {
       const P = Float32Array.from(p.positions);

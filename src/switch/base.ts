@@ -1646,6 +1646,15 @@ export function switchGeometry(s: Scad, plan: SwitchPlan, extraCuts: Man[] = [])
     T(s.cylinder(OC.h + c + 0.6, OC.pinD / 2, OC.pinD / 2, 24), [q[0], q[1], ocZ0() - c - 0.01]),
     T(s.cylinder(0.6, OC.pinD / 2 + c + 0.1, OC.pinD / 2, 24), [q[0], q[1], ocZ0() + OC.h + 0.1]),
   ]);
+  /** (the over-centre spring) A blade's plate clear of the spring's pins on the bed, wherever it is from closed to open:
+   * with one moving blade (a double slip's), its plate reaches over where they stand. */
+  const ocClear = (v: SetV, b: number, m: Man) => {
+    if (!ocOn(v) || b === v.fixed) return m;
+    const fb = fdbBlades(v)[b], sw = (v.three ? 2 : 1) * fb.ang * bSide(b), n = 6, r = OC.pinD / 2 + c + 0.2, z0 = bedTop - 1, h = c + plateT + 2;
+    const holes = ocGeo(v).A.map((q) => W.Manifold.hull(Array.from({ length: n + 1 }, (_, k) => T(s.cylinder(h, r, r, 24), [...rotAbout(q, fb.pivot, (-sw * k) / n), z0] as Vec3))));
+    const cut = s.union(holes);
+    return cut.boundingBox().max[0] < m.boundingBox().min[0] || cut.boundingBox().min[0] > m.boundingBox().max[0] ? m : s.difference(m, [cut]);
+  };
   /** The post on the slider for the spring's middle ring (its teardrop as the blades' posts), up to theirs. */
   const ocPost = (v: SetV) => T(s.extrude(fdbPost2d(ocGeo(v).P, 0), postTop - g.layerTop + 0.01), [0, 0, g.layerTop - 0.01]);
 
@@ -2109,7 +2118,7 @@ export function switchGeometry(s: Scad, plan: SwitchPlan, extraCuts: Man[] = [])
     base, basePieces, mech,
     pointsPart: (k = 0) => pointsPart(sets[k]),
     /** The points' parts: one, or one per blade (pointsPieces 2). */
-    pointsParts: (k = 0) => (fdb ? blades(sets[k]).map((b) => nailed(sets[k], b, fdbBladePart(sets[k], b))) : units(sets[k]).map((u) => unitPart(sets[k], u))),
+    pointsParts: (k = 0) => (fdb ? blades(sets[k]).map((b) => ocClear(sets[k], b, nailed(sets[k], b, fdbBladePart(sets[k], b)))) : units(sets[k]).map((u) => unitPart(sets[k], u))),
     /** Each points part's pivot and swing (to turn it to the left-hand route). */
     pointsUnits: (k = 0) => units(sets[k]).map((u) => ({ pivot: u.pivot, swing: u.swing })),
     throwPart: (k = 0) => throwPart(sets[k]),
@@ -2121,6 +2130,8 @@ export function switchGeometry(s: Scad, plan: SwitchPlan, extraCuts: Man[] = [])
     /** (a nail switch) no lever, nor bracket: the blades pushed over by hand */
     isNail: (k = 0) => !!sets[k].nail,
     /** (throwAction 'overcentre') Peco's spring, as assembled and as printed; undefined without it. */
+    /** (the over-centre spring) its pins on the bed, in the set's frame, and how high they reach (none without it) */
+    ocPinsAt: (k = 0): { at: Pt[]; r: number; top: number } => (ocOn(sets[k]) ? { at: ocGeo(sets[k]).A, r: OC.pinD / 2 + c + 0.1, top: ocZ0() + OC.h + 0.7 } : { at: [], r: 0, top: 0 }),
     springPart: (k = 0) => (ocOn(sets[k]) ? ocPart(sets[k]) : undefined),
     springPrint: (k = 0) => (ocOn(sets[k]) ? ocPrint(sets[k]) : undefined),
     /**
