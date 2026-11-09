@@ -1,20 +1,25 @@
 <!doctype html><html><body style="margin:0;background:transparent"><script type="module">
 // (scripts/option-pictures.mts's renderer: the STLs in ?stl= (comma separated; each part its own colour), the camera at
 // ?dir= (x,y,z from the target), ?dist= (times the parts' size), looking at ?at= (else their middle); ?col=, each part's
-// colour (hex, comma separated), if given)
+// colour (hex, comma separated), if given; ?clip=, a plane to cut the view at)
 import * as THREE from 'three';
 import { STLLoader } from 'three/examples/jsm/loaders/STLLoader.js';
 const q = new URLSearchParams(location.search), W = Number(q.get('w') ?? 960), H = Number(q.get('h') ?? 640);
-const r = new THREE.WebGLRenderer({ antialias: true, alpha: true, preserveDrawingBuffer: true }); r.setSize(W, H); r.setClearColor(0x000000, 0); document.body.append(r.domElement);
+const r = new THREE.WebGLRenderer({ antialias: true, alpha: true, preserveDrawingBuffer: true }); r.setSize(W, H); r.localClippingEnabled = true; r.setClearColor(0x000000, 0); document.body.append(r.domElement);
 // (a clear background: the pictures sit on the page's own, light or dark)
 const sc = new THREE.Scene();
 sc.add(new THREE.HemisphereLight(0xffffff, 0x666677, 1.7)); const dl = new THREE.DirectionalLight(0xffffff, 1.5); dl.position.set(-1, -2, 3); sc.add(dl);
 const cols = q.get('col') ? q.get('col').split(',').map((h) => parseInt(h, 16)) : [0x6f7780, 0x8a5a44, 0x4f6f8f, 0x7a7f4f, 0x6f4f7f];
+// (?clip=x,y,z,nx,ny,nz: cut away what's on the normal's side of the plane through x,y,z, to see inside: a hole's depth)
+const cq = q.get('clip')?.split(',').map(Number), clip = cq ? [new THREE.Plane(new THREE.Vector3(-cq[3], -cq[4], -cq[5]).normalize(), 0)] : [];
+if (cq) clip[0].constant = -clip[0].normal.dot(new THREE.Vector3(cq[0], cq[1], cq[2]));
+// (?zs=: heights stretched this many times, to see a rise of a few mm along a long track)
+const zs = Number(q.get('zs') ?? 1);
 const box = new THREE.Box3();
 let k = 0;
 for (const url of q.get('stl').split(',')) {
   const g = new STLLoader().parse(await (await fetch(url)).arrayBuffer()); g.computeVertexNormals();
-  const m = new THREE.Mesh(g, new THREE.MeshStandardMaterial({ color: cols[k++ % cols.length], roughness: 0.6, flatShading: true })); sc.add(m); g.computeBoundingBox(); box.union(g.boundingBox);
+  const m = new THREE.Mesh(g, new THREE.MeshStandardMaterial({ color: cols[k++ % cols.length], roughness: 0.6, flatShading: true, side: THREE.DoubleSide, clippingPlanes: clip })); m.scale.z = zs; sc.add(m); box.union(new THREE.Box3().setFromObject(m));
 }
 const c = box.getCenter(new THREE.Vector3()), size = box.getSize(new THREE.Vector3()).length();
 const [ax, ay, az] = (q.get('dir') ?? '1,-1,0.8').split(',').map(Number), f = Number(q.get('dist') ?? 1.1);
