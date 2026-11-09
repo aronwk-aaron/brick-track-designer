@@ -237,6 +237,17 @@ function fdbLayout(v: SetLike, p: BaseParams, rails: [Route, number, number][], 
   const pp = plates.flatMap((ring) => ring.flatMap((q, k) => { const e = ring[(k + 1) % ring.length], n = Math.max(1, Math.ceil(norm(sub(e, q)) / 0.5)); return Array.from({ length: n }, (_, j) => add(q, mul(sub(e, q), j / n)) as Pt); }));
   const fromPlate = new Set(pp), hwOf = (q: Pt) => (fromPlate.has(q) ? c : hw), inPlates = (q: Pt) => plates.length > 0 && windingIn(plates, q);
   const pts = [...keep.flat(), ...pp], n3 = v.three ? 2 : 1, plateW = fdbPlateW(p), postIn0 = plateW / 2 + HEAD_HW;
+  // (the points by where they are, in squares CELL across: what's near a place looked for only in the squares round it.
+  // A double slip's search for a place for each pin and post asks a hundred thousand times, of over a thousand points)
+  const CELL = 16, grid = new Map<number, Pt[]>(), cellOf = (x: number, y: number) => Math.floor(x / CELL) * 65536 + Math.floor(y / CELL);
+  for (const q of pts) { const k = cellOf(q[0], q[1]), at = grid.get(k); if (at) at.push(q); else grid.set(k, [q]); }
+  const near = (q0: Pt, r: number) => {
+    const out: Pt[] = [];
+    for (let i = Math.floor((q0[0] - r) / CELL); i <= Math.floor((q0[0] + r) / CELL); i++)
+      for (let j = Math.floor((q0[1] - r) / CELL); j <= Math.floor((q0[1] + r) / CELL); j++)
+        for (const q of grid.get(i * 65536 + j) ?? []) if (norm(sub(q, q0)) < r) out.push(q);
+    return out;
+  };
   return [0, 1].map((b) => blade(b));
   function blade(b: number): FdbBladeLayout {
     const rt = v.three ? v.three.S : b === 0 ? v.ra : v.rb, o = b === 0 ? -G : +G, side = b === 0 ? 1 : -1;
@@ -257,12 +268,14 @@ function fdbLayout(v: SetLike, p: BaseParams, rails: [Route, number, number][], 
     const f0 = make(0, FDB.pivotIn, postIn0);
     if (!pts.length) return f0;
     const angles = (f: { ang: number }) => Array.from({ length: 9 }, (_, k) => (dir * n3 * f.ang * k) / 8);
-    const near = (q0: Pt, r: number) => pts.filter((q) => norm(sub(q, q0)) < r);
     // (the stock rail it closes on (the other route's, at the same offset), on past the pin: the blade's heel end swings out toward it)
     const stockBehind = (f: { pivot: Pt }) => { const out: Pt[] = []; for (let s = sOf(stockRt, f.pivot); s <= v.sHeel + 6; s += 0.5) out.push(railPoint(stockRt, s, o)); return out; };
     // the blade's own rail (on the plate, toe to heel) clear of them as it swings
+    // (the points near enough the blade's rail to matter: the same for each place tried, but the stock rail's behind the pin)
+    const nearBar = (q: Pt) => Math.abs(routeLat(rt, q) - o) < HEAD_HW + hwBar + 12;
+    const barPts = pts.filter((q) => !notches.some((nt) => norm(sub(q, nt.at)) < nt.reach)).filter(nearBar);
     const barOk = (f: ReturnType<typeof make>) => {
-      const cand = [...pts.filter((q) => !notches.some((nt) => norm(sub(q, nt.at)) < nt.reach)), ...stockBehind(f)].filter((q) => Math.abs(routeLat(rt, q) - o) < HEAD_HW + hwBar + 12);
+      const cand = [...barPts, ...stockBehind(f).filter(nearBar)];
       return angles(f).every((a) => cand.every((q) => {
         const q2 = rotAbout(q, f.pivot, -a);
         if (Math.abs(routeLat(rt, q2) - o) >= HEAD_HW + (fromPlate.has(q) ? c : hwBar)) return true;
@@ -350,7 +363,9 @@ export function sprungLipFits(v: SetLike, b: number, p: BaseParams, f: FdbBladeL
     && !windingIn(pl, [(x0 + x1) / 2, (y0 + y1) / 2]));
 }
 /** (fdbLayout with other points' plates beside the set) Its layouts, by the keep-out they were worked out against. */
-const fdbMemo = new WeakMap<Pt[][], Map<string, FdbBladeLayout[]>>();
+const fdbMemo = new WeakMap<object, Map<string, FdbBladeLayout[]>>();
+/** (fdbLayout with other track near the set, no plates beside it) Its layouts, by the other track's routes they were worked out against. */
+const fdbMemoNear = new WeakMap<object, Map<string, FdbBladeLayout[]>>();
 /** Whether q is inside the region the rings make (non-zero winding: holes go the other way round). */
 function windingIn(rings: Pt[][], q: Pt) {
   let w = 0;
@@ -701,10 +716,13 @@ export function switchPlan(routes: Route[], specs: SetSpec[], p: BaseParams = BA
       const rails = railsNear(v);
       // (with other points' plates beside them, the same layout asked for again and again as network.ts tries the lever's
       // places (its offset changes nothing here): worked out once)
-      if (keepOut.length) {
-        const memo = fdbMemo.get(keepOut) ?? new Map<string, FdbBladeLayout[]>(), key = JSON.stringify([v.sToe, v.sHeel, v.throwY, v.fdbTravel, v.toeY, v.pointsEndY, v.fixed, v.notches, p, routes.map((r) => [r.start, r.segments])]);
+      // (and so without them, by the other track near the points (foreign: the same list for each try): a double slip's
+      // and an X yard's levers are tried in a few hundred places, each the same layout, and that took minutes)
+      const memos = keepOut.length ? fdbMemo : fdbMemoNear, by = keepOut.length ? keepOut : foreign.length ? foreign : undefined;
+      if (by) {
+        const memo = memos.get(by) ?? new Map<string, FdbBladeLayout[]>(), key = JSON.stringify([v.sToe, v.sHeel, v.throwY, v.fdbTravel, v.toeY, v.pointsEndY, v.fixed, v.notches, p, routes.map((r) => [r.start, r.segments])]);
         if (!memo.has(key)) memo.set(key, fdbLayout(v, p, rails, keepOut));
-        fdbMemo.set(keepOut, memo);
+        memos.set(by, memo);
         v.fdb = memo.get(key)!.map((f) => ({ ...f }));
       } else v.fdb = fdbLayout(v, p, rails, keepOut);
       const why = v.fdb.find((f, b) => f.blocked && b !== v.fixed)?.blocked;
