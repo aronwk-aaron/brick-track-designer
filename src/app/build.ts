@@ -58,6 +58,15 @@ export interface Piece {
 
 /** A piece's lift onto its grade: its height at its middle c, and how it rises along dir. */
 export interface Lift { h: number; slope: number; dir: [number, number]; c: [number, number] }
+/** A box's triangles (corner positions, for the view): w across and l along a pose (its middle), h high from z 0. */
+function boxTris(q: Pose, w: number, l: number, h: number): number[] {
+  const a = (q[2] * Math.PI) / 180, c = Math.cos(a), sn = Math.sin(a);
+  const P = (x: number, y: number, z: number) => [q[0] + x * c - y * sn, q[1] + x * sn + y * c, z];
+  const v = [[-1, -1], [1, -1], [1, 1], [-1, 1]].flatMap(([x, y]) => [P((x * w) / 2, (y * l) / 2, 0), P((x * w) / 2, (y * l) / 2, h)]);
+  // (corners: 2k at the bottom, 2k+1 at the top, k round it; the faces outward)
+  const quad = (i: number, j: number, k: number, m: number) => [...v[i], ...v[j], ...v[k], ...v[i], ...v[k], ...v[m]];
+  return [...quad(0, 6, 4, 2), ...quad(1, 3, 5, 7), ...[0, 1, 2, 3].flatMap((k) => { const n = (k + 1) % 4; return quad(2 * k, 2 * n, 2 * n + 1, 2 * k + 1); })];
+}
 /** How a piece of these routes (those on a grade) is lifted: its middle's height on the route nearest it, and the rise along the route there. */
 function liftOf(rts: Route[], positions: Float32Array): Lift | undefined {
   if (!rts.some((rt) => rt.grade) || !positions.length) return undefined;
@@ -159,7 +168,11 @@ export const boughtColor = (parts: LegoPart[]) => (parts.some((p) => p.shop === 
 // Pieces built before, by what they were built from: an edit rebuilds only
 // the pieces it changes (the worker keeps this between builds).
 const memo = new Map<string, unknown>();
-function cached<T>(key: string, f: () => T): T {
+/** The build's settings (every option, the gauge), under which every piece built before is kept: a piece's key need
+ * not name each setting it's built with (Axle length, Tongues on were missed: a change to one kept the parts as they were). */
+let settingsKey = '';
+function cached<T>(key0: string, f: () => T): T {
+  const key = settingsKey + key0;
   if (memo.has(key)) { const v = memo.get(key) as T; memo.delete(key); memo.set(key, v); return v; }
   const v = f();
   memo.set(key, v);
@@ -176,8 +189,8 @@ const DATA_BUDGET = 1.5e9;
 let dataBytes = 0, holdData = 0;
 const bytesOf = (v: unknown): number => (ArrayBuffer.isView(v) ? v.byteLength : Array.isArray(v) ? v.reduce((t: number, x) => t + bytesOf(x), 0)
   : v && typeof v === 'object' ? Object.values(v).reduce((t: number, x) => t + bytesOf(x), 0) : 8);
-function putData(key: string, v: unknown) {
-  const old = data.get(key);
+function putData(key0: string, v: unknown) {
+  const key = settingsKey + key0, old = data.get(key);
   if (old) { dataBytes -= old.bytes; data.delete(key); }
   const bytes = bytesOf(v);
   data.set(key, { v, bytes }); dataBytes += bytes;
@@ -187,8 +200,8 @@ function trimData() {
   if (!holdData) while (dataBytes > DATA_BUDGET && data.size > 1) { const [k, e] = data.entries().next().value!; data.delete(k); dataBytes -= e.bytes; }
 }
 function cachedData<T>(key: string, f: () => T): T {
-  const e = data.get(key);
-  if (e) { data.delete(key); data.set(key, e); return e.v as T; }
+  const e = data.get(settingsKey + key);
+  if (e) { data.delete(settingsKey + key); data.set(settingsKey + key, e); return e.v as T; }
   const v = f();
   putData(key, v);
   return v;
@@ -348,6 +361,7 @@ export function levelBankedNearOthers(routes: Route[], near: number): { routes: 
 /** opts.plan: only list the jobs it'd do (buildJobs), stopping there. */
 export function buildDesign(w: Wasm, design: Design, report: (what: string, frac: number) => void = () => {}, early?: (overlay: unknown) => void, opts: { plan?: BuildJob[] } = {}) {
   design = upgradeDesign(design);
+  settingsKey = `${JSON.stringify([{ ...OPTION_DEFAULTS, ...design.options }, design.gaugeStuds])}|`;
   if (!design.routes.some((r) => isMono(r) && r.segs.length > 0)) return buildTrain(w, design, report, early, opts);
   const t0 = performance.now();
   const trainD: Design = { ...design, routes: design.routes.filter((r) => !isMono(r)) };
@@ -448,7 +462,7 @@ function graded(w: Wasm, design: Design, res: ReturnType<typeof buildLevel>): Re
     }
     return false;
   });
-  const risers: LegoPart[] = [];
+  const risers: LegoPart[] = []; const stacks: number[] = [];
   const addPart = (part: string, name: string, qty: number) => { if (qty <= 0) return; const e = risers.find((x) => x.part === part); if (e) e.qty += qty; else risers.push({ part, name, qty }); };
   const scad = new Scad(w), so = { ...SUPPORT_DEFAULTS, baseXStuds: 6, baseYStuds: 4 };
   let n = 0, skipped = 0;
@@ -459,7 +473,12 @@ function graded(w: Wasm, design: Design, res: ReturnType<typeof buildLevel>): Re
       if (h < 3.2 - 1e-6) continue;
       if (overOther([q[0], q[1]], h + ballastH)) { skipped++; continue; }
       // (lower than a brick: LEGO plates, printed or not; a printed support that low has no room for its legs)
-      if (o.raisedOn === 'lego' || h < 9.6 - 1e-6) { const pl = Math.round(h / 3.2); addPart('3007', 'Brick 2 x 8', Math.floor(pl / 3)); addPart('3034', 'Plate 2 x 8', pl % 3); continue; }
+      if (o.raisedOn === 'lego' || h < 9.6 - 1e-6) {
+        const pl = Math.round(h / 3.2); addPart('3007', 'Brick 2 x 8', Math.floor(pl / 3)); addPart('3034', 'Plate 2 x 8', pl % 3);
+        // (for the view: the stack, 8 studs across the track and 2 along it, turned with it)
+        stacks.push(...boxTris(q, 64, 16, pl * 3.2));
+        continue;
+      }
       // (printed: as tall as the track's bottom there, its top tilted to the grade; turned with the track)
       const bricks = Math.floor((h + 0.01) / 9.6), flat = Math.abs(slope) < 1e-4, so2 = { ...so, bricks, plates: (h - bricks * 9.6) / 3.2 };
       const sp = cachedData(`tsup:${JSON.stringify(so2)}:${slope.toFixed(5)}`, () => arena(w, () => {
@@ -473,7 +492,7 @@ function graded(w: Wasm, design: Design, res: ReturnType<typeof buildLevel>): Re
     }
   }
   if (skipped) warnings.push(`${skipped} of the places a raised track stands over other track (as round a helix): nothing's put there to hold it up (nothing stands on track; a deck between them isn't built yet)`);
-  if (risers.length) pieces.push({ name: 'risers-bought', color: LEGO_COLOR, positions: new Float32Array(0), stl: new Uint8Array(0), lego: risers });
+  if (risers.length) pieces.push({ name: 'risers-bought', color: LEGO_COLOR, positions: Float32Array.from(stacks), stl: new Uint8Array(0), lego: risers });
   return { ...res, pieces, info: { ...res.info, warnings } };
 }
 
@@ -1578,7 +1597,8 @@ function buildOne(w: Wasm, design: Design, report: (what: string, frac: number) 
     if (inLengths) sectioned(b, 'track', rest, restSol.checkRails, [], [], copt, restKey);
     else if (pc.rest.length > 1 && tiled(b, 'track', rest, restSol.checkRails, [], copt)) { /* built in tiles */ }
     else if (plan) throw PLANNED;
-    else if (pc.rest.length > 1 || cut.fitsBed(whole().m)) {
+    // (cut at the baseplate edges: there, as addTrack cuts it, however long; the equal lengths below took no notice of them)
+    else if (pc.rest.length > 1 || cut.bp || cut.fitsBed(whole().m)) {
       overlay.grips.push(...whole().grips);
       addTrack(b, 'track', whole().m, rest, sizeOf(rest), sleepered ? (ls) => cached(`cxcut:${restKey}:${JSON.stringify(ls)}`, () => crossingPiece(scad, rest, copt, restSol, [], { cuts: grooveCuts, innerEnds: dropInner(rest), bedAt: ls })) : undefined);
     } else {
@@ -1591,7 +1611,7 @@ function buildOne(w: Wasm, design: Design, report: (what: string, frac: number) 
         const at = (k: number) => (k === n ? L : Math.round((L * k) / n / 8) * 8), gridPose = routePose(rt, 0);
         const subs = Array.from({ length: n }, (_, k) => subRoute(rt, at(k), at(k + 1)));
         const bits = subs.map((sub) => cached(`cx1:${JSON.stringify({ sub, copt, gridPose })}`, () => crossingPiece(scad, [sub], copt, undefined, undefined, { gridPose })));
-        if (bits.every(cut.fitsBed) || n === 20) { bits.forEach((m, k) => { const lm = labelled(b, m, [subs[k]], sizeOf([subs[k]])); add(b, `track${k + 1}`, TRACK_COLOR, lm, lm); }); break; }
+        if (bits.every(cut.fitsBed) || n === 20) { bits.forEach((m, k) => { const lm = labelled(b, m, [subs[k]], sizeOf([subs[k]]), `${k + 1}`); add(b, `track${k + 1}`, TRACK_COLOR, lm, lm); }); break; }
       }
     }
   }
