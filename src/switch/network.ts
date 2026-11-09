@@ -316,8 +316,8 @@ export function networkSplits(s: Scad, routes: Route[], sol: Solution, p: BasePa
     // (the slider in two parts, its arm under other track: the piece with the posts, in after the bar)
     const thp = gm.throwPostsPart(0), thpP = gm.throwPostsPrint(0);
     if (thp && thpP) moving.push({ name: `${tag}-throw-posts`, color: 0xe8892b, local: thpP, world: place(thp, P) });
-    moving.push({ name: `${tag}-lever`, color: 0xd4af37, local: gm.leverPrint(0), world: place(gm.leverPart(0), P) });
-    if (p.throwModule) { const br = gm.bracketPart(0); moving.push({ name: `${tag}-bracket`, color: 0x8a8f99, local: br, world: place(br, P) }); }
+    if (!gm.isNail(0)) moving.push({ name: `${tag}-lever`, color: 0xd4af37, local: gm.leverPrint(0), world: place(gm.leverPart(0), P) });
+    if (p.throwModule && !gm.isNail(0)) { const br = gm.bracketPart(0); moving.push({ name: `${tag}-bracket`, color: 0x8a8f99, local: br, world: place(br, P) }); }
     const end = sp.merge ? 'end' : 'start';
     // (its arm under other track: that track's studs on it, as on its bed (crossing.ts, where they're clear of its rails),
     // not on its own bed nor by the lever (its ears, its opening))

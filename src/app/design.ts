@@ -112,7 +112,9 @@ export interface PieceOptions {
   /** The studs on the sleepers: on the baseplate's grid, or in rows following the track (as the OpenSCAD curves). */
   curveStuds?: 'grid' | 'follow';
   /** The throw: 'bracket' (the plate-style: the lever on its own 3 x 3 stud bracket, on studs on the arm), 'built-in' (the ears part of the arm) or 'stand' (a switch stand, a ground throw as Caboose Industries': a handle swung over on an eccentric, locked at each end; plate-style points). */
-  throwStyle?: 'bracket' | 'built-in' | 'stand';
+  throwStyle?: 'bracket' | 'built-in' | 'stand' | 'nail';
+  /** Points with no room for a throw (its arm across other track, a double slip's in its middle): a nail switch ('nail') or the slider under that track to a lever past it ('slider', default). */
+  boxedThrow?: 'nail' | 'slider';
   /** (plate-style points) What holds the points, and what a train trailing through them does: 'detent' (the lever's click), 'overcentre' (Peco's V spring: they snap over and stay). (the sprung blades spring back on their own.) */
   throwAction?: 'detent' | 'overcentre';
   /** (plate-style points) The blades: 'sprung' (a spring in each, so trains can trail through), 'simple' (rigid: the slider's post in a plain hole, no spring), or 'prototype' (rigid, planed to a point, tight under the stock rail's undercut head, the tie bar at the points). */
@@ -442,7 +444,8 @@ export const TEMPLATES: Record<string, Design> = {
   // leaving one track 7.96 studs before the crossing and joining the other 7.96 studs after it; the points are
   // in the middle, their blades side by side. One blade a set (single point): blades on top fit between its rails;
   // with two, they're built on tines under the bed)
-  'Double slip (22.5°)': { version: 1, gaugeStuds: 4, options: { pointBlades: 1 }, routes: [
+  // (its points thrown by hand, nail switches, as the reference double slips' inner points: no room for a lever's throw there)
+  'Double slip (22.5°)': { version: 1, gaugeStuds: 4, options: { pointBlades: 1, throwStyle: 'nail' }, routes: [
     { name: 'A', x: 0, y: -20, heading: 0, segs: [{ kind: 'straight', studs: 40 }] },
     { name: 'B', x: 20 * tan(22.5), y: -20, heading: 22.5, segs: [{ kind: 'straight', studs: 40 / cos(22.5) }] },
     { name: 'A to B', x: 0, y: -SLIP_LEAD, heading: 0, segs: [{ kind: 'curve', radius: 40, angle: 22.5 }] },

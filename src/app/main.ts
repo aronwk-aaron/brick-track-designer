@@ -1233,7 +1233,13 @@ const OPTION_FORM: OptSection[] = [
       { v: 'bracket', t: 'Lever on a bracket', tip: 'The lever sits on a separate 3 x 3 stud bracket on the arm.' },
       { v: 'stand', t: 'Switch stand (ground throw)', tip: 'A handle beside the track, like a real ground throw. It locks at each end.',
         con: 'A train trailing through against it derails unless the points spring back. A three-way\'s middle position isn\'t locked.',
-        no: (c) => (c.fdb ? undefined : 'only with Mechanism: Blades on top, on pins') }] },
+        no: (c) => (c.fdb ? undefined : 'only with Mechanism: Blades on top, on pins') },
+      { v: 'nail', t: 'Nail switch (by hand, no lever)', tip: 'As on the reference double slips\' inner points: no lever, no arm. The slider stays under the points, held at either end by an over-centre spring; push the blade over with a fingernail in the notch on its plate. Trains can trail through.',
+        con: 'Nothing to work it from beside the track, nor to motorise.', no: (c) => (c.fdb ? undefined : 'only with Mechanism: Blades on top, on pins') }] },
+    { key: 'boxedThrow', label: 'Points with no room for a throw', get: () => design.options?.boxedThrow ?? 'slider', set: (v) => { design.options = { ...design.options, boxedThrow: v as 'nail' | 'slider' }; }, def: 'slider',
+      off: (c) => (c.fdb ? undefined : 'only with Mechanism: Blades on top, on pins'), help: 'Points whose throw would cross other track (its lever on that track, or its arm across it), as a double slip\'s in its middle.', choices: [
+      { v: 'nail', t: 'Nail switches', tip: 'Those points thrown by hand (Throw: Nail switch); the rest as set.' },
+      { v: 'slider', t: 'A slider under the track, to a lever past it', tip: 'The slider in a tunnel under the other track (in two parts), the lever out past it.', con: 'Long sliders under other track; where there\'s no room even so, a warning.' }] },
     { key: 'throwAction', label: 'Points kept set by', off: onlyPlates, choices: [
       { v: 'detent', t: 'Lever click', tip: 'The lever clicks into place at each end.', con: 'A train trailing through the wrong way can push the points part way and derail.' },
       { v: 'overcentre', t: 'Over-centre spring', tip: 'A printed spring snaps the points to whichever side they\'re pushed. Trains can trail through.', con: 'The spring is light (about 0.3 N) and depends on print accuracy. Not on three-ways or with a switch stand.' }] },

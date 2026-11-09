@@ -624,6 +624,7 @@ interface LeverPlan {
 }
 /** A points set's lever on the plan (it can be dragged there). avoid: (the plate-style) where no cut goes, its parts' keep-outs added; G: the rails' offset. */
 function leverItem(items: TrackworkItem[], tw: Trackwork, avoid: Keep[] | undefined, G: number, key: string, P: Pose, v: LeverPlan) {
+  if ((v as { nail?: boolean }).nail) return; // (a nail switch: no lever to place)
   const wd = (x: number, y: number) => poseToWorld(P, [x, y]);
   const ed = tw.throw?.[key];
   // (pts: the arm's outline, as built: from the stock rail out to the stud line past the lever, 3 studs wide)
@@ -654,7 +655,7 @@ function switchParams(o: PieceOptions, gaugeStuds: number, alone: boolean) {
     // (a floor under the moving parts only with the lid over them: otherwise they go in from below, through their pockets)
     ...(o.pointsModule === 'layers' && o.ballast !== 'none' && { mechFloor: 1.2 }), endSupports: o.endSupports !== false,
     throwModule: o.throwStyle === 'bracket', mechStyle: (o.mechStyle === 'tines' ? 'tines' : 'plates') as 'tines' | 'plates', // (anything else, an older name included: the default)
-    throwStand: o.throwStyle === 'stand', throwAction: o.throwAction ?? 'detent', bladeStyle: o.bladeStyle ?? 'simple',
+    throwStand: o.throwStyle === 'stand', throwNail: o.throwStyle === 'nail', boxedThrow: o.boxedThrow ?? 'slider', throwAction: o.throwAction ?? 'detent', bladeStyle: o.bladeStyle ?? 'simple',
     bladeLip: o.bladeLip === 'front' ? 'front' as const : 'pin' as const, // (unset, an older design: the snap lip on the pin)
     ...(alone && { ballastOnly: o.trackFitTol ?? 0.2 }) };
 }
@@ -1293,7 +1294,7 @@ function buildSwitches(b: PieceBuild, switches: ReturnType<typeof planPieces>['s
     const gm = cached(`sw:${JSON.stringify({ routes: sw.routes, sets: sw.sets, params, cl, tw: b.grooveEdits })}`, () => {
       const g = switchGeometry(scad, sw.plan, frameCuts);
       return { bases: g.basePieces(), whole: g.base(), grips: g.grips, sets: sw.sets.map((_, k) => ({ thr: g.throwPart(k), thrPrint: g.throwPrint(k), thp: g.throwPostsPart(k), thpPrint: g.throwPostsPrint(k), pp: g.pointsParts(k), print: g.leverPrint(k), lever: g.leverPart(k), bracket: params.throwModule ? g.bracketPart(k) : undefined,
-        spring: g.springPart(k), springPrint: g.springPrint(k), turns: g.pointsTurns(k) })) };
+        spring: g.springPart(k), springPrint: g.springPrint(k), turns: g.pointsTurns(k) })), nail: sw.sets.map((_, k) => g.isNail(k)) };
     });
     const bases = gm.bases;
     // (its tubes, for the plan's grip marks, in the design's frame)
@@ -1311,14 +1312,14 @@ function buildSwitches(b: PieceBuild, switches: ReturnType<typeof planPieces>['s
     });
     gm.sets.forEach(({ thr, thrPrint, thp, thpPrint, pp, print, lever, bracket, spring, springPrint, turns }, k) => {
       const sfx = sw.sets.length > 1 ? `${k + 1}` : '';
-      if (bracket) add(b, `${tag}-bracket${sfx}`, 0x8a8f99, bracket, place(bracket, sw.pose));
+      if (bracket && !gm.nail[k]) add(b, `${tag}-bracket${sfx}`, 0x8a8f99, bracket, place(bracket, sw.pose));
       const turnOf = (j: number): Piece['turn'] => { const t2 = turns?.[j]; return t2 && { at: poseToWorld(sw.pose, t2.at), by: t2.by, swing: t2.swing, ...(t2.tilt && { tilt: t2.tilt.map((q) => poseToWorld(sw.pose, q)) as [[number, number], [number, number]] }) }; };
       pp.forEach((pts, j) => add(b, `${tag}-points${sfx}${pp.length > 1 ? (j === 0 ? '-a' : '-b') : ''}`, 0x4682b4, pts, place(pts, sw.pose), turnOf(j)));
       // (Peco's spring: printed flat and straight, as assembled squeezed between its pins)
       if (spring && springPrint) add(b, `${tag}-points${sfx}-spring`, 0xc0392b, springPrint, place(spring, sw.pose));
       add(b, `${tag}-throw${sfx}`, 0xe8892b, thrPrint, place(thr, sw.pose));
       if (thp && thpPrint) add(b, `${tag}-throw${sfx}-posts`, 0xe8892b, thpPrint, place(thp, sw.pose));
-      add(b, `${tag}-lever${sfx}`, 0xd4af37, print, place(lever, sw.pose));
+      if (!gm.nail[k]) add(b, `${tag}-lever${sfx}`, 0xd4af37, print, place(lever, sw.pose));
     });
   });
 }

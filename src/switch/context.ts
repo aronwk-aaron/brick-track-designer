@@ -54,6 +54,15 @@ export interface SwitchParams {
   throwShift?: number;
   /** (switch.scad's throw_ballast) On ballast: the ballast's steps carried on round the lever's arm, with studs. */
   throwBallast?: boolean;
+  /**
+   * (the plate-style points) Points whose throw would run under other track (a double slip's, in its middle): 'nail',
+   * a nail switch, as the reference double slips' inner points: no lever, the slider short, under the points
+   * only, held at either end by the over-centre spring, the blade pushed over by a fingernail in a notch on its plate;
+   * or 'slider' (default), the slider under the other track out to a lever past it.
+   */
+  boxedThrow?: 'nail' | 'slider';
+  /** (the plate-style points) Every points set a nail switch (Throw: Nail switch): no levers at all. */
+  throwNail?: boolean;
   /** (clip_and_peg_on_ballast) On ballast: the end connectors keep their snap peg and C-clip. */
   pegOnBallast?: boolean;
   /** (generate_track off) The ballast alone, with a seat this much clear each side (mm) for the track printed apart. */
@@ -272,6 +281,8 @@ export function pointsSet(routes: Route[], ps: PointsSet, p: SwitchParams, defau
     /** the throw arm runs under other track (its rails across the arm, past the stock rail), and whether the slider can
      * pass under it there (a closed tunnel; with blades on top, the slider in two parts: switch/base.ts fdbSplit): filled in by switchPlan */
     under: false, underOk: false,
+    /** no room for a throw (it would run under other track) and p.boxedThrow 'nail': a nail switch (no lever; switch/base.ts) */
+    nail: false,
   };
 }
 export type PointsSetValues = ReturnType<typeof pointsSet>;

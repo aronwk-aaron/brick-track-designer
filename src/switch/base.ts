@@ -731,8 +731,16 @@ export function switchPlan(routes: Route[], specs: SetSpec[], p: BaseParams = BA
   });
   const fRails: [Route, number, number][] = foreign.flatMap((rt) => [[rt, -G, 0], [rt, G, 0]] as [Route, number, number][]);
   for (const v of sets as SetLike[]) {
+    if (p.throwNail && p.mechStyle === 'plates' && !v.three) { v.nail = true; v.stand = false; continue; }
     const xIn = v.throwStockX + v.throwDir * 2 * 3.9, xOut = v.leverX + v.throwDir * 10;
     v.under = fRails.length > 0 && railIn(fRails, Math.min(xIn, xOut), Math.max(xIn, xOut), v.throwY - 3, v.throwY + 3);
+    // (blades on top, no room for a throw: its arm under other track, or its lever on other track's sleepers, where that
+    // track's trains run over it (a double slip's, in its middle): a nail switch instead, unless asked for the slider)
+    // (the lever on other track's sleepers, or its arm across that track's four-foot, between or over its rails)
+    const lat = (q: Pt) => Math.min(...foreign.map((rt) => Math.abs(routeLat(rt, q))));
+    let onOther = foreign.length > 0 && lat([v.leverX, v.throwY]) < sleeperLen / 2 + 2;
+    for (let x = xIn; foreign.length && !onOther && v.throwDir * (x - v.leverX) <= 0; x += v.throwDir * 2) if (lat([x, v.throwY]) < G + HEAD_HW + 1) onOther = true;
+    if ((p.throwNail || ((v.under || onOther) && (p.boxedThrow ?? 'slider') === 'nail')) && p.mechStyle === 'plates' && !v.three) { v.nail = true; v.under = false; v.stand = false; continue; }
     if (!v.under) continue;
     const roof = g.bedTop <= PLATE_H + 1e-6 && g.cavityTop <= g.bedTop - 0.3;
     if (p.mechStyle !== 'plates' || !roof) { v.underOk = roof; continue; }
@@ -743,6 +751,8 @@ export function switchPlan(routes: Route[], specs: SetSpec[], p: BaseParams = BA
       ...(v.fixed !== undefined ? [[v.fixed === 0 ? v.ra : v.rb, v.fixed === 0 ? -G : G, v.sMate!] as [Route, number, number]] : []), ...railsNear(v)];
     v.underOk = !railIn(rails, sp.o0, sp.o1, v.throwY - sp.hw, v.throwY + sp.hw);
   }
+  // (a nail switch: no arm out to a lever, no steps round it)
+  sets.forEach((v, k) => { if ((v as SetLike).nail) Object.assign(setData[k], { armX0: v.throwStockX, armX1: v.throwStockX, ...throwStepsData(v, g, false) }); });
   return {
     warnings, notes,
     p, g, G, tc, sleeperW, sleeperLen, routes, nRoutes, specs, sets, others, latOthers, isStock, railFixS, frogs, checkList,
@@ -1165,6 +1175,7 @@ export function switchGeometry(s: Scad, plan: SwitchPlan, extraCuts: Man[] = [])
   /** (the plate-style throw) the studs on the arm the bracket sits on: two rows of three round the lever, clear of its slot. */
   const bracketStuds = (v: SetV) => [-1, 0, 1].flatMap((i) => [-1, 1].map((j): [number, number] => [v.leverX + i * STUD, v.throwY + j * STUD]));
   const throwArm = (v: SetV) => {
+    if (v.nail) return s.union([]); // (a nail switch: no arm, no lever)
     // (the arm's end out to the next stud line, so it sits square on the studs)
     const xIn = v.throwStockX, xEnd = v.leverX + v.throwDir * 10, parts: Man[] = [];
     const xOut = scadParity() ? xEnd : v.throwDir * Math.ceil((v.throwDir * xEnd) / STUD - 1e-6) * STUD;
@@ -1213,6 +1224,7 @@ export function switchGeometry(s: Scad, plan: SwitchPlan, extraCuts: Man[] = [])
       for (let y = 4; y <= plan.baseY1 + 1e-9; y += 8) spots.push([x, y, roundScad(x / 8), roundScad(y / 8)]);
     // (the throw arms too: hollow with tubes underneath, like the rest)
     const onArm = (x: number, y: number, m: number) => !scadParity() && sets.some((v) => {
+      if (v.nail) return false;
       const xEnd = v.leverX + v.throwDir * 10, xOut = v.throwDir * Math.ceil((v.throwDir * xEnd) / STUD - 1e-6) * STUD;
       return x >= Math.min(v.throwStockX, xOut) + m - 0.02 && x <= Math.max(v.throwStockX, xOut) - m + 0.02 && Math.abs(y - v.throwY) <= g.armW / 2 - m + 0.02;
     });
@@ -1298,6 +1310,12 @@ export function switchGeometry(s: Scad, plan: SwitchPlan, extraCuts: Man[] = [])
     return plate;
   };
   /** A blade part, as assembled for the right-hand route: its plate on the bed, its rail on the plate. */
+  /** (a nail switch) a moving blade's plate notched across its top over its post, for a fingernail to push it over by. */
+  const nailed = (v: SetV, b: number, m: Man) => {
+    if (!v.nail || b === v.fixed) return m;
+    const fb = fdbBlades(v)[b], z1 = bedTop + c + plateT;
+    return s.difference(m, [cube([1.4, 7, 1.2], [fb.post[0] - 0.7, fb.post[1] - 3.5, z1 - 1.2])]);
+  };
   const fdbBladePart = (v: SetV, b: number) => {
     const fb = fdbBlades(v)[b], z0 = bedTop + c, z1 = z0 + plateT;
     const rt = bRt(v, b), o = bO(b), oStock = bO(b), sideS = oStock < 0 ? 1 : -1, face = oStock + sideS * (HEAD_HW + c);
@@ -1432,6 +1450,11 @@ export function switchGeometry(s: Scad, plan: SwitchPlan, extraCuts: Man[] = [])
   const fdbFloor = () => g.layerZ0 - c;
   /** The slider's footprint: its travel, from the far post out to the lever's opening. */
   const fdbSlot2d = (v: SetV, m: number) => {
+    // (a nail switch: under the points only, its posts' and the over-centre spring's post's travel)
+    if (v.nail) {
+      const xn = nailXs(v), lo = Math.min(...xn) - v.leverTravel - 4, hi = Math.max(...xn) + v.leverTravel + 4;
+      return sq([hi - lo, rodW + 2 * (c + m)], [lo, v.throwY - rodW / 2 - c - m]);
+    }
     const xs = [...fdbPostAt(v).map((q) => q[0]), v.forkX, ...fdbMouth(v), ...(split(v) ? [fdbSplit(v, p).a, fdbSplit(v, p).b] : [])];
     const x0 = Math.min(...xs) - v.leverTravel - 4, x1 = Math.max(...xs) + v.leverTravel + 4;
     const [m0, m1] = fdbMouth(v), a = Math.max(x0, Math.min(x1, v.throwDir > 0 ? m1 : m0));
@@ -1442,7 +1465,9 @@ export function switchGeometry(s: Scad, plan: SwitchPlan, extraCuts: Man[] = [])
   const fdbGroove = (v: SetV) => {
     // (the slider in two parts: open only where the posts' piece goes in, at the points, as wide as the bar; up past the posts' tops)
     if (split(v)) { const sp = fdbSplit(v, p); return cube([sp.o1 - sp.o0, 2 * sp.hw, postTop + 0.4 - g.layerTop + 0.01], [sp.o0, v.throwY - sp.hw, g.layerTop - 0.01]); }
-    const qs = fdbPostAt(v), T2 = v.leverTravel + 1, [m0, m1] = fdbMouth(v), mouth = (m0 + m1) / 2;
+    const qs = fdbPostAt(v), T2 = v.leverTravel + 1, [m0, m1] = v.nail ? [0, 0] : fdbMouth(v);
+    // (a nail switch: from post to post, each's travel either way)
+    const mouth = v.nail ? qs.reduce((a, q) => (v.throwDir * q[0] > v.throwDir * a[0] ? q : a))[0] + v.throwDir * T2 : (m0 + m1) / 2;
     // (wide enough for the posts wherever they are as the blades swing: their y moves a little)
     const dy = Math.max(0, ...fdbBlades(v).filter((_, b) => b !== v.fixed).flatMap((f) => [f.open, f.open === 0 ? f.ang : 0].map((a) => Math.abs(rotAbout(f.post, f.pivot, a)[1] - v.throwY)))) + 0.2;
     const far = qs.reduce((a, q) => (v.throwDir * q[0] < v.throwDir * a[0] ? q : a));
@@ -1459,6 +1484,12 @@ export function switchGeometry(s: Scad, plan: SwitchPlan, extraCuts: Man[] = [])
   /** The slider bar: posts up into the blades, the fork for the lever's tip at its end. */
   const fdbSlider = (v: SetV) => {
     const z0 = g.layerZ0, z1 = g.layerTop;
+    if (v.nail) {
+      // (a nail switch: the bar under the points only, its posts and the over-centre spring's post on it; no fork)
+      const xn = nailXs(v), band = sq([1000, rodW], [-500, v.throwY - rodW / 2]);
+      const posts = fdbPostAt(v).map((q) => T(s.extrude(fdbPost2d(q, 0).intersect(band), postTop - z1 + 0.01), [0, 0, z1 - 0.01]));
+      return s.union([cube([Math.max(...xn) - Math.min(...xn) + 6, rodW, z1 - z0], [Math.min(...xn) - 3, v.throwY - rodW / 2, z0]), ...posts, ...fdbSliderExtra(v)]);
+    }
     const xs = [...fdbPostAt(v).map((q) => q[0]), v.forkX], x0 = Math.min(...xs) - 3, x1 = Math.max(...xs) + forkHw;
     const slotW = g.leverTipD + 2 * c, m = v.forkMouthHw;
     // (the posts up into the blades, to just under the plates' tops; no wider than the bar, which prints on its side:
@@ -1498,6 +1529,7 @@ export function switchGeometry(s: Scad, plan: SwitchPlan, extraCuts: Man[] = [])
   const fdbSliderExtra = (v: SetV): Man[] => (ocOn(v) ? [ocPost(v)] : []);
   /** The channel through the arm for the slider's fork and the lever. */
   const fdbChannel = (v: SetV) => {
+    if (v.nail) return s.union([T(s.extrude(fdbSlot2d(v, 0), g.layerTop + c - fdbFloor()), [0, 0, fdbFloor()]), fdbGroove(v)]);
     // (wide enough for the slider to go down through, as well as the lever's tip)
     const wf = leverT() + 2 * c, [g0, g1] = fdbMouth(v);
     // (and the posts' groove: the arm's top is over it too)
@@ -1575,7 +1607,9 @@ export function switchGeometry(s: Scad, plan: SwitchPlan, extraCuts: Man[] = [])
     const dEnd = Math.hypot(OC.D, T / 2), free = dEnd + OC.preload;
     return { P, A, T, dEnd, free };
   };
-  const ocOn = (v: SetV) => fdb && p.throwAction === 'overcentre' && !v.three && !v.stand;
+  const ocOn = (v: SetV) => fdb && (p.throwAction === 'overcentre' || v.nail) && !v.three && !v.stand;
+  /** (a nail switch) where along the throw its slider has things on it: its posts, and the over-centre spring's. */
+  const nailXs = (v: SetV) => [...fdbPostAt(v).map((q) => q[0]), ...(ocOn(v) ? [ocGeo(v).P[0]] : [])];
   /** The post's hole in the middle ring: round its teardrop, which turns a little in it. */
   const ocHoleR = FDB.postD / 2 * Math.SQRT2 + c;
   /** One half of the spring in plan, from its middle ring's centre (origin) along +u to its pin's ring at u = len: its meander and the pin's ring. */
@@ -2075,7 +2109,7 @@ export function switchGeometry(s: Scad, plan: SwitchPlan, extraCuts: Man[] = [])
     base, basePieces, mech,
     pointsPart: (k = 0) => pointsPart(sets[k]),
     /** The points' parts: one, or one per blade (pointsPieces 2). */
-    pointsParts: (k = 0) => (fdb ? blades(sets[k]).map((b) => fdbBladePart(sets[k], b)) : units(sets[k]).map((u) => unitPart(sets[k], u))),
+    pointsParts: (k = 0) => (fdb ? blades(sets[k]).map((b) => nailed(sets[k], b, fdbBladePart(sets[k], b))) : units(sets[k]).map((u) => unitPart(sets[k], u))),
     /** Each points part's pivot and swing (to turn it to the left-hand route). */
     pointsUnits: (k = 0) => units(sets[k]).map((u) => ({ pivot: u.pivot, swing: u.swing })),
     throwPart: (k = 0) => throwPart(sets[k]),
@@ -2084,6 +2118,8 @@ export function switchGeometry(s: Scad, plan: SwitchPlan, extraCuts: Man[] = [])
     throwPostsPart: (k = 0) => (split(sets[k]) ? fdbPostPiece(sets[k]) : undefined),
     throwPostsPrint: (k = 0) => (split(sets[k]) ? throwPrint(sets[k], fdbPostPiece(sets[k])) : undefined),
     leverPart: (k = 0) => leverPart(sets[k]),
+    /** (a nail switch) no lever, nor bracket: the blades pushed over by hand */
+    isNail: (k = 0) => !!sets[k].nail,
     /** (throwAction 'overcentre') Peco's spring, as assembled and as printed; undefined without it. */
     springPart: (k = 0) => (ocOn(sets[k]) ? ocPart(sets[k]) : undefined),
     springPrint: (k = 0) => (ocOn(sets[k]) ? ocPrint(sets[k]) : undefined),
