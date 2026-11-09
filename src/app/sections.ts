@@ -4,7 +4,7 @@
 // base is clear of every other track's (never through points, frogs or
 // crossings), plain stretches in lengths that fit the print bed.
 import type { Route } from '../route/route';
-import { routeLat, routeLength, routePose, routesBox, railPoint } from '../route/route';
+import { GRADE_APART, heightAt, routeLat, routeLength, routePose, routeSOf, routesBox, railPoint } from '../route/route';
 import type { Split } from '../route/solver';
 
 /** A piece of one route: [route, from, to] (arc lengths). */
@@ -37,6 +37,9 @@ export function planSections(routes: Route[], splits: Split[], half: number, roo
   const seams: { at: [number, number]; kind: 'blocked' | 'split' }[] = [];
   const boxes = routes.map((rt) => routesBox([rt], half + 16, 8));
   const inBox = (j: number, q: [number, number]) => q[0] >= boxes[j][0] && q[0] <= boxes[j][2] && q[1] >= boxes[j][1] && q[1] <= boxes[j][3];
+  // (track on a grade: route i at s and route j where it's level with q pass one over the other, GRADE_APART or more apart in height)
+  const graded = routes.some((rt) => !!rt.grade);
+  const over = (i: number, s: number, j: number, q: [number, number]) => graded && Math.abs(heightAt(routes[i], s) - heightAt(routes[j], routeSOf(routes[j], q))) >= GRADE_APART;
   // the points' stretches (and a connector's length past them), where no cut goes
   const busy = routes.map(() => [] as [number, number][]);
   for (const sp of splits) sp.routes.forEach((ri, k) => busy[ri].push([sp.spans[k][0] - 24, sp.spans[k][1] + 24]));
@@ -46,7 +49,7 @@ export function planSections(routes: Route[], splits: Split[], half: number, roo
     if (s < minPart || s > L - minPart || busy[i].some(([a, b]) => s >= a && s <= b)) return false;
     for (const ds of [-10, 0, 10]) for (let o = -half; o <= half + 1e-9; o += 8) {
       const q = railPoint(rt, s + ds, o);
-      for (let j = 0; j < routes.length; j++) if (j !== i && inBox(j, q) && Math.abs(routeLat(routes[j], q)) < half + 2) return false;
+      for (let j = 0; j < routes.length; j++) if (j !== i && inBox(j, q) && Math.abs(routeLat(routes[j], q)) < half + 2 && !over(i, s + ds, j, q)) return false;
     }
     return true;
   };
@@ -54,7 +57,7 @@ export function planSections(routes: Route[], splits: Split[], half: number, roo
   const nearCross = (i: number, s: number) => {
     for (let ds = -24; ds <= 24; ds += 8) {
       const q = railPoint(routes[i], s + ds, 0);
-      for (let j = 0; j < routes.length; j++) if (j !== i && inBox(j, q) && Math.abs(routeLat(routes[j], q)) < 24) return true;
+      for (let j = 0; j < routes.length; j++) if (j !== i && inBox(j, q) && Math.abs(routeLat(routes[j], q)) < 24 && !over(i, s + ds, j, q)) return true;
     }
     return false;
   };
@@ -176,17 +179,14 @@ export function planSections(routes: Route[], splits: Split[], half: number, roo
     return out;
   });
   const sAt = (i: number, q: [number, number]) => {
-    // (the arc length along route i level with q: nearest sample)
-    const rt = routes[i], L = routeLength(rt);
-    let best = 0, bd = Infinity;
-    for (let s = 0; s <= L; s += 2) { const p = railPoint(rt, s, 0), d = Math.hypot(p[0] - q[0], p[1] - q[1]); if (d < bd) { bd = d; best = s; } }
-    return best;
+    // (the arc length along route i level with q: its nearest point)
+    return routeSOf(routes[i], q);
   };
   for (let p = 0; p < pieces.length; p++) for (let r = p + 1; r < pieces.length; r++) {
     const [ip] = pieces[p], [ir, ar, br] = pieces[r];
     if (find(p) === find(r)) continue;
     if (ip === ir) continue; // (two pieces of one track join only at an ordinary end)
-    const hit = samples[p].some((q) => inBox(ir, q) && Math.abs(routeLat(routes[ir], q)) < half && (() => { const s = sAt(ir, q); return s >= ar - 1 && s <= br + 1; })());
+    const hit = samples[p].some((q) => inBox(ir, q) && Math.abs(routeLat(routes[ir], q)) < half && (() => { const s = sAt(ir, q); return s >= ar - 1 && s <= br + 1; })() && !over(ir, sAt(ir, q), ip, q));
     if (hit) parent[find(p)] = find(r);
   }
   const groups = new Map<number, number[]>();

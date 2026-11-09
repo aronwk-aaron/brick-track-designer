@@ -226,6 +226,7 @@ export function toRoutes(d: Design): Route[] {
       id: r.name || String(i),
       throwSide: r.throwSide,
       ...(r.system === 'monorail' && r.monoHeight !== undefined && { elev: r.monoHeight * 3.2, ...(r.monoHeightEnd !== undefined && { elevEnd: r.monoHeightEnd * 3.2 }) }),
+      ...(r.system !== 'monorail' && ((r.monoHeight ?? 0) > 0 || (r.monoHeightEnd ?? 0) > 0) && { grade: [(r.monoHeight ?? 0) * 3.2, (r.monoHeightEnd ?? r.monoHeight ?? 0) * 3.2] as [number, number] }),
       start: [r.x * STUD, r.y * STUD, r.heading],
       segments: r.segs.map((sg, k): Segment => {
         const out: Segment = sg.kind === 'straight'
@@ -423,7 +424,7 @@ export const TEMPLATE_GROUPS: [string, string[]][] = [
   ['Crossings', ['90° crossing', '22.5° crossing', 'Double slip (22.5°)', 'Crossing on a curve']],
   ['Switches', ['Left switch (LEGO)', 'Right switch (LEGO)', 'Left switch (BrickTracks R104)', 'Right switch (BrickTracks R104)', 'Wye switch', 'Three-way switch (one throw)', 'Three-way switch (tandem, two throws)']],
   ['Layouts', ['Oval (LEGO R40)', 'Crossover (R40)', 'Double crossover (R56)', 'Yard ladder (R40)', 'Wye with a crossover', 'Double-track return loop (turning right)', 'Double-track return loop (turning left)']],
-  ['Features', ['Grade up at 2.5%', 'Siding ending in a buffer stop', 'Bridge with guard rails', 'Dual gauge track', 'Banked curve', 'Crossing on sleepers']],
+  ['Features', ['Grade up at 2.5%', 'Helix (R104, two turns)', 'Siding ending in a buffer stop', 'Bridge with guard rails', 'Dual gauge track', 'Banked curve', 'Crossing on sleepers']],
   ['Monorail', ['Monorail oval on supports', 'Monorail ramp (as LEGO\'s)', 'Monorail switch (experimental)', 'Monorail level crossing (experimental)']],
 ];
 export const TEMPLATES: Record<string, Design> = {
@@ -508,6 +509,11 @@ export const TEMPLATES: Record<string, Design> = {
     { name: 'Low', x: 0, y: -16, heading: 0, segs: [{ kind: 'straight', studs: 16 }] },
     { name: 'Grade', x: 0, y: 0, heading: 0, monoHeight: 0, monoHeightEnd: 6, segs: [{ kind: 'straight', studs: 96 }] },
     { name: 'High', x: 0, y: 96, heading: 0, monoHeight: 6, monoHeightEnd: 6, segs: [{ kind: 'straight', studs: 32 }] },
+  ] },
+  // (a helix: two turns of R104 on the standard grade, 2.48%, each turn 40.8 plates over the one under it (π × 104 / 8),
+  // 13 bricks clear; in and out on straights, the way out over the way in)
+  'Helix (R104, two turns)': { version: 1, gaugeStuds: 4, routes: [
+    { name: 'Helix', x: 0, y: -16, heading: 0, monoHeight: 0, monoHeightEnd: 83, segs: [{ kind: 'straight', studs: 16 }, { kind: 'curve', radius: 104, angle: 360 }, { kind: 'curve', radius: 104, angle: 360 }, { kind: 'straight', studs: 16 }] },
   ] },
   'Siding ending in a buffer stop': { version: 1, gaugeStuds: 4, options: { ballast: 'ballast' }, routes: [
     { name: 'Main', x: 0, y: 0, heading: 0, segs: [{ kind: 'straight', studs: 48 }] },

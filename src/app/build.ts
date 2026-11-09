@@ -12,7 +12,7 @@ import { arena, flat, type Wasm } from '../geom/kernel';
 import { stlBytes } from '../geom/stl';
 import { splitSelfCrossing } from '../route/selfcross';
 import { FORCE_ANGLE, FORCE_LAT, solve, type SplitEdits } from '../route/solver';
-import { hasRoll, poseToWorld, railPoint, routeLat, routeLength, routePose, routeRoll, routeSOf, type Pose } from '../route/route';
+import { GRADE_APART, hasRoll, heightAt, poseToWorld, railPoint, routeLat, routeLength, routePose, routeRoll, routeSOf, type Pose } from '../route/route';
 import { reversedRoute } from '../switch/reverse';
 import { BASE_DEFAULTS, switchGeometry } from '../switch/base';
 import { switchGlobals } from '../switch/context';
@@ -51,6 +51,24 @@ export interface Piece {
   turn?: { at: [number, number]; by: number; swing?: number; tilt?: [[number, number], [number, number]] };
   /** LEGO parts this piece is (a plain straight as LEGO's own track, its ballast as plates): not printed, in the LEGO parts list */
   lego?: LegoPart[];
+  /** (track on a grade) how it's lifted in the view: by h at its middle c, rising slope along dir (mm, a unit vector) */
+  lift?: Lift;
+}
+
+/** A piece's lift onto its grade: its height at its middle c, and how it rises along dir. */
+export interface Lift { h: number; slope: number; dir: [number, number]; c: [number, number] }
+/** How a piece of these routes (those on a grade) is lifted: its middle's height on the route nearest it, and the rise along the route there. */
+function liftOf(rts: Route[], positions: Float32Array): Lift | undefined {
+  if (!rts.some((rt) => rt.grade) || !positions.length) return undefined;
+  let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+  for (let i = 0; i < positions.length; i += 3) { x0 = Math.min(x0, positions[i]); x1 = Math.max(x1, positions[i]); y0 = Math.min(y0, positions[i + 1]); y1 = Math.max(y1, positions[i + 1]); }
+  const c: [number, number] = [(x0 + x1) / 2, (y0 + y1) / 2];
+  let best: Lift | undefined, bd = Infinity;
+  for (const rt of rts) {
+    const sv = routeSOf(rt, c), p = routePose(rt, sv), d = Math.hypot(p[0] - c[0], p[1] - c[1]), L = routeLength(rt), a = (p[2] * Math.PI) / 180;
+    if (d < bd) { bd = d; best = { h: heightAt(rt, sv), slope: L > 0 ? (heightAt(rt, L) - heightAt(rt, 0)) / L : 0, dir: [-Math.sin(a), Math.cos(a)], c }; }
+  }
+  return best;
 }
 
 /** A LEGO part (BrickLink's number and name) and how many. */
@@ -411,17 +429,34 @@ function graded(design: Design, res: ReturnType<typeof buildLevel>): ReturnType<
     if (!p.positions.length) return p;
     let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
     for (let i = 0; i < p.positions.length; i += 3) { x0 = Math.min(x0, p.positions[i]); x1 = Math.max(x1, p.positions[i]); y0 = Math.min(y0, p.positions[i + 1]); y1 = Math.max(y1, p.positions[i + 1]); }
-    const c: [number, number] = [(x0 + x1) / 2, (y0 + y1) / 2], g = hAt(c);
+    // (from the stretch of track it was built of, if known: where tracks pass one over the other, the nearest isn't)
+    const c: [number, number] = p.lift?.c ?? [(x0 + x1) / 2, (y0 + y1) / 2], g = p.lift ?? hAt(c);
     if (!g || (g.h === 0 && g.slope === 0)) return p;
     return { ...p, positions: lift(p.positions, c, g), ...(p.supports && { supports: lift(p.supports, c, g) }) };
   });
   // (the risers: under each route every 16 studs from its start, as high as it is there, in whole plates)
   const risers: LegoPart[] = [];
   const addPart = (part: string, name: string, qty: number) => { if (qty <= 0) return; const e = risers.find((x) => x.part === part); if (e) e.qty += qty; else risers.push({ part, name, qty }); };
+  // (over other track, as round a helix: from that track's top (3 plates of track, and its ballast), not the baseplate)
+  const ballastH = (design.options?.ballast ?? OPTION_DEFAULTS.ballast) === 'buddy' ? 6.4 : (design.options?.ballast ?? OPTION_DEFAULTS.ballast) === 'ballast' ? 3.2 : 0;
+  const below = (q: [number, number], h: number) => {
+    let top = 0;
+    // (every pass of every route, a helix's own turns too)
+    for (const { r, rt } of rts) {
+      const L = routeLength(rt);
+      for (let sv = 0; sv <= L; sv += 8) {
+        const p = routePose(rt, sv);
+        if (Math.abs(p[0] - q[0]) > 32 || Math.abs(p[1] - q[1]) > 32 || Math.hypot(p[0] - q[0], p[1] - q[1]) >= 32) continue;
+        const h2 = gradeAt(r, L, sv);
+        if (h2 < h - GRADE_APART) top = Math.max(top, h2 + 9.6 + ballastH);
+      }
+    }
+    return top;
+  };
   for (const { r, rt } of rts) {
     const L = routeLength(rt);
     for (let sv = 0; sv <= L + 1e-6; sv += 128) {
-      const pl = Math.round(gradeAt(r, L, sv) / 3.2);
+      const q = routePose(rt, sv), h = gradeAt(r, L, sv), pl = Math.max(0, Math.round((h - below([q[0], q[1]], h)) / 3.2));
       addPart('3007', 'Brick 2 x 8', Math.floor(pl / 3));
       addPart('3034', 'Plate 2 x 8', pl % 3);
     }
@@ -643,6 +678,7 @@ function tracksOverEachOther(routes: Route[], sol: { splits: Split[]; dropped?: 
     const p = pts[a2], q = pts[b2];
     if (Math.abs(p[0] - q[0]) > gap || Math.abs(p[1] - q[1]) > gap || Math.hypot(p[0] - q[0], p[1] - q[1]) >= gap) continue;
     if (p[4] === q[4] && Math.abs(p[3] - q[3]) < 4 * gap) continue; // (the same stretch of one route)
+    if (Math.abs(heightAt(routes[p[4]], p[3]) - heightAt(routes[q[4]], q[3])) >= GRADE_APART) continue; // (one over the other, on a grade)
     if (parting(p, q)) continue;
     if (Math.abs(Math.cos(((p[2] - q[2]) * Math.PI) / 180)) < cos15) continue; // (crossing at an angle: a crossing)
     if (!near(p, spots, 4 * gap)) spots.push(p);
@@ -1146,7 +1182,8 @@ function sectioned(b: PieceBuild, name: string, all: Route[], checks: CheckRail[
     for (const b2 of part.ms) {
       // (bought pieces' ballast: printed, named for the track it's under)
       const lego = apart ? b2.lego : whole;
-      b.pieces.push({ name: lego ? `track-bought-${lego[0].part.replace(/\s+/g, '')}-${++n}` : seated ? `${name}${b2.id ?? ++n}-ballast` : b2.id ? `${name}${b2.id}` : `${name}${++n}`, color: lego ? boughtColor(lego) : TRACK_COLOR, positions: b2.positions.slice(), stl: b2.stl.slice(), ...(b2.supports && !lego && { supports: b2.supports.slice() }), ...(lego && { lego }) });
+      const lift = liftOf(rts, b2.positions);
+      b.pieces.push({ name: lego ? `track-bought-${lego[0].part.replace(/\s+/g, '')}-${++n}` : seated ? `${name}${b2.id ?? ++n}-ballast` : b2.id ? `${name}${b2.id}` : `${name}${++n}`, color: lego ? boughtColor(lego) : TRACK_COLOR, positions: b2.positions.slice(), stl: b2.stl.slice(), ...(b2.supports && !lego && { supports: b2.supports.slice() }), ...(lego && { lego }), ...(lift && { lift }) });
       const bought = !!lego;
       if (!bought) b.volume += b2.volume;
       if (!b2.fits) b.bedWarnings.add(`some sections don't fit the ${o.printBedX} x ${o.printBedY} print bed: there's nowhere left to cut them`);

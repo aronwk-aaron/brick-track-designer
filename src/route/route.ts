@@ -36,7 +36,18 @@ export interface Route {
   elevEnd?: number;
   /** (editor) bridge guard rails and a dual-gauge third rail along it (geom/extrarails.ts); unset: none */
   extra?: ExtraRails;
+  /** (train track on a grade) its height off the baseplate at its start and end, mm: an even grade between; unset: level on it */
+  grade?: [number, number];
 }
+
+/** A route's height at arc length s (mm): on its grade, else 0. */
+export function heightAt(rt: Route, s: number): number {
+  if (!rt.grade) return 0;
+  const L = routeLength(rt), t = L > 0 ? Math.min(1, Math.max(0, s / L)) : 0;
+  return rt.grade[0] + (rt.grade[1] - rt.grade[0]) * t;
+}
+/** Two tracks this far apart in height (mm) or more pass over each other: no points, crossing or shared base between them. */
+export const GRADE_APART = 20;
 
 export type RouteEnds = 'none' | 'start' | 'end' | 'both';
 /**

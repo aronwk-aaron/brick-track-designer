@@ -6,7 +6,7 @@
 // full, and each route's flangeways (the band just inside each of its rails
 // where the wheel flanges run) are cut into every other route's rails, so
 // frogs and crossings fall out of the geometry, whatever the layout.
-import { type Pose, type Pt, type Route, railPolyline, routeLat, routeLength, routePose, routeSOf } from './route';
+import { GRADE_APART, heightAt, type Pose, type Pt, type Route, railPolyline, routeLat, routeLength, routePose, routeSOf } from './route';
 
 export interface SolverOptions {
   gauge: number;        // rail centre to rail centre, mm (40 = LEGO)
@@ -105,6 +105,8 @@ function inFlangeway(rt: Route, p: Pt, o: SolverOptions): boolean {
 export function solve(routes: Route[], opts: Partial<SolverOptions> = {}, edits: SplitEdits = {}): Solution {
   const o = { ...SOLVER_DEFAULTS, ...opts };
   const g = o.gauge / 2;
+  // (track on a grade: where one passes over another they don't meet)
+  const graded = routes.some((rt) => !!rt.grade);
   const rails = routes.map((rt) => Object.fromEntries(sides.map((sd) => [sd, railPolyline(rt, sd * g, o.step)])) as Record<Side, [number, number, number][]>);
   // Each route's box (its rails, and its flangeways beside them), grown by
   // pad: routes whose boxes don't meet can't cross, cut or crowd each other,
@@ -171,6 +173,7 @@ export function solve(routes: Route[], opts: Partial<SolverOptions> = {}, edits:
       if (Math.abs(routeLat(a, st)) > NEAR_LAT) continue;
       const sa = routeSOf(a, st);
       const pa = routePose(a, sa);
+      if (graded && Math.abs(heightAt(a, sa) - heightAt(b, 0)) >= GRADE_APART) continue; // (one over the other: no points)
       const off = Math.hypot(pa[0] - st[0], pa[1] - st[1]), dh = Math.abs(((pa[2] - b.start[2] + 540) % 360) - 180);
       if (off > NEAR_LAT) continue;
       if (sa > routeLength(a) - 0.6) continue; // (starting where the other ends: a join, not points)
@@ -196,6 +199,7 @@ export function solve(routes: Route[], opts: Partial<SolverOptions> = {}, edits:
       if (Math.abs(routeLat(a, [e[0], e[1]])) > NEAR_LAT) continue;
       const se = routeSOf(a, [e[0], e[1]]);
       const pa = routePose(a, se);
+      if (graded && Math.abs(heightAt(a, se) - heightAt(b, Lb)) >= GRADE_APART) continue;
       const off = Math.hypot(pa[0] - e[0], pa[1] - e[1]), dh = Math.abs(((pa[2] - e[2] + 540) % 360) - 180);
       if (off > NEAR_LAT) continue;
       if (se < 0.6) continue; // (ending where the other starts: a join, not points)
@@ -244,6 +248,8 @@ export function solve(routes: Route[], opts: Partial<SolverOptions> = {}, edits:
               let ang = Math.abs(((da - db) * 180) / Math.PI) % 180;
               if (ang > 90) ang = 180 - ang;
               if (ang < 0.5) continue;  // rails running together (a split), not a crossing
+              // (one over the other, on a grade: no crossing)
+              if (graded && Math.abs(heightAt(routes[i], A[k][0] + t * (A[k + 1][0] - A[k][0])) - heightAt(routes[j], B[m][0] + u * (B[m + 1][0] - B[m][0]))) >= GRADE_APART) continue;
               found.push([k, m, {
                 a: { route: i, side: sa, s: A[k][0] + t * (A[k + 1][0] - A[k][0]) },
                 b: { route: j, side: sb, s: B[m][0] + u * (B[m + 1][0] - B[m][0]) },
@@ -272,7 +278,7 @@ export function solve(routes: Route[], opts: Partial<SolverOptions> = {}, edits:
         let open: number | undefined;
         for (let n = 0; n < pts.length; n++) {
           const s = pts[n][0];
-          const cut = heads[n].some((q) => inBox(j, q) && inFlangeway(routes[j], q, o));
+          const cut = heads[n].some((q) => inBox(j, q) && inFlangeway(routes[j], q, o) && !(graded && Math.abs(heightAt(routes[i], s) - heightAt(routes[j], routeSOf(routes[j], q))) >= GRADE_APART));
           if (cut && open === undefined) open = s;
           if (!cut && open !== undefined) { grooves.push({ route: i, side: sd, s0: open, s1: s, by: j }); open = undefined; }
         }
