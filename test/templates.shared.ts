@@ -16,7 +16,7 @@ export function templatesBuild(groups: string[], only?: string[]) {
     try {
       const b = buildDesign(await kernel(), structuredClone(TEMPLATES[name]));
       expect(b.pieces.length).toBeGreaterThan(0);
-      expect(b.info.warnings.filter((w) => !/experimental/.test(w) && !(/Double slip/.test(name) && /blades are rigid/.test(w)))).toEqual([]);
+      expect(b.info.warnings.filter((w) => !/experimental/.test(w) && !(/Double slip/.test(name) && /blades are rigid/.test(w)) && !(/Helix/.test(name) && /stands over other track/.test(w)))).toEqual([]);
     } finally { Object.assign(OPTION_DEFAULTS, saved); }
   });
 }

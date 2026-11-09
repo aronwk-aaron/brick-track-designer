@@ -1372,9 +1372,23 @@ function halvesOf(b: PieceBuild, m: Man, bs: BoughtSwitch, under: [number, numbe
     const box = T(scad.cube([1000, 1000, 400]), [-500, before ? y - 1000 : y, -200]);
     return scad.intersection(m, T(R(box, [0, 0, bs.toe[2]]), [bs.toe[0], bs.toe[1], 0]));
   };
+  // (joined, unless Parts join with is Straight cuts: a dovetail each side of the switch, in the ballast past its sleepers'
+  // ends, from the ballast's bottom to the top of its lower layer, the tab on the half before the cut, its socket 0.15
+  // clear in the half after)
+  const bb = m.boundingBox(), sl = (b.gaugeStuds + 1) * 8 + 24, xs = [-(sl / 2 + 4), sl / 2 + 4];
+  const tail = (y: number, x: number, grow: number) => {
+    const pts: [number, number][] = [[x - 2.2 - grow, y - 0.01], [x + 2.2 + grow, y - 0.01], [x + 3.4 + grow, y + 4.5 + grow], [x - 3.4 - grow, y + 4.5 + grow]];
+    return scad.extrude(scad.polygon(pts.map((q) => poseToWorld(bs.toe, q))), -bb.min[2] + (grow ? 1 : 0)).translate([0, 0, bb.min[2] - (grow ? 0.5 : 0)]);
+  };
+  const joined = b.o.joint !== 'butt' && b.o.joint !== 'flataxle';
   for (const [y] of cuts.slice(0, 40)) {
-    const hs = [half(y, true), half(y, false)].filter((h) => h.numTri() > 0);
-    if (hs.length === 2 && hs.every(b.cut.fitsBed)) return hs;
+    let hs = [half(y, true), half(y, false)].filter((h) => h.numTri() > 0);
+    if (hs.length !== 2) continue;
+    if (joined) {
+      const tabs = xs.map((x) => tail(y, x, 0)), sockets = xs.map((x) => tail(y, x, 0.15));
+      hs = [scad.union([hs[0], scad.intersection(scad.union(tabs), m)]), scad.difference(hs[1], sockets)];
+    }
+    if (hs.every(b.cut.fitsBed)) return hs;
   }
   return [m];
 }
