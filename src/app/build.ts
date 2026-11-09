@@ -1468,7 +1468,7 @@ function buildOne(w: Wasm, design: Design, report: (what: string, frac: number) 
   const alone = opts.part === 'ballast';
   const job = <T>(key: string, cost: number, f: () => T, none: T): T => {
     if (!plan) return cachedData(key, f);
-    if (!data.has(key)) plan.push({ key, cost, run: f });
+    if (!data.has(settingsKey + key)) plan.push({ key, cost, run: f });
     return none;
   };
   const t0 = performance.now();
