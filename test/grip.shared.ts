@@ -9,7 +9,10 @@ import { TEMPLATE_GROUPS, TEMPLATES, toRoutes } from '../src/app/design';
 import { routePose } from '../src/route/route';
 
 export function sitsOnStuds(groups: string[]) {
-  const names = TEMPLATE_GROUPS.filter(([g]) => groups.includes(g)).flatMap(([, ns]) => ns);
+  // (not track up off the baseplate (a grade, a helix): it stands on supports, and a helix's route over itself, swept as
+  // one piece, is no piece at all (the kernel worked on it for over an hour))
+  const names = TEMPLATE_GROUPS.filter(([g]) => groups.includes(g)).flatMap(([, ns]) => ns)
+    .filter((n) => !TEMPLATES[n].routes.some((r) => (r.monoHeight ?? 0) > 0 || (r.monoHeightEnd ?? 0) > 0));
   for (const name of names)
     for (const grip of ['edges', 'all'] as const)
       it(`${name}, grip ${grip}: sits on a baseplate's studs`, { timeout: 60000 }, async () => {
