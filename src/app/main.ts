@@ -1148,6 +1148,11 @@ const OPTION_FORM: OptSection[] = [
       { v: '2', t: '2 studs', tip: 'Like LEGO sleepers.' },
       { v: '1', t: '1 stud', tip: 'Narrow, like bridge ties.' }] },
     { key: 'sleeperGapStuds', label: 'Gap between sleepers, studs', step: 1, min: 1, max: 6, off: (c) => (c.ballast ? 'with ballast there are no separate sleepers' : c.o.sleepers !== 'sleepers' ? 'set Under the rails to Sleepers with gaps' : undefined), help: 'LEGO track is 2.' },
+    { key: 'raisedOn', label: 'Raised track stands on', get: () => design.options?.raisedOn ?? 'printed', set: (v) => { design.options = { ...design.options, raisedOn: v as 'printed' | 'lego' }; }, def: 'printed',
+      off: () => (design.routes.some((r) => !isMono(r) && ((r.monoHeight ?? 0) > 0 || (r.monoHeightEnd ?? 0) > 0)) ? undefined : 'no train route is raised: give one a Height on its card (Place)'),
+      help: 'What holds up train track off the baseplate (a route\'s Height, End height), every 16 studs.', choices: [
+      { v: 'printed', t: 'Printed supports', tip: 'A support every 16 studs, as the monorail\'s: a 6 x 4 base gripping the baseplate, two legs, a 2 x 2 top the track\'s underside grips, tilted to the grade. One part each; lower than a brick, LEGO 2 x 8 plates instead.', con: 'Parts to print, tall ones on a high track.' },
+      { v: 'lego', t: 'LEGO bricks', tip: 'Stacks of LEGO 2 x 8 bricks and plates every 16 studs, in the parts list.', con: 'A lot of bricks for a high track (a helix\'s top turn).' }] },
     { key: 'curveStuds', label: 'Studs on the track', choices: [
       { v: 'grid', t: 'On the baseplate grid', tip: 'Every stud lines up with the baseplate. On curves they form a grid, not rows.' },
       { v: 'follow', t: 'In rows along the track', tip: 'Rows across the track, like LEGO track, so tiles fit across curves.', con: 'On curves the studs are off the baseplate grid.' }] },

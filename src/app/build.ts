@@ -3,6 +3,7 @@
 // the pieces: a switch wherever routes split (base and moving parts), the
 // rest as fixed trackwork. Runs in the worker (and in tests).
 import { Scad, R, T, type Man } from '../geom/scad';
+import { SUPPORT_DEFAULTS, supportHeight, supportPart } from '../geom/monorail';
 import { sweepRoute } from '../geom/sweep';
 import { DEFAULTS as TRACK_DEFAULTS, PLATE_H, Track } from '../geom/track';
 import { CROSSING_DEFAULTS, crossingPiece, joinedEnds } from '../geom/crossing';
@@ -380,7 +381,7 @@ export function buildDesign(w: Wasm, design: Design, report: (what: string, frac
 
 /** The train track's build: all of a design's routes (as buildDesign passes them, the train routes only). */
 function buildTrain(w: Wasm, design: Design, report: (what: string, frac: number) => void = () => {}, early?: (overlay: unknown) => void, opts: { plan?: BuildJob[] } = {}) {
-  return graded(design, buildLevel(w, design, report, early, opts));
+  return graded(w, design, buildLevel(w, design, report, early, opts));
 }
 
 /** A train route's height (mm) at arc length s: from its start height to its end height, an even grade (Height, End height on its card, plates). */
@@ -395,12 +396,12 @@ export function gradeOf(r: Design['routes'][number]): number {
 }
 
 /**
- * Train track on a grade (routes with a height, End height on their cards): the pieces are printed level, as ever, and
- * laid on risers. In the 3D view each one is lifted to its height and tilted along its track there; the risers, LEGO
+ * Train track up off the baseplate, level or on a grade (routes with a Height, End height on their cards): the pieces are
+ * printed level, as ever, and stand on printed supports or LEGO risers (Raised track stands on). In the 3D view each one is lifted to its height and tilted along its track there; the risers, LEGO
  * 2 x 8 bricks and plates under the track every 16 studs from each route's start, are in the parts list; a grade
  * steeper than the standard 2.5% (1 plate a 16-stud straight) is a warning.
  */
-function graded(design: Design, res: ReturnType<typeof buildLevel>): ReturnType<typeof buildLevel> {
+function graded(w: Wasm, design: Design, res: ReturnType<typeof buildLevel>): ReturnType<typeof buildLevel> {
   const raised = design.routes.filter((r) => !isMono(r) && r.segs.length && ((r.monoHeight ?? 0) > 0 || (r.monoHeightEnd ?? 0) > 0));
   if (!raised.length) return res;
   const rts = raised.map((r) => ({ r, rt: toRoutes({ ...design, routes: [r] })[0] })).filter((x) => x.rt);
@@ -434,33 +435,44 @@ function graded(design: Design, res: ReturnType<typeof buildLevel>): ReturnType<
     if (!g || (g.h === 0 && g.slope === 0)) return p;
     return { ...p, positions: lift(p.positions, c, g), ...(p.supports && { supports: lift(p.supports, c, g) }) };
   });
-  // (the risers: under each route every 16 studs from its start, as high as it is there, in whole plates)
+  // (what it stands on, every 16 studs from each route's start: LEGO 2 x 8 bricks and plates, or printed supports (the
+  // monorail's, a 2 x 2 top under the track's middle, a 6 x 4 base, tilted to the grade), from the baseplate up to its
+  // bottom (the ballast's). Not over other track, as round a helix: nothing stands on track, a deck between them isn't built yet)
+  const o = { ...OPTION_DEFAULTS, ...design.options };
+  const ballastH = o.ballast === 'buddy' ? 6.4 : o.ballast === 'ballast' ? 3.2 : 0;
+  const overOther = (q: [number, number], h: number) => rts.some(({ r, rt }) => {
+    const L = routeLength(rt);
+    for (let sv = 0; sv <= L; sv += 8) {
+      const p = routePose(rt, sv);
+      if (Math.abs(p[0] - q[0]) < 40 && Math.abs(p[1] - q[1]) < 40 && Math.hypot(p[0] - q[0], p[1] - q[1]) < 40 && gradeAt(r, L, sv) < h - GRADE_APART) return true;
+    }
+    return false;
+  });
   const risers: LegoPart[] = [];
   const addPart = (part: string, name: string, qty: number) => { if (qty <= 0) return; const e = risers.find((x) => x.part === part); if (e) e.qty += qty; else risers.push({ part, name, qty }); };
-  // (over other track, as round a helix: from that track's top (3 plates of track, and its ballast), not the baseplate)
-  const ballastH = (design.options?.ballast ?? OPTION_DEFAULTS.ballast) === 'buddy' ? 6.4 : (design.options?.ballast ?? OPTION_DEFAULTS.ballast) === 'ballast' ? 3.2 : 0;
-  const below = (q: [number, number], h: number) => {
-    let top = 0;
-    // (every pass of every route, a helix's own turns too)
-    for (const { r, rt } of rts) {
-      const L = routeLength(rt);
-      for (let sv = 0; sv <= L; sv += 8) {
-        const p = routePose(rt, sv);
-        if (Math.abs(p[0] - q[0]) > 32 || Math.abs(p[1] - q[1]) > 32 || Math.hypot(p[0] - q[0], p[1] - q[1]) >= 32) continue;
-        const h2 = gradeAt(r, L, sv);
-        if (h2 < h - GRADE_APART) top = Math.max(top, h2 + 9.6 + ballastH);
-      }
-    }
-    return top;
-  };
+  const scad = new Scad(w), so = { ...SUPPORT_DEFAULTS, baseXStuds: 6, baseYStuds: 4 };
+  let n = 0, skipped = 0;
   for (const { r, rt } of rts) {
-    const L = routeLength(rt);
+    const L = routeLength(rt), slope = L > 0 ? (gradeAt(r, L, L) - gradeAt(r, L, 0)) / L : 0;
     for (let sv = 0; sv <= L + 1e-6; sv += 128) {
-      const q = routePose(rt, sv), h = gradeAt(r, L, sv), pl = Math.max(0, Math.round((h - below([q[0], q[1]], h)) / 3.2));
-      addPart('3007', 'Brick 2 x 8', Math.floor(pl / 3));
-      addPart('3034', 'Plate 2 x 8', pl % 3);
+      const q = routePose(rt, sv), h = gradeAt(r, L, sv) - ballastH;
+      if (h < 3.2 - 1e-6) continue;
+      if (overOther([q[0], q[1]], h + ballastH)) { skipped++; continue; }
+      // (lower than a brick: LEGO plates, printed or not; a printed support that low has no room for its legs)
+      if (o.raisedOn === 'lego' || h < 9.6 - 1e-6) { const pl = Math.round(h / 3.2); addPart('3007', 'Brick 2 x 8', Math.floor(pl / 3)); addPart('3034', 'Plate 2 x 8', pl % 3); continue; }
+      // (printed: as tall as the track's bottom there, its top tilted to the grade; turned with the track)
+      const bricks = Math.floor((h + 0.01) / 9.6), flat = Math.abs(slope) < 1e-4, so2 = { ...so, bricks, plates: (h - bricks * 9.6) / 3.2 };
+      const sp = cachedData(`tsup:${JSON.stringify(so2)}:${slope.toFixed(5)}`, () => arena(w, () => {
+        let m = supportPart(scad, so2);
+        if (!flat) { const H = supportHeight(so2); m = m.refineToLength(2).warp((v) => { const k = Math.min(1, Math.max(0, (v[2] - (H - 8)) / 8)); v[2] += k * v[1] * slope; }); }
+        return { stl: stlBytes(m.getMesh(), true), positions: meshPositions(m.getMesh()) };
+      }, () => []));
+      const pos = sp.positions.slice(), a = (q[2] * Math.PI) / 180, c = Math.cos(a), sn = Math.sin(a);
+      for (let i = 0; i < pos.length; i += 3) { const x = pos[i], y = pos[i + 1]; pos[i] = q[0] + x * c - y * sn; pos[i + 1] = q[1] + x * sn + y * c; }
+      pieces.push({ name: `track-support${++n}`, color: 0x5a6470, positions: pos, stl: sp.stl.slice() });
     }
   }
+  if (skipped) warnings.push(`${skipped} of the places a raised track stands over other track (as round a helix): nothing's put there to hold it up (nothing stands on track; a deck between them isn't built yet)`);
   if (risers.length) pieces.push({ name: 'risers-bought', color: LEGO_COLOR, positions: new Float32Array(0), stl: new Uint8Array(0), lego: risers });
   return { ...res, pieces, info: { ...res.info, warnings } };
 }

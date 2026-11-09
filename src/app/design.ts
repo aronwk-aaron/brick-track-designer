@@ -139,6 +139,8 @@ export interface PieceOptions {
   legoTrack?: 'lego' | 'lego-only' | 'print';
   /** Bought track's printed ballast: a part for each bought piece, whole as it is (a switch's over-long one in two, between its sleepers); or 'together', one under the pieces side by side, cut for the bed and at table seams. */
   boughtBallast?: 'each' | 'together';
+  /** Track up off the baseplate (a route's Height) stands on: printed supports (the monorail's, every 16 studs), or LEGO 2 x 8 bricks and plates (bought). */
+  raisedOn?: 'printed' | 'lego';
   /** Parts joined with LEGO axles: the axles' length, studs (half in each part). */
   axleStuds?: number;
   /** Rail tongues at a cut: on every rail it crosses, or only on rails crossing it square (the others cut flat), as plate-style large switches are split. */
