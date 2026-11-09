@@ -425,7 +425,7 @@ function bricktracksLoop(turn: number): Design {
 /** Starting points for a design. */
 /** The Templates list's groups (in order), each its templates by name. */
 export const TEMPLATE_GROUPS: [string, string[]][] = [
-  ['Crossings', ['90° crossing', '22.5° crossing', 'Double slip (22.5°)', 'Crossing on a curve']],
+  ['Crossings', ['90° crossing', '22.5° crossing', 'Double slip (22.5°)', 'Double slip (45°, R40)', 'Crossing on a curve']],
   ['Switches', ['Left switch (LEGO)', 'Right switch (LEGO)', 'Left switch (BrickTracks R104)', 'Right switch (BrickTracks R104)', 'Wye switch', 'Three-way switch (one throw)', 'Three-way switch (tandem, two throws)']],
   ['Layouts', ['Oval (LEGO R40)', 'Crossover (R40)', 'Double crossover (R56)', 'Yard ladder (R40)', 'Yard (R56)', 'Wye with a crossover', 'Double-track return loop (turning right)', 'Double-track return loop (turning left)']],
   ['Features', ['Grade up at 2.5%', 'Helix (R104, two turns)', 'Siding ending in a buffer stop', 'Bridge with guard rails', 'Dual gauge track', 'Banked curve', 'Crossing on sleepers']],
@@ -450,6 +450,15 @@ export const TEMPLATES: Record<string, Design> = {
     { name: 'B', x: 20 * tan(22.5), y: -20, heading: 22.5, segs: [{ kind: 'straight', studs: 40 / cos(22.5) }] },
     { name: 'A to B', x: 0, y: -SLIP_LEAD, heading: 0, segs: [{ kind: 'curve', radius: 40, angle: 22.5 }] },
     { name: 'B to A', x: SLIP_LEAD * sin(22.5), y: -SLIP_LEAD * cos(22.5), heading: 22.5, segs: [{ kind: 'curve', radius: 40, angle: -22.5 }] },
+  ] },
+  // (as the reference R40 double slip: the tracks crossing at 45 degrees, each slip road an R40 curve of 45 from one
+  // track's end to the other's (40 tan 22.5 = 16.57 studs from the crossing), so its points are at its four ends, each
+  // with its throw beside it, outside)
+  'Double slip (45°, R40)': { version: 1, gaugeStuds: 4, routes: [
+    { name: 'A', x: 0, y: -40 * tan(22.5), heading: 0, segs: [{ kind: 'straight', studs: 80 * tan(22.5) }] },
+    { name: 'B', x: 40 * tan(22.5) * sin(45), y: -40 * tan(22.5) * cos(45), heading: 45, segs: [{ kind: 'straight', studs: 80 * tan(22.5) }] },
+    { name: 'A to B', x: 0, y: -40 * tan(22.5), heading: 0, segs: [{ kind: 'curve', radius: 40, angle: 45 }] },
+    { name: 'B to A', x: 40 * tan(22.5) * sin(45), y: -40 * tan(22.5) * cos(45), heading: 45, segs: [{ kind: 'curve', radius: 40, angle: -45 }] },
   ] },
   'Crossing on a curve': { version: 1, gaugeStuds: 4, routes: [
     { name: 'Curve', x: 0, y: -12, heading: 0, segs: [{ kind: 'curve', radius: 40, angle: 30 }] },
