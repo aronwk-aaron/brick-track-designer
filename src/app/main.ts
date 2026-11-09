@@ -185,8 +185,11 @@ function renderTables() {
     btn('+ Rectangle', () => { const [x, y] = at(); add({ shape: 'rect', x: x - 16, y: y - 32, w: 32, h: 64 }); }, 'Add a rectangular table, 32 x 64 studs'),
     btn('+ Curved', () => { const [x, y] = at(); add({ shape: 'arc', cx: x, cy: y, r0: 32, r1: 64, a0: 0, a1: 90 }); }, 'Add a curved table: a quarter ring, radius 32 to 64 studs round a centre'),
     btn('+ Any shape', () => { const [x, y] = at(); add({ shape: 'poly', pts: [[x - 16, y - 16], [x + 16, y - 16], [x + 24, y + 16], [x - 16, y + 16]] }); }, 'Add a table of any shape: its corners in studs'));
-  // (ready-made ones: a baseplate, a straight module, a quarter-circle corner module for a curve's radius (8 studs either side of the track))
+  // (ready-made ones: the usual 30" by 60" table and its 6 and 8 foot ones (a stud 8 mm: 96 by 190, 228 and 304 studs),
+  // a baseplate, a straight module, a quarter-circle corner module for a curve's radius (8 studs either side of the track))
   const presets: [string, (x: number, y: number) => Table][] = [
+    ...([[190, '60"', ', the usual one'], [228, '72"', ''], [304, '96"', '']] as const).map(([h, ft, usual]): [string, (x: number, y: number) => Table] =>
+      [`Table 30" × ${ft} (96 × ${h} studs)${usual}`, (x, y) => ({ shape: 'rect', x: x - 48, y: y - h / 2, w: 96, h })]),
     ['Baseplate, 32 × 32', (x, y) => ({ shape: 'rect', x: x - 16, y: y - 16, w: 32, h: 32 })],
     ['Straight module, 32 × 96', (x, y) => ({ shape: 'rect', x: x - 16, y: y - 48, w: 32, h: 96 })],
     ...[40, 56, 104, 120].map((r): [string, (x: number, y: number) => Table] => [`Corner module for R${r}, a quarter`, (x, y) => ({ shape: 'arc', cx: x, cy: y, r0: r - 8, r1: r + 8, a0: 0, a1: 90 })]),
