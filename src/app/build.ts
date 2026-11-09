@@ -1105,7 +1105,7 @@ function sectioned(b: PieceBuild, name: string, all: Route[], checks: CheckRail[
     const sb = routesBox(rts, bandHalf + 8);
     // (a section many print beds big, a whole yard's throat: built in blocks as a big layout cut to fill the bed is,
     // not as one piece: one piece of it took the kernel minutes to cut, and ran it out of memory)
-    if ((sb[2] - sb[0]) * (sb[3] - sb[1]) > 8 * o.printBedX * o.printBedY && tiled(b, name, rts, cChecks, mine, copt)) return;
+    if ((sb[2] - sb[0]) * (sb[3] - sb[1]) > 8 * o.printBedX * o.printBedY && tiled(b, name, rts, cChecks, mine, copt, true)) return;
     const zs = cx.zones.filter((z) => z.box[2] >= sb[0] && z.box[0] <= sb[2] && z.box[3] >= sb[1] && z.box[1] <= sb[3]).map((z) => [z.rt.id, z.s0, z.s1, z.box]);
     const sk = `sec:${JSON.stringify({ rts, cChecks, m: mine.map((x) => [x.key, x.inner, x.bladeCuts.map(([i]) => i)]), copt, g: b.grooveCuts.length ? b.grooveEdits : 0, di: [...secInner],
       gp: gridPose, bp, bxy: [o.baseplateX, o.baseplateY], joint: o.joint, ...(apart && { seat: o.trackFitTol ?? 0.2, seated, bb: o.boughtBallast }), ...(b.boughtSw.length && o.ballast !== 'none' && { sw: b.boughtSw.map((bs) => bs.legs) }), bed: [o.printBedX, o.printBedY], zs, ...(b.labelOn && { lab: [o.labelText, o.labelSize, o.labelGauge, o.labelParts] }) })}`;
@@ -1207,7 +1207,7 @@ function sectioned(b: PieceBuild, name: string, all: Route[], checks: CheckRail[
 // A big piece in tiles (src/app/tiles.ts): each cell of the cuts built
 // from the track near it only, cut to the cell with its joints. false: it
 // needs no cutting (build it whole).
-function tiled(b: PieceBuild, name: string, all: Route[], checks: CheckRail[], splits: SplitParts[], copt: typeof CROSSING_DEFAULTS) {
+function tiled(b: PieceBuild, name: string, all: Route[], checks: CheckRail[], splits: SplitParts[], copt: typeof CROSSING_DEFAULTS, big = false) {
   const { w, scad, o, track, cut: cx } = b, { join } = cx;
   let bx = routesBox(all, track.c.sleeperLen / 2 + 24);
   for (const sp of splits) for (const m of sp.adds) { const bb = m.boundingBox(); bx = [Math.min(bx[0], bb.min[0]), Math.min(bx[1], bb.min[1]), Math.max(bx[2], bb.max[0]), Math.max(bx[3], bb.max[1])]; }
@@ -1215,7 +1215,9 @@ function tiled(b: PieceBuild, name: string, all: Route[], checks: CheckRail[], s
   if (!plan.xs.length && !plan.ys.length) return false;
   // (only when it's big: in one build a piece is quicker, but a whole yard
   // runs the kernel out of memory)
-  if (all.reduce((t, rt) => t + routeLength(rt), 0) < TILE_OVER) return false;
+  // (a section many beds big is tiled whatever its length: bought track cut into its pieces left a throat's section short
+  // of it, built whole, and the kernel ran out of memory)
+  if (!big && all.reduce((t, rt) => t + routeLength(rt), 0) < TILE_OVER) return false;
   const cs = tileBlocks(plan, bx, BLOCK).filter((R) => R[2] > bx[0] && R[0] < bx[2] && R[3] > bx[1] && R[1] < bx[3]);
   const gridPose = routePose(all[0], 0);
   const splitBoxes = splits.map((sp) => [...sp.adds, ...sp.cuts, sp.stock].map((m) => m.boundingBox()));
