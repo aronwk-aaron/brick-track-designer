@@ -17,7 +17,7 @@ import { reversedRoute } from '../switch/reverse';
 import { BASE_DEFAULTS, switchGeometry } from '../switch/base';
 import { switchGlobals } from '../switch/context';
 import { planPieces, subRoute, toFrame } from '../switch/pieces';
-import { networkBody, networkSplits, type SplitParts } from '../switch/network';
+import { networkBody, networkSplits, type SplitParts, throwMoves } from '../switch/network';
 import { blocks as tileBlocks, cropRoutes, nearCell, planCuts, routesBox, type Rect } from './tiles';
 import type { CheckRail, Split } from '../route/solver';
 import { planSections } from './sections';
@@ -50,6 +50,10 @@ export interface Piece {
   /** (the plate-style blades) the pin it turns on, as assembled, and how far to turn it there to open it (degrees): it goes on open.
    * tilt (blades with a lip over the front): the ends of the plate's front's bottom edge, which goes in first, tilted under the lip */
   turn?: { at: [number, number]; by: number; swing?: number; tilt?: [[number, number], [number, number]] };
+  /** (a slider, and its posts' piece) how it slides from as assembled to its other end: along dir (a unit vector) by by (mm) */
+  slide?: { dir: [number, number]; by: number };
+  /** (a lever) how it swings from as assembled to its other end: about its pivot at, the axis level along axis (a unit vector), by by (degrees, right-handed) */
+  hinge?: { at: [number, number, number]; axis: [number, number]; by: number };
   /** LEGO parts this piece is (a plain straight as LEGO's own track, its ballast as plates): not printed, in the LEGO parts list */
   lego?: LegoPart[];
   /** (track on a grade) how it's lifted in the view: by h at its middle c, rising slope along dir (mm, a unit vector) */
@@ -500,9 +504,15 @@ function graded(w: Wasm, design: Design, res: ReturnType<typeof buildLevel>): Re
   let skipped = 0;
   for (const sp of spots) {
     const t = towers.find((tw) => Math.hypot(tw.q[0] - sp.q[0], tw.q[1] - sp.q[1]) < SNAP && (turnDiff(tw.q[2], sp.q[2]) < 10 || turnDiff(tw.q[2], sp.q[2]) > 170));
+    // (on another's pillars: its beam at the track's height there, where the pillars stand, not where its own place
+    // would have been, up to SNAP along: on a grade that's a different height, and the beam stood in the track or under it)
     // (its climb along the pillars' own heading: a track running back the other way over them climbs the other way)
-    if (t && sp.h - t.levels[t.levels.length - 1] >= GRADE_APART) { t.levels.push(sp.h); t.slopes.push(turnDiff(t.q[2], sp.q[2]) > 90 ? -sp.slope : sp.slope); continue; }
-    if (t) continue; // (as good as the same place, the same height: one beam holds it)
+    if (t) {
+      let h = sp.h, bd = Infinity;
+      for (let d = -SNAP; d <= SNAP; d += 2) { const c = sp.at(d), dd = Math.hypot(c.q[0] - t.q[0], c.q[1] - t.q[1]); if (dd < bd) { bd = dd; h = c.h; } }
+      if (h - t.levels[t.levels.length - 1] >= GRADE_APART) { t.levels.push(h); t.slopes.push(turnDiff(t.q[2], sp.q[2]) > 90 ? -sp.slope : sp.slope); }
+      continue; // (else as good as the same place, the same height: one beam holds it)
+    }
     // (a place over other track not on pillars of its own: its pillars beside it clear of that track's trains; else a
     // little along, up to half the way to the next place)
     // (and its feet off the sleepers of track on the baseplate there, 4 studs either side of it)
@@ -1004,14 +1014,14 @@ function bake(b: PieceBuild, m: Man): Baked {
 }
 
 /** A piece added: local, as printed; world, where it sits in the design. */
-function add(b: PieceBuild, name: string, color: number, local: Man, world: Man, turn?: Piece['turn']) {
+function add(b: PieceBuild, name: string, color: number, local: Man, world: Man, turn?: Piece['turn'], move?: Pick<Piece, 'slide' | 'hinge'>) {
   // (the copies it's told apart on let go at once, as bake's)
   arena(b.w, () => {
     const { positions, supports, clean } = viewOf(b.w, world);
     let stl = stlOf.get(local);
     // (each file lying on the bed: a part modelled where it sits in the track (the blades on the bed's top, say) came in floating)
     if (!stl) { stl = stlBytes((local === world ? clean : local).getMesh(), true); stlOf.set(local, stl); }
-    b.pieces.push({ name, color, positions, stl: stl.slice(), ...(supports && { supports }), ...(turn && { turn }) });
+    b.pieces.push({ name, color, positions, stl: stl.slice(), ...(supports && { supports }), ...(turn && { turn }), ...move });
     b.volume += local.volume();
   }, () => []);
 }
@@ -1199,7 +1209,6 @@ function sectioned(b: PieceBuild, name: string, all: Route[], checks: CheckRail[
     const ps = sec.map((k) => plan.pieces[k]);
     const rts = ps.map(([i, a, b2]) => (a === 0 && b2 === routeLength(all[i]) ? all[i] : { ...subRoute(all[i], a, b2), throwSide: all[i].throwSide }));
     const pieceOf = (i: number, s: number) => ps.findIndex(([pi, a, b2]) => pi === i && s >= a - 1e-6 && s <= b2 + 1e-6);
-    const firstOf = (i: number) => ps.findIndex(([pi]) => pi === i);
     const cChecks = checks.flatMap((cr) => ps.flatMap(([pi, a, b2], k) => {
       if (pi !== cr.route) return [];
       const s0 = Math.max(cr.s0, a), s1 = Math.min(cr.s1, b2);
@@ -1214,7 +1223,8 @@ function sectioned(b: PieceBuild, name: string, all: Route[], checks: CheckRail[
         const pj = end === 'start' ? pieceOf(jj, 0) : pieceOf(jj, routeLength(all[jj]));
         return pj >= 0 ? `${pj}:${end}` : '-';
       });
-      return [{ ...sp, inner, bladeCuts: sp.bladeCuts.filter(([i]) => firstOf(i) >= 0).map(([i, m]) => [firstOf(i), m] as [number, Man]) }];
+      return [{ ...sp, inner, // (a blade's cut on every piece of its route here: the rail it replaces can be on a later one than the route's first)
+        bladeCuts: sp.bladeCuts.flatMap(([i, m]) => ps.flatMap(([pi], k) => (pi === i ? [[k, m] as [number, Man]] : []))) }];
     });
     const secInner = b.dropInner(rts);
     // (each of its pieces a bought track piece, if it is one, ordinary ends both sides: a 16-stud straight LEGO's (53401),
@@ -1434,7 +1444,7 @@ function buildSwitches(b: PieceBuild, switches: ReturnType<typeof planPieces>['s
     const gm = cached(`sw:${JSON.stringify({ routes: sw.routes, sets: sw.sets, params, cl, tw: b.grooveEdits, grid })}`, () => {
       const g = switchGeometry(scad, grid ? { ...sw.plan, p: { ...sw.plan.p, grid } } : sw.plan, frameCuts);
       return { bases: g.basePieces(), whole: g.base(), grips: g.grips, sets: sw.sets.map((_, k) => ({ thr: g.throwPart(k), thrPrint: g.throwPrint(k), thp: g.throwPostsPart(k), thpPrint: g.throwPostsPrint(k), pp: g.pointsParts(k), print: g.leverPrint(k), lever: g.leverPart(k), bracket: params.throwModule ? g.bracketPart(k) : undefined,
-        spring: g.springPart(k), springPrint: g.springPrint(k), turns: g.pointsTurns(k) })), nail: sw.sets.map((_, k) => g.isNail(k)) };
+        spring: g.springPart(k), springPrint: g.springPrint(k), turns: g.pointsTurns(k), move: g.throwMove(k) })), nail: sw.sets.map((_, k) => g.isNail(k)) };
     });
     const bases = gm.bases;
     // (its tubes, for the plan's grip marks, in the design's frame)
@@ -1450,16 +1460,17 @@ function buildSwitches(b: PieceBuild, switches: ReturnType<typeof planPieces>['s
       const lm = labelled(b, m, sw.plan.routes, bases.length > 1 ? undefined : switchSize(sw.plan.routes), bases.length > 1 ? `${j + 1}` : undefined);
       add(b, bases.length > 1 ? `${tag}-base${j + 1}` : `${tag}-base`, TRACK_COLOR, lm, place(lm, sw.pose));
     });
-    gm.sets.forEach(({ thr, thrPrint, thp, thpPrint, pp, print, lever, bracket, spring, springPrint, turns }, k) => {
+    gm.sets.forEach(({ thr, thrPrint, thp, thpPrint, pp, print, lever, bracket, spring, springPrint, turns, move }, k) => {
+      const mv = throwMoves(move, sw.pose);
       const sfx = sw.sets.length > 1 ? `${k + 1}` : '';
       if (bracket && !gm.nail[k]) add(b, `${tag}-bracket${sfx}`, 0x8a8f99, bracket, place(bracket, sw.pose));
       const turnOf = (j: number): Piece['turn'] => { const t2 = turns?.[j]; return t2 && { at: poseToWorld(sw.pose, t2.at), by: t2.by, swing: t2.swing, ...(t2.tilt && { tilt: t2.tilt.map((q) => poseToWorld(sw.pose, q)) as [[number, number], [number, number]] }) }; };
       pp.forEach((pts, j) => add(b, `${tag}-points${sfx}${pp.length > 1 ? (j === 0 ? '-a' : '-b') : ''}`, 0x4682b4, pts, place(pts, sw.pose), turnOf(j)));
       // (Peco's spring: printed flat and straight, as assembled squeezed between its pins)
       if (spring && springPrint) add(b, `${tag}-points${sfx}-spring`, 0xc0392b, springPrint, place(spring, sw.pose));
-      add(b, `${tag}-throw${sfx}`, 0xe8892b, thrPrint, place(thr, sw.pose));
-      if (thp && thpPrint) add(b, `${tag}-throw${sfx}-posts`, 0xe8892b, thpPrint, place(thp, sw.pose));
-      if (!gm.nail[k]) add(b, `${tag}-lever${sfx}`, 0xd4af37, print, place(lever, sw.pose));
+      add(b, `${tag}-throw${sfx}`, 0xe8892b, thrPrint, place(thr, sw.pose), undefined, { slide: mv.slide });
+      if (thp && thpPrint) add(b, `${tag}-throw${sfx}-posts`, 0xe8892b, thpPrint, place(thp, sw.pose), undefined, { slide: mv.slide });
+      if (!gm.nail[k]) add(b, `${tag}-lever${sfx}`, 0xd4af37, print, place(lever, sw.pose), undefined, mv.hinge && { hinge: mv.hinge });
     });
   });
 }
@@ -1704,10 +1715,11 @@ function buildOne(w: Wasm, design: Design, report: (what: string, frac: number) 
     // (each points set's moving parts baked, by what they're made from: an edit bakes only the ones it changes)
     for (const sp of net.splits) {
       const ms = cachedData(`mov:${sp.key}`, () => sp.moving.map((m) => {
-        const wm = m.world.getMesh();
-        return { positions: meshPositions(wm), stl: stlBytes(m.local === m.world ? wm : m.local.getMesh(), true), volume: m.local.volume() };
+        // (its break-out supports apart, as a switch's own parts': the sprung blades' spring pockets')
+        const { positions, supports } = viewOf(w, m.world);
+        return { positions, supports, stl: stlBytes((m.local === m.world ? m.world : m.local).getMesh(), true), volume: m.local.volume() };
       }));
-      sp.moving.forEach((m, k) => { b.pieces.push({ name: m.name, color: m.color, positions: ms[k].positions.slice(), stl: ms[k].stl.slice(), ...(m.turn && { turn: m.turn }) }); b.volume += ms[k].volume; });
+      sp.moving.forEach((m, k) => { b.pieces.push({ name: m.name, color: m.color, positions: ms[k].positions.slice(), stl: ms[k].stl.slice(), ...(ms[k].supports && { supports: ms[k].supports!.slice() }), ...(m.turn && { turn: m.turn }), ...(m.slide && { slide: m.slide }), ...(m.hinge && { hinge: m.hinge }) }); b.volume += ms[k].volume; });
     }
     pc = { switches: [], rest: [], warnings: [...net.warnings] };
 

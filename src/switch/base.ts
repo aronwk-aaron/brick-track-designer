@@ -1922,11 +1922,13 @@ export function switchGeometry(s: Scad, plan: SwitchPlan, extraCuts: Man[] = [])
     // the pivot, the arm narrowing to the boss, the tail narrowing to the tip;
     // here as thick as the boss, the tip's round bar for the slider's fork)
     const paddle = () => {
-      const tail = g.leverDa;
+      // (the tail a neck where it passes through the fork's mouth, as wide as the mouth is made for (the tines' lever's
+      // driver): the tail narrowing all the way to the tip was 0.8 into the fork's lip, swung over)
+      const tail = g.leverDa, nw = g.leverDrvW / 2, neck = g.leverTipD / 2 + c + 0.8 + 1.2;
       const outline = W.CrossSection.union([
         circle(4.75, 40, [0, 14]),
         s.polygon([[-2.3, 10.5], [2.3, 10.5], [2.5, 0], [-2.5, 0]]), // (into the knob: one piece)
-        s.polygon([[-2.5, 0], [2.5, 0], [1.15, -tail], [-1.15, -tail]]),
+        s.polygon([[-2.5, 0], [2.5, 0], [nw, neck - tail], [nw, -tail], [-nw, -tail], [-nw, neck - tail]]),
       ]);
       // (the outline is in x (across) and z (up): extruded through y, the pivot's axis)
       return T(R(s.extrude(outline, tt), [90, 0, 0]), [0, tt / 2, 0]);
@@ -2337,6 +2339,11 @@ export function switchGeometry(s: Scad, plan: SwitchPlan, extraCuts: Man[] = [])
       return { at: f.pivot, by: b === 0 ? f.ang : 0, swing: b === 0 ? f.ang : -f.open,
         ...(fr && { tilt: [rotAbout([fr.xa, fr.yF], f.pivot, f.open), rotAbout([fr.xb, fr.yF], f.pivot, f.open)] as [Pt, Pt] }) };
     }) : undefined),
+    /**
+     * How the throw moves, from as assembled (the right-hand route's end) to its other end: the slider along +x by slide
+     * (mm); the lever about its pivot at (the axis along y) by turn (degrees; none for a nail switch, or the switch stand).
+     */
+    throwMove: (k = 0) => { const v = sets[k]; return { slide: v.leverTravel, ...(!v.nail && !v.stand && { lever: { at: [v.leverX, v.throwY, g.leverPz] as Vec3, turn: -2 * v.leverAng } }) }; },
     /** (throwModule) the lever's bracket, on the arm's studs. */
     bracketPart: (k = 0) => bracketPart(sets[k]),
     leverShape, leverPrint: (k = 0) => leverPrint(sets[k]),

@@ -17,7 +17,16 @@ import { type BaseParams, fdbFootprint, type SetOver, type SetSpec, switchGeomet
 import { gridLever, sharedLead, subRoute, type ThrowEdit, toFrame } from './pieces';
 import { gridIn, sprungOnGrid } from './context';
 
-export interface NetworkPart { name: string; color: number; local: Man; world: Man; turn?: { at: [number, number]; by: number; swing?: number; tilt?: [[number, number], [number, number]] } }
+export interface NetworkPart { name: string; color: number; local: Man; world: Man; turn?: { at: [number, number]; by: number; swing?: number; tilt?: [[number, number], [number, number]] };
+  /** (a slider; a lever) how it moves from as assembled to its other end: build.ts Piece */
+  slide?: Slide; hinge?: Hinge }
+export interface Slide { dir: [number, number]; by: number }
+export interface Hinge { at: [number, number, number]; axis: [number, number]; by: number }
+/** How a points set's throw moves (base.ts throwMove), in the design: its slider's slide, its lever's hinge; its frame P. */
+export function throwMoves(mv: { slide: number; lever?: { at: [number, number, number]; turn: number } }, P: Pose): { slide: Slide; hinge?: Hinge } {
+  const a = (P[2] * Math.PI) / 180, at = mv.lever && poseToWorld(P, [mv.lever.at[0], mv.lever.at[1]]);
+  return { slide: { dir: [Math.cos(a), Math.sin(a)], by: mv.slide }, ...(mv.lever && at && { hinge: { at: [at[0], at[1], mv.lever.at[2]], axis: [-Math.sin(a), Math.cos(a)], by: mv.lever.turn } }) };
+}
 
 const LOCAL_LEN = 400; // (how much of each route the points' frame looks at)
 
@@ -399,12 +408,12 @@ export function networkSplits(s: Scad, routes: Route[], sol: Solution, p: BasePa
     // (Peco's spring: printed flat and straight, as assembled squeezed between its pins)
     const spr = gm.springPart(0), sprP = gm.springPrint(0);
     if (spr && sprP) moving.push({ name: `${tag}-spring`, color: 0xc0392b, local: sprP, world: place(spr, P) });
-    const thr = gm.throwPart(0);
-    moving.push({ name: `${tag}-throw`, color: 0xe8892b, local: gm.throwPrint(0), world: place(thr, P) });
+    const thr = gm.throwPart(0), mv = throwMoves(gm.throwMove(0), P);
+    moving.push({ name: `${tag}-throw`, color: 0xe8892b, local: gm.throwPrint(0), world: place(thr, P), slide: mv.slide });
     // (the slider in two parts, its arm under other track: the piece with the posts, in after the bar)
     const thp = gm.throwPostsPart(0), thpP = gm.throwPostsPrint(0);
-    if (thp && thpP) moving.push({ name: `${tag}-throw-posts`, color: 0xe8892b, local: thpP, world: place(thp, P) });
-    if (!gm.isNail(0)) moving.push({ name: `${tag}-lever`, color: 0xd4af37, local: gm.leverPrint(0), world: place(gm.leverPart(0), P) });
+    if (thp && thpP) moving.push({ name: `${tag}-throw-posts`, color: 0xe8892b, local: thpP, world: place(thp, P), slide: mv.slide });
+    if (!gm.isNail(0)) moving.push({ name: `${tag}-lever`, color: 0xd4af37, local: gm.leverPrint(0), world: place(gm.leverPart(0), P), ...(mv.hinge && { hinge: mv.hinge }) });
     if (p.throwModule && !gm.isNail(0)) { const br = gm.bracketPart(0); moving.push({ name: `${tag}-bracket`, color: 0x8a8f99, local: br, world: place(br, P) }); }
     const end = sp.merge ? 'end' : 'start';
     // (its arm under other track: that track's studs on it, as on its bed (crossing.ts, where they're clear of its rails),
@@ -428,6 +437,19 @@ export function networkSplits(s: Scad, routes: Route[], sol: Solution, p: BasePa
       inner: [`${j}:${end}`, ...(j2 >= 0 ? [`${j2}:${end}`] : [])],
       moving,
     });
+  }
+  // (two sets side by side, each with a spring (a double slip's middle points as nail switches, one blade each): where
+  // one's spring or slider is in the other's parts, as assembled, they can't be put together: said, not left to be found)
+  for (let a = 0; a < built.length; a++) for (let b = a + 1; b < built.length; b++) {
+    const A = built[a].moving, B = built[b].moving, spring = (m: NetworkPart) => /-spring$/.test(m.name);
+    if (!A.some(spring) && !B.some(spring)) continue;
+    if (Math.hypot(built[a].toe[0] - built[b].toe[0], built[a].toe[1] - built[b].toe[1]) > 300) continue;
+    const meet = (x: NetworkPart, y: NetworkPart) => {
+      const p = x.world.boundingBox(), q = y.world.boundingBox();
+      return [0, 1, 2].every((k) => p.min[k] <= q.max[k] && q.min[k] <= p.max[k]) && s.w.Manifold.intersection(x.world, y.world).volume() > 0.5;
+    };
+    if (A.some((x) => B.some((y) => meet(x, y))))
+      warnings.push(`the points at ${studsAt(preps[a].gr.main)} and ${studsAt(preps[b].gr.main)} are too close for their springs: one's spring or slider is in the other's parts, and they can't be put together as built`);
   }
   return { splits: built, levers, warnings };
 }
