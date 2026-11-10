@@ -33,6 +33,10 @@ describe('warnings: plain track', { timeout: 600000 }, () => {
   it('a part with nowhere left to cut it for the print bed', async () => {
     await fires(/some parts don't fit the 60 x 60 print bed: there's nowhere left to cut them/, D(SWITCH(), { printBedX: 60, printBedY: 60 }), D(SWITCH()));
   });
+  it('a section (track pieces) with nowhere left to cut it for the print bed', async () => {
+    const d = (bed: number) => D([R('Straight', 0, 0, 0, [S(64)]), R('Branch', 0, 16, 0, [C(40, 22.5), C(40, -22.5), S(16)])], { splitTrack: 'lengths', legoTrack: 'lego', ballast: 'ballast', printBedX: bed, printBedY: bed });
+    await fires(/some sections don't fit the 100 x 100 print bed: there's nowhere left to cut them/, d(100), d(256));
+  });
   it('tables, with long track cut to fill the bed: their seams aren\'t cut at', async () => {
     const line = [R('A', 0, 0, 0, [S(64)])], tables = [T(-16, -16, 32, 48), T(-16, 32, 32, 48)];
     await fires(/the tables cut the track at their seams only with Long track cut into: Track pieces/, D(line, {}, { tables }), D(line, { splitTrack: 'lengths' }, { tables }));
