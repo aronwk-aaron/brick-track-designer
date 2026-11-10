@@ -647,7 +647,7 @@ function applyExplode() {
 explodeEl.addEventListener('input', applyExplode);
 // The 3D view's colours: what each colour of the parts shown is (only those there are).
 const COLOURS: [number, string][] = [
-  [0x6f7780, 'printed track'], [0x9aa3ad, 'printed monorail track'], [0x5a6470, 'monorail supports'], [0x4682b4, 'points (blades), monorail frame'],
+  [0x6f7780, 'printed track'], [0x9aa3ad, 'printed monorail track'], [0x5a6470, 'pillars and supports under raised track'], [0x4682b4, 'points (blades), monorail frame'],
   [0xc0392b, 'points spring'], [0xe8892b, 'throw'], [0xd4af37, 'lever'], [0x8a8f99, 'throw bracket'],
   [LEGO_COLOR, 'LEGO\'s (bought, not printed)'], [BRICKTRACKS_COLOR, 'BrickTracks\' (bought, not printed)'],
 ];

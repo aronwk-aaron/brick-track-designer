@@ -3,7 +3,6 @@
 // the pieces: a switch wherever routes split (base and moving parts), the
 // rest as fixed trackwork. Runs in the worker (and in tests).
 import { Scad, R, T, type Man } from '../geom/scad';
-import { SUPPORT_DEFAULTS, supportHeight, supportPart } from '../geom/monorail';
 import { sweepRoute } from '../geom/sweep';
 import { DEFAULTS as TRACK_DEFAULTS, PLATE_H, Track } from '../geom/track';
 import { CROSSING_DEFAULTS, crossingPiece, joinedEnds } from '../geom/crossing';
@@ -454,51 +453,116 @@ function graded(w: Wasm, design: Design, res: ReturnType<typeof buildLevel>): Re
     if (!g || (g.h === 0 && g.slope === 0)) return p;
     return { ...p, positions: lift(p.positions, c, g), ...(p.supports && { supports: lift(p.supports, c, g) }) };
   });
-  // (what it stands on, every 16 studs from each route's start: LEGO 2 x 8 bricks and plates, or printed supports (the
-  // monorail's, a 2 x 2 top under the track's middle, a 6 x 4 base, tilted to the grade), from the baseplate up to its
-  // bottom (the ballast's). Not over other track, as round a helix: nothing stands on track, a deck between them isn't built yet)
+  // (what it stands on, every 16 studs from each route's start, as the reference's train track on pillars: a beam
+  // across under the track, a stud's room past each rail's side, on two square pillars beside the track, from the
+  // baseplate up, each on a flared foot (printed, or LEGO 2 x 2 bricks under a 2 x 14 plate beam). Where track runs
+  // over other track (round a helix), the upper track's beam is on the same pillars as the lower one's, carried on up
+  // past it: the pillars stand beside the lower track, clear of its trains, and hold both. Lower than a brick (no room
+  // for a foot and a beam), under nothing else: LEGO 2 x 8 bricks and plates under the track's middle, as before)
   const o = { ...OPTION_DEFAULTS, ...design.options };
   const ballastH = o.ballast === 'buddy' ? 6.4 : o.ballast === 'ballast' ? 3.2 : 0;
-  const overOther = (q: [number, number], h: number) => rts.some(({ r, rt }) => {
-    const L = routeLength(rt);
-    for (let sv = 0; sv <= L; sv += 8) {
-      const p = routePose(rt, sv);
-      if (Math.abs(p[0] - q[0]) < 40 && Math.abs(p[1] - q[1]) < 40 && Math.hypot(p[0] - q[0], p[1] - q[1]) < 40 && gradeAt(r, L, sv) < h - GRADE_APART) return true;
-    }
-    return false;
-  });
   const risers: LegoPart[] = []; const stacks: number[] = [];
   const addPart = (part: string, name: string, qty: number) => { if (qty <= 0) return; const e = risers.find((x) => x.part === part); if (e) e.qty += qty; else risers.push({ part, name, qty }); };
-  const scad = new Scad(w), so = { ...SUPPORT_DEFAULTS, baseXStuds: 6, baseYStuds: 4 };
-  let n = 0, skipped = 0;
+  // (the places, the lowest first: each one over another's, near enough along the same way, put on its pillars)
+  type Spot = { q: Pose; h: number; at: (d: number) => Spot };
+  const towers: { q: Pose; levels: number[] }[] = [];
+  const spots: Spot[] = [];
   for (const { r, rt } of rts) {
-    const L = routeLength(rt), slope = L > 0 ? (gradeAt(r, L, L) - gradeAt(r, L, 0)) / L : 0;
-    for (let sv = 0; sv <= L + 1e-6; sv += 128) {
-      const q = routePose(rt, sv), h = gradeAt(r, L, sv) - ballastH;
-      if (h < 3.2 - 1e-6) continue;
-      if (overOther([q[0], q[1]], h + ballastH)) { skipped++; continue; }
-      // (lower than a brick: LEGO plates, printed or not; a printed support that low has no room for its legs)
-      if (o.raisedOn === 'lego' || h < 9.6 - 1e-6) {
-        const pl = Math.round(h / 3.2); addPart('3007', 'Brick 2 x 8', Math.floor(pl / 3)); addPart('3034', 'Plate 2 x 8', pl % 3);
-        // (for the view: the stack, 8 studs across the track and 2 along it, turned with it)
-        stacks.push(...boxTris(q, 64, 16, pl * 3.2));
-        continue;
-      }
-      // (printed: as tall as the track's bottom there, its top tilted to the grade; turned with the track)
-      const bricks = Math.floor((h + 0.01) / 9.6), flat = Math.abs(slope) < 1e-4, so2 = { ...so, bricks, plates: (h - bricks * 9.6) / 3.2 };
-      const sp = cachedData(`tsup:${JSON.stringify(so2)}:${slope.toFixed(5)}`, () => arena(w, () => {
-        let m = supportPart(scad, so2);
-        if (!flat) { const H = supportHeight(so2); m = m.refineToLength(2).warp((v) => { const k = Math.min(1, Math.max(0, (v[2] - (H - 8)) / 8)); v[2] += k * v[1] * slope; }); }
-        return { stl: stlBytes(m.getMesh(), true), positions: meshPositions(m.getMesh()) };
-      }, () => []));
-      const pos = sp.positions.slice(), a = (q[2] * Math.PI) / 180, c = Math.cos(a), sn = Math.sin(a);
-      for (let i = 0; i < pos.length; i += 3) { const x = pos[i], y = pos[i + 1]; pos[i] = q[0] + x * c - y * sn; pos[i + 1] = q[1] + x * sn + y * c; }
-      pieces.push({ name: `track-support${++n}`, color: 0x5a6470, positions: pos, stl: sp.stl.slice() });
-    }
+    const L = routeLength(rt);
+    const spotAt = (sv: number): Spot => ({ q: routePose(rt, sv), h: gradeAt(r, L, sv) - ballastH, at: (d) => spotAt(Math.min(L, Math.max(0, sv + d))) });
+    for (let sv = 0; sv <= L + 1e-6; sv += 128) { const sp = spotAt(sv); if (sp.h >= 3.2 - 1e-6) spots.push(sp); }
   }
-  if (skipped) warnings.push(`${skipped} of the places a raised track stands over other track (as round a helix): nothing's put there to hold it up (nothing stands on track; a deck between them isn't built yet)`);
+  spots.sort((a, b) => a.h - b.h);
+  const turnDiff = (a: number, b: number) => Math.abs(((a - b + 540) % 360) - 180);
+  // (raised track's places closer than this along, one over the other: on the same pillars)
+  const SNAP = 64;
+  /** Other track lower than h near q (its centre line within reach mm of q), at heights (track bottom) and lateral distances. */
+  const lowerNear = (q: [number, number], h: number, reach: number) => {
+    const out: { lat: number; h: number }[] = [];
+    for (const { r, rt } of rts) {
+      const L = routeLength(rt);
+      for (let sv = 0; sv <= L; sv += 4) {
+        const p = routePose(rt, sv), d = Math.hypot(p[0] - q[0], p[1] - q[1]), hh = gradeAt(r, L, sv);
+        if (d < reach && hh < h - GRADE_APART) out.push({ lat: d, h: hh });
+      }
+    }
+    return out;
+  };
+  const PILLAR_X = 44, PILLAR = 16 - 0.2, BEAM_T = 6.4, TRAIN_HW = 28;
+  let skipped = 0;
+  for (const sp of spots) {
+    const t = towers.find((tw) => Math.hypot(tw.q[0] - sp.q[0], tw.q[1] - sp.q[1]) < SNAP && (turnDiff(tw.q[2], sp.q[2]) < 10 || turnDiff(tw.q[2], sp.q[2]) > 170));
+    if (t && sp.h - t.levels[t.levels.length - 1] >= GRADE_APART) { t.levels.push(sp.h); continue; }
+    if (t) continue; // (as good as the same place, the same height: one beam holds it)
+    // (a place over other track not on pillars of its own: its pillars beside it clear of that track's trains; else a
+    // little along, up to half the way to the next place)
+    // (and its feet off the sleepers of track on the baseplate there, 4 studs either side of it)
+    const clear = (c: Spot) => [-1, 1].every((sd) => !lowerNear(poseToWorld(c.q, [sd * PILLAR_X, 0]) as [number, number], c.h + ballastH, TRAIN_HW + PILLAR / 2).length
+      && !lowerNear(poseToWorld(c.q, [sd * (PILLAR_X - PILLAR / 2), 0]) as [number, number], c.h + ballastH, 33).some((l) => l.h < 12)
+      && [-1, 1].every((e) => !lowerNear(poseToWorld(c.q, [sd * (PILLAR_X - PILLAR / 2), e * 16]) as [number, number], c.h + ballastH, 33).some((l) => l.h < 12)));
+    const at = [0, 16, -16, 32, -32, 48, -48, 64, -64].map((d) => sp.at(d)).find(clear);
+    if (!at) { skipped++; continue; }
+    towers.push({ q: at.q, levels: [at.h] });
+  }
+  const scad = new Scad(w);
+  let n = 0;
+  for (const tw of towers) {
+    const { q, levels } = tw, top = levels[levels.length - 1];
+    // (one level, lower than a brick and a beam: LEGO plates under the track's middle, printed or not)
+    if (levels.length === 1 && (o.raisedOn === 'lego' ? !lowerNear([q[0], q[1]], top + ballastH, 40).length : top < 9.6 - 1e-6)) {
+      const pl = Math.round(top / 3.2); addPart('3007', 'Brick 2 x 8', Math.floor(pl / 3)); addPart('3034', 'Plate 2 x 8', pl % 3);
+      stacks.push(...boxTris(q, 64, 16, pl * 3.2));
+      continue;
+    }
+    if (o.raisedOn === 'lego') {
+      // (2 x 2 brick pillars up to the top beam, a beam of two 2 x 12 plates under each level; heights to the plate)
+      for (const sd of [-1, 1]) {
+        const pl = Math.max(0, Math.round((top - 6.4) / 3.2)), pq = poseToWorld(q, [sd * PILLAR_X, 0]);
+        addPart('3003', 'Brick 2 x 2', Math.floor(pl / 3)); addPart('3022', 'Plate 2 x 2', pl % 3);
+        stacks.push(...boxTris([pq[0], pq[1], q[2]], 16, 16, pl * 3.2));
+      }
+      for (const h of levels) { addPart('91988', 'Plate 2 x 14', 2); const b = boxTris(q, 112, 16, 6.4); for (let i = 2; i < b.length; i += 3) b[i] += Math.round(h / 3.2) * 3.2 - 6.4; stacks.push(...b); }
+      continue;
+    }
+    const sp = cachedData(`tpillar:${JSON.stringify(levels.map((h) => +h.toFixed(2)))}`, () => arena(w, () => {
+      const m = trainPillars(scad, levels, PILLAR_X, PILLAR, BEAM_T);
+      return { stl: stlBytes(m.getMesh(), true), positions: meshPositions(m.getMesh()) };
+    }, () => []));
+    const pos = sp.positions.slice(), a = (q[2] * Math.PI) / 180, c = Math.cos(a), sn = Math.sin(a);
+    for (let i = 0; i < pos.length; i += 3) { const x = pos[i], y = pos[i + 1]; pos[i] = q[0] + x * c - y * sn; pos[i + 1] = q[1] + x * sn + y * c; }
+    pieces.push({ name: `track-support${++n}`, color: 0x5a6470, positions: pos, stl: sp.stl.slice() });
+  }
+  if (skipped) warnings.push(`${skipped} of the places a raised track crosses over other track: nothing's put there to hold it up (its pillars would stand in the lower track's way): cross where the track below runs alongside, or carry it on a bridge`);
   if (risers.length) pieces.push({ name: 'risers-bought', color: LEGO_COLOR, positions: Float32Array.from(stacks), stl: new Uint8Array(0), lego: risers });
   return { ...res, pieces, info: { ...res.info, warnings } };
+}
+
+/**
+ * Train track's pillars (in mm, the track's frame: x across, y along, z up from the baseplate), as the reference's:
+ * two square pillars x either side of the track's centre line, each on a flared foot hollow underneath (it sits over
+ * the baseplate's studs), and at each level (the track's bottom there, the lowest first) a beam across between them,
+ * a 2 x 2 of studs on top under the track's middle. The pillars go up to the top beam, past the lower ones. Printed
+ * as it stands: the beams bridge from pillar to pillar, the feet slope at 45 degrees.
+ */
+function trainPillars(s: Scad, levels: number[], x: number, side: number, beamT: number): Man {
+  // (the flare less on a low one, the foot's slope kept under the beam)
+  const top = levels[levels.length - 1], foot = 32 - 0.2, footT = 3.2, flare = Math.max(0.01, Math.min((foot - side) / 2, levels[0] - beamT - footT));
+  const parts: Man[] = [];
+  for (const sd of [-1, 1]) {
+    const cx = sd * x, inner = cx - (sd * side) / 2, outer = cx + (sd * foot) / 2, fw = foot / 2 + side / 2;
+    // (the foot: a plate, then up at 45 degrees to the pillar; flush with the pillar on the track's side, so it keeps
+    // clear of the sleepers of track below, as round a helix's start)
+    const slope = s.w.Manifold.hull([T(s.cube([fw, foot, footT]), [Math.min(inner, outer), -foot / 2, 0]), T(s.cube([side, side, 0.01]), [cx - side / 2, -side / 2, footT + flare])]);
+    parts.push(slope, T(s.cube([side, side, top - beamT - footT + 0.01]), [cx - side / 2, -side / 2, footT]));
+  }
+  for (const h of levels) {
+    const hw = x + side / 2;
+    parts.push(T(s.cube([2 * hw, side, beamT]), [-hw, -side / 2, h - beamT]));
+    for (const [sx, sy] of [[-4, -4], [4, -4], [-4, 4], [4, 4]]) parts.push(T(s.cylinder(1.8, 4.8 / 2, 4.8 / 2, 24), [sx, sy, h - 0.01]));
+  }
+  // (each foot hollow underneath, a rim round it)
+  const holes = [-1, 1].map((sd) => { const inner = sd * x - (sd * side) / 2, w0 = foot / 2 + side / 2 - 2.4; return T(s.cube([w0, foot - 2.4, 1.8]), [sd > 0 ? inner + 1.2 : inner - 1.2 - w0, -(foot - 2.4) / 2, -0.01]); });
+  return s.difference(s.union(parts), holes);
 }
 
 /** The train track's build, all of it level. */
