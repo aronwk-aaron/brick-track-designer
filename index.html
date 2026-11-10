@@ -582,6 +582,7 @@
         <h3>Laying track</h3>
         <ul>
           <li><kbd>D</kbd> or ✎ Draw, then click a grid point or a track's end to start; move to see the track; click to lay it and carry on.</li>
+          <li>Split and merge: with one track selected, <kbd>S</kbd> with the pointer on it (or the Split button, then a click on it) cuts it in two at the nearest whole stud, at least a stud in from either end; the two halves keep everything that was on that part (guard rails, third rail, ends, hand edits, heights). Select two tracks that meet end to end and press Merge to make them one.</li>
           <li>Guides: drawing, or dragging a track's end, the point snaps to the line straight on from another track's end, to 8 and 16 studs beside a straight, to a whole number of studs straight on, and (Curves: free) to the usual radii. A dashed line and a small label give the value (studs, degrees, radius). Hold <kbd>Alt</kbd> for no snapping (the stud grid stays); it also stops the snap onto other tracks' ends.</li>
           <li><kbd>Esc</kbd> or a right-click stops drawing; <kbd>Esc</kbd> again goes back to Select.</li>
           <li>Start on the middle of a track to branch off it: a switch.</li>
@@ -657,7 +658,7 @@
       
       <div id="selbar" class="chip" hidden>
         <span id="sel-count"></span>
-        <button id="sel-copy" type="button" title="Copy (Ctrl+C)">Copy</button><button id="sel-cut" type="button" title="Cut (Ctrl+X)">Cut</button><button id="sel-paste" type="button" title="Paste at the mouse (Ctrl+V)">Paste</button><button id="sel-dup" type="button" title="Duplicate (Ctrl+D)">Duplicate</button><button id="sel-mirror" type="button" title="Mirror left to right (M)">Mirror</button><button id="sel-rotl" type="button" title="Turn 90° left (Shift+R)">⟲ 90°</button><button id="sel-rotr" type="button" title="Turn 90° right (R)">⟳ 90°</button><button id="sel-del" type="button" class="danger" title="Delete (Del)">Delete</button>
+        <button id="sel-copy" type="button" title="Copy (Ctrl+C)">Copy</button><button id="sel-cut" type="button" title="Cut (Ctrl+X)">Cut</button><button id="sel-paste" type="button" title="Paste at the mouse (Ctrl+V)">Paste</button><button id="sel-dup" type="button" title="Duplicate (Ctrl+D)">Duplicate</button><button id="sel-mirror" type="button" title="Mirror left to right (M)">Mirror</button><button id="sel-rotl" type="button" title="Turn 90° left (Shift+R)">⟲ 90°</button><button id="sel-rotr" type="button" title="Turn 90° right (R)">⟳ 90°</button><button id="sel-split" type="button" title="Cut the selected route in two where you click on it (S)">Split</button><button id="sel-merge" type="button" title="Make two selected routes that meet one">Merge</button><button id="sel-del" type="button" class="danger" title="Delete (Del)">Delete</button>
       </div>
       <div id="othertab" class="chip" role="alert" hidden>
         <span>This design was changed in another tab or window. Changes here aren't kept in the browser until you choose.</span>

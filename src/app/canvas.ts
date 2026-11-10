@@ -11,9 +11,10 @@ import { type Design, type DRoute, type DSeg, dualRailOffsets, freeName, isMono,
 import { sleeperSpots } from '../geom/crossing';
 import { poseToWorld, routeLength, routePose, worldToPose } from '../route/route';
 import { forFingers } from './hints';
-import { joinedEnds, joinProblem, reversedRoute } from './routeedits';
+import { joinProblem, reversedRoute } from './routeedits';
+import { cutSegs, joinInto, nearestAlong, routeStuds, splitProblem } from './splitmerge';
 import { dragResult, END_INSET_PX, type Handle, type HandleKind, handleLabel, segmentHandles, visibleHandles, withValue } from './handles';
-import { isEdit, joinAnchors, reverseAnchors } from './twfollow';
+import { isEdit, reverseAnchors } from './twfollow';
 import { COMMON_RADII, type GuideEnd, type GuideResult, type GuideStraight, guidePoint } from './guides';
 import { describe, follow, plan, planAnyway, planAuto, planFreeTurning, planToPose, reversed, trace as traceRaw, type Pose } from './planner';
 
@@ -62,6 +63,8 @@ export interface CanvasHost {
   radius(): number;
   /** What a click or drag would do now, and where the mouse is (studs), for the status line. */
   status?(hint: string, at: [number, number] | undefined): void;
+  /** Split the route at studs along it (whole studs): undefined when done, else why not. */
+  split?(route: number, studs: number): string | undefined;
   /** Esc with nothing being drawn: back to Select mode. */
   leaveDraw?(): void;
   /** What new routes are: train track or monorail (Draw's Track choice). */
@@ -187,6 +190,33 @@ export class TrackCanvas {
   private drag: { route: number; end: 'start' | 'end'; sx: number; sy: number; moved: boolean; orig: DRoute; anchor: number; lastGood?: DRoute } | undefined;
   /** Dragging a curve's or straight's handle (angle, radius, length): which, and the segment as it was. */
   private handleDrag: { route: number; seg: number; kind: HandleKind; orig: DSeg; moved: boolean; sx: number; sy: number; why?: string } | undefined;
+  /** A short message in the hint line (why something wasn't done), for a few seconds. */
+  private noteText: string | undefined;
+  private noteTimer = 0;
+  say(text: string, ms = 3500) { this.noteText = text; clearTimeout(this.noteTimer); this.noteTimer = window.setTimeout(() => { this.noteText = undefined; this.draw(); }, ms); this.draw(); }
+  /** Split: the next click on the selected route cuts it there (from the selection bar's button). */
+  splitArmed = false;
+  /** Where the selected route would be cut for a point (studs along it, whole studs), if the point is on it. */
+  private cutFor(w: [number, number]): { route: number; s: number } | undefined {
+    const sel = this.selection();
+    if (sel.length !== 1) return undefined;
+    const r = this.host.design().routes[sel[0]];
+    if (!r) return undefined;
+    const n = nearestAlong(r, w);
+    return n.dist <= this.reach(24) + 0.5 ? { route: sel[0], s: Math.round(n.s) } : undefined;
+  }
+  /** Cut the selected route at the point under the pointer (or, with the pointer not on it, wait for a click on it). */
+  splitHere(wait = false) {
+    if (this.selection().length !== 1 || this.tableSelection().length) { this.say('Select one route to split it'); return; }
+    const cut = !wait && this.mouse ? this.cutFor(this.mouse) : undefined;
+    if (!cut) { this.splitArmed = true; this.draw(); return; }
+    this.splitAt(cut);
+  }
+  private splitAt(cut: { route: number; s: number }) {
+    this.splitArmed = false;
+    const why = this.host.split?.(cut.route, cut.s);
+    if (why) this.say(why); else this.draw();
+  }
   /** The last press was a finger's, not a mouse's: bigger handles to grab. */
   private touching = false;
   /** The handles on the selected route (when one is selected, in Select mode, nothing being drawn): at least 10 px apart on the screen. */
@@ -544,6 +574,12 @@ export class TrackCanvas {
       return;
     }
     const w = this.evWorld(e);
+    // (Split's waiting for a click on the route)
+    if (this.splitArmed && e.button === 0) {
+      const cut = this.cutFor(w);
+      if (cut) this.splitAt(cut); else this.say('Click on the selected route, where to cut it (Esc cancels)');
+      return;
+    }
     // Pressing on a handle of the selected route: drag it (a curve's angle or radius, a straight's length)
     if (!this.active && e.button === 0) {
       const h = this.handleAt(w), ri = this.selection()[0];
@@ -885,25 +921,8 @@ export class TrackCanvas {
   }
   /** Join route b onto the end of route a (b's start or end meeting a's end): a gets b's track, b goes. */
   private join(a: number, b: number, bEnd: 'start' | 'end') {
-    const routes = this.host.design().routes, rb = routes[b];
     // (not tracks that differ in system, gauge, guard rails or third rail: a route has one of each: snapEnd doesn't offer them)
-    if (joinProblem(this.host.design(), routes[a], rb)) return a;
-    // (b's hand edits to the trackwork are the joined track's)
-    { const d = this.host.design(), rts = toRoutes(d); joinAnchors(d, routes[a].name || String(a), rb.name || String(b), routeLength(rts[a]), routeLength(rts[b]), bEnd === 'end'); }
-    const more = bEnd === 'start' ? rb.segs.map((sg) => ({ ...sg })) : reversedRoute(rb).segs;
-    const segs = routes[a].segs;
-    for (const sg of more) {
-      const last = segs[segs.length - 1];
-      if (last?.kind === 'straight' && sg.kind === 'straight') last.studs = Math.round((last.studs + sg.studs) * 1e6) / 1e6;
-      else segs.push(sg);
-    }
-    // (the ends its guard rails and third rail stop at: the joined ends are inside the track now; b's far end is the new end)
-    for (const k of ['guardRailEnds', 'dualPlainEnds'] as const) { const v = joinedEnds(routes[a][k], rb[k], bEnd); if (v === undefined || v === 'none') delete routes[a][k]; else routes[a][k] = v; }
-    // (its far end, connector or buffer stop, is the joined track's end now)
-    const far = bEnd === 'start' ? rb.endEnd : rb.startEnd;
-    if (far) routes[a].endEnd = far; else delete routes[a].endEnd;
-    routes.splice(b, 1);
-    return b < a ? a - 1 : a;
+    return joinInto(this.host.design(), a, b, bEnd);
   }
   /** Is this end of route i free (not joined to another track's end, nor on another track)? */
   private endFree(i: number, which: 'start' | 'end'): boolean {
@@ -942,6 +961,7 @@ export class TrackCanvas {
     if (typingIn(e) || !down || dialogOpen()) return;
     // (Space held pans; not when a button, a tick box or a section's heading has the focus: Space presses it)
     if (e.code === 'Space' && !['BUTTON', 'INPUT', 'SUMMARY', 'A'].includes((e.target as HTMLElement)?.tagName)) { this.space = true; e.preventDefault(); }
+    if (e.key === 'Escape' && this.splitArmed) { this.splitArmed = false; return this.draw(); }
     if (e.key === 'Escape' && this.handleDrag) {
       // (the handle's segment put back as it was)
       const hd = this.handleDrag, r = this.host.design().routes[hd.route];
@@ -1047,6 +1067,8 @@ export class TrackCanvas {
     return this.touching || matchMedia('(pointer: coarse)').matches ? forFingers(h) : h;
   }
   private hintText(): string {
+    if (this.noteText) return this.noteText;
+    if (this.splitArmed) return 'Click on the route where to cut it · Esc cancels';
     if (this.handleDrag?.moved && this.handleDrag.why) return this.handleDrag.why;
     if (this.drag?.moved) return this.dragBad ? "Can't bend the track this way: release to keep the last good shape, Esc puts it back"
       : this.dragSnap ? 'Release to join the two ends' : this.joinBlocked ? `Release to reshape (${this.joinBlocked}) · Esc puts it back` : 'Release to reshape · drop on another end to join · hold Alt for no snapping · Esc puts it back';
@@ -1435,6 +1457,16 @@ export class TrackCanvas {
         else { const q = (on ? 7.5 : 6) * z; c.moveTo(hx, hy - q); c.lineTo(hx + q, hy); c.lineTo(hx, hy + q); c.lineTo(hx - q, hy); c.closePath(); }
         c.fillStyle = on ? '#e8892b' : '#fff'; c.fill(); c.strokeStyle = '#e8892b'; c.lineWidth = 2; c.stroke();
         if (on && rt?.segs[h.seg]) tag(hx + 12, hy - 12, handleLabel(rt.segs[h.seg]), '#b25c00');
+      }
+    }
+    // Split: where the selected route would be cut (the whole stud nearest the pointer), and the two lengths
+    if (this.splitArmed && this.mouse && !this.active && !this.drag && !this.moving) {
+      const cut = this.cutFor(this.mouse), rr = cut && d.routes[cut.route];
+      if (cut && rr) {
+        const why = splitProblem(rr, cut.s), [first] = cutSegs(rr.segs, cut.s), q = follow(rr, first), [qx, qy] = this.toScreen(q.x, q.y);
+        const ang = (q.heading * Math.PI) / 180, nx = Math.cos(ang) * 12, ny = -Math.sin(ang) * 12;
+        c.strokeStyle = why ? '#e0452b' : '#d9480f'; c.lineWidth = 2.5; c.beginPath(); c.moveTo(qx - nx, qy - ny); c.lineTo(qx + nx, qy + ny); c.stroke();
+        tag(qx, qy + 30, why ?? `cut here: ${cut.s} + ${+(routeStuds(rr) - cut.s).toFixed(1)} studs`, why ? '#e0452b' : '#b23c0a');
       }
     }
     // while dragging an end: what the reshaped track is, or why not

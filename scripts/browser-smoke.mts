@@ -301,6 +301,25 @@ try {
     const rt = await page.evaluate(() => JSON.parse(localStorage.getItem('btd-design')!).routes[1]);
     check(rt.x === 8 && rt.segs[0].studs === 17, `the track laid is exactly 8 studs from A, 17 long (${JSON.stringify(rt)})`); }
 
+  // split and merge: Split then a click on the route cuts it at a whole stud, Merge puts it back, each one undo step
+  at = 'split and merge';
+  await page.evaluate(() => localStorage.setItem('btd-design', JSON.stringify({ version: 1, gaugeStuds: 4, routes: [{ name: 'A', x: 0, y: 0, heading: 0, segs: [{ kind: 'straight', studs: 24 }, { kind: 'curve', radius: 24, angle: 90 }] }] })));
+  await page.reload(); await page.waitForSelector('#track'); await page.click('#mode-select'); await page.click('#fit'); await page.waitForTimeout(300);
+  { const [px, py] = await scr(0, 10); await page.mouse.click(px, py);
+    check(!(await page.isDisabled('#sel-split')) && await page.isDisabled('#sel-merge'), 'Split is there for one route, Merge not');
+    await page.click('#sel-split'); const [qx, qy] = await scr(0.3, 11.2); await page.mouse.move(qx, qy); await page.waitForTimeout(150);
+    check(/where to cut it/.test(await page.locator('#hint').innerText()), 'Split asks for a click on the route');
+    await page.mouse.click(qx, qy); await page.waitForTimeout(300);
+    const cut = await page.evaluate(() => JSON.parse(localStorage.getItem('btd-design')!).routes as { y: number; segs: unknown[] }[]);
+    check(cut.length === 2 && Number.isInteger(cut[1].y) && Math.abs(cut[1].y - 11) <= 1 && cut[1].segs.length === 2, `it cut the route at a whole stud near 11 (${JSON.stringify(cut.map((r) => r.y))})`);
+    check(!(await page.isDisabled('#sel-merge')), 'both halves are selected and Merge is on');
+    await page.click('#sel-merge'); await page.waitForTimeout(300);
+    check(await routes() === 1, 'Merge makes them one route again');
+    await page.click('#undo'); await page.waitForTimeout(150);
+    check(await routes() === 2, 'one Undo takes the merge back');
+    await page.click('#undo'); await page.waitForTimeout(150);
+    check(await routes() === 1, 'and one more the split'); }
+
   check(errors.length === 0, `no errors on the page${errors.length ? `: ${errors.join(' | ').slice(0, 600)}` : ''}`);
 } catch (err) {
   fails.push(`${at}: ${err instanceof Error ? err.message : err}`);

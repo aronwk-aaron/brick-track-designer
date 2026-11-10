@@ -207,6 +207,30 @@ export function joinAnchors(d: Design, a: string, b: string, lenA: number, lenB:
   });
 }
 
+/**
+ * A route cut in two at s (mm along it, of L): the first half keeps the name a, the second is b. The mirror of joinAnchors:
+ * each edit on a goes to the half it's in (those in the first half measured from its start, the second's from where it was
+ * measured: its end, or the cut); an edit that says it's between a and another route goes with a or b by where it is
+ * (rt: the route as it was). What says "which of the items like it" is dropped (counted along the whole route; worked out again once built).
+ * Call before the design's routes are changed.
+ */
+export function splitAnchors(d: Design, a: string, b: string, s: number, L: number, rt: Route) {
+  each(d, (_k, key, e) => {
+    let second: boolean | undefined;
+    if (e.on?.[0] === a) {
+      const from = e.on[1] === 's' ? e.on[2] : L - e.on[2];
+      second = from > s;
+      if (second) e.on = e.on[1] === 's' ? [b, 's', from - s, e.on[3]] : [b, 'e', e.on[2], e.on[3]];
+      else e.on = [a, 's', from, e.on[3]];
+    }
+    if (!e.is?.[0].includes(a)) return;
+    if (second === undefined) { const q = posOf(key); second = q ? project(rt, q).s > s : false; }
+    const primary = e.is[0][0] === a;
+    if (second) e.is = [e.is[0].map((n) => (n === a ? b : n)), e.is[1], e.is[2], e.is[3]];
+    if (primary) delete e.is;
+  });
+}
+
 /** An edit copied with its routes: its kind, where it is (mm), and the edit (its routes by the names they had). */
 export interface CopiedEdit { kind: Kind; at: [number, number]; e: Entry }
 /**

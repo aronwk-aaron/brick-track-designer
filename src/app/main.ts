@@ -21,6 +21,7 @@ import { addCircle, cleanPieces, cleanRadius, defaultPieces, pieceFit, piecesTex
 import { APP_VERSION, type BuiltEntry, pngBytes, pushBuilt, readBuilt, readReportZip, type Report, reportName, type ReportInput, reportZip } from './report';
 import { isZip } from '../geom/unzip';
 import { COMMON_RADII } from './guides';
+import { mergeProblem, mergeRoutes, splitRoute } from './splitmerge';
 import { initTemplateBrowser } from './templatebrowser';
 import { type CopiedEdit, copyEdits, followTrackwork, isEdit, leftOver, mirrorAnchors, pasteEdits, reconcileTrackwork, renameAnchors } from './twfollow';
 import { type OptChoice, optionForm, type OptCtx, type OptField } from './settings';
@@ -1169,6 +1170,7 @@ const canvas = new TrackCanvas($<HTMLCanvasElement>('track'), {
   radius: () => Number(radiusSel.value),
   system: () => (systemSel.value === 'monorail' ? 'monorail' : 'train'),
   leaveDraw: () => setMode('select'),
+  split: (i, s) => splitRouteAt(i, s),
   status: (hint, at) => {
     if (hintEl.textContent !== hint) { hintEl.textContent = hint; $('plan').style.setProperty('--hint-h', `${hintEl.offsetHeight}px`); }
     coordsEl.textContent = at ? `x ${at[0]}, y ${at[1]} studs` : '';
@@ -1245,7 +1247,7 @@ addEventListener('keydown', (e) => {
   if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'y') { e.preventDefault(); redo(); }
   if (e.ctrlKey || e.metaKey || e.altKey) return;
   if (e.key === 'd' || e.key === 'D') setMode('draw');
-  if (e.key === 's' || e.key === 'S') setMode('select');
+  if (e.key === 's' || e.key === 'S') { if (canvas.mode === 'select' && canvas.selection().length === 1) canvas.splitHere(); else setMode('select'); }
   if (e.key === 'p' || e.key === 'P') toggle3d();
   if ((e.key === 'f' || e.key === 'F') && !e.ctrlKey && !e.metaKey) canvas.fit(true);
   if (e.key === '?') openDialog(helpEl, $('help-close'));
@@ -1521,18 +1523,40 @@ const turnSel = (a: number) => transformSel((r, px, py) => {
   r.x = r3(px + dx * c - dy * sn); r.y = r3(py + dx * sn + dy * c);
   r.heading = r3((((r.heading + a + 180) % 360) + 360) % 360 - 180);
 }, (t, px, py) => turnedTable(t, px, py, a));
+/** Route i cut in two at s studs along it (Split): both halves selected. Undefined when done, else why not. */
+function splitRouteAt(i: number, s: number): string | undefined {
+  const res = splitRoute(design, i, s);
+  if ('problem' in res) return res.problem;
+  canvas.setSelection([i, i + 1]); openCards.clear(); changed(true);
+  canvas.say(`Split into ${res.first} and ${res.second}`);
+  return undefined;
+}
+/** Two selected routes that meet made one (Merge). */
+function mergeSel() {
+  const [i, j] = selected();
+  const res = mergeRoutes(design, i, j);
+  if ('problem' in res) { canvas.say(`Can't merge: ${res.problem}`); return; }
+  canvas.setSelection([res.index]); openCards.clear(); changed(true);
+}
 function updateSelbar() {
   const n = selected().length + selectedTables().length, bar = $('selbar');
   bar.hidden = n === 0 && !clipboard.length && !clipTables.length;
   $('sel-count').textContent = n ? `${n} selected` : 'clipboard:';
   for (const id of ['sel-copy', 'sel-cut', 'sel-dup', 'sel-mirror', 'sel-rotl', 'sel-rotr', 'sel-del']) ($(id) as HTMLButtonElement).disabled = n === 0;
   ($('sel-paste') as HTMLButtonElement).disabled = !clipboard.length && !clipTables.length;
+  const sel = selected(), one = sel.length === 1 && !selectedTables().length, two = sel.length === 2 && !selectedTables().length;
+  const split = $('sel-split') as HTMLButtonElement, merge = $('sel-merge') as HTMLButtonElement, mp = two ? mergeProblem(design, sel[0], sel[1]) : undefined;
+  split.disabled = !one; merge.disabled = !two || !!mp;
+  split.title = one ? 'Cut the selected route in two where you click on it, a whole stud along (S with the pointer on it)' : 'Split: select one route first';
+  merge.title = two ? (mp ? `Merge: can't, ${mp}` : 'Make these two routes one track') : 'Merge: select two routes that meet end to end';
 }
 $('sel-copy').addEventListener('click', () => { copySel(); updateSelbar(); });
 $('sel-cut').addEventListener('click', () => { if (copySel(true)) deleteSel(); updateSelbar(); });
 $('sel-paste').addEventListener('click', () => { pasteClip(); updateSelbar(); });
 $('sel-dup').addEventListener('click', () => { duplicateSel(); updateSelbar(); });
 $('sel-mirror').addEventListener('click', mirrorSel);
+$('sel-split').addEventListener('click', () => canvas.splitHere(true));
+$('sel-merge').addEventListener('click', mergeSel);
 $('sel-rotl').addEventListener('click', () => turnSel(90));
 $('sel-rotr').addEventListener('click', () => turnSel(-90));
 $('sel-del').addEventListener('click', () => { deleteSel(); updateSelbar(); });

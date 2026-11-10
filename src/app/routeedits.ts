@@ -44,13 +44,13 @@ export function mirrorRoute(r: DRoute, px: number) {
  * guard rails, third rail and monorail heights along its whole length, so two that differ would lose one's settings
  * (a bridge's guard rails, a narrow gauge's third rail) or have them stretched over the other's track.
  */
-export function joinProblem(d: Design, a: DRoute, b: DRoute): string | undefined {
+export function joinProblem(d: Design, a: DRoute, b: DRoute, heightsToo = true): string | undefined {
   if (isMono(a) !== isMono(b)) return 'one is monorail, the other train track';
   if (routeGaugeStuds(d, a) !== routeGaugeStuds(d, b)) return 'their gauges differ';
   const same = (...ks: (keyof DRoute)[]) => ks.every((k) => JSON.stringify(a[k] ?? null) === JSON.stringify(b[k] ?? null));
   if (!!a.guardRails !== !!b.guardRails || (a.guardRails && !same('guardRailGapStuds', 'guardRailTaperStuds', 'guardRailTaperShape', 'guardRailNoseRampStuds'))) return 'their guard rails differ';
   if (!!a.dualGauge !== !!b.dualGauge || (a.dualGauge && !same('dualGaugeStuds', 'dualShared'))) return 'their third rails differ';
-  if (isMono(a) && !same('monoHeight')) return 'their heights differ';
+  if (heightsToo && isMono(a) && !same('monoHeight')) return 'their heights differ';
   return undefined;
 }
 
