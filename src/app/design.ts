@@ -66,16 +66,18 @@ export interface Design {
   tables?: Table[];
 }
 
-/** Hand edits: check rails lengthened (+) or shortened (-) at each end, moved, or taken out; flangeway cuts lengthened; points moved along, taken out or forced; levers moved. */
+/** Hand edits (each also says where on its route it is, on: twfollow.ts): check rails lengthened (+) or shortened (-) at each end, moved, or taken out; flangeway cuts lengthened; points moved along, taken out or forced; levers moved. */
 export interface Trackwork {
-  check?: Record<string, { d0?: number; d1?: number; shift?: number; off?: boolean }>;
-  groove?: Record<string, { d0?: number; d1?: number }>;
+  check?: Record<string, { d0?: number; d1?: number; shift?: number; off?: boolean; on?: TwAnchor }>;
+  groove?: Record<string, { d0?: number; d1?: number; on?: TwAnchor }>;
   /** each points set (by its toe): moved along (mm); taken out (off: no points, both routes' rails run through as fixed track); routes
    * taken out of it (drop, by id: a three-way's branch, leaving a two-way); or forced where a route meets another a hair off (force) */
-  points?: Record<string, { toe?: number; off?: boolean; drop?: string[]; force?: boolean }>;
+  points?: Record<string, { toe?: number; off?: boolean; drop?: string[]; force?: boolean; on?: TwAnchor }>;
   /** each points set's lever, moved on the plan: its side, how far out (lever offset, mm), and how far along (its tines' length, mm) */
-  throw?: Record<string, { side?: 'left' | 'right'; leverOffset?: number; springLength?: number }>;
+  throw?: Record<string, { side?: 'left' | 'right'; leverOffset?: number; springLength?: number; on?: TwAnchor }>;
 }
+/** Where on the track a hand edit is, so it follows its track when that's moved (twfollow.ts): the route by name, from its start or end, mm along, mm to the right of its centre line. The build goes by the edit's key alone. */
+export type TwAnchor = [route: string, from: 's' | 'e', along: number, right: number];
 
 /** Piece options the editor's Options panel sets (switch.scad's Customizer settings). */
 export interface PieceOptions {
@@ -227,7 +229,9 @@ export function readDesign(v: unknown): Design {
   // (a setting that's not the kind of thing it should be, a number where a choice goes: left out, so its default)
   if (obj(d.options)) d.options = Object.fromEntries(Object.entries(d.options).filter(([k, x]) => (k in OPTION_DEFAULTS ? typeof x === typeof (OPTION_DEFAULTS as unknown as Record<string, unknown>)[k] : ['string', 'number', 'boolean'].includes(typeof x)) && (typeof x !== 'number' || fin(x))));
   else delete d.options;
-  if (obj(d.trackwork)) d.trackwork = Object.fromEntries(Object.entries(d.trackwork).filter(([, g]) => obj(g)).map(([k, g]) => [k, Object.fromEntries(Object.entries(g as object).filter(([, e]) => obj(e)))]));
+  // (each edit's place on its route, where it isn't one, left out: it's worked out again from where the edit is)
+  const anchor = (a: unknown) => Array.isArray(a) && a.length === 4 && typeof a[0] === 'string' && (a[1] === 's' || a[1] === 'e') && fin(a[2]) && fin(a[3]);
+  if (obj(d.trackwork)) d.trackwork = Object.fromEntries(Object.entries(d.trackwork).filter(([, g]) => obj(g)).map(([k, g]) => [k, Object.fromEntries(Object.entries(g as object).filter(([, e]) => obj(e)).map(([key, e]) => [key, 'on' in e && !anchor(e.on) ? Object.fromEntries(Object.entries(e).filter(([f]) => f !== 'on')) : e]))]));
   else delete d.trackwork;
   if (Array.isArray(d.tables)) {
     const nums = (t: Record<string, unknown>, ...ks: string[]) => ks.every((k) => fin(t[k]));

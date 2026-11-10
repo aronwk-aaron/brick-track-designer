@@ -11,6 +11,7 @@ import { type Design, type DRoute, type DSeg, freeName, isMono, toRoutes } from 
 import { sleeperSpots } from '../geom/crossing';
 import { poseToWorld, routeLength, routePose, worldToPose } from '../route/route';
 import { reversedRoute } from './routeedits';
+import { isEdit, joinAnchors, reverseAnchors } from './twfollow';
 import { describe, follow, plan, planAnyway, planAuto, planFreeTurning, planToPose, reversed, trace as traceRaw, type Pose } from './planner';
 
 // Track outlines traced once and kept (they're in studs, the same at any
@@ -610,7 +611,7 @@ export class TrackCanvas {
       else if (this.dragSnap) {
         // joined: make the two one track (the dragged end meeting the other's end)
         const routes = this.host.design().routes;
-        if (dr.end === 'start') routes[dr.route] = reversedRoute(routes[dr.route]);
+        if (dr.end === 'start') { routes[dr.route] = reversedRoute(routes[dr.route]); reverseAnchors(this.host.design(), routes[dr.route].name || String(dr.route)); }
         this.extra.clear(); this.selected = this.join(dr.route, this.dragSnap.route, this.dragSnap.end);
         this.host.select(this.selected);
       }
@@ -700,6 +701,8 @@ export class TrackCanvas {
     const routes = this.host.design().routes, rb = routes[b];
     // (train track and monorail only meet: a route is one or the other)
     if (isMono(routes[a]) !== isMono(rb)) return a;
+    // (b's hand edits to the trackwork are the joined track's)
+    { const d = this.host.design(), rts = toRoutes(d); joinAnchors(d, routes[a].name || String(a), rb.name || String(b), routeLength(rts[a]), routeLength(rts[b]), bEnd === 'end'); }
     const more = bEnd === 'start' ? rb.segs.map((sg) => ({ ...sg })) : reversedRoute(rb).segs;
     const segs = routes[a].segs;
     for (const sg of more) {
@@ -1113,7 +1116,7 @@ export class TrackCanvas {
           const twk = this.host.design().trackwork ?? {}, acc = getComputedStyle(this.el).getPropertyValue('--accent').trim() || '#2563eb';
           for (const it of this.overlay.items ?? []) {
             const e = ((twk as Record<string, Record<string, Record<string, unknown>> | undefined>)[it.kind] ?? {})[it.key];
-            if (!e || !Object.values(e).some((v) => v !== undefined && v !== false && !(Array.isArray(v) && !v.length))) continue;
+            if (!isEdit(e)) continue;
             const [sx, sy] = this.toScreen(it.at[0] / MM, it.at[1] / MM);
             c.strokeStyle = acc; c.lineWidth = 2; c.setLineDash([3, 2]); c.beginPath(); c.arc(sx, sy, 11, 0, 2 * Math.PI); c.stroke(); c.setLineDash([]);
           }

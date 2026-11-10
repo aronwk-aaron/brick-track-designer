@@ -15,6 +15,7 @@ import { BuildRunner, type WorkerPort } from './buildrun';
 import { History } from './history';
 import { fileBase as fileBaseOf, partsDownload, printedKinds, stlDownload } from './exports';
 import { mirrorRoute } from './routeedits';
+import { followTrackwork, isEdit, leftOver, mirrorAnchors, reconcileTrackwork, renameAnchors } from './twfollow';
 import { type OptChoice, optionForm, type OptCtx, type OptField } from './settings';
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
@@ -357,6 +358,7 @@ function drawForms() {
       // (just a name: the trackwork's references to it renamed too, no rebuild)
       const was = r.name;
       if (openCards.delete(cardId(r, i))) openCards.add(v);
+      renameAnchors(design, cardId(r, i), v);
       r.name = v;
       for (const e of Object.values(design.trackwork?.points ?? {})) if (e.drop) e.drop = e.drop.map((id) => (id === was ? v : id));
       changed(false, true, false); soon(render);
@@ -529,6 +531,8 @@ function updateExports() {
 
 /** The design changed: save it and rebuild. record: an undo step (not while a drag or a draw is still going on). build: false for what doesn't change the parts (a route's name). */
 function changed(rerender = false, record = true, build = true) {
+  // (the trackwork's hand edits go with their track: each one's place worked out again from the route it's on)
+  followTrackwork(design, canvas?.overlay?.items ?? []);
   const json = JSON.stringify(design);
   if (record) history.record(json);
   if (record) settleFrom = runner.id + 1; // (the next build is of the design as let go of)
@@ -561,10 +565,16 @@ function planStarted() {
 }
 function buildDone() { clearInterval(buildTick); $('buildstatus').hidden = true; building = false; updateExports(); }
 const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
+/** With the build's trackwork in: a hand edit a hair off its item (its place worked out from its route, the build's rounded) put onto it, and built again with it. */
+function settleEdits(items: TwItem[]) {
+  if (!reconcileTrackwork(design, items)) return;
+  save();
+  clearTimeout(timer); timer = window.setTimeout(requestBuild, 0);
+}
 // eslint-disable-next-line @typescript-eslint/no-explicit-any -- (the worker's messages, as worker.ts posts them)
 function onBuilt(d: any) {
   // (the trackwork, ahead of the pieces: the plan and the Trackwork panel can be worked on while they build)
-  if (d.early) { canvas.overlay = d.early; if (d.id >= settleFrom) canvas.settled(); updateLegend(); canvas.draw(); renderTrackwork(d.early.items ?? []); refreshOptions(); refreshRoutes(); return; }
+  if (d.early) { canvas.overlay = d.early; if (d.id >= settleFrom) canvas.settled(); settleEdits(d.early.items ?? []); updateLegend(); canvas.draw(); renderTrackwork(d.early.items ?? []); refreshOptions(); refreshRoutes(); return; }
   // (just the plan's trackwork, the 3D view not built: out of date till Build)
   if (d.planDone) {
     buildDone(); stale = true;
@@ -836,7 +846,7 @@ function updateLegend() {
   show('legend-points', its.some((it) => it.kind === 'points' && !it.off && !it.cand));
   show('legend-points-off', its.some((it) => it.kind === 'points' && it.off));
   show('legend-points-cand', its.some((it) => it.kind === 'points' && it.cand));
-  show('legend-edited', Object.values(design.trackwork ?? {}).some((g) => Object.keys(g ?? {}).length > 0));
+  show('legend-edited', Object.values(design.trackwork ?? {}).some((g) => Object.values(g ?? {}).some(isEdit)));
   show('legend-mono-points', !!(o as { monoPoints?: unknown[] } | undefined)?.monoPoints?.length);
   show('legend-levers', has('throw'));
   show('legend-grip', !!o?.grips?.length);
@@ -1166,7 +1176,7 @@ function transformSel(f: (r: DRoute, px: number, py: number) => void) {
   for (const i of sel) f(design.routes[i], px, py);
   changed(true);
 }
-const mirrorSel = () => transformSel((r, px) => mirrorRoute(r, px));
+const mirrorSel = () => { mirrorAnchors(design, selected().map((i) => design.routes[i].name || String(i))); transformSel((r, px) => mirrorRoute(r, px)); };
 const turnSel = (a: number) => transformSel((r, px, py) => {
   const c = Math.cos((a * Math.PI) / 180), sn = Math.sin((a * Math.PI) / 180), dx = r.x - px, dy = r.y - py;
   r.x = r3(px + dx * c - dy * sn); r.y = r3(py + dx * sn + dy * c);
@@ -1405,8 +1415,10 @@ function drawTrackwork(list: TwItem[]) {
   const body = $('trackwork-body'), scroll = $('trackwork').scrollTop; body.replaceChildren();
   const tw = design.trackwork ?? {};
   // (a hand edit: anything kept for it in design.trackwork)
-  const editedOf = (kind: keyof Trackwork, key: string) => { const e = (tw[kind] as Record<string, Record<string, unknown>> | undefined)?.[key]; return !!e && Object.values(e).some((v) => v !== undefined && v !== false && !(Array.isArray(v) && !v.length)); };
-  const edits = (['points', 'throw', 'check', 'groove'] as const).reduce((n, k) => n + Object.keys(tw[k] ?? {}).filter((key) => editedOf(k, key)).length, 0);
+  const editedOf = (kind: keyof Trackwork, key: string) => isEdit((tw[kind] as Record<string, unknown> | undefined)?.[key]);
+  // (edits whose item isn't there any more, its route deleted or the tracks no longer meeting: listed apart, not counted as on the track)
+  const left = leftOver(tw, list);
+  const edits = (['points', 'throw', 'check', 'groove'] as const).reduce((n, k) => n + Object.keys(tw[k] ?? {}).filter((key) => editedOf(k, key)).length, 0) - left.length;
   const edit = <K extends keyof Trackwork>(kind: K, key: string, patch: Record<string, unknown>) => {
     const t2 = (design.trackwork ??= {}), group = ((t2[kind] ??= {}) as Record<string, Record<string, unknown>>);
     group[key] = { ...group[key], ...patch };
@@ -1414,17 +1426,35 @@ function drawTrackwork(list: TwItem[]) {
   };
   const resetOne = (kind: keyof Trackwork, key: string) => { const g = (design.trackwork?.[kind] ?? {}) as Record<string, unknown>; delete g[key]; twSig = ''; changed(true); };
   // the bar on top: how many are edited, only those, reset them all
-  if (list.length || monoToes().length) {
+  if (list.length || monoToes().length || left.length) {
     const bar = document.createElement('div'); bar.className = 'twbar';
-    const cnt = document.createElement('span'); cnt.className = edits ? 'chipn on' : 'chipn'; cnt.textContent = edits ? `${edits} edited by hand` : 'Nothing edited: all as worked out';
+    const cnt = document.createElement('span'); cnt.className = edits ? 'chipn on' : 'chipn'; cnt.textContent = (edits ? `${edits} edited by hand` : 'Nothing edited: all as worked out') + (left.length ? ` · ${left.length} left over` : '');
     const only = document.createElement('input'); only.type = 'checkbox'; only.checked = twOnlyEdited; only.disabled = !edits;
     only.addEventListener('change', () => { twOnlyEdited = only.checked; twSig = ''; renderTrackwork(list); });
     const ol = document.createElement('label'); ol.className = 'only'; ol.append(only, document.createTextNode(' Show only edited'));
     const reset = btn('Reset all', () => { design.trackwork = {}; twSig = ''; twOnlyEdited = false; }, 'Put every check rail, flangeway cut, points set and lever back to what the app works out (points taken out put back, forced ones unforced). Undo brings them back.');
-    reset.disabled = !edits; reset.classList.add('danger');
+    reset.disabled = !edits && !left.length; reset.classList.add('danger');
     bar.append(cnt, ol, reset); body.append(bar);
   }
-  if (!list.length && !monoToes().length) { const n = document.createElement('div'); n.className = 'none'; n.textContent = 'No check rails, flangeway cuts or points in this design.'; body.append(n); $('trackwork-count').textContent = ''; return; }
+  // the edits left over: what each was, where, and a button to remove it
+  if (left.length) {
+    const g = document.createElement('details'); g.className = 'twg'; g.open = true;
+    const sm = document.createElement('summary'); sm.textContent = 'Left over';
+    const c = document.createElement('span'); c.className = 'n ed'; c.textContent = String(left.length); sm.append(c); g.append(sm);
+    const why = document.createElement('div'); why.className = 'none'; why.style.marginBottom = '6px';
+    why.textContent = 'Edits made by hand to trackwork that isn\'t there now (its track deleted, or the tracks no longer meet there). They do nothing; they come back into use if the trackwork does.';
+    g.append(why);
+    const what = { points: 'Points', throw: 'Lever', check: 'Check rail', groove: 'Flangeway cut' } as const;
+    for (const lo of left) {
+      const row = document.createElement('div'); row.className = 'twleft';
+      const on = ((tw[lo.kind] as Record<string, { on?: [string, string, number, number] }>)[lo.key]?.on)?.[0];
+      const t = document.createElement('span'); t.textContent = `${what[lo.kind]} edit${lo.at ? `, was at ${+(lo.at[0] / 8).toFixed(1)}, ${+(lo.at[1] / 8).toFixed(1)} studs` : ''}${on ? ` (on ${on})` : ''}`;
+      const rm = btn('Remove', () => { delete (design.trackwork![lo.kind] as Record<string, unknown>)[lo.key]; twSig = ''; }, 'Remove this left-over edit (Undo brings it back)');
+      row.append(t, rm); g.append(row);
+    }
+    body.append(g);
+  }
+  if (!list.length && !monoToes().length) { const n = document.createElement('div'); n.className = 'none'; n.textContent = 'No check rails, flangeway cuts or points in this design.'; body.append(n); $('trackwork-count').textContent = left.length ? ` (${left.length} left over)` : ''; return; }
   // a group of items, folding (its header stays in view)
   const group = (id: string, title: string, n: number, nEdited: number) => {
     const g = document.createElement('details'); g.className = 'twg'; g.open = twOpen.has(`g:${id}`) || (twOnlyEdited && nEdited > 0);
@@ -1544,5 +1574,5 @@ function drawTrackwork(list: TwItem[]) {
     });
   }
   $('trackwork').scrollTop = scroll;
-  $('trackwork-count').textContent = list.length || monoToes().length ? ` (${edits ? `${edits} edited` : 'none edited'})` : '';
+  $('trackwork-count').textContent = list.length || monoToes().length ? ` (${edits ? `${edits} edited` : 'none edited'}${left.length ? `, ${left.length} left over` : ''})` : '';
 }
