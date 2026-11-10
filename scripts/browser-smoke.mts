@@ -104,6 +104,25 @@ try {
   check(await routes() === 1, 'Add circle adds one route');
   check(await says(/8 parts to print.*built in/), `the circle builds in its 8 pieces (${await status()})`);
 
+  // (the circle's route is selected: its curves have handles; drag the first one's angle handle back to the middle of its arc)
+  at = 'a handle';
+  const handles = () => page.evaluate(() => JSON.parse(document.getElementById('track')!.dataset.handles ?? '[]') as { seg: number; kind: string; x: number; y: number }[]);
+  await page.click('#mode-select');
+  const hs = await handles();
+  const ang = hs.find((h) => h.seg === 0 && h.kind === 'angle'), mid = hs.find((h) => h.seg === 0 && h.kind === 'radius');
+  check(!!ang && !!mid, 'a selected route\'s curves have handles');
+  if (ang && mid) {
+    const tb = (await page.locator('#track').boundingBox())!;
+    await page.mouse.move(tb.x + ang.x, tb.y + ang.y);
+    await page.mouse.down();
+    await page.mouse.move(tb.x + (ang.x + mid.x) / 2, tb.y + (ang.y + mid.y) / 2, { steps: 4 });
+    await page.mouse.move(tb.x + mid.x, tb.y + mid.y, { steps: 4 });
+    await page.mouse.up();
+    const angle = () => page.locator('#routes input[title^="How far it turns"]').first().inputValue();
+    check(await angle() === '22.5', `dragging the angle handle sets the angle: the card shows it (${await angle()})`);
+    check(await says(/7 parts to print.*built in|8 parts to print.*built in/), `and it builds (${await status()})`);
+  }
+
   check(errors.length === 0, `no errors on the page${errors.length ? `: ${errors.join(' | ').slice(0, 600)}` : ''}`);
 } catch (err) {
   fails.push(`${at}: ${err instanceof Error ? err.message : err}`);

@@ -11,6 +11,7 @@ import { type Design, type DRoute, type DSeg, freeName, isMono, routeGaugeStuds,
 import { sleeperSpots } from '../geom/crossing';
 import { poseToWorld, routeLength, routePose, worldToPose } from '../route/route';
 import { reversedRoute } from './routeedits';
+import { dragValue, END_INSET_PX, type Handle, type HandleKind, handleLabel, segmentHandles, visibleHandles, withValue } from './handles';
 import { isEdit, joinAnchors, reverseAnchors } from './twfollow';
 import { describe, follow, plan, planAnyway, planAuto, planFreeTurning, planToPose, reversed, trace as traceRaw, type Pose } from './planner';
 
@@ -48,6 +49,8 @@ export interface CanvasHost {
   leaveDraw?(): void;
   /** What new routes are: train track or monorail (Draw's Track choice). */
   system?(): 'train' | 'monorail';
+  /** The forms show the design as it is now, mid-drag (a handle being dragged). */
+  live?(): void;
 }
 
 const MM = 8; // mm per stud
@@ -155,6 +158,20 @@ export class TrackCanvas {
   hidden = new Set<string>();
   /** Dragging a track's end: which route and end, where the press was, and the route as it was. */
   private drag: { route: number; end: 'start' | 'end'; sx: number; sy: number; moved: boolean; orig: DRoute; anchor: number; lastGood?: DRoute } | undefined;
+  /** Dragging a curve's or straight's handle (angle, radius, length): which, and the segment as it was. */
+  private handleDrag: { route: number; seg: number; kind: HandleKind; orig: DSeg; moved: boolean; sx: number; sy: number } | undefined;
+  /** The handles on the selected route (when one is selected, in Select mode, nothing being drawn): at least 10 px apart on the screen. */
+  private handles(): Handle[] {
+    if (this.mode !== 'select' || this.active || this.selection().length !== 1) return [];
+    const r = this.host.design().routes[this.selection()[0]];
+    return r ? visibleHandles(segmentHandles(r, END_INSET_PX / this.scale), this.scale) : [];
+  }
+  /** The handle under a point (studs), within a few pixels. */
+  private handleAt(w: [number, number]): Handle | undefined {
+    let best: Handle | undefined, bd = 9;
+    for (const h of this.handles()) { const dd = Math.hypot(h.at[0] - w[0], h.at[1] - w[1]) * this.scale; if (dd <= bd) { bd = dd; best = h; } }
+    return best;
+  }
   /** Dragging a lever: its item, and where it would go (mm) with what settings. */
   private leverDrag: { it: OverlayItem; moved: boolean; off: [number, number]; at?: [number, number]; arm?: [number, number][] } | undefined;
   /** Dragging a check rail's or flangeway cut's end (longer or shorter), or points along: what, which setting, from where (studs), the way that adds (mm), and its value before. */
@@ -378,13 +395,13 @@ export class TrackCanvas {
       if (e.touches.length === 1 && !pinch) {
         const t = e.touches[0], r = el.getBoundingClientRect(), w = this.toWorld(t.clientX - r.left, t.clientY - r.top);
         // (on empty ground in Select: pan, as the middle button; on track, a lever or points: as the left button)
-        const onSomething = !!(this.leverAt(w) || this.itemAt(w) || this.nearTrack(w, this.reach(24)) || this.onBand(w));
+        const onSomething = !!(this.handleAt(w) || this.leverAt(w) || this.itemAt(w) || this.nearTrack(w, this.reach(24)) || this.onBand(w));
         oneButton = this.mode === 'select' && !onSomething ? 1 : 0;
         last = t; start = [t.clientX, t.clientY]; this.mouse = w; held = false;
         const before = this.selection();
         this.down(fake(t, oneButton));
         noHold();
-        const on = this.mode === 'select' && !this.leverDrag && !this.itemDrag && !this.drag && !this.tableDrag ? this.nearTrack(w, this.reach(24)) ?? this.onBand(w) : undefined;
+        const on = this.mode === 'select' && !this.handleDrag && !this.leverDrag && !this.itemDrag && !this.drag && !this.tableDrag ? this.nearTrack(w, this.reach(24)) ?? this.onBand(w) : undefined;
         if (on) hold = window.setTimeout(() => {
           hold = undefined; held = true;
           // (the press itself selected it alone, ready to drag: put back as it was, then this one added or taken out)
@@ -447,6 +464,11 @@ export class TrackCanvas {
       return;
     }
     const w = this.evWorld(e);
+    // Pressing on a handle of the selected route: drag it (a curve's angle or radius, a straight's length)
+    if (!this.active && e.button === 0) {
+      const h = this.handleAt(w), ri = this.selection()[0];
+      if (h) { this.handleDrag = { route: ri, seg: h.seg, kind: h.kind, orig: structuredClone(this.host.design().routes[ri].segs[h.seg]), moved: false, sx: e.clientX, sy: e.clientY }; return; }
+    }
     // Pressing on a lever: drag it (side, out, along)
     if (!this.active && e.button === 0) {
       const it = this.leverAt(w);
@@ -560,6 +582,18 @@ export class TrackCanvas {
       id.at = [end[0] + id.dir[0] * (v - id.base), end[1] + id.dir[1] * (v - id.base)];
       return this.drawSoon();
     }
+    if (this.handleDrag) {
+      const hd = this.handleDrag, r = this.host.design().routes[hd.route];
+      this.mouse = this.evWorld(e);
+      if (!hd.moved && Math.hypot(e.clientX - hd.sx, e.clientY - hd.sy) < 4) return;
+      hd.moved = true;
+      const v = r && dragValue(r, hd, this.mouse, { shift: e.shiftKey, insetStuds: END_INSET_PX / this.scale });
+      if (r && v !== undefined) {
+        const next = withValue(r.segs[hd.seg], hd.kind, v);
+        if (JSON.stringify(next) !== JSON.stringify(r.segs[hd.seg])) { r.segs[hd.seg] = next; this.host.changed(false); this.host.live?.(); }
+      }
+      return this.drawSoon();
+    }
     if (this.leverDrag) {
       this.mouse = this.evWorld(e); this.leverDrag.moved = true;
       this.dragLever([this.mouse[0] + this.leverDrag.off[0], this.mouse[1] + this.leverDrag.off[1]]);
@@ -610,7 +644,7 @@ export class TrackCanvas {
     let c = this.mode === 'draw' ? 'crosshair' : 'default';
     if (this.space) c = 'grab';
     else if (w && !this.active) {
-      const grab = !!(this.leverAt(w) || this.itemAt(w)), hit = grab ? undefined : this.nearTrack(w, this.reach(18)) ?? (this.mode === 'select' ? this.onBand(w) : undefined);
+      const grab = !!(this.handleAt(w) || this.leverAt(w) || this.itemAt(w)), hit = grab ? undefined : this.nearTrack(w, this.reach(18)) ?? (this.mode === 'select' ? this.onBand(w) : undefined);
       if (grab) c = 'grab';
       else if (hit?.end) c = 'move';
       else if (hit && this.mode === 'select') c = 'pointer';
@@ -628,6 +662,7 @@ export class TrackCanvas {
       else if (moved) this.host.changed(true);
       return this.draw();
     }
+    if (this.handleDrag) { const moved = this.handleDrag.moved; this.handleDrag = undefined; if (moved) this.host.changed(true); return this.draw(); }
     if (this.leverDrag) {
       const ld = this.leverDrag, moved = ld.moved; this.leverDrag = undefined;
       if (moved && ld.at && ld.arm) this.leverPending = { key: ld.it.key, at: ld.at, arm: ld.arm };
@@ -795,6 +830,12 @@ export class TrackCanvas {
     if (typingIn(e) || !down || dialogOpen()) return;
     // (Space held pans; not when a button, a tick box or a section's heading has the focus: Space presses it)
     if (e.code === 'Space' && !['BUTTON', 'INPUT', 'SUMMARY', 'A'].includes((e.target as HTMLElement)?.tagName)) { this.space = true; e.preventDefault(); }
+    if (e.key === 'Escape' && this.handleDrag) {
+      // (the handle's segment put back as it was)
+      const hd = this.handleDrag, r = this.host.design().routes[hd.route];
+      if (r) r.segs[hd.seg] = hd.orig;
+      this.handleDrag = undefined; this.host.changed(true); this.host.live?.(); return this.draw();
+    }
     if (e.key === 'Escape' && this.drag) {
       // put the dragged track back as it was
       this.host.design().routes[this.drag.route] = this.drag.orig;
@@ -818,7 +859,7 @@ export class TrackCanvas {
   /** Whatever's being drawn or dragged, let go of where it is (the design under it replaced: undone, a template, a file). */
   letGo() {
     this.drag = undefined; this.dragBad = false; this.dragSnap = undefined; this.moving = undefined; this.box = undefined; this.tableDrag = undefined;
-    this.itemDrag = undefined; this.leverDrag = undefined; this.leverPending = undefined; this.panning = undefined;
+    this.itemDrag = undefined; this.handleDrag = undefined; this.leverDrag = undefined; this.leverPending = undefined; this.panning = undefined;
     this.stopDrawing();
   }
   /** The track being drawn carries on from where its route ends now (the route changed on its card, turned or mirrored since the last click); a route that's gone: nothing being drawn. */
@@ -1205,6 +1246,22 @@ export class TrackCanvas {
         const [kx, ky] = this.toScreen(at[0] / MM, at[1] / MM), kr = Math.max(4, Math.min(9, (3 / MM) * this.scale));
         c.fillStyle = '#e8892b'; c.strokeStyle = '#fff'; c.lineWidth = 1.5;
         c.beginPath(); c.arc(kx, ky, kr, 0, 2 * Math.PI); c.fill(); c.stroke();
+      }
+    }
+    // the selected route's handles: a curve's angle (round), its radius (diamond), a straight's length (square); the one dragged says its value
+    if (this.mode === 'select' && !this.active) {
+      const hovered = this.mouse && !this.handleDrag ? this.handleAt(this.mouse) : undefined, rt = d.routes[this.selection()[0]];
+      // (where they are on the screen, for the browser smoke test to grab)
+      const shown = this.handles();
+      this.el.dataset.handles = JSON.stringify(shown.map((h) => { const [x, y] = this.toScreen(h.at[0], h.at[1]); return { seg: h.seg, kind: h.kind, x: Math.round(x), y: Math.round(y) }; }));
+      for (const h of shown) {
+        const [hx, hy] = this.toScreen(h.at[0], h.at[1]), on = this.handleDrag ? this.handleDrag.seg === h.seg && this.handleDrag.kind === h.kind : hovered === h;
+        c.beginPath();
+        if (h.kind === 'angle') c.arc(hx, hy, on ? 7 : 5.5, 0, 2 * Math.PI);
+        else if (h.kind === 'length') { const q = on ? 6.5 : 5; c.rect(hx - q, hy - q, 2 * q, 2 * q); }
+        else { const q = on ? 7.5 : 6; c.moveTo(hx, hy - q); c.lineTo(hx + q, hy); c.lineTo(hx, hy + q); c.lineTo(hx - q, hy); c.closePath(); }
+        c.fillStyle = on ? '#e8892b' : '#fff'; c.fill(); c.strokeStyle = '#e8892b'; c.lineWidth = 2; c.stroke();
+        if (on && rt?.segs[h.seg]) tag(hx + 12, hy - 12, handleLabel(rt.segs[h.seg]), '#b25c00');
       }
     }
     // while dragging an end: what the reshaped track is, or why not
