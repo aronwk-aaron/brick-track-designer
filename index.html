@@ -389,6 +389,10 @@
     #tpl-body .tstar[aria-pressed="true"] { color: #e8a317; }
     #tpl-empty { text-align: center; color: var(--muted); padding: 40px 10px; line-height: 1.6; }
     @media (max-width: 560px) { #tpl-filters { display: inline-block; } #tpl-chips { display: none; max-height: 38vh; overflow-y: auto; } #tpl-chips.open { display: flex; } #tpl-dlg { width: 100vw; height: 100vh; border-radius: 0; border: none; } #tpl-body .grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; } #tpl-chips .crow > b { width: 100%; } }
+    #recent-dlg { border: 1px solid var(--line); border-radius: var(--radius); background: var(--panel); color: var(--ink); box-shadow: var(--shadow); padding: 0; width: min(92vw, 640px); max-height: 86vh; }
+    #recent-dlg::backdrop { background: rgba(0,0,0,0.35); } #recent-dlg .head { display: flex; align-items: center; gap: 8px; padding: 12px 16px; border-bottom: 1px solid var(--line); } #recent-dlg .head h2 { font-size: 15px; margin: 0; flex: 1; }
+    #recent-dlg .body { padding: 8px 16px 16px; overflow: auto; max-height: calc(86vh - 60px); } #recent-dlg p { color: var(--muted); }
+    #recent-dlg .rrow { display: flex; align-items: center; gap: 8px; padding: 8px 0; border-bottom: 1px solid var(--line); } #recent-dlg .rrow > div { flex: 1; min-width: 0; } #recent-dlg .rstatus { color: var(--muted); font-size: 12px; overflow-wrap: anywhere; } #recent-dlg .rrow span { color: var(--muted); font-size: 12px; }
     #parts-dlg { border: 1px solid var(--line); border-radius: var(--radius); background: var(--panel); color: var(--ink); box-shadow: var(--shadow); padding: 0; width: min(92vw, 720px); max-height: 86vh; }
     #parts-dlg::backdrop { background: rgba(0,0,0,0.35); }
     #parts-dlg .head { display: flex; align-items: center; gap: 8px; padding: 12px 16px; border-bottom: 1px solid var(--line); }
@@ -450,12 +454,13 @@
     <button id="toggle-3d" class="on" type="button" title="Show or hide the 3D preview (P)"><svg><use href="#i-cube"/></svg><span class="lbl">3D</span></button>
     <button id="settings-open" type="button" title="Settings for the pieces: track, ballast, switches, joints, fit (,)"><svg><use href="#i-sliders"/></svg><span class="lbl">Settings</span></button>
     <span class="sep"></span>
-    <button id="load" type="button" title="Open a saved design (.btd.json) (Ctrl+O)"><svg><use href="#i-open"/></svg><span class="lbl">Open</span></button>
+    <button id="load" type="button" title="Open a saved design (.btd.json) or a problem report (.zip) (Ctrl+O)"><svg><use href="#i-open"/></svg><span class="lbl">Open</span></button>
+    <button id="recent-open" type="button" title="The last 20 designs that were built in this browser: get one back, or download it"><svg><use href="#i-list"/></svg><span class="lbl">Recent</span></button>
     <button id="save" type="button" title="Save the design as a file (Ctrl+S); it's also kept in this browser as you work"><svg><use href="#i-save"/></svg><span class="lbl">Save</span></button>
     <button id="export-stl" type="button" class="primary" title="Download the parts to print (STL files)"><svg><use href="#i-download"/></svg>STL</button>
     <button id="parts-open" type="button" title="The parts list: what to buy and what to print"><svg><use href="#i-list"/></svg><span class="lbl">Parts list</span></button>
     <button id="export-layout" type="button" title="Download the parts as a parts library for the layout designer"><svg><use href="#i-layout"/></svg><span class="lbl">Layout parts</span></button>
-    <input id="load-file" type="file" accept=".json,application/json" hidden>
+    <input id="load-file" type="file" accept=".json,application/json,.zip,application/zip" hidden>
     <span class="sep"></span>
     <button id="theme" class="icon" type="button" title="Light or dark: follows the system (click for light, then dark)"><svg><use href="#i-theme"/></svg></button>
     <button id="about-open" class="icon" type="button" title="About Brick Track Designer, and its source code"><svg><use href="#i-info"/></svg></button>
@@ -481,6 +486,10 @@
       <div id="tpl-chips"></div>
     </div>
     <div id="tpl-body"></div>
+  </dialog>
+  <dialog id="recent-dlg" aria-labelledby="recent-title">
+    <div class="head"><h2 id="recent-title">Recent designs</h2><button id="recent-close" type="button" title="Close (Esc)">✕</button></div>
+    <div class="body" id="recent-body"></div>
   </dialog>
   <dialog id="ask-dlg" aria-labelledby="ask-text">
     <p id="ask-text"></p>
@@ -538,6 +547,11 @@
           <li>Templates opens the template browser: a picture, a name and the size for each starting point, in sections. Type in the search box (every word must fit), or press a Kind, Gauge, Track or Radius button to narrow them; Clear undoes all of that.</li>
           <li>A switch or crossing that comes in two hands is one card with Left and Right buttons. The star on a card keeps it in a Starred section at the top; the last eight you used are under Recent.</li>
           <li>Press a card (or <kbd>Enter</kbd> on it; the arrow keys move between cards) to put it on the plan in place of the design. If the design has changes that aren't in a file, it asks first. <kbd>Esc</kbd> closes the browser.</li>
+        </ul>
+        <h3>Something looks wrong</h3>
+        <ul>
+          <li>Press Report a problem (in the 3D view's bar, or here: <button id="report-help" type="button">Report a problem</button>). A zip downloads with the design, the settings, what the build said and the two views. Send it, or leave it in Downloads, so it can be looked at exactly as you saw it.</li>
+          <li>Open takes such a zip too and shows what was seen. Recent keeps the last 20 designs that built in this browser, so a problem seen an hour ago can still be reported.</li>
         </ul>
         <h3>A full circle</h3>
         <ul>
@@ -629,7 +643,7 @@
       <div id="coords" class="chip"></div>
     </div>
     <div id="splitter" title="Drag to resize; double-click to reset"></div>
-    <div id="view3d"><div id="buildstatus" class="chip" hidden><span class="spin"></span><span id="build-what">Building…</span> <span id="build-time"></span><span class="bar"><i id="build-bar"></i></span><button id="build-stop" type="button" title="Stop this build (the 3D view stays as it was; Rebuild when you're ready)">Stop</button></div><div id="view3d-top"><div id="views" class="chip"><button id="view-top" type="button" title="Look at the top">Top</button><button id="view-under" type="button" title="Look at the underside, to see where it grips">Underside</button><button id="view-frame" type="button" title="Fit the piece in the view (or double-click it)">Frame</button><span class="sep" id="views-sep2"></span><button class="show on" data-show="track" type="button" title="Show or hide the track (bases)">Track</button><button class="show on" data-show="bought" type="button" title="Show or hide the bought parts (LEGO's green, BrickTracks' purple): not printed">Bought</button><button class="show on" data-show="points" type="button" title="Show or hide the points">Points</button><button class="show on" data-show="throw" type="button" title="Show or hide the throws">Throws</button><button class="show on" data-show="lever" type="button" title="Show or hide the levers">Levers</button><button class="show on" id="show-supports" data-show="supports" type="button" title="Show or hide the breakaway print supports (orange): printed with the part, snapped off after">Supports</button><span class="sep"></span><button class="tog on" id="auto-build" type="button">Auto</button><span class="sep"></span><label class="explode" title="Pull the parts apart to see where they separate">Explode <input id="explode" type="range" min="0" max="1" step="0.02" value="0"></label></div><div id="legend3d" class="chip" hidden><div class="lhead"><b>Colours</b><button id="legend3d-fold" type="button" title="Fold the colours away (or open them)">–</button></div><div id="legend3d-rows"></div></div></div><div id="status" class="chip"><span id="info"></span><span id="error"></span><button id="rebuild" type="button" hidden>Rebuild</button></div></div>
+    <div id="view3d"><div id="buildstatus" class="chip" hidden><span class="spin"></span><span id="build-what">Building…</span> <span id="build-time"></span><span class="bar"><i id="build-bar"></i></span><button id="build-stop" type="button" title="Stop this build (the 3D view stays as it was; Rebuild when you're ready)">Stop</button></div><div id="view3d-top"><div id="views" class="chip"><button id="view-top" type="button" title="Look at the top">Top</button><button id="view-under" type="button" title="Look at the underside, to see where it grips">Underside</button><button id="view-frame" type="button" title="Fit the piece in the view (or double-click it)">Frame</button><button id="report-open" type="button" title="Something looks wrong? Downloads a zip with the design, the settings, what the build said and two pictures, to send to whoever can look into it">Report a problem</button><span class="sep" id="views-sep2"></span><button class="show on" data-show="track" type="button" title="Show or hide the track (bases)">Track</button><button class="show on" data-show="bought" type="button" title="Show or hide the bought parts (LEGO's green, BrickTracks' purple): not printed">Bought</button><button class="show on" data-show="points" type="button" title="Show or hide the points">Points</button><button class="show on" data-show="throw" type="button" title="Show or hide the throws">Throws</button><button class="show on" data-show="lever" type="button" title="Show or hide the levers">Levers</button><button class="show on" id="show-supports" data-show="supports" type="button" title="Show or hide the breakaway print supports (orange): printed with the part, snapped off after">Supports</button><span class="sep"></span><button class="tog on" id="auto-build" type="button">Auto</button><span class="sep"></span><label class="explode" title="Pull the parts apart to see where they separate">Explode <input id="explode" type="range" min="0" max="1" step="0.02" value="0"></label></div><div id="legend3d" class="chip" hidden><div class="lhead"><b>Colours</b><button id="legend3d-fold" type="button" title="Fold the colours away (or open them)">–</button></div><div id="legend3d-rows"></div></div></div><div id="status" class="chip"><span id="info"></span><span id="error"></span><button id="rebuild" type="button" hidden>Rebuild</button></div></div>
   </main>
   <script type="module" src="/src/app/main.ts"></script>
 </body>

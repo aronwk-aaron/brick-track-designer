@@ -141,6 +141,9 @@ export class TrackCanvas {
   setSelection(list: number[]) {
     this.selected = list[0]; this.extra = new Set(list.slice(1)); this.host.select(this.selected); this.draw();
   }
+  /** The plan's zoom and offset (a report keeps them, to show the same view again). */
+  view() { return { scale: this.scale, ox: this.ox, oy: this.oy }; }
+  setView(v: { scale: number; ox: number; oy: number }) { if (v.scale > 0 && Number.isFinite(v.ox) && Number.isFinite(v.oy)) { this.scale = Math.min(80, Math.max(0.5, v.scale)); this.ox = v.ox; this.oy = v.oy; this.draw(); } }
   /** The snapped grid point under the mouse (studs), if over the plan. */
   mouseStuds(): [number, number] | undefined { return this.mouse ? this.snap(this.mouse) : undefined; }
   private overlayNow: Overlay | undefined;

@@ -18,6 +18,8 @@ import { clamp, LIMITS, type Range, rangeText } from './limits';
 import { mirrorRoute } from './routeedits';
 import { TabStore, unsaved } from './session';
 import { addCircle, cleanPieces, cleanRadius, defaultPieces, pieceFit, piecesText, PIECES } from './circle';
+import { APP_VERSION, type BuiltEntry, pngBytes, pushBuilt, readBuilt, readReportZip, type Report, reportName, type ReportInput, reportZip } from './report';
+import { isZip } from '../geom/unzip';
 import { initTemplateBrowser } from './templatebrowser';
 import { type CopiedEdit, copyEdits, followTrackwork, isEdit, leftOver, mirrorAnchors, pasteEdits, reconcileTrackwork, renameAnchors } from './twfollow';
 import { type OptChoice, optionForm, type OptCtx, type OptField } from './settings';
@@ -567,6 +569,10 @@ const runner = new BuildRunner({
 let pieces: Piece[] = [], timer: number | undefined;
 /** The 3D view and the downloads: building (a newer design than the pieces), out of date (stopped, or the last build failed), or up to date. */
 let building = false, stale = false;
+/** What the last build said, for a problem report. */
+let lastBuild: { warnings: string[]; issues: { at: [number, number]; r: number; text: string }[]; ms?: number } = { warnings: [], issues: [] };
+/** The view (3D camera, toggles, plan) from a report just opened, applied once its design has built. */
+let pendingView: Report | undefined;
 /** The first build of the design as last let go of (a lever dropped is held where it was put on the plan till then). */
 let settleFrom = 0;
 const hasTrack = () => design.routes.some((r) => r.segs.length > 0);
@@ -682,6 +688,7 @@ function onBuilt(d: any) {
   updateLegend();
   canvas.draw();
   pieces = d.pieces;
+  lastBuild = { warnings: [...(d.info.warnings as string[])], issues: (d.overlay.issues ?? []).map((q: { at: [number, number]; r: number; text: string }) => ({ at: q.at, r: q.r, text: q.text })), ms: d.info.ms };
   showPieces(pieces);
   showIssues(d.overlay.issues ?? []);
   renderTrackwork(d.overlay.items ?? []);
@@ -692,6 +699,9 @@ function onBuilt(d: any) {
   const nLego = pieces.filter((p) => p.lego && p.name !== 'risers-bought').length, nPrint = pieces.filter((p) => !p.lego).length;
   setStatus(`${trackwork ? `${trackwork} · ` : ''}${plural(nPrint, 'part')} to print${nLego ? ` · ${plural(nLego, 'bought track piece')}` : ''} · ${i.size.map((v: number) => v.toFixed(0)).join(' × ')} mm · ${(i.volume / 1000).toFixed(1)} cm³ · built in ${(i.ms / 1000).toFixed(1)} s`,
     (i.warnings as string[]).join('; '), false, true);
+  // (the view a report was opened with, once its parts are there; and this design kept among the ones built lately)
+  if (pendingView) { const v = pendingView; pendingView = undefined; applyView(v); }
+  if (d.id >= settleFrom) rememberBuilt();
 }
 $('build-stop').addEventListener('click', stopBuild);
 $('rebuild').addEventListener('click', () => { stale = false; setStatus(''); requestBuild(true); $('rebuild').textContent = 'Rebuild'; });
@@ -1040,11 +1050,15 @@ loadInput.addEventListener('change', async () => {
   const f = loadInput.files?.[0]; if (!f) return;
   try {
     // (checked before it's taken: a file that isn't a design, or a damaged one, leaves the design there is as it was)
-    let d0: unknown;
-    try { d0 = JSON.parse(await f.text()); } catch { throw new Error("it isn't a track design (.btd.json): the file is cut short or isn't JSON"); }
+    let d0: unknown, view: Report | undefined;
+    // (a problem report's zip: its design, and the view it was seen in)
+    const bytes = new Uint8Array(await f.arrayBuffer());
+    if (isZip(bytes)) { const r = readReportZip(bytes); d0 = r.design; view = r.report; }
+    else { try { d0 = JSON.parse(new TextDecoder().decode(bytes)); } catch { throw new Error("it isn't a track design (.btd.json) or a problem report (.zip): the file is cut short or isn't JSON"); } }
     const d = readDesign(d0);
     if (!(await mayReplace())) { loadInput.value = ''; return; }
     design = d; replaced(); framed = false; changed(true); markClean(); canvas.fit();
+    pendingView = view;
   } catch (err) { setStatus('', `Couldn't open ${f.name}: ${err instanceof Error ? err.message : err}`); }
   loadInput.value = '';
 });
@@ -1190,6 +1204,97 @@ addEventListener('resize', headH); headH();
 // (a phone: the routes panel starts closed, unless it was left open; the panels close when you tap the plan)
 const narrow = () => matchMedia('(max-width: 760px)').matches;
 $('track').addEventListener('touchstart', () => { if (narrow()) { if (!document.body.classList.contains('nopanel')) $('toggle-panel').click(); if (!settingsEl.hidden) openSettings(false); } }, { passive: true });
+
+// ---------- reporting a problem, and the designs built lately ----------
+/** What the page knows, for a report (report.ts says what goes in it). */
+function reportInput(now = new Date()): ReportInput {
+  const size = (p: Piece): [number, number, number] | undefined => {
+    const a = p.positions; if (!a.length) return undefined;
+    const lo = [Infinity, Infinity, Infinity], hi = [-Infinity, -Infinity, -Infinity];
+    for (let k = 0; k < a.length; k += 3) for (let j = 0; j < 3; j++) { lo[j] = Math.min(lo[j], a[k + j]); hi[j] = Math.max(hi[j], a[k + j]); }
+    return [hi[0] - lo[0], hi[1] - lo[1], hi[2] - lo[2]];
+  };
+  const v = (x: THREE.Vector3): [number, number, number] => [x.x, x.y, x.z];
+  return {
+    version: APP_VERSION, now, userAgent: navigator.userAgent, window: { width: innerWidth, height: innerHeight, pixelRatio: devicePixelRatio },
+    design, status: { info: infoEl.textContent ?? '', problem: errEl.textContent ?? '' }, warnings: lastBuild.warnings, issues: lastBuild.issues, buildMs: lastBuild.ms,
+    pieces: pieces.map((p) => ({ name: p.name, lego: !!p.lego, size: size(p) })),
+    toggles: { auto: autoBuild, show3d, shown: [...shown], explode: Number(explodeEl.value), mode: canvas.mode },
+    selection: canvas.selection(), plan: canvas.view(), camera: { position: v(camera.position), target: v(controls.target), up: v(camera.up) },
+  };
+}
+/** The two views as they are on screen (the 3D one drawn just now, so nothing has to be kept: no cost to the view). */
+function viewPngs() {
+  let plan: Uint8Array | undefined, view3d: Uint8Array | undefined;
+  try { canvas.draw(); plan = pngBytes($<HTMLCanvasElement>('track').toDataURL('image/png')); } catch { /* fine: a report without it */ }
+  try { renderer.render(scene, camera); view3d = pngBytes(renderer.domElement.toDataURL('image/png')); } catch { /* fine */ }
+  return { plan, view3d };
+}
+function reportProblem() {
+  const note = prompt('What looks wrong? (You can leave this empty.) A zip with the design, the settings, the build\'s words and two pictures is then downloaded.', '');
+  if (note === null) return;
+  const now = new Date();
+  const z = reportZip(reportInput(now), note, viewPngs());
+  download(new Blob([z as BlobPart], { type: 'application/zip' }), reportName(design.name, now));
+}
+$('report-open').addEventListener('click', reportProblem);
+$('report-help').addEventListener('click', reportProblem);
+
+/** Show the view a report was made in: the 3D camera, which kinds were shown, Explode, and the plan's zoom. */
+function applyView(r: Report) {
+  const vw = r.views;
+  try {
+    if (Array.isArray(r.toggles?.shown)) {
+      shown.clear(); for (const k of r.toggles.shown) shown.add(k);
+      document.querySelectorAll<HTMLButtonElement>('button.show').forEach((b) => b.classList.toggle('on', shown.has(b.dataset.show!)));
+      showPieces(pieces);
+    }
+    if (typeof r.toggles?.explode === 'number') { explodeEl.value = String(r.toggles.explode); applyExplode(); }
+    const c = vw?.view3d;
+    if (c) { camera.position.set(...c.position); controls.target.set(...c.target); camera.up.set(...c.up); camera.lookAt(controls.target); controls.update(); framed = true; redraw3d(); }
+    if (vw?.plan) canvas.setView(vw.plan);
+  } catch { /* a view that can't be shown: the design is what matters */ }
+}
+
+const BUILT = 'btd-built';
+/** This design, built: kept among the last 20 built (their time and status line), in this browser. */
+function rememberBuilt() {
+  if (!design.routes.length) return;
+  try {
+    const list = pushBuilt(readBuilt(localStorage.getItem(BUILT)), { json: JSON.stringify(design), at: Date.now(), status: infoEl.textContent ?? '', ...(design.name && { name: design.name }) });
+    localStorage.setItem(BUILT, JSON.stringify(list));
+  } catch { /* storage full or off: fine */ }
+}
+const recentDlg = $<HTMLDialogElement>('recent-dlg');
+function showRecent() {
+  const body = $('recent-body'); body.replaceChildren();
+  let list: BuiltEntry[] = [];
+  try { list = readBuilt(localStorage.getItem(BUILT)); } catch { /* fine */ }
+  if (!list.length) { const p = document.createElement('p'); p.textContent = 'No design has been built in this browser yet. Each one that builds is kept here (the last 20).'; body.append(p); }
+  for (const e of list) {
+    const row = document.createElement('div'); row.className = 'rrow';
+    const when = new Date(e.at), what = document.createElement('div');
+    const b = document.createElement('b'); b.textContent = e.name || 'Untitled';
+    const t = document.createElement('span'); t.textContent = ` ${when.toLocaleDateString()} ${when.toLocaleTimeString()}`;
+    const st = document.createElement('div'); st.className = 'rstatus'; st.textContent = e.status || 'No status line';
+    what.append(b, t, st);
+    row.append(what, btn('Open', () => { /* below */ }, ''), btn('Download', () => { /* below */ }, ''));
+    const [open, dl] = [...row.querySelectorAll('button')];
+    open.addEventListener('click', async () => {
+      try {
+        const d = readDesign(JSON.parse(e.json));
+        if (!(await mayReplace())) return;
+        design = d; replaced(); framed = false; changed(true); markClean(); canvas.fit(); recentDlg.close();
+      } catch (err) { setStatus('', `Couldn't open it: ${err instanceof Error ? err.message : err}`); }
+    });
+    dl.addEventListener('click', () => download(new Blob([JSON.stringify(JSON.parse(e.json), null, 2)], { type: 'application/json' }), `${fileBaseOf(e.name)}.btd.json`));
+    body.append(row);
+  }
+}
+$('recent-open').addEventListener('click', () => { showRecent(); recentDlg.showModal(); });
+$('recent-close').addEventListener('click', () => recentDlg.close());
+recentDlg.addEventListener('click', (e) => { if (e.target === recentDlg) recentDlg.close(); });
+
 // Installable (add to home screen): the service worker keeps the app (and the geometry kernel) for offline use.
 if ('serviceWorker' in navigator && import.meta.env.PROD) addEventListener('load', () => {
   navigator.serviceWorker.register('sw.js').catch(() => { /* (no offline copy: fine) */ });

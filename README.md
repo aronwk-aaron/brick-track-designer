@@ -51,6 +51,23 @@ check the fits and the points on your printer: [docs/test-prints.md](docs/test-p
 says what to print, how to put it together and what to report. Every STL zip
 has a README.txt: what each file is, how to print it, how the points go together.
 
+## Reporting a problem, and reproducing one
+
+Report a problem (in the 3D view's bar, and in Help) downloads
+`btd-report-<name>-<date>-<time>.zip`: `design.btd.json` (the design as it is),
+`report.json` (the app's commit, the window, the settings that differ from the
+defaults, the build's words and warnings, the ringed issues, the parts, the
+toggles, the selection, and the plan's and 3D view's cameras), `plan.png`,
+`view3d.png` and `note.txt` (what the person typed). Open takes such a zip too and
+shows the view it was made in. To reproduce one from a script:
+
+    pnpm build && npx tsx scripts/open-report.mts path/to/btd-report-….zip
+
+It prints what the report says, opens the design in a headless browser at the
+same window size and camera, waits for the build, and saves
+`…-replay-plan.png` and `…-replay-view3d.png` next to the zip. Recent (toolbar)
+keeps the last 20 designs that built in the browser.
+
 ## Contributing
 
 Pull requests run CI (`.github/workflows/ci.yml`): Conventional Commits

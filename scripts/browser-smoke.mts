@@ -6,6 +6,8 @@
 import { spawn } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { chromium, type Page } from 'playwright-core';
+import { readFileSync } from 'node:fs';
+import { unzip } from '../src/geom/unzip';
 
 const root = new URL('../', import.meta.url).pathname, port = process.env.PORT ?? '4733';
 const chrome = process.env.CHROME ?? ['/usr/bin/google-chrome-stable', '/usr/bin/google-chrome', '/usr/bin/chromium'].find((p) => existsSync(p));
@@ -45,6 +47,21 @@ try {
   check(!(await page.locator('#tpl-dlg').evaluate((d: HTMLDialogElement) => d.open)), 'pressing the card closes the browser');
   check(await says(/1 switch.*parts? to print.*built in/), `a template loads and builds (${await status()})`);
   check(await routes() === 2, 'the template has its two routes');
+
+  at = 'a problem report';
+  const dl = page.waitForEvent('download', { timeout: 30_000 });
+  await page.click('#report-open');
+  const dlf = await dl, rep = unzip(readFileSync((await dlf.path())!));
+  check(/^btd-report-untitled-\d{8}-\d{6}\.zip$/.test(dlf.suggestedFilename()), `Report a problem downloads a zip named for the design and the time (${dlf.suggestedFilename()})`);
+  check(['design.btd.json', 'report.json', 'plan.png', 'view3d.png', 'note.txt'].every((n) => rep.has(n)), `with its five files (${[...rep.keys()].join(', ')})`);
+  let rd: { routes?: unknown[] } = {}, rr: { app?: { version?: string }; build?: { status?: string } } = {};
+  try { rd = JSON.parse(new TextDecoder().decode(rep.get('design.btd.json'))); rr = JSON.parse(new TextDecoder().decode(rep.get('report.json'))); } catch { /* the checks say */ }
+  check(rd.routes?.length === 2, 'its design parses and has the two routes');
+  check(!!rr.app?.version && /built in/.test(rr.build?.status ?? ''), `its report has the version and the build's words (${rr.app?.version})`);
+  check((rep.get('plan.png')?.length ?? 0) > 500 && (rep.get('view3d.png')?.length ?? 0) > 500, 'and both pictures have something in them');
+  // (opened again: the design and the view come back)
+  await page.setInputFiles('#load-file', { name: dlf.suggestedFilename(), mimeType: 'application/zip', buffer: Buffer.from(readFileSync((await dlf.path())!)) });
+  check(await says(/1 switch.*built in/), 'a report opened again builds its design');
 
   at = 'drawing';
   const box = (await page.locator('#track').boundingBox())!;
