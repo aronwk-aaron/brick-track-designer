@@ -5,7 +5,7 @@
 // Units: mm and degrees. As in switch.scad, set "a" is the right-hand route
 // (its inner rail, at -G, is blade 0) and "b" the left-hand one (blade 1, at
 // +G); the throw side is +1 for right, -1 for left.
-import { type Pt, type Route, railPoint, routeLat, routeLength, routeSOf } from '../route/route';
+import { type Pose, type Pt, type Route, railPoint, routeLat, routeLength, routeSOf, worldToPose } from '../route/route';
 
 export interface SwitchParams {
   gaugeStuds: number;
@@ -17,6 +17,8 @@ export interface SwitchParams {
   bladeDiscD: number;       // 14
   leverOffset: number;      // 8
   studH: number;            // 1.8
+  /** The stud grid the underside is on, in the switch's (or the points set's) frame (its pose: studs at 4 + 8k in it); unset, the frame's own (or the track's, lined up with it). */
+  grid?: Pose;
   /** the studs' fit (0.18, added to their 4.8 mm) and the anti-stud tubes' (0.06), as the LEGO fit settings */
   studFit?: number; antistudFit?: number;
   generateBallast: boolean; // false: track only; true: on ballast (switch.scad's generate_ballast)
@@ -102,6 +104,23 @@ export const STUD = 8;
 export const SPRUNG_SLIDER = { barH: 1.6, under: 0.2, rodW: 2.4 };
 /** sprung blades on track alone: the bed at the sleepers' top, the slider in a groove through it (SPRUNG_SLIDER). */
 export const sprungLow = (p: { bladeStyle?: string; generateBallast?: boolean; mechStyle?: string }) => p.bladeStyle === 'sprung' && p.mechStyle === 'plates' && !p.generateBallast;
+
+/** The design's stud grid gw (world) in the frame P, as SwitchParams' grid. */
+export const gridIn = (P: Pose, gw: Pose): Pose => [...worldToPose(P, [gw[0], gw[1]]), gw[2] - P[2]] as Pose;
+/** A frame's grid square to it (turned a whole number of right angles): its stud corner lines run across the frame. */
+export const squareGrid = (g: Pose) => { const e = ((g[2] % 90) + 90) % 90; return Math.min(e, 90 - e) < 1e-6; };
+/** Where the grid's stud corner lines cross the frame's y (mod 8), for a grid square to it. */
+export const gridLineY = (g: Pose | undefined) => (g && squareGrid(g) ? ((g[1] % STUD) + STUD) % STUD : 0);
+/**
+ * Sprung blades on track alone (sprungLow): their slider's bar lies in a groove down between two rows of the
+ * baseplate's studs, so its throw line must be one of the grid's stud corner lines (pointsSet puts it there, a grid
+ * square to the frame). For points at an angle to the grid it can't be: there the blades are rigid, their slider
+ * in its tunnel over the underside (said: angled). p.grid: the grid in this set's frame, or unset (lined up with the track).
+ */
+export function sprungOnGrid<T extends SwitchParams>(p: T): { p: T; angled: boolean } {
+  if (!p.grid || !sprungLow(p) || squareGrid(p.grid)) return { p, angled: false };
+  return { p: { ...p, bladeStyle: 'simple' }, angled: true };
+}
 
 /** Values for the whole switch (not per set). */
 import { scadParity as scadParityNow } from '../geom/track';
@@ -220,11 +239,12 @@ export function pointsSet(routes: Route[], ps: PointsSet, p: SwitchParams, defau
   // throw arm clears the end connector (half its width past it) and its post has plate round it)
   const fdbYSimple = Math.max(toeY + 8, Math.min(fdbPivotY - 8, Math.round((fdbPivotY - 0.6 * (fdbPivotY - toeY) - 4) / 8) * 8 + 4));
   // (sprung blades on track alone: between two stud lines, where the slider's groove clears a baseplate's studs)
-  const low = sprungLow(p), half = low ? 0 : 4;
+  // (on the design's grid, where it's square to the frame and off its stud lines: one of its corner lines, gl mod 8)
+  const low = sprungLow(p), half = low ? 0 : 4, gl = low ? gridLineY(p.grid) : 0;
   const fdbY0 = (p.bladeStyle === 'prototype' || p.bladeStyle === 'sprung') && p.mechStyle === 'plates'
     // (and with Peco's spring, room for its pin on the toe's side, past the plates' start)
-    ? Math.min(low ? Math.max(toeY + 8, Math.min(fdbPivotY - 8, Math.round((fdbPivotY - 0.6 * (fdbPivotY - toeY)) / 8) * 8)) : fdbYSimple,
-      Math.ceil((Math.max(toeY + 8, 8 + g.armW / 2, p.throwAction === 'overcentre' ? 8 + 12 + 4 : 0) - half) / 8 - 1e-6) * 8 + half) : fdbYSimple;
+    ? Math.min(low ? Math.max(toeY + 8, Math.min(fdbPivotY - 8, Math.round((fdbPivotY - 0.6 * (fdbPivotY - toeY) - gl) / 8) * 8 + gl)) : fdbYSimple,
+      Math.ceil((Math.max(toeY + 8, 8 + g.armW / 2, p.throwAction === 'overcentre' ? 8 + 12 + 4 : 0) - half - gl) / 8 - 1e-6) * 8 + half + gl) : fdbYSimple;
   // (moved along whole studs to keep its lever out of the way (throwShift): still on the stud grid as it was)
   const fdbY = (p.throwShift ?? 0) === 0 ? fdbY0 : Math.max(toeY + 8, Math.min(fdbPivotY - 8, fdbY0 + 8 * p.throwShift!));
   const fdbTravel = p.pointThrow * (fdbPivotY - fdbY) / Math.max(1, fdbPivotY - toeY) + p.springPreload;

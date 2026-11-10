@@ -1,5 +1,6 @@
 // Templates in the Templates list build, with the app's own defaults (setup-defaults.ts APP_DEFAULTS): no warnings but
-// the experimental notes, and the double slip's that its blades are rigid (no room for sprung plates beside the next sets').
+// the experimental notes, the double slip's that its blades are rigid (no room for sprung plates beside the next sets'), and
+// rigid blades on points at an angle to the baseplate grid (a sprung slider there would run over its studs).
 // (Split over files by group: the kernel wears out after a few big builds in one worker.)
 // Each within its time (BUDGET), and built again unchanged near enough at once: a guard against a build made slower.
 import { expect, it } from 'vitest';
@@ -46,7 +47,7 @@ export function templatesBuild(groups: string[], only?: string[]) {
       expect(ms2, `${name}: built again unchanged in ${(ms2 / 1000).toFixed(2)} s`).toBeLessThan(Math.max(1500, ms / 10));
       expect(again.pieces.length).toBe(b.pieces.length);
       expect(b.pieces.length).toBeGreaterThan(0);
-      expect(b.info.warnings.filter((w) => !/experimental/.test(w) && !(/Double slip/.test(name) && /blades are rigid/.test(w)) && !(/Helix/.test(name) && /stands over other track/.test(w)) && !(/X yard/.test(name) && /lever of the points at 67, 209|sprung blade's front has no lip|blades are rigid/.test(w)))).toEqual([]);
+      expect(b.info.warnings.filter((w) => !/experimental/.test(w) && !/at an angle to the baseplate grid/.test(w) && !(/Double slip/.test(name) && /blades are rigid/.test(w)) && !(/Helix/.test(name) && /stands over other track/.test(w)) && !(/X yard/.test(name) && /lever of the points at 67, 209|sprung blade's front has no lip|blades are rigid/.test(w)))).toEqual([]);
     } finally { Object.assign(OPTION_DEFAULTS, saved); clearBuildCache(); }
   });
 }

@@ -8,6 +8,7 @@ import type { SetOver } from './base';
 import { heightAt, poseToWorld, rollPart, routeLat, routeLength, routePose, routeSOf, segLength, segStarts, subExtra, worldToPose } from '../route/route';
 import type { Split } from '../route/solver';
 import { type BaseParams, BASE_DEFAULTS, type SetSpec, switchPlan, type SwitchPlan } from './base';
+import { gridIn, sprungOnGrid } from './context';
 
 const rad = (d: number) => (d * Math.PI) / 180;
 const cosd = (d: number) => Math.cos(rad(d));
@@ -101,7 +102,8 @@ export function sharedLead(a: Route, b: Route): number {
 /** toeShift: how far (mm) to move the points from where the branch leaves, by that point in the design (hand edits). */
 export function planPieces(routes: Route[], splits: Split[], p: BaseParams = BASE_DEFAULTS, toeShift: (at: [number, number]) => number = () => 0,
   throwEdit: (at: [number, number]) => ThrowEdit | undefined = () => undefined, gridLevers = false): Pieces {
-  const warnings: string[] = [];
+  const warnings: string[] = [], angled: string[] = [];
+  const gw = routes.length && (p.generateBallast || p.undersideGrid !== 'track') ? routePose(routes[0], 0) : undefined;
   // (the ends must clear each other's base: the sleepers, or with ballast its widest layer)
   const sleeperLen = (p.gaugeStuds + 1) * 8 + 24;
   const endHw = p.generateBallast ? (sleeperLen + ((p.ballastBuddy ?? true) ? 32 : 16)) / 2 : sleeperLen / 2;
@@ -124,6 +126,10 @@ export function planPieces(routes: Route[], splits: Split[], p: BaseParams = BAS
       const group = [first];
       while (list.length && list[0].sa - first.sa < 160 && group.length < 2) group.push(list.shift()!);
       const P = routePose(routes[parent], s0);
+      // (planned with the design's stud grid in its frame, but lined up with the track, track alone: sprung blades'
+      // slider on the grid's lines; at an angle to it, rigid blades (sprungOnGrid))
+      const pg = sprungOnGrid(gw ? { ...p, grid: gridIn(P, gw) } : p);
+      if (pg.angled) angled.push(`${(P[0] / 8).toFixed(0)}, ${(P[1] / 8).toFixed(0)}`);
       // The routes in the switch's frame: the parent on from the split, and
       // each child (with the parent's stretch up to it, for a later split).
       const frame = (rt: Route): Route => ({ ...rt, start: toFrame(P, rt.start) });
@@ -180,7 +186,7 @@ export function planPieces(routes: Route[], splits: Split[], p: BaseParams = BAS
         for (let k = 0; k + 1 < ends.length; k++)
           if (Math.abs(ends[k][0] - ends[k + 1][0]) < endHw * (Math.abs(cosd(ends[k][2])) + Math.abs(cosd(ends[k + 1][2]))) + 2) clear = false;
         if (!clear) continue;
-        const plan = switchPlan(rts, sets, p);
+        const plan = switchPlan(rts, sets, pg.p);
         if (plan.frogs.some((f) => f.pt[1] + p.checkRailLen / 2 + 34 > L)) continue;
         built = { L, rts, plan };
       }
@@ -188,7 +194,7 @@ export function planPieces(routes: Route[], splits: Split[], p: BaseParams = BAS
       // The routes to their ends: the switch and the track on from it are one
       // piece (it's split for the print bed only where it has to be).
       const whole = true;
-      if (whole) built = { L: Math.max(...sorted.map((rt) => routePose(rt, routeLength(rt))[1])), rts: sorted, plan: switchPlan(sorted, sets, p) };
+      if (whole) built = { L: Math.max(...sorted.map((rt) => routePose(rt, routeLength(rt))[1])), rts: sorted, plan: switchPlan(sorted, sets, pg.p) };
       // (each lever on a stud of the design's grid, unless moved by hand)
       if (gridLevers) {
         let moved = false;
@@ -198,7 +204,7 @@ export function planPieces(routes: Route[], splits: Split[], p: BaseParams = BAS
           const g2 = gridLever(P, built!.plan.sets[n], ed);
           if (g2.leverOffset !== undefined) { st[5] = g2; moved = true; }
         });
-        if (moved) built = { ...built, plan: switchPlan(sorted, sets, p) };
+        if (moved) built = { ...built, plan: switchPlan(sorted, sets, pg.p) };
       }
       // (but not switch.scad's print-bed guess, with its margins: the build cuts the base to the bed and says if a part still doesn't fit)
       warnings.push(...built.plan.warnings.filter((w) => !/print bed/.test(w)));
@@ -224,6 +230,7 @@ export function planPieces(routes: Route[], splits: Split[], p: BaseParams = BAS
       s = Math.max(s, b);
     }
   });
+  if (angled.length) warnings.push(`some switches' blades are rigid: at an angle to the baseplate grid, a sprung blades' slider would run over its studs (the switches at ${angled.slice(0, 4).join('; ')}${angled.length > 4 ? ' …' : ''}, in studs; Underside lined up with: The track itself keeps them sprung)`);
   return { switches, rest, warnings };
 }
 

@@ -81,7 +81,7 @@ export function optionForm(d: () => Design): { form: OptSection[]; noMono: (c?: 
         { v: 'float', t: 'Flat', tip: 'Flat underneath. It rests on the studs without gripping.' }] },
       { key: 'undersideGrid', label: 'Underside lined up with', off: (c) => (c.ballast ? 'only for track without ballast (ballast always lines up with the baseplate)' : undefined), choices: [
         { v: 'baseplate', t: 'The baseplate grid', tip: 'The sockets and tubes line up with the baseplate\'s studs, so the track clicks onto it.' },
-        { v: 'track', t: 'The track itself', tip: 'Hollow with anti-stud tubes in rows along the track, turned with it, like LEGO track\'s underside: for track laid off the grid, at an angle, or on other parts\' studs.',
+        { v: 'track', t: 'The track itself', tip: 'Hollow with anti-stud tubes in rows along the track, turned with it, like LEGO track\'s underside: for track not on a baseplate, or on other parts\' studs.',
           con: 'On a baseplate it only clicks on where the track happens to line up with the grid.' }] },
       { key: 'grip', label: 'Grip on the baseplate', off: (c) => (c.ballast && c.o.bottomStyle === 'float' ? 'Ballast underside is Flat, so nothing grips' : !c.ballast && c.o.undersideGrid === 'track' && c.switches === false ? 'Underside lined up with the track: tubes all along it, as LEGO track (it\'s for switches, and there are none)' : undefined), help: 'Switches always; track and crossings with Underside lined up with: The baseplate grid, or with ballast. With Sleepers with gaps (no ballast), only under the solid bed (switches, crossings): the sleepers\' own underside is LEGO track\'s.',
         choices: [

@@ -14,7 +14,7 @@ import { sweepRoute } from '../geom/sweep';
 import { ANTISTUD_FIT, connectorUnderside, hollowGrid, type Spot, studSpots, TUBE_OD } from '../geom/underside';
 import { DEFAULTS as TRACK_DEFAULTS, getSocketShape, scadParity, PLATE_H, RAIL_PROFILE, STUD, Track } from '../geom/track';
 import { couplerSupports, trackSeat } from '../geom/extras';
-import { SPRUNG_SLIDER, type FdbBladeLayout, sprungLow, HEAD_HW, type Notch, pointsSet, type PointsSetValues, STAND, SWITCH_DEFAULTS, type SwitchParams, switchGlobals } from './context';
+import { SPRUNG_SLIDER, type FdbBladeLayout, sprungLow, squareGrid, HEAD_HW, type Notch, pointsSet, type PointsSetValues, STAND, SWITCH_DEFAULTS, type SwitchParams, switchGlobals } from './context';
 
 export interface BaseParams extends SwitchParams {
   flangeway: number;        // 3
@@ -28,8 +28,6 @@ export interface BaseParams extends SwitchParams {
   studGrip: 'edges' | 'all';
   /** (track alone) The underside lined up with the baseplate's stud grid (the switch's own frame), or with the track (its end connectors on their own ends' frames). */
   undersideGrid?: 'baseplate' | 'track';
-  /** The stud grid the underside is on, in the switch's frame (its pose: studs at 4 + 8k in it); unset, the switch's own frame (or the track's, lined up with it). */
-  grid?: Pose;
   /**
    * The points as one part (both blades on a heel bar, one pivot: switch.scad's)
    * or two (each blade on its own pivot with its own spring, as the plate-style).
@@ -1602,7 +1600,9 @@ export function switchGeometry(s: Scad, plan: SwitchPlan, extraCuts: Man[] = [])
   const fdbRests = (v: SetV): Man | undefined => {
     if (!sprungLow(p)) return undefined;
     const bb = fdbSlot2d(v, 0).bounds(), out: CS[] = [];
-    for (let x = Math.ceil((bb.min[0] + 2) / STUD) * STUD; x <= bb.max[0] - 2 + 1e-9; x += STUD) out.push(circle((TUBE_OD - (p.antistudFit ?? ANTISTUD_FIT)) / 2, 24, [x, v.throwY]));
+    // (at the underside grid's stud corners along the throw line: x = gx mod 8, where it's square to the frame)
+    const gx = squareGrid(GR) ? ((GR[0] % STUD) + STUD) % STUD : 0;
+    for (let x = Math.ceil((bb.min[0] + 2 - gx) / STUD) * STUD + gx; x <= bb.max[0] - 2 + 1e-9; x += STUD) out.push(circle((TUBE_OD - (p.antistudFit ?? ANTISTUD_FIT)) / 2, 24, [x, v.throwY]));
     // (and a floor under the whole groove and the lever's opening, between the rests: the channel closed underneath
     // wherever a baseplate's stud isn't (the studs either side of the groove, 0.1 clear, as the tubes are))
     const ch = throwChannel(v), foot = ch.slice(fdbFloor() + 0.05).add(pointsPockets(v).slice(fdbFloor() + 0.05)).intersect(sq([bb.max[0] - bb.min[0], 40], [bb.min[0], v.throwY - 20]));

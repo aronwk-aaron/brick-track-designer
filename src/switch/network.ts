@@ -15,6 +15,7 @@ import type { Solution } from '../route/solver';
 import { reversedRoute } from './reverse';
 import { type BaseParams, fdbFootprint, type SetOver, type SetSpec, switchGeometry, switchPlan, type SwitchPlan } from './base';
 import { gridLever, sharedLead, subRoute, type ThrowEdit, toFrame } from './pieces';
+import { gridIn, sprungOnGrid } from './context';
 
 export interface NetworkPart { name: string; color: number; local: Man; world: Man; turn?: { at: [number, number]; by: number; swing?: number; tilt?: [[number, number], [number, number]] } }
 
@@ -56,6 +57,10 @@ export function networkSplits(s: Scad, routes: Route[], sol: Solution, p: BasePa
   // ---- which splits make a three-way ----
   const toeOf = (sp: Solution['splits'][number]) => { const s0 = sp.merge ? sp.spans[0][1] : sp.spans[0][0], q = routePose(routes[sp.routes[0]], s0); return [q[0], q[1]] as [number, number]; };
   const near = (a: [number, number], b: [number, number], within = 1) => Math.hypot(a[0] - b[0], a[1] - b[1]) < within;
+  // (the underside on the design's stud grid (the first route's start), but lined up with the track, track alone: each
+  // set planned with it in its frame, so the sprung slider's throw line is on the grid and what it rests on keeps clear
+  // of the baseplate's studs; sets at an angle to the grid, rigid blades (sprungOnGrid))
+  const gw = routes.length && (p.generateBallast || p.undersideGrid !== 'track') ? routePose(routes[0], 0) : undefined;
   const groups: { main: number; kids: number[] }[] = [], taken = new Set<number>();
   sol.splits.forEach((sp, k) => {
     if (taken.has(k)) return;
@@ -190,14 +195,15 @@ export function networkSplits(s: Scad, routes: Route[], sol: Solution, p: BasePa
     // (the blades as chosen, else, where they don't fit: first rigid blades on top, where the chosen shape's plate, with
     // its spring's pocket and the pocket's walls, doesn't fit beside other track's rails running between its stock rails
     // or other points' plates (keep: fdbLayout): a double slip's, a tandem's, a slip's; then on tines; said, where, below)
+    const pg = sprungOnGrid(gw ? { ...p, grid: gridIn(P, gw) } : p);
     const choose = (keep: Pt[][]) => {
-      let pp = p, plan = switchPlan(rts, [used], pp, 1, foreign, keep), how: 'rigid' | 'tines' | undefined;
+      let pp = pg.p, plan = switchPlan(rts, [used], pp, 1, foreign, keep), how: 'rigid' | 'tines' | 'angled' | undefined = pg.angled ? 'angled' : undefined;
       if (fdb && !three && blockedOf(plan) && p.bladeStyle && p.bladeStyle !== 'simple') {
-        const p1 = { ...p, bladeStyle: 'simple' as const }, plan1 = switchPlan(rts, [used], p1, 1, foreign, keep);
+        const p1 = { ...pg.p, bladeStyle: 'simple' as const }, plan1 = switchPlan(rts, [used], p1, 1, foreign, keep);
         if (blockedOf(plan1) === false) { pp = p1; plan = plan1; how = 'rigid'; }
       }
       if (fdb && !three && !tandem && blockedOf(plan)) {
-        const p2 = { ...p, mechStyle: 'tines' as const }, plan2 = switchPlan(rts, [used], p2, 1, foreign, keep);
+        const p2 = { ...pg.p, mechStyle: 'tines' as const }, plan2 = switchPlan(rts, [used], p2, 1, foreign, keep);
         if (blockedOf(plan2) === false) { pp = p2; plan = plan2; how = 'tines'; }
       }
       return { pp, plan, how };
@@ -247,6 +253,8 @@ export function networkSplits(s: Scad, routes: Route[], sol: Solution, p: BasePa
   // (a note, not ringed on the plan as a problem: the places not in studsAt's words)
   const rigidAt = preps.filter((q) => q.how === 'rigid').map((q) => studsAt(q.gr.main).replace(' (studs)', ''));
   if (rigidAt.length) warnings.push(`some points' blades are rigid: the chosen shape's plate doesn't fit beside the other track's rails or the next points' blades there (the points at ${rigidAt.slice(0, 4).join('; ')}${rigidAt.length > 4 ? ' …' : ''}, in studs)`);
+  const angledAt = preps.filter((q) => q.how === 'angled').map((q) => studsAt(q.gr.main).replace(' (studs)', ''));
+  if (angledAt.length) warnings.push(`some points' blades are rigid: at an angle to the baseplate grid, a sprung blades' slider would run over its studs (the points at ${angledAt.slice(0, 4).join('; ')}${angledAt.length > 4 ? ' …' : ''}, in studs; Underside lined up with: The track itself keeps them sprung)`);
   if (preps.some((q) => q.how === 'tines')) warnings.push("a double slip's points are built on tines under the bed, the blades notched for the other track's flanges: blades on top don't fit between its rails");
   const crowded = preps.filter((q) => q.alone && q.keep.length && q.blockedOf(q.st.plan)).map((q) => studsAt(q.gr.main));
   if (crowded.length) warnings.push(`the points at ${crowded.slice(0, 4).join('; ')}${crowded.length > 4 ? ' …' : ''} have no room for their blades' plates beside the next points' blades: they'd hit; move them apart, or use 'tines' points`);
@@ -361,9 +369,7 @@ export function networkSplits(s: Scad, routes: Route[], sol: Solution, p: BasePa
   // bed, in the design: another set's blade plate swinging over one (a double slip's sets are that close) is cut clear)
   // (the underside on the design's stud grid (the first route's start), but lined up with the track, track alone: each
   // set's frame given it, so what the slider rests on keeps clear of the baseplate's studs)
-  const gw = p.generateBallast || p.undersideGrid !== 'track' ? routePose(routes[0], 0) : undefined;
-  const gms = preps.map((q) => (gw ? switchGeometry(s, { ...q.st.plan, p: { ...q.st.plan.p, grid: [...worldToPose(q.P, [gw[0], gw[1]]), gw[2] - q.P[2]] as Pose } })
-    : q.gm?.plan === q.st.plan ? q.gm.gm : switchGeometry(s, q.st.plan)));
+  const gms = preps.map((q) => (q.gm?.plan === q.st.plan ? q.gm.gm : switchGeometry(s, q.st.plan)));
   const ocPins = gms.map((gm, k) => { const o = gm.ocPinsAt(0); return o.at.map((pt) => ({ at: poseToWorld(preps[k].P, pt) as Pt, r: o.r, top: o.top })); });
   /** A blade (local: in its set's frame) clear of the other sets' spring pins, wherever it is as it turns from closed to open. */
   const clearOfPins = (n: number, m: Man, turn: { at: Pt; by: number } | undefined): Man => {
