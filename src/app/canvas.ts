@@ -71,6 +71,8 @@ export interface CanvasHost {
   revert?(): void;
 }
 
+/** How long segments run along their centre line, studs. */
+export const segsStuds = (segs: DSeg[]) => segs.reduce((t, sg) => t + (sg.kind === 'straight' ? sg.studs : (Math.abs(sg.angle) * Math.PI * sg.radius) / 180), 0);
 const MM = 8; // mm per stud
 const MONO_HW = 15.9, MONO_RIDGE_HW = 3.2; // the monorail beam's and its ridge's half-widths, mm (monorail_lib.scad)
 
@@ -296,6 +298,7 @@ export class TrackCanvas {
     this.ctx = el.getContext('2d')!;
     new ResizeObserver(() => this.resize()).observe(el.parentElement!);
     el.addEventListener('contextmenu', (e) => e.preventDefault());
+    el.addEventListener('mouseleave', () => { if (this.hoverRoute !== undefined) { this.hoverRoute = undefined; this.drawSoon(); } });
     el.addEventListener('mousedown', (e) => { this.touching = false; this.down(e); });
     addEventListener('mousemove', (e) => this.move(e));
     addEventListener('mouseup', (e) => this.up(e));
@@ -669,16 +672,21 @@ export class TrackCanvas {
   /** The mouse pointer says what a press would do: grab a lever, points or an end, pick a track, or lay track. */
   private cursor() {
     const w = this.mouse;
-    let c = this.mode === 'draw' ? 'crosshair' : 'default';
+    let c = this.mode === 'draw' ? 'crosshair' : 'default', over: number | undefined;
     if (this.space) c = 'grab';
     else if (w && !this.active) {
       const grab = !!(this.handleAt(w) || this.leverAt(w) || this.itemAt(w)), hit = grab ? undefined : this.nearTrack(w, this.reach(18)) ?? (this.mode === 'select' ? this.onBand(w) : undefined);
       if (grab) c = 'grab';
       else if (hit?.end) c = 'move';
       else if (hit && this.mode === 'select') c = 'pointer';
+      // (the track a click would pick in Select, lightly marked: not over a handle, a lever or points)
+      if (this.mode === 'select' && !this.panning) over = hit?.route;
     }
     if (this.el.style.cursor !== c) this.el.style.cursor = c;
+    if (over !== this.hoverRoute) { this.hoverRoute = over; this.drawSoon(); }
   }
+  /** The route under the pointer in Select (lightly marked). */
+  private hoverRoute: number | undefined;
   private up(e: MouseEvent) {
     const pan = this.panning;
     this.panning = undefined;
@@ -1113,12 +1121,14 @@ export class TrackCanvas {
     }
     // the sleeper bands, each colour as one layer (red where a drag can't bend the track)
     {
-      const bandOf = (i: number) => (i === this.selected || this.extra.has(i) ? 'rgba(43,111,224,0.18)' : ink.band);
+      // (the track under the pointer, in Select: a hint of the selected blue, so what a click would pick is seen)
+      const HOVER = 'rgba(43,111,224,0.09)';
+      const bandOf = (i: number) => (i === this.selected || this.extra.has(i) ? 'rgba(43,111,224,0.18)' : i === this.hoverRoute ? HOVER : ink.band);
       const badOf = (i: number) => {
         const dragging = this.drag?.moved && this.drag.route === i && this.dragBad;
         return (k: number) => !!dragging && (this.dragBadFrom >= 0 ? k >= this.dragBadFrom : k < this.dragBadTo);
       };
-      for (const color of [ink.band, 'rgba(43,111,224,0.18)', 'rgba(224,69,43,0.22)']) layer(color, (draw) => d.routes.forEach((r, i) => {
+      for (const color of [ink.band, HOVER, 'rgba(43,111,224,0.18)', 'rgba(224,69,43,0.22)']) layer(color, (draw) => d.routes.forEach((r, i) => {
         if (isMono(r)) return; // (the monorail's beam: drawn below)
         let q: Pose = r; const bad = badOf(i);
         r.segs.forEach((sg, k) => {
@@ -1354,7 +1364,9 @@ export class TrackCanvas {
           }
           const [mx, my] = this.toScreen(...this.snap(this.mouse));
           const sn = this.joinableEnd(this.mouse);
-          const txt = sn ? `${describe(segs)}: joins ${d.routes[sn.route].name}` : this.joinBlocked ? `${describe(segs)}: ${this.joinBlocked}` : describe(segs);
+          // (carrying a route on: how long it is with this laid)
+          const total = this.active.route !== undefined && d.routes[this.active.route] ? ` · route ${+(segsStuds(d.routes[this.active.route].segs) + segsStuds(segs)).toFixed(1)} studs` : '';
+          const txt = sn ? `${describe(segs)}: joins ${d.routes[sn.route].name}` : this.joinBlocked ? `${describe(segs)}: ${this.joinBlocked}` : describe(segs) + total;
           tag(mx, my, txt, ink.selInk);
         } else {
           // can't get there with the allowed curves: show the curve it would

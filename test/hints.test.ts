@@ -14,3 +14,11 @@ describe('the plan hint for a finger', () => {
     expect(forFingers('No track yet: press D (or ✎ Draw) to lay some')).toBe('No track yet: tap ✎ Draw to lay some');
   });
 });
+
+import { segsStuds } from '../src/app/canvas';
+describe('the length of segments', () => {
+  it('adds straights and arcs', () => {
+    expect(segsStuds([{ kind: 'straight', studs: 16 }, { kind: 'curve', radius: 40, angle: 90 }])).toBeCloseTo(16 + 20 * Math.PI, 6);
+    expect(segsStuds([{ kind: 'curve', radius: 24, angle: -180 }])).toBeCloseTo(24 * Math.PI, 6);
+  });
+});
