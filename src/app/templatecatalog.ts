@@ -1,23 +1,26 @@
 // The template browser's facts about each template, worked out from its name and its routes (nothing is written by
 // hand but the few overrides below), and the plain logic of the browser: its sections, its search and its filters, and
 // the plan picture's lines. No page here: main's browser (templatebrowser.ts) only shows what this works out.
-import { type Design, STUD, TEMPLATES, TEMPLATE_GROUPS, isMono, routeGaugeStuds, toRoutes } from './design';
+import { type Design, STUD, TEMPLATES, TEMPLATE_GROUPS, TEMPLATE_SETS, isMono, routeGaugeStuds, toRoutes } from './design';
 import { type Pt, type Route, hostedEnds, railOffsetOf, railPoint, routeLength, routesBox, segLength, segStarts } from '../route/route';
 
 export type Kind =
   | 'switch' | 'curved switch' | 'wye' | 'three-way' | 'next-track switch' | 'crossing' | 'curved crossing' | 'slip'
-  | 'crossover' | 'buffer' | 'straight' | 'curve' | 'layout' | 'feature' | 'monorail' | 'test print';
-export const KINDS: Kind[] = ['switch', 'curved switch', 'wye', 'three-way', 'next-track switch', 'crossing', 'curved crossing', 'slip', 'crossover', 'buffer', 'straight', 'curve', 'layout', 'feature', 'monorail', 'test print'];
+  | 'crossover' | 'buffer' | 'straight' | 'curve' | 'set' | 'layout' | 'feature' | 'monorail' | 'test print';
+export const KINDS: Kind[] = ['switch', 'curved switch', 'wye', 'three-way', 'next-track switch', 'crossing', 'curved crossing', 'slip', 'crossover', 'buffer', 'straight', 'curve', 'set', 'layout', 'feature', 'monorail', 'test print'];
 /** What each kind is called, in plain words (the filter chips, the card's second line, the words a search finds). */
 export const KIND_LABEL: Record<Kind, string> = {
   switch: 'Switch', 'curved switch': 'Curved switch', wye: 'Wye', 'three-way': 'Three-way', 'next-track switch': 'Switch to the next track',
-  crossing: 'Crossing', 'curved crossing': 'Curved crossing', slip: 'Slip', crossover: 'Crossover', buffer: 'Buffer stop', straight: 'Straight', curve: 'Curve',
+  crossing: 'Crossing', 'curved crossing': 'Curved crossing', slip: 'Slip', crossover: 'Crossover', buffer: 'Buffer stop', straight: 'Straight', curve: 'Curve', set: 'Set',
   layout: 'Layout', feature: 'Feature', monorail: 'Monorail', 'test print': 'Test print',
 };
 export type Gauge = 'standard' | 'narrow' | 'dual' | 'mixed' | 'none';
 export const GAUGES: Exclude<Gauge, 'none'>[] = ['standard', 'narrow', 'dual', 'mixed'];
 export const GAUGE_LABEL: Record<Gauge, string> = { standard: 'Standard gauge', narrow: 'Narrow gauge', dual: 'Dual gauge', mixed: 'Mixed gauges', none: '' };
 export type System = 'train' | 'monorail';
+/** Whose range of parts a template is from (its group's), if it's one of the makers' groups. */
+export type Range = 'TrixBrix' | '4DBrix' | 'BrickTracks';
+export const RANGES: Range[] = ['TrixBrix', '4DBrix', 'BrickTracks'];
 export type Hand = 'left' | 'right' | 'none';
 
 export interface TemplateInfo {
@@ -29,7 +32,7 @@ export interface TemplateInfo {
   title: string;
   /** Radius in studs: the name's first R-number, else the curves' one radius (undefined: none, several, or not a whole number). */
   radius?: number;
-  gauge: Gauge; system: System;
+  gauge: Gauge; system: System; range?: Range;
   /** The track's footprint in studs, the longer side first. */
   length: number; width: number;
   routes: number;
@@ -44,14 +47,16 @@ export const KIND_OVERRIDES: Record<string, Kind> = {
   'T-junction core R56': 'feature',
 };
 
-/** The reference trackwork group's name: its templates are listed by kind, not in one pile. */
-export const REFERENCE_GROUP = 'TrixBrix trackwork';
+/** The makers' ranges' groups: their templates are listed by kind, not in one pile. */
+export const REFERENCE_GROUPS: Record<string, Range> = { 'TrixBrix trackwork': 'TrixBrix', '4DBrix trackwork': '4DBrix', 'BrickTracks trackwork': 'BrickTracks' };
 
 /** A template's kind: from its name (first rule that fits), else its group. */
 export function kindOf(name: string, group: string, mono = false): Kind {
   if (/test/i.test(group)) return 'test print';
   if (mono || /monorail/i.test(group)) return 'monorail';
   if (KIND_OVERRIDES[name]) return KIND_OVERRIDES[name];
+  // (a set of parts, as the maker sells them together: said by its module, not its name)
+  if (TEMPLATE_SETS.has(name)) return 'set';
   const n = name.toLowerCase();
   // (plain track: named for what it is, first)
   if (/^(narrow-gauge |dual gauge )?straight\b/.test(n)) return 'straight';
@@ -91,8 +96,8 @@ export function withoutHand(name: string): string {
   return s[0].toUpperCase() + s.slice(1);
 }
 
-/** Radii in a name, studs: "R40", "R40 left, R56 right" → [40, 56]. */
-export const radiiIn = (name: string) => [...name.matchAll(/\bR(\d+)\b/g)].map((m) => Number(m[1]));
+/** Radii in a name, studs: "R40", "R40 left, R56 right" → [40, 56] (whole ones: not a fitted "R63.8"). */
+export const radiiIn = (name: string) => [...name.matchAll(/\bR(\d+)\b(?!\.\d)/g)].map((m) => Number(m[1]));
 
 function gaugeOf(d: Design): Gauge {
   const rs = d.routes.filter((r) => !isMono(r));
@@ -117,18 +122,18 @@ function footprint(d: Design): { length: number; width: number } {
 
 /** The section a template is listed in (and the heading over it). */
 function sectionOf(group: string, kind: Kind, gauge: Gauge): { section: string; parent?: string } {
-  if (group !== REFERENCE_GROUP) return { section: group };
-  const parent = REFERENCE_GROUP;
+  if (!(group in REFERENCE_GROUPS)) return { section: group };
+  const parent = group;
   if (gauge === 'narrow') return { section: 'Narrow gauge', parent };
   if (gauge === 'dual' || gauge === 'mixed') return { section: 'Dual and mixed gauge', parent };
   const by: Partial<Record<Kind, string>> = {
     switch: 'Switches', 'curved switch': 'Curved switches', wye: 'Wyes', 'three-way': 'Three-ways', 'next-track switch': 'Switches to the next track',
-    crossing: 'Crossings', 'curved crossing': 'Curved and pass-through crossings', slip: 'Slips and crossovers', crossover: 'Slips and crossovers', buffer: 'Buffers', straight: 'Plain track', curve: 'Plain track',
+    crossing: 'Crossings', 'curved crossing': 'Curved and pass-through crossings', slip: 'Slips and crossovers', crossover: 'Slips and crossovers', buffer: 'Buffers', straight: 'Plain track', curve: 'Plain track', set: 'Sets',
   };
   return { section: by[kind] ?? 'Other parts', parent };
 }
 /** The order the reference trackwork's sections are shown in. */
-export const REFERENCE_SECTIONS = ['Switches', 'Curved switches', 'Wyes', 'Three-ways', 'Switches to the next track', 'Crossings', 'Curved and pass-through crossings', 'Slips and crossovers', 'Buffers', 'Plain track', 'Narrow gauge', 'Dual and mixed gauge', 'Other parts'];
+export const REFERENCE_SECTIONS = ['Switches', 'Curved switches', 'Wyes', 'Three-ways', 'Switches to the next track', 'Crossings', 'Curved and pass-through crossings', 'Slips and crossovers', 'Buffers', 'Plain track', 'Sets', 'Narrow gauge', 'Dual and mixed gauge', 'Other parts'];
 
 /** The facts about every template. */
 export function buildCatalog(templates: Record<string, Design> = TEMPLATES, groups: [string, string[]][] = TEMPLATE_GROUPS): TemplateInfo[] {
@@ -147,7 +152,7 @@ export function buildCatalog(templates: Record<string, Design> = TEMPLATES, grou
       const radius = radiiIn(name)[0] ?? (only !== undefined && Math.abs(only - Math.round(only)) < 0.01 ? Math.round(only) : undefined);
       out.push({
         name, group, kind, hand, ...(twin && templates[twin] && { twin }), title: withoutHand(name), ...(radius !== undefined && { radius }),
-        gauge, system: mono ? 'monorail' : 'train', ...footprint(d), routes: d.routes.length, ...sectionOf(group, kind, gauge),
+        gauge, system: mono ? 'monorail' : 'train', ...(REFERENCE_GROUPS[group] && { range: REFERENCE_GROUPS[group] }), ...footprint(d), routes: d.routes.length, ...sectionOf(group, kind, gauge),
       });
     }
   }
@@ -180,18 +185,19 @@ export function describe(c: Card): string {
 }
 
 // ---------- search and filters ----------
-export interface Filters { query: string; kinds: ReadonlySet<Kind>; gauges: ReadonlySet<Gauge>; systems: ReadonlySet<System>; radii: ReadonlySet<number> }
-export const noFilters = (): Filters => ({ query: '', kinds: new Set(), gauges: new Set(), systems: new Set(), radii: new Set() });
-export const filtering = (f: Filters) => !!(f.query.trim() || f.kinds.size || f.gauges.size || f.systems.size || f.radii.size);
+export interface Filters { query: string; kinds: ReadonlySet<Kind>; gauges: ReadonlySet<Gauge>; systems: ReadonlySet<System>; radii: ReadonlySet<number>; ranges: ReadonlySet<Range> }
+export const noFilters = (): Filters => ({ query: '', kinds: new Set(), gauges: new Set(), systems: new Set(), radii: new Set(), ranges: new Set() });
+export const filtering = (f: Filters) => !!(f.query.trim() || f.kinds.size || f.gauges.size || f.systems.size || f.radii.size || f.ranges.size);
 
 /** What a search looks in: names (both hands), kind words, gauge and track words, radius. */
-export const haystack = (c: Card) => [c.name, c.twin, c.title, c.group, KIND_LABEL[c.kind], c.kind, GAUGE_LABEL[c.gauge], c.system, c.radius !== undefined ? `R${c.radius}` : '']
+export const haystack = (c: Card) => [c.name, c.twin, c.title, c.group, KIND_LABEL[c.kind], c.kind, GAUGE_LABEL[c.gauge], c.system, c.range, c.radius !== undefined ? `R${c.radius}` : '']
   .filter(Boolean).join(' ').toLowerCase();
 /** Does a card pass the filters? Every word of the search must be found; within one kind of chip any one fits, across kinds all must. */
 export function matches(c: Card, f: Filters): boolean {
   if (f.kinds.size && !f.kinds.has(c.kind)) return false;
   if (f.gauges.size && !f.gauges.has(c.gauge)) return false;
   if (f.systems.size && !f.systems.has(c.system)) return false;
+  if (f.ranges.size && !(c.range && f.ranges.has(c.range))) return false;
   if (f.radii.size && !(c.radius !== undefined && f.radii.has(c.radius))) return false;
   const words = f.query.toLowerCase().split(/\s+/).filter(Boolean);
   if (!words.length) return true;
@@ -212,14 +218,14 @@ export function sectionsOf(cards: Card[], groups: [string, string[]][] = TEMPLAT
   const out: Section[] = [];
   const order = (a: Card, b: Card) => (a.radius ?? Infinity) - (b.radius ?? Infinity);
   for (const [g] of groups) {
-    if (g === REFERENCE_GROUP) continue;
+    if (g in REFERENCE_GROUPS) continue;
     const cs = cards.filter((c) => c.group === g && c.section === g);
     if (cs.length) out.push({ id: g, title: g, cards: cs });
   }
   // (groups added since: the reference trackwork's own order is the sections' list above)
-  for (const s of REFERENCE_SECTIONS) {
-    const cs = cards.filter((c) => c.parent === REFERENCE_GROUP && c.section === s);
-    if (cs.length) out.push({ id: `${REFERENCE_GROUP}/${s}`, title: s, parent: REFERENCE_GROUP, cards: [...cs].sort(order) });
+  for (const [g] of groups) if (g in REFERENCE_GROUPS) for (const s of REFERENCE_SECTIONS) {
+    const cs = cards.filter((c) => c.parent === g && c.section === s);
+    if (cs.length) out.push({ id: `${g}/${s}`, title: s, parent: g, cards: [...cs].sort(order) });
   }
   return out;
 }

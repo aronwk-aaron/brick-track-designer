@@ -3,7 +3,7 @@
 // this only shows them. Pictures are drawn when a card scrolls into view.
 import { TEMPLATES } from './design';
 import {
-  GAUGES, KIND_LABEL, type Card, type Filters, type Gauge, type Kind, type PlanPicture, type System,
+  GAUGES, KIND_LABEL, RANGES, type Range, type Card, type Filters, type Gauge, type Kind, type PlanPicture, type System,
   cardFor, cardsOf, catalog, countOf, describe, filterCards, filtering, kindsOf, noFilters, planPicture, radiiOf, sectionsOf,
 } from './templatecatalog';
 
@@ -51,8 +51,8 @@ export function initTemplateBrowser(pick: (name: string) => Promise<boolean>) {
   const load = () => { stars = keep(readList(STARS)); recent = keep(readList(RECENT)).slice(0, RECENT_MAX); };
 
   // ---- filter chips
-  type Axis = 'kinds' | 'gauges' | 'systems' | 'radii';
-  const chip = (axis: Axis, value: Kind | Gauge | System | number, label: string) => {
+  type Axis = 'kinds' | 'gauges' | 'systems' | 'radii' | 'ranges';
+  const chip = (axis: Axis, value: Kind | Gauge | System | Range | number, label: string) => {
     const b = document.createElement('button'); b.type = 'button'; b.textContent = label; b.dataset.axis = axis; b.dataset.value = String(value); b.setAttribute('aria-pressed', 'false');
     b.addEventListener('click', () => {
       const set = new Set(filters[axis] as ReadonlySet<unknown>);
@@ -72,6 +72,7 @@ export function initTemplateBrowser(pick: (name: string) => Promise<boolean>) {
     row('Kind', kindsOf(cards).map((k) => chip('kinds', k, KIND_LABEL[k])));
     row('Gauge', GAUGES.filter((g) => cards.some((c) => c.gauge === g)).map((g) => chip('gauges', g, ({ standard: 'Standard', narrow: 'Narrow', dual: 'Dual', mixed: 'Mixed', none: '' } as Record<Gauge, string>)[g])));
     row('Track', (['train', 'monorail'] as const).filter((s) => cards.some((c) => c.system === s)).map((s) => chip('systems', s, s === 'train' ? 'Train' : 'Monorail')));
+    row('Range', RANGES.filter((r) => cards.some((c) => c.range === r)).map((r) => chip('ranges', r, r)));
     row('Radius', radiiOf(cards).map((r) => chip('radii', r, `R${r}`)));
   }
   function syncChips() {
@@ -80,7 +81,7 @@ export function initTemplateBrowser(pick: (name: string) => Promise<boolean>) {
       b.setAttribute('aria-pressed', String([...set].some((v) => String(v) === b.dataset.value)));
     }
     clearBtn.disabled = !filtering(filters);
-    const on = filters.kinds.size + filters.gauges.size + filters.systems.size + filters.radii.size;
+    const on = filters.kinds.size + filters.gauges.size + filters.systems.size + filters.radii.size + filters.ranges.size;
     filtersBtn.textContent = on ? `Filters (${on})` : 'Filters';
   }
 

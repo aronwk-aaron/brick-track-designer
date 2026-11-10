@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { TEMPLATES, TEMPLATE_GROUPS, type Design } from '../src/app/design';
 import {
-  KINDS, KIND_LABEL, REFERENCE_GROUP, REFERENCE_SECTIONS, buildCatalog, cardFor, cardsOf, countOf, describe as describeCard, filterCards, handOf,
+  KINDS, KIND_LABEL, REFERENCE_GROUPS, REFERENCE_SECTIONS, buildCatalog, cardFor, cardsOf, countOf, describe as describeCard, filterCards, handOf,
   kindOf, kindsOf, noFilters, planPicture, radiiIn, radiiOf, sectionsOf, swapHand, withoutHand, type Filters,
 } from '../src/app/templatecatalog';
 
@@ -129,10 +129,12 @@ describe('sections', () => {
   const cards = cardsOf(infos), secs = sectionsOf(cards);
   it('lists every card once, stock groups first, reference trackwork by kind', () => {
     expect(secs.reduce((a, s) => a + s.cards.length, 0)).toBe(cards.length);
-    const stock = TEMPLATE_GROUPS.map(([g]) => g).filter((g) => g !== REFERENCE_GROUP);
+    const stock = TEMPLATE_GROUPS.map(([g]) => g).filter((g) => !(g in REFERENCE_GROUPS));
     expect(secs.slice(0, stock.length).map((s) => s.title)).toEqual(stock);
-    expect(secs.slice(stock.length).every((s) => s.parent === REFERENCE_GROUP)).toBe(true);
-    expect(secs.slice(stock.length).map((s) => s.title)).toEqual(REFERENCE_SECTIONS.filter((t) => secs.some((s) => s.title === t && s.parent)));
+    expect(secs.slice(stock.length).every((s) => s.parent! in REFERENCE_GROUPS)).toBe(true);
+    // (each maker's range in turn, its sections in the one order)
+    const ranges = TEMPLATE_GROUPS.map(([g]) => g).filter((g) => g in REFERENCE_GROUPS);
+    expect(secs.slice(stock.length).map((s) => `${s.parent}/${s.title}`)).toEqual(ranges.flatMap((g) => REFERENCE_SECTIONS.filter((t) => secs.some((s) => s.title === t && s.parent === g)).map((t) => `${g}/${t}`)));
     expect(new Set(secs.map((s) => s.id)).size).toBe(secs.length);
   });
   it('has no "Other parts" pile of more than a few', () => {
@@ -171,6 +173,16 @@ describe('search and filters', () => {
   });
   it('finds a card by its other hand\'s name too', () => {
     expect(names({ query: 'right switch lego' })).toEqual(['Left switch (LEGO)']);
+  });
+  it('filters by the maker\'s range', () => {
+    const bt = names({ ranges: new Set(['BrickTracks']) });
+    expect(bt.length).toBeGreaterThan(10);
+    expect(bt.every((n) => /BrickTracks/.test(n))).toBe(true);
+    expect(names({ ranges: new Set(['TrixBrix']) })).toContain('Switch R104 left');
+    expect(names({ ranges: new Set(['TrixBrix']), query: 'bricktracks' })).toEqual([]);
+    expect(info('Curve R104 (BrickTracks)').kind).toBe('curve');
+    expect(info('Siding R104 left (BrickTracks)').kind).toBe('set');
+    expect(info('Oval (LEGO R40)').range).toBeUndefined();
   });
   it('filters by kind, gauge, track and radius, and combines them', () => {
     expect(names({ kinds: new Set(['wye']) }).every((n) => /wye/i.test(n))).toBe(true);
