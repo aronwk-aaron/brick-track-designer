@@ -13,15 +13,22 @@ export function stlBytes(mesh: MeshLike, onBed = false): Uint8Array {
     for (let i = 0; i < vp.length; i += np) for (let c = 0; c < 3; c++) { mn[c] = Math.min(mn[c], vp[i + c]); mx[c] = Math.max(mx[c], vp[i + c]); }
     off[0] = -(mn[0] + mx[0]) / 2; off[1] = -(mn[1] + mx[1]) / 2; off[2] = -mn[2];
   }
-  const buf = new ArrayBuffer(84 + n * 50);
+  // (each corner as the file has it, moved and in single precision: a sliver triangle's corners a hair apart can come
+  // out the same point, and that triangle, with no area, is left out (its other two sides are each other's
+  // reverse, so the surface stays closed))
+  const at = (v: number, c: number) => Math.fround(vp[v * np + c] + off[c]);
+  const same = (a: number, b: number) => at(a, 0) === at(b, 0) && at(a, 1) === at(b, 1) && at(a, 2) === at(b, 2);
+  const keep: number[] = [];
+  for (let t = 0; t < n; t++) { const [a, b, c] = [mesh.triVerts[3 * t], mesh.triVerts[3 * t + 1], mesh.triVerts[3 * t + 2]]; if (!same(a, b) && !same(b, c) && !same(c, a)) keep.push(t); }
+  const buf = new ArrayBuffer(84 + keep.length * 50);
   const dv = new DataView(buf);
-  dv.setUint32(80, n, true);
-  for (let t = 0; t < n; t++) {
-    const o = 84 + t * 50 + 12; // normal left zero: slicers recompute it
+  dv.setUint32(80, keep.length, true);
+  keep.forEach((t, i) => {
+    const o = 84 + i * 50 + 12; // normal left zero: slicers recompute it
     for (let k = 0; k < 3; k++) {
       const v = mesh.triVerts[t * 3 + k];
-      for (let c = 0; c < 3; c++) dv.setFloat32(o + k * 12 + c * 4, vp[v * np + c] + off[c], true);
+      for (let c = 0; c < 3; c++) dv.setFloat32(o + k * 12 + c * 4, at(v, c), true);
     }
-  }
+  });
   return new Uint8Array(buf);
 }
