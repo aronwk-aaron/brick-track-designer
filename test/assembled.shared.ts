@@ -113,7 +113,7 @@ const STEPS = [0.25, 0.5, 0.75, 1];
  *   rest (the preload, sprung; nothing, rigid), and left where it was as the slider goes to its other end, its post runs into it.
  * (The over-centre spring bends as the slider moves: its shape between isn't modelled, so it's checked as assembled only.)
  */
-export function moves(w: Wasm, ps: Part[]) {
+export function moves(w: Wasm, ps: Part[], o: PieceOptions) {
   const out: string[] = [];
   const sets = new Map<string, Part[]>();
   for (const q of ps) if (isMoving(q.p.name)) { const k = setOf(q.p.name); sets.set(k, [...(sets.get(k) ?? []), q]); }
@@ -140,7 +140,8 @@ export function moves(w: Wasm, ps: Part[]) {
       for (const f of STEPS) {
         const b2 = slid(bar.m, sl, sl.by * f);
         const best = Math.min(...Array.from({ length: 49 }, (_, k) => shared(turned(q.m, t.at, (t.swing! * k) / 48), b2)));
-        if (best > may + 0.1) { out.push(`${q.p.name} can't follow its slider ${(sl.by * f).toFixed(1)} mm along: ${best.toFixed(2)} mm3 in it at best (${rest.toFixed(2)} at rest)`); break; }
+        // (at the travel's end the blade's shut on its stock rail, the post pressed on by the preload, as the closed one's as assembled: mayShare's)
+        if (best > (f === 1 ? Math.max(may, 3 * (o.springPreload ?? 1)) : may) + 0.1) { out.push(`${q.p.name} can't follow its slider ${(sl.by * f).toFixed(1)} mm along: ${best.toFixed(2)} mm3 in it at best (${rest.toFixed(2)} at rest)`); break; }
       }
       if (![0, ...STEPS].some((f) => shared(q.m, slid(bar.m, sl, sl.by * f)) > OVERLAP)) out.push(`${q.p.name} isn't moved by its slider: left where it was, it's clear of the slider all the way to its other end`);
     }
@@ -247,7 +248,7 @@ function problemsOf(w: Wasm, pieces: Piece[], ps: Part[], unsolid: string[], o: 
   // (a bought piece is shown as a stand-in; a printed one must be a solid: said by prints)
   for (const n of unsolid) if (!pieces.find((p) => p.name === n)!.lego) out.push(`${n} isn't a closed solid as assembled`);
   out.push(...overlaps(w, ps, o));
-  out.push(...moves(w, ps));
+  out.push(...moves(w, ps, o));
   // (3. each moving part can be put in, the way it's built to go: assembly.shared.ts putTogether, with the app's defaults'
   // plate-style points: the slider down through the lever's opening and along its tunnel, the blades on from above (or
   // tilted in under their lip, or on open), the lever between its ears, a lid last)
