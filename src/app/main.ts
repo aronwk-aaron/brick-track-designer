@@ -976,6 +976,9 @@ try { const v = localStorage.getItem('btd-hidden'); if (v) { canvas.hidden.clear
 document.querySelectorAll<HTMLElement>('#legend [data-layer]').forEach((el) => {
   const k = el.dataset.layer!;
   el.title = 'Click to show or hide this on the plan';
+  // (by the keyboard too: Tab to it, Enter or Space)
+  el.tabIndex = 0; el.setAttribute('role', 'button');
+  el.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); e.stopPropagation(); el.click(); } });
   el.classList.toggle('off', canvas.hidden.has(k));
   el.addEventListener('click', () => {
     if (canvas.hidden.has(k)) canvas.hidden.delete(k); else canvas.hidden.add(k);
