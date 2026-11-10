@@ -16,21 +16,24 @@ function crc32(d: Uint8Array): number {
   return (c ^ 0xffffffff) >>> 0;
 }
 
-/** Zip files (name, bytes) into one archive, stored. */
-export function zip(files: { name: string; data: Uint8Array }[]): Uint8Array {
+/** Zip files (name, bytes) into one archive, stored; each dated when (now: they were all 1 January 1980). */
+export function zip(files: { name: string; data: Uint8Array }[], when = new Date()): Uint8Array {
   const enc = new TextEncoder(), local: Uint8Array[] = [], central: Uint8Array[] = [];
+  // (a zip's own time and date: two seconds to the count, years from 1980, local time)
+  const time = (when.getHours() << 11) | (when.getMinutes() << 5) | (when.getSeconds() >> 1);
+  const date = (Math.max(0, when.getFullYear() - 1980) << 9) | ((when.getMonth() + 1) << 5) | when.getDate();
   let offset = 0;
   for (const f of files) {
     const name = enc.encode(f.name), crc = crc32(f.data), size = f.data.length;
     const h = new DataView(new ArrayBuffer(30));
     h.setUint32(0, 0x04034b50, true); h.setUint16(4, 20, true); h.setUint16(6, 0x0800, true); h.setUint16(8, 0, true);
-    h.setUint16(10, 0, true); h.setUint16(12, 0x21, true); // 1980-01-01
+    h.setUint16(10, time, true); h.setUint16(12, date, true);
     h.setUint32(14, crc, true); h.setUint32(18, size, true); h.setUint32(22, size, true);
     h.setUint16(26, name.length, true); h.setUint16(28, 0, true);
     local.push(new Uint8Array(h.buffer), name, f.data);
     const c = new DataView(new ArrayBuffer(46));
     c.setUint32(0, 0x02014b50, true); c.setUint16(4, 20, true); c.setUint16(6, 20, true); c.setUint16(8, 0x0800, true);
-    c.setUint16(10, 0, true); c.setUint16(12, 0, true); c.setUint16(14, 0x21, true);
+    c.setUint16(10, 0, true); c.setUint16(12, time, true); c.setUint16(14, date, true);
     c.setUint32(16, crc, true); c.setUint32(20, size, true); c.setUint32(24, size, true);
     c.setUint16(28, name.length, true); c.setUint32(42, offset, true);
     central.push(new Uint8Array(c.buffer), name);

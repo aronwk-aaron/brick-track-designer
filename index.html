@@ -89,8 +89,8 @@
     aside { display: flex; flex-direction: column; min-height: 0; border-right: 1px solid var(--line); background: var(--panel); }
     aside .head { display: flex; align-items: center; gap: 6px; padding: 8px 10px; border-bottom: 1px solid var(--line); }
     aside .head h2 { font-size: 13px; margin: 0; flex: 1; }
-    #routes { overflow: auto; padding: 8px; flex: 1; min-height: 120px; }
-    #trackwork { border-top: 1px solid var(--line); padding: 6px 10px 10px; max-height: 60%; overflow: auto; flex: 0 1 auto; }
+    #routes { overflow: auto; padding: 8px; flex: 1 1 38%; min-height: 38%; }
+    #trackwork { border-top: 1px solid var(--line); padding: 6px 10px 10px; max-height: 45%; min-height: 40px; overflow: auto; flex: 0 1 auto; }
     #palette { border-top: 1px solid var(--line); padding: 6px 10px 10px; max-height: 45%; overflow: auto; flex: 0 1 auto; }
     #palette > summary { cursor: pointer; font-weight: 600; padding: 4px 0; }
     #palette .pgroup { display: flex; flex-wrap: wrap; gap: 4px; margin: 2px 0 6px; align-items: center; } #palette .pgroup b { width: 100%; font-size: 12px; display: flex; align-items: center; gap: 6px; }
@@ -235,6 +235,9 @@
     #views [hidden] { display: none; }
     #legend3d { left: 10px; top: 10px; color: var(--muted); display: flex; flex-direction: column; gap: 2px; max-width: 220px; z-index: 1; }
     #legend3d[hidden] { display: none; }
+    /* (the bar, and the colours under it: side by side, the colours covered the bar's buttons wherever it wrapped) */
+    #view3d-top { position: absolute; left: 10px; right: 10px; top: 10px; display: flex; flex-direction: column; gap: 6px; z-index: 1; pointer-events: none; }
+    #view3d-top > .chip { position: static; pointer-events: auto; max-width: 100%; } #view3d-top > #views { align-self: flex-end; } #view3d-top > #legend3d { align-self: flex-start; }
     #legend3d .lhead { display: flex; align-items: center; gap: 6px; color: var(--ink); font-size: 12px; }
     #legend3d .lhead b { flex: 1; }
     #legend3d .lhead button { margin: 0; padding: 0 6px; line-height: 16px; }
@@ -248,6 +251,7 @@
     #choices.open { display: block; } #choices-backdrop { position: fixed; inset: 0; background: rgba(10, 12, 16, 0.5); z-index: 61; display: none; } #choices.open ~ #choices-backdrop { display: block; }
     #choices .chead { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; } #choices h3 { margin: 0; font-size: 18px; }
     #choices-body { display: grid; gap: 14px; }
+    #choices-why { margin: 0 0 12px; color: var(--warn); font-weight: 600; }
     @media (max-width: 760px) { #choices-body { grid-template-columns: minmax(0, 1fr) !important; } }
     #choices .choice { border: 1px solid var(--line); border-radius: 12px; padding: 10px; display: flex; flex-direction: column; gap: 6px; background: var(--raise); }
     #choices .choice.current { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
@@ -280,6 +284,8 @@
     @keyframes spin { to { transform: rotate(360deg); } }
     #status { left: 10px; bottom: 10px; right: auto; max-width: calc(100% - 20px); color: var(--muted); pointer-events: none; }
     #status:empty { display: none; }
+    /* (a long list of warnings: three lines, the rest scrolled to, not laid over the view) */
+    #status { max-height: 4.9em; overflow-y: auto; pointer-events: auto; }
     #plan > #status, #plan > #buildstatus { bottom: 46px; z-index: 1; }
     #error { color: var(--err); }
     #error.warn { color: var(--warn); }
@@ -499,7 +505,7 @@
         </ul>
         <h3>Layout parts (for the layout designer)</h3>
         <ul>
-          <li>⬇ Layout parts downloads a zip with a parts library for the Collaborative Brick Layout Designer (and BlueBrick): one part for each printed track part, as cut for your print bed (the points, throws and levers drawn on the part they go in), with connection points where the track leaves it, and a set that puts them all down as designed.</li>
+          <li>⬇ Layout parts downloads a zip with a parts library for the Collaborative Brick Layout Designer (and BlueBrick): one part for each printed track part, as cut for your print bed (the points, throws and levers drawn on the part they go in), with connection points where the track leaves it, and a set that puts them all down as designed. Bought LEGO track (straights, R40 curves, switches) is placed in the set as the library's own parts, not made again; a bought piece on printed ballast, and BrickTracks' pieces, are parts in the zip as the printed ones are.</li>
           <li>Save the design under a name first: the folder, the parts and the set are named after it, so each design's parts are its own.</li>
           <li>In the layout designer (desktop 1.4.0 or later): Tools &gt; Parts &gt; Add Parts from a Zip…, and choose the zip. The set is under the design's name in the Parts panel: place the whole set (its pieces are hidden in the library; Ungroup it to move them one at a time). After exporting again, add the new zip the same way. "Upload to server…" shares the parts and the set. (BlueBrick: copy the folder into its parts folder.) The README in the zip says more.</li>
         </ul>
@@ -514,6 +520,7 @@
       <div id="help-backdrop"></div>
       <div id="choices" class="chip" role="dialog" aria-label="Choices">
         <div class="chead"><h3 id="choices-title"></h3><button id="choices-close" type="button" title="Close (Esc)">✕</button></div>
+        <p id="choices-why" hidden></p>
         <div id="choices-body"></div>
       </div>
       <div id="choices-backdrop"></div>
@@ -529,7 +536,7 @@
       <div id="coords" class="chip"></div>
     </div>
     <div id="splitter" title="Drag to resize; double-click to reset"></div>
-    <div id="view3d"><div id="buildstatus" class="chip" hidden><span class="spin"></span><span id="build-what">Building…</span> <span id="build-time"></span><span class="bar"><i id="build-bar"></i></span><button id="build-stop" type="button" title="Stop this build (the 3D view stays as it was; Rebuild when you're ready)">Stop</button></div><div id="views" class="chip"><button id="view-top" type="button" title="Look at the top">Top</button><button id="view-under" type="button" title="Look at the underside, to see where it grips">Underside</button><button id="view-frame" type="button" title="Fit the piece in the view (or double-click it)">Frame</button><span class="sep" id="views-sep2"></span><button class="show on" data-show="track" type="button" title="Show or hide the track (bases)">Track</button><button class="show on" data-show="bought" type="button" title="Show or hide the bought parts (LEGO's green, BrickTracks' purple): not printed">Bought</button><button class="show on" data-show="points" type="button" title="Show or hide the points">Points</button><button class="show on" data-show="throw" type="button" title="Show or hide the throws">Throws</button><button class="show on" data-show="lever" type="button" title="Show or hide the levers">Levers</button><button class="show on" id="show-supports" data-show="supports" type="button" title="Show or hide the breakaway print supports (orange): printed with the part, snapped off after">Supports</button><span class="sep"></span><button class="tog on" id="auto-build" type="button">Auto</button><span class="sep"></span><label class="explode" title="Pull the parts apart to see where they separate">Explode <input id="explode" type="range" min="0" max="1" step="0.02" value="0"></label></div><div id="legend3d" class="chip" hidden><div class="lhead"><b>Colours</b><button id="legend3d-fold" type="button" title="Fold the colours away (or open them)">–</button></div><div id="legend3d-rows"></div></div><div id="status" class="chip"><span id="info"></span><span id="error"></span><button id="rebuild" type="button" hidden>Rebuild</button></div></div>
+    <div id="view3d"><div id="buildstatus" class="chip" hidden><span class="spin"></span><span id="build-what">Building…</span> <span id="build-time"></span><span class="bar"><i id="build-bar"></i></span><button id="build-stop" type="button" title="Stop this build (the 3D view stays as it was; Rebuild when you're ready)">Stop</button></div><div id="view3d-top"><div id="views" class="chip"><button id="view-top" type="button" title="Look at the top">Top</button><button id="view-under" type="button" title="Look at the underside, to see where it grips">Underside</button><button id="view-frame" type="button" title="Fit the piece in the view (or double-click it)">Frame</button><span class="sep" id="views-sep2"></span><button class="show on" data-show="track" type="button" title="Show or hide the track (bases)">Track</button><button class="show on" data-show="bought" type="button" title="Show or hide the bought parts (LEGO's green, BrickTracks' purple): not printed">Bought</button><button class="show on" data-show="points" type="button" title="Show or hide the points">Points</button><button class="show on" data-show="throw" type="button" title="Show or hide the throws">Throws</button><button class="show on" data-show="lever" type="button" title="Show or hide the levers">Levers</button><button class="show on" id="show-supports" data-show="supports" type="button" title="Show or hide the breakaway print supports (orange): printed with the part, snapped off after">Supports</button><span class="sep"></span><button class="tog on" id="auto-build" type="button">Auto</button><span class="sep"></span><label class="explode" title="Pull the parts apart to see where they separate">Explode <input id="explode" type="range" min="0" max="1" step="0.02" value="0"></label></div><div id="legend3d" class="chip" hidden><div class="lhead"><b>Colours</b><button id="legend3d-fold" type="button" title="Fold the colours away (or open them)">–</button></div><div id="legend3d-rows"></div></div></div><div id="status" class="chip"><span id="info"></span><span id="error"></span><button id="rebuild" type="button" hidden>Rebuild</button></div></div>
   </main>
   <script type="module" src="/src/app/main.ts"></script>
 </body>

@@ -4,7 +4,7 @@ import { describe, expect, it } from 'vitest';
 import { kernel } from '../src/geom/kernel';
 import { buildDesign, clearBuildCache, legoParts, type LegoPart } from '../src/app/build';
 import { type Design, OPTION_DEFAULTS, type PieceOptions, TEMPLATES, upgradeDesign } from '../src/app/design';
-import { fileBase, partsCsv, partsDownload, printedKinds, stlDownload, wantedListXml } from '../src/app/exports';
+import { fileBase, partsCsv, partsDownload, plainKind, printedKinds, stlDownload, TRACK_PARTS, wantedListXml } from '../src/app/exports';
 import { zip } from '../src/geom/zip';
 
 const APP = (globalThis as { APP_DEFAULTS?: PieceOptions }).APP_DEFAULTS!;
@@ -109,7 +109,7 @@ describe('the downloads', { timeout: 300000 }, () => {
       expect(parts.find((p) => /curve/i.test(p.name))?.qty).toBe(16);
       const xml = dec.decode(files[1].data);
       expect(xml.match(/<ITEM>/g)).toHaveLength(parts.length);
-      for (const p of parts) expect(xml).toContain(`<ITEMID>${p.part}</ITEMID><COLOR>85</COLOR><MINQTY>${p.qty}</MINQTY>`);
+      for (const p of parts) expect(xml).toContain(`<ITEMID>${p.part}</ITEMID>${TRACK_PARTS.has(p.part) ? '<COLOR>85</COLOR>' : ''}<MINQTY>${p.qty}</MINQTY>`);
       // (and nothing bought is in the files to print)
       const stl = stlDownload(b.pieces, 'oval');
       const printed = b.pieces.filter((p) => !p.lego);
@@ -125,11 +125,19 @@ describe('the downloads', { timeout: 300000 }, () => {
     const parts: LegoPart[] = [{ part: '53401', name: 'Train Track Straight', qty: 12 }, { part: 'BrickTracks R104', name: 'BrickTracks R104 curve, 11.25"', qty: 3, shop: 'bricktracks' }];
     expect(partsCsv(parts)).toBe('Part,Name,Quantity,From\n53401,"Train Track Straight",12,LEGO (BrickLink)\nBrickTracks R104,"BrickTracks R104 curve, 11.25""",3,BrickTracks');
     expect(wantedListXml(parts)).toBe('<INVENTORY>\n  <ITEM><ITEMTYPE>P</ITEMTYPE><ITEMID>53401</ITEMID><COLOR>85</COLOR><MINQTY>12</MINQTY></ITEM>\n</INVENTORY>\n');
+    // (the track in its one colour; plates and bricks in any: no colour said)
+    expect(wantedListXml([{ part: '3795', name: 'Plate 2 x 6', qty: 4 }])).toBe('<INVENTORY>\n  <ITEM><ITEMTYPE>P</ITEMTYPE><ITEMID>3795</ITEMID><MINQTY>4</MINQTY></ITEM>\n</INVENTORY>\n');
+    // (a zip's files are dated when they're made, not 1980)
+    const z = zip([{ name: 'a.txt', data: new Uint8Array(3) }], new Date(2026, 10, 9, 14, 30, 8)), dv = new DataView(z.buffer);
+    expect([dv.getUint16(10, true), dv.getUint16(12, true)]).toEqual([(14 << 11) | (30 << 5) | 4, ((2026 - 1980) << 9) | (11 << 5) | 9]);
   });
   it('printed parts by kind: their names without the numbers, the most first', () => {
     const p = (name: string, lego = false) => ({ name, stl: new Uint8Array(0), ...(lego && { lego: [{ part: '53401', name: 'x', qty: 1 }] }) });
     expect(printedKinds([p('track1'), p('track2'), p('track3-2'), p('switch1-points-a'), p('switch2-points-a'), p('track1-ballast'), p('lever'), p('track-bought-53401-1', true)]))
       .toEqual([['track', 3], ['switch-points-a', 2], ['track-ballast', 1], ['lever', 1]]);
+    // (in plain words for the parts list; a kind it doesn't know stays as it is)
+    expect(['track', 'switch-points-a', 'points-b', 'points-throw', 'points-lever', 'track-ballast', 'track-track', 'switch-base', 'track-support', 'gantry'].map(plainKind))
+      .toEqual(['Track', 'Points blade (first of the two)', 'Points blade (second of the two)', 'Throw (the slider that moves the points)', 'Lever', 'Ballast (printed apart from its track)', 'Track (seated in its ballast)', 'Track', 'Pillar under raised track', 'gantry']);
   });
 });
 

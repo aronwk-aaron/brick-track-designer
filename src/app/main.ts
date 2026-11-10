@@ -13,7 +13,7 @@ import { layoutParts } from './layoutparts';
 import { freeStart, PALETTE, placePart } from './palette';
 import { BuildRunner, type WorkerPort } from './buildrun';
 import { History } from './history';
-import { fileBase as fileBaseOf, partsDownload, printedKinds, stlDownload } from './exports';
+import { fileBase as fileBaseOf, partsDownload, plainKind, printedKinds, stlDownload } from './exports';
 import { clamp, LIMITS, type Range, rangeText } from './limits';
 import { mirrorRoute } from './routeedits';
 import { TabStore, unsaved } from './session';
@@ -750,7 +750,8 @@ function showColours(list: Piece[]) {
   rows.replaceChildren(...items.map(([c, t]) => { const r = document.createElement('span'), i = document.createElement('i'); i.style.background = c; r.append(i, t); return r; }));
   $('legend3d').hidden = !items.length;
 }
-try { $('legend3d').classList.toggle('folded', localStorage.getItem('btd-legend3d') === '0'); } catch { /* fine */ }
+// (folded to start with on a phone, where it would take half the view; as it was left, once it's been folded or opened)
+try { const v = localStorage.getItem('btd-legend3d'); $('legend3d').classList.toggle('folded', v === '0' || (v === null && matchMedia('(max-width: 760px)').matches)); } catch { /* fine */ }
 $('legend3d-fold').addEventListener('click', () => {
   const on = !$('legend3d').classList.toggle('folded');
   $('legend3d-fold').textContent = on ? '–' : '+';
@@ -943,7 +944,7 @@ $('parts-open').addEventListener('click', () => {
     buy.length ? `<table><tr><th class="n">Qty</th><th>Part</th><th>Name</th><th>From</th></tr>${[...buy].sort((a, b) => from(a).localeCompare(from(b)) || b.qty - a.qty).map((p) => `<tr><td class="n">${p.qty}</td><td>${esc(p.part)}</td><td>${esc(p.name)}</td><td>${from(p)}</td></tr>`).join('')}</table>`
       : '<p>Nothing: every piece is printed (Settings: Bought track).</p>',
     '<h3>To print</h3>',
-    printed.length ? `<table><tr><th class="n">Qty</th><th>Part</th></tr>${kinds.map(([k, n]) => `<tr><td class="n">${n}</td><td>${esc(k)}</td></tr>`).join('')}</table><p>${printed.length} part${printed.length === 1 ? '' : 's'} in all: the STL download has them.</p>`
+    printed.length ? `<table><tr><th class="n">Qty</th><th>Part</th><th>Its files' names have</th></tr>${kinds.map(([k, n]) => `<tr><td class="n">${n}</td><td>${esc(plainKind(k))}</td><td>${esc(k)}</td></tr>`).join('')}</table><p>${printed.length} part${printed.length === 1 ? '' : 's'} in all: the STL download has them.</p>`
       : '<p>Nothing: every piece is bought.</p>',
     ...byTable(),
   ].join('');
@@ -1314,6 +1315,8 @@ function valueText(f: OptField, v: string) {
 function showChoices(f: OptField, cur: string, def: string, c: OptCtx, off: string | undefined, use: (v: string) => void) {
   const modal = $('choices'), body = $('choices-body');
   $('choices-title').textContent = f.label;
+  // (can't be changed now: said in the open, over the choices, not only on each greyed button)
+  $('choices-why').textContent = off ? `Locked: ${off}.` : ''; $('choices-why').hidden = !off;
   body.replaceChildren();
   // (a number or on/off: its pictured values, as choices; the value now, a number compared as one)
   const same = (a: string, b: string) => a === b || (!f.choices && !f.check && !f.text && Number(a) === Number(b));
