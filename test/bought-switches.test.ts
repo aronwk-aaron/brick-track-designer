@@ -1,9 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { buildDesign } from '../src/app/build';
+import { buildDesign, clearBuildCache } from '../src/app/build';
 import { type Design, OPTION_DEFAULTS, type PieceOptions, TEMPLATES, toRoutes } from '../src/app/design';
 import { kernel } from '../src/geom/kernel';
 import { BT_LEAD } from '../src/app/boughtswitch';
 import { routeLength, routePose } from '../src/route/route';
+import { assembledProblems } from './assembled.shared';
 
 const APP = (globalThis as { APP_DEFAULTS?: PieceOptions }).APP_DEFAULTS!;
 type Built = ReturnType<typeof buildDesign>;
@@ -129,4 +130,38 @@ describe('switches bought as track pieces, as plain track is', { timeout: 600000
       expect(printed(sw).length).toBeGreaterThan(1);
     } finally { Object.assign(OPTION_DEFAULTS, saved); }
   });
+  // (whose ground is whose where a bought switch's ballast meets other track's: under a track's own sleepers it's
+  // that track's; the rest of the switch's band the switch's. Not the templates' designs: bought and printed track on
+  // from each end of each make of switch, on ballast and with the buddy layer, each piece's ballast its own or
+  // together: all of it goes together (assembled.shared.ts), the switch and the track at its ends as any two pieces)
+  const LEAD = (8 - 104 * (1 - Math.cos(Math.PI / 8))) / Math.sin(Math.PI / 8);
+  const beside: [string, Design['routes']][] = [
+    ['their R104 switch, bought track on from every end', [
+      { name: 'Lead', x: 0, y: -16, heading: 0, segs: [{ kind: 'straight', studs: 16 }] },
+      { name: 'Straight', x: 0, y: 0, heading: 0, segs: [{ kind: 'straight', studs: 40 }, { kind: 'straight', studs: 1.6 }, { kind: 'straight', studs: 8 }] },
+      { name: 'Branch', x: 0, y: 0, heading: 0, segs: [{ kind: 'curve', radius: 104, angle: 22.5 }, { kind: 'straight', studs: LEAD }, { kind: 'curve', radius: 104, angle: -11.25 }] }]],
+    ['their R104 switch the other hand, printed track on from every end', [
+      { name: 'Lead', x: 8, y: -4, heading: 90, segs: [{ kind: 'curve', radius: 60, angle: 20 }] },
+      { name: 'Straight', x: 8, y: -4, heading: 270, segs: [{ kind: 'straight', studs: 40 }, { kind: 'curve', radius: 60, angle: 15 }] },
+      { name: 'Branch', x: 8, y: -4, heading: 270, segs: [{ kind: 'curve', radius: 104, angle: -22.5 }, { kind: 'straight', studs: LEAD }, { kind: 'curve', radius: 60, angle: 22.5 }] }]],
+    ['LEGO\'s switch, a LEGO curve and a printed straight on from it', [
+      { name: 'Straight', x: 0, y: 0, heading: 0, segs: [{ kind: 'straight', studs: 32 }, { kind: 'straight', studs: 13 }] },
+      { name: 'Branch', x: 0, y: 0, heading: 0, segs: [{ kind: 'curve', radius: 40, angle: 36.8699 }, { kind: 'curve', radius: 40, angle: -14.3699 }, { kind: 'curve', radius: 40, angle: -22.5 }] }]],
+  ];
+  for (const [what, routes] of beside) for (const [ballast, boughtBallast] of [['ballast', 'each'], ['buddy', 'each'], ['ballast', 'together']] as const)
+    it(`${what}, on ${ballast}, its ballast ${boughtBallast}: it all goes together`, async () => {
+      const saved = { ...OPTION_DEFAULTS };
+      Object.assign(OPTION_DEFAULTS, APP);
+      try {
+        const w = await kernel();
+        clearBuildCache();
+        const d: Design = { version: 1, gaugeStuds: 4, options: { ballast, boughtBallast } as Design['options'], routes };
+        const b = buildDesign(w, d);
+        clearBuildCache();
+        expect(b.info.warnings).toEqual([]);
+        expect(b.pieces.filter((p) => /^switch-bought/.test(p.name))).toHaveLength(1);
+        expect(b.pieces.some((p) => /^switch-ballast/.test(p.name))).toBe(true);
+        expect(assembledProblems(w, b.pieces, { ...APP, ...d.options }).join('; ')).toBe('');
+      } finally { Object.assign(OPTION_DEFAULTS, saved); clearBuildCache(); }
+    });
 });

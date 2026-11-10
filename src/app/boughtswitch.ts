@@ -73,6 +73,10 @@ export interface BoughtSwitch {
   legs: [Route, Route];
   /** the design's routes it takes the place of: [route, s0, s1] */
   covers: [number, number, number][];
+  /** drawn merging in (its legs run back from the toe along their routes) */
+  merge?: boolean;
+  /** the leg whose route runs on through the toe (the other's ends there): the track on from the toe is in line with this one */
+  through?: 0 | 1;
 }
 
 const mirror = (sg: Segment): Segment => (sg.kind === 'arc' ? { ...sg, angle: -sg.angle } : sg);
@@ -118,7 +122,7 @@ export function findBoughtSwitches(routes: Route[], splits: Split[], kinds: Swit
         for (const [a, sa, b, sb] of [[i, sT, j, sJ], [j, sJ, i, sT]] as const) {
           const ls = leg(a, sa, kind.straight), lb = leg(b, sb, LB);
           if (!ls || !lb || !same(ls[0], refS) || !same(lb[0], refB)) continue;
-          hit = { kind, hand, part: kind[hand], toe, legs: [ls[0], lb[0]], covers: [ls[1], lb[1]] };
+          hit = { kind, hand, part: kind[hand], toe, legs: [ls[0], lb[0]], covers: [ls[1], lb[1]], merge: !!sp.merge, through: a === i ? 0 : 1 };
         }
         if (hit) break;
       }
@@ -154,7 +158,17 @@ export function findBoughtSwitches(routes: Route[], splits: Split[], kinds: Swit
   });
   // (its ends on the routes where their pieces join, if that's within a hair: forced points' legs meet a route a hair off,
   // and a sliver of track left over there is no piece of anything)
-  for (const b of found) b.covers = b.covers.map(([r, s0, s1]) => [r, snap(routes[r], s0), snap(routes[r], s1)]);
+  // (and each leg moved with them, to lie between those joints: the track on from each of its ends meets it there, not
+  // a hair past it or short of it (the piece gives that much))
+  for (const b of found) {
+    const was = b.covers;
+    b.covers = b.covers.map(([r, s0, s1]) => [r, snap(routes[r], s0), snap(routes[r], s1)]);
+    b.legs = b.legs.map((lg, k) => {
+      const [r, s0, s1] = b.covers[k];
+      if (s0 === was[k][1] && s1 === was[k][2]) return lg;
+      return b.merge ? reversedRoute(subRoute(routes[r], s0, s1)) : subRoute(routes[r], s0, s1);
+    }) as [Route, Route];
+  }
   const overlaps = (a: BoughtSwitch, b: BoughtSwitch) => a.covers.some(([r, s0, s1]) => b.covers.some(([r2, t0, t1]) => r === r2 && s0 < t1 - 1e-6 && t0 < s1 - 1e-6));
   return found.filter((b) => !clash(b) && !found.some((c) => c !== b && overlaps(b, c)));
 }

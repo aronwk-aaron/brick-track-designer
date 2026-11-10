@@ -2,7 +2,7 @@
 // (flangeway cuts, check rails, crossings, points, the tubes that grip), and
 // the pieces: a switch wherever routes split (base and moving parts), the
 // rest as fixed trackwork. Runs in the worker (and in tests).
-import { Scad, R, T, type Man } from '../geom/scad';
+import { Scad, R, T, type CS, type Man } from '../geom/scad';
 import { sweepRoute } from '../geom/sweep';
 import { DEFAULTS as TRACK_DEFAULTS, PLATE_H, Track } from '../geom/track';
 import { CROSSING_DEFAULTS, crossingPiece, joinedEnds, ownSleeperSpots } from '../geom/crossing';
@@ -1132,6 +1132,8 @@ interface PieceBuild {
   tables: Table[];
   /** the bought switches (boughtswitch.ts): their ballast a part of its own, kept clear of */
   boughtSw: BoughtSwitch[];
+  /** every route of the trackwork (the bought switches' legs cut out of them): the ground under each one's sleepers is its own track's (trackBeds) */
+  trackRoutes: Route[];
   /** flangeway cuts lengthened by hand, and their edits (for the cache keys) */
   grooveCuts: Man[]; grooveEdits: Trackwork['groove'];
   /** the ends of rts left on other track by points taken out (droppedInner) */
@@ -1405,7 +1407,7 @@ function sectioned(b: PieceBuild, name: string, all: Route[], checks: CheckRail[
     if ((sb[2] - sb[0]) * (sb[3] - sb[1]) > 8 * o.printBedX * o.printBedY && tiled(b, name, rts, cChecks, mine, copt, true)) return;
     const zs = cx.zones.filter((z) => z.box[2] >= sb[0] && z.box[0] <= sb[2] && z.box[3] >= sb[1] && z.box[1] <= sb[3]).map((z) => [z.rt.id, z.s0, z.s1, z.box]);
     const sk = `sec:${JSON.stringify({ rts, cChecks, m: mine.map((x) => [x.key, x.inner, x.bladeCuts.map(([i]) => i)]), copt, g: b.grooveCuts.length ? b.grooveEdits : 0, di: [...secInner],
-      gp: gridPose, bp, bxy: [o.baseplateX, o.baseplateY], joint: o.joint, ...(apart && { seat: o.trackFitTol ?? 0.2, seated, bb: o.boughtBallast }), ...(b.boughtSw.length && o.ballast !== 'none' && { sw: b.boughtSw.map((bs) => bs.legs) }), bed: [o.printBedX, o.printBedY], zs, ...(b.labelOn && { lab: [o.labelText, o.labelSize, o.labelGauge, o.labelParts, base + si + 1] }) })}`;
+      gp: gridPose, bp, bxy: [o.baseplateX, o.baseplateY], joint: o.joint, ...(apart && { seat: o.trackFitTol ?? 0.2, seated, bb: o.boughtBallast }), ...(o.ballast !== 'none' && (b.boughtSw.length || seated) && { sw: groundKey(b, routesBox(rts, bandHalf + 64), seated) }), bed: [o.printBedX, o.printBedY], zs, ...(b.labelOn && { lab: [o.labelText, o.labelSize, o.labelGauge, o.labelParts, base + si + 1] }) })}`;
     let part: { ms: (Baked & { id?: string; lego?: LegoPart[]; seats?: Pose[] })[]; grips: [number, number][] };
     const cost = rts.reduce((t, rt) => t + routeLength(rt), 0) + 400 * mine.length;
     try { part = b.job(sk, cost, () => arena(w, () => {
@@ -1428,18 +1430,31 @@ function sectioned(b: PieceBuild, name: string, all: Route[], checks: CheckRail[
         if (seated && o.boughtBallast === 'together') {
           // (or the section's in one, cut for the bed and at the tables' seams)
           const seat = scad.union(trs.map((m) => trackSeat(scad, m, tol)));
-          const bal = crossingPiece(scad, rts, { ...copt, sleepers: 'sleepers', sleeperGapStuds: 2, sleeperWidthStuds: 2, ballastOnly: tol, supports: false }, none, grips, { gridPose, innerEnds: secInner, seat });
+          // (clear of a bought switch's ballast beside it, a part of its own, but under its own track's sleepers)
+          const bal = yielded(b, crossingPiece(scad, rts, { ...copt, sleepers: 'sleepers', sleeperGapStuds: 2, sleeperWidthStuds: 2, ballastOnly: tol, supports: false }, none, grips, { gridPose, innerEnds: secInner, seat }), switchKeepOut(b, routesBox(rts, bandHalf + 64)));
           const bals = byTables(b, bal).flatMap((m) => (fitsBed(m) ? [m] : cx.whole(m, cx.bedCut(flat(w, m), rts))));
           const kept = bals.filter((m) => m.numTri() > 0), id = (k: number) => (kept.length > 1 ? `${base + si + 1}-${k + 1}` : `${base + si + 1}`);
           kept.forEach((m, k) => ms.push({ ...bake(b, labelled(b, m, rts, kept.length > 1 || rts.length > 1 ? undefined : sizeOf(rts), id(k))), ...(b.labelOn && { id: id(k) }) }));
         } else if (seated) {
           const seat = scad.union(trs.map((m) => trackSeat(scad, m, tol)));
-          const keep = switchKeepOut(b, routesBox(rts, bandHalf + 64));
-          const done: Man[] = [];
+          // (in plan, cut straight down: cut by the other's solid, what was left of this one under the other's hollow
+          // underside hooked the two together. Under its own sleepers it's this piece's whatever else reaches there
+          // (trackBeds); else an earlier piece's, or a bought switch's)
+          // (other track's: not the routes its own pieces are lengths of, whose band the same width over, sampled its
+          // own way, left slivers along the piece's sleepers' ends)
+          // (and where two tracks' sleepers' ground is the same ground, close beside each other on from a switch: the
+          // route's that comes first)
+          const routeOf = (p: Route) => b.trackRoutes.findIndex((rt) => { const q = routePose(p, routeLength(p) / 2), at = routePose(rt, routeSOf(rt, [q[0], q[1]])); return Math.hypot(at[0] - q[0], at[1] - q[1]) < 0.5; });
+          const sbox = routesBox(rts, bandHalf + 64), keep = switchKeepOut(b, sbox);
+          const hwBed = track.c.sleeperLen / 2 + tol;
+          const bedOf = (rt: Route) => { const L = routeLength(rt), n2 = Math.max(2, Math.ceil(L / 4)), side = (off: number) => Array.from({ length: n2 + 1 }, (_, k) => railPoint(rt, (L * k) / n2, off)); return scad.polygon([...side(-hwBed), ...side(hwBed).reverse()]); };
+          const done: CS[] = [], doneBeds: CS[] = [];
           rts.forEach((rt, k) => {
             const own = crossingPiece(scad, [rt], { ...copt, sleepers: 'sleepers', sleeperGapStuds: 2, sleeperWidthStuds: 2, ballastOnly: tol, supports: false }, none, grips, { gridPose, seat });
-            const m = scad.difference(own, [...done, keep]);
-            done.push(own);
+            const ri = routeOf(rt), first = trackBeds(b, sbox, (r2) => b.trackRoutes.indexOf(r2) >= ri), later = trackBeds(b, sbox, (r2) => b.trackRoutes.indexOf(r2) <= ri);
+            const bed = bedOf(rt), others = w.CrossSection.union([...done, ...(keep ? [keep] : []), ...(later ? [later] : [])]).subtract(bed);
+            const m = yielded(b, own, w.CrossSection.union([others, ...doneBeds, ...(first ? [first] : [])]));
+            done.push(own.project()); doneBeds.push(bed);
             const id = rts.length > 1 ? `${base + si + 1}-${k + 1}` : `${base + si + 1}`;
             // (one part: what's cut off it where it meets the next piece's, slivers, left out)
             const comps = m.decompose().sort((x, y) => y.volume() - x.volume()), big = comps[0]?.volume() ?? 0;
@@ -1455,8 +1470,8 @@ function sectioned(b: PieceBuild, name: string, all: Route[], checks: CheckRail[
       let body = step(() => buildBody());
       // (on ballast, its ballast clear of a bought switch's beside it, which is a part of its own: up to the sleepers' top)
       if (o.ballast !== 'none' && b.boughtSw.length) {
-        const keep = switchKeepOut(b, routesBox(rts, bandHalf + 64));
-        if (keep) body = scad.difference(body, [scad.intersection(keep, T(scad.cube([1e5, 1e5, 100]), [-5e4, -5e4, -100 + PLATE_H + 0.01]))]);
+        const whole0 = body;
+        body = step(() => yielded(b, whole0, switchKeepOut(b, routesBox(rts, bandHalf + 64)), PLATE_H + 0.01));
       }
       if (body.numTri() === 0) return { ms: [], grips };
       // (and where it crosses a baseplate edge, cut there with peg and clip: a plain piece of one track already ends at
@@ -1552,11 +1567,13 @@ function tiled(b: PieceBuild, name: string, all: Route[], checks: CheckRail[], s
       return { ...sp, inner, bladeCuts: sp.bladeCuts.filter(([i]) => cr.map[i] >= 0).map(([i, m]) => [cr.map[i], m] as [number, Man]) };
     });
     const tileCuts = b.grooveCuts.filter((m) => nearCell(m.boundingBox(), R, MARGIN)), tileInner = b.dropInner(cr.routes, cr.inner);
+    // (on ballast, its ballast clear of a bought switch's beside it, as a section's)
+    const kbox = [R[0] - MARGIN, R[1] - MARGIN, R[2] + MARGIN, R[3] + MARGIN], nearSw = o.ballast !== 'none' && b.boughtSw.length > 0;
     // (keyed by what it's built from, not the whole design: an edit rebuilds only the tiles near it (the points near
     // it by what each is made from, network.ts SplitParts key; where no rail-end tongue goes, near it))
     const zs = cx.zones.filter((z) => z.box[2] >= R[0] - MARGIN && z.box[0] <= R[2] + MARGIN && z.box[3] >= R[1] - MARGIN && z.box[1] <= R[3] + MARGIN).map((z) => [z.rt.id, z.s0, z.s1, z.box]);
     const tk = `tile:${JSON.stringify({ r: cr.routes, c: cr.checks, i: [...tileInner], R, lines, near: tileSplits.map((sp) => [sp.key, sp.inner, sp.bladeCuts.map(([i]) => i)]),
-      copt, joint: o.joint, tongueRails: o.tongueRails, g: b.grooveCuts.length ? b.grooveEdits : 0, gp: gridPose, bed: [o.printBedX, o.printBedY], zs, ...(b.labelOn && { lab: [o.labelText, o.labelSize, o.labelGauge, o.labelParts, base + ci + 1] }) })}`;
+      copt, joint: o.joint, tongueRails: o.tongueRails, g: b.grooveCuts.length ? b.grooveEdits : 0, gp: gridPose, bed: [o.printBedX, o.printBedY], zs, ...(nearSw && { sw: groundKey(b, kbox) }), ...(b.labelOn && { lab: [o.labelText, o.labelSize, o.labelGauge, o.labelParts, base + ci + 1] }) })}`;
     let part: { ms: (Baked & { id?: string; bought?: boolean })[]; grips: [number, number][] };
     // (how long it takes, about: its track, and points most of all)
     const cost = cr.routes.reduce((t, rt) => t + routeLength(rt), 0) + 400 * near.length;
@@ -1564,7 +1581,8 @@ function tiled(b: PieceBuild, name: string, all: Route[], checks: CheckRail[], s
       const grips: [number, number][] = [];
       // (each step's leftovers let go as it's done, as a section's)
       const step = <T extends Man | Man[]>(f: () => T): T => arena(w, f, (r) => (Array.isArray(r) ? r : [r]));
-      const body = step(() => networkBody(scad, cr.routes, { crossings: [], grooves: [], splits: [], checkRails: cr.checks }, copt, tileSplits, grips, { cuts: tileCuts, innerEnds: tileInner, gridPose, ...(b.sleepered && { bedAt: lines }) }));
+      const body0 = step(() => networkBody(scad, cr.routes, { crossings: [], grooves: [], splits: [], checkRails: cr.checks }, copt, tileSplits, grips, { cuts: tileCuts, innerEnds: tileInner, gridPose, ...(b.sleepered && { bedAt: lines }) }));
+      const body = nearSw ? step(() => yielded(b, body0, switchKeepOut(b, kbox), PLATE_H + 0.01)) : body0;
       const holes: [number, number, number][] = [];
       const got = step(() => cutPiece(scad, track, body, cr.routes, lines, join.joint, join.flatRails, cx.noTongue, holes, cx.fitsBed).filter((m) => {
         const bb = m.boundingBox(), cx2 = (bb.min[0] + bb.max[0]) / 2, cy = (bb.min[1] + bb.max[1]) / 2;
@@ -1638,16 +1656,80 @@ function buildSwitches(b: PieceBuild, switches: ReturnType<typeof planPieces>['s
   });
 }
 
-/** Where the bought switches' ballast is, near a box (mm): each leg's widest ballast band, from its toe to its ends. */
-function switchKeepOut(b: PieceBuild, box: number[]): Man | undefined {
-  const { scad, o } = b, sl = (b.gaugeStuds + 1) * 8 + 24, hw = (o.ballast === 'buddy' ? sl + 32 : sl + 16) / 2 + 0.01;
-  const bands = b.boughtSw.flatMap((bs) => bs.legs).filter((lg) => { const r = routesBox([lg], hw); return r[0] <= box[2] && r[2] >= box[0] && r[1] <= box[3] && r[3] >= box[1]; }).map((lg) => {
-    const L = routeLength(lg), n = Math.max(2, Math.ceil(L / 4)), side = (off: number) => Array.from({ length: n + 1 }, (_, k) => railPoint(lg, (L * k) / n, off));
-    return T(scad.extrude(scad.polygon([...side(-hw), ...side(hw).reverse()]), 300), [0, 0, -150]);
+/**
+ * Whose ground is whose where a bought switch's ballast meets other track's (it's a part of its own):
+ * - the ground under a track's own sleepers (a band a sleeper long across it, and the fit's clearance) is that
+ *   track's: its own ballast is there, or its own seat, and a bought switch's ballast stops short of it;
+ * - the rest of a bought switch's ballast band (each leg's, from its toe to its ends) is the switch's: other track's
+ *   ballast (its shoulders, running in beside the switch's ends) stops at it.
+ * Both in plan, cut straight down through the parts (yielded), so nothing of one is left under or in the other.
+ */
+/** The ground under track's own sleepers near a box (mm), in plan: every route's but the bought switches' legs (not: nor these). */
+function trackBeds(b: PieceBuild, box: number[], not?: (rt: Route) => boolean): CS | undefined {
+  const { scad, w } = b, hw = ((b.gaugeStuds + 1) * 8 + 24) / 2 + (b.o.trackFitTol ?? 0.2);
+  const bands = b.trackRoutes.flatMap((rt) => {
+    if (not?.(rt)) return [];
+    const r = routesBox([rt], hw);
+    if (r[0] > box[2] || r[2] < box[0] || r[1] > box[3] || r[3] < box[1]) return [];
+    // (only its stretch near the box: a yard's tracks are long)
+    const L = routeLength(rt);
+    let s0 = Infinity, s1 = -Infinity;
+    for (let sv = 0; sv <= L + 4; sv += 4) {
+      const q = routePose(rt, Math.min(L, sv));
+      if (q[0] >= box[0] - hw && q[0] <= box[2] + hw && q[1] >= box[1] - hw && q[1] <= box[3] + hw) { s0 = Math.min(s0, Math.min(L, sv)); s1 = Math.max(s1, Math.min(L, sv)); }
+    }
+    s0 = s0 < 8 ? 0 : s0 - 4; s1 = s1 > L - 8 ? L : s1 + 4;
+    if (!(s1 > s0)) return [];
+    const n = Math.max(2, Math.ceil((s1 - s0) / 4)), side = (off: number) => Array.from({ length: n + 1 }, (_, k) => railPoint(rt, s0 + ((s1 - s0) * k) / n, off));
+    return [scad.polygon([...side(-hw), ...side(hw).reverse()])];
   });
-  return bands.length ? scad.union(bands) : undefined;
+  return bands.length ? w.CrossSection.union(bands) : undefined;
 }
 
+/** Where the bought switches' ballast is, near a box (mm), in plan: each leg's widest ballast band, from its toe to its ends, less the ground under other track's own sleepers. */
+function switchKeepOut(b: PieceBuild, box: number[]): CS | undefined {
+  const { scad, w, o } = b, sl = (b.gaugeStuds + 1) * 8 + 24, hw = (o.ballast === 'buddy' ? sl + 32 : sl + 16) / 2 + 0.01;
+  const bands = b.boughtSw.flatMap((bs) => bs.legs).filter((lg) => { const r = routesBox([lg], hw); return r[0] <= box[2] && r[2] >= box[0] && r[1] <= box[3] && r[3] >= box[1]; }).map((lg) => {
+    const L = routeLength(lg), n = Math.max(2, Math.ceil(L / 4)), side = (off: number) => Array.from({ length: n + 1 }, (_, k) => railPoint(lg, (L * k) / n, off));
+    return scad.polygon([...side(-hw), ...side(hw).reverse()]);
+  });
+  if (!bands.length) return undefined;
+  const all = w.CrossSection.union(bands), beds = trackBeds(b, box);
+  return beds ? all.subtract(beds) : all;
+}
+
+/**
+ * A part less what it gives way to (in plan, cut straight down through it; top: only up to there, a printed track's
+ * ballast under its sleepers' tops), and no stud of it left split by the cut: a stud on its ballast the cut passes
+ * through goes whole (what stands on the ballast's top near the cut, no bigger than a stud and not a whole one).
+ */
+function yielded(b: PieceBuild, m: Man, to: CS | undefined, top = 150): Man {
+  const { scad } = b;
+  if (!to || to.isEmpty() || m.numTri() === 0) return m;
+  const mb = m.boundingBox(), tb = to.bounds();
+  if (tb.min[0] > mb.max[0] || tb.max[0] < mb.min[0] || tb.min[1] > mb.max[1] || tb.max[1] < mb.min[1]) return m;
+  const out = scad.difference(m, [T(scad.extrude(to, top + 150), [0, 0, -150])]);
+  if (out.numTri() === 0) return out;
+  // (the studs near the cut: bodies of the slice just over the ballast's top (z 0), within reach of what was cut away
+  // (a stud and more: the slice's own edge cuts studs too, further out; those don't touch the cut and stay))
+  const near = scad.intersection(out, T(scad.extrude(to.offset(8, 'Round'), 2.4), [0, 0, 0.2]));
+  if (near.numTri() === 0) return out;
+  const atCut = T(scad.extrude(to.offset(1, 'Round'), 3), [0, 0, 0]);
+  const split = near.decompose().flatMap((c) => {
+    const bb = c.boundingBox(), dx = bb.max[0] - bb.min[0], dy = bb.max[1] - bb.min[1], dz = bb.max[2] - bb.min[2];
+    if (Math.max(dx, dy) > 5.4) return [];
+    // (a whole stud: round, as wide one way as the other, and all of it there)
+    if (Math.abs(dx - dy) < 0.08 && dx > 4 && c.volume() > 0.76 * dx * dy * dz) return [];
+    if (c.intersect(atCut).volume() < 1e-6) return [];
+    return [T(scad.cube([dx + 0.04, dy + 0.04, 3]), [bb.min[0] - 0.02, bb.min[1] - 0.02, 0])];
+  });
+  return split.length ? scad.difference(out, split) : out;
+}
+/** What a part near a box gives way to, as a cache key's part: the bought switches' ground there and (beds) other track's own, by their size and place. */
+function groundKey(b: PieceBuild, box: number[], beds = false) {
+  const sig = (cs: CS | undefined) => { if (!cs || cs.isEmpty()) return 0; const bb = cs.bounds(); return [cs.area(), cs.numVert(), ...bb.min, ...bb.max].map((v) => Math.round(v * 100) / 100); };
+  return [sig(switchKeepOut(b, box)), beds ? sig(trackBeds(b, box)) : 0];
+}
 
 /** A printed piece cut along the tables' seams: its part on each table (and what's on none), each a part of its own. */
 function byTables(b: PieceBuild, m: Man): Man[] {
@@ -1718,19 +1800,30 @@ function boughtSwitches(b: PieceBuild, bought: BoughtSwitch[], copt: typeof CROS
   const tol = o.trackFitTol ?? 0.2, onBallast = o.ballast !== 'none';
   bought.forEach((bs, n) => {
     b.prog.step(`Building bought switch ${n + 1} of ${bought.length}`);
-    const key = `bsw:${JSON.stringify({ legs: bs.legs, copt, gridPose, tol, onBallast, bed: [o.printBedX, o.printBedY], bb: o.boughtBallast, t: o.boughtBallast === 'together' ? b.tables : 0 })}`;
+    const key = `bsw:${JSON.stringify({ legs: bs.legs, copt, gridPose, tol, onBallast, ...(onBallast && { beds: groundKey(b, routesBox(bs.legs, 80), true)[1] }), bed: [o.printBedX, o.printBedY], bb: o.boughtBallast, t: o.boughtBallast === 'together' ? b.tables : 0 })}`;
     // (a job, as a tile or a section is: its ballast is a few seconds' work, and a yard has several)
     const got = b.job<{ view: Baked; bal: Baked[] } | undefined>(key, 3000, () => arena(w, () => {
       // (as bought: its underside's footprint as its sleepers and base, a plate thick, and each leg's rails on them)
-      const asBought = { ...copt, ballast: 'none' as const, ballastOnly: undefined, sleepers: 'sleepers' as const, sleeperGapStuds: 2, sleeperWidthStuds: 2, supports: false, buffers: undefined };
+      const asBought = { ...copt, ballast: 'none' as const, ballastOnly: undefined, sleepers: 'sleepers' as const, sleeperGapStuds: 2, sleeperWidthStuds: 2, supports: false, buffers: undefined, undersideGrid: 'track' as const };
       const fp = footprint(bs), under = made(new w.CrossSection(fp.underside, 'EvenOdd'));
       const legs = scad.union(bs.legs.map((lg) => crossingPiece(scad, [lg], asBought, undefined, undefined, { gridPose }))), lb = legs.boundingBox();
       const rails = scad.intersection(legs, T(scad.cube([lb.max[0] - lb.min[0] + 2, lb.max[1] - lb.min[1] + 2, 50]), [lb.min[0] - 1, lb.min[1] - 1, PLATE_H + 0.01]));
-      const view = bake(b, scad.union([scad.extrude(under, PLATE_H + 0.02), rails]));
+      // (its three ends as a track piece's are: each leg built as bought, what of it is within a stud of an end, in
+      // place of the footprint there and of anything traced past the end: the next piece's end goes in it as in any)
+      const hwE = (b.gaugeStuds + 1) * 4 + 12 + 8;
+      const endBox = (P: Pose) => place(T(scad.cube([2 * hwE, 8 + 24, 60]), [-hwE, -8, -10]), P);
+      // (the toe's from the leg whose route runs on through it: forced points' other leg ends a hair off it, and the two
+      // ends, one over the other, narrowed the clip the next piece's peg goes in)
+      const toeLeg = bs.legs[bs.through ?? 0], toeP = routePose(toeLeg, 0), toeBox = endBox([toeP[0], toeP[1], toeP[2] + 180]);
+      const farBoxes = bs.legs.map((lg) => endBox(routePose(lg, routeLength(lg)))), endBoxes = scad.union([toeBox, ...farBoxes]);
+      const ends = scad.union([scad.intersection(crossingPiece(scad, [toeLeg], asBought, undefined, undefined, { gridPose }), toeBox), scad.intersection(legs, scad.union(farBoxes))]);
+      const view = bake(b, scad.union([scad.difference(scad.union([scad.extrude(under, PLATE_H + 0.02), rails]), [endBoxes]), ends]));
       if (!onBallast) return { view, bal: [] as Baked[] };
-      const cs = w.CrossSection.union([under, ...fp.extras.map((pts) => scad.polygon(pts))]).offset(tol, 'Miter', 2);
+      // (its seat: its footprint and its ends' outlines; and no ballast of it under other track's own sleepers (trackBeds))
+      const cs = w.CrossSection.union([under, ends.project(), ...fp.extras.map((pts) => scad.polygon(pts))]).offset(tol, 'Miter', 2);
       const none = { crossings: [], grooves: [], splits: [], checkRails: [] };
       let m = crossingPiece(scad, bs.legs, { ...copt, ballastOnly: tol, supports: false, buffers: undefined }, none, undefined, { gridPose, seat: scad.extrude(cs, 200) });
+      m = yielded(b, m, trackBeds(b, routesBox(bs.legs, 80)));
       // (a pad under what of the switch reaches out past its ballast (LEGO's lever housing), from the ballast's bottom up
       // to the switch's: it stands on something)
       if (fp.pads.length && m.numTri() > 0) {
@@ -1755,6 +1848,25 @@ function boughtSwitches(b: PieceBuild, bought: BoughtSwitch[], copt: typeof CROS
       if (!p.fits) b.bedWarnings.add(`a bought switch's ballast doesn't fit the ${o.printBedX} x ${o.printBedY} print bed, even in two`);
     });
   });
+}
+
+/**
+ * A printed part that's the track on from both far ends of a left-hand bought switch: said. A track end's peg is on
+ * its right, looking out of the piece, so a part on both ends of a right-hand switch slides off along the straight
+ * (the branch's peg slips out of its clip's mouth sideways); a left-hand one's is behind its clip's wall that way, and
+ * the part comes off no straight way. (Each end's track a part of its own goes on as any piece does.)
+ */
+function twoEndedParts(b: PieceBuild, bought: BoughtSwitch[]) {
+  const lefts = bought.filter((bs) => bs.hand === 'left');
+  if (!lefts.length) return;
+  const printed = b.pieces.filter((p) => !p.lego && /^track[\d-]*$/.test(p.name) && p.positions.length);
+  for (const bs of lefts) {
+    // (just past each far end, on its centre line: the next part's end is there)
+    const at = bs.legs.map((lg) => { const e = routePose(lg, routeLength(lg)); return poseToWorld(e, [0, 4]); });
+    const on = (p: Piece, q: [number, number]) => { const v = p.positions; for (let i = 0; i < v.length; i += 3) if (Math.abs(v[i] - q[0]) < 6 && Math.abs(v[i + 1] - q[1]) < 6) return true; return false; };
+    if (printed.some((p) => at.every((q) => on(p, q))))
+      b.bedWarnings.add(`the printed track on from both ends of the bought switch at ${(bs.toe[0] / 8).toFixed(0)}, ${(bs.toe[1] / 8).toFixed(0)} (studs) is one part: it won't slide onto a left-hand switch's two ends (they point different ways), its pegs have to be forced in; move a cut so each track on from the switch is a part of its own`);
+  }
 }
 
 /** One build: the track with its ballast (part undefined), or, printed apart, the ballast alone with its seat ('ballast'; the track is the build without ballast). */
@@ -1817,7 +1929,7 @@ function buildOne(w: Wasm, design: Design, report: (what: string, frac: number) 
   const sleepered = o.sleepers === 'sleepers' && o.ballast === 'none';
   const labelOn = o.ballast !== 'none' && o.bottomStyle === 'float' && !!o.labelText?.trim();
   const b: PieceBuild = { w, scad, o, gaugeStuds: design.gaugeStuds, track, cut, prog, pieces: [], volume: 0, bedWarnings, overlay, job,
-    labelOn, num: { part: 0, sec: 0 }, alongTrack, gridPose, sleepered, bufs, grooveCuts, grooveEdits: tw.groove, dropInner, tables: design.tables ?? [], boughtSw: bought };
+    labelOn, num: { part: 0, sec: 0 }, alongTrack, gridPose, sleepered, bufs, grooveCuts, grooveEdits: tw.groove, dropInner, tables: design.tables ?? [], boughtSw: bought, trackRoutes: routes };
   const copt = { ...CROSSING_DEFAULTS, gaugeStuds: design.gaugeStuds, grip: o.grip ?? 'edges', flangeway: o.flangeway, flangewayDepth: o.flangewayDepth, checkRailW: o.checkRailW, checkRailFlare: o.checkRailFlare,
     ballast: o.ballast, bottomStyle: o.bottomStyle, supports: o.endSupports !== false, curveStuds: o.curveStuds,
     studFit: o.studFit, antistudFit: o.antistudFit, sleepers: o.sleepers, undersideGrid: o.ballast === 'none' ? o.undersideGrid : undefined, sleeperWidthStuds: o.sleeperWidthStuds, sleeperGapStuds: o.sleeperGapStuds,
@@ -1929,6 +2041,7 @@ function buildOne(w: Wasm, design: Design, report: (what: string, frac: number) 
   if (plan) { boughtSwitches(b, bought, copt, gridPose); throw PLANNED; }
   buildSwitches(b, pc.switches, routes, params, layered);
   boughtSwitches(b, bought, copt, gridPose);
+  twoEndedParts(b, bought);
   const pieces = b.pieces;
   const all = pieces.flatMap((p) => [p.positions]);
   const mn = [Infinity, Infinity, Infinity], mx = [-Infinity, -Infinity, -Infinity];

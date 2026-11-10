@@ -71,9 +71,6 @@ function mayShare(A: Piece, B: Piece, size: number[], v: number, o: PieceOptions
   // middle: 64 x 16 x 16 / 8 x the slope, 51 mm3 at 2.5%; said where it's over that)
   const [tr, su] = /^track-support|^risers-bought/.test(A.name) ? [B, A] : [A, B];
   if (/^track-support|^risers-bought/.test(su.name) && tr.lift) return total <= 64 * 32 * Math.abs(tr.lift.slope) + OVERLAP;
-  // (a bought switch is shown as a slab of its footprint, a plate thick: its ends' connectors aren't modelled, so it and
-  // the bought track at its ends aren't compared)
-  if (A.lego && B.lego && (/^switch-bought/.test(A.name) || /^switch-bought/.test(B.name))) return true;
   if (!isMoving(A.name) && !isMoving(B.name)) return v <= 3 && size[2] <= 3.3 && Math.max(size[0], size[1]) <= 4.4;
   const [bl, th] = /throw/.test(A.name) ? [B, A] : [A, B];
   if (bl.turn && /throw\d*$/.test(th.name) && setOf(bl.name) === setOf(th.name)) return v <= 3 * (o.springPreload ?? 1) && size[2] <= 1.5;
@@ -286,11 +283,9 @@ export interface Known { problems: RegExp[]; warning?: RegExp; why: string }
  * design limit the build says itself has a warning: nail-switch.test.ts has one, a double slip's middle points as nail switches.)
  */
 export const KNOWN: Record<string, Known> = {
-  ...Object.fromEntries(['Double-track return loop (turning right)', 'Double-track return loop (turning left)'].map((name): [string, Known] => [name, {
-    problems: [/^track-bought-BrickTracksS0\d-\d+ and switch\d-ballast2 overlap: (10|21)\.\d+ mm3/, /^track74-ballast and track75-ballast can't be brought together: .* 6\.\d mm3/],
-    why: 'the bought switch\'s printed ballast is in the bought straights at its ends (0.8 to 3 mm, 4.8 x 1.8 mm each: 11 and 22 mm3); two of the curve\'s ballast parts hook into each other (6 mm3 in the way whichever way they\'re drawn apart)' }])),
-  'X yard (6 tracks, single slips)': { problems: [/^track\d+ and switch-bought-BrickTracksR104switch(left|right)-\d overlap/, /^track\d+ and switch\d-ballast2 overlap: 52\d\.\d+ mm3/, /^track3 and track9 overlap: 3\.7\d mm3/],
-    why: 'each bought switch\'s printed ballast is in the printed track part beside it (20.6 x 15.3 mm, 525 mm3, four places), and the switch as shown (a slab of its footprint) in the printed track at its ends; two parts share 3.8 mm3 at one joint' },
+  'X yard (6 tracks, single slips)': { problems: [/^track\d+ and switch-bought-BrickTracksR104switchleft-[23] can't be brought together: .* 22\.\d mm3 .* 3 pegs/, /^track3 and track9 overlap: 3\.7\d mm3/],
+    warning: /the printed track on from both ends of the bought switch at \d+, \d+ \(studs\) is one part: it won't slide onto a left-hand switch's two ends/,
+    why: 'the printed part on from both far ends of each left-hand bought switch won\'t slide onto its two ends at once (the build says so: a design limit); and one part\'s corner (1.4 x 1.6 mm, a plate thick: 3.8 mm3) is in the next part\'s end at a block joint beside the first switch\'s ends (at 7, 633 mm)' },
 };
 
 /** A design built as the app builds it (its defaults) and checked: nothing wrong but what's known (k), which must still be found. */
