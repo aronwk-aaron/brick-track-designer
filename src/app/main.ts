@@ -438,7 +438,11 @@ function drawForms() {
     e.textContent = 'No track yet. Draw on the grid, pick a template, or add a route by numbers.';
     routesEl.append(e);
   }
-  design.routes.forEach((r, i) => {
+  design.routes.forEach((r, i) => routesEl.append(makeCard(r, i)));
+}
+/** One route's card: its heading, and its form when it's open (a folded one is its heading only). */
+function makeCard(r: DRoute, i: number): HTMLElement {
+  {
     const box = document.createElement('details'); box.className = 'route';
     const sel = i === canvas?.selected;
     if (sel) box.classList.add('selected');
@@ -456,7 +460,7 @@ function drawForms() {
     });
     // (a folded card is its heading only: its form is made when it's opened, which draws the cards again. A big layout's
     // hundreds of folded cards, each with its whole form, made every click on the plan slow)
-    if (!box.open) { box.append(sum); routesEl.append(box); return; }
+    if (!box.open) { box.append(sum); return box; }
     const body = document.createElement('div'); body.className = 'body';
     // (the card in folding sections, each remembered open or shut for every card: only the shape open to start with)
     const part = (title: string, note = '') => {
@@ -590,8 +594,14 @@ function drawForms() {
     more.lastElementChild!.className = 'danger';
     shape.append(add, rangeNote('A straight: 0 to 2000 studs. A curve: radius 24 to 1000 studs, up to 360° either way (add another to go on round).')); body.append(more);
     box.append(sum, body);
-    routesEl.append(box);
-  });
+    return box;
+  }
+}
+/** Just route i's card drawn again (a handle being dragged on the plan changes that route alone: the other cards stay as they are). */
+function renderCard(i: number) {
+  const old = routesEl.children[i];
+  if (!old || routesEl.children.length !== design.routes.length || !design.routes[i]) return render();
+  keepingFocus(document.querySelector('aside')!, () => { canvas.highlightSeg = undefined; old.replaceWith(makeCard(design.routes[i], i)); });
 }
 
 // ---------- building ----------
@@ -667,18 +677,27 @@ function updateExports() {
   }
 }
 
-/** The design changed: save it and rebuild. record: an undo step (not while a drag or a draw is still going on). build: false for what doesn't change the parts (a route's name). */
+/**
+ * The design changed: save it and rebuild. record: an undo step, which is a change let go of; false is a drag still going
+ * on (a route, a handle, a table, a lever), where nothing is stored, listed or counted on each mouse move (the plan
+ * draws itself): the design is saved once on release, so a reload mid-drag brings back the last released design.
+ * build: false for what doesn't change the parts (a route's name).
+ */
 function changed(rerender = false, record = true, build = true) {
   // (the trackwork's hand edits go with their track: each one's place worked out again from the route it's on)
   followTrackwork(design, canvas?.overlay?.items ?? []);
-  const json = JSON.stringify(design);
-  if (record) history.record(json);
-  if (record) settleFrom = runner.id + 1; // (the next build is of the design as let go of)
-  save();
-  updateLegend();
-  if (rerender) render();
-  canvas?.draw();
-  updateHistoryButtons();
+  if (record) {
+    history.record(JSON.stringify(design));
+    settleFrom = runner.id + 1; // (the next build is of the design as let go of)
+    save();
+    updateLegend();
+    if (rerender) render();
+    canvas?.draw();
+    updateHistoryButtons();
+  } else {
+    if (rerender) render();
+    canvas?.drawSoon();
+  }
   if (!build) return;
   clearTimeout(timer);
   timer = window.setTimeout(requestBuild, 150);
@@ -1144,7 +1163,7 @@ const canvas = new TrackCanvas($<HTMLCanvasElement>('track'), {
   design: () => design,
   changed: (commit) => changed(commit, commit), // (one undo step per finished action, none for each mouse move)
   revert: () => restore(history.current), // (Esc mid-drag: back to the last finished action)
-  live: () => render(), // (a handle being dragged: the route's card shows its numbers as they change)
+  live: (route) => (route === undefined ? render() : renderCard(route)), // (a handle being dragged: the route's card shows its numbers as they change)
   select: () => { foldedCards.clear(); render(); updateSelbar(); },
   radius: () => Number(radiusSel.value),
   system: () => (systemSel.value === 'monorail' ? 'monorail' : 'train'),

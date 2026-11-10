@@ -190,13 +190,16 @@ try {
   const tbx = (await page.locator('#track').boundingBox())!;
   const scr = async (wx: number, wy: number): Promise<[number, number]> => { const v = await page.evaluate(() => (window as unknown as { btdCanvas: { view(): { scale: number; ox: number; oy: number } } }).btdCanvas.view()); return [tbx.x + v.ox + wx * v.scale, tbx.y + v.oy - wy * v.scale]; };
   const xy = async (n: string) => page.evaluate((nm) => { const r = (JSON.parse(localStorage.getItem('btd-design') ?? '{}').routes as { name: string; x: number; y: number }[]).find((q) => q.name === nm)!; return `${r.x},${r.y}`; }, n);
+  // (the route as the plan has it, mid-drag: a drag isn't stored till it's let go of)
+  const xyLive = (n: string) => page.evaluate((nm) => { const r = (window as unknown as { btdCanvas: { host: { design(): { routes: { name: string; x: number; y: number }[] } } } }).btdCanvas.host.design().routes.find((q) => q.name === nm)!; return `${r.x},${r.y}`; }, n);
   const errs0 = errors.length;
   // Esc during a drag of a whole route puts it back, and the route stays selected
   const [bx, by] = await scr(12, 0);
   await page.mouse.move(bx, by); await page.mouse.down(); await page.mouse.move(bx + 60, by + 40, { steps: 4 });
-  check(await xy('B') !== '4,0', 'a route being dragged moves');
+  check(await xyLive('B') !== '4,0', 'a route being dragged moves');
+  check(await xy('B') === '4,0', 'and a reload now would bring it back where it was (nothing stored mid-drag)');
   await page.keyboard.press('Escape');
-  check(await xy('B') === '4,0', 'Esc mid-drag puts the route back');
+  check(await xyLive('B') === '4,0' && await xy('B') === '4,0', 'Esc mid-drag puts the route back');
   await page.mouse.move(bx + 90, by + 60, { steps: 3 }); await page.mouse.up();
   check(await xy('B') === '4,0', 'and letting go afterwards moves nothing');
   check(await page.locator('#sel-count').innerText() === '1 selected', 'the route is still selected');
@@ -216,6 +219,23 @@ try {
   await page.mouse.move(...(await scr(0, -30))); await page.keyboard.press('Control+v'); await page.keyboard.press('Control+v');
   const pasted = await page.evaluate(() => (JSON.parse(localStorage.getItem('btd-design') ?? '{}').routes as { x: number; y: number }[]).slice(3).map((q) => `${q.x},${q.y}`));
   check(pasted.length === 2 && pasted[0] !== pasted[1], `pasting twice at one spot doesn't stack the routes (${pasted.join(' ')})`);
+  // a drag saves once, on release: nothing is stored while it goes on (the design is as last let go of), then the design as dropped
+  at = 'saving a drag';
+  await page.evaluate(() => localStorage.setItem('btd-design', JSON.stringify({ version: 1, gaugeStuds: 4, routes: [
+    { name: 'A', x: -20, y: 0, heading: -90, segs: [{ kind: 'straight', studs: 16 }] },
+    { name: 'B', x: 4, y: 0, heading: -90, segs: [{ kind: 'straight', studs: 16 }] },
+  ] })));
+  await page.reload(); await page.waitForSelector('#track'); await page.click('#mode-select'); await page.click('#fit'); await page.waitForTimeout(400);
+  await page.evaluate(() => { const w = window as unknown as { __saves: number }; w.__saves = 0; const o = Storage.prototype.setItem; Storage.prototype.setItem = function (k: string, v: string) { if (k === 'btd-design') w.__saves++; return o.call(this, k, v); }; });
+  const saves = () => page.evaluate(() => (window as unknown as { __saves: number }).__saves);
+  const b0 = (await xy('B')).split(',').map(Number), [dx0, dy0] = await scr(b0[0] + 8, b0[1]);
+  await page.mouse.move(dx0, dy0); await page.mouse.down(); await page.mouse.move(dx0 + 40, dy0 + 30, { steps: 6 }); await page.waitForTimeout(700);
+  check(await saves() === 0 && await xy('B') === b0.join(','), `nothing is stored while a route is dragged (${await saves()} saves)`);
+  await page.mouse.up();
+  check(await saves() >= 1 && await xy('B') !== b0.join(','), `the design is stored when it is dropped (${await saves()} saves, ${await xy('B')})`);
+  await page.keyboard.press('Control+z'); await page.waitForTimeout(200);
+  check(await xy('B') === b0.join(','), 'and the drag is one undo step');
+
   // resizing the window keeps the plan point at the middle of the plan where it was (the route's screen position moves by half the change)
   at = 'resize';
   const viewOf = () => page.evaluate(() => { const c = document.getElementById('track')!.getBoundingClientRect(); const v = (window as unknown as { btdCanvas: { view(): { scale: number; ox: number; oy: number } } }).btdCanvas.view(); return { ...v, w: c.width, h: c.height }; });

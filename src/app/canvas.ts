@@ -66,7 +66,7 @@ export interface CanvasHost {
   /** What new routes are: train track or monorail (Draw's Track choice). */
   system?(): 'train' | 'monorail';
   /** The forms show the design as it is now, mid-drag (a handle being dragged). */
-  live?(): void;
+  live?(route?: number): void;
   /** The design as it was at the last finished action (a drag cancelled with Esc: nothing of it kept). */
   revert?(): void;
 }
@@ -643,7 +643,7 @@ export class TrackCanvas {
       hd.why = res?.why;
       if (r && res) {
         const next = withValue(r.segs[hd.seg], hd.kind, res.value);
-        if (JSON.stringify(next) !== JSON.stringify(r.segs[hd.seg])) { r.segs[hd.seg] = next; this.host.changed(false); this.host.live?.(); }
+        if (JSON.stringify(next) !== JSON.stringify(r.segs[hd.seg])) { r.segs[hd.seg] = next; this.host.changed(false); this.host.live?.(hd.route); }
       }
       return this.drawSoon();
     }
