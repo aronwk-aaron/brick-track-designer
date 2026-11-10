@@ -6,6 +6,7 @@ describe('templates: reference slips', { timeout: 900000 }, () => templatesBuild
   'Double slip R40 45°',
   'Single slip R40 45°',
   'Double crossover R40',
+  'Narrow-gauge double crossover R36',
   'Crossover, 4-stud gap, left',
   'Crossover, 4-stud gap, right',
   'Buffer stop',

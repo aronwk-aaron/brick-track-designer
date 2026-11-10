@@ -36,4 +36,7 @@ describe('templates: reference switches2', { timeout: 900000 }, () => templatesB
   'Narrow-gauge switch R84 left',
   'Narrow-gauge switch R84 right',
   'Narrow-gauge wye R36',
+  'Narrow-gauge switch R36 left, lever on the branch side',
+  'Narrow-gauge switch R36 right, lever on the branch side',
+  'Wye R104, 8-stud gap',
 ]));

@@ -27,4 +27,8 @@ describe('templates: reference crossings', { timeout: 900000 }, () => templatesB
   'Pass-through crossing R120 right',
   'T-junction core R56',
   'Narrow-gauge crossing 90°',
+  'Narrow-gauge crossing 22.5° left',
+  'Narrow-gauge crossing 22.5° right',
+  'Narrow-gauge crossing 33.75° left',
+  'Narrow-gauge crossing 33.75° right',
 ]));
