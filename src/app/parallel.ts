@@ -4,7 +4,7 @@
 // handed back as plain data; then the build itself, which finds them all
 // done. The same code builds each job wherever it's built, so the pieces come
 // out as a build in one worker makes them.
-import type { Wasm } from '../geom/kernel';
+import { kernelBroke, type Wasm } from '../geom/kernel';
 import { type BuildJob, buildDesign, buildJobs, holdJobs, jobDone, mayHaveJobs } from './build';
 import type { Design } from './design';
 
@@ -130,7 +130,7 @@ export function serveHelper(w: Wasm, post: (m: FromHelper, transfer: ArrayBuffer
       const part = j.run();
       post({ key: m.run, part }, buffersOf(part));
     } catch (err) {
-      const fatal = err instanceof WebAssembly.RuntimeError || typeof err === 'number';
+      const fatal = kernelBroke(err);
       post({ key: m.run, error: String(err instanceof Error ? err.message : err), fatal }, []);
     }
   };

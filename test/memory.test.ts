@@ -2,19 +2,11 @@
 // grows, stays within a bound. Each build once left its solids behind for the garbage collector, which never got to
 // them in time: a dozen small builds took 2 GB of the kernel's 4, and it ran out ("memory access out of bounds").
 import { describe, expect, it } from 'vitest';
-import { kernel } from '../src/geom/kernel';
+import { kernel, kernelBytes } from '../src/geom/kernel';
 import { buildDesign, clearBuildCache } from '../src/app/build';
 import { type Design, TEMPLATES } from '../src/app/design';
 
-// (the kernel's memory, caught as it's set up: it isn't handed out otherwise)
-let mem: WebAssembly.Memory | undefined;
-const instantiate = WebAssembly.instantiate.bind(WebAssembly) as (...a: unknown[]) => Promise<unknown>;
-(WebAssembly as unknown as { instantiate: unknown }).instantiate = async (...a: unknown[]) => {
-  const r = (await instantiate(...a)) as { instance?: WebAssembly.Instance; exports?: WebAssembly.Exports };
-  for (const v of Object.values((r.instance ?? (r as unknown as WebAssembly.Instance)).exports)) if (v instanceof WebAssembly.Memory) mem = v;
-  return r;
-};
-const MB = () => (mem?.buffer.byteLength ?? 0) / 1e6;
+const MB = () => kernelBytes() / 1e6;
 // (a file's bytes summed up: compared as a number, not byte by byte (a mismatch's report would be the files themselves))
 const sum = (d: Uint8Array) => { let h = 2166136261; for (const b of d) h = Math.imul(h ^ b, 16777619) >>> 0; return `${d.length}:${h}`; };
 
@@ -25,7 +17,7 @@ const moved = (d: Design, k: number): Design => ({ ...structuredClone(d), routes
 describe('the kernel\'s memory over many builds', { timeout: 900000 }, () => {
   it('stays within a bound: 5 rounds of 7 designs take no more than the first', async () => {
     const w = await kernel();
-    expect(mem, 'the kernel\'s memory').toBeDefined();
+    expect(kernelBytes(), 'the kernel\'s memory').toBeGreaterThan(0);
     clearBuildCache();
     const after: number[] = [];
     for (let round = 0; round < 5; round++) {

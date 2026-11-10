@@ -8,7 +8,7 @@ import { DEFAULTS as TRACK_DEFAULTS, PLATE_H, Track } from '../geom/track';
 import { CROSSING_DEFAULTS, crossingPiece, joinedEnds } from '../geom/crossing';
 import { trackSeat } from '../geom/extras';
 import { markClear } from '../geom/extrarails';
-import { arena, flat, made, type Wasm } from '../geom/kernel';
+import { arena, flat, kernelBroke, made, type Wasm } from '../geom/kernel';
 import { stlBytes } from '../geom/stl';
 import { splitSelfCrossing } from '../route/selfcross';
 import { FORCE_ANGLE, FORCE_LAT, solve, type SplitEdits } from '../route/solver';
@@ -1342,7 +1342,7 @@ function sectioned(b: PieceBuild, name: string, all: Route[], checks: CheckRail[
       const kept = parts2.filter((m) => m.numTri() > 0), id = (k: number) => (kept.length > 1 ? `${si + 1}-${k + 1}` : `${si + 1}`);
       return { ms: kept.map((m, k) => arena(w, () => ({ ...bake(b, labelled(b, m, rts, kept.length > 1 ? undefined : sizeOf(rts), id(k))), ...(b.labelOn && { id: id(k) }) }), () => [])), grips };
     }, () => []), { ms: [], grips: [] }); } catch (err) {
-      if (err instanceof WebAssembly.RuntimeError || typeof err === 'number') throw err;
+      if (kernelBroke(err)) throw err;
       b.bedWarnings.add(`section ${si + 1} of ${name} failed to build: ${err instanceof Error ? err.message : String(err)}`);
       return;
     }
@@ -1426,7 +1426,7 @@ function tiled(b: PieceBuild, name: string, all: Route[], checks: CheckRail[], s
       return { ms: parts.map((m, k) => arena(w, () => ({ ...bake(b, labelled(b, b.alongTrack ? m : edgeGrip(scad, track, m, gridPose, bottom), cr.routes, undefined, `${ci + 1}-${k + 1}`)), ...(b.labelOn && { id: `${ci + 1}-${k + 1}` }) }), () => [])),
         grips: grips.filter((q) => q[0] > R[0] && q[0] <= R[2] && q[1] > R[1] && q[1] <= R[3]) };
     }, () => []), { ms: [], grips: [] }); } catch (err) {
-      if (err instanceof WebAssembly.RuntimeError || typeof err === 'number') throw err; // (the kernel's broken now: no use carrying on)
+      if (kernelBroke(err)) throw err; // (the kernel's broken now: no use carrying on)
       b.bedWarnings.add(`part ${ci + 1} of ${name} (x ${Math.max(R[0], bx[0]).toFixed(0)} to ${Math.min(R[2], bx[2]).toFixed(0)}, y ${Math.max(R[1], bx[1]).toFixed(0)} to ${Math.min(R[3], bx[3]).toFixed(0)}) failed to build: ${err instanceof Error ? err.message : `kernel error ${String(err)}`}`);
       return;
     }

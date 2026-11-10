@@ -4,7 +4,7 @@
 // it is (test/buildrun.test.ts).
 
 /** A worker, as much of it as is used. */
-export interface WorkerPort { postMessage(m: unknown): void; terminate(): void; onmessage: ((e: { data: BuildMessage }) => void) | null }
+export interface WorkerPort { postMessage(m: unknown): void; terminate(): void; onmessage: ((e: { data: BuildMessage }) => void) | null; onerror?: ((e: unknown) => void) | null; onmessageerror?: ((e: unknown) => void) | null }
 /** What the worker says (worker.ts): picked up and progress, the plan's trackwork ahead of the pieces, the plan alone done, the pieces, or an error (fatal: its kernel's broken). */
 export interface BuildMessage { id: number; progress?: string; frac?: number; early?: unknown; planDone?: boolean; error?: string; fatal?: boolean; [k: string]: unknown }
 export interface RunnerOpts {
@@ -44,6 +44,10 @@ export class BuildRunner {
   private fresh(): WorkerPort {
     const w = this.o.spawn();
     w.onmessage = (e) => this.got(e.data);
+    // (a worker that fails outright (its script, or the browser stopping it for the memory it took) says nothing more:
+    // as a broken kernel, or the build would be waited for without end)
+    const failed = () => { if (w === this.worker && this.last) this.got({ id: this.last.id, fatal: true, error: 'the worker stopped' }); };
+    w.onerror = failed; w.onmessageerror = failed;
     return w;
   }
   private replace() { this.worker.terminate(); this.worker = this.fresh(); }

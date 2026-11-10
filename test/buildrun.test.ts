@@ -11,7 +11,7 @@ function rig() {
   const got: BuildMessage[] = [];
   let retries = 0;
   const runner = new BuildRunner({
-    spawn: () => { const w = { sent: [] as { id: number; design: unknown; planOnly: boolean }[], dead: false, onmessage: null, postMessage(m: unknown) { this.sent.push(m as never); }, terminate() { this.dead = true; } }; workers.push(w); return w; },
+    spawn: () => { const w = { sent: [] as { id: number; design: unknown; planOnly: boolean }[], dead: false, onmessage: null, onerror: null, onmessageerror: null, postMessage(m: unknown) { this.sent.push(m as never); }, terminate() { this.dead = true; } }; workers.push(w); return w; },
     message: (d) => got.push(d),
     retrying: () => { retries++; },
     setTimeout: (f, ms) => { const t = { f, ms, off: false }; timers.push(t); return t; },
@@ -94,6 +94,24 @@ describe('the build runner', () => {
       expect(r.got).toHaveLength(k + 1);
     }
     expect(r.retries()).toBe(5);
+  });
+  it('a worker that fails outright (no message, an error event): as a broken kernel, tried once more; an old worker\'s error is nothing', () => {
+    const r = rig();
+    const id = r.runner.request({ big: true }, false);
+    r.workers[0].onerror!(new Error('out of memory'));
+    expect(r.retries()).toBe(1);
+    expect(r.workers).toHaveLength(2);
+    expect(r.workers[1].sent).toEqual([{ id, design: { big: true }, planOnly: false }]);
+    // (the worker replaced: its late error changes nothing)
+    r.workers[0].onerror!(new Error('late'));
+    expect(r.workers).toHaveLength(2);
+    r.workers[1].onmessageerror!(new Error('a message that couldn\'t be read'));
+    expect(r.got).toEqual([{ id, error: FATAL_TEXT, fatal: true }]);
+    expect(r.workers).toHaveLength(3);
+    // (idle now: an error with nothing asked for is nothing)
+    r.runner.stop();
+    r.workers[3].onerror!(new Error('idle'));
+    expect(r.got).toHaveLength(1);
   });
   it('an ordinary error is passed on as it is, the worker kept', () => {
     const r = rig();

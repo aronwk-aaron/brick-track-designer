@@ -8,12 +8,49 @@ let loaded: Promise<Wasm> | undefined;
 // In the browser, pass the URL of manifold.wasm (Vite: import
 // 'manifold-3d/manifold.wasm?url').
 export function kernel(wasmUrl?: string): Promise<Wasm> {
-  loaded ??= Module(wasmUrl ? { locateFile: () => wasmUrl } : undefined).then((w) => {
+  loaded ??= withMemory(() => Module(wasmUrl ? { locateFile: () => wasmUrl } : undefined)).then((w) => {
     w.setup();
     patch(w);
     return w;
+  }, (err) => {
+    // (it didn't load (offline, and not kept by the browser): said as that, and tried again the next time it's asked for)
+    loaded = undefined;
+    throw new KernelNotLoaded(err);
   });
   return loaded;
+}
+/** The kernel couldn't be loaded (its file not fetched): nothing wrong with the design. */
+export class KernelNotLoaded extends Error {
+  constructor(cause?: unknown) { super('the geometry kernel couldn\'t be loaded (are you offline?): reload the page once you\'re connected', { cause }); this.name = 'KernelNotLoaded'; }
+}
+
+// The kernel's memory: it only grows, to 4 GB at most. With nearly all of it taken the kernel doesn't fail, it
+// crawls (a build that had taken 45 s was still "Building" ten minutes on, nothing said): so it's watched, and a
+// build that takes it past FULL is stopped with KernelFull, which the page treats as a broken kernel (a new worker,
+// its memory empty, and the build once more).
+let memory: WebAssembly.Memory | undefined;
+/** The kernel's memory now (bytes; 0 before it's loaded). */
+export const kernelBytes = () => memory?.buffer.byteLength ?? 0;
+/** More of the kernel's memory in use than this: the build's stopped (KernelFull). */
+export const KERNEL_FULL = 3.6e9;
+let full = KERNEL_FULL;
+/** (tests) Another limit; hands back the one it was. */
+export function setKernelFull(bytes: number) { const was = full; full = bytes; return was; }
+export class KernelFull extends Error {
+  constructor() { super('the geometry kernel ran out of memory'); this.name = 'KernelFull'; }
+}
+/** Is it the kernel's own failure (it trapped, threw one of its own, or ran out of memory): no use going on in this worker? */
+export const kernelBroke = (err: unknown) => !(err instanceof KernelNotLoaded) && (err instanceof WebAssembly.RuntimeError || typeof err === 'number' || err instanceof KernelFull);
+/** load run with the kernel's memory caught as its module's set up (it isn't handed out otherwise). */
+async function withMemory<T>(load: () => Promise<T>): Promise<T> {
+  const WA = WebAssembly as unknown as Record<string, unknown>, saved = { instantiate: WA.instantiate, instantiateStreaming: WA.instantiateStreaming };
+  const catching = (f: unknown) => typeof f !== 'function' ? f : async (...a: unknown[]) => {
+    const r = (await (f as (...b: unknown[]) => Promise<unknown>).apply(WebAssembly, a)) as { instance?: WebAssembly.Instance; exports?: WebAssembly.Exports };
+    for (const v of Object.values((r.instance ?? (r as WebAssembly.Instance)).exports ?? {})) if (v instanceof WebAssembly.Memory) memory = v;
+    return r;
+  };
+  WA.instantiate = catching(saved.instantiate); WA.instantiateStreaming = catching(saved.instantiateStreaming);
+  try { return await load(); } finally { WA.instantiate = saved.instantiate; WA.instantiateStreaming = saved.instantiateStreaming; }
 }
 
 // Freeing kernel memory. The kernel's solids live in WASM memory until their
@@ -28,6 +65,7 @@ let recording: Set<Handle> | undefined;
 // call that hands back a solid made before (a union of one thing can) doesn't make it the caller's to delete)
 const seen = new WeakSet<object>();
 const patched = new WeakSet<object>();
+let calls = 0;
 // (the solids worked out: asked something that needs their triangles. Till then a solid is only the booleans to do,
 // and holds on to what they're done to)
 const worked = new WeakSet<object>();
@@ -52,7 +90,11 @@ function patch(w: Wasm) {
       if (!d || typeof d.value !== 'function' || !d.writable) continue;
       const f = d.value as (...a: unknown[]) => unknown;
       const works = WORKS_OUT.has(k);
-      obj[k] = function (this: unknown, ...a: unknown[]) { const r = f.apply(this, a); if (works && this && typeof this === 'object') worked.add(this); note(r); return r; };
+      obj[k] = function (this: unknown, ...a: unknown[]) {
+        // (every so often: is the kernel's memory nearly gone?)
+        if ((++calls & 31) === 0 && memory && memory.buffer.byteLength > full) throw new KernelFull();
+        const r = f.apply(this, a); if (works && this && typeof this === 'object') worked.add(this); note(r); return r;
+      };
     }
   };
   // (the instances' methods are on the kernel's own class prototypes, not on

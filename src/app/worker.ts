@@ -1,7 +1,7 @@
 // Solves and builds a design off the main thread (src/app/build.ts), a big
 // one's heavy jobs shared out among helper workers (parallel.ts, helper.ts).
 import wasmUrl from 'manifold-3d/manifold.wasm?url';
-import { kernel } from '../geom/kernel';
+import { kernel, kernelBroke } from '../geom/kernel';
 import type { Design } from './design';
 import { buildDesign, PLAN_ONLY } from './build';
 import { buildShared, CANCELLED, type FromHelper, helperCount, type HelperPort } from './parallel';
@@ -33,7 +33,7 @@ self.onmessage = async (e: MessageEvent<{ id: number; design: Design; planOnly?:
     if (err === CANCELLED) return;
     if (err === PLAN_ONLY) { post({ id, planDone: true }); return; }
     // (a crash inside the kernel leaves it broken for every build after: the page starts a new worker)
-    const fatal = err instanceof WebAssembly.RuntimeError || typeof err === 'number';
+    const fatal = kernelBroke(err);
     post({ id, fatal, error: String(err instanceof Error ? err.message : typeof err === 'number' ? 'the geometry kernel failed' : err) });
   }
 };
