@@ -772,6 +772,12 @@ export class TrackCanvas {
     }
   }
   stopDrawing() { this.active = undefined; this.draw(); }
+  /** Whatever's being drawn or dragged, let go of where it is (the design under it replaced: undone, a template, a file). */
+  letGo() {
+    this.drag = undefined; this.dragBad = false; this.dragSnap = undefined; this.moving = undefined; this.box = undefined; this.tableDrag = undefined;
+    this.itemDrag = undefined; this.leverDrag = undefined; this.leverPending = undefined; this.panning = undefined;
+    this.stopDrawing();
+  }
   /** The track being drawn carries on from where its route ends now (the route changed on its card, turned or mirrored since the last click); a route that's gone: nothing being drawn. */
   private syncActive() {
     const a = this.active;

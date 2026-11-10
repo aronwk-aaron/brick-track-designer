@@ -346,6 +346,10 @@
     /* the notch and the home bar (installed to the home screen) */
     header { padding-top: max(7px, env(safe-area-inset-top)); padding-left: max(12px, env(safe-area-inset-left)); padding-right: max(12px, env(safe-area-inset-right)); }
     #status, #hint { margin-bottom: env(safe-area-inset-bottom); }
+    #ask-dlg { border: 1px solid var(--line); border-radius: var(--radius); background: var(--panel); color: var(--ink); box-shadow: var(--shadow); padding: 18px 20px 14px; width: min(92vw, 440px); font-size: 14px; line-height: 1.45; }
+    #ask-dlg::backdrop { background: rgba(0,0,0,0.35); } #ask-dlg p { margin: 0 0 14px; } #ask-dlg .foot { display: flex; gap: 8px; justify-content: flex-end; }
+    #othertab { left: 50%; transform: translateX(-50%); top: 56px; z-index: 3; display: flex; flex-wrap: wrap; gap: 6px 8px; align-items: center; max-width: min(560px, calc(100% - 20px)); border-color: var(--warn); }
+    #othertab span { flex: 1 1 260px; } #othertab button { height: 26px; padding: 0 9px; font-size: 12px; }
     /* the parts list: what to buy and what to print */
     #parts-dlg { border: 1px solid var(--line); border-radius: var(--radius); background: var(--panel); color: var(--ink); box-shadow: var(--shadow); padding: 0; width: min(92vw, 720px); max-height: 86vh; }
     #parts-dlg::backdrop { background: rgba(0,0,0,0.35); }
@@ -431,6 +435,10 @@
     <div class="body" id="parts-body"></div>
     <div class="foot"><button id="export-lego" type="button"><svg><use href="#i-download"/></svg>Download (CSV + BrickLink list)</button></div>
   </dialog>
+  <dialog id="ask-dlg" aria-labelledby="ask-text">
+    <p id="ask-text"></p>
+    <div class="foot"><button id="ask-no" type="button"></button><button id="ask-yes" type="button" class="danger"></button></div>
+  </dialog>
   <section id="settings" hidden aria-label="Settings">
     <div class="shead">
       <h2>Settings</h2>
@@ -512,6 +520,10 @@
       <div id="selbar" class="chip" hidden>
         <span id="sel-count"></span>
         <button id="sel-copy" type="button" title="Copy (Ctrl+C)">Copy</button><button id="sel-cut" type="button" title="Cut (Ctrl+X)">Cut</button><button id="sel-paste" type="button" title="Paste at the mouse (Ctrl+V)">Paste</button><button id="sel-dup" type="button" title="Duplicate (Ctrl+D)">Duplicate</button><button id="sel-mirror" type="button" title="Mirror left to right (M)">Mirror</button><button id="sel-rotl" type="button" title="Turn 90° left (Shift+R)">⟲ 90°</button><button id="sel-rotr" type="button" title="Turn 90° right (R)">⟳ 90°</button><button id="sel-del" type="button" class="danger" title="Delete (Del)">Delete</button>
+      </div>
+      <div id="othertab" class="chip" role="alert" hidden>
+        <span>This design was changed in another tab or window. Changes here aren't kept in the browser until you choose.</span>
+        <button id="othertab-load" type="button" title="Take the other tab's design here (Undo brings this one back)">Load the other one</button><button id="othertab-keep" type="button" title="Keep this tab's design: it's what the browser keeps from now, over the other tab's">Keep this one</button>
       </div>
       <div id="hint" class="chip"></div>
       <div id="coords" class="chip"></div>

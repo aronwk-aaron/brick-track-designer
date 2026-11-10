@@ -16,6 +16,7 @@ import { History } from './history';
 import { fileBase as fileBaseOf, partsDownload, printedKinds, stlDownload } from './exports';
 import { clamp, LIMITS, type Range, rangeText } from './limits';
 import { mirrorRoute } from './routeedits';
+import { TabStore, unsaved } from './session';
 import { followTrackwork, isEdit, leftOver, mirrorAnchors, reconcileTrackwork, renameAnchors } from './twfollow';
 import { type OptChoice, optionForm, type OptCtx, type OptField } from './settings';
 
@@ -31,7 +32,30 @@ const history = new History(JSON.stringify(design));
 function load(): Design | undefined {
   try { const s = localStorage.getItem(STORE); return s ? readDesign(JSON.parse(s)) : undefined; } catch { return undefined; }
 }
-function save() { try { localStorage.setItem(STORE, JSON.stringify(design)); } catch { /* storage off: fine */ } }
+// (another tab's newer design, not chosen between yet: this one doesn't write over it; session.ts)
+const tabs = new TabStore((() => { try { return localStorage.getItem(STORE); } catch { return null; } })());
+function save() {
+  if (!tabs.mayWrite) return;
+  try { const j = JSON.stringify(design); localStorage.setItem(STORE, j); tabs.wrote(j); } catch { /* storage off: fine */ }
+}
+/** The design as it is now is in a file (saved, opened) or a template's own: replacing it loses nothing till it's changed. */
+const CLEAN = 'btd-clean';
+function markClean() { try { localStorage.setItem(CLEAN, JSON.stringify(design)); } catch { /* fine */ } }
+const hasUnsaved = () => { let clean: string | null = null; try { clean = localStorage.getItem(CLEAN); } catch { /* fine */ } return unsaved(JSON.stringify(design), clean); };
+/** Ask, in a dialog over the page: resolves true for yes (Esc, or a click outside: no). */
+function ask(text: string, yes: string, no: string): Promise<boolean> {
+  const dlg = $<HTMLDialogElement>('ask-dlg');
+  $('ask-text').textContent = text; $('ask-yes').textContent = yes; $('ask-no').textContent = no;
+  return new Promise((resolve) => {
+    const done = (v: boolean) => { dlg.removeEventListener('close', onClose); $('ask-yes').onclick = $('ask-no').onclick = null; if (dlg.open) dlg.close(); resolve(v); };
+    const onClose = () => done(false);
+    dlg.addEventListener('close', onClose);
+    $('ask-yes').onclick = () => done(true); $('ask-no').onclick = () => done(false);
+    dlg.showModal(); $('ask-no').focus();
+  });
+}
+/** Before a template or a file takes the design's place: asked, if it has changes that are in no file. */
+const mayReplace = async () => !hasUnsaved() || ask('Replace the design on the plan? It has changes that aren\'t saved to a file. (Undo brings it back, until the page is closed or reloaded.)', 'Replace it', 'Keep it');
 
 // ---------- the keyboard's focus, kept as a form is drawn again ----------
 // (the forms are drawn again whole when the design changes: the control with the focus was thrown away with the rest,
@@ -837,9 +861,10 @@ renderer.setAnimationLoop(() => { if (!dirty3d) return; dirty3d = false; rendere
 const tpl = $<HTMLSelectElement>('template');
 // (in groups: crossings, switches, layouts, features, monorail)
 for (const [g, names] of TEMPLATE_GROUPS) { const og = document.createElement('optgroup'); og.label = g; for (const name of names) if (TEMPLATES[name]) og.append(new Option(name, name)); tpl.append(og); }
-tpl.addEventListener('change', () => {
-  if (!tpl.value) return;
-  design = structuredClone(TEMPLATES[tpl.value]); tpl.value = ''; replaced(); framed = false; changed(true); canvas.fit();
+tpl.addEventListener('change', async () => {
+  const name = tpl.value; tpl.value = '';
+  if (!name || !(await mayReplace())) return;
+  design = structuredClone(TEMPLATES[name]); replaced(); framed = false; changed(true); markClean(); canvas.fit();
 });
 $('add-route').addEventListener('click', () => {
   design.routes.push({ name: nextName(), ...freeStart(design), segs: [{ kind: 'straight', studs: 16 }] });
@@ -866,7 +891,7 @@ function updateLegend() {
 }
 /** A different design (a template, a file, undo or redo): the toolbar and the forms show it, nothing selected. */
 function replaced() {
-  canvas.stopDrawing(); canvas.setSelection([]); openCards.clear(); twSig = ''; renderOptions();
+  canvas.letGo(); canvas.setSelection([]); openCards.clear(); twSig = ''; renderOptions();
 }
 
 const download = (blob: Blob, name: string) => {
@@ -937,13 +962,19 @@ $('export-layout').addEventListener('click', () => {
 });
 // The design's name (asked on Save): what it saves and downloads under.
 const fileBase = () => fileBaseOf(design.name);
-$('save').addEventListener('click', () => {
-  const name = prompt('Save the design as:', design.name || 'track-piece');
-  if (name === null) return;
-  // (the name isn't the track: kept, without a rebuild or an undo step)
-  design.name = name.trim() || undefined; history.amend(JSON.stringify(design)); save();
+/** Save the design as a file. Its name is asked for the first time, and kept: after that it saves under it at once (as: asked again, to save under another). */
+function saveFile(as = false) {
+  if (as || !design.name) {
+    const name = prompt('Save the design as:', design.name || 'track-piece');
+    if (name === null) return;
+    // (the name isn't the track: kept, without a rebuild or an undo step)
+    design.name = name.trim() || undefined; history.amend(JSON.stringify(design)); save();
+  }
   download(new Blob([JSON.stringify(design, null, 2)], { type: 'application/json' }), `${fileBase()}.btd.json`);
-});
+  markClean(); showSaveName();
+}
+const showSaveName = () => { $('save').title = `${design.name ? `Save the design as ${fileBase()}.btd.json (Ctrl+S). Shift+click, or Ctrl+Shift+S: under another name` : 'Save the design as a file (Ctrl+S): asks its name the first time'}; it's also kept in this browser as you work`; };
+$('save').addEventListener('click', (e) => saveFile(e.shiftKey));
 const loadInput = $<HTMLInputElement>('load-file');
 $('load').addEventListener('click', () => loadInput.click());
 loadInput.addEventListener('change', async () => {
@@ -952,7 +983,9 @@ loadInput.addEventListener('change', async () => {
     // (checked before it's taken: a file that isn't a design, or a damaged one, leaves the design there is as it was)
     let d0: unknown;
     try { d0 = JSON.parse(await f.text()); } catch { throw new Error("it isn't a track design (.btd.json): the file is cut short or isn't JSON"); }
-    design = readDesign(d0); replaced(); framed = false; changed(true); canvas.fit();
+    const d = readDesign(d0);
+    if (!(await mayReplace())) { loadInput.value = ''; return; }
+    design = d; replaced(); framed = false; changed(true); markClean(); canvas.fit();
   } catch (err) { setStatus('', `Couldn't open ${f.name}: ${err instanceof Error ? err.message : err}`); }
   loadInput.value = '';
 });
@@ -1040,7 +1073,8 @@ const toggle3d = () => {
   if (show3d && stale) { if (autoBuild) { stale = false; requestBuild(true); } else { $('rebuild').textContent = 'Build'; setStatus('The 3D view is built when you press Build (Auto is off).', '', true); } }
 };
 $('toggle-3d').addEventListener('click', toggle3d);
-const restore = (json: string) => { design = JSON.parse(json); replaced(); save(); render(); canvas.draw(); updateHistoryButtons(); requestBuild(); };
+// (a step of the history is a design as any other: checked as it's taken, and whatever was being dragged on the plan let go of, not carried on with on a design it wasn't begun on)
+const restore = (json: string) => { try { design = readDesign(JSON.parse(json)); } catch { return; } replaced(); save(); render(); canvas.draw(); updateHistoryButtons(); showSaveName(); requestBuild(); };
 const undo = () => { const j = history.undo(); if (j !== undefined) restore(j); };
 const redo = () => { const j = history.redo(); if (j !== undefined) restore(j); };
 function updateHistoryButtons() {
@@ -1053,12 +1087,12 @@ addEventListener('keydown', (e) => {
   // (a dialog open over the page: Esc closes Help (? too), and no other key is a shortcut: nothing's changed behind it)
   const dialog = dialogOpen(), helpOpen = helpEl.classList.contains('open');
   if (e.key === 'Escape' || (e.key === '?' && helpOpen && !typingIn(e))) { helpEl.classList.remove('open'); if (helpOpen) return; }
+  // (the design's file, not the browser's Save page and Open file; while typing in a field too: what's typed is taken first)
+  if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's' && !dialog) { e.preventDefault(); if (typingIn(e)) (e.target as HTMLElement).blur(); saveFile(e.shiftKey); return; }
+  if ((e.ctrlKey || e.metaKey) && !e.shiftKey && e.key.toLowerCase() === 'o' && !dialog) { e.preventDefault(); $('load').click(); return; }
   if (typingIn(e) || dialog) return;
   if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') { e.preventDefault(); (e.shiftKey ? redo : undo)(); }
   if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'y') { e.preventDefault(); redo(); }
-  // (the design's file, not the browser's Save page and Open file)
-  if ((e.ctrlKey || e.metaKey) && !e.shiftKey && e.key.toLowerCase() === 's') { e.preventDefault(); $('save').click(); }
-  if ((e.ctrlKey || e.metaKey) && !e.shiftKey && e.key.toLowerCase() === 'o') { e.preventDefault(); $('load').click(); }
   if (e.ctrlKey || e.metaKey || e.altKey) return;
   if (e.key === 'd' || e.key === 'D') setMode('draw');
   if (e.key === 's' || e.key === 'S') setMode('select');
@@ -1153,6 +1187,18 @@ if (!design.routes.length) setMode('draw');
 
 render();
 changed();
+showSaveName();
+
+// Another tab or window on the same design: told when it writes the kept design, this one stops writing and asks which to keep.
+addEventListener('storage', (e) => {
+  if (e.key !== STORE || !tabs.changedElsewhere(e.newValue, JSON.stringify(design))) return;
+  $('othertab').hidden = false;
+});
+$('othertab-load').addEventListener('click', () => {
+  const j = tabs.choose('other'); $('othertab').hidden = true;
+  try { if (j) { design = readDesign(JSON.parse(j)); replaced(); framed = false; changed(true); canvas.fit(); } } catch { save(); }
+});
+$('othertab-keep').addEventListener('click', () => { tabs.choose('mine'); $('othertab').hidden = true; save(); });
 
 
 // ---------- selection: copy, cut, paste, duplicate, mirror, turn ----------
