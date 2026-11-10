@@ -41,4 +41,10 @@ describe('templates: reference switches2', { timeout: 900000 }, () => templatesB
   'Wye R104, 8-stud gap',
   'Dual gauge switch R40 left',
   'Dual gauge switch R40 right',
+  'Dual gauge turnout R36 left',
+  'Dual gauge turnout R36 right',
+  'Dual gauge slide, centre to left',
+  'Dual gauge slide, centre to right',
+  'Dual gauge switch R36, narrow gauge branch, left',
+  'Dual gauge switch R36, narrow gauge branch, right',
 ]));

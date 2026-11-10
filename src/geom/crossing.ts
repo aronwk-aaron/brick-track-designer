@@ -5,7 +5,7 @@
 // supports at every route end, and square stud sockets on the grid of the
 // first route's start, so the piece sits on plates and baseplates.
 import type { Pose, Route } from '../route/route';
-import { hasRoll, poseToWorld, railPoint, routeLat, routeLength, routePose, routeRoll, routesBox, routeSOf, worldToPose } from '../route/route';
+import { hasRoll, hostedEnds, poseToWorld, railPoint, routeLat, routeLength, routePose, routeRoll, routesBox, routeSOf, worldToPose } from '../route/route';
 import { solve, type Solution, type SolverOptions, SOLVER_DEFAULTS } from '../route/solver';
 import { Scad, T, R, type CS, type Man, type Vec2 } from './scad';
 import { type Bank, bankPoint, sweepRoute, trackBank } from './sweep';
@@ -299,6 +299,18 @@ export function crossingPiece(s: Scad, routes: Route[], o: CrossingOptions = CRO
   };
   const tieStuds: Vec2[] = [];
   // (each route's guard rails and third rail, if it has them: extrarails.ts)
+  // (mixed gauges: a narrower route's end in a wider one's (route.ts hostedEnds): no connector of its own there; the
+  // wider one's has a rail end for each of its rails that isn't the wider one's own, in that connector's frame)
+  const hosted = hostedEnds(routes, gOf);
+  const isHosted = (i: number, end: 'start' | 'end') => hosted.some((h) => h.route === i && h.end === end);
+  const hostXfs = (i: number, end: 'start' | 'end', have: number[] = []) => {
+    const out = [...have];
+    for (const h of hosted) if (h.host === i && h.hostEnd === end) for (const sd of [-1, 1]) {
+      const xr = h.lat + sd * gOf[h.route], xf = end === 'start' ? xr : -xr;
+      if (Math.abs(Math.abs(xr) - gOf[i]) > 0.1 && out.every((v) => Math.abs(v - xf) > 0.1)) out.push(xf);
+    }
+    return out;
+  };
   const extras = routes.map((_, i) => extraRails(s, tOf[i], routes, i, !!x.innerEnds?.has(`${i}:start`), !!x.innerEnds?.has(`${i}:end`), { w: o.flangeway, depth: o.flangewayDepth }));
   // (a third rail through a crossing: its own flangeway (the narrow gauge's wheels') cut through the other routes' rails
   // and third rails, as each route's flangeways are; and theirs through it)
@@ -372,16 +384,17 @@ export function crossingPiece(s: Scad, routes: Route[], o: CrossingOptions = CRO
     const peg = !onBallast || !!o.pegOnBallast || alone;
     // (at a banked end, a route left banked to its end: turned with the bed)
     // (no stud recesses of their own: the underside's cut under them, on its grid, below)
-    const conn0 = T(t.fullEndpoint(peg, false, ex?.xfs[0], ex?.guardX), [0, 4, 0]), conn1 = T(R(t.fullEndpoint(peg, false, ex?.xfs[1], ex?.guardX), [0, 0, 180]), [0, -4, 0]);
-    if (!inStart) parts.push(atPose(roll0 ? bankedEnd(s, conn0, trackBank(c.sleeperLen), roll0, c.sleeperLen, true) : conn0, p0));
-    if (!inEnd) parts.push(atPose(roll1 ? bankedEnd(s, conn1, trackBank(c.sleeperLen), roll1, c.sleeperLen, false) : conn1, p1));
+    const xfs0 = hostXfs(i, 'start', ex?.xfs[0]), xfs1 = hostXfs(i, 'end', ex?.xfs[1]), noConn0 = inStart || isHosted(i, 'start'), noConn1 = inEnd || isHosted(i, 'end');
+    const conn0 = T(t.fullEndpoint(peg, false, xfs0, ex?.guardX), [0, 4, 0]), conn1 = T(R(t.fullEndpoint(peg, false, xfs1, ex?.guardX), [0, 0, 180]), [0, -4, 0]);
+    if (!noConn0) parts.push(atPose(roll0 ? bankedEnd(s, conn0, trackBank(c.sleeperLen), roll0, c.sleeperLen, true) : conn0, p0));
+    if (!noConn1) parts.push(atPose(roll1 ? bankedEnd(s, conn1, trackBank(c.sleeperLen), roll1, c.sleeperLen, false) : conn1, p1));
     // (buffer stops, in their end's frame; the peg and clip above the bed on ballast held up by breakaway supports)
     if (bufS) parts.push(atPose(R(bufferStop(t, o.buffer ?? BUFFER_DEFAULTS, onBallast), [0, 0, 180]), p0));
     if (bufE) parts.push(atPose(bufferStop(t, o.buffer ?? BUFFER_DEFAULTS, onBallast), p1));
     if (onBallast && peg && o.supports) {
       const cs = couplerSupports(t, bottomZ - 0.02);
-      if (cs && !inStart) parts.push(atPose(T(cs, [0, 4, 0]), p0));
-      if (cs && !inEnd) parts.push(atPose(T(R(cs, [0, 0, 180]), [0, -4, 0]), p1));
+      if (cs && !noConn0) parts.push(atPose(T(cs, [0, 4, 0]), p0));
+      if (cs && !noConn1) parts.push(atPose(T(R(cs, [0, 0, 180]), [0, -4, 0]), p1));
     }
     if (o.supports) {
       const zs = bottomZ - 0.02;
@@ -391,9 +404,9 @@ export function crossingPiece(s: Scad, routes: Route[], o: CrossingOptions = CRO
       // (and one by the peg (a dual gauge's third rail's) kept clear of it, as the footing is: its rib and foot ran into
       // the peg, so the end's supports, footing and all, printed as one with the part and lay 7 mm under the next one)
       const offPeg = (m: Man, dir: number, xfs?: number[]) => (c.hasCoupler && peg && xfs?.length ? s.difference(m, [T(s.cylinder(40, 2.5, 2.5, 32), [dir * c.couplerX, 0, zs - 1])]) : m);
-      const sup0 = (z: number) => offPeg(t.startRailSupports(z, offClip(ex?.xfs[0])), -1, ex?.xfs[0]), sup1 = (z: number) => offPeg(t.endRailSupports(z, offClip(ex?.xfs[1])), 1, ex?.xfs[1]);
-      if (!inStart) parts.push(atPose(roll0 ? s.union([bankedSupports(s, sup0, trackBank(c.sleeperLen), roll0, zs), t.supportFooting(zs, 0, -1)]) : s.union([sup0(zs), t.supportFooting(zs, 0, -1)]), p0));
-      if (!inEnd) parts.push(atPose(roll1 ? s.union([bankedSupports(s, sup1, trackBank(c.sleeperLen), roll1, zs), t.supportFooting(zs, 0, +1)]) : s.union([sup1(zs), t.supportFooting(zs, 0, +1)]), p1));
+      const sup0 = (z: number) => offPeg(t.startRailSupports(z, offClip(xfs0)), -1, xfs0), sup1 = (z: number) => offPeg(t.endRailSupports(z, offClip(xfs1)), 1, xfs1);
+      if (!noConn0) parts.push(atPose(roll0 ? s.union([bankedSupports(s, sup0, trackBank(c.sleeperLen), roll0, zs), t.supportFooting(zs, 0, -1)]) : s.union([sup0(zs), t.supportFooting(zs, 0, -1)]), p0));
+      if (!noConn1) parts.push(atPose(roll1 ? s.union([bankedSupports(s, sup1, trackBank(c.sleeperLen), roll1, zs), t.supportFooting(zs, 0, +1)]) : s.union([sup1(zs), t.supportFooting(zs, 0, +1)]), p1));
     }
     // (its third rail through a crossing, or another's through its own: the flangeways cut through it)
     const exCuts = ex?.solid && (ex.dualBand || dualBands(i).length) ? [...othersBands(i), ...dualBands(i)] : [];

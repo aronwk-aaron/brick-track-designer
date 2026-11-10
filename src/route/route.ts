@@ -140,6 +140,30 @@ export function worldToPose(P: Pose, q: Pt): Pt {
   return [dx * c + dy * s, -dx * s + dy * c];
 }
 
+/**
+ * A narrower track's end that lies in a wider track's end (mixed gauges: the narrow gauge leaving a dual-gauge track,
+ * or shifting across it): both end at the same line, facing the same way, the narrow one's rails within the wider
+ * one's. They are one track's end there: the wider one's end connector, with a rail end for each of the narrow
+ * one's rails that isn't one of its own (crossing.ts), as a dual-gauge track's end has for its third rail.
+ */
+export interface HostedEnd { route: number; end: 'start' | 'end'; host: number; hostEnd: 'start' | 'end'; /** the narrow track's middle, to the right of the wider one's, facing along the wider one (mm) */ lat: number }
+/** gs: each route's rails' offset from its middle (half its gauge, mm). */
+export function hostedEnds(routes: Route[], gs: number[]): HostedEnd[] {
+  if (gs.every((g) => g === gs[0])) return [];
+  const ends = routes.map((rt) => (rt.segments.length ? [['start', routePose(rt, 0), 180], ['end', routePose(rt, routeLength(rt)), 0]] as ['start' | 'end', Pose, number][] : []));
+  const out: HostedEnd[] = [];
+  routes.forEach((rt, i) => {
+    for (const [end, p, turn] of ends[i]) {
+      const hit = routes.flatMap((r2, j) => (j === i || !(gs[j] > gs[i] + 1) || rt.grade || r2.grade ? [] : ends[j].flatMap(([hostEnd, q, hturn]) => {
+        const dh = Math.abs(((p[2] + turn - q[2] - hturn + 540) % 360) - 180), [lat, along] = worldToPose(q, [p[0], p[1]]);
+        return dh < 0.5 && Math.abs(along) < 0.05 && Math.abs(lat) + gs[i] <= gs[j] + 0.05 ? [{ route: i, end, host: j, hostEnd, lat }] : [];
+      })))[0];
+      if (hit) out.push(hit);
+    }
+  });
+  return out;
+}
+
 export const segLength = (sg: Segment) => (sg.kind === 'straight' ? sg.length : (Math.abs(sg.angle) * Math.PI * sg.radius) / 180);
 export const routeLength = (rt: Route) => rt.segments.reduce((a, sg) => a + segLength(sg), 0);
 

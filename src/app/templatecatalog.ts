@@ -2,7 +2,7 @@
 // hand but the few overrides below), and the plain logic of the browser: its sections, its search and its filters, and
 // the plan picture's lines. No page here: main's browser (templatebrowser.ts) only shows what this works out.
 import { type Design, STUD, TEMPLATES, TEMPLATE_GROUPS, isMono, routeGaugeStuds, toRoutes } from './design';
-import { type Pt, type Route, railOffsetOf, railPoint, routeLength, routesBox, segLength, segStarts } from '../route/route';
+import { type Pt, type Route, hostedEnds, railOffsetOf, railPoint, routeLength, routesBox, segLength, segStarts } from '../route/route';
 
 export type Kind =
   | 'switch' | 'curved switch' | 'wye' | 'three-way' | 'next-track switch' | 'crossing' | 'curved crossing' | 'slip'
@@ -96,6 +96,8 @@ function gaugeOf(d: Design): Gauge {
   if (!rs.length) return 'none';
   if (rs.some((r) => r.dualGauge)) return 'dual';
   const gs = new Set(rs.map((r) => routeGaugeStuds(d, r)));
+  // (a narrower track within a wider one's end: the narrow gauge leaving a dual-gauge track, or moved across it)
+  if (gs.size > 1 && hostedEnds(toRoutes(d), toRoutes(d).map((rt) => railOffsetOf(rt, ((d.gaugeStuds + 1) * STUD) / 2))).length) return 'dual';
   if (gs.size > 1) return 'mixed';
   return [...gs][0] < 4 ? 'narrow' : 'standard';
 }

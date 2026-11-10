@@ -6,7 +6,7 @@
 // full, and each route's flangeways (the band just inside each of its rails
 // where the wheel flanges run) are cut into every other route's rails, so
 // frogs and crossings fall out of the geometry, whatever the layout.
-import { GRADE_APART, heightAt, type Pose, type Pt, type Route, railOffsetOf, railPolyline, routeLat, routeLength, routePose, routeSOf } from './route';
+import { GRADE_APART, heightAt, hostedEnds, type Pose, type Pt, type Route, railOffsetOf, railPolyline, routeLat, routeLength, routePose, routeSOf } from './route';
 
 export interface SolverOptions {
   gauge: number;        // rail centre to rail centre, mm (40 = LEGO); a route with its own (Route.gauge) uses that
@@ -43,6 +43,8 @@ export interface Split {
   merge?: boolean;
   /** Made by hand (SplitEdits.force): the second route meets the first a hair off (within FORCE_LAT, FORCE_ANGLE). */
   forced?: boolean;
+  /** (refused) Points of a narrow gauge on dual-gauge track (its routes within a wider track's rails), where they aren't built: 'side', the branch leaves away from the rail both gauges share; 'centre', no rail is shared. */
+  dual?: 'side' | 'centre';
 }
 
 /** A route end that meets another route nearly, but not quite, as points would: a place points could be forced (SplitEdits.force). */
@@ -98,9 +100,9 @@ function segX(p1: Pt, p2: Pt, p3: Pt, p4: Pt): [number, number] | undefined {
 }
 
 /** Is point p within route j's flangeways (inside either of its rails), where route j runs? */
-function inFlangeway(rt: Route, p: Pt, o: SolverOptions, g: number): boolean {
+function inFlangeway(rt: Route, p: Pt, o: SolverOptions, g: number, within = -1e-9): boolean {
   const lat = Math.abs(routeLat(rt, p));
-  return lat <= g - o.headHw + 1e-9 && lat >= g - o.headHw - o.flangeway - 1e-9;
+  return lat <= g - o.headHw - within && lat >= g - o.headHw - o.flangeway + within;
 }
 
 export function solve(routes: Route[], opts: Partial<SolverOptions> = {}, edits: SplitEdits = {}): Solution {
@@ -155,6 +157,11 @@ export function solve(routes: Route[], opts: Partial<SolverOptions> = {}, edits:
     return a !== b ? a > b : i < j;
   };
   const apart = 2 * o.headHw + o.flangeway;
+  // (mixed gauges: a narrower track's end in a wider one's, both ending at one line (route.ts hostedEnds: the narrow
+  // gauge leaving a dual-gauge track up its middle). No points are meant there, nor refused: each gauge's trains keep
+  // to their own rails, fixed track, the flangeways cut as where any two tracks meet)
+  const hosted = hostedEnds(routes, gs);
+  const oneEnd = (i: number, j: number, end: 'start' | 'end') => hosted.some((h) => (h.route === j && h.end === end && h.host === i) || (h.host === j && h.hostEnd === end && h.route === i));
   // Near misses (a route end a little off another route, or a little off
   // its heading): offered as places to force points; true where they're
   // forced and near enough to build.
@@ -169,6 +176,30 @@ export function solve(routes: Route[], opts: Partial<SolverOptions> = {}, edits:
     const ok = lat <= FORCE_LAT && angle <= FORCE_ANGLE, at: Pt = [pa[0], pa[1]];
     near.push({ routes: [i, j], end, at, lat, angle, ok, ...(opposite && { opposite: true }) });
     return ok && !opposite && !!edits.force?.(at);
+  };
+  // (mixed gauges: points between two routes of a narrow gauge that lie within a wider track's rails there, the narrow
+  // gauge of dual-gauge track drawn as routes of its own. Built where one of the two keeps to the wider track and the
+  // other leaves it on the side of the rail both gauges share: one moving blade, by the narrow gauge's own rail; the
+  // shared rail is the wider track's, fixed, the branch's flangeway cut through it. Elsewhere not: leaving the other
+  // way the blade would close on the shared rail, in the wider gauge's flangeway; with no rail shared, nor would it fit.
+  // toe to end: each route's span, from the toe. Undefined: not on dual-gauge track, or built)
+  const mixedGauges = gs.some((g) => g !== gs[0]);
+  const onDual = (i: number, j: number, [a0, a1]: [number, number], [, b1]: [number, number]): Split['dual'] => {
+    if (!mixedGauges) return undefined;
+    const toe = routePose(routes[i], a0);
+    for (let k = 0; k < routes.length; k++) {
+      if (k === i || k === j || !(gs[k] > gs[i] + 1)) continue;
+      const rk = routes[k], lat0 = routeLat(rk, [toe[0], toe[1]]), sk = routeSOf(rk, [toe[0], toe[1]]);
+      if (Math.abs(lat0) + gs[i] > gs[k] + 0.05 || sk < -0.01 || sk > routeLength(rk) + 0.01) continue;
+      const dh = Math.abs(((routePose(rk, Math.max(0, Math.min(routeLength(rk), sk)))[2] - toe[2] + 540) % 180) - 90);
+      if (dh < 89) continue; // (not along it: a crossing)
+      const shared = [-1, 1].find((sd) => Math.abs(lat0 + sd * gs[i] - sd * gs[k]) < 0.1);
+      if (shared === undefined) return 'centre';
+      const ea = routePose(routes[i], a1), eb = routePose(routes[j], b1), da = routeLat(rk, [ea[0], ea[1]]) - lat0, db = routeLat(rk, [eb[0], eb[1]]) - lat0;
+      const [stay, leave] = Math.abs(da) <= Math.abs(db) ? [da, db] : [db, da];
+      return Math.abs(stay) < 0.5 && Math.sign(leave) === shared ? undefined : 'side';
+    }
+    return undefined;
   };
   for (let i = 0; i < routes.length; i++)
     for (let j = 0; j < routes.length; j++) {
@@ -186,6 +217,7 @@ export function solve(routes: Route[], opts: Partial<SolverOptions> = {}, edits:
       const forcing = !exact;
       // (routes of different gauges: no points between them, nor a near miss to force)
       if (gs[i] !== gs[j] && forcing) continue;
+      if (oneEnd(i, j, 'start')) continue;
       if (forcing && !nearMiss(i, j, 'start', sa, pa, off, dh)) continue;
       if (sa < (forcing ? 0.6 : 1e-6) && !mainOf(i, j, 'start')) continue;  // both start together: once
       let t = 0;
@@ -195,7 +227,8 @@ export function solve(routes: Route[], opts: Partial<SolverOptions> = {}, edits:
         if (Math.abs(routeLat(a, [p[0], p[1]])) >= apart) break;
         t += o.step;
       }
-      (gs[i] !== gs[j] ? refused : splits).push({ routes: [i, j], s: sa + t, spans: [[sa, sa + t], [0, t]], ...(forcing && { forced: true }) });
+      const dual = gs[i] === gs[j] ? onDual(i, j, [sa, sa + t], [0, t]) : undefined;
+      (gs[i] !== gs[j] || dual ? refused : splits).push({ routes: [i, j], s: sa + t, spans: [[sa, sa + t], [0, t]], ...(forcing && { forced: true }), ...(dual && { dual }) });
     }
   // Merges: a route that ends on another, arriving the way it runs (the
   // points seen from the other end).
@@ -213,6 +246,7 @@ export function solve(routes: Route[], opts: Partial<SolverOptions> = {}, edits:
       const exact = off <= 0.01 && dh <= SPLIT_ANGLE;
       const forcing = !exact;
       if (gs[i] !== gs[j] && forcing) continue;
+      if (oneEnd(i, j, 'end')) continue;
       if (forcing && !nearMiss(i, j, 'end', se, pa, off, dh)) continue;
       if (se > routeLength(a) - 0.6 && !mainOf(i, j, 'end')) continue; // both end together: once
       let t = 0;
@@ -221,7 +255,8 @@ export function solve(routes: Route[], opts: Partial<SolverOptions> = {}, edits:
         if (Math.abs(routeLat(a, [p[0], p[1]])) >= apart) break;
         t += o.step;
       }
-      (gs[i] !== gs[j] ? refused : splits).push({ routes: [i, j], s: se - t, spans: [[se - t, se], [Lb - t, Lb]], merge: true, ...(forcing && { forced: true }) });
+      const dual = gs[i] === gs[j] ? onDual(i, j, [se, se - t], [Lb, Lb - t]) : undefined;
+      (gs[i] !== gs[j] || dual ? refused : splits).push({ routes: [i, j], s: se - t, spans: [[se - t, se], [Lb - t, Lb]], merge: true, ...(forcing && { forced: true }), ...(dual && { dual }) });
     }
 
   // Points left out by hand: the routes' rails run through as fixed track
@@ -272,6 +307,8 @@ export function solve(routes: Route[], opts: Partial<SolverOptions> = {}, edits:
         }
 
   // Grooves: where a rail's head runs through another route's flangeway.
+  // (between gauges, a rail must be in the flangeway, not just along its edge: a narrower track within a wider one
+  // shares a rail with it, on one line, and that rail's head lies along the other's flangeway all the way without being in it)
   const grooves: Groove[] = [];
   for (let i = 0; i < routes.length; i++)
     for (const sd of sides) {
@@ -286,7 +323,7 @@ export function solve(routes: Route[], opts: Partial<SolverOptions> = {}, edits:
         let open: number | undefined;
         for (let n = 0; n < pts.length; n++) {
           const s = pts[n][0];
-          const cut = heads[n].some((q) => inBox(j, q) && inFlangeway(routes[j], q, o, gs[j]) && !(graded && Math.abs(heightAt(routes[i], s) - heightAt(routes[j], routeSOf(routes[j], q))) >= GRADE_APART));
+          const cut = heads[n].some((q) => inBox(j, q) && inFlangeway(routes[j], q, o, gs[j], gs[i] !== gs[j] ? 0.01 : undefined) && !(graded && Math.abs(heightAt(routes[i], s) - heightAt(routes[j], routeSOf(routes[j], q))) >= GRADE_APART));
           if (cut && open === undefined) open = s;
           if (!cut && open !== undefined) { grooves.push({ route: i, side: sd, s0: open, s1: s, by: j }); open = undefined; }
         }

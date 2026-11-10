@@ -488,7 +488,7 @@ function drawForms() {
         place.append(field('Gauge, studs', gi));
         const n5 = document.createElement('small'); n5.className = 'desc';
         if (isMono(r)) { n5.textContent = 'Gauge: locked, a monorail beam has none (Place › Track).'; n5.style.color = 'var(--warn)'; }
-        else { n5.style.color = 'var(--muted)'; n5.textContent = `Gauge: studs between this route's rails, ${LIMITS.gauge[0]} to ${LIMITS.gauge[1]}; empty: the design's, ${design.gaugeStuds} (Settings › Track › Gauge). Tracks of different gauges cross and run side by side; points between them aren't built.`; }
+        else { n5.style.color = 'var(--muted)'; n5.textContent = `Gauge: studs between this route's rails, ${LIMITS.gauge[0]} to ${LIMITS.gauge[1]}; empty: the design's, ${design.gaugeStuds} (Settings › Track › Gauge). Tracks of different gauges cross and run side by side; points between them aren't built. A narrower track starting in a wider one's end, within its rails, leaves it on fixed rails (the narrow gauge out of dual-gauge track).`; }
         place.append(n5);
       }
       // (monorail: the beam's height off the baseplate, in plates; empty: the supports' height in Settings, or on the baseplate)

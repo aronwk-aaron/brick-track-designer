@@ -13,7 +13,7 @@ import { stlBytes } from '../geom/stl';
 import { bedFit, type BedFit, END_REACH, longestFit, longestTrack, tightBox } from '../geom/bedfit';
 import { splitSelfCrossing } from '../route/selfcross';
 import { FORCE_ANGLE, FORCE_LAT, solve, type SplitEdits } from '../route/solver';
-import { GRADE_APART, hasRoll, heightAt, poseToWorld, railOffsetOf, railPoint, routeLat, routeLength, routePose, routeRoll, routeSOf, sleeperLenOf, type Pose, worldToPose } from '../route/route';
+import { GRADE_APART, hasRoll, heightAt, hostedEnds, poseToWorld, railOffsetOf, railPoint, routeLat, routeLength, routePose, routeRoll, routeSOf, sleeperLenOf, type Pose, worldToPose } from '../route/route';
 import { reversedRoute } from '../switch/reverse';
 import { BASE_DEFAULTS, switchGeometry } from '../switch/base';
 import { switchGlobals } from '../switch/context';
@@ -448,6 +448,8 @@ export function unbuildable(design: Design): string | undefined {
     if (mine.filter((q) => on(q, idx[a])).length * STEP >= 64) return `${name(idx[a])} runs along itself (a curve of more than a full turn, or drawn back over its own track): shorten it, or give it a height so it climbs over`;
     for (let b = 0; b < idx.length; b++) {
       if (b === a || mine.length < 2 || samples[b].length < mine.length || (samples[b].length === mine.length && b < a)) continue;
+      // (a narrower track up a wider one's middle isn't the same track twice: the narrow gauge of a dual-gauge track, drawn as a route of its own)
+      if (routeGaugeStuds(design, design.routes[idx[a]]) !== routeGaugeStuds(design, design.routes[idx[b]])) continue;
       if (mine.every((q) => on(q, idx[b]))) return `${name(idx[a])} lies on top of ${name(idx[b])} (the same track drawn twice): delete one of them`;
     }
   }
@@ -917,7 +919,9 @@ function solveTrackwork(w: Wasm, design: Design, o: PieceOptions, step: (what: s
   const forceWarnings: string[] = [];
   for (const sp of sol.refused ?? []) {
     const at = splitAt(sp), [ra, rb] = sp.routes.map((ri) => routes[ri]), name = (rt: Route) => `${rt.id.replace(/[:~]\d+$/, '')} (${(rt.gauge ?? gauge) / 8 - 1} studs)`;
-    forceWarnings.push(`points between tracks of different gauges aren't built: ${name(rb)} ${sp.merge ? 'ends' : 'starts'} on ${name(ra)} at ${(at[0] / 8).toFixed(0)}, ${(at[1] / 8).toFixed(0)} (studs); its rails run on to it as plain track, and trains can't take the turn`);
+    // (a narrow gauge's points on dual-gauge track: built only where the branch leaves on the shared rail's side)
+    if (sp.dual) forceWarnings.push(`narrow-gauge points on dual-gauge track are built only where the branch leaves on the side of the rail both gauges share${sp.dual === 'centre' ? ' (here none is shared: the narrow gauge is up the middle)' : ''}: the points of ${name(ra)} and ${name(rb)} at ${(at[0] / 8).toFixed(0)}, ${(at[1] / 8).toFixed(0)} (studs) aren't built; the rails run through as plain track, and trains can't choose their way`);
+    else forceWarnings.push(`points between tracks of different gauges aren't built: ${name(rb)} ${sp.merge ? 'ends' : 'starts'} on ${name(ra)} at ${(at[0] / 8).toFixed(0)}, ${(at[1] / 8).toFixed(0)} (studs); its rails run on to it as plain track, and trains can't take the turn`);
   }
   for (const sp of sol.dropped ?? []) { if (sol.refused?.includes(sp)) continue; const at = splitAt(sp); items.push({ kind: 'points', key: keyOf(at), at, pts: [at], off: true, routes: idsOf(sp.routes) }); }
   // (near misses: where points could be forced, unless they are; and a warning where they're forced but too far off to build)
@@ -1013,6 +1017,14 @@ function tracksOverEachOther(routes: Route[], sol: { splits: Split[]; dropped?: 
     for (let t = 0; t <= Lj; t += step) { const sj = sp.merge ? Lj - t : t, q = routePose(rj, sj); d = Math.hypot(q[0] - toe[0], q[1] - toe[1]); if (Math.abs(routeLat(routes[i], [q[0], q[1]])) >= gap) break; }
     return { i, j, toe, r: d + 2 * gap };
   });
+  // (mixed gauges: a narrower track that leaves a wider one's end from within it (route.ts hostedEnds: the narrow gauge
+  // out of a dual-gauge track) parts from it side by side as a switch's routes do, on fixed rails)
+  if (mixed) for (const h of hostedEnds(routes, routes.map((rt) => railOffsetOf(rt, (gap - 24) / 2)))) {
+    const rj = routes[h.route], Lj = routeLength(rj), toe = routePose(rj, h.end === 'start' ? 0 : Lj);
+    let d = 0;
+    for (let t = 0; t <= Lj; t += step) { const q = routePose(rj, h.end === 'start' ? t : Lj - t); d = Math.hypot(q[0] - toe[0], q[1] - toe[1]); if (Math.abs(routeLat(routes[h.host], [q[0], q[1]])) >= gap) break; }
+    parts.push({ i: h.host, j: h.route, toe, r: d + 2 * gap });
+  }
   // (and with them every route of the switches near it: a tandem's or a curve's switches' branches part side by side too)
   const groups = parts.map((pt) => ({ ...pt, rs: new Set(parts.filter((o2) => Math.hypot(o2.toe[0] - pt.toe[0], o2.toe[1] - pt.toe[1]) < pt.r + o2.r).flatMap((o2) => [o2.i, o2.j])) }));
   const parting = (p: number[], q: number[]) => groups.some((pt) => pt.rs.has(p[4]) && pt.rs.has(q[4])
