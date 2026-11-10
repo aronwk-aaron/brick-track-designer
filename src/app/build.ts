@@ -771,7 +771,7 @@ function progressOf(report: (what: string, frac: number) => void): Progress {
 export interface Overlay {
   grooves: [number, number][][]; checkRails: [number, number][][]; crossings: [number, number][]; splits: [number, number][]; grips: [number, number][]; items: TrackworkItem[];
   /** what's wrong, and where (mm, and how far round it): ringed in red on the plan and in the 3D view */
-  issues: { at: [number, number]; r: number; text: string }[];
+  issues: { at: [number, number]; r: number; text: string; area?: boolean }[];
 }
 
 /** A hand edit's key: where the item is (its middle, mm, "x,y"). */
@@ -1164,7 +1164,7 @@ interface PieceBuild {
 /** A part too big for the bed: ringed where it is. */
 function bedIssue(b: PieceBuild, bb: { min: number[]; max: number[] }) {
   b.overlay.issues.push({ at: [(bb.min[0] + bb.max[0]) / 2, (bb.min[1] + bb.max[1]) / 2],
-    r: Math.hypot(bb.max[0] - bb.min[0], bb.max[1] - bb.min[1]) / 2, text: `A part ${(bb.max[0] - bb.min[0]).toFixed(0)} x ${(bb.max[1] - bb.min[1]).toFixed(0)} mm: too big for the ${b.o.printBedX} x ${b.o.printBedY} print bed` });
+    r: Math.hypot(bb.max[0] - bb.min[0], bb.max[1] - bb.min[1]) / 2, text: `A part ${(bb.max[0] - bb.min[0]).toFixed(0)} x ${(bb.max[1] - bb.min[1]).toFixed(0)} mm: too big for the ${b.o.printBedX} x ${b.o.printBedY} print bed`, area: true });
 }
 
 /** A part for the view: its triangles, and its breakaway supports' apart (loose bits, small beside it), to show or hide. */

@@ -4,7 +4,7 @@ import * as THREE from 'three';
 import wasmUrl from 'manifold-3d/manifold.wasm?url';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { BANK_MAX, type BankRamps, type Design, type DRoute, type DSeg, OPTION_DEFAULTS, type PieceOptions, RAIL_DEFAULTS, TEMPLATES, type Trackwork, endOf, freeName, isMono, readDesign, routeGaugeStuds, setSystem } from './design';
-import { TrackCanvas, type OverlayItem, dialogOpen, eachLever, leverSide, leverSlides, typingIn } from './canvas';
+import { ISSUE_R, TrackCanvas, type OverlayItem, dialogOpen, eachLever, leverSide, leverSlides, typingIn } from './canvas';
 import { describe } from './planner';
 import { BRICKTRACKS_COLOR, gradeOf, LEGO_COLOR, type LegoPart, legoParts, type Piece } from './build';
 import { TABLE_COLORS, type Table, tableAt } from './tables';
@@ -797,12 +797,13 @@ applyShown();
 // post up from each so it's seen over the track.
 const issueGroup = new THREE.Group();
 scene.add(issueGroup);
-function showIssues(list: { at: [number, number]; r: number }[]) {
+function showIssues(list: { at: [number, number]; r: number; area?: boolean }[]) {
   for (const m of [...issueGroup.children]) { issueGroup.remove(m); const mm = m as THREE.Mesh; mm.geometry.dispose(); (mm.material as THREE.Material).dispose(); }
   const top = meshes.length ? new THREE.Box3().setFromObject(group).max.z : 10;
   for (const is of list) {
-    const r = Math.max(8, is.r), mat = () => new THREE.MeshBasicMaterial({ color: 0xe02828, transparent: true, opacity: 0.9, depthTest: false });
-    const ring = new THREE.Mesh(new THREE.TorusGeometry(r, Math.max(0.8, r / 60), 8, 64), mat());
+    // (a small ring on the spot, the post standing on it: a ring as wide as the warning's reach said nothing of where)
+    const r = is.area ? Math.max(8, is.r) : Math.min(Math.max(6, is.r), ISSUE_R), mat = () => new THREE.MeshBasicMaterial({ color: 0xe02828, transparent: true, opacity: 0.9, depthTest: false });
+    const ring = new THREE.Mesh(new THREE.TorusGeometry(r, is.area ? Math.max(0.8, r / 60) : 1.2, 8, 64), mat());
     ring.position.set(is.at[0], is.at[1], top + 1);
     const post = new THREE.Mesh(new THREE.CylinderGeometry(0.8, 0.8, 30, 8), mat());
     post.rotation.x = Math.PI / 2; post.position.set(is.at[0], is.at[1], top + 16);
