@@ -32,7 +32,25 @@ const railIn = () => (scadParity() ? 3.9 : 4);
 export const endsHas = (e: RouteEnds, atEnd: boolean) => e === 'both' || e === (atEnd ? 'end' : 'start');
 
 /** Does a route have extra rails to build (a third rail only if its gauge is narrower)? */
-export const hasExtraRails = (x: ExtraRails | undefined, gaugeStuds: number) => !!x && (x.guard || (x.dual && x.dualStuds < gaugeStuds));
+export const hasExtraRails = (x: ExtraRails | undefined, gaugeStuds: number) => !!x && (x.guard || dualBuilt(x, gaugeStuds));
+
+/**
+ * Is a route's narrow gauge built: narrower than its track's, and, centred (its own two rails up the middle, four rails
+ * in all), two studs or more narrower (its rails a stud inside the running rails: any closer and they'd be in them)?
+ */
+export const dualBuilt = (x: ExtraRails | undefined, gaugeStuds: number) => !!x?.dual && x.dualStuds < gaugeStuds - (x.dualShared === 'centre' ? 1 : 0);
+
+/**
+ * The narrow gauge's own rails: how far each is to the right of the middle of the route as drawn (mm), and which way
+ * its flangeway lies from it (in: +1 to the right, towards the narrow gauge's middle). One beside a shared rail (the
+ * third rail), two centred.
+ */
+export function dualRails(x: ExtraRails, gaugeStuds: number): { xd: number; in: number }[] {
+  const w = (x.dualStuds + 1) * STUD;
+  if (x.dualShared === 'centre') return [{ xd: -w / 2, in: 1 }, { xd: w / 2, in: -1 }];
+  const sd = x.dualShared === 'right' ? 1 : -1;
+  return [{ xd: sd * (((gaugeStuds + 1) / 2) * STUD - w), in: sd }]; // (dual_x, the drawn route's way)
+}
 
 /**
  * The stretches of route i (its own arc lengths) clear of every other route:
@@ -68,7 +86,9 @@ export function clearStretches(routes: Route[], i: number, sleeperLen: number, s
   // more (an R40 branch: 22 degrees; R104's 14 is too shallow). On the shared rail's side the third rail would lie under
   // the blades: left out there, as before)
   const xr = rt.extra;
-  if (crossings && xr?.dual) routes.forEach((r2, j) => {
+  // (centred, the narrow gauge's rails lie either side of the middle: one of them under the blades whichever side the
+  // branch leaves: left out through points)
+  if (crossings && xr?.dual && xr.dualShared !== 'centre') routes.forEach((r2, j) => {
     if (j === i || !r2.segments.length) return;
     const G = (sleeperLen - 24) / 2, side = (xr.dualShared === 'right' ? -1 : 1) * (xr.to >= xr.from ? 1 : -1), reach = G + Math.abs(G - (xr.dualStuds + 1) * STUD);
     const L2 = routeLength(r2), ends = [routePose(r2, 0), routePose(r2, L2)];
@@ -138,8 +158,7 @@ export function extraRails(s: Scad, t: Track, routes: Route[], i: number, inStar
   if (!x || !hasExtraRails(x, gs)) return undefined;
   const L = routeLength(rt), dir = x.to >= x.from ? 1 : -1, lo = Math.min(x.from, x.to), hi = Math.max(x.from, x.to);
   const loc = (d: number) => (d - x.from) * dir;
-  const dualOn = x.dual && x.dualStuds < gs;
-  const dualXd = (x.dualShared === 'right' ? 1 : -1) * (((gs + 1) / 2) * 8 - (x.dualStuds + 1) * 8); // (dual_x, the drawn route's way)
+  const dualOn = dualBuilt(x, gs), duals = dualOn ? dualRails(x, gs) : [];
   const guardX = c.railOffset - 2 * 1.25 - x.guardGapStuds * STUD;
   // (the stretches, drawn arc lengths)
   const clear = x.clear ?? clearStretches(routes, i, c.sleeperLen).map(([a, b]) => (dir > 0 ? [x.from + a, x.from + b] : [x.from - b, x.from - a]) as [number, number]);
@@ -226,14 +245,16 @@ export function extraRails(s: Scad, t: Track, routes: Route[], i: number, inStar
       const d0 = A <= 1e-3 && endsHas(x.dualPlainEnds, false) ? A + DUAL_END_IN : A;
       const d1 = B >= x.len - 1e-3 && endsHas(x.dualPlainEnds, true) ? B - DUAL_END_IN : B;
       if (d1 - d0 >= STUD) {
-        run(dir * dualXd, d0, d1, dualClr);
-        // (through a crossing: the narrow gauge's flangeway inside it, as deep and wide as the running rails')
-        if (through) {
-          const a = Math.max(0, Math.min(loc(d0), loc(d1))), b = Math.min(L, Math.max(loc(d0), loc(d1))), xl = dir * dualXd, sd = dir * (x.dualShared === 'right' ? 1 : -1);
-          if (b - a >= 0.1) bands.push(sweepRoute(s, s.square([fw.w, fw.depth + 1]).translate([sd > 0 ? xl + 1.25 : xl - 1.25 - fw.w, PLATE_H + 6.4 - fw.depth]), rt, a, b, trackBank(c.sleeperLen)));
+        for (const { xd, in: inw } of duals) {
+          run(dir * xd, d0, d1, dualClr);
+          // (through a crossing: the narrow gauge's flangeway inside it, as deep and wide as the running rails')
+          if (through) {
+            const a = Math.max(0, Math.min(loc(d0), loc(d1))), b = Math.min(L, Math.max(loc(d0), loc(d1))), xl = dir * xd, sd = dir * inw;
+            if (b - a >= 0.1) bands.push(sweepRoute(s, s.square([fw.w, fw.depth + 1]).translate([sd > 0 ? xl + 1.25 : xl - 1.25 - fw.w, PLATE_H + 6.4 - fw.depth]), rt, a, b, trackBank(c.sleeperLen)));
+          }
+          if (covers(x.from, d0, d1)) dualXs0.push(dir * xd);
+          if (covers(x.to, d0, d1)) dualXs1.push(-dir * xd);
         }
-        if (covers(x.from, d0, d1)) dualXs0.push(dir * dualXd);
-        if (covers(x.to, d0, d1)) dualXs1.push(-dir * dualXd);
       }
     }
   }
@@ -260,7 +281,7 @@ export function extraRails(s: Scad, t: Track, routes: Route[], i: number, inStar
       return clr.every(({ a, b, r }) => segDist(q, a, b) >= r);
     },
     postOk: (P) => (p) => {
-      if (Math.abs(p[0]) < c.railOffset && ((x.guard && Math.abs(Math.abs(p[0]) - gr) < guardClr) || (dualOn && Math.abs(p[0] - dir * dualXd) < dualClr))) return false;
+      if (Math.abs(p[0]) < c.railOffset && ((x.guard && Math.abs(Math.abs(p[0]) - gr) < guardClr) || duals.some(({ xd }) => Math.abs(p[0] - dir * xd) < dualClr))) return false;
       return out.clearOf(poseToWorld(P, p));
     },
   };

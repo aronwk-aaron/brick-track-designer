@@ -72,7 +72,7 @@ export interface ExtraRails {
   guardRampStuds: number;   // the point's nose ramp (0: none)
   dual: boolean;
   dualStuds: number;        // the narrow gauge (studs between its rails)
-  dualShared: 'right' | 'left'; // the running rail both gauges use (right / left of the route as drawn)
+  dualShared: 'right' | 'left' | 'centre'; // the running rail both gauges use (right / left of the route as drawn); centre: neither, the narrow gauge up the middle on two rails of its own
   dualPlainEnds: RouteEnds; // drawn ends meeting plain track: the third rail stops short there
   /** arc lengths along the drawn route at this route's start and end (from > to: it runs the other way), and the drawn route's length */
   from: number; to: number; len: number;

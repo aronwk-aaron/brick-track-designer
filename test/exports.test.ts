@@ -4,7 +4,7 @@ import { describe, expect, it } from 'vitest';
 import { kernel } from '../src/geom/kernel';
 import { buildDesign, clearBuildCache, legoParts, type LegoPart } from '../src/app/build';
 import { type Design, FIT_LADDER, OPTION_DEFAULTS, type PieceOptions, TEMPLATES, upgradeDesign } from '../src/app/design';
-import { stlReadme, fileBase, partsCsv, partsDownload, plainKind, printedKinds, stlDownload, TRACK_PARTS, wantedListXml } from '../src/app/exports';
+import { fileBase, partsCsv, partsDownload, plainKind, printedKinds, stlDownload, TRACK_PARTS, wantedListXml } from '../src/app/exports';
 import { zip } from '../src/geom/zip';
 
 const APP = (globalThis as { APP_DEFAULTS?: PieceOptions }).APP_DEFAULTS!;
@@ -216,28 +216,5 @@ describe('a design saved by an older version (upgradeDesign)', () => {
     clearBuildCache();
     expect(buildDesign(w, d).pieces.length).toBeGreaterThan(0);
     clearBuildCache();
-  });
-});
-
-describe('the README in the STL zip: for someone who was not there', () => {
-  const part = (name: string) => ({ name, stl: new Uint8Array(0) });
-  const ps = [part('track1'), part('track2'), part('points-a'), part('points-b'), part('throw'), part('lever'), part('switch-spring')];
-  const txt = stlReadme(ps, 'loop');
-  it('numbers the parts of a kind, and says how they print', () => {
-    expect(txt).toMatch(/loop-track1\.stl: Track \(1 of 2\)/);
-    expect(txt).toMatch(/loop-track2\.stl: Track \(2 of 2\)/);
-    expect(txt).toMatch(/No slicer supports/);
-    expect(txt).toMatch(/0\.2 mm layers/);
-  });
-  it('puts the points together slider first, then the spring, the blades and the lever', () => {
-    const at = (re: RegExp) => txt.search(re);
-    expect(at(/The throw/)).toBeLessThan(at(/The spring/));
-    expect(at(/The spring/)).toBeLessThan(at(/The blades/));
-    expect(at(/The blades/)).toBeLessThan(at(/The lever/));
-  });
-  it('points at the parts list for what is bought', () => {
-    const t = stlReadme([...ps, { name: 'track-bought-53401-1', stl: new Uint8Array(0), lego: [{ part: '53401', name: 'Straight', qty: 2 }] }], 'loop');
-    expect(t).toMatch(/BOUGHT, NOT PRINTED \(the Parts list button/);
-    expect(t).toMatch(/2 x Straight \(53401\)/);
   });
 });

@@ -32,28 +32,26 @@ const kindOf = (p: Part) => { const n = p.kit && p.name.startsWith(`${p.kit}-`) 
 export function stlReadme(pieces: Part[], base: string, kit?: Coupon[]): string {
   const printed = pieces.filter((p) => !p.lego), has = (re: RegExp) => printed.some((p) => re.test(kindOf(p)));
   const out = [`${base}: ${printed.length} parts to print`, 'Made with Brick Track Designer.', ''];
-  // (each file's place among those of its kind: "track part 3 of 8")
-  const nth = (p: Part) => { const same = printed.filter((q) => kindOf(q) === kindOf(p)); return same.length > 1 ? ` (${same.indexOf(p) + 1} of ${same.length})` : ''; };
   if (kit?.length) {
     out.push('TEST PRINTS', "Each coupon's files start with its name. What to do with them, and the form to fill in: docs/test-prints.md in the app's repository (Help has the link).", '');
     for (const k of kit) if (k.note) out.push(`  ${k.name}: ${k.note}`);
     out.push('');
   }
   out.push('FILES (print one of each)');
-  for (const p of printed) out.push(`  ${base}-${p.name}.stl: ${plainKind(kindOf(p))}${nth(p)}${p.supports ? ' [has break-out supports]' : ''}`);
+  for (const p of printed) out.push(`  ${base}-${p.name}.stl: ${plainKind(kindOf(p))}${p.supports ? ' [has break-out supports]' : ''}`);
   const bought = legoParts(pieces);
-  if (bought.length) out.push('', 'BOUGHT, NOT PRINTED (the Parts list button downloads this as a list, with a BrickLink wanted list)', ...bought.map((p) => `  ${p.qty} x ${p.name} (${p.part})`));
+  if (bought.length) out.push('', 'BOUGHT, NOT PRINTED (the Parts list has the full list)', ...bought.map((p) => `  ${p.qty} x ${p.name} (${p.part})`));
   out.push('', 'PRINTING',
     '  Each file lies on the bed the way it prints: leave it as it is. No slicer supports, no brim.',
     '  0.4 mm nozzle, 0.2 mm layers, PLA or PETG.');
   if (printed.some((p) => p.supports)) out.push('  The parts marked above are printed with small loose supports of their own (under rail ends, in sprung blades): snap them out with a small screwdriver, and check that nothing is left in the slots.');
   if (has(/throw|points|lever|spring/)) {
-    out.push('', 'PUTTING THE POINTS TOGETHER (in this order)');
+    out.push('', 'PUTTING THE POINTS TOGETHER');
     const steps = ['Join the track parts and press them onto a baseplate.'];
     if (has(/throw/)) steps.push("The throw (the slider): down through the opening where the lever goes, then along its tunnel under the rails, till its posts stand up where the blades go.");
-    if (has(/-spring$/)) steps.push("The spring (the thin flat part). A snap clamp: dropped over its two bosses in its pocket (between the blades, or on the lever's arm), sprung open over the slider's post; its two small links are loose in it and stay in. An over-centre spring: its rings pressed over their pins.");
     if (has(/points/)) steps.push("The blades: from above, each onto its pin and the slider's post, its front edge tilted in under the lip on the bed where there is one.");
     if (has(/(^|-)lever$/)) steps.push('The lever: pressed in between its two ears till its pivot clicks in, its foot in the slider.');
+    if (has(/-spring$/)) steps.push("The spring (the thin flat part). A snap clamp: dropped over its two bosses in its pocket (between the blades, or on the lever's arm), sprung open over the slider's post; its two small links are loose in it and stay in. An over-centre spring: its rings pressed over their pins.");
     if (has(/(^|-)lid$/)) steps.push('The lid: over the points, last of all.');
     steps.forEach((t, k) => out.push(`  ${k + 1}. ${t}`));
     out.push('  Move the lever: both blades should go over together and close against their rails.');

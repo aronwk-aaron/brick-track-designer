@@ -86,3 +86,67 @@ describe('a dual-gauge track through a crossing', { timeout: 300000 }, () => {
     }
   });
 });
+
+// The narrow gauge centred (dualShared: 'centre'): up the middle on two rails of its own, four rails in all, each 12 mm
+// from the middle (a 2-stud gauge), where a narrow-gauge track's own rails are: over the end connector's peg and clip.
+// A flange swept along all four rails, both gauges; each end's supports loose; lengths go together, on ballast too.
+// Through a crossing they run on as a third rail does; through points they're left out, and said.
+describe('dual gauge, the narrow gauge centred (four rails)', { timeout: 600000 }, () => {
+  const N = 12, APP = (globalThis as { APP_DEFAULTS?: typeof OPTION_DEFAULTS }).APP_DEFAULTS!;
+  const len = (rt: ReturnType<typeof toRoutes>[number]) => rt.segments.reduce((a, sg) => a + (sg.kind === 'straight' ? sg.length : (Math.abs(sg.angle) * Math.PI * sg.radius) / 180), 0);
+  for (const ballast of ['none', 'buddy'] as const)
+    it(`track in 16-stud lengths${ballast === 'none' ? '' : ', on ballast'}: four rails end to end, a flange passes along each, the supports break away, and it goes together`, async () => {
+      const w = await kernel(), s = new Scad(w), t = TEMPLATES['Dual gauge track, narrow gauge centred'];
+      const d: Design = { ...t, options: { ...t.options, legoTrack: 'print', ballast, sleepers: 'sleepers', splitTrack: 'lengths', pieceLengthStuds: 16 } };
+      clearBuildCache();
+      const b = buildDesign(w, structuredClone(d)), rt = toRoutes(d)[0], L = len(rt);
+      expect(b.info.warnings).toEqual([]);
+      expect(b.pieces.filter((p) => !/ballast/.test(p.name)).length).toBeGreaterThanOrEqual(4);
+      for (const p of b.pieces.filter((q) => !/ballast/.test(q.name))) expect(p.supports?.length ?? 0, `${p.name}'s break-out supports`).toBeGreaterThan(0);
+      const track = w.Manifold.union(b.pieces.map((q) => solid(w, q.positions)!));
+      const band = (x: number, sd: number) => sweepRoute(s, s.square([FL.width - FL.off, FL.depth + 2]).translate([sd > 0 ? x + HEAD_HW + FL.off : x - HEAD_HW - FL.width, RAIL_TOP - FL.depth]), rt, 1, L - 1);
+      for (const [what, x, sd] of [['the left running rail', -G, 1], ['the right running rail', G, -1], ['the narrow gauge\'s left rail', -N, 1], ['the narrow gauge\'s right rail', N, -1]] as [string, number, number][])
+        expect(band(x, sd).intersect(track).volume(), `a flange inside ${what}`).toBeLessThan(0.02);
+      // (the narrow gauge's rails there all the way, joints and all)
+      for (const x of [-N, N]) {
+        const rail = sweepRoute(s, s.square([1, 1]).translate([x - 0.5, RAIL_TOP - 1.5]), rt, 1, L - 1);
+        expect(rail.intersect(track).volume(), `the narrow gauge's rail at ${x}`).toBeGreaterThan(rail.volume() * 0.97);
+      }
+      clearBuildCache();
+      const saved = { ...OPTION_DEFAULTS };
+      Object.assign(OPTION_DEFAULTS, APP);
+      try { expect(assembledProblems(w, b.pieces, { ...APP, ...d.options }).join('; ')).toBe(''); } finally { Object.assign(OPTION_DEFAULTS, saved); }
+    });
+  it('crossed square by a plain track: all four rails run through, and a flange passes along every rail of both gauges', async () => {
+    const w = await kernel(), s = new Scad(w), d = TEMPLATES['Dual gauge crossing 90°, narrow gauge centred'];
+    clearBuildCache();
+    const b = buildDesign(w, { ...d, options: { ...d.options, printBedX: 500, printBedY: 500 } }), routes = toRoutes(d);
+    expect(b.info.warnings).toEqual([]);
+    const track = w.Manifold.union(b.pieces.map((q) => solid(w, q.positions)!));
+    const band = (r: number, x: number, sd: number) => sweepRoute(s, s.square([FL.width - FL.off, FL.depth + 2]).translate([sd > 0 ? x + HEAD_HW + FL.off : x - HEAD_HW - FL.width, RAIL_TOP - FL.depth]), routes[r], 10, len(routes[r]) - 10);
+    routes.forEach((_, r) => {
+      expect(band(r, -G, 1).intersect(track).volume(), `route ${r}, inside its left rail`).toBeLessThan(0.02);
+      expect(band(r, G, -1).intersect(track).volume(), `route ${r}, inside its right rail`).toBeLessThan(0.02);
+    });
+    for (const [x, sd] of [[-N, 1], [N, -1]]) {
+      expect(band(0, x, sd).intersect(track).volume(), `the narrow gauge inside its rail at ${x}`).toBeLessThan(0.02);
+      const mid = len(routes[0]) / 2, rail = sweepRoute(s, s.square([1, 1]).translate([x - 0.5, RAIL_TOP - 1.5]), routes[0], mid - 30, mid + 30);
+      expect(rail.intersect(track).volume()).toBeGreaterThan(rail.volume() * 0.5);
+    }
+    expect(assembledProblems(w, b.pieces, { ...OPTION_DEFAULTS, ...d.options }).join('; ')).toBe('');
+    clearBuildCache();
+  });
+  it('through points its rails are left out, and the build says where; a narrow gauge under 2 studs narrower isn\'t built', async () => {
+    const w = await kernel();
+    const b = buildDesign(w, { version: 1, gaugeStuds: 4, options: { legoTrack: 'print', printBedX: 500, printBedY: 500 }, routes: [
+      { name: 'Dual', x: 0, y: 0, heading: 0, dualGauge: true, dualShared: 'centre', segs: [{ kind: 'straight', studs: 40 }] }, { name: 'Branch', x: 0, y: 0, heading: 0, segs: [{ kind: 'curve', radius: 40, angle: 33.75 }] }] });
+    expect(b.info.warnings.join(' ')).toMatch(/the narrow gauge centred isn't built through points.*the narrow gauge's rails of Dual are left out for \d+ studs at .* narrow-gauge trains can't run through there/);
+    clearBuildCache();
+    // (3 studs in a 4-stud track: its rails would be in the running rails: the track as it is without)
+    const one = (o: object): Design => ({ version: 1, gaugeStuds: 4, options: { legoTrack: 'print' }, routes: [{ name: 'Dual', x: 0, y: 0, heading: 0, ...o, segs: [{ kind: 'straight', studs: 16 }] }] });
+    const tris = (d: Design) => { clearBuildCache(); return buildDesign(w, d).pieces.map((p) => p.positions.length); };
+    expect(tris(one({ dualGauge: true, dualShared: 'centre', dualGaugeStuds: 3 }))).toEqual(tris(one({})));
+    expect(tris(one({ dualGauge: true, dualShared: 'centre', dualGaugeStuds: 2 }))).not.toEqual(tris(one({})));
+    clearBuildCache();
+  });
+});

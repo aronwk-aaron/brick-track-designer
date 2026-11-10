@@ -7,7 +7,7 @@
 // Drag with the right or middle button (or Space + drag) to pan; the wheel
 // zooms.
 import { movedTable, type Table, TABLE_COLORS, tableMiddle, tableOutline } from './tables';
-import { type Design, type DRoute, type DSeg, freeName, isMono, routeGaugeStuds, toRoutes, type Trackwork } from './design';
+import { type Design, type DRoute, type DSeg, dualRailOffsets, freeName, isMono, routeGaugeStuds, toRoutes, type Trackwork } from './design';
 import { sleeperSpots } from '../geom/crossing';
 import { poseToWorld, routeLength, routePose, worldToPose } from '../route/route';
 import { reversedRoute } from './routeedits';
@@ -1103,6 +1103,9 @@ export class TrackCanvas {
       // sleeper band, rails, centre line (the monorail's beam drawn above)
       if (!isMono(r)) {
         drawSegs(r, r.segs, isBad, '', sel ? ink.sel : ink.rail, gOf(r)); // (bands drawn above, as layers)
+        // (dual gauge: the narrow gauge's own rails, thinner: the third rail, or two centred. Its whole length: where
+        // they're left out (points, track alongside) the build says)
+        for (const o of dualRailOffsets(d, r)) line(offsetPts(r, r.segs, o), sel ? ink.sel : ink.rail, Math.max(1, railW * 0.6));
         line(trace(r, r.segs, 0.5), ink.centre, 1, [4, 4]);
       }
       // what each curve is, at its middle (and straights' lengths when zoomed in)

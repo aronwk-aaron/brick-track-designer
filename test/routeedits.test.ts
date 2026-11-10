@@ -29,6 +29,8 @@ describe('a route turned end for end', () => {
     expect(reversedRoute({ ...r0, dualGauge: true }).dualShared).toBe('left');
     expect(reversedRoute({ ...r0, dualGauge: true, dualShared: 'left' }).dualShared).toBe('right');
     expect(reversedRoute(r0).dualShared).toBeUndefined();
+    // (centred, the narrow gauge shares neither rail: the same turned round)
+    expect(reversedRoute({ ...r0, dualGauge: true, dualShared: 'centre' }).dualShared).toBe('centre');
   });
   it('level track stays level, and twice round is as it was', () => {
     expect(reversedRoute({ ...r0, monoHeight: 4 })).toMatchObject({ monoHeight: 4 });

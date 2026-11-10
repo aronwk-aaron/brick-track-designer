@@ -185,7 +185,8 @@ const FDB_RIM = 2;
  */
 export function thirdRailAt(rt: Route, s: number, gaugeStuds: number): number | undefined {
   const x = rt.extra;
-  if (!x?.dual || !(x.dualStuds < gaugeStuds) || !x.clearDual) return undefined;
+  // (centred, the narrow gauge's two rails never run through points: extrarails.ts)
+  if (!x?.dual || !(x.dualStuds < gaugeStuds) || !x.clearDual || x.dualShared === 'centre') return undefined;
   const dir = x.to >= x.from ? 1 : -1, d = x.from + dir * s;
   if (!x.clearDual.some(([a, b]) => a <= d && d <= b)) return undefined;
   return (x.dualShared === 'right' ? 1 : -1) * dir * (((gaugeStuds + 1) * STUD) / 2 - (x.dualStuds + 1) * STUD);
