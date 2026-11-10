@@ -286,8 +286,8 @@ export const KNOWN: Record<string, Known> = {
   ...Object.fromEntries(['Double-track return loop (turning right)', 'Double-track return loop (turning left)'].map((name): [string, Known] => [name, {
     problems: [/^track-bought-BrickTracksS0\d-\d+ and switch\d-ballast2 overlap: (10|21)\.\d+ mm3/, /^track74-ballast and track75-ballast can't be brought together: .* 6\.\d mm3/],
     why: 'the bought switch\'s printed ballast is in the bought straights at its ends (0.8 to 3 mm, 4.8 x 1.8 mm each: 11 and 22 mm3); two of the curve\'s ballast parts hook into each other (6 mm3 in the way whichever way they\'re drawn apart)' }])),
-  'X yard (6 tracks, single slips)': { problems: [/^track\d+ and switch-bought-BrickTracksR104switch(left|right)-\d overlap/, /^track\d+ and switch\d-ballast2 overlap: 52\d\.\d+ mm3/, /^track1 and track7 overlap: 3\.7\d mm3/, /^points(4|19) can't follow its slider 3\.0 mm along: 0\.6\d mm3/],
-    why: 'each bought switch\'s printed ballast is in the printed track part beside it (20.6 x 15.3 mm, 525 mm3, four places), and the switch as shown (a slab of its footprint) in the printed track at its ends; two rigid blades\' holes pinch their posts mid-travel (0.67 mm3); two parts share 3.8 mm3 at one joint' },
+  'X yard (6 tracks, single slips)': { problems: [/^track\d+ and switch-bought-BrickTracksR104switch(left|right)-\d overlap/, /^track\d+ and switch\d-ballast2 overlap: 52\d\.\d+ mm3/, /^track1 and track7 overlap: 3\.7\d mm3/],
+    why: 'each bought switch\'s printed ballast is in the printed track part beside it (20.6 x 15.3 mm, 525 mm3, four places), and the switch as shown (a slab of its footprint) in the printed track at its ends; two parts share 3.8 mm3 at one joint' },
   'Grade up at 2.5%': { problems: [/^track-bought-53401-8 and track-support4 overlap: 22\.\d+ mm3/],
     why: 'the last pillars\' beam leans with the grade under a track piece that\'s shown level there: 0.2 into it along one edge (35.8 x 1.4 mm)' },
   'Helix (R104, two turns)': { problems: [/^track-bought-BrickTracksR104-\d+ and track-support\d+ overlap/],
