@@ -17,6 +17,8 @@ export const LIMITS = {
   heading: [-360, 360, 0],
   /** a route's height and end height, plates (250: 80 cm) */
   plates: [0, 250, 0],
+  /** a route's own gauge, studs between its rails (as the design's: Settings › Track › Gauge) */
+  gauge: [2, 10, 4],
   /** a table's place and corners, studs */
   tablePlace: [-10000, 10000, 0],
   tableSize: [1, 2000, 32],
@@ -40,6 +42,7 @@ export const rangeText = (r: Range) => `Range ${r[0]} to ${r[1]}, default ${r[2]
 export function clampDesign(d: Design): Design {
   for (const r of d.routes) {
     r.x = clamp(r.x, LIMITS.start); r.y = clamp(r.y, LIMITS.start); r.heading = clamp(r.heading, LIMITS.heading);
+    if (typeof r.gaugeStuds === 'number') r.gaugeStuds = clamp(Math.round(r.gaugeStuds), LIMITS.gauge);
     if (typeof r.monoHeight === 'number') r.monoHeight = clamp(r.monoHeight, LIMITS.plates);
     if (typeof r.monoHeightEnd === 'number') r.monoHeightEnd = clamp(r.monoHeightEnd, LIMITS.plates);
     for (const sg of r.segs) {

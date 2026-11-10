@@ -38,7 +38,14 @@ export interface Route {
   extra?: ExtraRails;
   /** (train track on a grade) its height off the baseplate at its start and end, mm: an even grade between; unset: level on it */
   grade?: [number, number];
+  /** (mixed gauges) its own gauge, rail centre to rail centre, mm, where it's not the design's (left out: the design's, as the piece is built at) */
+  gauge?: number;
 }
+
+/** A route's rails' offset from its centre line (mm): its own gauge's (Route.gauge), else def, the design's. */
+export const railOffsetOf = (rt: Route, def: number) => (rt.gauge !== undefined ? rt.gauge / 2 : def);
+/** A route's sleepers' length (mm): its own gauge's, else def, the design's. */
+export const sleeperLenOf = (rt: Route, def: number) => (rt.gauge !== undefined ? rt.gauge + 24 : def);
 
 /** A route's height at arc length s (mm): on its grade, else 0. */
 export function heightAt(rt: Route, s: number): number {

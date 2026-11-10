@@ -41,6 +41,8 @@ export interface DRoute {
   dualShared?: 'right' | 'left';
   /** Ends of the route as drawn that meet plain track: the third rail stops short there (dual_plain_ends). */
   dualPlainEnds?: RouteEnds;
+  /** Its own gauge, studs between its rails (left out: the design's, Design.gaugeStuds): a narrow-gauge line in a standard-gauge design, say. Train track only. */
+  gaugeStuds?: number;
   /** What runs on it: train track (left out: train), or LEGO monorail beam. */
   system?: 'train' | 'monorail';
   /** (monorail) the beam's height off the baseplate, in plates (3.2 mm); left out: the supports' height (Settings › Monorail), or on the baseplate without supports */
@@ -233,7 +235,9 @@ export function readDesign(v: unknown): Design {
       const ok = obj(sg) && ((sg.kind === 'straight' && fin(sg.studs)) || (sg.kind === 'curve' && fin(sg.radius) && sg.radius > 0 && fin(sg.angle)));
       if (!ok) throw new Error(`${what}'s piece ${k + 1} is neither a straight (studs) nor a curve (radius, angle)`);
     });
-    return { ...r, name: typeof r.name === 'string' ? r.name : '' } as unknown as DRoute;
+    // (its own gauge, where it's not a number: left out, so the design's)
+    const { gaugeStuds: gs, ...r1 } = r;
+    return { ...r1, ...(fin(gs) && { gaugeStuds: gs }), name: typeof r.name === 'string' ? r.name : '' } as unknown as DRoute;
   });
   const d = { ...v, version: 1, gaugeStuds: fin(v.gaugeStuds) ? v.gaugeStuds : 4, routes } as Record<string, unknown>;
   if (typeof d.name !== 'string') delete d.name;
@@ -283,6 +287,9 @@ export function bufferEnds(d: Design): [number, number][] {
   return out;
 }
 
+/** A route's gauge, studs between its rails: its own (DRoute.gaugeStuds), else the design's. A monorail has none of its own. */
+export const routeGaugeStuds = (d: Design, r: DRoute) => (r.gaugeStuds !== undefined && !isMono(r) ? r.gaugeStuds : d.gaugeStuds);
+
 export function toRoutes(d: Design): Route[] {
   return d.routes.map((r, i) => {
     const rolls = bankRolls(d, r).rolls;
@@ -291,6 +298,8 @@ export function toRoutes(d: Design): Route[] {
       throwSide: r.throwSide,
       ...(r.system === 'monorail' && r.monoHeight !== undefined && { elev: r.monoHeight * 3.2, ...(r.monoHeightEnd !== undefined && { elevEnd: r.monoHeightEnd * 3.2 }) }),
       ...(r.system !== 'monorail' && ((r.monoHeight ?? 0) > 0 || (r.monoHeightEnd ?? 0) > 0) && { grade: [(r.monoHeight ?? 0) * 3.2, (r.monoHeightEnd ?? r.monoHeight ?? 0) * 3.2] as [number, number] }),
+      // (its own gauge only where it's not the design's: a route at the design's gauge is as it always was)
+      ...(routeGaugeStuds(d, r) !== d.gaugeStuds && { gauge: (routeGaugeStuds(d, r) + 1) * STUD }),
       start: [r.x * STUD, r.y * STUD, r.heading],
       segments: r.segs.map((sg, k): Segment => {
         const out: Segment = sg.kind === 'straight'

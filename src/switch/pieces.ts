@@ -28,7 +28,7 @@ export function subRoute(rt: Route, s0: number, s1: number, id = rt.id): Route {
     if (b > a + 1e-6) segments.push(part(sg, a - st[i], b - st[i]));
   });
   const f = rt.sleeperFrame;
-  return { id, start: routePose(rt, s0), segments, ...(f && { sleeperFrame: { ...f, s0: f.s0 + s0 } }), ...(rt.extra && { extra: subExtra(rt.extra, s0, s1) }), ...(rt.grade && { grade: [heightAt(rt, s0), heightAt(rt, s1)] as [number, number] }) };
+  return { id, start: routePose(rt, s0), segments, ...(f && { sleeperFrame: { ...f, s0: f.s0 + s0 } }), ...(rt.extra && { extra: subExtra(rt.extra, s0, s1) }), ...(rt.grade && { grade: [heightAt(rt, s0), heightAt(rt, s1)] as [number, number] }), ...(rt.gauge !== undefined && { gauge: rt.gauge }) };
 }
 /** A pose in frame P's coordinates (P at the origin heading +y). */
 export function toFrame(P: Pose, q: Pose): Pose {
