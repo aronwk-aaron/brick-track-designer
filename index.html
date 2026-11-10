@@ -496,11 +496,49 @@
           <li>Start on the middle of a track to branch off it: a switch.</li>
           <li>Drag a track's end to reshape it; drop it on another end to join them. <kbd>Esc</kbd> while dragging puts it back.</li>
         </ul>
+        <h3>Routes by numbers</h3>
+        <ul>
+          <li>Each track is a route, with a card in the Routes panel (click its line to open it): its Shape (straights and curves, each to change, remove or add to), its Place (name, start, heading, height), its Ends (an end connector or a buffer stop; a branch's lever side), and Guard rails and dual gauge. + Route adds one by numbers.</li>
+          <li>Each number's range is in its tip (hover it) and under the card's fields; a number outside it is held to it.</li>
+        </ul>
         <h3>Switches</h3>
         <ul>
           <li>Points (yellow squares): click to take them out (both tracks' rails run through as plain track: a grey square), again to put them back; drag to move them along. A hollow yellow square is a track end a little off another track: click it to force points there (dashed: too far off; redraw it to start on the track).</li>
           <li>Levers (orange): drag one across the track to swap its side, or further out (on tines, along too). Hover a lever to see what set its side, the branch it throws picked out in orange: a lever dragged across wins, then the branch route's own Lever side (on its card), then the Settings' Lever side.</li>
-          <li>The Trackwork panel has each one's numbers, and a three-way's branches one at a time.</li>
+          <li>The Trackwork panel has each one's numbers, and a three-way's branches one at a time; also the check rails (to lengthen, move in or take out) and the flangeway cuts (to lengthen). What you change by hand is marked Edited, and Reset puts it back.</li>
+          <li>Edits go with their track when it's moved, turned or mirrored. One whose trackwork is gone (its track deleted) is listed there as Left over, to remove.</li>
+        </ul>
+        <h3>Bought track: the parts palette</h3>
+        <ul>
+          <li>The Parts palette (under the routes) lays LEGO's and BrickTracks' track pieces one at a time: on the end of the selected route, or as a new route with nothing selected. ↶ and ↷ lay a curve to the left or the right. A switch's branch is a route of its own.</li>
+          <li>Track that's exactly one of those pieces is bought, not printed (green and purple in the 3D view), as Settings › Bought track says; on ballast, the ballast under it is printed.</li>
+        </ul>
+        <h3>Tables</h3>
+        <ul>
+          <li>The Tables panel sets out the tables or modules the layout stands on: + Rectangle, + Curved, + Any shape, or a ready-made one. Each has its numbers in the panel; drag one by its name on the plan (in Select).</li>
+          <li>The track is cut where one table meets the next (with Long track cut into: Track pieces, in Settings › Print bed and cutting into parts), and the parts list says what goes on each table.</li>
+        </ul>
+        <h3>Settings</h3>
+        <ul>
+          <li>Settings (<kbd>,</kbd> or the toolbar) has everything about how the pieces are made: track, ballast, underside, the switches' points and throws, the print bed and cutting, bought track, joints, labels, fit, monorail. Find a setting… searches them; each section folds.</li>
+          <li>Each setting shows its range and default. The round <i>i</i> by a setting shows pictures of its choices side by side. One that can't be changed now is greyed out and says why. Reset to defaults is at the bottom.</li>
+        </ul>
+        <h3>The 3D view, and building</h3>
+        <ul>
+          <li>The 3D view shows the parts as they'll print. With Auto on (in its bar) it builds after every change; with Auto off, when you press Build. Stop ends a long build; the view then shows the last design built, greyed, until Rebuild.</li>
+          <li>Drag turns it, the wheel zooms, a double-click (or Frame) fits it; Top and Underside look from above and below. Track, Bought, Points, Throws, Levers and Supports show or hide those parts; Explode pulls the parts apart. <kbd>P</kbd> hides the view (nothing is built while it's hidden).</li>
+          <li>The line under it says what was built (parts to print, bought pieces, size) and any warnings; a red ring on the plan and in the view marks where something's wrong.</li>
+        </ul>
+        <h3>Saving, and the downloads</h3>
+        <ul>
+          <li>The design is kept in this browser as you work. Save (<kbd>Ctrl</kbd>+<kbd>S</kbd>) downloads it as a file, asking its name the first time (<kbd>Shift</kbd>+click or <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>S</kbd>: under another name); Open (<kbd>Ctrl</kbd>+<kbd>O</kbd>) loads one. A template or a file taking the place of a design with changes not in a file asks first.</li>
+          <li>With the app open in two tabs or windows, the one you're not working in says the design was changed elsewhere, and asks which to keep.</li>
+          <li>STL downloads the parts to print (a zip when there are several). Parts list shows what to buy and what to print (by table, if there are tables), and downloads the list with a BrickLink wanted list of the LEGO parts. The downloads are of the design as last built: they wait for a build to finish.</li>
+        </ul>
+        <h3>On a touch screen</h3>
+        <ul>
+          <li>One finger does what the mouse's left button does: tap a track to select it, drag it to move it, drag an end, a lever or points; in Draw, tap to lay track. In Select, a finger on empty ground moves the plan. Two fingers pinch to zoom and move it.</li>
+          <li>Hold a finger still on a track to add it to the selection, or take it out. The selection's bar has Copy, Paste, Mirror, Turn and Delete; the routes and settings panels slide over the plan from the toolbar's buttons.</li>
         </ul>
         <h3>Layout parts (for the layout designer)</h3>
         <ul>
@@ -512,7 +550,7 @@
         <ul>
           <li>Wheel zooms; right/middle-drag or <kbd>Space</kbd>+drag pans (while drawing too).</li>
           <li>Select: click a track; <kbd>Shift</kbd>+click adds more; drag on empty ground for a box; <kbd>Ctrl</kbd>+<kbd>A</kbd> all; <kbd>Esc</kbd> none. <kbd>Ctrl</kbd>+<kbd>C</kbd>/<kbd>X</kbd>/<kbd>V</kbd> copy, cut, paste (at the mouse), <kbd>Ctrl</kbd>+<kbd>D</kbd> duplicate, <kbd>M</kbd> mirror, <kbd>R</kbd> / <kbd>Shift</kbd>+<kbd>R</kbd> turn 90°, <kbd>Del</kbd> delete.</li>
-          <li><kbd>D</kbd> draw, <kbd>S</kbd> select, <kbd>F</kbd> fit, <kbd>P</kbd> 3D preview, <kbd>?</kbd> this help, <kbd>Ctrl</kbd>+<kbd>S</kbd> save, <kbd>Ctrl</kbd>+<kbd>O</kbd> open, <kbd>Ctrl</kbd>+<kbd>Z</kbd> undo, <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>Z</kbd> or <kbd>Ctrl</kbd>+<kbd>Y</kbd> redo.</li>
+          <li><kbd>D</kbd> draw, <kbd>S</kbd> select, <kbd>F</kbd> fit, <kbd>P</kbd> 3D preview, <kbd>,</kbd> settings, <kbd>?</kbd> this help, <kbd>Ctrl</kbd>+<kbd>S</kbd> save, <kbd>Ctrl</kbd>+<kbd>O</kbd> open, <kbd>Ctrl</kbd>+<kbd>Z</kbd> undo, <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>Z</kbd> or <kbd>Ctrl</kbd>+<kbd>Y</kbd> redo.</li>
         </ul>
         <button id="help-close" type="button">Close</button>
       </dialog>
