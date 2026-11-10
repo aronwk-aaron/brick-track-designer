@@ -21,6 +21,7 @@ import { addCircle, cleanPieces, cleanRadius, defaultPieces, pieceFit, piecesTex
 import { APP_VERSION, type BuiltEntry, pngBytes, pushBuilt, readBuilt, readReportZip, type Report, reportName, type ReportInput, reportZip } from './report';
 import { isZip } from '../geom/unzip';
 import { COMMON_RADII } from './guides';
+import { lockedWhy, setLocked } from './lock';
 import { parallelRoute } from './parallelroute';
 import { mergeProblem, mergeRoutes, splitRoute } from './splitmerge';
 import { initTemplateBrowser } from './templatebrowser';
@@ -316,8 +317,9 @@ function renderTables() {
     name.addEventListener('change', () => { t.name = name.value; changed(); });
     const col = document.createElement('input'); col.type = 'color'; col.value = t.color ?? TABLE_COLORS[k % TABLE_COLORS.length]; col.title = 'Its colour on the plan';
     col.addEventListener('input', () => { t.color = col.value; changed(false, true, false); });
-    head.append(col, name, btn('✕', () => { design.tables = ts.filter((x) => x !== t); if (!design.tables.length) delete design.tables; canvas.setSelection(canvas.selection()); }, 'Remove this table'));
+    head.append(col, name, btn('✕', () => { if (t.locked) { canvas.say(lockedWhy(design, [], [k])!); return; } design.tables = ts.filter((x) => x !== t); if (!design.tables.length) delete design.tables; canvas.setSelection(canvas.selection()); }, 'Remove this table'));
     const f = document.createElement('div'); f.className = 'tfields';
+    f.append(lockToggle(t));
     // (drawn again once it's taken: the number shown is the one kept, a width under 1 as 1)
     const n = (label: string, v: number, set: (x: number) => void, range: Range, step = 1) => f.append(field(label, num(v, (x) => { set(x); soon(render); }, step, '', range)));
     if (t.shape === 'rect') { n('x', t.x, (v) => { t.x = v; }, LIMITS.tablePlace); n('y', t.y, (v) => { t.y = v; }, LIMITS.tablePlace); n('width', t.w, (v) => { t.w = v; }, LIMITS.tableSize); n('length', t.h, (v) => { t.h = v; }, LIMITS.tableSize); }
@@ -443,6 +445,15 @@ function drawForms() {
   }
   design.routes.forEach((r, i) => routesEl.append(makeCard(r, i)));
 }
+/** A route's or table's Locked tick: locked, it can be selected and copied but not moved, reshaped, mirrored, turned or deleted. */
+function lockToggle(x: { locked?: boolean }): HTMLElement {
+  const lab = document.createElement('label'); lab.className = 'lockrow';
+  const cb = document.createElement('input'); cb.type = 'checkbox'; cb.checked = x.locked === true;
+  cb.addEventListener('change', () => { setLocked(x, cb.checked); changed(true); });
+  lab.title = 'Locked: it can be selected and copied, but not moved, reshaped, mirrored, turned or deleted until you untick this.';
+  lab.append(cb, ' Locked: not moved, reshaped, mirrored, turned or deleted');
+  return lab;
+}
 /** One route's card: its heading, and its form when it's open (a folded one is its heading only). */
 function makeCard(r: DRoute, i: number): HTMLElement {
   {
@@ -452,7 +463,7 @@ function makeCard(r: DRoute, i: number): HTMLElement {
     box.open = (sel && !foldedCards.has(cardId(r, i))) || openCards.has(cardId(r, i));
     const sum = document.createElement('summary');
     const title = document.createElement('b'); title.textContent = r.name || `Route ${i + 1}`;
-    const what = document.createElement('span'); what.textContent = r.segs.length ? describe(r.segs) : 'empty';
+    const what = document.createElement('span'); what.textContent = (r.locked ? 'locked · ' : '') + (r.segs.length ? describe(r.segs) : 'empty');
     sum.append(title, what);
     sum.addEventListener('click', (e) => {
       e.preventDefault();
@@ -465,6 +476,7 @@ function makeCard(r: DRoute, i: number): HTMLElement {
     // hundreds of folded cards, each with its whole form, made every click on the plan slow)
     if (!box.open) { box.append(sum); return box; }
     const body = document.createElement('div'); body.className = 'body';
+    body.append(lockToggle(r));
     // (the card in folding sections, each remembered open or shut for every card: only the shape open to start with)
     const part = (title: string, note = '') => {
       const d2 = document.createElement('details'); d2.className = 'rsub'; d2.open = openParts.has(title);
@@ -588,6 +600,7 @@ function makeCard(r: DRoute, i: number): HTMLElement {
     more.append(
       btn('New route from its end', () => { const e = endOf(design, i); design.routes.push({ name: freeName(design, 'R'), ...e, segs: [{ kind: 'straight', studs: 16 }], ...(isMono(r) && { system: 'monorail' as const }) }); }),
       btn('Delete', () => {
+        { const why = lockedWhy(design, [i]); if (why) { canvas.say(why); return; } }
         // (the routes after it move up one: the selection stays on the routes it was on)
         const keep = canvas.selection().filter((j) => j !== i).map((j) => (j > i ? j - 1 : j));
         design.routes.splice(i, 1); openCards.clear(); canvas.stopDrawing();
@@ -1477,8 +1490,9 @@ function addRoutes(list: DRoute[], dx: number, dy: number, tables: Table[] = [])
 function copySel(cut = false, toBrowser = true) {
   // (nothing selected: what was copied stays copied)
   if (!selected().length && !selectedTables().length) return false;
-  clipboard = selected().map((i) => structuredClone(design.routes[i]));
-  clipTables = selectedTables().map((k) => structuredClone(design.tables![k]));
+  // (a copy isn't locked)
+  clipboard = selected().map((i) => { const c = structuredClone(design.routes[i]); delete c.locked; return c; });
+  clipTables = selectedTables().map((k) => { const c = structuredClone(design.tables![k]); delete c.locked; return c; });
   clipNames = selected().map((i) => design.routes[i].name || String(i));
   // (cut: the edits go with the routes, not left behind with nothing to be on)
   clipEdits = copyEdits(design, clipNames, cut);
@@ -1493,7 +1507,14 @@ function duplicateSel() {
   addRoutes(clipboard, 8, 0, clipTables);
   [clipboard, clipTables, clipNames, clipEdits] = keep as [DRoute[], Table[], string[], CopiedEdit[]];
 }
+/** The selection can't be changed if any of it is locked: said in the hint line. True when refused. */
+function refuseLocked(): boolean {
+  const why = lockedWhy(design, selected(), selectedTables());
+  if (why) canvas.say(why);
+  return !!why;
+}
 function deleteSel() {
+  if (refuseLocked()) return;
   for (const i of selected().sort((a, b) => b - a)) design.routes.splice(i, 1);
   const gone = new Set(selectedTables());
   if (gone.size && design.tables) { design.tables = design.tables.filter((_, k) => !gone.has(k)); if (!design.tables.length) delete design.tables; }
@@ -1513,6 +1534,7 @@ function pasteClip() {
 /** Transform the selection (its tables too) about its first route's start (or, with no route, its first table's middle). */
 function transformSel(f: (r: DRoute, px: number, py: number) => void, g: (t: Table, px: number, py: number) => Table) {
   const sel = selected(), tk = selectedTables(); if (!sel.length && !tk.length) return;
+  if (refuseLocked()) return;
   const [px, py] = sel.length ? [design.routes[sel[0]].x, design.routes[sel[0]].y] : (([x, y]) => [Math.round(x), Math.round(y)])(tableMiddle(design.tables![tk[0]]));
   for (const i of sel) f(design.routes[i], px, py);
   for (const k of tk) design.tables![k] = g(design.tables![k], px, py);
@@ -1526,6 +1548,7 @@ const turnSel = (a: number) => transformSel((r, px, py) => {
 }, (t, px, py) => turnedTable(t, px, py, a));
 /** Route i cut in two at s studs along it (Split): both halves selected. Undefined when done, else why not. */
 function splitRouteAt(i: number, s: number): string | undefined {
+  { const why = lockedWhy(design, [i]); if (why) return why; }
   const res = splitRoute(design, i, s);
   if ('problem' in res) return res.problem;
   canvas.setSelection([i, i + 1]); openCards.clear(); changed(true);
@@ -1553,6 +1576,7 @@ parSpacing.addEventListener('keydown', (e) => { if (e.key === 'Enter') makeParal
 /** Two selected routes that meet made one (Merge). */
 function mergeSel() {
   const [i, j] = selected();
+  if (refuseLocked()) return;
   const res = mergeRoutes(design, i, j);
   if ('problem' in res) { canvas.say(`Can't merge: ${res.problem}`); return; }
   canvas.setSelection([res.index]); openCards.clear(); changed(true);
@@ -1571,7 +1595,7 @@ function updateSelbar() {
   merge.title = two ? (mp ? `Merge: can't, ${mp}` : 'Make these two routes one track') : 'Merge: select two routes that meet end to end';
 }
 $('sel-copy').addEventListener('click', () => { copySel(); updateSelbar(); });
-$('sel-cut').addEventListener('click', () => { if (copySel(true)) deleteSel(); updateSelbar(); });
+$('sel-cut').addEventListener('click', () => { if (!refuseLocked() && copySel(true)) deleteSel(); updateSelbar(); });
 $('sel-paste').addEventListener('click', () => { pasteClip(); updateSelbar(); });
 $('sel-dup').addEventListener('click', () => { duplicateSel(); updateSelbar(); });
 $('sel-mirror').addEventListener('click', mirrorSel);
@@ -1584,7 +1608,7 @@ addEventListener('keydown', (e) => {
   if (typingIn(e) || dialogOpen()) return;
   const k = e.key.toLowerCase(), mod = e.ctrlKey || e.metaKey;
   if (mod && k === 'c') { e.preventDefault(); copySel(); }
-  else if (mod && k === 'x') { e.preventDefault(); if (copySel(true)) deleteSel(); }
+  else if (mod && k === 'x') { e.preventDefault(); if (!refuseLocked() && copySel(true)) deleteSel(); }
   else if (mod && k === 'v') { e.preventDefault(); pasteClip(); }
   else if (mod && k === 'd') { e.preventDefault(); duplicateSel(); }
   else if (mod && k === 'a') { e.preventDefault(); canvas.setSelection(design.routes.map((_, i) => i), (design.tables ?? []).map((_, k) => k)); }

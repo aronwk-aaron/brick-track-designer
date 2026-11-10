@@ -52,6 +52,8 @@ export interface DRoute {
   monoHeight?: number;
   /** (monorail) its height at its end, in plates: it ramps from monoHeight to this, easing in and out (left out: level) */
   monoHeightEnd?: number;
+  /** Locked: it can be selected and copied, not moved, reshaped, mirrored, turned or deleted till it's unlocked (lock.ts). Left out: not locked. */
+  locked?: boolean;
 }
 /** The extra rails' settings left out of a route (straight.scad's defaults). */
 export const RAIL_DEFAULTS = {
@@ -257,8 +259,8 @@ export function readDesign(v: unknown): Design {
       if (!ok) throw new Error(`${what}'s piece ${k + 1} is neither a straight (studs) nor a curve (radius, angle)`);
     });
     // (its own gauge, where it's not a number: left out, so the design's)
-    const { gaugeStuds: gs, ...r1 } = r;
-    return { ...r1, ...(fin(gs) && { gaugeStuds: gs }), name: typeof r.name === 'string' ? r.name : '' } as unknown as DRoute;
+    const { gaugeStuds: gs, locked, ...r1 } = r;
+    return { ...r1, ...(fin(gs) && { gaugeStuds: gs }), ...(locked === true && { locked }), name: typeof r.name === 'string' ? r.name : '' } as unknown as DRoute;
   });
   const d = { ...v, version: 1, gaugeStuds: fin(v.gaugeStuds) ? v.gaugeStuds : 4, routes } as Record<string, unknown>;
   if (typeof d.name !== 'string') delete d.name;
@@ -278,7 +280,8 @@ export function readDesign(v: unknown): Design {
   else delete d.trackwork;
   if (Array.isArray(d.tables)) {
     // (a table with no shape, where its numbers say what it is: that shape; else left out, tables.ts tableOf)
-    const tables = d.tables.map(tableOf).filter((t): t is Table => !!t);
+    // (a lock that's not a plain true: not locked)
+    const tables = d.tables.map(tableOf).filter((t): t is Table => !!t).map((t) => { if (t.locked !== undefined && t.locked !== true) { const { locked: _l, ...rest } = t; return rest as Table; } return t; });
     if (tables.length) d.tables = tables; else delete d.tables;
   } else delete d.tables;
   // (its numbers held to their ranges, as the fields hold what's typed: limits.ts)

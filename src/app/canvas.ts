@@ -15,6 +15,7 @@ import { joinProblem, reversedRoute } from './routeedits';
 import { cutSegs, joinInto, nearestAlong, routeStuds, splitProblem } from './splitmerge';
 import { dragResult, END_INSET_PX, type Handle, type HandleKind, handleLabel, segmentHandles, visibleHandles, withValue } from './handles';
 import { isEdit, reverseAnchors } from './twfollow';
+import { lockedWhy } from './lock';
 import { COMMON_RADII, type GuideEnd, type GuideResult, type GuideStraight, guidePoint } from './guides';
 import { describe, follow, plan, planAnyway, planAuto, planFreeTurning, planToPose, reversed, trace as traceRaw, type Pose } from './planner';
 
@@ -133,7 +134,7 @@ export class TrackCanvas {
   private space = false;
   mode: 'draw' | 'select' = 'select';
   /** Moving the selected tracks: where the press was (studs) and where they started. */
-  private moving: { x: number; y: number; orig: { i: number; x: number; y: number }[]; tables?: { k: number; orig: Table }[]; moved: boolean } | undefined;
+  private moving: { x: number; y: number; orig: { i: number; x: number; y: number }[]; tables?: { k: number; orig: Table }[]; moved: boolean; said?: boolean } | undefined;
   /** a table being dragged by its handle (its name, in its middle): which, where from, as it was */
   private tableDrag: { k: number; x: number; y: number; orig: Table; moved: boolean } | undefined;
   /** the table whose handle (its name, in its middle) is within reach of a point (studs), if any */
@@ -223,7 +224,7 @@ export class TrackCanvas {
   private handles(): Handle[] {
     if (this.mode !== 'select' || this.active || this.selection().length !== 1) return [];
     const r = this.host.design().routes[this.selection()[0]];
-    return r ? visibleHandles(segmentHandles(r, END_INSET_PX / this.scale), this.scale, this.touching ? 32 : 10) : [];
+    return r && !r.locked ? visibleHandles(segmentHandles(r, END_INSET_PX / this.scale), this.scale, this.touching ? 32 : 10) : [];
   }
   /** The handle under a point (studs), within a few pixels. */
   private handleAt(w: [number, number]): Handle | undefined {
@@ -598,6 +599,8 @@ export class TrackCanvas {
       const hit = this.nearTrack(w);
       if (hit?.end) {
         const r = this.host.design().routes[hit.route];
+        // (a locked track's end isn't dragged or carried on: it's selected, and says so)
+        if (r.locked) { this.extra.clear(); this.selTables.clear(); this.selected = hit.route; this.host.select(this.selected); this.say(lockedWhy(this.host.design(), [hit.route])!); return; }
         const work = hit.end === 'end' ? r : reversed(r);
         // reshape from the start of the last curve (and the straight before it)
         let c = -1;
@@ -730,6 +733,7 @@ export class TrackCanvas {
     if (this.tableDrag) {
       const m = this.tableDrag, p = this.evWorld(e), d = this.host.design();
       const dx = Math.round(p[0] - m.x), dy = Math.round(p[1] - m.y); // (whole studs: stays on the grid)
+      if (d.tables?.[m.k]?.locked) { if (dx || dy) { this.say(lockedWhy(d, [], [m.k])!, 1500); } this.mouse = p; return this.drawSoon(); }
       if ((dx || dy || m.moved) && d.tables?.[m.k]) { m.moved = true; d.tables[m.k] = movedTable(m.orig, dx, dy); this.host.changed(false); }
       this.mouse = p;
       return this.drawSoon();
@@ -737,6 +741,8 @@ export class TrackCanvas {
     if (this.moving) {
       const m = this.moving, p = this.evWorld(e), d = this.host.design();
       const dx = Math.round(p[0] - m.x), dy = Math.round(p[1] - m.y); // (whole studs: stays on the grid)
+      const lock = lockedWhy(d, m.orig.map((o) => o.i), (m.tables ?? []).map((t) => t.k));
+      if (lock && (dx || dy)) { if (!m.said) { m.said = true; this.say(lock); } this.mouse = p; return this.drawSoon(); }
       if (dx || dy || m.moved) {
         m.moved = true;
         for (const o of m.orig) { d.routes[o.i].x = Math.round((o.x + dx) * 1e4) / 1e4; d.routes[o.i].y = Math.round((o.y + dy) * 1e4) / 1e4; }
@@ -909,7 +915,7 @@ export class TrackCanvas {
     d0.routes.forEach((r, i) => {
       if (i === skip) return;
       // (an end it can't be joined to isn't snapped to: and the reason is said when it's near)
-      const why = mine && joinProblem(d0, mine, r);
+      const why = r.locked ? 'it is locked' : mine && joinProblem(d0, mine, r);
       const e = follow(r, r.segs);
       for (const [end, pose] of [['start', { x: r.x, y: r.y, heading: r.heading }], ['end', { ...e, heading: e.heading + 180 }]] as const) {
         const d = Math.hypot(pose.x - p[0], pose.y - p[1]);
@@ -1001,6 +1007,8 @@ export class TrackCanvas {
       const n = e.shiftKey ? 8 : 1, dx = e.key === 'ArrowLeft' ? -n : e.key === 'ArrowRight' ? n : 0, dy = e.key === 'ArrowDown' ? -n : e.key === 'ArrowUp' ? n : 0;
       e.preventDefault();
       if (this.moving || this.drag || this.handleDrag || this.tableDrag || this.itemDrag || this.leverDrag || this.box || this.active || (!dx && !dy)) return;
+      const lock = lockedWhy(this.host.design(), this.selection(), this.tableSelection());
+      if (lock) { this.say(lock); return; }
       const routes = this.host.design().routes;
       for (const i of this.selection()) if (routes[i]) { routes[i].x = Math.round((routes[i].x + dx) * 1e4) / 1e4; routes[i].y = Math.round((routes[i].y + dy) * 1e4) / 1e4; }
       const ts = this.host.design().tables;
@@ -1010,6 +1018,8 @@ export class TrackCanvas {
     }
     if ((e.key === 'Delete' || e.key === 'Backspace') && (this.selected !== undefined || this.tableSelection().length) && !this.active) {
       const d = this.host.design(), routes = d.routes, gone = new Set(this.tableSelection());
+      const lock = lockedWhy(d, this.selection(), this.tableSelection());
+      if (lock) { this.say(lock); return; }
       for (const i of this.selection().sort((a, b) => b - a)) routes.splice(i, 1);
       if (gone.size && d.tables) { d.tables = d.tables.filter((_, k) => !gone.has(k)); if (!d.tables.length) delete d.tables; }
       this.setSelection([]); this.host.changed(true);
@@ -1097,6 +1107,7 @@ export class TrackCanvas {
       if (this.mouse && !this.hidden.has('tables') && this.tableHandle(this.mouse) !== undefined) return 'Drag this table by its name to move it (its size and shape: the Tables panel)';
       if (hit?.end) return 'Drag this end to reshape the track';
       if (this.moving?.moved) return 'Moving: let go to put it down';
+      if (this.selected !== undefined && this.selection().length === 1 && this.host.design().routes[this.selected]?.locked) return `${this.host.design().routes[this.selected].name || 'The route'} is locked · unlock it on its card to move or change it · copy still works`;
       if (this.selected !== undefined) return `${this.selection().length > 1 ? `${this.selection().length} tracks` : this.host.design().routes[this.selected]?.name ?? ''} selected · drag to move · ${matchMedia('(pointer: coarse)').matches ? 'hold a finger on a track to add it or take it out' : 'Shift+click adds more · Delete removes'}`;
       if (!this.host.design().routes.length) return 'No track yet: press D (or ✎ Draw) to lay some';
       return 'Click a track to select it, drag it to move it · drag an end to reshape it · D to draw';
@@ -1139,7 +1150,7 @@ export class TrackCanvas {
       c.strokeStyle = picked ? ink.sel : ink.rail; c.lineWidth = picked ? 3 : 1.5; c.stroke();
       // (its handle: its name in its middle, to drag it by)
       const m = tableMiddle(t), [sx, sy] = this.toScreen(m[0], m[1]);
-      c.fillStyle = picked ? ink.selInk : ink.label; c.font = '12px system-ui, sans-serif'; c.textAlign = 'center'; c.fillText(`✥ ${t.name || `Table ${k + 1}`}`, sx, sy + 4); c.textAlign = 'start';
+      c.fillStyle = picked ? ink.selInk : ink.label; c.font = '12px system-ui, sans-serif'; c.textAlign = 'center'; c.fillText(`✥ ${t.name || `Table ${k + 1}`}${t.locked ? ' (locked)' : ''}`, sx, sy + 4); c.textAlign = 'start';
     });
     // baseplate edges, where the track is cut (Piece options)
     const bpS = d.options?.baseplate ?? 0;
@@ -1458,6 +1469,17 @@ export class TrackCanvas {
         c.fillStyle = on ? '#e8892b' : '#fff'; c.fill(); c.strokeStyle = '#e8892b'; c.lineWidth = 2; c.stroke();
         if (on && rt?.segs[h.seg]) tag(hx + 12, hy - 12, handleLabel(rt.segs[h.seg]), '#b25c00');
       }
+    }
+    // a small padlock on each locked route, in the middle of it
+    for (const r of d.routes) {
+      if (!r.locked) continue;
+      const pts = trace(r, r.segs, 1), m = pts[Math.floor(pts.length / 2)];
+      if (!m) continue;
+      const [lx, ly] = this.toScreen(m[0], m[1]);
+      c.save(); c.translate(lx, ly); c.fillStyle = ink.tagBg; c.strokeStyle = ink.mark; c.lineWidth = 1.5;
+      c.beginPath(); c.arc(0, -3, 4, Math.PI, 0); c.stroke();
+      c.beginPath(); c.rect(-5.5, -3, 11, 8); c.fill(); c.stroke();
+      c.restore();
     }
     // Split: where the selected route would be cut (the whole stud nearest the pointer), and the two lengths
     if (this.splitArmed && this.mouse && !this.active && !this.drag && !this.moving) {

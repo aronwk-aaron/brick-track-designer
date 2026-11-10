@@ -211,6 +211,7 @@
     #selbar[hidden] { display: none; }
     #selform { left: 10px; top: 50px; display: flex; gap: 8px; align-items: center; padding: 4px 8px; z-index: 2; flex-wrap: wrap; max-width: calc(100% - 280px); }
     #selform[hidden] { display: none; }
+    .lockrow { display: flex; gap: 6px; align-items: center; font-size: 12px; color: var(--muted); padding: 2px 0; }
     #selform button { padding: 2px 7px; font-size: 12px; }
     #selbar button { padding: 2px 7px; font-size: 12px; }
     #sel-count { color: var(--muted); margin: 0 4px; font-size: 12px; }
@@ -587,6 +588,7 @@
           <li><kbd>D</kbd> or ✎ Draw, then click a grid point or a track's end to start; move to see the track; click to lay it and carry on.</li>
           <li>Split and merge: with one track selected, <kbd>S</kbd> with the pointer on it (or the Split button, then a click on it) cuts it in two at the nearest whole stud, at least a stud in from either end; the two halves keep everything that was on that part (guard rails, third rail, ends, hand edits, heights). Select two tracks that meet end to end and press Merge to make them one.</li>
           <li>Parallel…: with one track selected, a new track beside it, 6 to 200 studs over (default 16; 8 and 16 are the usual), to its left or right: straights as long, curves with the radius concentric with the original. It says why not where a curve would go under R24.</li>
+          <li>Lock: tick Locked on a route's card (or a table's) and it can still be selected and copied, but not dragged, nudged, reshaped by its handles or ends, mirrored, turned, split, merged or deleted; the plan shows a small padlock on it, and the hint line says "R3 is locked" when you try. A copy isn't locked.</li>
           <li>Guides: drawing, or dragging a track's end, the point snaps to the line straight on from another track's end, to 8 and 16 studs beside a straight, to a whole number of studs straight on, and (Curves: free) to the usual radii. A dashed line and a small label give the value (studs, degrees, radius). Hold <kbd>Alt</kbd> for no snapping (the stud grid stays); it also stops the snap onto other tracks' ends.</li>
           <li><kbd>Esc</kbd> or a right-click stops drawing; <kbd>Esc</kbd> again goes back to Select.</li>
           <li>Start on the middle of a track to branch off it: a switch.</li>

@@ -334,6 +334,27 @@ try {
     await page.click('#undo'); await page.waitForTimeout(150);
     check(await routes() === 1, 'one Undo takes it back'); }
 
+  // a locked route: selected and copied, but not dragged, nudged, mirrored or deleted ("R3 is locked"); unlocked on its card
+  at = 'locks';
+  await page.evaluate(() => localStorage.setItem('btd-design', JSON.stringify({ version: 1, gaugeStuds: 4, routes: [{ name: 'R3', x: 0, y: 0, heading: 0, locked: true, segs: [{ kind: 'straight', studs: 20 }] }] })));
+  await page.reload(); await page.waitForSelector('#track'); await page.click('#mode-select'); await page.click('#fit'); await page.waitForTimeout(300);
+  { const route = () => page.evaluate(() => JSON.stringify(JSON.parse(localStorage.getItem('btd-design')!).routes));
+    const r0 = await route(), hintNow = () => page.locator('#hint').innerText();
+    const [ax, ay] = await scr(0, 10), [bx, by] = await scr(10, 10);
+    await page.mouse.click(ax, ay); await page.waitForTimeout(150);
+    check(/R3 is locked/.test(await hintNow()), `selecting it says it is locked (${await hintNow()})`);
+    await page.mouse.move(ax, ay); await page.mouse.down(); await page.mouse.move(bx, by, { steps: 5 }); await page.waitForTimeout(100);
+    check(/R3 is locked/.test(await hintNow()), 'dragging it says R3 is locked'); await page.mouse.up();
+    await page.keyboard.press('ArrowRight'); await page.click('#sel-mirror'); await page.click('#sel-rotl'); await page.keyboard.press('Delete'); await page.click('#sel-del');
+    const [ex, ey] = await scr(0, 0); await page.mouse.move(ex, ey); await page.mouse.down(); await page.mouse.move(ex + 40, ey + 40, { steps: 5 }); await page.mouse.up();
+    check(await route() === r0, 'dragging, nudging, mirroring, turning, deleting and reshaping its end all leave it as it was');
+    await page.click('#sel-dup'); await page.waitForTimeout(200);
+    const dup = await page.evaluate(() => JSON.parse(localStorage.getItem('btd-design')!).routes as { locked?: boolean }[]);
+    check(dup.length === 2 && dup[0].locked === true && dup[1].locked === undefined, 'a copy can be made, and is not locked');
+    await page.click('#undo'); await page.waitForTimeout(150);
+    await page.mouse.click(ax, ay); await page.waitForTimeout(150); await page.locator('.lockrow input').first().uncheck(); await page.waitForTimeout(150);
+    check(!(await route()).includes('locked'), 'unticking Locked on its card unlocks it'); }
+
   check(errors.length === 0, `no errors on the page${errors.length ? `: ${errors.join(' | ').slice(0, 600)}` : ''}`);
 } catch (err) {
   fails.push(`${at}: ${err instanceof Error ? err.message : err}`);

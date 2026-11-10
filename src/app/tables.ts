@@ -5,7 +5,7 @@
 import type { Pt } from '../route/route';
 
 /** A table, in studs (angles in degrees, counterclockwise from +x, as the plan's x and y). */
-export type Table = { name?: string; color?: string } & (
+export type Table = { name?: string; color?: string; /** locked: not moved, turned or deleted (lock.ts) */ locked?: boolean } & (
   | { shape: 'rect'; x: number; y: number; w: number; h: number }
   /** a ring section round (cx, cy), radius r0 to r1, from angle a0 to a1 */
   | { shape: 'arc'; cx: number; cy: number; r0: number; r1: number; a0: number; a1: number }

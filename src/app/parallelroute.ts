@@ -27,6 +27,6 @@ export function parallelRoute(d: Design, r: DRoute, side: 'left' | 'right', spac
     out.segs[k] = { ...sg, radius };
   }
   out.name = freeName(d, 'T');
-  delete out.throwSide;
+  delete out.throwSide; delete out.locked;
   return { route: out };
 }
