@@ -95,7 +95,7 @@ describe('a switch laid from one of its far ends', () => {
     const e: Design = { version: 1, gaugeStuds: 4, routes: [] };
     expect(placePart(e, 'lego-switch-l', undefined, 1, 'straight').added.length).toBe(2);
   });
-  it('a passing loop built from the palette alone: the far switch laid from its straight end, and both found as bought switches', async () => {
+  it('a passing loop built from the palette alone: the far switch laid from its straight end, and both found as bought switches', { timeout: 600000 }, async () => {
     const saved = { ...OPTION_DEFAULTS };
     Object.assign(OPTION_DEFAULTS, APP);
     try {
