@@ -1215,12 +1215,13 @@ try { foldLegend(localStorage.getItem('btd-legend') === '0'); } catch { /* fine 
 $('legend-fold').addEventListener('click', () => foldLegend(!legendEl.classList.contains('folded')));
 canvas.draw();
 (window as unknown as { btdCanvas: unknown }).btdCanvas = canvas; // (for the browser checks)
-const setMode = (m: 'draw' | 'select') => {
+const setMode = (m: 'draw' | 'select' | 'measure') => {
   canvas.mode = m; canvas.stopDrawing();
-  $('mode-draw').classList.toggle('on', m === 'draw'); $('mode-select').classList.toggle('on', m === 'select');
+  $('mode-draw').classList.toggle('on', m === 'draw'); $('mode-select').classList.toggle('on', m === 'select'); $('mode-measure').classList.toggle('on', m === 'measure');
 };
 $('mode-draw').addEventListener('click', () => setMode('draw'));
 $('mode-select').addEventListener('click', () => setMode('select'));
+$('mode-measure').addEventListener('click', () => setMode('measure'));
 $('fit').addEventListener('click', () => canvas.fit());
 // Show or hide the 3D preview (remembered in the browser).
 const mainEl = document.querySelector('main')!;
@@ -1262,6 +1263,7 @@ addEventListener('keydown', (e) => {
   if (e.ctrlKey || e.metaKey || e.altKey) return;
   if (e.key === 'd' || e.key === 'D') setMode('draw');
   if (e.key === 's' || e.key === 'S') { if (canvas.mode === 'select' && canvas.selection().length === 1) canvas.splitHere(); else setMode('select'); }
+  if (e.key === 't' || e.key === 'T') setMode(canvas.mode === 'measure' ? 'select' : 'measure');
   if (e.key === 'p' || e.key === 'P') toggle3d();
   if ((e.key === 'f' || e.key === 'F') && !e.ctrlKey && !e.metaKey) canvas.fit(true);
   if (e.key === '?') openDialog(helpEl, $('help-close'));

@@ -16,6 +16,7 @@ import { cutSegs, joinInto, nearestAlong, routeStuds, splitProblem } from './spl
 import { dragResult, END_INSET_PX, type Handle, type HandleKind, handleLabel, segmentHandles, visibleHandles, withValue } from './handles';
 import { isEdit, reverseAnchors } from './twfollow';
 import { lockedWhy } from './lock';
+import { type MeasurePoint, measureBetween, measurePoint } from './measure';
 import { COMMON_RADII, type GuideEnd, type GuideResult, type GuideStraight, guidePoint } from './guides';
 import { describe, follow, plan, planAnyway, planAuto, planFreeTurning, planToPose, reversed, trace as traceRaw, type Pose } from './planner';
 
@@ -132,7 +133,10 @@ export class TrackCanvas {
   private mouse: [number, number] | undefined;   // world, studs
   private panning: { x: number; y: number; ox: number; oy: number; right?: boolean; moved?: boolean } | undefined;
   private space = false;
-  mode: 'draw' | 'select' = 'select';
+  mode: 'draw' | 'select' | 'measure' = 'select';
+  /** Measure: the two points clicked (the second not yet: the pointer's). Not saved. */
+  private meas: { a?: MeasurePoint; b?: MeasurePoint } = {};
+  private measureAt(w: [number, number]): MeasurePoint { return measurePoint(this.host.design().routes, w, this.reach(14), this.guided(w)); }
   /** Moving the selected tracks: where the press was (studs) and where they started. */
   private moving: { x: number; y: number; orig: { i: number; x: number; y: number }[]; tables?: { k: number; orig: Table }[]; moved: boolean; said?: boolean } | undefined;
   /** a table being dragged by its handle (its name, in its middle): which, where from, as it was */
@@ -575,6 +579,12 @@ export class TrackCanvas {
       return;
     }
     const w = this.evWorld(e);
+    // Measure: the first click starts, the second ends, the next starts again
+    if (this.mode === 'measure' && e.button === 0) {
+      const mp = this.measureAt(w);
+      this.meas = !this.meas.a || this.meas.b ? { a: mp } : { a: this.meas.a, b: mp };
+      this.draw(); return;
+    }
     // (Split's waiting for a click on the route)
     if (this.splitArmed && e.button === 0) {
       const cut = this.cutFor(w);
@@ -778,7 +788,7 @@ export class TrackCanvas {
   /** The mouse pointer says what a press would do: grab a lever, points or an end, pick a track, or lay track. */
   private cursor() {
     const w = this.mouse;
-    let c = this.mode === 'draw' ? 'crosshair' : 'default', over: number | undefined;
+    let c = this.mode !== 'select' ? 'crosshair' : 'default', over: number | undefined;
     if (this.space) c = 'grab';
     else if (w && !this.active) {
       const grab = !!(this.handleAt(w) || this.leverAt(w) || this.itemAt(w)), hit = grab ? undefined : this.nearTrack(w, this.reach(18)) ?? (this.mode === 'select' ? this.onBand(w) : undefined);
@@ -967,6 +977,7 @@ export class TrackCanvas {
     if (typingIn(e) || !down || dialogOpen()) return;
     // (Space held pans; not when a button, a tick box or a section's heading has the focus: Space presses it)
     if (e.code === 'Space' && !['BUTTON', 'INPUT', 'SUMMARY', 'A'].includes((e.target as HTMLElement)?.tagName)) { this.space = true; e.preventDefault(); }
+    if (e.key === 'Escape' && this.mode === 'measure') { if (this.meas.a) { this.meas = {}; return this.draw(); } return this.host.leaveDraw?.(); }
     if (e.key === 'Escape' && this.splitArmed) { this.splitArmed = false; return this.draw(); }
     if (e.key === 'Escape' && this.handleDrag) {
       // (the handle's segment put back as it was)
@@ -1025,7 +1036,7 @@ export class TrackCanvas {
       this.setSelection([]); this.host.changed(true);
     }
   }
-  stopDrawing() { this.active = undefined; this.draw(); }
+  stopDrawing() { this.active = undefined; this.meas = {}; this.draw(); }
   /** Whatever's being drawn or dragged, let go of where it is (the design under it replaced: undone, a template, a file). */
   letGo() {
     this.guideNow = undefined; this.guideKey = '';
@@ -1079,6 +1090,7 @@ export class TrackCanvas {
   private hintText(): string {
     if (this.noteText) return this.noteText;
     if (this.splitArmed) return 'Click on the route where to cut it · Esc cancels';
+    if (this.mode === 'measure') return this.meas.b ? 'Click to measure again · Esc clears' : this.meas.a ? 'Click the second point · it snaps to track ends and centre lines · Esc clears' : 'Click the first point to measure from: it snaps to track ends and centre lines · Esc stops';
     if (this.handleDrag?.moved && this.handleDrag.why) return this.handleDrag.why;
     if (this.drag?.moved) return this.dragBad ? "Can't bend the track this way: release to keep the last good shape, Esc puts it back"
       : this.dragSnap ? 'Release to join the two ends' : this.joinBlocked ? `Release to reshape (${this.joinBlocked}) · Esc puts it back` : 'Release to reshape · drop on another end to join · hold Alt for no snapping · Esc puts it back';
@@ -1228,7 +1240,7 @@ export class TrackCanvas {
       c.fillStyle = '#d9480f'; c.fillRect(px - 3, py - 3, 6, 6);
       tag(px, py + 40, g.guides.map((x) => x.label).join(' · '), '#b23c0a');
     };
-    if (!(this.drag?.moved) && !(this.mode === 'draw' && this.mouse)) { this.guideNow = undefined; this.guideKey = ''; }
+    if (!(this.drag?.moved) && !(this.mode !== 'select' && this.mouse)) { this.guideNow = undefined; this.guideKey = ''; }
     /** Draw segments from pose p, each in its colour: bad ones red. */
     const drawSegs = (p: Pose, segs: DSeg[], isBad: (k: number) => boolean, band: string, rail: string, g = (d.gaugeStuds + 1) / 2) => {
       let q = p;
@@ -1481,6 +1493,24 @@ export class TrackCanvas {
       c.beginPath(); c.rect(-5.5, -3, 11, 8); c.fill(); c.stroke();
       c.restore();
     }
+    // Measure: the two points, the line between and what it says
+    if (this.mode === 'measure') {
+      const cur = this.mouse ? this.measureAt(this.mouse) : undefined, a = this.meas.a, b = this.meas.b ?? (a ? cur : undefined);
+      const dot = (m: MeasurePoint) => { const [sx, sy] = this.toScreen(m.p[0], m.p[1]); c.fillStyle = m.on ? (m.on.at === 'end' ? '#2b9e4a' : '#f0b400') : '#0a7d5a'; c.beginPath(); c.arc(sx, sy, 5, 0, 2 * Math.PI); c.fill(); c.strokeStyle = '#fff'; c.lineWidth = 1.5; c.stroke(); };
+      let text = '';
+      if (a && b) {
+        const [ax, ay] = this.toScreen(a.p[0], a.p[1]), [bx, by] = this.toScreen(b.p[0], b.p[1]);
+        c.save(); c.strokeStyle = '#0a7d5a'; c.lineWidth = 2; c.setLineDash([2, 3]); c.beginPath(); c.moveTo(ax, ay); c.lineTo(bx, by); c.stroke(); c.restore();
+        text = measureBetween(a, b).text;
+        tag((ax + bx) / 2, (ay + by) / 2, text, '#0a6a4c');
+        dot(a); dot(b);
+      } else if (cur) {
+        dot(cur);
+        if (cur.on) tag(...this.toScreen(cur.p[0], cur.p[1]), cur.on.at === 'end' ? `end of ${cur.on.name}` : `along ${cur.on.name}`, '#0a6a4c');
+        else showGuides();
+      }
+      this.el.dataset.measure = text;
+    } else delete this.el.dataset.measure;
     // Split: where the selected route would be cut (the whole stud nearest the pointer), and the two lengths
     if (this.splitArmed && this.mouse && !this.active && !this.drag && !this.moving) {
       const cut = this.cutFor(this.mouse), rr = cut && d.routes[cut.route];
