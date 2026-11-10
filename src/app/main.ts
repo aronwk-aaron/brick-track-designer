@@ -1086,8 +1086,8 @@ $('undo').addEventListener('click', undo);
 $('redo').addEventListener('click', redo);
 addEventListener('keydown', (e) => {
   // (a dialog open over the page: Esc closes Help (? too), and no other key is a shortcut: nothing's changed behind it)
-  const dialog = dialogOpen(), helpOpen = helpEl.classList.contains('open');
-  if (e.key === 'Escape' || (e.key === '?' && helpOpen && !typingIn(e))) { helpEl.classList.remove('open'); if (helpOpen) return; }
+  const dialog = dialogOpen(), helpOpen = helpEl.open;
+  if (e.key === '?' && helpOpen && !typingIn(e)) { helpEl.close(); return; }
   // (the design's file, not the browser's Save page and Open file; while typing in a field too: what's typed is taken first)
   if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's' && !dialog) { e.preventDefault(); if (typingIn(e)) (e.target as HTMLElement).blur(); saveFile(e.shiftKey); return; }
   if ((e.ctrlKey || e.metaKey) && !e.shiftKey && e.key.toLowerCase() === 'o' && !dialog) { e.preventDefault(); $('load').click(); return; }
@@ -1099,7 +1099,7 @@ addEventListener('keydown', (e) => {
   if (e.key === 's' || e.key === 'S') setMode('select');
   if (e.key === 'p' || e.key === 'P') toggle3d();
   if ((e.key === 'f' || e.key === 'F') && !e.ctrlKey && !e.metaKey) canvas.fit();
-  if (e.key === '?') helpEl.classList.add('open');
+  if (e.key === '?') openDialog(helpEl, $('help-close'));
   if (e.key === ',') openSettings(settingsEl.hidden);
 });
 
@@ -1140,17 +1140,24 @@ if ('serviceWorker' in navigator && import.meta.env.PROD) addEventListener('load
 });
 
 // Help
-const helpEl = $('help');
-$('help-open').addEventListener('click', () => helpEl.classList.add('open'));
-$('about-open').addEventListener('click', () => { helpEl.classList.add('open'); $('about').scrollIntoView({ block: 'start' }); });
-$('help-close').addEventListener('click', () => helpEl.classList.remove('open'));
-$('help-backdrop').addEventListener('click', () => helpEl.classList.remove('open'));
-// (over the whole page, the toolbar and panels dimmed under it too, not only the plan)
-document.body.append(helpEl, $('help-backdrop'));
-// (the settings' choice pictures: the same, a modal over the page)
-document.body.append($('choices'), $('choices-backdrop'));
-for (const id of ['choices-close', 'choices-backdrop']) $(id).addEventListener('click', () => $('choices').classList.remove('open'));
-addEventListener('keydown', (e) => { if (e.key === 'Escape') $('choices').classList.remove('open'); });
+// (Help and a setting's pictures are dialogs over the page: the keyboard's focus goes into them and stays there till
+// they're closed (Esc, their button, or a click outside), then goes back to where it was)
+const helpEl = $<HTMLDialogElement>('help'), choicesEl = $<HTMLDialogElement>('choices');
+function openDialog(d: HTMLDialogElement, focus?: HTMLElement) {
+  if (d.open) return;
+  d.classList.add('open'); d.showModal();
+  focus?.focus({ preventScroll: true });
+}
+for (const d of [helpEl, choicesEl]) {
+  d.addEventListener('close', () => d.classList.remove('open'));
+  d.addEventListener('click', (e) => { const r = d.getBoundingClientRect(); if (e.target === d && (e.clientX < r.left || e.clientX > r.right || e.clientY < r.top || e.clientY > r.bottom)) d.close(); });
+}
+$('help-open').addEventListener('click', () => openDialog(helpEl, $('help-close')));
+$('about-open').addEventListener('click', () => { openDialog(helpEl, $('help-close')); helpEl.scrollTop = 0; });
+$('help-close').addEventListener('click', () => helpEl.close());
+// (over the whole page, the toolbar and panels dimmed under them too, not only the plan)
+document.body.append(helpEl, choicesEl);
+$('choices-close').addEventListener('click', () => choicesEl.close());
 
 // The routes panel: shown or hidden (remembered).
 const setPanel = (on: boolean) => {
@@ -1313,7 +1320,7 @@ function valueText(f: OptField, v: string) {
 /** A setting's choices (or, a number or on/off, the values pictured) side by side in a modal: each one's picture, what it
  * does, its drawback, and a button to use it. */
 function showChoices(f: OptField, cur: string, def: string, c: OptCtx, off: string | undefined, use: (v: string) => void) {
-  const modal = $('choices'), body = $('choices-body');
+  const modal = $<HTMLDialogElement>('choices'), body = $('choices-body');
   $('choices-title').textContent = f.label;
   // (can't be changed now: said in the open, over the choices, not only on each greyed button)
   $('choices-why').textContent = off ? `Locked: ${off}.` : ''; $('choices-why').hidden = !off;
@@ -1334,14 +1341,14 @@ function showChoices(f: OptField, cur: string, def: string, c: OptCtx, off: stri
     const b = document.createElement('button'); b.type = 'button';
     b.textContent = isCur ? 'In use' : 'Use this'; b.disabled = isCur || !!off;
     if (off) b.title = `Locked: ${off}`;
-    b.addEventListener('click', () => { use(f.text && ch.v === 'none' ? '' : ch.v); modal.classList.remove('open'); });
+    b.addEventListener('click', () => { use(f.text && ch.v === 'none' ? '' : ch.v); modal.close(); });
     card.append(b); body.append(card);
   }
   // (one column per choice, the window only as wide as they need: no empty space beside two)
   const n = choices.length;
   body.style.gridTemplateColumns = `repeat(${n}, minmax(0, 1fr))`;
   modal.style.width = `min(${n * 340 + 48}px, calc(100vw - 32px))`;
-  modal.classList.add('open');
+  openDialog(modal, $('choices-close'));
 }
 function renderOptions() { keepingFocus($('settings'), drawOptions); }
 function drawOptions() {

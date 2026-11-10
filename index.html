@@ -248,7 +248,7 @@
     #legend button { margin-top: 4px; padding: 1px 6px; font-size: 12px; }
     #help { position: fixed; inset: 0; margin: auto; height: fit-content; background: var(--panel); width: min(760px, calc(100vw - 32px)); padding: 22px 28px; font-size: 15px; line-height: 1.5; display: none; z-index: 60; border-radius: 14px; }
     #choices { position: fixed; inset: 0; margin: auto; height: fit-content; max-height: calc(100vh - 48px); overflow-y: auto; width: min(1100px, calc(100vw - 32px)); padding: 18px 22px; background: var(--panel); z-index: 62; display: none; border-radius: 14px; font-size: 14px; }
-    #choices.open { display: block; } #choices-backdrop { position: fixed; inset: 0; background: rgba(10, 12, 16, 0.5); z-index: 61; display: none; } #choices.open ~ #choices-backdrop { display: block; }
+    #choices.open { display: block; } #choices::backdrop, #help::backdrop { background: rgba(10, 12, 16, 0.5); } #choices, #help { color: var(--ink); }
     #choices .chead { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; } #choices h3 { margin: 0; font-size: 18px; }
     #choices-body { display: grid; gap: 14px; }
     #choices-why { margin: 0 0 12px; color: var(--warn); font-weight: 600; }
@@ -260,8 +260,6 @@
     #choices .choice button { margin-top: auto; align-self: flex-start; }
     #options .field span button.pics { width: 18px; height: 18px; padding: 0; margin-left: 6px; border-radius: 50%; font: italic 600 11px/1 Georgia, serif; color: var(--accent); border-color: var(--accent); background: transparent; vertical-align: 1px; }
     #options .field span button.pics:hover { background: var(--accent-soft); }
-    #help-backdrop { position: fixed; inset: 0; background: rgba(10, 12, 16, 0.5); z-index: 59; display: none; }
-    #help.open ~ #help-backdrop { display: block; }
     #help h3 { font-size: 17px; margin: 16px 0 8px; } #help h3:first-child { margin-top: 0; } #help kbd { font-size: 13px; }
     #help.open { display: block; }
     #help ul { margin: 0 0 10px; padding-left: 22px; } #help li { margin: 4px 0; }
@@ -478,7 +476,7 @@
         </div>
         <button id="help-open" type="button" title="How to use the editor (?)">? Help</button>
       </div>
-      <div id="help" class="chip" role="dialog" aria-label="Help">
+      <dialog id="help" class="chip" aria-label="Help">
         <h3 id="about">About</h3>
         <p>Brick Track Designer lays out LEGO-compatible train track (switches, crossings, crossovers, yards) and makes it into
           parts to 3D print: STL files cut to your print bed, joined like LEGO track. It runs in your browser: nothing you
@@ -516,14 +514,13 @@
           <li><kbd>D</kbd> draw, <kbd>S</kbd> select, <kbd>F</kbd> fit, <kbd>P</kbd> 3D preview, <kbd>?</kbd> this help, <kbd>Ctrl</kbd>+<kbd>S</kbd> save, <kbd>Ctrl</kbd>+<kbd>O</kbd> open, <kbd>Ctrl</kbd>+<kbd>Z</kbd> undo, <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>Z</kbd> or <kbd>Ctrl</kbd>+<kbd>Y</kbd> redo.</li>
         </ul>
         <button id="help-close" type="button">Close</button>
-      </div>
-      <div id="help-backdrop"></div>
-      <div id="choices" class="chip" role="dialog" aria-label="Choices">
+      </dialog>
+      <dialog id="choices" class="chip" aria-labelledby="choices-title">
         <div class="chead"><h3 id="choices-title"></h3><button id="choices-close" type="button" title="Close (Esc)">✕</button></div>
         <p id="choices-why" hidden></p>
         <div id="choices-body"></div>
-      </div>
-      <div id="choices-backdrop"></div>
+      </dialog>
+      
       <div id="selbar" class="chip" hidden>
         <span id="sel-count"></span>
         <button id="sel-copy" type="button" title="Copy (Ctrl+C)">Copy</button><button id="sel-cut" type="button" title="Cut (Ctrl+X)">Cut</button><button id="sel-paste" type="button" title="Paste at the mouse (Ctrl+V)">Paste</button><button id="sel-dup" type="button" title="Duplicate (Ctrl+D)">Duplicate</button><button id="sel-mirror" type="button" title="Mirror left to right (M)">Mirror</button><button id="sel-rotl" type="button" title="Turn 90° left (Shift+R)">⟲ 90°</button><button id="sel-rotr" type="button" title="Turn 90° right (R)">⟳ 90°</button><button id="sel-del" type="button" class="danger" title="Delete (Del)">Delete</button>

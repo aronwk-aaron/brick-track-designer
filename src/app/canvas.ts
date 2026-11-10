@@ -78,7 +78,7 @@ export function typingIn(e: KeyboardEvent) {
   return !!t && (t.tagName === 'SELECT' || t.tagName === 'TEXTAREA' || t.isContentEditable);
 }
 /** A dialog open over the page (the parts list, Help, a setting's pictures): a key pressed then isn't one of the plan's shortcuts. */
-export const dialogOpen = () => !!document.querySelector('dialog[open], #help.open, #choices.open');
+export const dialogOpen = () => !!document.querySelector('dialog[open]');
 const norm180 = (a: number) => ((((a + 180) % 360) + 360) % 360) - 180;
 
 export class TrackCanvas {
@@ -351,6 +351,9 @@ export class TrackCanvas {
     const fake = (t: { clientX: number; clientY: number }, button = 0) =>
       ({ clientX: t.clientX, clientY: t.clientY, button, buttons: 1, shiftKey: false, ctrlKey: false, metaKey: false, altKey: false, preventDefault() {}, stopPropagation() {} }) as unknown as MouseEvent;
     let pinch: { d: number; scale: number; world: [number, number] } | undefined, last: { clientX: number; clientY: number } | undefined, oneButton = 0, start: [number, number] = [0, 0];
+    // (a finger held still on a track in Select: it's added to the selection, or taken out, as Shift+click with a mouse)
+    let hold: number | undefined, held = false;
+    const noHold = () => { clearTimeout(hold); hold = undefined; };
     const mid = (e: TouchEvent): [number, number] => { const r = el.getBoundingClientRect(), [a, b] = [e.touches[0], e.touches[1]]; return [(a.clientX + b.clientX) / 2 - r.left, (a.clientY + b.clientY) / 2 - r.top]; };
     const spread = (e: TouchEvent) => Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY);
     el.addEventListener('touchstart', (e) => {
@@ -360,9 +363,22 @@ export class TrackCanvas {
         // (on empty ground in Select: pan, as the middle button; on track, a lever or points: as the left button)
         const onSomething = !!(this.leverAt(w) || this.itemAt(w) || this.nearTrack(w, this.reach(24)) || this.onBand(w));
         oneButton = this.mode === 'select' && !onSomething ? 1 : 0;
-        last = t; start = [t.clientX, t.clientY]; this.mouse = w; this.down(fake(t, oneButton));
+        last = t; start = [t.clientX, t.clientY]; this.mouse = w; held = false;
+        const before = this.selection();
+        this.down(fake(t, oneButton));
+        noHold();
+        const on = this.mode === 'select' && !this.leverDrag && !this.itemDrag && !this.drag && !this.tableDrag ? this.nearTrack(w, this.reach(24)) ?? this.onBand(w) : undefined;
+        if (on) hold = window.setTimeout(() => {
+          hold = undefined; held = true;
+          // (the press itself selected it alone, ready to drag: put back as it was, then this one added or taken out)
+          this.moving = undefined; this.selected = before[0]; this.extra = new Set(before.slice(1));
+          this.toggleSelected(on.route);
+          navigator.vibrate?.(15);
+          this.host.select(this.selected); this.draw();
+        }, 500);
         return;
       }
+      noHold();
       if (e.touches.length === 2) {
         // (a second finger: whatever the first began ends where it is, and the two pinch and pan)
         if (last && !pinch) this.up(fake(last, oneButton));
@@ -379,11 +395,17 @@ export class TrackCanvas {
         this.drawSoon();
         return;
       }
-      if (!pinch && e.touches.length === 1) { last = e.touches[0]; this.move(fake(last, oneButton)); }
+      if (!pinch && e.touches.length === 1) {
+        if (held) return;
+        if (Math.hypot(e.touches[0].clientX - start[0], e.touches[0].clientY - start[1]) >= 8) noHold();
+        last = e.touches[0]; this.move(fake(last, oneButton));
+      }
     }, { passive: false });
     const end = (e: TouchEvent) => {
       e.preventDefault();
+      noHold();
       if (pinch) { if (e.touches.length === 0) pinch = undefined; last = undefined; return; }
+      if (held) { held = false; last = undefined; return; }
       const t = e.changedTouches[0] ?? last;
       if (last) this.up(fake(t, oneButton));
       // (a tap on empty ground: nothing selected, as a click there)
@@ -392,6 +414,13 @@ export class TrackCanvas {
     };
     el.addEventListener('touchend', end, { passive: false });
     el.addEventListener('touchcancel', end, { passive: false });
+  }
+  /** A route added to the selection, or taken out of it (Shift+click; a finger held on it). */
+  private toggleSelected(route: number) {
+    if (this.selected === undefined) this.selected = route;
+    else if (route === this.selected) { this.selected = [...this.extra][0]; this.extra.delete(this.selected!); }
+    else if (this.extra.has(route)) this.extra.delete(route);
+    else this.extra.add(route);
   }
   private down(e: MouseEvent) {
     this.syncActive();
@@ -438,13 +467,8 @@ export class TrackCanvas {
         this.moving = { x: w[0], y: w[1], moved: false, orig: this.selection().map((i) => ({ i, x: d.routes[i].x, y: d.routes[i].y })) };
         return;
       }
-      if (add && hit) {
-        // add to the selection, or take it out
-        if (this.selected === undefined) this.selected = hit.route;
-        else if (hit.route === this.selected) { this.selected = [...this.extra][0]; this.extra.delete(this.selected!); }
-        else if (this.extra.has(hit.route)) this.extra.delete(hit.route);
-        else this.extra.add(hit.route);
-      } else {
+      if (add && hit) this.toggleSelected(hit.route);
+      else {
         this.selected = hit?.route; this.extra.clear();
         // (and it can be dragged straight away)
         if (hit) { const d = this.host.design(); this.moving = { x: w[0], y: w[1], moved: false, orig: [{ i: hit.route, x: d.routes[hit.route].x, y: d.routes[hit.route].y }] }; }
@@ -844,7 +868,7 @@ export class TrackCanvas {
       if (this.mouse && !this.hidden.has('tables') && this.tableHandle(this.mouse) !== undefined) return 'Drag this table by its name to move it (its size and shape: the Tables panel)';
       if (hit?.end) return 'Drag this end to reshape the track';
       if (this.moving?.moved) return 'Moving: let go to put it down';
-      if (this.selected !== undefined) return `${this.selection().length > 1 ? `${this.selection().length} tracks` : this.host.design().routes[this.selected]?.name ?? ''} selected · drag to move · Shift+click adds more · Delete removes`;
+      if (this.selected !== undefined) return `${this.selection().length > 1 ? `${this.selection().length} tracks` : this.host.design().routes[this.selected]?.name ?? ''} selected · drag to move · ${matchMedia('(pointer: coarse)').matches ? 'hold a finger on a track to add it or take it out' : 'Shift+click adds more · Delete removes'}`;
       if (!this.host.design().routes.length) return 'No track yet: press D (or ✎ Draw) to lay some';
       return 'Click a track to select it, drag it to move it · drag an end to reshape it · D to draw';
     }
