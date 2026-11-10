@@ -8,7 +8,7 @@
 // Units: mm and degrees, switch.scad's frame (the routes start at the origin
 // heading +y). Routes are right to left, as switch.scad's `routes`.
 import type { Pose, Pt, Route } from '../route/route';
-import { railPoint, routeLat, routeLength, routePose, routeSOf, segStarts, worldToPose } from '../route/route';
+import { poseToWorld, railPoint, routeLat, routeLength, routePose, routeSOf, segStarts, worldToPose } from '../route/route';
 import { M, R, T, type CS, type Man, type Scad, type Vec2, type Vec3 } from '../geom/scad';
 import { sweepRoute } from '../geom/sweep';
 import { ANTISTUD_FIT, connectorUnderside, hollowGrid, type Spot, studSpots, TUBE_OD } from '../geom/underside';
@@ -28,6 +28,8 @@ export interface BaseParams extends SwitchParams {
   studGrip: 'edges' | 'all';
   /** (track alone) The underside lined up with the baseplate's stud grid (the switch's own frame), or with the track (its end connectors on their own ends' frames). */
   undersideGrid?: 'baseplate' | 'track';
+  /** The stud grid the underside is on, in the switch's frame (its pose: studs at 4 + 8k in it); unset, the switch's own frame (or the track's, lined up with it). */
+  grid?: Pose;
   /**
    * The points as one part (both blades on a heel bar, one pivot: switch.scad's)
    * or two (each blade on its own pivot with its own spring, as the plate-style).
@@ -1077,6 +1079,11 @@ export function switchGeometry(s: Scad, plan: SwitchPlan, extraCuts: Man[] = [])
 
   // ---------- ties ----------
   const studRecess = () => t.studSocket(1 + p.studH + 0.2);
+  // (the underside's stud grid: the design's (p.grid) or the switch's own frame; a point on it at a stud's place, 4 + 8k)
+  const GR: Pose = !scadParity() && p.grid ? p.grid : [0, 0, 0];
+  const onStud = (q: Pt) => worldToPose(GR, q).every((v) => { const e = (((v - 4) % STUD) + STUD) % STUD; return Math.min(e, STUD - e) < 1e-6; });
+  // (a stud recess under a tie's stud only where it's on that grid: elsewhere the underside's own sockets and hollow)
+  const recessOk = (q: Pt) => !p.grid || scadParity() || onStud(q);
   const endKeepout = () => s.union(plan.endPoses.map((e) => atPose(cube([sleeperLen + 8, 8 + 2 * STUD + 20, 100], [-(sleeperLen / 2 + 4), -(8 + 2 * STUD), -50]), e)));
   const offs = [-1, 1].map((k) => k * (sleeperLen / 2 - 4)).concat(tc.betweenRailsRaw);
   const turnoutTies = () => {
@@ -1108,7 +1115,7 @@ export function switchGeometry(s: Scad, plan: SwitchPlan, extraCuts: Man[] = [])
       // (with ballast, kept within its top layer: the ends don't stick out over the step below)
       const tie = cube([xr - xl, sleeperW, PLATE_H], [xl, y - sleeperW / 2, 0]);
       out.push(s.difference(g.ballast ? s.intersection(tie, s.union(routes.map((rt) => sweep(sq([g.ballastTopW, PLATE_H + 2], [-g.ballastTopW / 2, -1]), rt)))) : tie,
-        [...(g.ballast ? [] : spots.map((q) => T(studRecess(), [q[0], q[1], -1]))), endKeepout()]));
+        [...(g.ballast ? [] : spots.filter(recessOk).map((q) => T(studRecess(), [q[0], q[1], -1]))), endKeepout()]));
       for (const q of spots) out.push(T(t.stud(tc.postD, tc.postH), [q[0], q[1], PLATE_H - 0.2]));
     }
     return s.union(out);
@@ -1123,7 +1130,7 @@ export function switchGeometry(s: Scad, plan: SwitchPlan, extraCuts: Man[] = [])
           if (plan.latOthers(i, railPoint(rt, st + dy, o)) > sleeperLen / 2 + 1 + TRACK_DEFAULTS.studD / 2 + 0.3) keep.push([o, dy]);
         out.push(s.difference(atPose(cube([sleeperLen, sleeperW, PLATE_H], [-sleeperLen / 2, -sleeperW / 2, 0]), ps), [
           ...plan.others(i).map((j) => sweep(sq([sleeperLen + 2, PLATE_H + 10], [-sleeperLen / 2 - 1, -1]), routes[j])),
-          ...(g.ballast ? [] : keep.map((k) => atPose(T(studRecess(), [k[0], k[1], -1]), ps))),
+          ...(g.ballast ? [] : keep.filter((k) => recessOk(poseToWorld(ps, k))).map((k) => atPose(T(studRecess(), [k[0], k[1], -1]), ps))),
         ]));
         for (const k of keep) out.push(atPose(T(t.stud(tc.postD, tc.postH), [k[0], k[1], PLATE_H - 0.2]), ps));
       }
@@ -1142,7 +1149,7 @@ export function switchGeometry(s: Scad, plan: SwitchPlan, extraCuts: Man[] = [])
     const out: Man[] = [];
     for (const ps of leadTiePoses()) {
       out.push(s.difference(atPose(cube([sleeperLen, sleeperW, PLATE_H], [-sleeperLen / 2, -sleeperW / 2, 0]), ps),
-        g.ballast ? [] : offs.flatMap((o) => [-4, 4].map((dy) => atPose(T(studRecess(), [o, dy, -1]), ps)))));
+        g.ballast ? [] : offs.flatMap((o) => [-4, 4].filter((dy) => recessOk(poseToWorld(ps, [o, dy]))).map((dy) => atPose(T(studRecess(), [o, dy, -1]), ps)))));
       for (const o of offs) for (const dy of [-4, 4]) out.push(atPose(T(t.stud(tc.postD, tc.postH), [o, dy, PLATE_H - 0.2]), ps));
     }
     return s.union(out);
@@ -1156,7 +1163,7 @@ export function switchGeometry(s: Scad, plan: SwitchPlan, extraCuts: Man[] = [])
   // (track alone: each end connector hollow underneath as a 1 x N plate (underside.ts), where it's on the stud grid
   // (the start always), or everywhere with the underside lined up with the track; the grid's sockets elsewhere)
   const connFrames = (): Pose[] => (g.ballast || scadParity() ? [] : [[0, 4, 0] as Pose, ...plan.endPoses.map((e): Pose => [e[0] + 4 * sind(e[2]), e[1] - 4 * cosd(e[2]), e[2] + 180])]
-    .filter((P) => p.undersideGrid === 'track' || [4, 12].every((lx) => [P[0] + lx * cosd(P[2]), P[1] + lx * sind(P[2])].every((v) => { const e = (((v - 4) % STUD) + STUD) % STUD; return Math.min(e, STUD - e) < 1e-6; }))));
+    .filter((P) => (p.undersideGrid === 'track' && !p.grid) || [4, 12].every((lx) => onStud(poseToWorld(P, [lx, 0])))));
   const inConn = (q: Pt) => connFrames().some((P) => { const l = localOf(P, q); return Math.abs(l[0]) <= sleeperLen / 2 && Math.abs(l[1]) <= STUD / 2; });
   const connUnder = () => {
     const fr = connFrames(), cs = connectorUnderside(s, t);
@@ -1257,8 +1264,19 @@ export function switchGeometry(s: Scad, plan: SwitchPlan, extraCuts: Man[] = [])
   // (switch_underside(): the base's stud grid, square to the start)
   const underside = () => {
     const xr = plan.baseXRange(plan.baseY0, plan.baseY1), spots: Spot[] = [];
-    for (let x = Math.floor(xr[0] / 8) * 8 - 4; x <= xr[1] + 4 + 1e-9; x += 8)
-      for (let y = 4; y <= plan.baseY1 + 1e-9; y += 8) if (!inConn([x, y])) spots.push([x, y, roundScad(x / 8), roundScad(y / 8)]);
+    if (GR[0] === 0 && GR[1] === 0 && GR[2] === 0) {
+      for (let x = Math.floor(xr[0] / 8) * 8 - 4; x <= xr[1] + 4 + 1e-9; x += 8)
+        for (let y = 4; y <= plan.baseY1 + 1e-9; y += 8) if (!inConn([x, y])) spots.push([x, y, roundScad(x / 8), roundScad(y / 8)]);
+    } else {
+      // (on the design's grid: its studs over the base's box)
+      const box = [[xr[0] - 8, -8], [xr[1] + 8, -8], [xr[0] - 8, plan.baseY1 + 8], [xr[1] + 8, plan.baseY1 + 8]].map((q) => worldToPose(GR, q as Pt));
+      const [i0, i1] = [Math.floor(Math.min(...box.map((q) => q[0])) / 8) - 1, Math.ceil(Math.max(...box.map((q) => q[0])) / 8) + 1];
+      const [j0, j1] = [Math.floor(Math.min(...box.map((q) => q[1])) / 8) - 1, Math.ceil(Math.max(...box.map((q) => q[1])) / 8) + 1];
+      for (let i = i0; i <= i1; i++) for (let j = j0; j <= j1; j++) {
+        const q = poseToWorld(GR, [4 + 8 * i, 4 + 8 * j]);
+        if (q[1] > -4 && q[1] < plan.baseY1 + 8 && !inConn(q)) spots.push([q[0], q[1], i, j]);
+      }
+    }
     // (the throw arms too: hollow with tubes underneath, like the rest)
     const onArm = (x: number, y: number, m: number) => !scadParity() && sets.some((v) => {
       if (v.nail) return false;
@@ -1278,7 +1296,7 @@ export function switchGeometry(s: Scad, plan: SwitchPlan, extraCuts: Man[] = [])
     const solid = (x: number, y: number) => onArm(x, y, 0) || (y < bedY0
       ? leads.some((e) => { const l = localOf(e, [x, y]); return Math.abs(l[1]) <= half && Math.abs(l[0]) <= sleeperLen / 2; })
       : ty.length === 0 || y <= ty[0] - sleeperW / 2 - (TRACK_DEFAULTS.studD + 1) / 2 || ty.some((tt) => Math.abs(y - tt) <= half));
-    return studSpots(s, t, spots, bed, [1, 0], [0, 1], p.studH + 0.21, 0, solid, p.studGrip);
+    return studSpots(s, t, spots, bed, [cosd(GR[2]), sind(GR[2])], [-sind(GR[2]), cosd(GR[2])], p.studH + 0.21, GR[2], solid, p.studGrip);
   };
 
   // ---------- the plate-style points (mechStyle 'plates') ----------
@@ -1589,9 +1607,13 @@ export function switchGeometry(s: Scad, plan: SwitchPlan, extraCuts: Man[] = [])
     // wherever a baseplate's stud isn't (the studs either side of the groove, 0.1 clear, as the tubes are))
     const ch = throwChannel(v), foot = ch.slice(fdbFloor() + 0.05).add(pointsPockets(v).slice(fdbFloor() + 0.05)).intersect(sq([bb.max[0] - bb.min[0], 40], [bb.min[0], v.throwY - 20]));
     const studR = TRACK_DEFAULTS.studD / 2 + 0.1, studs: CS[] = [];
-    for (let x = Math.floor(bb.min[0] / STUD) * STUD - 4; x <= bb.max[0] + 4 + 1e-9; x += STUD) for (const dy of [-12, -4, 4, 12]) studs.push(circle(studR, 24, [x, v.throwY + dy]));
-    out.push(foot.offset(1, 'Round', 2, 24).subtract(W.CrossSection.union(studs)));
-    return s.difference(s.extrude(W.CrossSection.union(out), bedTop), [pointsPockets(v), ch]);
+    // (the underside grid's studs about it)
+    const box = [[bb.min[0] - 8, v.throwY - 16], [bb.max[0] + 8, v.throwY - 16], [bb.min[0] - 8, v.throwY + 16], [bb.max[0] + 8, v.throwY + 16]].map((q) => worldToPose(GR, q as Pt));
+    for (let i = Math.floor(Math.min(...box.map((q) => q[0])) / 8) - 1; i <= Math.ceil(Math.max(...box.map((q) => q[0])) / 8); i++)
+      for (let j = Math.floor(Math.min(...box.map((q) => q[1])) / 8) - 1; j <= Math.ceil(Math.max(...box.map((q) => q[1])) / 8); j++) studs.push(circle(studR, 24, poseToWorld(GR, [4 + 8 * i, 4 + 8 * j])));
+    out.push(foot.offset(1, 'Round', 2, 24));
+    // (all of it clear of the underside grid's studs: on a frame off that grid the rests too)
+    return s.difference(s.extrude(W.CrossSection.union(out).subtract(W.CrossSection.union(studs)), bedTop), [pointsPockets(v), ch]);
   };
   /** (blades with a lip over the front) A blade's plate front, closed: where it is (y) and its two ends (x), from the plate's outline. */
   const lipFront = (v: SetV, b: number, plate2d = fdbPlate2d(v, b)) => {
@@ -2004,7 +2026,10 @@ export function switchGeometry(s: Scad, plan: SwitchPlan, extraCuts: Man[] = [])
     const xr = plan.baseXRange(plan.baseY0, plan.baseY1), socks: CS[] = [];
     if (!scadParity()) {
       // grip along the edges and every 4 studs, thin posts elsewhere (underside.ts), not a tube at every corner
-      const hg = hollowGrid(s, t, cav, (lx, ly) => [lx, ly], Math.floor(xr[0] / 8) - 1, Math.ceil(xr[1] / 8), -1, Math.ceil(plan.baseY1 / 8), p.studGrip);
+      // (on the design's grid: the indices over the base's box in it)
+      const box = [[xr[0] - 16, -16], [xr[1] + 16, -16], [xr[0] - 16, plan.baseY1 + 16], [xr[1] + 16, plan.baseY1 + 16]].map((q) => worldToPose(GR, q as Pt).map((v) => v / 8));
+      const hg = hollowGrid(s, t, cav, (lx, ly) => poseToWorld(GR, [lx, ly]), Math.floor(Math.min(...box.map((q) => q[0]))) - 1, Math.ceil(Math.max(...box.map((q) => q[0]))),
+        Math.floor(Math.min(...box.map((q) => q[1]))) - 1, Math.ceil(Math.max(...box.map((q) => q[1]))), p.studGrip);
       grips.push(...hg.grips);
       return { under: T(s.extrude(hg.cut, g.bottomCavity + 0.01), [0, 0, pieceBottomZ - 0.01]), tubes: hg.tubes ? T(s.extrude(hg.tubes, g.bottomCavity), [0, 0, pieceBottomZ]) : s.union([]) };
     }

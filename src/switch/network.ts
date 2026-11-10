@@ -359,7 +359,11 @@ export function networkSplits(s: Scad, routes: Route[], sol: Solution, p: BasePa
   }
   // (each set's geometry, as built for the throws' check if its plan's the same; and the over-centre springs' pins on the
   // bed, in the design: another set's blade plate swinging over one (a double slip's sets are that close) is cut clear)
-  const gms = preps.map((q) => (q.gm?.plan === q.st.plan ? q.gm.gm : switchGeometry(s, q.st.plan)));
+  // (the underside on the design's stud grid (the first route's start), but lined up with the track, track alone: each
+  // set's frame given it, so what the slider rests on keeps clear of the baseplate's studs)
+  const gw = p.generateBallast || p.undersideGrid !== 'track' ? routePose(routes[0], 0) : undefined;
+  const gms = preps.map((q) => (gw ? switchGeometry(s, { ...q.st.plan, p: { ...q.st.plan.p, grid: [...worldToPose(q.P, [gw[0], gw[1]]), gw[2] - q.P[2]] as Pose } })
+    : q.gm?.plan === q.st.plan ? q.gm.gm : switchGeometry(s, q.st.plan)));
   const ocPins = gms.map((gm, k) => { const o = gm.ocPinsAt(0); return o.at.map((pt) => ({ at: poseToWorld(preps[k].P, pt) as Pt, r: o.r, top: o.top })); });
   /** A blade (local: in its set's frame) clear of the other sets' spring pins, wherever it is as it turns from closed to open. */
   const clearOfPins = (n: number, m: Man, turn: { at: Pt; by: number } | undefined): Man => {

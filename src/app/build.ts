@@ -12,7 +12,7 @@ import { arena, flat, type Wasm } from '../geom/kernel';
 import { stlBytes } from '../geom/stl';
 import { splitSelfCrossing } from '../route/selfcross';
 import { FORCE_ANGLE, FORCE_LAT, solve, type SplitEdits } from '../route/solver';
-import { GRADE_APART, hasRoll, heightAt, poseToWorld, railPoint, routeLat, routeLength, routePose, routeRoll, routeSOf, type Pose } from '../route/route';
+import { GRADE_APART, hasRoll, heightAt, poseToWorld, railPoint, routeLat, routeLength, routePose, routeRoll, routeSOf, type Pose, worldToPose } from '../route/route';
 import { reversedRoute } from '../switch/reverse';
 import { BASE_DEFAULTS, switchGeometry } from '../switch/base';
 import { switchGlobals } from '../switch/context';
@@ -924,6 +924,8 @@ interface PieceBuild {
   labelOn: boolean;
   /** track only, its underside lined up with the track: no grip added along the cut edges on the baseplate's grid */
   alongTrack: boolean;
+  /** the design's stud grid (the first route's start): every part's underside on it (but lined up with the track) */
+  gridPose: Pose;
   /** track only with sleepers: the bed kept across each cut, so the parts there have floor to join with */
   sleepered: boolean;
   /** route ends that end in a buffer stop, by where they are */
@@ -1097,7 +1099,7 @@ function sectioned(b: PieceBuild, name: string, all: Route[], checks: CheckRail[
   const st = (q: [number, number]) => `${(q[0] / 8).toFixed(0)}, ${(q[1] / 8).toFixed(0)}`;
   for (const sm of plan.seams) b.bedWarnings.add(sm.kind === 'blocked' ? `a table's seam crosses points or a crossing at ${st(sm.at)} (studs): the track isn't cut there (move the table's edge)`
     : `a table's seam at ${st(sm.at)} (studs) isn't where two track pieces join: the piece there is printed in two (move the table's edge to a joint to buy it)`);
-  const gridPose = routePose(all[0], 0);
+  const gridPose = b.gridPose;
   b.prog.steps += plan.sections.length;
   let n = 0;
   /**
@@ -1307,7 +1309,7 @@ function tiled(b: PieceBuild, name: string, all: Route[], checks: CheckRail[], s
   // of it, built whole, and the kernel ran out of memory)
   if (!big && all.reduce((t, rt) => t + routeLength(rt), 0) < TILE_OVER) return false;
   const cs = tileBlocks(plan, bx, BLOCK).filter((R) => R[2] > bx[0] && R[0] < bx[2] && R[3] > bx[1] && R[1] < bx[3]);
-  const gridPose = routePose(all[0], 0);
+  const gridPose = b.gridPose;
   const splitBoxes = splits.map((sp) => [...sp.adds, ...sp.cuts, sp.stock].map((m) => m.boundingBox()));
   b.prog.steps += cs.length;
   let n = 0;
@@ -1381,8 +1383,10 @@ function buildSwitches(b: PieceBuild, switches: ReturnType<typeof planPieces>['s
     const tag = switches.length > 1 ? `switch${n + 1}` : 'switch';
     const cl = sw.plan.checkList;
     const frameCuts = b.grooveCuts.map((m) => R(T(m, [-sw.pose[0], -sw.pose[1], 0]), [0, 0, -sw.pose[2]]));
-    const gm = cached(`sw:${JSON.stringify({ routes: sw.routes, sets: sw.sets, params, cl, tw: b.grooveEdits })}`, () => {
-      const g = switchGeometry(scad, sw.plan, frameCuts);
+    // (its underside on the design's stud grid, in its own frame: but lined up with the track, track alone)
+    const grid: Pose | undefined = b.alongTrack ? undefined : [...worldToPose(sw.pose, [b.gridPose[0], b.gridPose[1]]), b.gridPose[2] - sw.pose[2]] as Pose;
+    const gm = cached(`sw:${JSON.stringify({ routes: sw.routes, sets: sw.sets, params, cl, tw: b.grooveEdits, grid })}`, () => {
+      const g = switchGeometry(scad, grid ? { ...sw.plan, p: { ...sw.plan.p, grid } } : sw.plan, frameCuts);
       return { bases: g.basePieces(), whole: g.base(), grips: g.grips, sets: sw.sets.map((_, k) => ({ thr: g.throwPart(k), thrPrint: g.throwPrint(k), thp: g.throwPostsPart(k), thpPrint: g.throwPostsPrint(k), pp: g.pointsParts(k), print: g.leverPrint(k), lever: g.leverPart(k), bracket: params.throwModule ? g.bracketPart(k) : undefined,
         spring: g.springPart(k), springPrint: g.springPrint(k), turns: g.pointsTurns(k) })), nail: sw.sets.map((_, k) => g.isNail(k)) };
     });
@@ -1591,7 +1595,7 @@ function buildOne(w: Wasm, design: Design, report: (what: string, frac: number) 
   const sleepered = o.sleepers === 'sleepers' && o.ballast === 'none';
   const labelOn = o.ballast !== 'none' && o.bottomStyle === 'float' && !!o.labelText?.trim();
   const b: PieceBuild = { w, scad, o, gaugeStuds: design.gaugeStuds, track, cut, prog, pieces: [], volume: 0, bedWarnings, overlay, job,
-    labelOn, alongTrack, sleepered, bufs, grooveCuts, grooveEdits: tw.groove, dropInner, tables: design.tables ?? [], boughtSw: bought };
+    labelOn, alongTrack, gridPose, sleepered, bufs, grooveCuts, grooveEdits: tw.groove, dropInner, tables: design.tables ?? [], boughtSw: bought };
   const copt = { ...CROSSING_DEFAULTS, gaugeStuds: design.gaugeStuds, grip: o.grip ?? 'edges', flangeway: o.flangeway, flangewayDepth: o.flangewayDepth, checkRailW: o.checkRailW, checkRailFlare: o.checkRailFlare,
     ballast: o.ballast, bottomStyle: o.bottomStyle, supports: o.endSupports !== false, curveStuds: o.curveStuds,
     studFit: o.studFit, antistudFit: o.antistudFit, sleepers: o.sleepers, undersideGrid: o.ballast === 'none' ? o.undersideGrid : undefined, sleeperWidthStuds: o.sleeperWidthStuds, sleeperGapStuds: o.sleeperGapStuds,
@@ -1664,23 +1668,23 @@ function buildOne(w: Wasm, design: Design, report: (what: string, frac: number) 
   }
   if (restSol) {
     prog.step('Building the track');
-    const restKey = JSON.stringify({ rest, copt, solverOpts, tw });
-    const whole = () => cached(`cx:${restKey}`, () => { const grips: [number, number][] = []; return { m: crossingPiece(scad, rest, copt, restSol, grips, { cuts: grooveCuts, innerEnds: dropInner(rest) }), grips }; });
+    const restKey = JSON.stringify({ rest, copt, solverOpts, tw, gridPose });
+    const whole = () => cached(`cx:${restKey}`, () => { const grips: [number, number][] = []; return { m: crossingPiece(scad, rest, copt, restSol, grips, { cuts: grooveCuts, innerEnds: dropInner(rest), gridPose }), grips }; });
     if (inLengths) sectioned(b, 'track', rest, restSol.checkRails, [], [], copt, restKey);
     else if (pc.rest.length > 1 && tiled(b, 'track', rest, restSol.checkRails, [], copt)) { /* built in tiles */ }
     else if (plan) throw PLANNED;
     // (cut at the baseplate edges: there, as addTrack cuts it, however long; the equal lengths below took no notice of them)
     else if (pc.rest.length > 1 || cut.bp || cut.fitsBed(whole().m)) {
       overlay.grips.push(...whole().grips);
-      addTrack(b, 'track', whole().m, rest, sizeOf(rest), sleepered ? (ls) => cached(`cxcut:${restKey}:${JSON.stringify(ls)}`, () => crossingPiece(scad, rest, copt, restSol, [], { cuts: grooveCuts, innerEnds: dropInner(rest), bedAt: ls })) : undefined);
+      addTrack(b, 'track', whole().m, rest, sizeOf(rest), sleepered ? (ls) => cached(`cxcut:${restKey}:${JSON.stringify(ls)}`, () => crossingPiece(scad, rest, copt, restSol, [], { cuts: grooveCuts, innerEnds: dropInner(rest), bedAt: ls, gridPose })) : undefined);
     } else {
       // A plain track longer than the bed: in equal lengths, joined like
       // LEGO track pieces (rail-end tongues, peg and clip), each fitting it.
       const rt = pc.rest[0], L = routeLength(rt);
       for (let n = 2; n <= 20; n++) {
-        // (cut on whole studs from its start, each length's underside and studs on the whole track's grid: lengths of
+        // (cut on whole studs from its start, each length's underside and studs on one grid, the design's: lengths of
         // L / n each were off it, their sockets and tubes beside the baseplate's studs)
-        const at = (k: number) => (k === n ? L : Math.round((L * k) / n / 8) * 8), gridPose = routePose(rt, 0);
+        const at = (k: number) => (k === n ? L : Math.round((L * k) / n / 8) * 8);
         const subs = Array.from({ length: n }, (_, k) => subRoute(rt, at(k), at(k + 1)));
         const bits = subs.map((sub) => cached(`cx1:${JSON.stringify({ sub, copt, gridPose })}`, () => crossingPiece(scad, [sub], copt, undefined, undefined, { gridPose })));
         if (bits.every(cut.fitsBed) || n === 20) { bits.forEach((m, k) => { const lm = labelled(b, m, [subs[k]], sizeOf([subs[k]]), `${k + 1}`); add(b, `track${k + 1}`, TRACK_COLOR, lm, lm); }); break; }

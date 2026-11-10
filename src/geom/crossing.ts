@@ -175,6 +175,8 @@ export function crossingPiece(s: Scad, routes: Route[], o: CrossingOptions = CRO
   // ends too, the piece one through there, not two connectors laid over each other inside it)
   const joined = new Set([...(x0.innerEnds ?? []), ...joinedEnds(routes)]);
   const x: CrossingExtras = { ...x0, innerEnds: joined };
+  // (ends that run on into another route's end, or a loop's own: its bed runs on through there, no rim across it)
+  const runOn = joinedEnds(routes);
   const t = new Track(s, o), c = t.c, g = c.railOffset;
   // (route ends that end in a buffer stop: no connector, the rails run into its posts, the bed and ballast to the end)
   const bufAt = (q: Pose) => !!o.buffers?.some((b) => Math.hypot(b[0] - q[0], b[1] - q[1]) < 0.5);
@@ -459,6 +461,8 @@ export function crossingPiece(s: Scad, routes: Route[], o: CrossingOptions = CRO
     let bed = !sleepered ? s.polygon([...side(-hw), ...side(hw).reverse()])
       : s.w.CrossSection.union(zones[i].map(([a, b]) => [a > 0 ? a + WALL : a, b < L ? b - WALL : b]).filter(([a, b]) => b > a + 1).map(([a, b]) => s.polygon([...side(-hw, a, b), ...side(hw, a, b).reverse()])));
     for (const [e, k] of [[routePose(rt, 0), 1], [routePose(rt, L), -1]] as const) {
+      // (a loop's start and end are one place: their half-planes, opposite ways, left no hollow at all)
+      if (runOn.has(`${i0}:${k > 0 ? 'start' : 'end'}`)) continue;
       const big = 4 * (L + c.sleeperLen);
       // the half-plane beyond the cut, in the end's frame (+y into the route at the start)
       const keep = s.w.CrossSection.square([2 * big, big]).translate([-big, cutAt(k)]).rotate(k > 0 ? 0 : 180).rotate(e[2]).translate([e[0], e[1]]);
@@ -501,7 +505,7 @@ export function crossingPiece(s: Scad, routes: Route[], o: CrossingOptions = CRO
     const tubeAt = (q: Vec2) => tubesT.push({ c: q, cs: s.w.CrossSection.circle(TUBE_OD / 2, 24).subtract(s.w.CrossSection.circle(TUBE_ID / 2, 24)).translate(q) });
     for (const [ri, rt] of routes.entries()) {
       const L = routeLength(rt), m = TUBE_OD / 2 + 0.2;
-      const lo = (bufEnd(ri, 'start') ? WALL : BED_END + WALL) + m, hi = L - (bufEnd(ri, 'end') ? WALL : BED_END + WALL) - m;
+      const lo = (runOn.has(`${ri}:start`) ? 0 : bufEnd(ri, 'start') ? WALL : BED_END + WALL) + m, hi = L - (runOn.has(`${ri}:end`) ? 0 : bufEnd(ri, 'end') ? WALL : BED_END + WALL) - m;
       for (let sAt = STUD; sAt <= L - STUD + 1e-9; sAt += STUD) {
         if (sAt < lo || sAt > hi) continue;
         if (sleepered && !zones[ri].some(([a, b]) => sAt >= (a > 0 ? a + WALL + m : a) && sAt <= (b < L ? b - WALL - m : b))) continue;
@@ -564,7 +568,7 @@ export function crossingPiece(s: Scad, routes: Route[], o: CrossingOptions = CRO
         // and clear of both ends' connectors (measured along each end's frame)
         const L = routeLength(rt);
         return [routePose(rt, 0), routePose(rt, L)].every((e, k) => {
-          if (Math.hypot(pt[0] - e[0], pt[1] - e[1]) > c.sleeperLen + 2 * STUD) return true;
+          if (runOn.has(`${ri}:${k ? 'end' : 'start'}`) || Math.hypot(pt[0] - e[0], pt[1] - e[1]) > c.sleeperLen + 2 * STUD) return true;
           const along = worldToPose(e, pt)[1] * (k ? -1 : 1);
           return along >= (bufEnd(ri, k ? 'end' : 'start') ? WALL : BED_END + WALL) + m;
         });

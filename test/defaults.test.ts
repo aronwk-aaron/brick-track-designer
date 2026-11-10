@@ -6,9 +6,9 @@ import { kernel } from '../src/geom/kernel';
 const APP = (globalThis as { APP_DEFAULTS?: PieceOptions }).APP_DEFAULTS!;
 
 describe('the app\'s defaults: like LEGO track', { timeout: 300000 }, () => {
-  it('sleepers, the underside along the track, long track in 16-stud pieces', () => {
+  it('sleepers, the underside on the baseplate grid, long track in 16-stud pieces', () => {
     expect(APP.sleepers).toBe('sleepers');
-    expect(APP.undersideGrid).toBe('track');
+    expect(APP.undersideGrid).toBe('baseplate');
     expect(APP.splitTrack).toBe('lengths');
     expect(APP.pieceLengthStuds).toBe(16);
     expect(APP.ballast).toBe('none');

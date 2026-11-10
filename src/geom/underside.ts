@@ -183,7 +183,14 @@ export function edgeGrip(s: Scad, t: Track, part: Man, gp: [number, number, numb
     const bore = W.CrossSection.circle((TUBE_ID + (t.o.antistudFit ?? ANTISTUD_FIT)) / 2, 24).translate(q);
     if (bore.intersect(nearMid(q)).area() > 0.05) bores.push(bore);
   }
-  const add = [rim.area() > 0.5 ? T(s.extrude(rim, cavH), [0, 0, bottom]) : undefined, rings.length ? T(s.extrude(W.CrossSection.union(rings), cavH), [0, 0, bottom]) : undefined].filter((m): m is Man => !!m);
+  // (the rim clear of the baseplate's studs: a cut's edge can run anywhere across the grid, a stud half under it)
+  const studs: CS[] = [];
+  for (let i = i0; i <= i1; i++) for (let j = j0; j <= j1; j++) {
+    const q = poseToWorld(gp, [4 + i * STUD, 4 + j * STUD]);
+    if (q[0] > bb.min[0] - 4 && q[0] < bb.max[0] + 4 && q[1] > bb.min[1] - 4 && q[1] < bb.max[1] + 4) studs.push(W.CrossSection.circle(t.o.studD / 2 + 0.1, 24).translate(q));
+  }
+  const rimClear = studs.length ? rim.subtract(W.CrossSection.union(studs)) : rim;
+  const add = [rimClear.area() > 0.5 ? T(s.extrude(rimClear, cavH), [0, 0, bottom]) : undefined, rings.length ? T(s.extrude(W.CrossSection.union(rings), cavH), [0, 0, bottom]) : undefined].filter((m): m is Man => !!m);
   const out = add.length ? s.union([part, ...add]) : part;
   return bores.length ? s.difference(out, [T(s.extrude(W.CrossSection.union(bores), cavH + 0.01), [0, 0, bottom - 0.01])]) : out;
 }
