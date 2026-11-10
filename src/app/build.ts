@@ -830,7 +830,7 @@ function solveTrackwork(w: Wasm, design: Design, o: PieceOptions, step: (what: s
     const dr = xr.to >= xr.from ? 1 : -1;
     for (const [a, b] of gaps) {
       const q = routePose(rt, Math.max(0, Math.min(routeLength(rt), (((a + b) / 2) - xr.from) * dr)));
-      bankWarnings.push(`dual gauge isn't built through points, beside track running alongside, or across track crossing at under ${DUAL_CROSS}°: the third rail of ${rt.id.split(':')[0]} is left out for ${((b - a) / 8).toFixed(0)} studs at ${(q[0] / 8).toFixed(0)}, ${(q[1] / 8).toFixed(0)} (studs), and narrow-gauge trains can't run through there`);
+      bankWarnings.push(`dual gauge isn't built through points (but where the branch leaves on the third rail's side, crossing it at ${DUAL_CROSS}° or more), beside track running alongside, or across track crossing at under ${DUAL_CROSS}°: the third rail of ${rt.id.split(':')[0]} is left out for ${((b - a) / 8).toFixed(0)} studs at ${(q[0] / 8).toFixed(0)}, ${(q[1] / 8).toFixed(0)} (studs), and narrow-gauge trains can't run through there`);
     }
   }
   // What the canvas draws over the track, in mm: flangeway cuts, check rails,

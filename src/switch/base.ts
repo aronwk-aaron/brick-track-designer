@@ -179,6 +179,17 @@ const sprungNeed = (pre: number) => ({ out: sprungHalf(pre), in: sprungHalf(0) }
 const sprungRoot = (root: number, f: { pivot: Pt; post: Pt }) => Math.min(root, Math.hypot(f.pivot[0] - f.post[0], f.pivot[1] - f.post[1]) - SPRUNG.holeD / 2 - 3);
 /** How much plate there must be round the pin's hole and round the post's (rigid blades) (mm). */
 const FDB_RIM = 2;
+/**
+ * A dual-gauge route's third rail at s along it, if it runs there (extrarails.ts: marked clear there, clearDual): how far
+ * to the right of the route's middle it is (mm). Undefined: no third rail there.
+ */
+export function thirdRailAt(rt: Route, s: number, gaugeStuds: number): number | undefined {
+  const x = rt.extra;
+  if (!x?.dual || !(x.dualStuds < gaugeStuds) || !x.clearDual) return undefined;
+  const dir = x.to >= x.from ? 1 : -1, d = x.from + dir * s;
+  if (!x.clearDual.some(([a, b]) => a <= d && d <= b)) return undefined;
+  return (x.dualShared === 'right' ? 1 : -1) * dir * (((gaugeStuds + 1) * STUD) / 2 - (x.dualStuds + 1) * STUD);
+}
 /** A true three-way's routes (straight, left, right) and half its one slider's travel; own: a lever to each blade instead (SetSpec's blade), each set one blade's. */
 interface ThreeWay { S: Route; L: Route; R: Route; half: number; own?: boolean }
 type SetLike = PointsSetValues & { three?: ThreeWay };
@@ -842,6 +853,9 @@ export function switchPlan(routes: Route[], specs: SetSpec[], p: BaseParams = BA
     const rails: [Route, number, number][] = [];
     routes.forEach((rt, i) => { if (!own.includes(rt)) for (const o of [-G, G]) rails.push([rt, o, isStock(i, o) ? 0 : railFixS(i, o) + p.pointClearance]); });
     for (const rt of foreign) for (const o of [-G, G]) rails.push([rt, o, 0]);
+    // (a dual-gauge route's third rail between the points' own rails (extrarails.ts: it runs on through points whose branch
+    // leaves on its side): the blades' plates are kept clear of it, as of any other rail there)
+    for (const rt of own) { const o = thirdRailAt(rt, v.sHeel, p.gaugeStuds); if (o !== undefined) rails.push([rt, o, 0]); }
     return rails;
   };
   // (other track across the blades: notched near the heels, as a double slip's; else blocked)
@@ -875,7 +889,7 @@ export function switchPlan(routes: Route[], specs: SetSpec[], p: BaseParams = BA
       // and an X yard's levers are tried in a few hundred places, each the same layout, and that took minutes)
       const memos = keepOut.length ? fdbMemo : fdbMemoNear, by = keepOut.length ? keepOut : foreign.length ? foreign : undefined;
       if (by) {
-        const memo = memos.get(by) ?? new Map<string, FdbBladeLayout[]>(), key = JSON.stringify([v.sToe, v.sHeel, v.throwY, v.fdbTravel, v.toeY, v.pointsEndY, v.fixed, v.notches, p, routes.map((r) => [r.start, r.segments])]);
+        const memo = memos.get(by) ?? new Map<string, FdbBladeLayout[]>(), key = JSON.stringify([v.sToe, v.sHeel, v.throwY, v.fdbTravel, v.toeY, v.pointsEndY, v.fixed, v.notches, p, routes.map((r) => [r.start, r.segments, r.extra?.dual ? [r.extra.dualShared, r.extra.dualStuds, r.extra.from, r.extra.to] : 0])]);
         if (!memo.has(key)) memo.set(key, fdbLayout(v, p, rails, keepOut));
         memos.set(by, memo);
         v.fdb = memo.get(key)!.map((f) => ({ ...f }));

@@ -13,7 +13,7 @@ import type { Pose, Pt, Route } from '../route/route';
 import { poseToWorld, railPoint, routeLat, routeLength, routePose, routeSOf, worldToPose } from '../route/route';
 import type { Solution } from '../route/solver';
 import { reversedRoute } from './reverse';
-import { type BaseParams, fdbFootprint, type SetOver, type SetSpec, switchGeometry, switchPlan, type SwitchPlan } from './base';
+import { type BaseParams, fdbFootprint, type SetOver, type SetSpec, switchGeometry, switchPlan, type SwitchPlan, thirdRailAt } from './base';
 import { bladeEdit, gridLever, sharedLead, subRoute, type ThrowEdit, toFrame, twoLevers } from './pieces';
 import { gridIn, sprungOnGrid } from './context';
 
@@ -211,9 +211,12 @@ export function networkSplits(s: Scad, routes: Route[], sol: Solution, p: BasePa
     const pg = sprungOnGrid(gw ? { ...p, grid: gridIn(P, gw) } : p);
     const choose = (keep: Pt[][]) => {
       let pp = pg.p, plan = switchPlan(rts, [used], pp, 1, foreign, keep), how: 'rigid' | 'tines' | 'angled' | undefined = pg.angled ? 'angled' : undefined;
-      if (fdb && !three && blockedOf(plan) && p.bladeStyle && p.bladeStyle !== 'simple') {
+      // (and where a dual-gauge track's third rail runs between the stock rails: a sprung plate cut back clear of it has no
+      // room for its spring's pocket and the lip over its front)
+      const third = rts.some((rt) => thirdRailAt(rt, plan.sets[0].sHeel, p.gaugeStuds) !== undefined);
+      if (fdb && !three && (blockedOf(plan) || third) && p.bladeStyle && p.bladeStyle !== 'simple') {
         const p1 = { ...pg.p, bladeStyle: 'simple' as const }, plan1 = switchPlan(rts, [used], p1, 1, foreign, keep);
-        if (blockedOf(plan1) === false) { pp = p1; plan = plan1; how = 'rigid'; }
+        if (blockedOf(plan1) === false || (third && !blockedOf(plan1))) { pp = p1; plan = plan1; how = 'rigid'; }
       }
       if (fdb && !three && !tandem && blockedOf(plan)) {
         const p2 = { ...pg.p, mechStyle: 'tines' as const }, plan2 = switchPlan(rts, [used], p2, 1, foreign, keep);

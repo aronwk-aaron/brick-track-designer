@@ -1,14 +1,15 @@
 // A dual-gauge track's third rail through a crossing (geom/extrarails.ts DUAL_CROSS, geom/crossing.ts): it runs on where
 // other track crosses it at 20 degrees or more, that track's flangeways cut through it and its own (the narrow gauge's
 // wheels' flanges, inside it on the shared rail's side) through that track's rails. Checked with a flange swept along
-// every rail of both tracks, both gauges. Through points it's still left out, and the build says so.
+// every rail of both tracks, both gauges. Through points it runs on where the branch leaves on its side and crosses it
+// steeply enough (an R40 branch); elsewhere through points it's still left out, and the build says so.
 import { describe, expect, it } from 'vitest';
 import { buildDesign, clearBuildCache } from '../src/app/build';
-import { type Design, TEMPLATES, toRoutes } from '../src/app/design';
+import { type Design, OPTION_DEFAULTS, TEMPLATES, toRoutes } from '../src/app/design';
 import { kernel } from '../src/geom/kernel';
 import { Scad } from '../src/geom/scad';
 import { sweepRoute } from '../src/geom/sweep';
-import { solid } from './assembled.shared';
+import { assembledProblems, solid } from './assembled.shared';
 
 const RAIL_TOP = 3.2 + 6.4, HEAD_HW = 1.25, G = 20, FL = { depth: 3, width: 1.5, off: 0.05 };
 /** the third rail of a 2-stud gauge in a 4-stud one, the right-hand rail shared: 4 left of the middle; the narrow gauge's flange runs on its right */
@@ -40,10 +41,48 @@ describe('a dual-gauge track through a crossing', { timeout: 300000 }, () => {
       }
       clearBuildCache();
     });
-  it('through a switch the third rail is left out, and the build says where and that narrow-gauge trains can\'t run there', async () => {
-    const b = buildDesign(await kernel(), { version: 1, gaugeStuds: 4, options: { legoTrack: 'print', printBedX: 500, printBedY: 500 }, routes: [
-      { name: 'Dual', x: 0, y: 0, heading: 0, dualGauge: true, segs: [{ kind: 'straight', studs: 32 }] }, { name: 'Branch', x: 0, y: 0, heading: 0, segs: [{ kind: 'curve', radius: 40, angle: 33.75 }] }] });
-    expect(b.info.warnings.join(' ')).toMatch(/dual gauge isn't built through points.*the third rail of Dual is left out for \d+ studs at .* narrow-gauge trains can't run through there/);
-    clearBuildCache();
+  // (through points: the third rail runs on where the branch leaves on its side (extrarails.ts clearStretches): it lies
+  // between the blades' plates, which are kept clear of it (base.ts railsNear), and the branch's inner rail crosses it
+  // past the blades at a fixed frog, flangeways cut both ways as at any crossing)
+  for (const [name, sg] of [['Dual gauge switch R40 left', -1], ['Dual gauge switch R40 right', 1]] as [string, number][]) for (const blade of ['simple', 'sprung'] as const)
+    it(`${name}, ${blade === 'simple' ? 'rigid' : 'sprung'} blades: the third rail runs through the points, a flange passes along every rail of both gauges, and it goes together`, async () => {
+      const w = await kernel(), s = new Scad(w), t = TEMPLATES[name], d: Design = { ...t, options: { ...t.options, bladeStyle: blade, printBedX: 500, printBedY: 500 } };
+      clearBuildCache();
+      const b = buildDesign(w, structuredClone(d)), routes = toRoutes(d);
+      // (sprung blades asked for: rigid ones there, and said: a sprung plate cut back clear of the third rail has no room for its spring)
+      expect(b.info.warnings.filter((q) => !(blade === 'sprung' && /blades are rigid/.test(q)))).toEqual([]);
+      if (blade === 'sprung') expect(b.info.warnings.join(' ')).toMatch(/blades are rigid/);
+      expect(b.info.switches).toBe(1);
+      const track = w.Manifold.union(b.pieces.filter((q) => !/points|throw|lever/.test(q.name)).map((q) => solid(w, q.positions)!));
+      const L = (r: number) => routes[r].segments.reduce((a, sg2) => a + (sg2.kind === 'straight' ? sg2.length : (Math.abs(sg2.angle) * Math.PI * sg2.radius) / 180), 0);
+      const band = (r: number, x: number, sd: number, s0 = 4) => sweepRoute(s, s.square([FL.width - FL.off, FL.depth + 2]).translate([sd > 0 ? x + HEAD_HW + FL.off : x - HEAD_HW - FL.width, RAIL_TOP - FL.depth]), routes[r], s0, L(r) - 4);
+      // (the third rail there from the toe to the far end)
+      const rail = sweepRoute(s, s.square([1, 1]).translate([sg * 4 - 0.5, RAIL_TOP - 1.5]), routes[0], 8, L(0) - 8);
+      expect(rail.intersect(track).volume()).toBeGreaterThan(rail.volume() * 0.9);
+      // (the narrow gauge's flange inside the third rail, all the way: clear of the track, and of the blades wherever they are)
+      const narrow = band(0, sg * 4, -sg);
+      expect(narrow.intersect(track).volume(), 'the narrow gauge inside its third rail').toBeLessThan(0.02);
+      for (const q of b.pieces.filter((p2) => /points-[ab]/.test(p2.name))) {
+        const m = solid(w, q.positions)!, tn = q.turn!, sw = tn.swing ?? tn.by;
+        for (const f of [-1, 0, 1]) {
+          const at = m.translate([-tn.at[0], -tn.at[1], 0]).rotate([0, 0, sw * f]).translate([tn.at[0], tn.at[1], 0]);
+          expect(narrow.intersect(at).volume(), `${q.name} turned ${f}, in the narrow gauge's flange's way`).toBeLessThan(0.02);
+          // (and the blade clear of the third rail itself, over its swing)
+          if (f * Math.sign(tn.by || 1) >= 0 || tn.by === 0) expect(at.intersect(rail).volume(), `${q.name} turned ${f}, on the third rail`).toBeLessThan(0.02);
+        }
+      }
+      // (past the blades, the fixed track: both gauges on the straight, the standard on the branch, over the frog at the third rail)
+      for (const [what, v] of [['the straight, left rail', band(0, -G, 1, 110)], ['the straight, right rail', band(0, G, -1, 110)], ['the branch, left rail', band(1, -G, 1, 110)], ['the branch, right rail', band(1, G, -1, 110)]] as [string, ReturnType<typeof band>][])
+        expect(v.intersect(track).volume(), what).toBeLessThan(0.02);
+      expect(assembledProblems(w, b.pieces, { ...OPTION_DEFAULTS, ...d.options }).join('; ')).toBe('');
+      clearBuildCache();
+    });
+  it('through points whose branch leaves on the shared rail\'s side, or too shallow (R104), the third rail is left out, and the build says where', async () => {
+    for (const branch of [{ kind: 'curve' as const, radius: 40, angle: -33.75 }, { kind: 'curve' as const, radius: 104, angle: 22.5 }]) {
+      const b = buildDesign(await kernel(), { version: 1, gaugeStuds: 4, options: { legoTrack: 'print', printBedX: 500, printBedY: 500 }, routes: [
+        { name: 'Dual', x: 0, y: 0, heading: 0, dualGauge: true, segs: [{ kind: 'straight', studs: 40 }] }, { name: 'Branch', x: 0, y: 0, heading: 0, segs: [branch] }] });
+      expect(b.info.warnings.join(' ')).toMatch(/dual gauge isn't built through points.*the third rail of Dual is left out for \d+ studs at .* narrow-gauge trains can't run through there/);
+      clearBuildCache();
+    }
   });
 });

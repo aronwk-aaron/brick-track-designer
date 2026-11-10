@@ -63,6 +63,26 @@ export function clearStretches(routes: Route[], i: number, sleeperLen: number, s
     }
     flush();
   });
+  // (a third rail runs on through points too, where the branch leaves this route on the third rail's side: the branch's
+  // inner rail crosses the third rail past the blades, a fixed frog there as any crossing's, if they cross at DUAL_CROSS or
+  // more (an R40 branch: 22 degrees; R104's 14 is too shallow). On the shared rail's side the third rail would lie under
+  // the blades: left out there, as before)
+  const xr = rt.extra;
+  if (crossings && xr?.dual) routes.forEach((r2, j) => {
+    if (j === i || !r2.segments.length) return;
+    const G = (sleeperLen - 24) / 2, side = (xr.dualShared === 'right' ? -1 : 1) * (xr.to >= xr.from ? 1 : -1), reach = G + Math.abs(G - (xr.dualStuds + 1) * STUD);
+    const L2 = routeLength(r2), ends = [routePose(r2, 0), routePose(r2, L2)];
+    const e = ends.findIndex((q) => { const sq = routeSOf(rt, [q[0], q[1]]), pq = routePose(rt, Math.max(0, Math.min(L, sq))), dh = (((q[2] - pq[2]) % 180) + 180) % 180; return Math.hypot(q[0] - pq[0], q[1] - pq[1]) < 0.5 && Math.min(dh, 180 - dh) < 1; });
+    if (e < 0) return;
+    // (out from where it leaves: on the third rail's side all the way, and steep enough where its far rail crosses the third rail)
+    let steep = false;
+    for (let t = 2; t <= L2; t += 2) {
+      const q = routePose(r2, e === 0 ? t : L2 - t), lat = routeLat(rt, [q[0], q[1]]);
+      if (lat * side < -0.5) return;
+      if (Math.abs(lat) >= reach) { const pq = routePose(rt, Math.max(0, Math.min(L, routeSOf(rt, [q[0], q[1]])))), dh = (((q[2] - pq[2]) % 180) + 180) % 180; steep = Math.min(dh, 180 - dh) >= DUAL_CROSS; break; }
+    }
+    if (steep) for (let k = 0; k <= n; k++) if (nearAt(k, j)) crossed.add(`${j}:${k}`);
+  });
   let a = -1;
   for (let k = 0; k <= n; k++) {
     const sk = Math.min(Math.max((L * k) / n, 0.5), L - 0.5);
