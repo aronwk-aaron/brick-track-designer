@@ -6,12 +6,12 @@ import { type Pt, type Route, hostedEnds, railOffsetOf, railPoint, routeLength, 
 
 export type Kind =
   | 'switch' | 'curved switch' | 'wye' | 'three-way' | 'next-track switch' | 'crossing' | 'curved crossing' | 'slip'
-  | 'crossover' | 'buffer' | 'layout' | 'feature' | 'monorail' | 'test print';
-export const KINDS: Kind[] = ['switch', 'curved switch', 'wye', 'three-way', 'next-track switch', 'crossing', 'curved crossing', 'slip', 'crossover', 'buffer', 'layout', 'feature', 'monorail', 'test print'];
+  | 'crossover' | 'buffer' | 'straight' | 'curve' | 'layout' | 'feature' | 'monorail' | 'test print';
+export const KINDS: Kind[] = ['switch', 'curved switch', 'wye', 'three-way', 'next-track switch', 'crossing', 'curved crossing', 'slip', 'crossover', 'buffer', 'straight', 'curve', 'layout', 'feature', 'monorail', 'test print'];
 /** What each kind is called, in plain words (the filter chips, the card's second line, the words a search finds). */
 export const KIND_LABEL: Record<Kind, string> = {
   switch: 'Switch', 'curved switch': 'Curved switch', wye: 'Wye', 'three-way': 'Three-way', 'next-track switch': 'Switch to the next track',
-  crossing: 'Crossing', 'curved crossing': 'Curved crossing', slip: 'Slip', crossover: 'Crossover', buffer: 'Buffer stop',
+  crossing: 'Crossing', 'curved crossing': 'Curved crossing', slip: 'Slip', crossover: 'Crossover', buffer: 'Buffer stop', straight: 'Straight', curve: 'Curve',
   layout: 'Layout', feature: 'Feature', monorail: 'Monorail', 'test print': 'Test print',
 };
 export type Gauge = 'standard' | 'narrow' | 'dual' | 'mixed' | 'none';
@@ -45,7 +45,7 @@ export const KIND_OVERRIDES: Record<string, Kind> = {
 };
 
 /** The reference trackwork group's name: its templates are listed by kind, not in one pile. */
-export const REFERENCE_GROUP = 'Reference trackwork';
+export const REFERENCE_GROUP = 'TrixBrix trackwork';
 
 /** A template's kind: from its name (first rule that fits), else its group. */
 export function kindOf(name: string, group: string, mono = false): Kind {
@@ -53,6 +53,9 @@ export function kindOf(name: string, group: string, mono = false): Kind {
   if (mono || /monorail/i.test(group)) return 'monorail';
   if (KIND_OVERRIDES[name]) return KIND_OVERRIDES[name];
   const n = name.toLowerCase();
+  // (plain track: named for what it is, first)
+  if (/^(narrow-gauge |dual gauge )?straight\b/.test(n)) return 'straight';
+  if (/^(narrow-gauge |dual gauge )?curve\b/.test(n)) return 'curve';
   if (/slip/.test(n)) return 'slip';
   if (/crossover/.test(n)) return 'crossover';
   if (/curved switch/.test(n)) return 'curved switch';
@@ -120,12 +123,12 @@ function sectionOf(group: string, kind: Kind, gauge: Gauge): { section: string; 
   if (gauge === 'dual' || gauge === 'mixed') return { section: 'Dual and mixed gauge', parent };
   const by: Partial<Record<Kind, string>> = {
     switch: 'Switches', 'curved switch': 'Curved switches', wye: 'Wyes', 'three-way': 'Three-ways', 'next-track switch': 'Switches to the next track',
-    crossing: 'Crossings', 'curved crossing': 'Curved and pass-through crossings', slip: 'Slips and crossovers', crossover: 'Slips and crossovers', buffer: 'Buffers',
+    crossing: 'Crossings', 'curved crossing': 'Curved and pass-through crossings', slip: 'Slips and crossovers', crossover: 'Slips and crossovers', buffer: 'Buffers', straight: 'Plain track', curve: 'Plain track',
   };
   return { section: by[kind] ?? 'Other parts', parent };
 }
 /** The order the reference trackwork's sections are shown in. */
-export const REFERENCE_SECTIONS = ['Switches', 'Curved switches', 'Wyes', 'Three-ways', 'Switches to the next track', 'Crossings', 'Curved and pass-through crossings', 'Slips and crossovers', 'Buffers', 'Narrow gauge', 'Dual and mixed gauge', 'Other parts'];
+export const REFERENCE_SECTIONS = ['Switches', 'Curved switches', 'Wyes', 'Three-ways', 'Switches to the next track', 'Crossings', 'Curved and pass-through crossings', 'Slips and crossovers', 'Buffers', 'Plain track', 'Narrow gauge', 'Dual and mixed gauge', 'Other parts'];
 
 /** The facts about every template. */
 export function buildCatalog(templates: Record<string, Design> = TEMPLATES, groups: [string, string[]][] = TEMPLATE_GROUPS): TemplateInfo[] {

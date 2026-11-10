@@ -2,7 +2,7 @@
 import { describe } from 'vitest';
 import { templatesBuild } from './templates.shared';
 
-describe('templates: reference slips', { timeout: 900000 }, () => templatesBuild(['Reference trackwork'], [
+describe('templates: reference slips', { timeout: 900000 }, () => templatesBuild(['TrixBrix trackwork'], [
   'Double slip R40 45°',
   'Single slip R40 45°',
   'Double crossover R40',

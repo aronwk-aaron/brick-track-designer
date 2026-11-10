@@ -2,7 +2,7 @@
 import { describe } from 'vitest';
 import { templatesBuild } from './templates.shared';
 
-describe('templates: reference switches2', { timeout: 900000 }, () => templatesBuild(['Reference trackwork'], [
+describe('templates: reference switches2', { timeout: 900000 }, () => templatesBuild(['TrixBrix trackwork'], [
   'Curved switch R40 45° left',
   'Curved switch R40 45° right',
   'Curved switch R40 90° left',

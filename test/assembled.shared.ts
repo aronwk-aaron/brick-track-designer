@@ -281,7 +281,12 @@ export interface Known { problems: RegExp[]; warning?: RegExp; why: string }
  * What doesn't go together yet. Each is a fault found by these checks and not yet put right (why: what it is). (A
  * design limit the build says itself has a warning: nail-switch.test.ts has one, a double slip's middle points as nail switches.)
  */
-export const KNOWN: Record<string, Known> = {};
+export const KNOWN: Record<string, Known> = {
+  'Straight, 1 stud': { problems: [/^track is in 3 pieces/],
+    why: 'a straight one stud long is shorter than its own end joints: the peg and the clip at its two ends take the bed between them, and the part comes out in three bodies (on sleepers and on a solid bed alike)' },
+  'Crossover, three tracks, R104': { problems: [/^track[1-4] is 3\d\d x 1\d\d at its tightest: over the 256 x 256 print bed/], warning: /sections don't fit the 256 x 256 print bed/,
+    why: 'its four sections are cut across only, each three tracks wide (320 to 368 mm): between the tracks the crossovers\' diamonds fill the gap from rail to rail, so no cut runs along it clear of a frog. The reference cuts its middle sections along the track centre lines (clear of every rail from 28 to 52 studs along, 20 mm from the three-ways\' frogs): a cut the cutter doesn\'t make yet' },
+};
 
 /**
  * 7. Edges shared by more than two triangles in the printed parts' files (assembly.shared.ts sharedEdges), a template's
@@ -292,7 +297,7 @@ export const KNOWN: Record<string, Known> = {};
  * on the slopes of ballast and of sleepers' ends, and up a cut's joints. None is known to be read back wrongly
  * (checks 1 to 5 pass with them); each kind is still to be looked into as the slider's groove's was.
  */
-export const EDGES: Record<string, number> = { 'X yard (6 tracks, single slips)': 472, 'Yard (R56)': 159, 'Double-track return loop (turning left)': 109, 'Double-track return loop (turning right)': 109, 'Double crossover (R56)': 97, 'Wye with a crossover': 74, 'Double slip (22.5°)': 35, 'Yard ladder (R40)': 33, 'Wye R40, 8-stud spacing': 32, 'T-junction core R56': 30, 'Pass-through crossing R72 (B) right': 26, 'Siding ending in a buffer stop': 16, 'Pass-through crossing R72 (B) left': 14, 'Crossing 45° left': 14, 'Double crossover R40': 9, 'Wye R40 left, R56 right': 8, 'Wye switch': 7, 'Wye R120 left, R104 right': 7, 'Dual gauge track': 7, 'Crossing 45° right': 7, 'Banked curve': 6, 'Pass-through crossing R120 right': 6, 'Wye R104 left, R120 right': 6, 'Narrow-gauge crossing 33.75° left': 6, 'Curved switch R56 90° left': 6, 'Wye R40': 6, 'Narrow-gauge crossing 90°': 5, 'Narrow-gauge switch R48 left': 5, 'Narrow-gauge wye R36': 5, 'Dual gauge crossing 45°': 5, 'Switch R72 left': 5,
+export const EDGES: Record<string, number> = { 'Curve R40, 5.62°': 15, 'X yard (6 tracks, single slips)': 472, 'Yard (R56)': 159, 'Double-track return loop (turning left)': 109, 'Double-track return loop (turning right)': 109, 'Double crossover (R56)': 97, 'Wye with a crossover': 74, 'Double slip (22.5°)': 35, 'Yard ladder (R40)': 33, 'Wye R40, 8-stud spacing': 32, 'T-junction core R56': 30, 'Pass-through crossing R72 (B) right': 26, 'Siding ending in a buffer stop': 16, 'Pass-through crossing R72 (B) left': 14, 'Crossing 45° left': 14, 'Double crossover R40': 9, 'Wye R40 left, R56 right': 8, 'Wye switch': 7, 'Wye R120 left, R104 right': 7, 'Dual gauge track': 7, 'Crossing 45° right': 7, 'Banked curve': 6, 'Pass-through crossing R120 right': 6, 'Wye R104 left, R120 right': 6, 'Narrow-gauge crossing 33.75° left': 6, 'Curved switch R56 90° left': 6, 'Wye R40': 6, 'Narrow-gauge crossing 90°': 5, 'Narrow-gauge switch R48 left': 5, 'Narrow-gauge wye R36': 5, 'Dual gauge crossing 45°': 5, 'Switch R72 left': 5,
   // (mixed gauges: as the same layout at one gauge has them, 92 at 4 studs, in the sleepered crossing's part; and the 45° crossings as the standard ones)
   'Narrow gauge beside and across standard track': 118, 'Narrow-gauge crossing of standard track 45° right': 21, 'Narrow-gauge crossing of standard track 45° left': 7 };
 /** (edges) A template not in EDGES may have this many: one or two come and go with a corner's last digit. */
@@ -331,4 +336,4 @@ export function assembledSuite(groups: string[], only?: string[], known: Record<
 }
 
 /** The reference trackwork's templates from one to another (by their place in the list): a file's worth. */
-export const reference = (from: number, to: number) => TEMPLATE_GROUPS.find(([g]) => g === 'Reference trackwork')![1].slice(from, to);
+export const reference = (from: number, to: number) => TEMPLATE_GROUPS.find(([g]) => g === 'TrixBrix trackwork')![1].slice(from, to);

@@ -2,4 +2,4 @@
 import { describe } from 'vitest';
 import { assembledSuite, reference } from './assembled.shared';
 
-describe('templates go together: reference trackwork, 1 to 26', { timeout: 1200000 }, () => assembledSuite(['Reference trackwork'], reference(0, 26)));
+describe('templates go together: reference trackwork, 1 to 26', { timeout: 1200000 }, () => assembledSuite(['TrixBrix trackwork'], reference(0, 26)));

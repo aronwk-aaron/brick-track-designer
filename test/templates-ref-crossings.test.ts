@@ -2,7 +2,7 @@
 import { describe } from 'vitest';
 import { templatesBuild } from './templates.shared';
 
-describe('templates: reference crossings', { timeout: 900000 }, () => templatesBuild(['Reference trackwork'], [
+describe('templates: reference crossings', { timeout: 900000 }, () => templatesBuild(['TrixBrix trackwork'], [
   'Crossing 90°, 8 studs',
   'Crossing 45° left',
   'Crossing 45° right',

@@ -26,7 +26,7 @@ describe('the template catalog', () => {
   });
 
   it('reads kinds from names', () => {
-    const k = (n: string, g = 'Reference trackwork') => kindOf(n, g);
+    const k = (n: string, g = 'TrixBrix trackwork') => kindOf(n, g);
     expect(k('Switch R104 left')).toBe('switch');
     expect(k('Left switch (LEGO)', 'Switches')).toBe('switch');
     expect(k('Narrow-gauge switch R36 left')).toBe('switch');
