@@ -923,20 +923,6 @@ function cutContext(w: Wasm, scad: Scad, o: PieceOptions, track: Track, routes: 
     || bankedRts.some((rt) => Math.abs(routeLat(rt, q)) < G0 + 6 && Math.abs(routeRoll(rt, routeSOf(rt, q))) > 1e-9);
   /** How every cut joins (Parts join with): Straight cuts + LEGO axles is axle joints with the rails cut flat. */
   const join = { t: track, joint: o.joint === 'flataxle' ? 'axle' as const : o.joint ?? 'lego', flatRails: o.joint === 'flataxle', noTongue };
-  // (a part's pieces that don't touch: for the fitter below, and a section's parts (sectioned))
-  const one = new WeakSet<Man>();
-  // (big: what counts as a piece, not a support (mm3); a section's parts' loose pieces from 600, a track end's supports being about 250)
-  const bodies = (m: Man, big = 1000): Man[] => {
-    if (one.has(m) && big === 1000) return [m];
-    const all2 = flat(w, m).decompose(), big2 = all2.filter((b2) => b2.volume() > big), small = all2.filter((b2) => b2.volume() <= big);
-    if (big2.length <= 1) { one.add(m); return [m]; }
-    // (each small bit with the piece nearest it: the one it supports)
-    const boxes = big2.map((b2) => b2.boundingBox()), groups: Man[][] = big2.map((b2) => [b2]);
-    const gap = (a: { min: number[]; max: number[] }, b: { min: number[]; max: number[] }) =>
-      Math.hypot(Math.max(0, a.min[0] - b.max[0], b.min[0] - a.max[0]), Math.max(0, a.min[1] - b.max[1], b.min[1] - a.max[1]));
-    for (const sm of small) { const sb = sm.boundingBox(); let best = 0; boxes.forEach((bx, k) => { if (gap(sb, bx) < gap(sb, boxes[best])) best = k; }); groups[best].push(sm); }
-    return groups.map((g2) => { const u = g2.length > 1 ? scad.union(g2) : g2[0]; one.add(u); return u; });
-  };
   /** Fits a part to the bed: its pieces that don't touch apart, and one too big split along stepped paths (pathsplit.ts), as often as it takes. */
   /** holes: the axle holes the cuts so far put in (cutter.ts), kept clear of: more are added as it goes. */
   const fitter = (pieceRoutes: Route[], holes: Keep[] = []) => {
@@ -946,6 +932,18 @@ function cutContext(w: Wasm, scad: Scad, o: PieceOptions, track: Track, routes: 
     // (each found in a flat copy of it, kernel.ts flat: a cut part's record of what it was made from made decompose()
     // take most of a gigabyte)
     // (the parts found to be one body already, and their copies: not taken apart again)
+    const one = new WeakSet<Man>();
+    const bodies = (m: Man): Man[] => {
+      if (one.has(m)) return [m];
+      const all2 = flat(w, m).decompose(), big2 = all2.filter((b2) => b2.volume() > 1000), small = all2.filter((b2) => b2.volume() <= 1000);
+      if (big2.length <= 1) { one.add(m); return [m]; }
+      // (each small bit with the piece nearest it: the one it supports)
+      const boxes = big2.map((b2) => b2.boundingBox()), groups: Man[][] = big2.map((b2) => [b2]);
+      const gap = (a: { min: number[]; max: number[] }, b: { min: number[]; max: number[] }) =>
+        Math.hypot(Math.max(0, a.min[0] - b.max[0], b.min[0] - a.max[0]), Math.max(0, a.min[1] - b.max[1], b.min[1] - a.max[1]));
+      for (const sm of small) { const sb = sm.boundingBox(); let best = 0; boxes.forEach((bx, k) => { if (gap(sb, bx) < gap(sb, boxes[best])) best = k; }); groups[best].push(sm); }
+      return groups.map((g2) => { const u = g2.length > 1 ? scad.union(g2) : g2[0]; one.add(u); return u; });
+    };
     // (where the stepped cuts so far ran across each axis: the next part's cut lines up with them where it can)
     const cutAt: [number[], number[]] = [[], []];
     const fitAll = (m: Man, depth = 0): Man[] => {
@@ -1002,7 +1000,7 @@ function cutContext(w: Wasm, scad: Scad, o: PieceOptions, track: Track, routes: 
     return cells.filter((c2) => c2.numTri() > 0).flatMap((c2) => fit(c2));
   };
   // (pointsAvoid: the plate-style levers' keep-outs are added as each is placed (leverItem); crossings: the overlay's, no straight cut through them)
-  return { fitsBed, pointsAvoid, zones, noTongue, join, jointRoom, bandHalf, bp, crossings, fitter, bedCut, whole, bodies };
+  return { fitsBed, pointsAvoid, zones, noTongue, join, jointRoom, bandHalf, bp, crossings, fitter, bedCut, whole };
 }
 /** How cutting a part to fit goes: the bed, where no cut goes, how cuts join, and the cutters. */
 type CutContext = ReturnType<typeof cutContext>;
@@ -1383,8 +1381,7 @@ function sectioned(b: PieceBuild, name: string, all: Route[], checks: CheckRail[
         const bottom = body.boundingBox().min[2] + 0.02;
         parts2 = parts2.flatMap((m) => (fitsBed(m) ? [m] : step(() => cx.whole(m, step(() => cx.bedCut(flat(w, m), rts))).map((m2) => (b.alongTrack ? m2 : edgeGrip(scad, track, m2, gridPose, bottom))))));
       }
-      // (pieces of it that don't touch, each a part of its own: a file held two or three loose ones (past a three-way's frogs, the middle track and each branch's end))
-      const kept = parts2.filter((m) => m.numTri() > 0).flatMap((m) => cx.bodies(m, 600)), id = (k: number) => (kept.length > 1 ? `${si + 1}-${k + 1}` : `${si + 1}`);
+      const kept = parts2.filter((m) => m.numTri() > 0), id = (k: number) => (kept.length > 1 ? `${si + 1}-${k + 1}` : `${si + 1}`);
       return { ms: kept.map((m, k) => arena(w, () => ({ ...bake(b, labelled(b, m, rts, kept.length > 1 ? undefined : sizeOf(rts), id(k))), ...(b.labelOn && { id: id(k) }) }), () => [])), grips };
     }, () => []), { ms: [], grips: [] }); } catch (err) {
       if (kernelBroke(err)) throw err;
