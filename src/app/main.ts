@@ -10,6 +10,9 @@ import { TABLE_COLORS, type Table, tableAt } from './tables';
 import { zip } from '../geom/zip';
 import { layoutParts } from './layoutparts';
 import { PALETTE, placePart } from './palette';
+import { BuildRunner, type WorkerPort } from './buildrun';
+import { History } from './history';
+import { fileBase as fileBaseOf, partsDownload, printedKinds, stlDownload } from './exports';
 import { type OptChoice, optionForm, type OptCtx, type OptField } from './settings';
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
@@ -18,8 +21,8 @@ const STORE = 'btd-design';
 
 // ---------- the document ----------
 let design: Design = load() ?? { version: 1, gaugeStuds: 4, routes: [] };
-// Undo history: designs as JSON, the current one last.
-const history: string[] = [JSON.stringify(design)], future: string[] = [];
+// Undo history: designs as JSON, the current one last (history.ts).
+const history = new History(JSON.stringify(design));
 
 function load(): Design | undefined {
   try { const s = localStorage.getItem(STORE); return s ? upgradeDesign(JSON.parse(s) as Design) : undefined; } catch { return undefined; }
@@ -415,10 +418,14 @@ function render() {
 // (one build at a time; a build still going when a newer one is asked for is
 // given a second to finish, then the worker is replaced, so a slow build of
 // a big layout never holds up the next change)
-const newWorker = () => { const w2 = new Worker(new URL('./worker.ts', import.meta.url), { type: 'module' }); w2.onmessage = onBuilt; return w2; };
-let worker: Worker;
-let fatalRetry = -1;
-let seq = 0, seqPlanOnly = false, started = 0, pieces: Piece[] = [], timer: number | undefined, restartCheck: number | undefined;
+// (which build's messages count, the worker replaced when it's stuck or its kernel's broken: buildrun.ts)
+const runner = new BuildRunner({
+  spawn: () => new Worker(new URL('./worker.ts', import.meta.url), { type: 'module' }) as unknown as WorkerPort,
+  message: (d) => onBuilt(d),
+  // (said, and the bar back at the start: the build's from nothing again, not stuck)
+  retrying: () => { $('build-what').textContent = 'The geometry kernel ran out of memory: building again from the start…'; $('build-bar').style.width = '0%'; },
+});
+let pieces: Piece[] = [], timer: number | undefined;
 /** The 3D view and the downloads: building (a newer design than the pieces), out of date (stopped, or the last build failed), or up to date. */
 let building = false, stale = false;
 /** The first build of the design as last let go of (a lever dropped is held where it was put on the plan till then). */
@@ -431,28 +438,22 @@ const want3d = () => autoBuild && show3d;
 /** force: the 3D view too, whatever Auto says (Build pressed, the view shown again). */
 function requestBuild(force = false) {
   clearTimeout(timer);
-  const id = ++seq, planOnly = !force && !want3d();
-  seqPlanOnly = planOnly;
+  const planOnly = !force && !want3d();
   // (nothing to build: no need to ask the worker, which would only say so)
   if (!hasTrack()) {
+    runner.skip();
     buildDone(); stale = false; pieces = []; showPieces(pieces); canvas.overlay = undefined; updateLegend(); canvas.draw(); renderTrackwork([]); refreshOptions();
     setStatus('Nothing to build yet: draw some track, or pick a template.');
     return;
   }
-  worker.postMessage({ id, design: structuredClone(design), planOnly });
+  runner.request(structuredClone(design), planOnly);
   // (just the plan's trackwork: quick, and nothing built, so no build's progress or Stop; said quietly in the status line)
   if (planOnly) planStarted(); else buildStarted();
-  clearTimeout(restartCheck);
-  restartCheck = window.setTimeout(() => {
-    if (started >= id || id !== seq) return;
-    worker.terminate(); worker = newWorker();
-    worker.postMessage({ id, design: structuredClone(design), planOnly });
-  }, 1000);
 }
 /** Stop the build that's going (a big layout taking its time): the 3D view stays as it was, out of date, till Rebuild. */
 function stopBuild() {
-  clearTimeout(timer); clearTimeout(restartCheck);
-  seq++; worker.terminate(); worker = newWorker();
+  clearTimeout(timer);
+  runner.stop();
   buildDone(); stale = true;
   setStatus('Build stopped: the 3D view and the downloads are of the design before your last changes.', '', true);
 }
@@ -483,8 +484,8 @@ function updateExports() {
 /** The design changed: save it and rebuild. record: an undo step (not while a drag or a draw is still going on). build: false for what doesn't change the parts (a route's name). */
 function changed(rerender = false, record = true, build = true) {
   const json = JSON.stringify(design);
-  if (record && json !== history[history.length - 1]) { history.push(json); future.length = 0; if (history.length > 200) history.shift(); }
-  if (record) settleFrom = seq + 1; // (the next build is of the design as let go of)
+  if (record) history.record(json);
+  if (record) settleFrom = runner.id + 1; // (the next build is of the design as let go of)
   save();
   updateLegend();
   if (rerender) render();
@@ -514,10 +515,8 @@ function planStarted() {
 }
 function buildDone() { clearInterval(buildTick); $('buildstatus').hidden = true; building = false; updateExports(); }
 const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
-function onBuilt(e: MessageEvent) {
-  const d = e.data;
-  started = Math.max(started, d.id);
-  if (d.id !== seq) return;          // an older build
+// eslint-disable-next-line @typescript-eslint/no-explicit-any -- (the worker's messages, as worker.ts posts them)
+function onBuilt(d: any) {
   // (the trackwork, ahead of the pieces: the plan and the Trackwork panel can be worked on while they build)
   if (d.early) { canvas.overlay = d.early; if (d.id >= settleFrom) canvas.settled(); updateLegend(); canvas.draw(); renderTrackwork(d.early.items ?? []); refreshOptions(); refreshRoutes(); return; }
   // (just the plan's trackwork, the 3D view not built: out of date till Build)
@@ -528,7 +527,6 @@ function onBuilt(e: MessageEvent) {
     return;
   }
   if (d.progress) { $('build-what').textContent = `${d.progress}…`; $('build-bar').style.width = `${Math.round((d.frac ?? 0) * 100)}%`; return; }
-  if (d.fatal && fatalRetry !== d.id) { fatalRetry = d.id; worker.terminate(); worker = newWorker(); worker.postMessage({ id: d.id, design: structuredClone(design), planOnly: seqPlanOnly }); return; }
   buildDone();
   // (the plan keeps the trackwork it was sent; the 3D view the last pieces that built, greyed)
   if (d.error) { stale = pieces.length > 0; setStatus('', `Can't build this: ${d.error}${stale ? ' (the 3D view shows the last design that built)' : ''}`); return; }
@@ -548,7 +546,6 @@ function onBuilt(e: MessageEvent) {
   setStatus(`${trackwork ? `${trackwork} · ` : ''}${plural(nPrint, 'part')} to print${nLego ? ` · ${plural(nLego, 'bought track piece')}` : ''} · ${i.size.map((v: number) => v.toFixed(0)).join(' × ')} mm · ${(i.volume / 1000).toFixed(1)} cm³ · built in ${(i.ms / 1000).toFixed(1)} s`,
     (i.warnings as string[]).join('; '), false, true);
 }
-worker = newWorker();
 $('build-stop').addEventListener('click', stopBuild);
 $('rebuild').addEventListener('click', () => { stale = false; setStatus(''); requestBuild(true); $('rebuild').textContent = 'Rebuild'; });
 // Auto: build the 3D view after every change, or only when Build is pressed
@@ -811,21 +808,15 @@ const download = (blob: Blob, name: string) => {
 // One piece: its STL; several (a switch and its moving parts): a zip of them. (Not the pieces that are LEGO's own: the LEGO parts list has those.)
 $('export-stl').addEventListener('click', () => {
   if (!pieces.length || building || stale) return;
-  const base = fileBase(), printed = pieces.filter((p) => !p.lego);
-  if (!printed.length) return;
-  if (printed.length === 1) download(new Blob([printed[0].stl as BlobPart], { type: 'model/stl' }), `${base}.stl`);
-  else download(new Blob([zip(printed.map((p) => ({ name: `${base}-${p.name}.stl`, data: p.stl }))) as BlobPart], { type: 'application/zip' }), `${base}.zip`);
+  const d = stlDownload(pieces, fileBase());
+  if (d) download(new Blob([d.data as BlobPart], { type: d.type }), d.name);
 });
 // The LEGO parts the design uses instead of printing (plain straights as LEGO track, their ballast as plates): a list,
 // and a BrickLink wanted list to upload, in a zip.
 $('export-lego').addEventListener('click', () => {
   if (!pieces.length || building || stale) return;
-  const parts = legoParts(pieces);
-  if (!parts.length) return;
-  const csv = ['Part,Name,Quantity,From', ...parts.map((p) => `${p.part},"${p.name}",${p.qty},${p.shop === 'bricktracks' ? 'BrickTracks' : 'LEGO (BrickLink)'}`)].join('\n');
-  const xml = `<INVENTORY>\n${parts.filter((p) => !p.shop).map((p) => `  <ITEM><ITEMTYPE>P</ITEMTYPE><ITEMID>${p.part}</ITEMID><COLOR>85</COLOR><MINQTY>${p.qty}</MINQTY></ITEM>`).join('\n')}\n</INVENTORY>\n`;
-  const enc = new TextEncoder();
-  download(new Blob([zip([{ name: `${fileBase()}-lego-parts.csv`, data: enc.encode(csv) }, { name: `${fileBase()}-bricklink-wanted-list.xml`, data: enc.encode(xml) }]) as BlobPart], { type: 'application/zip' }), `${fileBase()}-lego-parts.zip`);
+  const d = partsDownload(pieces, fileBase());
+  if (d) download(new Blob([d.data as BlobPart], { type: d.type }), d.name);
 });
 // The parts list, on screen: what to buy (as the download has it) and what to print, by kind.
 const partsDlg = $<HTMLDialogElement>('parts-dlg');
@@ -852,15 +843,14 @@ $('parts-open').addEventListener('click', () => {
     })];
   };
   // (printed parts by kind: their names without the numbers, as track, track-ballast, points-a)
-  const kinds = new Map<string, number>();
-  for (const p of printed) { const k = p.name.replace(/\d+(-\d+)*/g, '').replace(/--+/g, '-').replace(/^-|-$/g, '') || p.name; kinds.set(k, (kinds.get(k) ?? 0) + 1); }
+  const kinds = printedKinds(printed);
   const from = (p: LegoPart) => (p.shop === 'bricktracks' ? 'BrickTracks' : 'LEGO (BrickLink)');
   $('parts-body').innerHTML = [
     '<h3>To buy</h3>',
     buy.length ? `<table><tr><th class="n">Qty</th><th>Part</th><th>Name</th><th>From</th></tr>${[...buy].sort((a, b) => from(a).localeCompare(from(b)) || b.qty - a.qty).map((p) => `<tr><td class="n">${p.qty}</td><td>${esc(p.part)}</td><td>${esc(p.name)}</td><td>${from(p)}</td></tr>`).join('')}</table>`
       : '<p>Nothing: every piece is printed (Settings: Bought track).</p>',
     '<h3>To print</h3>',
-    printed.length ? `<table><tr><th class="n">Qty</th><th>Part</th></tr>${[...kinds].sort((a, b) => b[1] - a[1]).map(([k, n]) => `<tr><td class="n">${n}</td><td>${esc(k)}</td></tr>`).join('')}</table><p>${printed.length} part${printed.length === 1 ? '' : 's'} in all: the STL download has them.</p>`
+    printed.length ? `<table><tr><th class="n">Qty</th><th>Part</th></tr>${kinds.map(([k, n]) => `<tr><td class="n">${n}</td><td>${esc(k)}</td></tr>`).join('')}</table><p>${printed.length} part${printed.length === 1 ? '' : 's'} in all: the STL download has them.</p>`
       : '<p>Nothing: every piece is bought.</p>',
     ...byTable(),
   ].join('');
@@ -878,12 +868,12 @@ $('export-layout').addEventListener('click', () => {
   } catch (err) { setStatus(infoEl.textContent ?? '', `Couldn't make the layout parts: ${err instanceof Error ? err.message : err}`); }
 });
 // The design's name (asked on Save): what it saves and downloads under.
-const fileBase = () => (design.name || 'track-piece').replace(/[\\/:*?"<>|]+/g, '-').trim() || 'track-piece';
+const fileBase = () => fileBaseOf(design.name);
 $('save').addEventListener('click', () => {
   const name = prompt('Save the design as:', design.name || 'track-piece');
   if (name === null) return;
   // (the name isn't the track: kept, without a rebuild or an undo step)
-  design.name = name.trim() || undefined; history[history.length - 1] = JSON.stringify(design); save();
+  design.name = name.trim() || undefined; history.amend(JSON.stringify(design)); save();
   download(new Blob([JSON.stringify(design, null, 2)], { type: 'application/json' }), `${fileBase()}.btd.json`);
 });
 const loadInput = $<HTMLInputElement>('load-file');
@@ -981,11 +971,11 @@ const toggle3d = () => {
 };
 $('toggle-3d').addEventListener('click', toggle3d);
 const restore = (json: string) => { design = JSON.parse(json); replaced(); save(); render(); canvas.draw(); updateHistoryButtons(); requestBuild(); };
-const undo = () => { if (history.length > 1) { future.push(history.pop()!); restore(history[history.length - 1]); } };
-const redo = () => { if (future.length) { const j = future.pop()!; history.push(j); restore(j); } };
+const undo = () => { const j = history.undo(); if (j !== undefined) restore(j); };
+const redo = () => { const j = history.redo(); if (j !== undefined) restore(j); };
 function updateHistoryButtons() {
-  ($('undo') as HTMLButtonElement).disabled = history.length <= 1;
-  ($('redo') as HTMLButtonElement).disabled = !future.length;
+  ($('undo') as HTMLButtonElement).disabled = !history.canUndo;
+  ($('redo') as HTMLButtonElement).disabled = !history.canRedo;
 }
 $('undo').addEventListener('click', undo);
 $('redo').addEventListener('click', redo);
