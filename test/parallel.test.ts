@@ -113,6 +113,23 @@ describe('builds shared out', { timeout: 900000 }, () => {
     same(one, await buildShared(w, yard(), spawn, 3));
     clearBuildCache();
   });
+  it('a bought switch\'s ballast is a job too, and comes out as built in one worker', async () => {
+    const w = await kernel();
+    const d = (): Design => ({ version: 1, gaugeStuds: 4, options: { splitTrack: 'lengths', legoTrack: 'lego', ballast: 'ballast' }, routes: [
+      { name: 'Main', x: 0, y: 0, heading: 0, segs: [{ kind: 'straight', studs: 256 }] },
+      { name: 'Siding', x: 0, y: 64, heading: 0, segs: [{ kind: 'curve', radius: 40, angle: 22.5 }, { kind: 'curve', radius: 40, angle: -22.5 }, { kind: 'straight', studs: 32 }] },
+    ] });
+    clearBuildCache();
+    const one = buildDesign(w, d());
+    expect(one.pieces.some((p) => /^switch-bought/.test(p.name))).toBe(true);
+    expect(one.pieces.some((p) => /^switch-ballast/.test(p.name))).toBe(true);
+    clearBuildCache();
+    const jobs = buildJobs(w, d());
+    expect(jobs.filter((j) => /^bsw:/.test(j.key))).toHaveLength(1);
+    for (const j of jobs) jobDone(j.key, j.run());
+    same(one, buildDesign(w, d()));
+    clearBuildCache();
+  });
   it('which designs may have jobs to share out: 8 m of track, or 2 m cut into track pieces (the setting or its default)', () => {
     const line = (studs: number, options?: Design['options']): Design => ({ version: 1, gaugeStuds: 4, ...(options && { options }), routes: [{ name: 'A', x: 0, y: 0, heading: 0, segs: [{ kind: 'straight', studs }] }] });
     // (the tests' default: long track cut to fill the bed)

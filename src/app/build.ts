@@ -1609,7 +1609,8 @@ function boughtSwitches(b: PieceBuild, bought: BoughtSwitch[], copt: typeof CROS
   bought.forEach((bs, n) => {
     b.prog.step(`Building bought switch ${n + 1} of ${bought.length}`);
     const key = `bsw:${JSON.stringify({ legs: bs.legs, copt, gridPose, tol, onBallast, bed: [o.printBedX, o.printBedY], bb: o.boughtBallast, t: o.boughtBallast === 'together' ? b.tables : 0 })}`;
-    const got = cachedData(key, () => arena(w, () => {
+    // (a job, as a tile or a section is: its ballast is a few seconds' work, and a yard has several)
+    const got = b.job<{ view: Baked; bal: Baked[] } | undefined>(key, 3000, () => arena(w, () => {
       // (as bought: its underside's footprint as its sleepers and base, a plate thick, and each leg's rails on them)
       const asBought = { ...copt, ballast: 'none' as const, ballastOnly: undefined, sleepers: 'sleepers' as const, sleeperGapStuds: 2, sleeperWidthStuds: 2, supports: false, buffers: undefined };
       const fp = footprint(bs), under = made(new w.CrossSection(fp.underside, 'EvenOdd'));
@@ -1634,7 +1635,8 @@ function boughtSwitches(b: PieceBuild, bought: BoughtSwitch[], copt: typeof CROS
       const parts = o.boughtBallast === 'together' ? byTables(b, m).flatMap((p) => (b.cut.fitsBed(p) ? [p] : b.cut.whole(p, b.cut.bedCut(flat(w, p), bs.legs))))
         : b.cut.fitsBed(m) ? [m] : halvesOf(b, m, bs, fp.underside);
       return { view, bal: parts.filter((p) => p.numTri() > 0).map((p) => bake(b, p)) };
-    }, () => []));
+    }, () => []), undefined);
+    if (!got) return; // (planning: listed, not built)
     const tag = bought.length > 1 ? `switch${n + 1}` : 'switch';
     b.pieces.push({ name: `switch-bought-${bs.part.part.replace(/\s+/g, '')}-${n + 1}`, color: boughtColor([bs.part]), positions: got.view.positions.slice(), stl: got.view.stl.slice(), lego: [{ ...bs.part }] });
     got.bal.forEach((p, k) => {
@@ -1764,7 +1766,7 @@ function buildOne(w: Wasm, design: Design, report: (what: string, frac: number) 
         lidParts.forEach((m, k) => add(b, `points${lidParts.length > 1 ? k + 1 : ''}-lid`, TRACK_COLOR, m, m));
       } else addTrack(b, 'track', whole.body, routes, undefined, sleepered ? (ls) => cached(`netcut:${netKey}:${JSON.stringify(ls)}`, () => networkBody(scad, routes, sol, copt, net.splits, [], { cuts: grooveCuts, innerEnds: dropInner(routes), bedAt: ls }), true) : undefined);
     }
-    if (plan) throw PLANNED;
+    if (plan) { boughtSwitches(b, bought, copt, gridPose); throw PLANNED; }
     // (each points set's moving parts baked, by what they're made from: an edit bakes only the ones it changes)
     for (const sp of net.splits) {
       const ms = cachedData(`mov:${sp.key}`, () => sp.moving.map((m) => {
@@ -1802,7 +1804,7 @@ function buildOne(w: Wasm, design: Design, report: (what: string, frac: number) 
       }
     }
   }
-  if (plan) throw PLANNED;
+  if (plan) { boughtSwitches(b, bought, copt, gridPose); throw PLANNED; }
   buildSwitches(b, pc.switches, routes, params, layered);
   boughtSwitches(b, bought, copt, gridPose);
   const pieces = b.pieces;
