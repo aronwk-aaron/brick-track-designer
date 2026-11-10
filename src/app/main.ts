@@ -17,6 +17,7 @@ import { fileBase as fileBaseOf, partsDownload, plainKind, printedKinds, stlDown
 import { clamp, LIMITS, type Range, rangeText } from './limits';
 import { mirrorRoute } from './routeedits';
 import { TabStore, unsaved } from './session';
+import { addCircle, cleanPieces, cleanRadius, defaultPieces, pieceFit, piecesText, PIECES } from './circle';
 import { initTemplateBrowser } from './templatebrowser';
 import { type CopiedEdit, copyEdits, followTrackwork, isEdit, leftOver, mirrorAnchors, pasteEdits, reconcileTrackwork, renameAnchors } from './twfollow';
 import { type OptChoice, optionForm, type OptCtx, type OptField } from './settings';
@@ -343,9 +344,50 @@ function renderPalette() {
   else if (design.gaugeStuds !== 4) note('Bought only at a gauge of 4 studs: now they\'re printed.', true);
 }
 
+// ---------- a full circle ----------
+let circleR = 40, circleN = 16, circleNEdited = false;
+/** Full circle: a radius and a number of pieces; says what a piece is (its size, and whether it fits the bed) before it's added. */
+function renderCircle() {
+  const body = $('circle-body'), o = { ...OPTION_DEFAULTS, ...design.options } as PieceOptions;
+  body.replaceChildren();
+  const field = (label: string, v: number, min: number, max: number, step: number, tip: string, on: (n: number) => void) => {
+    const f = document.createElement('label'); f.className = 'field'; const sp = document.createElement('span'); sp.textContent = label; sp.title = tip;
+    const inp = document.createElement('input'); inp.type = 'number'; inp.min = String(min); inp.max = String(max); inp.step = String(step); inp.value = String(v); inp.title = tip;
+    inp.addEventListener('input', () => { const n = Number(inp.value); if (inp.value !== '' && Number.isFinite(n)) on(n); });
+    // (what was typed, put right in place: not drawn again, which would lose a click on Add)
+    inp.addEventListener('change', () => { inp.value = String(inp === rIn.current ? circleR : circleN); });
+    f.append(sp, inp); return { f, inp };
+  };
+  const rIn: { current?: HTMLInputElement } = {};
+  const info = document.createElement('div'); info.className = 'cnote';
+  const fit = document.createElement('div'); fit.className = 'cnote';
+  const show = () => {
+    const pf = pieceFit(circleR, circleN, { gaugeStuds: design.gaugeStuds, ballast: o.ballast, printBedX: o.printBedX, printBedY: o.printBedY });
+    info.textContent = piecesText(circleN);
+    fit.textContent = pf.text; fit.className = `cnote${pf.fit === 'fits' ? '' : ' warn'}`;
+  };
+  const r = field('Radius, studs', circleR, LIMITS.radius[0], LIMITS.radius[1], 8, `${rangeText(LIMITS.radius)} The usual radii are 24 + 8k.`, (n) => {
+    circleR = cleanRadius(n); if (!circleNEdited) circleN = defaultPieces(circleR);
+    n2.inp.value = String(circleN); show();
+  });
+  rIn.current = r.inp;
+  const n2 = field('Pieces', circleN, PIECES[0], PIECES[1], 1, `Equal pieces round it: a whole number, ${PIECES[0]} to ${PIECES[1]}. R40 and smaller: 16; R56 to R120: 32; larger: 64.`, (n) => { circleN = cleanPieces(n); circleNEdited = true; show(); });
+  const add = btn('Add circle', () => {
+    const i = addCircle(design, nextName(), circleR, circleN);
+    canvas.setSelection([i]); changed(true); canvas.fit();
+  }, 'Add the circle as one route, clear of the routes there are');
+  add.classList.add('add');
+  show();
+  body.append(r.f, n2.f, info, fit);
+  // (the build cuts a curve where its own pieces join only with pieces cut to length and bought track on: else by length from the start, which makes unequal pieces)
+  if (o.splitTrack !== 'lengths') { const w = document.createElement('div'); w.className = 'cnote warn'; w.textContent = 'Equal pieces need Long track cut into: Track pieces (Settings › Print bed and cutting into parts).'; body.append(w); }
+  else if ((o.legoTrack ?? 'lego') === 'print') { const w = document.createElement('div'); w.className = 'cnote warn'; w.textContent = 'Equal pieces need Bought track set to something other than Printed (Settings › Bought track): now the track is cut by length from the start.'; body.append(w); }
+  body.append(add);
+}
+
 function render() { keepingFocus(document.querySelector('aside')!, drawForms); }
 function drawForms() {
-  renderTables(); renderPalette();
+  renderTables(); renderPalette(); renderCircle();
   // (the rows go: no piece left picked out by one that's gone)
   canvas.highlightSeg = undefined;
   routesEl.replaceChildren();

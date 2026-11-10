@@ -92,6 +92,18 @@ try {
   await page.keyboard.press('Escape');
   check(!(await page.locator('#tpl-dlg').evaluate((d: HTMLDialogElement) => d.open)), 'Esc closes the browser');
 
+  at = 'a full circle';
+  // (a fresh design with the app's own settings: the template before set its own)
+  await page.evaluate(() => localStorage.clear());
+  await page.reload(); await page.waitForSelector('#track');
+  await page.click('#circle > summary');
+  await page.fill('#circle-body input >> nth=0', '24');
+  await page.fill('#circle-body input >> nth=1', '8');
+  check(/8 pieces · 45° each/.test(await page.locator('#circle-body').innerText()), 'Full circle says the angle of each piece');
+  await page.click('#circle-body button.add');
+  check(await routes() === 1, 'Add circle adds one route');
+  check(await says(/8 parts to print.*built in/), `the circle builds in its 8 pieces (${await status()})`);
+
   check(errors.length === 0, `no errors on the page${errors.length ? `: ${errors.join(' | ').slice(0, 600)}` : ''}`);
 } catch (err) {
   fails.push(`${at}: ${err instanceof Error ? err.message : err}`);

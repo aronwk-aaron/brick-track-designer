@@ -91,6 +91,8 @@
     aside .head h2 { font-size: 13px; margin: 0; flex: 1; }
     #routes { overflow: auto; padding: 8px; flex: 1 1 38%; min-height: 38%; }
     #trackwork { border-top: 1px solid var(--line); padding: 6px 10px 10px; max-height: 45%; min-height: 40px; overflow: auto; flex: 0 1 auto; }
+    #circle { border-top: 1px solid var(--line); padding: 6px 10px 10px; flex: 0 0 auto; } #circle > summary { cursor: pointer; font-weight: 600; padding: 4px 0; }
+    #circle .field { grid-template-columns: 1fr 84px; } #circle .cnote { color: var(--muted); font-size: 12px; margin: 4px 0; line-height: 1.35; } #circle .cnote.warn { color: var(--warn); } #circle button.add { margin-top: 6px; }
     #palette { border-top: 1px solid var(--line); padding: 6px 10px 10px; max-height: 45%; overflow: auto; flex: 0 1 auto; }
     #palette > summary { cursor: pointer; font-weight: 600; padding: 4px 0; }
     #palette .pgroup { display: flex; flex-wrap: wrap; gap: 4px; margin: 2px 0 6px; align-items: center; } #palette .pgroup b { width: 100%; font-size: 12px; display: flex; align-items: center; gap: 6px; }
@@ -462,6 +464,7 @@
   <aside>
     <div class="head"><h2 id="routes-title">Routes</h2><button id="add-route" type="button" title="Add a route by numbers">+ Route</button></div>
     <div id="routes"></div>
+    <details id="circle"><summary title="Lay a whole circle of curve in one step, in equal pieces">Full circle</summary><div id="circle-body"></div></details>
     <details id="palette"><summary title="Bought track pieces (LEGO&#39;s and BrickTracks&#39;), laid one at a time on the selected route&#39;s end">Parts palette</summary><div id="palette-body"></div></details>
     <details id="tables"><summary title="The tables (modules) the layout is laid across: the track is cut where they meet">Tables<span id="tables-count" class="count"></span></summary><div id="tables-body"></div></details>
     <details id="trackwork"><summary title="The check rails, flangeway cuts, points and levers the app works out, each to change by hand">Trackwork<span id="trackwork-count" class="count"></span></summary><div id="trackwork-body"></div></details>
@@ -533,6 +536,11 @@
           <li>Templates opens the template browser: a picture, a name and the size for each starting point, in sections. Type in the search box (every word must fit), or press a Kind, Gauge, Track or Radius button to narrow them; Clear undoes all of that.</li>
           <li>A switch or crossing that comes in two hands is one card with Left and Right buttons. The star on a card keeps it in a Starred section at the top; the last eight you used are under Recent.</li>
           <li>Press a card (or <kbd>Enter</kbd> on it; the arrow keys move between cards) to put it on the plan in place of the design. If the design has changes that aren't in a file, it asks first. <kbd>Esc</kbd> closes the browser.</li>
+        </ul>
+        <h3>A full circle</h3>
+        <ul>
+          <li>Full circle (under the routes) adds a closed ring of curve in equal pieces: pick its radius and how many pieces, and it says each piece's size and whether it fits the print bed. R40 and smaller default to 16 pieces, R56 to R120 to 32, bigger to 64. It's one route, and it builds as one part for each piece.</li>
+          <li>If a bigger piece needs it, Add raises Piece length (Settings › Print bed and cutting into parts) so the pieces stay whole. A piece that doesn't fit the bed is cut again: use more pieces.</li>
         </ul>
         <h3>Laying track</h3>
         <ul>
