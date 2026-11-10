@@ -10,6 +10,11 @@ const CACHE = 'btd-v1';
 self.addEventListener('install', () => self.skipWaiting());
 self.addEventListener('activate', (e) => e.waitUntil(self.clients.claim()));
 const keep = (req, res) => { if (res.ok) { const copy = res.clone(); caches.open(CACHE).then((c) => c.put(req, copy)); } return res; };
+// (what the page had fetched before this worker was there, on the first visit: fetched again and kept, where it isn't)
+self.addEventListener('message', (e) => {
+  const urls = Array.isArray(e.data?.keep) ? e.data.keep.filter((u) => typeof u === 'string' && u.startsWith(location.origin + '/')) : [];
+  e.waitUntil(caches.open(CACHE).then((c) => Promise.all(urls.map((u) => c.match(u).then((hit) => hit ?? fetch(u).then((res) => { if (res.ok) return c.put(u, res); })).catch(() => { /* (not kept: fetched when it's next asked for) */ })))));
+});
 self.addEventListener('fetch', (e) => {
   const req = e.request, url = new URL(req.url);
   if (req.method !== 'GET' || url.origin !== location.origin) return;

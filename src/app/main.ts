@@ -1,6 +1,7 @@
 // The editor: routes on the left (in studs and degrees), the plan view and the
 // 3D piece on the right, rebuilt in a worker as you edit.
 import * as THREE from 'three';
+import wasmUrl from 'manifold-3d/manifold.wasm?url';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { BANK_MAX, type BankRamps, type Design, type DRoute, type DSeg, OPTION_DEFAULTS, type PieceOptions, RAIL_DEFAULTS, TEMPLATE_GROUPS, TEMPLATES, type Trackwork, endOf, freeName, isMono, readDesign } from './design';
 import { TrackCanvas, type OverlayItem, dialogOpen, leverSide, leverSlides, typingIn } from './canvas';
@@ -1074,7 +1075,12 @@ addEventListener('resize', headH); headH();
 const narrow = () => matchMedia('(max-width: 760px)').matches;
 $('track').addEventListener('touchstart', () => { if (narrow()) { if (!document.body.classList.contains('nopanel')) $('toggle-panel').click(); if (!settingsEl.hidden) openSettings(false); } }, { passive: true });
 // Installable (add to home screen): the service worker keeps the app (and the geometry kernel) for offline use.
-if ('serviceWorker' in navigator && import.meta.env.PROD) addEventListener('load', () => { navigator.serviceWorker.register('sw.js').catch(() => { /* (no offline copy: fine) */ }); });
+if ('serviceWorker' in navigator && import.meta.env.PROD) addEventListener('load', () => {
+  navigator.serviceWorker.register('sw.js').catch(() => { /* (no offline copy: fine) */ });
+  // (the first visit: the page and its scripts were fetched before the service worker was there to keep them, so it's
+  // told what they were, and the geometry kernel, not fetched till the first build: offline works after one visit, not two)
+  void navigator.serviceWorker.ready.then((reg) => reg.active?.postMessage({ keep: [location.href, new URL(wasmUrl, location.href).href, ...performance.getEntriesByType('resource').map((e) => e.name)] })).catch(() => { /* fine */ });
+});
 
 // Help
 const helpEl = $('help');
