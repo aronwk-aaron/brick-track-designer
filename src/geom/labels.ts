@@ -8,6 +8,7 @@
 import type { Pt, Route } from '../route/route';
 import { railPoint, routeLength, routePose } from '../route/route';
 import type { CS, Man, Scad } from './scad';
+import { made } from './kernel';
 import { CAP_HEIGHT, GLYPHS, UNITS } from './labelfont';
 
 /** OpenSCAD's text(size = s) has an em of 1.389 s (track_lib.scad's text_em_per_size). */
@@ -35,7 +36,7 @@ export function textOutline(w: Scad['w'], txt: string, cap: number): CS | undefi
     for (const ct of contours) { const out: Pt[] = []; for (let i = 0; i < ct.length; i += 2) out.push([x + ct[i] * k0, ct[i + 1] * k0 - cap / 2]); paths.push(out); }
     x += adv * k0;
   }
-  return paths.length ? new w.CrossSection(paths, 'NonZero') : undefined;
+  return paths.length ? made(new w.CrossSection(paths, 'NonZero')) : undefined;
 }
 
 /** A line to engrave: its text, and how far right of the track's centre line it runs (mm; negative: left). */
@@ -117,7 +118,7 @@ export function labelCut(s: Scad, part: Man, routes: Route[], lines: LabelLine[]
           }
           return out;
         });
-        glyphs.push(new s.w.CrossSection(paths, 'NonZero'));
+        glyphs.push(made(new s.w.CrossSection(paths, 'NonZero')));
       }
     }
     return glyphs.length ? s.w.CrossSection.union(glyphs) : undefined;

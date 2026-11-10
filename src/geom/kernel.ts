@@ -22,21 +22,27 @@ export function kernel(wasmUrl?: string): Promise<Wasm> {
 // part way. arena() records every solid and cross-section made while f runs
 // and deletes them all afterwards, except the ones kept (a kept solid holds
 // on to what it was made from inside the kernel, so that's safe).
-type Handle = { delete(): void; isDeleted?(): boolean };
+export type Handle = { delete(): void; isDeleted?(): boolean };
 let recording: Set<Handle> | undefined;
-// (made outside any arena: never deleted by one, even if an arena's call
-// hands it back, as a union of one thing can)
-const outside = new WeakSet<object>();
+// (every solid noted once, by whoever was recording when it was made (no one: made outside, never deleted here): a
+// call that hands back a solid made before (a union of one thing can) doesn't make it the caller's to delete)
+const seen = new WeakSet<object>();
 const patched = new WeakSet<object>();
+// (the solids worked out: asked something that needs their triangles. Till then a solid is only the booleans to do,
+// and holds on to what they're done to)
+const worked = new WeakSet<object>();
+const WORKS_OUT = new Set(['numTri', 'numVert', 'numEdge', 'boundingBox', 'volume', 'surfaceArea', 'getMesh', 'isEmpty', 'status', 'genus', 'decompose', 'slice', 'project']);
+/** Has the solid been worked out (or is it a cross-section, which always is)? */
+export const isWorked = (h: unknown) => worked.has(h as object) || typeof (h as { numTri?: unknown }).numTri !== 'function';
 function patch(w: Wasm) {
   if (patched.has(w)) return;
   patched.add(w);
   const classes = [w.Manifold, w.CrossSection] as unknown as (Record<string, unknown> & { prototype: Record<string, unknown> })[];
-  const isHandle = (v: unknown) => classes.some((c) => v instanceof (c as unknown as new () => object));
+  const isOne = (v: unknown) => classes.some((c) => v instanceof (c as unknown as new () => object));
   const one = (x: unknown) => {
-    if (!isHandle(x)) return;
-    if (!recording) outside.add(x as object);
-    else if (!outside.has(x as object)) recording.add(x as Handle);
+    if (!isOne(x) || seen.has(x as object)) return;
+    seen.add(x as object);
+    recording?.add(x as Handle);
   };
   const note = (r: unknown) => { if (Array.isArray(r)) r.forEach(one); else one(r); };
   const wrap = (obj: Record<string, unknown>) => {
@@ -45,7 +51,8 @@ function patch(w: Wasm) {
       const d = Object.getOwnPropertyDescriptor(obj, k);
       if (!d || typeof d.value !== 'function' || !d.writable) continue;
       const f = d.value as (...a: unknown[]) => unknown;
-      obj[k] = function (this: unknown, ...a: unknown[]) { const r = f.apply(this, a); note(r); return r; };
+      const works = WORKS_OUT.has(k);
+      obj[k] = function (this: unknown, ...a: unknown[]) { const r = f.apply(this, a); if (works && this && typeof this === 'object') worked.add(this); note(r); return r; };
     }
   };
   // (the instances' methods are on the kernel's own class prototypes, not on
@@ -54,19 +61,65 @@ function patch(w: Wasm) {
   for (const c of classes) wrap(c);
   for (const pr of protos) wrap(pr);
 }
+/**
+ * The kept ones of what was made worked out now, before the rest is deleted. The kernel puts off each boolean till
+ * its result is asked about, and works out a chain of them in one go where nothing else holds its steps: with the
+ * steps deleted first it grouped them differently, and the same piece came out a few mm3 different. Worked out
+ * with everything still there, it's what it was.
+ */
+export function settle(made: Iterable<Handle>, kept: Set<unknown>) {
+  for (const h of made) if (kept.has(h) && !h.isDeleted?.()) (h as { numTri?: () => number }).numTri?.();
+}
 export function arena<T>(w: Wasm, f: () => T, keep: (r: T) => unknown[]): T {
   patch(w);
   const outer = recording, mine = new Set<Handle>();
   recording = mine;
   let r: T;
-  try { r = f(); } finally { recording = outer; }
+  try { r = f(); } catch (err) {
+    // (it failed part way: what it made is left to whoever's recording outside, which may yet look at it)
+    if (outer) for (const h of mine) outer.add(h);
+    throw err;
+  } finally { recording = outer; }
   const kept = new Set(keep(r));
+  settle(mine, kept);
   for (const h of mine) if (!kept.has(h) && !h.isDeleted?.()) h.delete();
-  // (kept ones belong to whoever's recording outside, if anyone)
-  if (outer) for (const h of kept) outer.add(h as Handle);
-  else for (const h of kept) outside.add(h as object);
+  // (the kept ones it made belong to whoever's recording outside, if anyone; a kept one made before stays whose it was)
+  if (outer) for (const h of mine) if (kept.has(h)) outer.add(h);
   return r;
 }
+
+/**
+ * f run with every solid and cross-section it makes noted in `into`, none deleted: for whoever owns them to delete
+ * when they're done with (the build's cache, by what each kept piece still uses: app/solidcache.ts).
+ */
+export function recordInto<T>(into: Set<Handle>, f: () => T): T {
+  const outer = recording;
+  recording = into;
+  try { return f(); } finally { recording = outer; }
+}
+
+/** A solid or cross-section made with new, which the kernel's patched methods don't see: noted as their results are. */
+export function made<T extends object>(x: T): T {
+  if (!seen.has(x)) { seen.add(x); recording?.add(x as unknown as Handle); }
+  return x;
+}
+
+/** Is it a kernel solid or cross-section (something to delete)? */
+export const isHandle = (x: unknown): x is Handle => !!x && typeof x === 'object' && typeof (x as Handle).delete === 'function' && typeof (x as Handle).isDeleted === 'function';
+
+/** The solids and cross-sections in a value: itself, or in its arrays, objects, maps and sets, however deep. */
+export function handlesIn(v: unknown, out = new Set<Handle>(), walked = new Set<object>()): Set<Handle> {
+  if (!v || typeof v !== 'object' || ArrayBuffer.isView(v) || v instanceof ArrayBuffer || walked.has(v)) return out;
+  walked.add(v);
+  if (isHandle(v)) { out.add(v); return out; }
+  if (Array.isArray(v) || v instanceof Set) for (const x of v) handlesIn(x, out, walked);
+  else if (v instanceof Map) for (const [k, x] of v) { handlesIn(k, out, walked); handlesIn(x, out, walked); }
+  else for (const x of Object.values(v)) handlesIn(x, out, walked);
+  return out;
+}
+
+/** Delete them (the ones not deleted already). */
+export function free(hs: Iterable<Handle>) { for (const h of hs) if (!h.isDeleted?.()) h.delete(); }
 
 /**
  * A solid as a fresh one from its own mesh, its triangles only: none of the
@@ -79,8 +132,5 @@ export function arena<T>(w: Wasm, f: () => T, keep: (r: T) => unknown[]): T {
 export function flat<M>(w: Wasm, m: M): M {
   const g = (m as unknown as { getMesh(): { numProp: number; vertProperties: Float32Array; triVerts: Uint32Array; mergeFromVert: Uint32Array; mergeToVert: Uint32Array } }).getMesh();
   const mesh = new w.Mesh({ numProp: g.numProp, vertProperties: g.vertProperties, triVerts: g.triVerts, mergeFromVert: g.mergeFromVert, mergeToVert: g.mergeToVert });
-  const r = new w.Manifold(mesh);
-  // (made with new, which arena() doesn't see: noted here as its methods' results are)
-  if (recording) recording.add(r as unknown as Handle); else outside.add(r);
-  return r as unknown as M;
+  return made(new w.Manifold(mesh)) as unknown as M;
 }

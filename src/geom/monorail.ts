@@ -8,7 +8,7 @@
 // curves), its ends' features placed in each end's frame: the track's centre
 // line on x = 0, the piece's body at +y from the end at y = 0 (as the .scad
 // files' end_cuts / end_adds); z = 0 is the bottom of the beam.
-import type { Wasm } from './kernel';
+import { made, type Wasm } from './kernel';
 import { M, R, T, type CS, type Man, type Scad, type Vec2 } from './scad';
 import { arcSegments, sweepRoute } from './sweep';
 import { sizeForCap, textOutline, textWidth } from './labels';
@@ -178,11 +178,11 @@ export class Mono {
       for (let k = 1; k <= n; k++) ss.push(s0 + ((s1 - s0) * k) / n);
     });
     const at = (s: number, o: number): Vec2 => frameAt(routePose(rt, s))([o, 0]);
-    const band = new w.CrossSection([[...ss.map((s) => at(s, hw)), ...[...ss].reverse().map((s) => at(s, -hw))]], 'NonZero');
+    const band = made(new w.CrossSection([[...ss.map((s) => at(s, hw)), ...[...ss].reverse().map((s) => at(s, -hw))]], 'NonZero'));
     const mine = gaps.filter((g) => g.s > a - 0.7 && g.s < b + 0.7);
     if (!mine.length) return band;
     const holes = mine.map((g) => { const f = frameAt(routePose(rt, g.s)); return this.gapPts(g.side).map(f); });
-    return band.subtract(new w.CrossSection(holes, 'NonZero'));
+    return band.subtract(made(new w.CrossSection(holes, 'NonZero')));
   }
 
   /**

@@ -4,7 +4,7 @@
 // Units: mm. Frame: a piece starts at y = 0 on x = 0 heading +y; z = 0 is
 // the bottom of the sleepers. A 2D cross-section has x = offset to the right
 // of the centre line and y = z.
-import type { Wasm } from './kernel';
+import { made, type Wasm } from './kernel';
 
 export const PLATE_H = 3.2;
 
@@ -26,7 +26,7 @@ const RAIL_PROFILE: Pt[] = [
 // A rail's cross-section at offset o right of the centre line, standing on
 // the sleepers (rail_2d).
 export function railSection(w: Wasm, o: number) {
-  return new w.CrossSection([RAIL_PROFILE.map(([x, y]) => [x + o, y + PLATE_H] as Pt)], 'NonZero');
+  return made(new w.CrossSection([RAIL_PROFILE.map(([x, y]) => [x + o, y + PLATE_H] as Pt)], 'NonZero'));
 }
 
 // A cross-section swept along a straight from y = 0 to y = length.

@@ -1,7 +1,7 @@
 // A thin OpenSCAD-like layer over manifold-3d, so the OpenSCAD track library
 // can be ported line by line and compared mesh for mesh: the same primitives
 // (with the same tessellation), the same rotation order and the same frames.
-import type { Wasm } from './kernel';
+import { made, type Wasm } from './kernel';
 
 export type Vec2 = [number, number];
 export type Vec3 = [number, number, number];
@@ -24,7 +24,7 @@ export class Scad {
   /** polygon(points) */
   polygon(points: Vec2[] | Vec2[][]): CS {
     const paths = (Array.isArray(points[0][0]) ? points : [points]) as Vec2[][];
-    return new this.w.CrossSection(paths, 'NonZero');
+    return made(new this.w.CrossSection(paths, 'NonZero'));
   }
 
   square(size: Vec2, center = false): CS {

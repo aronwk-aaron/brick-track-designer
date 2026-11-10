@@ -13,6 +13,7 @@ import { poseToWorld, routeLat, routeLength, routePose, routeSOf, segLength, seg
 import { reversedRoute } from '../switch/reverse';
 import { type PieceOptions } from './design';
 import type { Piece } from './build';
+import { SolidCache } from './solidcache';
 
 const dAng = (a: number, b: number) => Math.abs(((((a - b) % 360) + 540) % 360) - 180);
 const near = (p: Pose, q: Pose, tol = 0.05) => Math.hypot(p[0] - q[0], p[1] - q[1]) < tol;
@@ -187,15 +188,10 @@ export function planCuts(rt: Route, a: number, b: number, X: number, Y: number, 
   return fits(p, b) ? out : g;
 }
 
-const memo = new Map<string, unknown>();
-function cached<V>(key: string, f: () => V): V {
-  if (memo.has(key)) return memo.get(key) as V;
-  const v = f();
-  memo.set(key, v);
-  if (memo.size > 400) memo.delete(memo.keys().next().value!);
-  return v;
-}
-export function clearMonoCache() { memo.clear(); }
+// (its solids kept by what they're built from, each owned by its entry and deleted with it: solidcache.ts)
+const solids = new SolidCache(400);
+const cached = <V>(key: string, f: () => V): V => solids.get(key, f);
+export function clearMonoCache() { solids.clear(); }
 function meshPositions(wm: { triVerts: Uint32Array; vertProperties: Float32Array; numProp: number }, dz = 0) {
   const tv = wm.triVerts, vp = wm.vertProperties, np = wm.numProp, out = new Float32Array(tv.length * 3);
   for (let i = 0, o = 0; i < tv.length; i++, o += 3) { const b = tv[i] * np; out[o] = vp[b]; out[o + 1] = vp[b + 1]; out[o + 2] = vp[b + 2] + dz; }
