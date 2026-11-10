@@ -48,13 +48,17 @@ const BUDGET: Record<string, number> = {
   'Narrow-gauge switch R48 left': 5, 'Narrow-gauge switch R48 right': 6, 'Narrow-gauge switch R84 left': 6, 'Narrow-gauge switch R84 right': 5,
   'Narrow-gauge wye R36': 3, 'Narrow-gauge switch R36 left, lever on the branch side': 3,
   'Narrow-gauge switch R36 right, lever on the branch side': 3, 'Wye R104, 8-stud gap': 9, 'Dual gauge switch R40 left': 4,
-  'Dual gauge switch R40 right': 4, 'X yard (6 tracks, single slips)': 415, 'Crossover, three tracks, R104': 150, 'Oval (LEGO R40)': 20, 'Crossover (R40)': 33,
+  'Dual gauge switch R40 right': 4, 'X yard (6 tracks, single slips)': 415, 'Crossover, three tracks, R104': 150, 'Modular triple crossover R40': 150, 'Modular double crossover R40, levers inside': 70, 'Modular double crossover R40, levers outside': 70,
+  'Modular crossover R40 left': 45, 'Modular crossover R40 right': 45, 'Modular three-way R40 with parallel-track adapters': 25, 'Modular three-way R40 with continuous-curve adapters': 35,
+  'Modular wye R40 with parallel-track adapters': 20, 'Modular wye R40 with continuous-curve adapters': 20, 'Modular three-way R40': 15, 'Oval (LEGO R40)': 20, 'Crossover (R40)': 33,
   'Double crossover (R56)': 55, 'Switch R40 left': 9, 'Switch R40 right': 7, 'Switch R40 left, 28-stud straight': 4,
   'Switch R40 right, 28-stud straight': 3, 'Yard switch R40 left': 3, 'Yard switch R40 right': 3, 'Switch R56 left': 10, 'Switch R56 right': 8,
   'Switch R72 left': 10, 'Switch R72 right': 9, 'Switch R104 left': 10, 'Switch R104 right': 9, 'Switch R104 left, lever on the straight side': 9,
   'Switch R104 right, lever on the straight side': 9, 'Switch R120 left': 7, 'Switch R120 right': 7, 'Switch R148 left': 11, 'Switch R148 right': 12,
   'Switch R148 left, lever on the straight side': 11, 'Switch R148 right, lever on the straight side': 12,
 };
+/** (the sets: four times what each took on a laptop, till CI's own times are in) */
+Object.assign(BUDGET, { 'Switch, 2-stud gap, left, with its R51 curve': 12, 'Switch, 2-stud gap, right, with its R51 curve': 12, 'Three-way, 2-stud gap, with its R51 curves': 17, 'Compact corner R104, 90°, one curved switch, left': 42, 'Compact corner R104, 90°, one curved switch, right': 91, 'Compact corner R104, 90°, two curved switches, right': 91, 'Compact corner R104, 90°, three curved switches, left': 84, 'Compact corner R104, 90°, three curved switches, right': 130, 'Double turnout R56 and R40, left': 45, 'Single pass-through R40, left': 68, 'Single pass-through R40, right': 61, 'Yard R104, two tracks, right': 16, 'Three-way R104 to three parallel tracks': 22, 'Switch R120 left with its siding curves': 13, 'Switch R120 right with its siding curves': 15, 'Switch R120 left with its turnout curve': 26, 'Switch R120 right with its turnout curve': 22, 'Switch R148 left with its siding curves': 22, 'Switch R148 right with its siding curves': 20, 'Switch R148 left with its turnout curve': 31, 'Switch R148 right with its turnout curve': 31, 'Yard R40, two tracks, right': 12, 'Switch R56 right with its siding curve': 14, 'Switch R56 left with its turnout curve': 43, 'Crossover turnout R72, left': 49, 'Crossover turnout R72, right': 40, 'Double turnout R72 and R56, left': 58, 'Double crossover turnout R72, left': 66, 'Double crossover turnout R72, right': 65, 'Double crossover turnout R72 and R40, left': 82, 'Switch R72 left with its turnout curve': 12, 'Switch R72 right with its turnout curve': 13, 'Wye R40, 8-stud spacing, to two parallel tracks': 12, 'Dual gauge crossing 45° left over two tracks': 38, 'Dual gauge crossing 45° right over two tracks': 40, 'Dual gauge star crossing 45° over two tracks': 83, 'Narrow-gauge switch R48 left with its turnout curve': 17, 'Narrow-gauge switch R48 right with its turnout curve': 17, 'Wye R104 with its adapter curves': 12, 'Wye R104, 8-stud gap, with its curves': 16 });
 const BUDGET_SMALL = 10; // (a template with no time of its own yet)
 /** only: just these templates of the groups */
 export function templatesBuild(groups: string[], only?: string[]) {
@@ -80,7 +84,7 @@ export function templatesBuild(groups: string[], only?: string[]) {
       expect(ms2, `${name}: built again unchanged in ${(ms2 / 1000).toFixed(2)} s`).toBeLessThan(limit);
       expect(again.pieces.length).toBe(b.pieces.length);
       expect(b.pieces.length).toBeGreaterThan(0);
-      const extra = b.info.warnings.filter((w) => !/experimental/.test(w) && !/at an angle to the baseplate grid/.test(w) && !(/Double slip/.test(name) && /blades are rigid/.test(w)) && !(/Helix/.test(name) && /stands over other track/.test(w)) && !(/three tracks/.test(name) && /sections don't fit the \d+ x \d+ print bed/.test(w)) && !(/X yard/.test(name) && /lever of the points at 67, 209|sprung blade's front has no lip|blades are rigid/.test(w)));
+      const extra = b.info.warnings.filter((w) => !/experimental/.test(w) && !/at an angle to the baseplate grid/.test(w) && !(/Double slip/.test(name) && /blades are rigid/.test(w)) && !(/Helix/.test(name) && /stands over other track/.test(w)) && !(/three tracks|triple crossover/.test(name) && /sections don't fit the \d+ x \d+ print bed/.test(w)) && !(/X yard/.test(name) && /lever of the points at 67, 209|sprung blade's front has no lip|blades are rigid/.test(w)));
       // (said in full when it fails)
       expect(extra.join(' | ')).toBe('');
     } finally { Object.assign(OPTION_DEFAULTS, saved); clearBuildCache(); }
