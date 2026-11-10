@@ -1,5 +1,5 @@
 import { chromium } from 'playwright-core';
-import { copyFileSync } from 'node:fs';
+import { readFileSync, copyFileSync, writeFileSync } from 'node:fs';
 const D = '/tmp/claude-1000/-home-aronwk-Documents-openscad/15314535-b478-4283-bdb1-482d43fbab7c/scratchpad/templates-browser';
 const b = await chromium.launch({ executablePath: '/usr/bin/google-chrome-stable', args: ['--use-angle=swiftshader','--enable-unsafe-swiftshader'] });
 const errs: string[] = [];
@@ -13,22 +13,32 @@ const mk = async (w: number, h: number, design?: unknown) => {
 };
 const built = (p: any, re: RegExp) => p.waitForFunction((s: string) => new RegExp(s).test(document.getElementById('info')!.textContent!) && document.getElementById('buildstatus')!.hidden, re.source, { timeout: 240000 });
 const saved = (p: any) => p.evaluate(() => JSON.parse(localStorage.getItem('btd-design')!));
+const info = (p: any) => p.evaluate(() => document.getElementById('info')!.textContent + ' | ' + document.getElementById('error')!.textContent);
 
-// 1. two ready-made tables
-let p = await mk(1400, 900, { version: 1, gaugeStuds: 4, routes: [{ name: 'A', x: 0, y: 0, heading: 0, segs: [{ kind: 'straight', studs: 32 }] }] });
-await p.click('#tables > summary');
-for (let k = 0; k < 2; k++) { await p.locator('#tables-body select').first().selectOption('0'); await p.waitForTimeout(300); }
-console.log('tables', JSON.stringify((await saved(p)).tables?.map((t: any) => [t.x, t.y, t.w, t.h])));
-await p.keyboard.press('f'); await p.click('#fit'); await p.waitForTimeout(500);
-await p.screenshot({ path: D + '/fix-tables-desktop.png' });
-await p.close();
-
-// 2. Top view on Yard ladder
-p = await mk(1400, 900);
-await p.click('#templates-open'); await p.fill('#tpl-search', 'yard ladder'); await p.click('button[data-template="Yard ladder (R40)"]');
+// 3. ballast colours; fold a selected card; palette still lays on it
+let p = await mk(1400, 900, { version: 1, gaugeStuds: 4, options: { ballast: 'buddy' }, routes: [{ name: 'A', x: 0, y: 0, heading: 0, segs: [{ kind: 'straight', studs: 16 }, { kind: 'curve', radius: 40, angle: 22.5 }] }] });
 await built(p, /built in/);
-await p.click('#view-under'); await p.waitForTimeout(300); await p.click('#view-top'); await p.waitForTimeout(800);
-await p.screenshot({ path: D + '/fix-top-yard-desktop.png' });
+console.log('colours:', await p.locator('#legend3d-rows').innerText());
+await p.locator('#routes details.route >> nth=0 >> summary >> nth=0').click(); await p.waitForTimeout(300);
+console.log('open after select', await p.evaluate(() => document.querySelector('#routes details.route')!.hasAttribute('open')));
+await p.locator('#routes details.route >> nth=0 >> summary >> nth=0').click(); await p.waitForTimeout(300);
+console.log('open after 2nd click', await p.evaluate(() => document.querySelector('#routes details.route')!.hasAttribute('open')), 'selected', await p.evaluate(() => !!document.querySelector('#routes details.route.selected')));
+await p.click('#palette > summary');
+await p.locator('#palette-body button', { hasText: /^Straight$/ }).first().click(); await p.waitForTimeout(400);
+const d = await saved(p); console.log('routes', d.routes.length, 'segs of A', d.routes[0].segs.length);
+await p.screenshot({ path: D + '/fix-fold-palette-desktop.png' });
 await p.close();
+
+// 4. phone toolbar
+p = await mk(390, 844);
+const arrow = (q: any) => q.evaluate(() => [getComputedStyle(document.querySelector('header')!, '::after').content, getComputedStyle(document.querySelector('header')!, '::before').content, document.querySelector('header')!.className]);
+console.log('phone start', await arrow(p));
+await p.screenshot({ path: D + '/fix-toolbar-phone-start.png', clip: { x: 0, y: 0, width: 390, height: 70 } });
+await p.evaluate(() => { const h = document.querySelector('header')!; h.scrollLeft = h.scrollWidth; });
+await p.waitForTimeout(300);
+console.log('phone end', await arrow(p));
+await p.screenshot({ path: D + '/fix-toolbar-phone-end.png', clip: { x: 0, y: 0, width: 390, height: 70 } });
+await p.close();
+for (const w of [1040, 1200, 1360]) { p = await mk(w, 700); await p.screenshot({ path: D + '/fix-toolbar-' + w + '.png', clip: { x: 0, y: 0, width: w, height: 70 } }); await p.close(); }
 console.log('errors', errs);
 await b.close();

@@ -325,10 +325,12 @@
     #empty div { border-radius: 12px; padding: 18px 22px; }
     @media (max-width: 1560px) { header h1 { display: none; } }
     @media (max-width: 1240px) { body { grid-template-columns: 260px minmax(0, 1fr); } body.settings { grid-template-columns: 260px minmax(0, 1fr) 300px; } body.settings.nopanel { grid-template-columns: 0 minmax(0, 1fr) 300px; } }
-    /* (labels beside the toolbar's icons where the bar still fits on one row: all, then the main buttons', then Templates', then none and no title) */
-    @media (max-width: 1879px) { header .lbl { display: none; } #templates-open .lbl, #load .lbl, #save .lbl { display: inline; } }
-    @media (max-width: 1329px) { #load .lbl, #save .lbl { display: none; } }
-    @media (max-width: 1219px) { header .lbl, #templates-open .lbl { display: none; } header h1, #source-link { display: none; } header { gap: 4px; } header .sep { margin: 0 1px; } #radius { width: 108px; } #system { width: 100px; } }
+    /* (labels beside the toolbar's icons where the bar still fits on one row: all, then the main buttons', then Templates' only
+       with the title, source link and spacing given up, then none) */
+    @media (max-width: 1959px) { header .lbl { display: none; } #templates-open .lbl, #load .lbl, #save .lbl { display: inline; } }
+    @media (max-width: 1399px) { #load .lbl, #save .lbl { display: none; } header h1, #source-link { display: none; } header { gap: 4px; } header .sep { margin: 0 1px; } #radius { width: 108px; } #system { width: 100px; } }
+    @media (max-width: 1239px) { #templates-open .lbl { display: none; } }
+    @media (max-width: 1119px) { #about-open { display: none; } }
     /* ---- phones and small tablets: the plan and 3D view fill the screen; the routes and settings panels slide over them ---- */
     @media (max-width: 760px) {
       body, body.nopanel, body.settings, body.settings.nopanel { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr); }

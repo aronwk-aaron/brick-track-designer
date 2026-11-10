@@ -1857,9 +1857,11 @@ function drawTrackwork(list: TwItem[]) {
 // (a phone's toolbar scrolls sideways: arrows show at an edge with more behind it)
 {
   const bar = document.querySelector('header')!;
+  // (by where the first and last buttons are, not by the scroll width: the arrows themselves take room)
   const sync = () => {
-    bar.classList.toggle('more-right', bar.scrollLeft + bar.clientWidth < bar.scrollWidth - 4);
-    bar.classList.toggle('more-left', bar.scrollLeft > 4);
+    const r = bar.getBoundingClientRect(), shownKids = [...bar.children].filter((c) => (c as HTMLElement).offsetWidth > 0), first = shownKids[0]?.getBoundingClientRect(), last = shownKids.at(-1)?.getBoundingClientRect();
+    bar.classList.toggle('more-right', !!last && last.right > r.right + 2 && bar.scrollWidth > bar.clientWidth);
+    bar.classList.toggle('more-left', !!first && first.left < r.left - 2);
   };
   bar.addEventListener('scroll', sync, { passive: true });
   addEventListener('resize', sync);
