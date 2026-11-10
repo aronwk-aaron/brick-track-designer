@@ -26,7 +26,8 @@ describe('designs that can\'t be built', { timeout: 120000 }, () => {
     const d = { ...line, options: { legoTrack: 'print' as const }, tables: [{ x: -8, y: -8, w: 16, h: 24 }, { x: -8, y: 16, w: 16, h: 24 }] as never };
     expect(unbuildable(d)).toBeUndefined();
     const w = await kernel(), b = buildDesign(w, d);
-    expect(b.pieces.filter((p) => /^track/.test(p.name)).length).toBe(2);
+    // (one part: 32 studs with its ends is a little over the 256 mm bed, and goes on it corner to corner (it was cut in two for the bed before parts were judged turned))
+    expect(b.pieces.filter((p) => /^track/.test(p.name)).length).toBe(1);
   });
   it('more track than can be built', () => {
     expect(unbuildable(D([R('A', 0, 0, 0, [S(100000)])]))).toBe(`100000 studs of track is more than can be built (${MAX_TRACK_STUDS} at most): check the lengths typed in`);
