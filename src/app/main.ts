@@ -30,6 +30,38 @@ function load(): Design | undefined {
 }
 function save() { try { localStorage.setItem(STORE, JSON.stringify(design)); } catch { /* storage off: fine */ } }
 
+// ---------- the keyboard's focus, kept as a form is drawn again ----------
+// (the forms are drawn again whole when the design changes: the control with the focus was thrown away with the rest,
+// and the next key pressed was a shortcut on the plan: M mirrored the selection, Delete removed it)
+const FOCUSABLE = 'input, select, textarea, button, summary';
+/** What a control is, as near as its form says: its kind, its label (or its own text) and its tip. */
+const controlSig = (el: HTMLElement) => `${el.tagName}|${el.closest('label')?.querySelector('span')?.textContent ?? el.textContent ?? ''}|${el.title}`;
+/** Draw a form again without the focus falling out of it: the control that had it (the same one of its kind and label, counted from the top) has it again. */
+function keepingFocus(box: HTMLElement, draw: () => void) {
+  const a = document.activeElement as HTMLElement | null;
+  if (!a || !box.contains(a)) { draw(); return; }
+  const sig = controlSig(a), those = () => [...box.querySelectorAll<HTMLElement>(FOCUSABLE)].filter((el) => controlSig(el) === sig);
+  const nth = those().indexOf(a);
+  draw();
+  const el = those()[nth];
+  if (el && !(el as HTMLInputElement).disabled) el.focus({ preventScroll: true });
+}
+/** A number or a text being typed, not taken yet (Enter, or leaving the field): its form isn't drawn again under it (a build coming back did), but once it's taken. */
+let typing: HTMLElement | undefined;
+const drawWhenTyped = new Set<() => void>();
+const midEdit = (box: HTMLElement) => !!typing && typing.isConnected && box.contains(typing);
+{
+  const typed = (e: Event) => {
+    if (e.target !== typing) return;
+    typing = undefined;
+    if (drawWhenTyped.size) setTimeout(() => { const fs = [...drawWhenTyped]; drawWhenTyped.clear(); for (const f of fs) f(); });
+  };
+  addEventListener('input', (e) => { const t = e.target; if ((t instanceof HTMLInputElement && (t.type === 'number' || t.type === 'text')) || t instanceof HTMLTextAreaElement) typing = t; }, true);
+  addEventListener('change', typed, true); addEventListener('focusout', typed, true);
+}
+/** Draw a form again once the focus has moved on: a field's change is taken as Tab leaves it, and drawn again at once, the field Tab was going to was gone. */
+const soon = (f: () => void) => { setTimeout(f); };
+
 // ---------- the form ----------
 const num = (v: number, set: (n: number) => void, step = 1, label = '') => {
   const i = document.createElement('input');
@@ -143,7 +175,7 @@ function bankFields(sg: DSeg, mono: boolean): HTMLElement[] {
     if (!curve) return;
     const v = Math.min(Math.max(n, 0), BANK_MAX);
     if (v > 0) curve.bank = v; else { delete curve.bank; delete curve.bankRamps; }
-    render();
+    soon(render);
   }, 0.5, 'The track leans in by this many degrees, about the inner rail: the outer rail is higher (4-stud gauge: 3° = 2.1 mm). The underside stays flat. 0 = level. Range 0 to 10, default 0.');
   bank.min = '0'; bank.max = String(BANK_MAX); bank.disabled = !curve;
   const sel = document.createElement('select');
@@ -229,7 +261,7 @@ function renderTables() {
         const parts = ta.value.split(';').map((v) => v.trim()).filter(Boolean), pts = parts.map((v) => v.split(',').map((x) => Number(x.trim())));
         const wrong = parts.filter((_, k) => pts[k].length !== 2 || !pts[k].every(Number.isFinite));
         bad.textContent = wrong.length ? `Not x, y: ${wrong.slice(0, 3).join('; ')}. Kept the corners as they were.` : pts.length < 3 ? 'It needs 3 corners at least. Kept the corners as they were.' : '';
-        if (!bad.textContent) { t.pts = pts as [number, number][]; changed(true); }
+        if (!bad.textContent) { t.pts = pts as [number, number][]; changed(); soon(render); }
       });
       f.append(field('corners (x, y; …)', ta), bad);
     }
@@ -273,7 +305,8 @@ function renderPalette() {
   else if (design.gaugeStuds !== 4) note('Bought only at a gauge of 4 studs: now they\'re printed.', true);
 }
 
-function render() {
+function render() { keepingFocus(document.querySelector('aside')!, drawForms); }
+function drawForms() {
   renderTables(); renderPalette();
   // (the rows go: no piece left picked out by one that's gone)
   canvas.highlightSeg = undefined;
@@ -321,7 +354,7 @@ function render() {
       if (openCards.delete(cardId(r, i))) openCards.add(v);
       r.name = v;
       for (const e of Object.values(design.trackwork?.points ?? {})) if (e.drop) e.drop = e.drop.map((id) => (id === was ? v : id));
-      changed(true, true, false);
+      changed(false, true, false); soon(render);
     });
     place.append(field('Name', name),
       field('Start x, studs', num(r.x, (n) => { r.x = n; }, 1)),
@@ -340,14 +373,14 @@ function render() {
       hi.value = r.monoHeight === undefined ? '' : String(r.monoHeight); hi.placeholder = 'auto';
       hi.title = isMono(r) ? 'The beam\'s height off the baseplate in plates (3.2 mm). Empty: the supports\' height (Settings › Monorail), or on the baseplate. Raise it to pass over train track or another monorail (5 plates clear of a beam, more over track).'
         : 'Train track: its height off the baseplate at its start, in plates (3.2 mm), on risers (LEGO 2 x 8 bricks and plates, in the parts list). The pieces are printed level and laid on them. Empty: on the baseplate.';
-      hi.addEventListener('change', () => { const n = Math.round(Number(hi.value)); if (hi.value.trim() === '' || !Number.isFinite(n)) delete r.monoHeight; else r.monoHeight = Math.min(60, Math.max(0, n)); changed(true); });
+      hi.addEventListener('change', () => { const n = Math.round(Number(hi.value)); if (hi.value.trim() === '' || !Number.isFinite(n)) delete r.monoHeight; else r.monoHeight = Math.min(60, Math.max(0, n)); changed(); soon(render); });
       place.append(field(isMono(r) && r.monoHeightEnd !== undefined ? 'Start height, plates' : 'Height, plates', hi));
       // (a ramp: its height at its end; empty: level)
       const he = document.createElement('input'); he.type = 'number'; he.step = '1'; he.min = '0'; he.max = '60';
       he.value = r.monoHeightEnd === undefined ? '' : String(r.monoHeightEnd); he.placeholder = 'level';
       he.disabled = r.monoHeight === undefined;
       he.title = r.monoHeight === undefined ? 'Locked: set its Height first' : !isMono(r) ? 'Train track: its height at its end, in plates: an even grade from its start height to this. The standard is 2.5% (a plate a 16-stud straight; a whole turn of R40 rises 15.7 plates, R104 40.8). Empty: level.' : 'Its height at its end, in plates: it ramps from its start height to this, easing in and out (level at both ends). Empty: level. It may be as steep as LEGO\'s monorail ramps (21° at the steepest): those rise 5 bricks over each 32-stud piece.';
-      he.addEventListener('change', () => { const n = Math.round(Number(he.value)); if (he.value.trim() === '' || !Number.isFinite(n)) delete r.monoHeightEnd; else r.monoHeightEnd = Math.min(60, Math.max(0, n)); changed(true); });
+      he.addEventListener('change', () => { const n = Math.round(Number(he.value)); if (he.value.trim() === '' || !Number.isFinite(n)) delete r.monoHeightEnd; else r.monoHeightEnd = Math.min(60, Math.max(0, n)); changed(); soon(render); });
       place.append(field(isMono(r) ? 'End height, plates (a ramp)' : 'End height, plates (a grade)', he));
       // (train track on a grade: how steep, against the standard 2.5%)
       if (!isMono(r) && r.monoHeight !== undefined && r.monoHeightEnd !== undefined && r.monoHeightEnd !== r.monoHeight) {
@@ -1165,10 +1198,14 @@ let optSig = '';
 let branchSig = '';
 function refreshRoutes() {
   const sig = JSON.stringify((canvas.overlay?.items ?? []).filter((it) => it.kind === 'points' && !it.cand).map((it) => [it.key, it.routes]));
-  if (sig !== branchSig) { branchSig = sig; render(); }
+  if (sig === branchSig) return;
+  if (midEdit(document.querySelector('aside')!)) { drawWhenTyped.add(refreshRoutes); return; }
+  branchSig = sig; render();
 }
 function refreshOptions() {
-  if (JSON.stringify([design.options, design.gaugeStuds, switchesNow(), noMono()]) !== optSig) renderOptions();
+  if (JSON.stringify([design.options, design.gaugeStuds, switchesNow(), noMono()]) === optSig) return;
+  if (midEdit($('settings'))) { drawWhenTyped.add(refreshOptions); return; }
+  renderOptions();
 }
 /** Switches in the design, as last built (undefined: not built yet). */
 function switchesNow() {
@@ -1222,7 +1259,8 @@ function showChoices(f: OptField, cur: string, def: string, c: OptCtx, off: stri
   modal.style.width = `min(${n * 340 + 48}px, calc(100vw - 32px))`;
   modal.classList.add('open');
 }
-function renderOptions() {
+function renderOptions() { keepingFocus($('settings'), drawOptions); }
+function drawOptions() {
   const body = $('options-body'), scroll = $('options').scrollTop;
   const o = { ...OPTION_DEFAULTS, ...design.options } as PieceOptions;
   const c: OptCtx = { o, ballast: o.ballast !== 'none', fdb: o.mechStyle !== 'tines', switches: switchesNow() };
@@ -1296,7 +1334,7 @@ function renderOptions() {
         sel.addEventListener('change', () => { setOpt(f, f.numeric ? Number(sel.value) : sel.value); changed(true); renderOptions(); });
       } else if (f.text) {
         const ti = document.createElement('input'); ti.type = 'text'; ti.value = String(cur ?? ''); ti.disabled = !!off; ti.maxLength = 24;
-        ti.addEventListener('change', () => { setOpt(f, ti.value.trim().toUpperCase()); changed(true); renderOptions(); });
+        ti.addEventListener('change', () => { setOpt(f, ti.value.trim().toUpperCase()); changed(); soon(() => { render(); renderOptions(); }); });
         const lab = field(f.label, ti); lab.classList.add('stack'); wrap.append(lab); pics(lab);
         if (f.help) note(f.help);
       } else if (f.check) {
@@ -1306,7 +1344,7 @@ function renderOptions() {
         note([f.help, `Default: ${def === false ? 'off' : 'on'}.`].filter(Boolean).join(' '));
       } else {
         const lim = (v: number) => Math.min(f.max ?? Infinity, Math.max(f.min ?? -Infinity, v));
-        const i = num(Number(cur), (v) => { const x = lim(v); setOpt(f, x); i.value = String(x); if (f.rerender) renderOptions(); }, f.step ?? 1, f.help ?? '');
+        const i = num(Number(cur), (v) => { const x = lim(v); setOpt(f, x); i.value = String(x); if (f.rerender) soon(renderOptions); }, f.step ?? 1, f.help ?? '');
         i.disabled = !!off;
         if (f.min !== undefined) i.min = String(f.min);
         if (f.max !== undefined) i.max = String(f.max);
@@ -1342,7 +1380,15 @@ function renderTrackwork(list: TwItem[]) {
   const sig = JSON.stringify([list.map((it) => [it.kind, it.key, it.off, Math.round((it.len ?? 0) * 10), it.toe, it.routes, it.forced, it.cand, it.lever && [it.lever.side, it.lever.leverOffset, it.lever.springLength]]),
     design.trackwork, design.options?.throwSide, design.options?.mechStyle, design.routes.map((r) => [r.name, r.throwSide]), monoToes(), twOnlyEdited]);
   if (sig === twSig) return; // (don't rebuild the form under the user's fingers)
+  twList = list;
+  if (midEdit($('trackwork'))) { drawWhenTyped.add(twLater); return; }
   twSig = sig;
+  keepingFocus($('trackwork'), () => drawTrackwork(list));
+}
+/** (the trackwork as last worked out, to draw once a number being typed there is taken) */
+let twList: TwItem[] = [];
+const twLater = () => renderTrackwork(twList);
+function drawTrackwork(list: TwItem[]) {
   const body = $('trackwork-body'), scroll = $('trackwork').scrollTop; body.replaceChildren();
   const tw = design.trackwork ?? {};
   // (a hand edit: anything kept for it in design.trackwork)
