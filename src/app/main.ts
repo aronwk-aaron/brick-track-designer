@@ -12,7 +12,7 @@ import { zip } from '../geom/zip';
 import { layoutParts } from './layoutparts';
 import { freeStart, type LaidFrom, PALETTE, placePart } from './palette';
 import { BuildRunner, type WorkerPort } from './buildrun';
-import { History } from './history';
+import { History, loadHistory, saveHistory } from './history';
 import { fileBase as fileBaseOf, partsDownload, plainKind, printedKinds, stlDownload, turnedText } from './exports';
 import { clamp, LIMITS, type Range, rangeText } from './limits';
 import { mirrorRoute } from './routeedits';
@@ -31,7 +31,16 @@ const STORE = 'btd-design';
 // ---------- the document ----------
 let design: Design = load() ?? { version: 1, gaugeStuds: 4, routes: [] };
 // Undo history: designs as JSON, the current one last (history.ts).
-const history = new History(JSON.stringify(design));
+// (kept in the browser beside the design, so a reload doesn't lose it: only if it's the history of the design stored)
+const history = (() => { try { return loadHistory(localStorage, localStorage.getItem(STORE)); } catch { return undefined; } })() ?? new History(JSON.stringify(design));
+let historyTimer: number | undefined;
+/** The history kept now (and not again till the design next changes). */
+function keepHistory() {
+  clearTimeout(historyTimer); historyTimer = undefined;
+  try { if (tabs.mayWrite) saveHistory(localStorage, history); } catch { /* storage off: fine */ }
+}
+addEventListener('pagehide', () => { if (historyTimer !== undefined) keepHistory(); });
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden' && historyTimer !== undefined) keepHistory(); });
 
 function load(): Design | undefined {
   try { const s = localStorage.getItem(STORE); return s ? readDesign(JSON.parse(s)) : undefined; } catch { return undefined; }
@@ -41,6 +50,8 @@ const tabs = new TabStore((() => { try { return localStorage.getItem(STORE); } c
 function save() {
   if (!tabs.mayWrite) return;
   try { const j = JSON.stringify(design); localStorage.setItem(STORE, j); tabs.wrote(j); } catch { /* storage off: fine */ }
+  // (the history after it, once things are quiet: it's a lot of text to write on each step of a drag)
+  clearTimeout(historyTimer); historyTimer = window.setTimeout(keepHistory, 800);
 }
 /** The design as it is now is in a file (saved, opened) or a template's own: replacing it loses nothing till it's changed. */
 const CLEAN = 'btd-clean';

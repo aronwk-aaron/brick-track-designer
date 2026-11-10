@@ -1,6 +1,6 @@
 // Undo and redo (history.ts).
 import { describe, expect, it } from 'vitest';
-import { History } from '../src/app/history';
+import { hashOf, History, HISTORY_KEY, type HistoryStore, keptHistory, loadHistory, saveHistory } from '../src/app/history';
 
 describe('undo and redo', () => {
   it('steps back and forward through the changes', () => {
@@ -49,5 +49,82 @@ describe('undo and redo', () => {
     for (let j = h.undo(); j !== undefined; j = h.undo()) back.push(j);
     expect(back).toEqual(['19', '18', '17', '16']);
     expect(h.current).toBe('16');
+  });
+});
+
+/** A browser's storage that keeps text, and can be told to refuse writes over a size. */
+function fake(room = Infinity, throwing: Partial<Record<'getItem' | 'setItem' | 'removeItem', boolean>> = {}): HistoryStore & { data: Map<string, string> } {
+  const data = new Map<string, string>();
+  return {
+    data,
+    getItem: (k) => { if (throwing.getItem) throw new Error('blocked'); return data.get(k) ?? null; },
+    setItem: (k, v) => { if (throwing.setItem || v.length > room) throw new DOMException('full', 'QuotaExceededError'); data.set(k, v); },
+    removeItem: (k) => { if (throwing.removeItem) throw new Error('blocked'); data.delete(k); },
+  };
+}
+const made = (...js: string[]) => { const h = new History(js[0]); for (const j of js.slice(1)) h.record(j); return h; };
+
+describe('history kept across a reload', () => {
+  it('comes back with its steps, undo and redo', () => {
+    const h = made('a', 'b', 'c', 'd'); h.undo();
+    const st = fake();
+    expect(saveHistory(st, h)).toBe(true);
+    const back = loadHistory(st, 'c')!;
+    expect(back.current).toBe('c');
+    expect([back.canUndo, back.canRedo]).toEqual([true, true]);
+    expect(back.undo()).toBe('b'); expect(back.undo()).toBe('a'); expect(back.undo()).toBeUndefined();
+    expect(back.redo()).toBe('b'); expect(back.redo()).toBe('c'); expect(back.redo()).toBe('d');
+  });
+  it('is thrown away when it is not of the design stored (and removed)', () => {
+    const st = fake(); saveHistory(st, made('a', 'b'));
+    expect(loadHistory(st, 'x')).toBeUndefined();
+    expect(st.data.has(HISTORY_KEY)).toBe(false);
+    saveHistory(st, made('a', 'b'));
+    expect(loadHistory(st, null)).toBeUndefined();
+  });
+  it('is thrown away when the text is not a history', () => {
+    for (const junk of ['not json', '{}', '{"v":1}', '{"v":2,"hash":"x","past":["a"],"future":[]}', '{"v":1,"hash":"x","past":[],"future":[]}', '{"v":1,"hash":"x","past":[1],"future":[]}', 'null']) {
+      const st = fake(); st.data.set(HISTORY_KEY, junk);
+      expect(loadHistory(st, 'a')).toBeUndefined();
+      expect(st.data.has(HISTORY_KEY)).toBe(false);
+    }
+  });
+  it('a stored hash that is not the design\'s is thrown away', () => {
+    const st = fake(); st.data.set(HISTORY_KEY, JSON.stringify({ v: 1, hash: hashOf('zzz'), past: ['a', 'b'], future: [] }));
+    expect(loadHistory(st, 'b')).toBeUndefined();
+  });
+  it('drops the oldest steps to stay within the budget, never the current one', () => {
+    const big = (c: string) => c.repeat(400);
+    const h = made(big('a'), big('b'), big('c'), big('d'));
+    const k = JSON.parse(keptHistory(h, 900));
+    expect(k.past).toEqual([big('c'), big('d')]);
+    expect(JSON.parse(keptHistory(h, 10)).past).toEqual([big('d')]);
+    h.undo(); h.undo();
+    const k2 = JSON.parse(keptHistory(h, 900));
+    expect(k2.past.at(-1)).toBe(big('b')); expect(k2.past.length + k2.future.length).toBeLessThanOrEqual(2);
+  });
+  it('the whole of what is kept is about 1 MB at most', () => {
+    const h = new History('x'.repeat(100_000));
+    for (let i = 0; i < 30; i++) h.record(`${i}`.padEnd(100_000, 'y'));
+    expect(keptHistory(h).length).toBeLessThan(1_050_000);
+  });
+  it('a full browser: tried again with less, then given up on without throwing', () => {
+    const h = made('a'.repeat(300_000), 'b'.repeat(300_000), 'c'.repeat(300_000));
+    const st = fake(500_000);
+    expect(saveHistory(st, h)).toBe(true);
+    expect(st.data.get(HISTORY_KEY)!.length).toBeLessThanOrEqual(500_000);
+    expect(loadHistory(st, 'c'.repeat(300_000))!.current.length).toBe(300_000);
+    const none = fake(10);
+    expect(saveHistory(none, h)).toBe(false);
+    expect(none.data.has(HISTORY_KEY)).toBe(false);
+  });
+  it('storage that throws on every call does not throw out of here', () => {
+    const st = fake(Infinity, { getItem: true, setItem: true, removeItem: true });
+    expect(() => saveHistory(st, made('a', 'b'))).not.toThrow();
+    expect(saveHistory(st, made('a', 'b'))).toBe(false);
+    expect(loadHistory(st, 'b')).toBeUndefined();
+    const st2 = fake(); saveHistory(st2, made('a', 'b'));
+    const bad = { ...st2, getItem: st2.getItem, removeItem: () => { throw new Error('blocked'); } };
+    expect(() => loadHistory(bad, 'zzz')).not.toThrow();
   });
 });

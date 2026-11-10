@@ -239,6 +239,14 @@ try {
   check((await tab()).length === 1 && await routes() === 1, 'Delete takes out the selected copy and its table, not the first');
   await page.keyboard.press('Control+a'); await page.keyboard.press('Delete');
   check((await tab()).length === 0 && await routes() === 0, 'Delete takes the selected tables out with the routes');
+  // undo survives a reload (the history is kept beside the design)
+  at = 'undo after a reload';
+  await page.waitForTimeout(1200);
+  await page.reload(); await page.waitForSelector('#track');
+  check(!(await page.isDisabled('#undo')), 'Undo is still there after a reload');
+  await page.click('#undo'); await page.waitForTimeout(200);
+  check(await routes() === 1 && (await tab()).length === 1, 'and steps back to the design before the last change');
+
   // an end dragged onto one that has other guard rails doesn't join (and says why)
   await page.evaluate(() => localStorage.setItem('btd-design', JSON.stringify({ version: 1, gaugeStuds: 4, routes: [
     { name: 'A', x: -20, y: 0, heading: -90, segs: [{ kind: 'straight', studs: 16 }], guardRails: true },
