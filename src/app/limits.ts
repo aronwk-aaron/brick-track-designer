@@ -10,6 +10,8 @@ export const LIMITS = {
   straight: [0, 2000, 16],
   /** a curve's radius, studs (the curves there are run 24 + 8k, to 1000) */
   radius: [24, 1000, 40],
+  /** a monorail curve's radius, studs (LEGO's points and short curve are R22; printed monorail curves go down to R4) */
+  monoRadius: [4, 1000, 28],
   /** a curve's angle, degrees, + left (a whole turn at most a piece: a helix is curve after curve) */
   angle: [-360, 360, 22.5],
   /** a route's start, studs from the plan's middle (10000: 80 m) */
@@ -47,7 +49,7 @@ export function clampDesign(d: Design): Design {
     if (typeof r.monoHeightEnd === 'number') r.monoHeightEnd = clamp(r.monoHeightEnd, LIMITS.plates);
     for (const sg of r.segs) {
       if (sg.kind === 'straight') sg.studs = clamp(sg.studs, LIMITS.straight);
-      else { sg.radius = clamp(sg.radius, LIMITS.radius); sg.angle = clamp(sg.angle, LIMITS.angle); }
+      else { sg.radius = clamp(sg.radius, r.system === 'monorail' ? LIMITS.monoRadius : LIMITS.radius); sg.angle = clamp(sg.angle, LIMITS.angle); }
     }
   }
   for (const t of d.tables ?? []) {
