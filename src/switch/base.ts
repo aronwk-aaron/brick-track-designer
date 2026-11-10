@@ -119,6 +119,17 @@ const SPRUNG = { plateT: 3.0, plateW: 13.4, holeD: 4.85, holeDepth: 2.2, pocketH
  */
 const LIP = { run: 2.4, end: 0.6, thick: 2.0, below: 0.2 };
 /**
+ * (sprung blades on track alone, at an angle to the stud grid: sprungThin) The slider can't lie between the
+ * baseplate's stud rows there, so it's the shallow one over them (SHALLOW_SLIDER), the bed 3.9 up, 0.7 higher. The
+ * plate is thinner by as much, 2.3, its top where the reference's is (3.1 under the rail's top, at the wheels'
+ * flanges): its roof 1.0, the pocket 1.3 with beams 1.0 tall (the reference's 1.4: the spring softer by a third), its
+ * stud's hole 1.5 deep on a stud 1.2 tall. Its front's bevel and lip to suit.
+ */
+const SPRUNG_THIN = { plateT: 2.3, holeDepth: 1.5, pocketH: 1.3, beamH: 1.0, studH: 1.2 }, LIP_THIN = { run: 1.7, end: 0.6, thick: 2.0, below: 0.2 };
+type Sprungish = { bladeStyle?: string; generateBallast?: boolean; mechStyle?: string; sprungThin?: boolean };
+/** The sprung blades' sizes: the reference's, or the thinner plate's. */
+const sprungOf = (p: Sprungish) => (p.sprungThin ? { ...SPRUNG, ...SPRUNG_THIN } : { ...SPRUNG, studH: undefined as number | undefined });
+/**
  * (rigid blades with the front lip, bladeLip 'front') The same lip over their
  * 1.6 plate. The front holds where the lip's underside reaches over the
  * bevel, in plan: run - below - c * sqrt 2 (the gap's c, across the 45 degree
@@ -140,9 +151,9 @@ const fdbSprung = (p: { bladeStyle?: string; generateBallast?: boolean; mechStyl
 /** A lip over the blades' fronts: the sprung blades', or the rigid ones' with bladeLip 'front' (where other track leaves room: FdbBladeLayout's lip). */
 const fdbLipOn = (p: { bladeStyle?: string; mechStyle?: string; bladeLip?: string }) => p.mechStyle === 'plates' && (p.bladeStyle === 'sprung' || p.bladeLip === 'front');
 /** The lip's and the plate front's bevel's sizes, for the plate's thickness. */
-const lipOf = (p: { bladeStyle?: string; mechStyle?: string }) => (fdbSprung(p) ? LIP : LIP_RIGID);
+const lipOf = (p: Sprungish) => (fdbSprung(p) ? (p.sprungThin ? LIP_THIN : LIP) : LIP_RIGID);
 /** The plate's thickness. */
-const fdbPlateT = (p: { bladeStyle?: string; generateBallast?: boolean; mechStyle?: string }) => (fdbSprung(p) ? SPRUNG.plateT : FDB.plateT);
+const fdbPlateT = (p: Sprungish) => (fdbSprung(p) ? sprungOf(p).plateT : FDB.plateT);
 /** (sprung blades) The beams' gap (the post between them) and how far each side the pocket reaches from the post. */
 const sprungGap = () => FDB.postD + 0.1;
 const sprungHalf = (give: number) => sprungGap() / 2 + SPRUNG.beamW + give + 0.6;
@@ -1010,7 +1021,7 @@ export function switchGeometry(s: Scad, plan: SwitchPlan, extraCuts: Man[] = [])
   /** The slider bar's width: with sprung blades on track alone narrower, to pass between the underside's stud rows (SPRUNG_SLIDER). */
   const rodW = sprungLow(p) ? SPRUNG_SLIDER.rodW : FDB.rodW;
   /** The blade plates' thickness; where the slider's posts reach up to (into the post's hole, or the sprung blades' spring pocket). */
-  const plateT = fdbPlateT(p), postTop = bedTop + c + (sprung ? SPRUNG.pocketH - 0.3 : FDB.plateT - 0.2);
+  const SP = sprungOf(p), plateT = fdbPlateT(p), postTop = bedTop + c + (sprung ? SP.pocketH - 0.3 : FDB.plateT - 0.2);
   const stockFootCut = (v: SetV) => fdb ? s.union([]) : s.union([0, 1].map((b) => {
     const side = bSide(b), face = bO(b) + side * HEAD_HW;
     return sweep(sq([10, bedTop + 3 - floorZ], [side > 0 ? face : face - 10, floorZ]), bOther(v, b), v.sToe - 2, v.sHeel + g.discR);
@@ -1551,11 +1562,11 @@ export function switchGeometry(s: Scad, plan: SwitchPlan, extraCuts: Man[] = [])
     // (rooted in the pocket's heel-end wall: on into it, so each is one with the plate)
     const beams = W.CrossSection.union([box(-SPRUNG.past + 1, root + 0.8, g2, g2 + SPRUNG.beamW), box(-SPRUNG.past + 1, root + 0.8, -g2 - SPRUNG.beamW, -g2)]).intersect(plate2d.offset(-SPRUNG.wall, 'Miter', 1000));
     const supports = pocket.offset(-0.9, 'Miter', 1000).subtract(W.CrossSection.union([beams, box(-SPRUNG.past, root, -g2, g2)]).offset(SPRUNG.slit, 'Miter', 1000));
-    const hole = T(s.cylinder(SPRUNG.holeDepth + 1, SPRUNG.holeD / 2, SPRUNG.holeD / 2, 40), [fb.pivot[0], fb.pivot[1], z0 - 1]);
+    const hole = T(s.cylinder(SP.holeDepth + 1, SPRUNG.holeD / 2, SPRUNG.holeD / 2, 40), [fb.pivot[0], fb.pivot[1], z0 - 1]);
     return s.union([
-      s.difference(plate, [T(s.extrude(pocket, SPRUNG.pocketH + 1), [0, 0, z0 - 1]), hole]),
-      clip(T(s.extrude(beams, SPRUNG.beamH), [0, 0, z0])),
-      ...(supports.area() > 1 ? [clip(T(s.extrude(supports, SPRUNG.pocketH - SPRUNG.supportGap), [0, 0, z0]))] : []),
+      s.difference(plate, [T(s.extrude(pocket, SP.pocketH + 1), [0, 0, z0 - 1]), hole]),
+      clip(T(s.extrude(beams, SP.beamH), [0, 0, z0])),
+      ...(supports.area() > 1 ? [clip(T(s.extrude(supports, SP.pocketH - SPRUNG.supportGap), [0, 0, z0]))] : []),
     ]);
   };
 
@@ -1770,7 +1781,7 @@ export function switchGeometry(s: Scad, plan: SwitchPlan, extraCuts: Man[] = [])
   // (each with a little snap lip over the plate, so the blade stays on: the plate's hole squeezes past it)
   const fdbPins = (v: SetV) => s.union([...fdbBlades(v).filter((_, b) => b !== v.fixed).flatMap((f) => sprung
     // (sprung blades: a LEGO stud, the plate's hole over it)
-    ? [T(s.cylinder(p.studH + 0.01, t.o.studD / 2, t.o.studD / 2, 40), [f.pivot[0], f.pivot[1], bedTop - 0.01])]
+    ? [T(s.cylinder((SP.studH ?? p.studH) + 0.01, t.o.studD / 2, t.o.studD / 2, 40), [f.pivot[0], f.pivot[1], bedTop - 0.01])]
     // (rigid blades with the lip over the front (LIP_RIGID): a plain pin, 0.4 over the plate; it goes in tilted, under the lip)
     : f.lip ? [T(s.cylinder(c + FDB.plateT + 0.4, FDB.pinD / 2, FDB.pinD / 2, 24), [f.pivot[0], f.pivot[1], bedTop - 0.01])]
     : [T(s.cylinder(c + FDB.plateT + 0.8, FDB.pinD / 2, FDB.pinD / 2, 24), [f.pivot[0], f.pivot[1], bedTop - 0.01]),

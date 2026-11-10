@@ -51,6 +51,8 @@ export interface SwitchParams {
   throwStand?: boolean;
   /** (the plate-style points) The blades: 'simple' (as before), 'prototype' (planed to a point and laid tight under the stock rail's undercut head, the tie bar at the points) or 'sprung' (leaf springs under the plate, a stud for its pivot). */
   bladeStyle?: 'simple' | 'prototype' | 'sprung';
+  /** (sprung blades on track alone, at an angle to the stud grid: sprungOnGrid) thinner plates on the shallow slider over the studs (switch/base.ts SPRUNG_THIN) */
+  sprungThin?: boolean;
   /** (the plate-style points, rigid blades) What holds each blade down: 'pin' (a snap lip on its pin, as before) or 'front' (a lip on the bed over its plate's front, as the sprung blades', and a plain pin). The sprung blades always have the lip. */
   bladeLip?: 'pin' | 'front';
   /** (the plate-style points) Blades per set: 2 (both move), or 1 (a single-point switch, as a tram's: only the blade on the more curved route moves; the other side's rail is fixed, from where it's a flangeway clear of its stock rail). A three-way keeps both. */
@@ -116,7 +118,7 @@ export const SPRUNG_SLIDER = { barH: 1.6, under: 0.2, rodW: 2.4 };
  */
 export const SHALLOW_SLIDER = { floor: 0.4, barH: 1.0, under: 0.2 };
 /** sprung blades on track alone: the bed at the sleepers' top, the slider in a groove through it (SPRUNG_SLIDER). */
-export const sprungLow = (p: { bladeStyle?: string; generateBallast?: boolean; mechStyle?: string }) => p.bladeStyle === 'sprung' && p.mechStyle === 'plates' && !p.generateBallast;
+export const sprungLow = (p: { bladeStyle?: string; generateBallast?: boolean; mechStyle?: string; sprungThin?: boolean }) => p.bladeStyle === 'sprung' && p.mechStyle === 'plates' && !p.generateBallast && !p.sprungThin;
 
 /** The design's stud grid gw (world) in the frame P, as SwitchParams' grid. */
 export const gridIn = (P: Pose, gw: Pose): Pose => [...worldToPose(P, [gw[0], gw[1]]), gw[2] - P[2]] as Pose;
@@ -127,12 +129,13 @@ export const gridLineY = (g: Pose | undefined) => (g && squareGrid(g) ? ((g[1] %
 /**
  * Sprung blades on track alone (sprungLow): their slider's bar lies in a groove down between two rows of the
  * baseplate's studs, so its throw line must be one of the grid's stud corner lines (pointsSet puts it there, a grid
- * square to the frame). For points at an angle to the grid it can't be: there the blades are rigid, their slider
- * in its tunnel over the underside (said: angled). p.grid: the grid in this set's frame, or unset (lined up with the track).
+ * square to the frame). For points at an angle to the grid it can't be: there the slider is the shallow one, over the
+ * studs (SHALLOW_SLIDER, the bed 0.7 higher), and the blades' plates thinner by as much, their tops where they were
+ * (sprungThin; said: angled). p.grid: the grid in this set's frame, or unset (lined up with the track).
  */
 export function sprungOnGrid<T extends SwitchParams>(p: T): { p: T; angled: boolean } {
   if (!p.grid || !sprungLow(p) || squareGrid(p.grid)) return { p, angled: false };
-  return { p: { ...p, bladeStyle: 'simple' }, angled: true };
+  return { p: { ...p, sprungThin: true }, angled: true };
 }
 
 /** Values for the whole switch (not per set). */

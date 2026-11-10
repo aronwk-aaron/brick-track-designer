@@ -98,7 +98,7 @@ export function optionForm(d: () => Design): { form: OptSection[]; noMono: (c?: 
           con: 'The one blade steers both ways: a wheel can pick the wrong way if the wheels are loose. Three-ways keep both blades.' }] },
       { key: 'bladeStyle', label: 'Blade shape', off: onlyPlates, choices: [
         { v: 'sprung', t: 'Sprung', tip: 'A 3 mm plate with a flat top on a LEGO stud, two leaf springs in a pocket underneath (supports built in), so a train trailing through pushes them over and they spring back. The slider meets them at the points.',
-          con: 'Break the supports out of the pocket after printing.' },
+          con: 'Break the supports out of the pocket after printing. On points at an angle to the baseplate grid (no ballast) the plates are thinner, 2.3 mm, and their springs softer by a third: the slider has to pass over the studs there.' },
         { v: 'simple', t: 'Rigid', tip: 'Each blade on a thin plate, the slider\'s post in a plain hole: no spring.', con: 'A train trailing through the wrong way can\'t push the blades over: set the points first.' },
         { v: 'prototype', t: 'Rigid, realistic (planed, tucked under the rail)', tip: 'Rigid blades planed to a point and tucked under the stock rail head, so flanges can\'t catch them.',
           con: 'No spring, as Rigid. Fit the blades swung open, then close them. The stock rail head is thinner along the points.' }] },

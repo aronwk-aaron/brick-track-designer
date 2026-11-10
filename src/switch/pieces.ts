@@ -230,7 +230,7 @@ export function planPieces(routes: Route[], splits: Split[], p: BaseParams = BAS
       s = Math.max(s, b);
     }
   });
-  if (angled.length) warnings.push(`some switches' blades are rigid: at an angle to the baseplate grid, a sprung blades' slider would run over its studs (the switches at ${angled.slice(0, 4).join('; ')}${angled.length > 4 ? ' …' : ''}, in studs; Underside lined up with: The track itself keeps them sprung)`);
+  if (angled.length) warnings.push(`some switches' sprung blades are on thinner plates (2.3 mm), their slider over the studs: at an angle to the baseplate grid it can't lie between them (the switches at ${angled.slice(0, 4).join('; ')}${angled.length > 4 ? ' …' : ''}, in studs; Underside lined up with: The track itself keeps the full plates)`);
   return { switches, rest, warnings };
 }
 

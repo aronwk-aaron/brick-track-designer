@@ -23,6 +23,10 @@ const cases: [string, Design][] = [
   ['crossover on ballast, prototype blades, lip over the front', { ...crossover, options: { ballast: 'ballast', bladeStyle: 'prototype', bladeLip: 'front' } }],
   ['left switch, prototype blades, lip over the front', { ...TEMPLATES['Left switch (LEGO)'], options: { bladeStyle: 'prototype', bladeLip: 'front' } }],
   ['left switch with everything, cut to a 128 bed', { ...TEMPLATES['Left switch (LEGO)'], options: { printBedX: 128, printBedY: 128, throwAction: 'overcentre', bladeStyle: 'prototype' } }],
+  // (at an angle to the stud grid: sprung blades on thinner plates, the slider over the studs)
+  ['left switch at 30° to the stud grid, sprung blades', { ...TEMPLATES['Left switch (LEGO)'], routes: [{ name: 'Z', x: -40, y: -40, heading: 0, segs: [{ kind: 'straight', studs: 8 }] },
+    ...TEMPLATES['Left switch (LEGO)'].routes.map((r) => ({ ...r, x: r.x * Math.cos(Math.PI / 6) - r.y * Math.sin(Math.PI / 6), y: r.x * Math.sin(Math.PI / 6) + r.y * Math.cos(Math.PI / 6), heading: r.heading + 30 }))],
+    options: { bladeStyle: 'sprung', undersideGrid: 'baseplate', ballast: 'none', legoTrack: 'print' } } as Design],
   // (the blades held down by little brackets over their plates, pegged into the bed)
 ];
 
