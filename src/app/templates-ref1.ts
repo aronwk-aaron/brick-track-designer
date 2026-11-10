@@ -1,7 +1,8 @@
 // The reference range's plain track: every straight and curve it has, each as the part is (its ends where the parts
 // library has them, studs and degrees: the curve between them fitted to those ends, said over each). All printed, none
 // bought. A part that's another turned round or mirrored has no template of its own; nor the R40 pass-through
-// connector (4.2 studs long, turning 11.25 degrees: its ends in the library need an R19 curve, under the app's 24-stud minimum). (Four of the shortest are on a solid
+// connector (4.2 studs long, turning 11.25 degrees: its ends in the library need an R19 curve, under the app's 24-stud minimum) and
+// the narrow-gauge curve made for the 45-degree dual gauge crossing (33.75 degrees in 9.4 studs: R14.7). (Four of the shortest are on a solid
 // bed: on sleepers their length leaves part of a sleeper at an end joined to nothing, and the piece came out in two or three.)
 import type { Design } from './design';
 
@@ -126,8 +127,6 @@ export const REF1_PLAIN: Record<string, Design> = {
   'Narrow-gauge curve R84, 11.25°': { version: 1, gaugeStuds: 2, options: { legoTrack: 'print', splitTrack: 'bed' }, routes: [{ name: 'Track', x: 0, y: 0, heading: 0, segs: [{ kind: 'curve', radius: 84, angle: 11.25 }] }] },
   // (R96 for 11.25 degrees)
   'Narrow-gauge curve R96, 11.25°': { version: 1, gaugeStuds: 2, options: { legoTrack: 'print', splitTrack: 'bed' }, routes: [{ name: 'Track', x: 0, y: 0, heading: 0, segs: [{ kind: 'curve', radius: 96, angle: 11.25 }] }] },
-  // (R14.68 for 33.75 degrees, then 1.49 studs straight)
-  'Narrow-gauge curve R14.7, 33.75° with 1.49 studs straight': { version: 1, gaugeStuds: 2, options: { legoTrack: 'print', splitTrack: 'bed' }, routes: [{ name: 'Track', x: 0, y: 0, heading: 0, segs: [{ kind: 'curve', radius: 14.681098, angle: 33.75 }, { kind: 'straight', studs: 1.488383 }] }] },
   // (3.42 studs straight, then R65.36 for 11.25 degrees)
   'Narrow-gauge curve R65.4, 11.25° with 3.42 studs straight, on ballast': { version: 1, gaugeStuds: 2, options: { legoTrack: 'print', splitTrack: 'bed', ballast: 'ballast' }, routes: [{ name: 'Track', x: 0, y: 0, heading: 0, segs: [{ kind: 'straight', studs: 3.417145 }, { kind: 'curve', radius: 65.359154, angle: 11.25 }] }] },
   // (16 studs straight)

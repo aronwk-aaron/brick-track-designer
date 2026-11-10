@@ -63,7 +63,6 @@ describe('templates: reference plain track', { timeout: 900000 }, () => template
   'Narrow-gauge curve R72, 11.25°',
   'Narrow-gauge curve R84, 11.25°',
   'Narrow-gauge curve R96, 11.25°',
-  'Narrow-gauge curve R14.7, 33.75° with 1.49 studs straight',
   'Narrow-gauge curve R65.4, 11.25° with 3.42 studs straight, on ballast',
   'Dual gauge straight, 16 studs, narrow gauge at the side',
   'Dual gauge straight, 16 studs, narrow gauge centred',
