@@ -10,7 +10,8 @@ import { movedTable, type Table, TABLE_COLORS, tableMiddle, tableOutline } from 
 import { type Design, type DRoute, type DSeg, dualRailOffsets, freeName, isMono, routeGaugeStuds, toRoutes, type Trackwork } from './design';
 import { sleeperSpots } from '../geom/crossing';
 import { poseToWorld, routeLength, routePose, worldToPose } from '../route/route';
-import { reversedRoute } from './routeedits';
+import { forFingers } from './hints';
+import { joinProblem, reversedRoute } from './routeedits';
 import { dragValue, END_INSET_PX, type Handle, type HandleKind, handleLabel, segmentHandles, visibleHandles, withValue } from './handles';
 import { isEdit, joinAnchors, reverseAnchors } from './twfollow';
 import { describe, follow, plan, planAnyway, planAuto, planFreeTurning, planToPose, reversed, trace as traceRaw, type Pose } from './planner';
@@ -23,6 +24,21 @@ function tracedOnce(key: string, make: () => [number, number][]) {
   let v = tracedPts.get(key);
   if (!v) { if (tracedPts.size > 20000) tracedPts.clear(); v = make(); tracedPts.set(key, v); }
   return v;
+}
+/** A route's box (studs), kept like its trace: the routes a pointer is nowhere near aren't walked along. */
+const boxes = new Map<string, [number, number, number, number]>();
+function routeBox(r: DRoute): [number, number, number, number] {
+  const key = `${r.x},${r.y},${r.heading}${JSON.stringify(r.segs)}`;
+  let b = boxes.get(key);
+  if (!b) {
+    if (boxes.size > 20000) boxes.clear();
+    b = [Infinity, Infinity, -Infinity, -Infinity];
+    for (const q of trace(r, r.segs, 1)) { b[0] = Math.min(b[0], q[0]); b[1] = Math.min(b[1], q[1]); b[2] = Math.max(b[2], q[0]); b[3] = Math.max(b[3], q[1]); }
+    const end = follow(r, r.segs);
+    b = [Math.min(b[0], r.x, end.x), Math.min(b[1], r.y, end.y), Math.max(b[2], r.x, end.x), Math.max(b[3], r.y, end.y)];
+    boxes.set(key, b);
+  }
+  return b;
 }
 const trace = (p: Pose, segs: DSeg[], step = 0.5) => tracedOnce(`t${p.x},${p.y},${p.heading},${step}${JSON.stringify(segs)}`, () => traceRaw(p, segs, step));
 
@@ -51,6 +67,8 @@ export interface CanvasHost {
   system?(): 'train' | 'monorail';
   /** The forms show the design as it is now, mid-drag (a handle being dragged). */
   live?(): void;
+  /** The design as it was at the last finished action (a drag cancelled with Esc: nothing of it kept). */
+  revert?(): void;
 }
 
 const MM = 8; // mm per stud
@@ -163,15 +181,17 @@ export class TrackCanvas {
   private drag: { route: number; end: 'start' | 'end'; sx: number; sy: number; moved: boolean; orig: DRoute; anchor: number; lastGood?: DRoute } | undefined;
   /** Dragging a curve's or straight's handle (angle, radius, length): which, and the segment as it was. */
   private handleDrag: { route: number; seg: number; kind: HandleKind; orig: DSeg; moved: boolean; sx: number; sy: number } | undefined;
+  /** The last press was a finger's, not a mouse's: bigger handles to grab. */
+  private touching = false;
   /** The handles on the selected route (when one is selected, in Select mode, nothing being drawn): at least 10 px apart on the screen. */
   private handles(): Handle[] {
     if (this.mode !== 'select' || this.active || this.selection().length !== 1) return [];
     const r = this.host.design().routes[this.selection()[0]];
-    return r ? visibleHandles(segmentHandles(r, END_INSET_PX / this.scale), this.scale) : [];
+    return r ? visibleHandles(segmentHandles(r, END_INSET_PX / this.scale), this.scale, this.touching ? 32 : 10) : [];
   }
   /** The handle under a point (studs), within a few pixels. */
   private handleAt(w: [number, number]): Handle | undefined {
-    let best: Handle | undefined, bd = 9;
+    let best: Handle | undefined, bd = this.touching ? 22 : 9; // (a fingertip is wider than a pointer)
     for (const h of this.handles()) { const dd = Math.hypot(h.at[0] - w[0], h.at[1] - w[1]) * this.scale; if (dd <= bd) { bd = dd; best = h; } }
     return best;
   }
@@ -276,7 +296,7 @@ export class TrackCanvas {
     this.ctx = el.getContext('2d')!;
     new ResizeObserver(() => this.resize()).observe(el.parentElement!);
     el.addEventListener('contextmenu', (e) => e.preventDefault());
-    el.addEventListener('mousedown', (e) => this.down(e));
+    el.addEventListener('mousedown', (e) => { this.touching = false; this.down(e); });
     addEventListener('mousemove', (e) => this.move(e));
     addEventListener('mouseup', (e) => this.up(e));
     el.addEventListener('wheel', (e) => this.wheel(e), { passive: false });
@@ -296,9 +316,10 @@ export class TrackCanvas {
     if (this.ox === 0 && this.oy === 0) this.fit();
     this.draw();
   }
-  /** Fit the whole design in view. */
-  fit() {
-    const pts = this.host.design().routes.flatMap((r) => trace(r, r.segs, 2));
+  /** Fit the whole design in view (or, with part: just the selected routes, when some are). */
+  fit(part = false) {
+    const all = this.host.design().routes, sel = part ? this.selection().filter((i) => all[i]) : [];
+    const pts = (sel.length ? sel.map((i) => all[i]) : all).flatMap((r) => trace(r, r.segs, 2));
     const w = this.el.width / devicePixelRatio, h = this.el.height / devicePixelRatio;
     if (pts.length < 2) { this.scale = 6; this.ox = w / 2; this.oy = h / 2; return this.draw(); }
     // (found one at a time: a big layout's points, all handed to Math.min at once, were more than it takes)
@@ -342,6 +363,9 @@ export class TrackCanvas {
     let best: { route: number; pose: Pose; end: 'start' | 'end' | undefined; d: number } | undefined;
     this.host.design().routes.forEach((r, i) => {
       if (i === skip) return;
+      // (a route whose box is further from p than the reach, with a stud for the points between its samples: not looked along)
+      const bx = routeBox(r), m = reach * 1.4 + 1;
+      if (p[0] < bx[0] - m || p[0] > bx[2] + m || p[1] < bx[1] - m || p[1] > bx[3] + m) return;
       const end = follow(r, r.segs);
       for (const [pose, which] of [[{ x: r.x, y: r.y, heading: r.heading }, 'start'], [end, 'end']] as const) {
         const d = Math.hypot(pose.x - p[0], pose.y - p[1]);
@@ -395,6 +419,7 @@ export class TrackCanvas {
     const spread = (e: TouchEvent) => Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY);
     el.addEventListener('touchstart', (e) => {
       e.preventDefault();
+      this.touching = true;
       if (e.touches.length === 1 && !pinch) {
         const t = e.touches[0], r = el.getBoundingClientRect(), w = this.toWorld(t.clientX - r.left, t.clientY - r.top);
         // (on empty ground in Select: pan, as the middle button; on track, a lever or points: as the left button)
@@ -751,6 +776,8 @@ export class TrackCanvas {
     if (good) this.drag!.lastGood = structuredClone(cur);
   }
   private dragBad = false;
+  /** Why the end the mouse is at can't be joined to the track being dragged or drawn (set by snapEnd). */
+  private joinBlocked: string | undefined;
   private dragSnap: { route: number; end: 'start' | 'end'; pose: Pose } | undefined;
   /**
    * Another track's end near p to join onto (not route skip): which route and
@@ -765,11 +792,16 @@ export class TrackCanvas {
   }
   private snapEnd(p: [number, number], skip: number | undefined): { route: number; end: 'start' | 'end'; pose: Pose } | undefined {
     let best: { route: number; end: 'start' | 'end'; pose: Pose; d: number } | undefined;
-    this.host.design().routes.forEach((r, i) => {
+    const d0 = this.host.design(), mine = skip !== undefined ? d0.routes[skip] : undefined;
+    this.joinBlocked = undefined;
+    d0.routes.forEach((r, i) => {
       if (i === skip) return;
+      // (an end it can't be joined to isn't snapped to: and the reason is said when it's near)
+      const why = mine && joinProblem(d0, mine, r);
       const e = follow(r, r.segs);
       for (const [end, pose] of [['start', { x: r.x, y: r.y, heading: r.heading }], ['end', { ...e, heading: e.heading + 180 }]] as const) {
         const d = Math.hypot(pose.x - p[0], pose.y - p[1]);
+        if (why) { if (d < this.reach(18)) this.joinBlocked = `can't join ${r.name || i}: ${why}`; continue; }
         if (d < this.reach(18) && (!best || d < best.d)) best = { route: i, end, pose: { ...pose, heading: ((pose.heading % 360) + 540) % 360 - 180 }, d };
       }
     });
@@ -778,10 +810,8 @@ export class TrackCanvas {
   /** Join route b onto the end of route a (b's start or end meeting a's end): a gets b's track, b goes. */
   private join(a: number, b: number, bEnd: 'start' | 'end') {
     const routes = this.host.design().routes, rb = routes[b];
-    // (train track and monorail only meet: a route is one or the other)
-    if (isMono(routes[a]) !== isMono(rb)) return a;
-    // (nor tracks of different gauges: a route is one gauge)
-    if (routeGaugeStuds(this.host.design(), routes[a]) !== routeGaugeStuds(this.host.design(), rb)) return a;
+    // (not tracks that differ in system, gauge, guard rails or third rail: a route has one of each: snapEnd doesn't offer them)
+    if (joinProblem(this.host.design(), routes[a], rb)) return a;
     // (b's hand edits to the trackwork are the joined track's)
     { const d = this.host.design(), rts = toRoutes(d); joinAnchors(d, routes[a].name || String(a), rb.name || String(b), routeLength(rts[a]), routeLength(rts[b]), bEnd === 'end'); }
     const more = bEnd === 'start' ? rb.segs.map((sg) => ({ ...sg })) : reversedRoute(rb).segs;
@@ -845,12 +875,36 @@ export class TrackCanvas {
       this.drag = undefined; this.dragBad = false; this.dragSnap = undefined;
       this.host.changed(true); return this.draw();
     }
+    // Esc mid-drag of the routes, a table, a lever, a check rail's end or a selection box: put back as it was (not a step), the selection kept
+    if (e.key === 'Escape' && (this.moving || this.tableDrag || this.itemDrag || this.leverDrag || this.box)) {
+      const m = this.moving, t = this.tableDrag, d = this.host.design();
+      const sel = this.selection(), changedAlready = !!(m?.moved || t?.moved || this.itemDrag?.moved || this.leverDrag?.moved);
+      if (m) for (const o of m.orig) if (d.routes[o.i]) { d.routes[o.i].x = o.x; d.routes[o.i].y = o.y; }
+      if (t && d.tables?.[t.k]) d.tables[t.k] = t.orig;
+      const lever = !!(this.itemDrag?.moved || this.leverDrag?.moved);
+      this.moving = undefined; this.tableDrag = undefined; this.itemDrag = undefined; this.leverDrag = undefined; this.leverPending = undefined; this.box = undefined;
+      if (lever && this.host.revert) { this.host.revert(); this.setSelection(sel.filter((i) => i < this.host.design().routes.length)); }
+      else if (changedAlready) this.host.changed(false);
+      return this.draw();
+    }
+    // (a drag going on: Delete would pull the routes out from under it)
+    if ((e.key === 'Delete' || e.key === 'Backspace') && (this.moving || this.tableDrag || this.itemDrag || this.leverDrag || this.box || this.handleDrag || this.drag)) return;
     // Esc: stop the track being drawn; pressed again (nothing being drawn), back to Select
     // (in Select mode, Esc lets go of the selection)
     if (e.key === 'Escape') {
       if (this.active) this.stopDrawing();
       else if (this.mode === 'draw') this.host.leaveDraw?.();
       else if (this.selection().length) this.setSelection([]);
+    }
+    // Arrow keys in Select: the selected routes a stud over (Shift: eight, a LEGO plate's width), one step each; not while a button, a slider or a list has the focus (they use the arrows)
+    if (e.key.startsWith('Arrow') && this.mode === 'select' && this.selection().length && !e.ctrlKey && !e.metaKey && !e.altKey && (e.target === document.body || e.target === this.el)) {
+      const n = e.shiftKey ? 8 : 1, dx = e.key === 'ArrowLeft' ? -n : e.key === 'ArrowRight' ? n : 0, dy = e.key === 'ArrowDown' ? -n : e.key === 'ArrowUp' ? n : 0;
+      e.preventDefault();
+      if (this.moving || this.drag || this.handleDrag || this.tableDrag || this.itemDrag || this.leverDrag || this.box || this.active || (!dx && !dy)) return;
+      const routes = this.host.design().routes;
+      for (const i of this.selection()) if (routes[i]) { routes[i].x = Math.round((routes[i].x + dx) * 1e4) / 1e4; routes[i].y = Math.round((routes[i].y + dy) * 1e4) / 1e4; }
+      this.host.changed(true); this.draw();
+      return;
     }
     if ((e.key === 'Delete' || e.key === 'Backspace') && this.selected !== undefined && !this.active) {
       const routes = this.host.design().routes;
@@ -903,10 +957,14 @@ export class TrackCanvas {
   }
 
   // ---------- drawing ----------
-  /** What a click or drag would do now. */
+  /** What a click or drag would do now (worded for a finger when the screen is a touch one). */
   hint(): string {
+    const h = this.hintText();
+    return this.touching || matchMedia('(pointer: coarse)').matches ? forFingers(h) : h;
+  }
+  private hintText(): string {
     if (this.drag?.moved) return this.dragBad ? "Can't bend the track this way: release to keep the last good shape, Esc puts it back"
-      : this.dragSnap ? 'Release to join the two ends' : 'Release to reshape · drop on another end to join · Esc puts it back';
+      : this.dragSnap ? 'Release to join the two ends' : this.joinBlocked ? `Release to reshape (${this.joinBlocked}) · Esc puts it back` : 'Release to reshape · drop on another end to join · Esc puts it back';
     if (this.active) return 'Click to lay track · keep clicking to go on · Esc or right-click stops · right-drag pans';
     // (over a lever: which side it's on and what put it there)
     const lv = this.leverDrag?.it ?? (this.mouse && !this.itemDrag ? this.leverAt(this.mouse) : undefined);
@@ -1262,10 +1320,11 @@ export class TrackCanvas {
       this.el.dataset.handles = JSON.stringify(shown.map((h) => { const [x, y] = this.toScreen(h.at[0], h.at[1]); return { seg: h.seg, kind: h.kind, x: Math.round(x), y: Math.round(y) }; }));
       for (const h of shown) {
         const [hx, hy] = this.toScreen(h.at[0], h.at[1]), on = this.handleDrag ? this.handleDrag.seg === h.seg && this.handleDrag.kind === h.kind : hovered === h;
+        const z = this.touching ? 1.6 : 1;
         c.beginPath();
-        if (h.kind === 'angle') c.arc(hx, hy, on ? 7 : 5.5, 0, 2 * Math.PI);
-        else if (h.kind === 'length') { const q = on ? 6.5 : 5; c.rect(hx - q, hy - q, 2 * q, 2 * q); }
-        else { const q = on ? 7.5 : 6; c.moveTo(hx, hy - q); c.lineTo(hx + q, hy); c.lineTo(hx, hy + q); c.lineTo(hx - q, hy); c.closePath(); }
+        if (h.kind === 'angle') c.arc(hx, hy, (on ? 7 : 5.5) * z, 0, 2 * Math.PI);
+        else if (h.kind === 'length') { const q = (on ? 6.5 : 5) * z; c.rect(hx - q, hy - q, 2 * q, 2 * q); }
+        else { const q = (on ? 7.5 : 6) * z; c.moveTo(hx, hy - q); c.lineTo(hx + q, hy); c.lineTo(hx, hy + q); c.lineTo(hx - q, hy); c.closePath(); }
         c.fillStyle = on ? '#e8892b' : '#fff'; c.fill(); c.strokeStyle = '#e8892b'; c.lineWidth = 2; c.stroke();
         if (on && rt?.segs[h.seg]) tag(hx + 12, hy - 12, handleLabel(rt.segs[h.seg]), '#b25c00');
       }
@@ -1274,7 +1333,7 @@ export class TrackCanvas {
     if (this.drag?.moved && this.mouse) {
       const r = d.routes[this.drag.route];
       const [mx, my] = this.toScreen(...this.snap(this.mouse));
-      const txt = this.dragSnap && !this.dragBad ? `${describe(r.segs)}: joins ${d.routes[this.dragSnap.route].name}` : this.dragBad ? `Can't bend the track this way (red part: ${describe(this.dragBadFrom >= 0 ? r.segs.slice(this.dragBadFrom) : r.segs.slice(0, this.dragBadTo))}${this.host.radius() < 0 ? ', tighter than R24' : ''})` : describe(r.segs);
+      const txt = this.dragSnap && !this.dragBad ? `${describe(r.segs)}: joins ${d.routes[this.dragSnap.route].name}` : this.dragBad ? `Can't bend the track this way (red part: ${describe(this.dragBadFrom >= 0 ? r.segs.slice(this.dragBadFrom) : r.segs.slice(0, this.dragBadTo))}${this.host.radius() < 0 ? ', tighter than R24' : ''})` : this.joinBlocked ? `${describe(r.segs)}: ${this.joinBlocked}` : describe(r.segs);
       tag(mx, my, txt, this.dragBad ? '#e0452b' : ink.selInk);
       c.fillStyle = '#2b9e4a'; c.beginPath(); c.arc(mx, my, 5, 0, 2 * Math.PI); c.fill();
       return;
@@ -1295,7 +1354,7 @@ export class TrackCanvas {
           }
           const [mx, my] = this.toScreen(...this.snap(this.mouse));
           const sn = this.joinableEnd(this.mouse);
-          const txt = sn ? `${describe(segs)}: joins ${d.routes[sn.route].name}` : describe(segs);
+          const txt = sn ? `${describe(segs)}: joins ${d.routes[sn.route].name}` : this.joinBlocked ? `${describe(segs)}: ${this.joinBlocked}` : describe(segs);
           tag(mx, my, txt, ink.selInk);
         } else {
           // can't get there with the allowed curves: show the curve it would

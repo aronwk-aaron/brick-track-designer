@@ -255,6 +255,7 @@
     #choices .chead { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; } #choices h3 { margin: 0; font-size: 18px; }
     #choices-body { display: grid; gap: 14px; }
     #choices-why { margin: 0 0 12px; color: var(--warn); font-weight: 600; }
+    @media (max-width: 760px) { #coords { display: none; } #hint { max-width: calc(100% - 20px); } }
     @media (max-width: 760px) { #choices-body { grid-template-columns: minmax(0, 1fr) !important; } }
     #choices .choice { border: 1px solid var(--line); border-radius: 12px; padding: 10px; display: flex; flex-direction: column; gap: 6px; background: var(--raise); }
     #choices .choice.current { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
@@ -288,7 +289,7 @@
     #status:empty { display: none; }
     /* (a long list of warnings: three lines, the rest scrolled to, not laid over the view) */
     #status { max-height: 4.9em; overflow-y: auto; pointer-events: auto; }
-    #plan > #status, #plan > #buildstatus { bottom: 46px; z-index: 1; }
+    #plan > #status, #plan > #buildstatus { bottom: calc(var(--hint-h, 26px) + 20px); z-index: 1; } /* (above the hint, which is two or three lines on a phone) */
     #error { color: var(--err); }
     #error.warn { color: var(--warn); }
     #info:not(:empty) + #error:not(:empty)::before { content: ' · '; color: var(--muted); }
@@ -459,7 +460,7 @@
     <button id="templates-open" type="button" title="Templates: starting points with pictures. Search them, filter them, star the ones you use"><svg><use href="#i-layout"/></svg><span class="lbl">Templates</span></button>
     <button id="clear" type="button" class="danger" title="Remove all the track (Undo brings it back)"><svg><use href="#i-trash"/></svg><span class="lbl">Clear</span></button>
     <span class="spacer"></span>
-    <button id="fit" type="button" title="Fit the track in view (F)"><svg><use href="#i-fit"/></svg><span class="lbl">Fit</span></button>
+    <button id="fit" type="button" title="Fit the track in view (F; with tracks selected, F fits just those)"><svg><use href="#i-fit"/></svg><span class="lbl">Fit</span></button>
     <button id="toggle-3d" class="on" type="button" title="Show or hide the 3D preview (P)"><svg><use href="#i-cube"/></svg><span class="lbl">3D</span></button>
     <button id="settings-open" type="button" title="Settings for the pieces: track, ballast, switches, joints, fit (,)"><svg><use href="#i-sliders"/></svg><span class="lbl">Settings</span></button>
     <span class="sep"></span>
@@ -575,7 +576,8 @@
           <li><kbd>Esc</kbd> or a right-click stops drawing; <kbd>Esc</kbd> again goes back to Select.</li>
           <li>Start on the middle of a track to branch off it: a switch.</li>
           <li>With one track selected in Select, each curve has a round handle at its far end (drag it to change its angle, in 5.625° steps) and a diamond in its middle (drag it to change the radius, to the usual 24 + 8k), and each straight a square at its end (its length, in whole studs). <kbd>Shift</kbd> makes the steps finer; the value shows by the handle, with how many such curves make a circle; <kbd>Esc</kbd> puts it back. One Undo takes back the whole drag.</li>
-          <li>Drag a track's end to reshape it; drop it on another end to join them. <kbd>Esc</kbd> while dragging puts it back.</li>
+          <li>Drag a track's end to reshape it; drop it on another end to join them (only tracks with the same gauge, guard rails and third rail join). <kbd>Esc</kbd> while dragging puts it back: a track end, a handle, a whole track or a table.</li>
+          <li>The arrow keys move the selected tracks a stud (<kbd>Shift</kbd>: eight). <kbd>F</kbd> fits the selected tracks in view, or all of them with none selected.</li>
         </ul>
         <h3>Routes by numbers</h3>
         <ul>

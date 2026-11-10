@@ -147,6 +147,58 @@ try {
   const tbs = await page.evaluate(() => (JSON.parse(localStorage.getItem('btd-design') ?? '{}').tables ?? []) as { x: number; w: number }[]);
   check(tbs.length === 2 && tbs[1].x >= tbs[0].x + tbs[0].w, `a second ready-made table lands clear of the first (${JSON.stringify(tbs.map((t) => t.x))})`);
 
+  // (editing a fresh design of two short routes, fitted: where things are on the screen from the plan's own view)
+  at = 'editing';
+  await page.evaluate(() => localStorage.setItem('btd-design', JSON.stringify({ version: 1, gaugeStuds: 4, routes: [
+    { name: 'A', x: -20, y: 0, heading: -90, segs: [{ kind: 'straight', studs: 16 }], guardRails: true },
+    { name: 'B', x: 4, y: 0, heading: -90, segs: [{ kind: 'straight', studs: 16 }] },
+    { name: 'C', x: -20, y: -12, heading: -90, segs: [{ kind: 'straight', studs: 16 }] },
+  ] })));
+  await page.reload(); await page.waitForSelector('#track'); await page.click('#mode-select'); await page.click('#fit');
+  await page.waitForTimeout(300);
+  const tbx = (await page.locator('#track').boundingBox())!;
+  const scr = async (wx: number, wy: number): Promise<[number, number]> => { const v = await page.evaluate(() => (window as unknown as { btdCanvas: { view(): { scale: number; ox: number; oy: number } } }).btdCanvas.view()); return [tbx.x + v.ox + wx * v.scale, tbx.y + v.oy - wy * v.scale]; };
+  const xy = async (n: string) => page.evaluate((nm) => { const r = (JSON.parse(localStorage.getItem('btd-design') ?? '{}').routes as { name: string; x: number; y: number }[]).find((q) => q.name === nm)!; return `${r.x},${r.y}`; }, n);
+  const errs0 = errors.length;
+  // Esc during a drag of a whole route puts it back, and the route stays selected
+  const [bx, by] = await scr(12, 0);
+  await page.mouse.move(bx, by); await page.mouse.down(); await page.mouse.move(bx + 60, by + 40, { steps: 4 });
+  check(await xy('B') !== '4,0', 'a route being dragged moves');
+  await page.keyboard.press('Escape');
+  check(await xy('B') === '4,0', 'Esc mid-drag puts the route back');
+  await page.mouse.move(bx + 90, by + 60, { steps: 3 }); await page.mouse.up();
+  check(await xy('B') === '4,0', 'and letting go afterwards moves nothing');
+  check(await page.locator('#sel-count').innerText() === '1 selected', 'the route is still selected');
+  // Delete during a drag is ignored (it used to throw on each move)
+  await page.mouse.move(bx, by); await page.mouse.down(); await page.mouse.move(bx + 30, by + 30, { steps: 3 });
+  await page.keyboard.press('Delete'); await page.mouse.move(bx + 60, by + 40, { steps: 3 }); await page.mouse.up();
+  check(await routes() === 3, 'Delete in the middle of a drag removes nothing');
+  await page.mouse.click(bx, by); // (selected again, wherever the drag left it)
+  // the arrow keys nudge the selection a stud; Shift eight
+  const was = (await xy('B')).split(',').map(Number);
+  await page.keyboard.press('ArrowRight'); await page.keyboard.press('Shift+ArrowUp');
+  check(await xy('B') === `${was[0] + 1},${was[1] + 8}`, `the arrow keys nudge the selected route (${await xy('B')})`);
+  // copy with nothing selected keeps what was copied
+  await page.keyboard.press('Control+c'); await page.keyboard.press('Escape'); await page.keyboard.press('Control+c');
+  check(!(await page.isDisabled('#sel-paste')), 'Copy with nothing selected leaves the clipboard as it was');
+  // paste again at the same spot: each one a step over
+  await page.mouse.move(...(await scr(0, -30))); await page.keyboard.press('Control+v'); await page.keyboard.press('Control+v');
+  const pasted = await page.evaluate(() => (JSON.parse(localStorage.getItem('btd-design') ?? '{}').routes as { x: number; y: number }[]).slice(3).map((q) => `${q.x},${q.y}`));
+  check(pasted.length === 2 && pasted[0] !== pasted[1], `pasting twice at one spot doesn't stack the routes (${pasted.join(' ')})`);
+  // an end dragged onto one that has other guard rails doesn't join (and says why)
+  await page.evaluate(() => localStorage.setItem('btd-design', JSON.stringify({ version: 1, gaugeStuds: 4, routes: [
+    { name: 'A', x: -20, y: 0, heading: -90, segs: [{ kind: 'straight', studs: 16 }], guardRails: true },
+    { name: 'B', x: 4, y: 0, heading: -90, segs: [{ kind: 'straight', studs: 16 }] },
+  ] })));
+  await page.reload(); await page.waitForSelector('#track'); await page.click('#mode-select'); await page.click('#fit'); await page.waitForTimeout(300);
+  const [sx, sy] = await scr(4, 0), [ex, ey] = await scr(-4, 0);
+  await page.mouse.move(sx, sy); await page.mouse.down(); await page.mouse.move((sx + ex) / 2, sy, { steps: 3 }); await page.mouse.move(ex, ey, { steps: 3 });
+  await page.waitForTimeout(150);
+  check(/can't join A/.test(await page.locator('#hint').innerText()), `the hint says why they won't join (${await page.locator('#hint').innerText()})`);
+  await page.mouse.up();
+  check(await routes() === 2, 'and they stay two routes');
+  check(errors.length === errs0, `no errors from any of that${errors.length > errs0 ? `: ${errors.slice(errs0).join(' | ').slice(0, 300)}` : ''}`);
+
   check(errors.length === 0, `no errors on the page${errors.length ? `: ${errors.join(' | ').slice(0, 600)}` : ''}`);
 } catch (err) {
   fails.push(`${at}: ${err instanceof Error ? err.message : err}`);

@@ -1,6 +1,6 @@
 // A route turned end for end, or mirrored: its track, and with it everything on its card that's said by its ends
 // (start, end) or its sides (left, right), so it stays the track it was.
-import type { BankRamps, DRoute } from './design';
+import { type BankRamps, type Design, type DRoute, isMono, routeGaugeStuds } from './design';
 import { reversed } from './planner';
 
 const otherEnd = <T extends string | undefined>(e: T): T => (e === 'start' ? 'end' : e === 'end' ? 'start' : e) as T;
@@ -36,4 +36,19 @@ export function mirrorRoute(r: DRoute, px: number) {
   for (const sg of r.segs) if (sg.kind === 'curve') sg.angle = -sg.angle;
   if (r.dualGauge || r.dualShared) r.dualShared = otherSide(r.dualShared ?? 'right');
   if (r.throwSide) r.throwSide = otherSide(r.throwSide);
+}
+
+/**
+ * Why two routes can't be made one track (undefined: they can). A route is one system, one gauge, and has one set of
+ * guard rails, third rail and monorail heights along its whole length, so two that differ would lose one's settings
+ * (a bridge's guard rails, a narrow gauge's third rail) or have them stretched over the other's track.
+ */
+export function joinProblem(d: Design, a: DRoute, b: DRoute): string | undefined {
+  if (isMono(a) !== isMono(b)) return 'one is monorail, the other train track';
+  if (routeGaugeStuds(d, a) !== routeGaugeStuds(d, b)) return 'their gauges differ';
+  const same = (...ks: (keyof DRoute)[]) => ks.every((k) => JSON.stringify(a[k] ?? null) === JSON.stringify(b[k] ?? null));
+  if (!!a.guardRails !== !!b.guardRails || (a.guardRails && !same('guardRailGapStuds', 'guardRailTaperStuds', 'guardRailTaperShape', 'guardRailNoseRampStuds'))) return 'their guard rails differ';
+  if (!!a.dualGauge !== !!b.dualGauge || (a.dualGauge && !same('dualGaugeStuds', 'dualShared'))) return 'their third rails differ';
+  if (isMono(a) && !same('monoHeight')) return 'their heights differ';
+  return undefined;
 }
