@@ -30,6 +30,20 @@ export function stlPositions(stl: Uint8Array) {
 }
 
 /**
+ * The edges of a file's mesh shared by more than two triangles (corners the same where exactly the same, as a slicer
+ * reads them), each by its two ends: where two walls only touch, along a line. The file's still closed, and a slicer
+ * cutting layers isn't troubled; but read back in as a solid such an edge can be joined wrongly (a slider's groove
+ * floor was, 0.7 mm3 of it in the slider), so they're counted (assembled.shared.ts EDGES).
+ */
+export function sharedEdges(P: ArrayLike<number>): [number[], number[]][] {
+  const ids = new Map<string, number>(), xs: number[][] = [], tri: number[] = [];
+  for (let i = 0; i < P.length; i += 3) { const key = `${P[i]},${P[i + 1]},${P[i + 2]}`; let id = ids.get(key); if (id === undefined) { id = xs.length; ids.set(key, id); xs.push([P[i], P[i + 1], P[i + 2]]); } tri.push(id); }
+  const n = new Map<number, number>(), N = xs.length;
+  for (let t = 0; t < tri.length; t += 3) for (const [a, b] of [[tri[t], tri[t + 1]], [tri[t + 1], tri[t + 2]], [tri[t + 2], tri[t]]]) { if (a === b) continue; const k = a < b ? a * N + b : b * N + a; n.set(k, (n.get(k) ?? 0) + 1); }
+  return [...n].filter(([, c]) => c > 2).map(([k]) => [xs[Math.floor(k / N)], xs[k % N]]);
+}
+
+/**
  * How much of a solid, as printed (upright), hangs with nothing under it (mm2): faces facing down, steeper
  * than 45 degrees, above its bottom. Held: something within 0.45 below (break-out supports), a slope of 45
  * degrees or less, a bridge (held both sides, 10 or less across). Sampled over each face, not just its middle.

@@ -159,8 +159,11 @@ export function edgeGrip(s: Scad, t: Track, part: Man, gp: [number, number, numb
   const roof = part.slice(bottom + cavH + 0.3), mid = part.slice(bottom + cavH / 2);
   if (roof.area() < 1) return part;
   const inner = roof.offset(-BOTTOM_WALL, 'Miter', 1000);
-  // (the rim, only where it's hollow now)
-  const rim = roof.subtract(inner).subtract(mid);
+  // (the rim, only where it's hollow now; and 0.01 on into the walls it meets: ending exactly on a wall's face, the two
+  // only touched there, along a line up the part's side: an edge of four triangles in the file, which a mesh read back
+  // in can join wrongly (switch/base.ts's slider groove had the same). No further: round a clip's socket, wider at the
+  // bottom than where the walls are looked at, it's that much more in the socket (0.05 put 0.1 mm3 more in the peg))
+  const band = roof.subtract(inner), rim = band.subtract(mid).offset(0.01, 'Miter', 4).intersect(band);
   const bb = roof.bounds();
   const toG = (x: number, y: number) => worldToPose(gp, [x, y]).map((v) => v / STUD);
   const cs = [toG(bb.min[0], bb.min[1]), toG(bb.max[0], bb.min[1]), toG(bb.min[0], bb.max[1]), toG(bb.max[0], bb.max[1])];
@@ -184,10 +187,12 @@ export function edgeGrip(s: Scad, t: Track, part: Man, gp: [number, number, numb
     if (bore.intersect(nearMid(q)).area() > 0.05) bores.push(bore);
   }
   // (the rim clear of the baseplate's studs: a cut's edge can run anywhere across the grid, a stud half under it)
+  // (each stud's circle turned half a facet, a flat side to the grid's lines: with a corner on them, the circles of the
+  // row of studs next to a cut on a stud line just touched what's 2.5 from them, along a line from the bottom up)
   const studs: CS[] = [];
   for (let i = i0; i <= i1; i++) for (let j = j0; j <= j1; j++) {
     const q = poseToWorld(gp, [4 + i * STUD, 4 + j * STUD]);
-    if (q[0] > bb.min[0] - 4 && q[0] < bb.max[0] + 4 && q[1] > bb.min[1] - 4 && q[1] < bb.max[1] + 4) studs.push(W.CrossSection.circle(t.o.studD / 2 + 0.1, 24).translate(q));
+    if (q[0] > bb.min[0] - 4 && q[0] < bb.max[0] + 4 && q[1] > bb.min[1] - 4 && q[1] < bb.max[1] + 4) studs.push(W.CrossSection.circle(t.o.studD / 2 + 0.1, 24).rotate(gp[2] + 7.5).translate(q));
   }
   const rimClear = studs.length ? rim.subtract(W.CrossSection.union(studs)) : rim;
   const add = [rimClear.area() > 0.5 ? T(s.extrude(rimClear, cavH), [0, 0, bottom]) : undefined, rings.length ? T(s.extrude(W.CrossSection.union(rings), cavH), [0, 0, bottom]) : undefined].filter((m): m is Man => !!m);

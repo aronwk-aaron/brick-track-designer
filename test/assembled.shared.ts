@@ -13,7 +13,7 @@ import { expect, it } from 'vitest';
 import { arena, kernel } from '../src/geom/kernel';
 import { buildDesign, clearBuildCache, type Piece } from '../src/app/build';
 import { type Design, OPTION_DEFAULTS, type PieceOptions, TEMPLATE_GROUPS, TEMPLATES } from '../src/app/design';
-import { putTogether, stlPositions } from './assembly.shared';
+import { putTogether, sharedEdges, stlPositions } from './assembly.shared';
 
 type Wasm = Awaited<ReturnType<typeof kernel>>;
 type Man = InstanceType<Wasm['Manifold']>;
@@ -288,8 +288,21 @@ export const KNOWN: Record<string, Known> = {
     why: 'the printed part on from both far ends of each left-hand bought switch won\'t slide onto its two ends at once (the build says so: a design limit); and one part\'s corner (1.4 x 1.6 mm, a plate thick: 3.8 mm3) is in the next part\'s end at a block joint beside the first switch\'s ends (at 7, 633 mm)' },
 };
 
-/** A design built as the app builds it (its defaults) and checked: nothing wrong but what's known (k), which must still be found. */
-export async function goesTogether(name: string, design: Design, k?: Known) {
+/**
+ * 7. Edges shared by more than two triangles in the printed parts' files (assembly.shared.ts sharedEdges), a template's
+ * in all: no more than these, and no more than EDGES_FEW where it isn't here. Two kinds are put right (a cut part's
+ * rim ending exactly on a wall, and a stud's clearance circle touching the rim of a cut on a stud line: 2640 in 85
+ * templates before, 1230 in 63 after); what's left is where it was found, a little over (a tenth, 2 at least), so
+ * it can come down and not go up: on rails' and blades' tops (two heads or a planed side meeting along a line),
+ * on the slopes of ballast and of sleepers' ends, and up a cut's joints. None is known to be read back wrongly
+ * (checks 1 to 5 pass with them); each kind is still to be looked into as the slider's groove's was.
+ */
+export const EDGES: Record<string, number> = { 'X yard (6 tracks, single slips)': 472, 'Yard (R56)': 159, 'Double-track return loop (turning left)': 109, 'Double-track return loop (turning right)': 109, 'Double crossover (R56)': 97, 'Wye with a crossover': 74, 'Double slip (22.5°)': 35, 'Yard ladder (R40)': 33, 'Wye R40, 8-stud spacing': 32, 'T-junction core R56': 30, 'Pass-through crossing R72 (B) right': 26, 'Siding ending in a buffer stop': 16, 'Pass-through crossing R72 (B) left': 14, 'Crossing 45° left': 14, 'Double crossover R40': 9, 'Wye R40 left, R56 right': 8, 'Wye switch': 7, 'Wye R120 left, R104 right': 7, 'Dual gauge track': 7, 'Crossing 45° right': 7, 'Banked curve': 6, 'Pass-through crossing R120 right': 6, 'Wye R104 left, R120 right': 6, 'Narrow-gauge crossing 33.75° left': 6, 'Curved switch R56 90° left': 6, 'Wye R40': 6, 'Narrow-gauge crossing 90°': 5, 'Narrow-gauge switch R48 left': 5, 'Narrow-gauge wye R36': 5, 'Dual gauge crossing 45°': 5, 'Switch R72 left': 5 };
+/** (edges) A template not in EDGES may have this many: one or two come and go with a corner's last digit. */
+export const EDGES_FEW = 4;
+
+/** A design built as the app builds it (its defaults) and checked: nothing wrong but what's known (k), which must still be found. edges: its files' edges shared by more than two triangles, at most (not counted where it isn't given). */
+export async function goesTogether(name: string, design: Design, k?: Known, edges?: number) {
   const saved = { ...OPTION_DEFAULTS };
   Object.assign(OPTION_DEFAULTS, APP);
   try {
@@ -305,13 +318,19 @@ export async function goesTogether(name: string, design: Design, k?: Known) {
     // (what's allowed is still there (else it comes off the list), and said by the build where it's a limit)
     for (const re of allowed) expect(problems.some((q) => re.test(q)), `${name}: ${re} is no longer found: take it off the list`).toBe(true);
     if (k?.warning) expect(b.info.warnings.some((q) => k.warning!.test(q)), `${name}: the build doesn't say ${k.warning}`).toBe(true);
+    // (7. its files' edges shared by more than two triangles)
+    if (edges !== undefined) {
+      const found = b.pieces.filter((p) => !p.lego && p.stl.length).map((p) => [p.name, sharedEdges(stlPositions(p.stl))] as const).filter(([, e]) => e.length);
+      const total = found.reduce((t, [, e]) => t + e.length, 0);
+      expect(total, `${name}: ${total} edges shared by more than two triangles in its files (${found.map(([n, e]) => `${n} ${e.length}, the first at ${e[0][0].map((v) => v.toFixed(1)).join(' ')}`).join('; ')})`).toBeLessThanOrEqual(edges);
+    }
   } finally { Object.assign(OPTION_DEFAULTS, saved); clearBuildCache(); }
 }
 
 /** The templates of these groups (only: just these of them), each built as the app builds it and checked. */
 export function assembledSuite(groups: string[], only?: string[], known: Record<string, Known> = KNOWN) {
   for (const [g, names] of TEMPLATE_GROUPS) if (groups.includes(g)) for (const name of names) if (!only || only.includes(name))
-    it(`${g}: ${name} goes together`, () => goesTogether(name, TEMPLATES[name], known[name]));
+    it(`${g}: ${name} goes together`, () => goesTogether(name, TEMPLATES[name], known[name], EDGES[name] ?? EDGES_FEW));
 }
 
 /** The reference trackwork's templates from one to another (by their place in the list): a file's worth. */

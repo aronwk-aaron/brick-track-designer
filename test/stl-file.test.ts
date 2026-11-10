@@ -4,6 +4,7 @@ import { describe, expect, it } from 'vitest';
 import { buildDesign, clearBuildCache } from '../src/app/build';
 import { OPTION_DEFAULTS, type PieceOptions, TEMPLATES } from '../src/app/design';
 import { kernel } from '../src/geom/kernel';
+import { sharedEdges } from './assembly.shared';
 
 const APP = (globalThis as { APP_DEFAULTS?: PieceOptions }).APP_DEFAULTS!;
 /** The volume inside a triangle soup (9 numbers a triangle). */
@@ -15,6 +16,16 @@ const vol = (v: ArrayLike<number>) => {
 };
 
 describe('the parts\' files', { timeout: 300000 }, () => {
+  // (what the templates' files are counted for (assembled.shared.ts EDGES): two solids that only touch along a line)
+  it('an edge shared by four triangles is found: two boxes touching along an edge have one, a box none', async () => {
+    const w = await kernel(), soup = (m: InstanceType<typeof w.Manifold>) => { const g = m.getMesh(), out: number[] = []; for (const v of g.triVerts) out.push(g.vertProperties[v * g.numProp], g.vertProperties[v * g.numProp + 1], g.vertProperties[v * g.numProp + 2]); return out; };
+    const a = w.Manifold.cube([2, 2, 2]), b = w.Manifold.cube([2, 2, 2]).translate([2, 2, 0]), both = a.add(b);
+    expect(sharedEdges(soup(a))).toEqual([]);
+    const e = sharedEdges(soup(both));
+    expect(e).toHaveLength(1);
+    expect(e[0].map((q) => q.join()).sort()).toEqual(['2,2,0', '2,2,2']);
+    for (const m of [a, b, both]) m.delete();
+  });
   it('the 45° double slip, track only: each file closed, no triangle without area, the part and its supports', async () => {
     const saved = { ...OPTION_DEFAULTS };
     Object.assign(OPTION_DEFAULTS, APP);
