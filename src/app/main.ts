@@ -1442,6 +1442,8 @@ function drawTrackwork(list: TwItem[]) {
     i.addEventListener('change', () => change(i.checked)); row.append(field(label, i));
   };
   const show = (edited: boolean) => !twOnlyEdited || edited;
+  // (lengths said in studs, as they're set: kept in mm)
+  const studsOf = (mm: number) => String(Math.round((mm / 8) * 100) / 100);
   // Points: one per toe (a three-way's splits share one), built or taken out; and the near misses, to force points there
   {
     const keys = [...new Set(list.filter((it) => it.kind === 'points').map((it) => it.key))];
@@ -1458,7 +1460,7 @@ function drawTrackwork(list: TwItem[]) {
           check(row, 'Force points here', st.forced, () => canvas.togglePoints(key), 'Make points here though the track end is a hair off the other track');
         } else {
           const ids = [...new Set(its.flatMap((it) => it.routes ?? []))];
-          const sub = [ids.join(' / '), st.state === 'off' ? 'taken out' : st.forced ? 'forced' : '', cur.toe ? `moved ${cur.toe > 0 ? '+' : ''}${cur.toe} mm` : '', cur.drop?.length ? `without ${cur.drop.join(', ')}` : ''].filter(Boolean).join(' · ');
+          const sub = [ids.join(' / '), st.state === 'off' ? 'taken out' : st.forced ? 'forced' : '', cur.toe ? `moved ${cur.toe > 0 ? '+' : ''}${studsOf(cur.toe)} studs` : '', cur.drop?.length ? `without ${cur.drop.join(', ')}` : ''].filter(Boolean).join(' · ');
           const row = item(g, key, `Points ${++n}`, sub, ed, 'points');
           check(row, 'Built (off: both tracks\' rails run through as plain track)', st.state === 'built', () => canvas.togglePoints(key));
           // (a three-way: each route in it or not; one taken out leaves a two-way for the others)
@@ -1481,7 +1483,7 @@ function drawTrackwork(list: TwItem[]) {
       if (!show(ed)) return;
       let sub: string;
       if (kind === 'throw' && it.lever) { const ls = leverSide(design, it as unknown as OverlayItem, (canvas.overlay?.items ?? [])); sub = `${ls.side} · ${(it.lever.leverOffset / 8).toFixed(2).replace(/\.?0+$/, '')} studs out`; }
-      else sub = [it.len ? `${it.len.toFixed(1)} mm` : '', it.off ? 'taken out' : '', cur.d0 ? `start ${Number(cur.d0) > 0 ? '+' : ''}${cur.d0}` : '', cur.d1 ? `end ${Number(cur.d1) > 0 ? '+' : ''}${cur.d1}` : '', cur.shift ? `moved ${cur.shift}` : ''].filter(Boolean).join(' · ');
+      else sub = [it.len ? `${studsOf(it.len)} studs` : '', it.off ? 'taken out' : '', cur.d0 ? `start ${Number(cur.d0) > 0 ? '+' : ''}${studsOf(Number(cur.d0))}` : '', cur.d1 ? `end ${Number(cur.d1) > 0 ? '+' : ''}${studsOf(Number(cur.d1))}` : '', cur.shift ? `moved in ${cur.shift} mm` : ''].filter(Boolean).join(' · ');
       const row = item(g, it.key, `${names[kind][1]} ${n + 1}`, sub, ed, kind);
       // (studs: the value kept in mm, shown and set in studs)
       const numField = (label: string, prop: string, step: number, min?: number, studs = false) => {
