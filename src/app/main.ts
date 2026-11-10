@@ -543,8 +543,9 @@ function onBuilt(e: MessageEvent) {
   refreshOptions(); refreshRoutes();
   const i = d.info;
   const trackwork = [i.switches && plural(i.switches, 'switch', 'switches'), i.crossings && plural(i.crossings, 'rail crossing'), i.checkRails && plural(i.checkRails, 'check rail')].filter(Boolean).join(', ');
-  const nLego = pieces.filter((p) => p.lego).length;
-  setStatus(`${trackwork ? `${trackwork} · ` : ''}${plural(i.pieces - nLego, 'part')} to print${nLego ? ` · ${plural(nLego, 'bought track piece')}` : ''} · ${i.size.map((v: number) => v.toFixed(0)).join(' × ')} mm · ${(i.volume / 1000).toFixed(1)} cm³ · built in ${(i.ms / 1000).toFixed(1)} s`,
+  // (what's bought: the track pieces; the bricks a raised track stands on are in the parts list, not counted here)
+  const nLego = pieces.filter((p) => p.lego && p.name !== 'risers-bought').length, nPrint = pieces.filter((p) => !p.lego).length;
+  setStatus(`${trackwork ? `${trackwork} · ` : ''}${plural(nPrint, 'part')} to print${nLego ? ` · ${plural(nLego, 'bought track piece')}` : ''} · ${i.size.map((v: number) => v.toFixed(0)).join(' × ')} mm · ${(i.volume / 1000).toFixed(1)} cm³ · built in ${(i.ms / 1000).toFixed(1)} s`,
     (i.warnings as string[]).join('; '), false, true);
 }
 worker = newWorker();

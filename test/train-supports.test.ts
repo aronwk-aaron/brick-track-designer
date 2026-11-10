@@ -26,6 +26,9 @@ describe('raised train track on pillars', { timeout: 600000 }, () => {
           const sup = b.pieces.filter((p) => /^track-support/.test(p.name));
           if (raisedOn === 'printed') expect(sup.length).toBeGreaterThan(0);
           else expect(sup.length).toBe(0);
+          // (the size said: as it stands, lifted onto its grade, with what it stands on)
+          expect(b.info.size[2]).toBeGreaterThan(/Helix/.test(name) ? 250 : 15);
+          expect(b.info.pieces).toBe(b.pieces.length);
           // (the track's centre line, every 4 mm, at its height (its bottom))
           const line: [number, number, number][] = [];
           for (const r of d.routes) {

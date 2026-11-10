@@ -534,7 +534,18 @@ function graded(w: Wasm, design: Design, res: ReturnType<typeof buildLevel>): Re
   }
   if (skipped) warnings.push(`${skipped} of the places a raised track crosses over other track: nothing's put there to hold it up (its pillars would stand in the lower track's way): cross where the track below runs alongside, or carry it on a bridge`);
   if (risers.length) pieces.push({ name: 'risers-bought', color: LEGO_COLOR, positions: Float32Array.from(stacks), stl: new Uint8Array(0), lego: risers });
-  return { ...res, pieces, info: { ...res.info, warnings } };
+  // (the size as it stands, lifted, with what it stands on; the printed pillars' volume with the track's)
+  const mn = [Infinity, Infinity, Infinity], mx = [-Infinity, -Infinity, -Infinity];
+  let supVol = 0;
+  for (const p of pieces) {
+    const v = p.positions;
+    for (let i = 0; i < v.length; i += 3) for (let k = 0; k < 3; k++) { mn[k] = Math.min(mn[k], v[i + k]); mx[k] = Math.max(mx[k], v[i + k]); }
+    // (a closed mesh's volume, from its triangles)
+    if (/^track-support/.test(p.name)) for (let i = 0; i < v.length; i += 9)
+      supVol += (v[i] * (v[i + 4] * v[i + 8] - v[i + 5] * v[i + 7]) - v[i + 1] * (v[i + 3] * v[i + 8] - v[i + 5] * v[i + 6]) + v[i + 2] * (v[i + 3] * v[i + 7] - v[i + 4] * v[i + 6])) / 6;
+  }
+  const size = mn[0] < Infinity ? [0, 1, 2].map((k) => mx[k] - mn[k]) : res.info.size;
+  return { ...res, pieces, info: { ...res.info, warnings, size, volume: res.info.volume + Math.abs(supVol), pieces: pieces.length } };
 }
 
 /**
