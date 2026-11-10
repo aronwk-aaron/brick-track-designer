@@ -67,9 +67,9 @@ If you'd rather your slicer made the rail-end supports, turn Supports under rail
 
 - **The underside is hollow** (anti-stud tubes that grip a baseplate), so each track part has a roof over the
   hollows, 2 mm up, which prints as a bridge. The project's overhang check
-  (`test/printable.*.test.ts`, [what it checks](#what-the-ci-checks-about-printing)) finds roofs wider than the
-  10 mm it allows for a bridge in every track part it looks at. *Not yet confirmed by a test print:* watch the first layers over the
-  hollows, and use your slicer's bridge settings.
+  (`test/printable.*.test.ts`, [what it checks](#what-the-ci-checks-about-printing)) finds roof that nothing
+  holds (more than 10 mm across) in every track part it looks at, a few hundred to a few thousand mm2 a part. *Not yet confirmed
+  by a test print:* watch the layers over the hollows, and use your slicer's bridge settings.
 - **Sleepers with gaps** (Settings › Track › Under the rails): the rails print as bridges over the gaps between
   sleepers. Solid bed has none.
 - **Studs at cuts:** where a cut passes a stud, the setting Studs a cut goes through decides. *Whole on one part*
@@ -94,9 +94,11 @@ says what to set.
 
 ## Putting plain track together
 
-![A joint of each kind, pulled apart](printing-and-assembly/joints.webp)
+![Peg and clip, pulled apart](printing-and-assembly/joint-lego.webp)
+![Dovetail, pulled apart](printing-and-assembly/joint-dovetail.webp)
 
-*(Left to right: peg and clip, dovetail, axle holes.)*
+*(Two parts of a cut straight, drawn apart: peg and clip above, dovetail below. The axle joint looks like the first, with a
+cross-shaped hole in each end face.)*
 
 1. **Joints.** Parts cut for your print bed, or at a baseplate's edge, join as Settings › Joints › Parts join with
    says:
@@ -116,10 +118,10 @@ says what to set.
 
 ### Bought track in printed ballast
 
-![A bought curve lifted out of its printed seat](printing-and-assembly/bought-seat.webp)
+![Track lifted out of its ballast seat](printing-and-assembly/track-in-ballast.webp)
 
-With ballast and bought track, you print the ballast and drop LEGO's or BrickTracks' track into its seat (the green
-piece above is the bought one). Lay it in; it should drop in and sit flat, with a little slack all round: Settings ›
+With ballast and bought track, you print the ballast and drop LEGO's or BrickTracks' track into its seat (the picture
+shows printed track over its ballast: bought track drops in the same way). Lay it in; it should drop in and sit flat, with a little slack all round: Settings ›
 Bought track and Ballast › Track fit in the seat sets that gap (0.2 mm today). Print **Test print 5** first: it
 is one such seat.
 
@@ -133,8 +135,8 @@ the layout comes apart.
 
 Print every file of the switch (the zip's README.txt lists them), take out the supports (above), join the track
 parts of the switch base with the joint you chose, and press them onto a baseplate. Then the moving parts go in
-**in this order**, and the order is what the app's assembly tests check part by part: each is tried in the way
-described, against the track and against what's already in.
+**in this order**. The app's assembly tests try each moving part going in, in the way described, against the track and
+against the parts already in: that is what the directions below rest on. They don't try the whole sequence one part after the next.
 
 Whichever mechanism, finish the same way: **move the lever (or push the blade): both blades should go over together
 and close against their rails.** Then roll a wheelset through every route, both ways, with the points set each way.
@@ -143,7 +145,7 @@ and close against their rails.** Then roll a wheelset through every route, both 
 
 ![A switch, exploded: from the bottom, the base, the slider, the two blades, the lever](printing-and-assembly/switch-blades-top.webp)
 
-*(Picture: the parts in the order they go in, from the base up: slider, blades, lever.)*
+*(Picture: the parts lifted out of the base in tiers, the first to go in lowest: slider, then blades, then lever.)*
 
 1. **The slider** (`switch-throw`): down through the opening where the lever will go, then along its tunnel under
    the rails, till its posts stand up where the blades go. (With a two-part slider, under other track, the part with the
@@ -162,10 +164,10 @@ blades, set the points first. Lever click keeps the points where they are set (P
 
 #### Lever on a bracket, or a switch stand
 
-- **Bracket** (Throw: Lever on a bracket): the `…-bracket` is a 3 x 3 stud plate that presses onto the studs on the
-  slider's arm; the lever then goes into the bracket's ears as above.
-- **Switch stand** (Throw: Switch stand, a ground throw): a handle beside the track that locks at each end. It goes in
-  where the lever would, between its ears. It locks, so a train trailing against it derails unless the blades spring back.
+- **Bracket** (Throw: Lever on a bracket): the `…-bracket` is a 3 x 3 stud plate that presses onto the studs on the track
+  part's arm (two rows of three round where the lever goes); the lever then goes into the bracket's ears as above.
+- **Switch stand** (Throw: Switch stand, a ground throw): a handle beside the track that locks at each end. It is the file called
+  `…-lever` and goes in where the lever would, between its ears. It locks, so a train trailing against it derails unless the blades spring back.
 
 *The bracket and stand are put in the same way as the lever in the tests. Not yet confirmed by a test print.*
 
@@ -208,6 +210,8 @@ may not hold: *not yet confirmed by a test print.*
 
 ![A switch with its points under the bed](printing-and-assembly/switch-tines.webp)
 
+*(Picture: seen from below, the slider, the points and the lever drawn out of the base, the slider nearest it.)*
+
 Mechanism: Under the bed, on spring tines. The moving parts sit in pockets under the bed and go in **from below**,
 the lever from above.
 
@@ -235,7 +239,7 @@ to pillar, the feet slope at 45 degrees. Or choose LEGO bricks: stacks of 2 x 8 
 Monorail pieces (`monorail…`) are beams with ends you choose (Settings › Monorail): hollow studs out of the sides (like
 LEGO monorail), two studs on top in recesses, or plain. Each end has two LEGO cross-axle holes (Joining axle length 2 studs
 by default) to pin pieces together with axles. A **support** every so many studs (Support every, studs) is a part of its
-own: its base grips the baseplate and the beam sits on top. Parts are cut over a supports where they can be. The monorail
+own: its base grips the baseplate and the beam sits on top. Parts are cut over a support where they can be. The monorail
 points are marked experimental in the app. Printing and assembly are as above: no supports.
 *Not yet confirmed by a test print.*
 
@@ -260,7 +264,7 @@ points are marked experimental in the app. Printing and assembly are as above: n
 
 ## What the CI checks about printing
 
-Every change is tested: each part of about twenty representative designs, in the way up it is exported, has no
+Every change is tested: each part of about fifteen representative designs, in the way up it is exported, has no
 overhang beyond what the project allows without supports (faces facing down steeper than 45 degrees, unless they are held by the
 part's own break-out supports, are a slope of 45 degrees or less, or are a bridge held both sides and 10 mm
 or less across), and no floating island (a bit of a layer, 0.2 mm, resting on nothing in the layer below). Where a design fails, the exact part and place is
