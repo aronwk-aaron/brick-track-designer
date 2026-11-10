@@ -381,8 +381,50 @@ export function buildDesign(w: Wasm, design: Design, report: (what: string, frac
     return run();
   }
 }
+/** The most track a design may have, studs (240 m: a hall's worth; a figure typed with too many noughts is turned away, not built for hours). */
+export const MAX_TRACK_STUDS = 30000;
+/**
+ * What can't be built at all, said plainly before anything's worked out (undefined: nothing): more track than
+ * MAX_TRACK_STUDS; a route that lies along itself (a flat curve of more than a full turn); a route that lies wholly on
+ * another (the same route drawn twice). Each ran the kernel out of memory or never ended. Track at another height
+ * (a helix's turns, a bridge) is not on top of what's under it; monorail routes aren't looked at.
+ */
+export function unbuildable(design: Design): string | undefined {
+  const rts = toRoutes(design), idx = design.routes.map((r, i) => i).filter((i) => !isMono(design.routes[i]) && rts[i]?.segments.length);
+  const total = idx.reduce((t, i) => t + routeLength(rts[i]), 0) / 8;
+  if (total > MAX_TRACK_STUDS) return `${Math.round(total)} studs of track is more than can be built (${MAX_TRACK_STUDS} at most): check the lengths typed in`;
+  // (every route's centre line every 8 mm, by where it is, in 4 mm squares: two samples in one place heading the same
+  // way (or back along it) at the same height are one track on another)
+  const STEP = 8, CELL = 4, grid = new Map<string, { i: number; s: number; x: number; y: number; h: number; z: number }[]>();
+  const samples = idx.map((i) => {
+    const L = routeLength(rts[i]), out: { i: number; s: number; x: number; y: number; h: number; z: number }[] = [];
+    for (let sv = 0; sv <= L; sv += STEP) { const q = routePose(rts[i], sv); out.push({ i, s: sv, x: q[0], y: q[1], h: q[2], z: gradeAt(design.routes[i], L, sv) }); }
+    return out;
+  });
+  for (const list of samples) for (const q of list) { const k = `${Math.floor(q.x / CELL)},${Math.floor(q.y / CELL)}`, at = grid.get(k); if (at) at.push(q); else grid.set(k, [q]); }
+  const turn = (a: number, b: number) => { const d = Math.abs(((a - b) % 180 + 180) % 180); return Math.min(d, 180 - d); };
+  /** the samples of route j lying on q (not q's own neighbours along its route) */
+  const on = (q: (typeof samples)[number][number], j: number) => {
+    const ci = Math.floor(q.x / CELL), cj = Math.floor(q.y / CELL);
+    for (let a = ci - 2; a <= ci + 2; a++) for (let b = cj - 2; b <= cj + 2; b++) for (const o of grid.get(`${a},${b}`) ?? [])
+      if (o.i === j && (o.i !== q.i || Math.abs(o.s - q.s) > 64) && Math.hypot(o.x - q.x, o.y - q.y) < STEP / 2 + 0.5 && turn(o.h, q.h) < 1 && Math.abs(o.z - q.z) < GRADE_APART) return true;
+    return false;
+  };
+  const name = (i: number) => design.routes[i].name || `route ${i + 1}`;
+  for (let a = 0; a < idx.length; a++) {
+    const mine = samples[a];
+    // (along itself: 8 studs of it or more)
+    if (mine.filter((q) => on(q, idx[a])).length * STEP >= 64) return `${name(idx[a])} runs along itself (a curve of more than a full turn, or drawn back over its own track): shorten it, or give it a height so it climbs over`;
+    for (let b = 0; b < idx.length; b++) {
+      if (b === a || mine.length < 2 || samples[b].length < mine.length || (samples[b].length === mine.length && b < a)) continue;
+      if (mine.every((q) => on(q, idx[b]))) return `${name(idx[a])} lies on top of ${name(idx[b])} (the same track drawn twice): delete one of them`;
+    }
+  }
+  return undefined;
+}
 function buildAll(w: Wasm, design: Design, report: (what: string, frac: number) => void, early: ((overlay: unknown) => void) | undefined, opts: BuildOpts) {
   design = upgradeDesign(design);
+  { const why = unbuildable(design); if (why) throw new Error(why); }
   settingsKey = `${JSON.stringify([{ ...OPTION_DEFAULTS, ...design.options }, design.gaugeStuds])}|`;
   if (!design.routes.some((r) => isMono(r) && r.segs.length > 0)) return buildTrain(w, design, report, early, opts);
   const t0 = performance.now();
