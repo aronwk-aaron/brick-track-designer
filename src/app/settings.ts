@@ -182,8 +182,8 @@ export function optionForm(d: () => Design): { form: OptSection[]; noMono: (c?: 
       { key: 'pieceLengthStuds', label: 'Piece length, studs', step: 4, min: 0, max: 64, off: (c) => (c.o.splitTrack === 'lengths' ? undefined : 'only with Long track cut into: Track pieces'), help: 'LEGO straights are 16. 0: as long as fits the print bed. A longer piece than the bed takes: as long as fits.' },
       { key: 'baseplate', label: 'Cut at baseplate edges', numeric: true, help: 'So every part sits on one baseplate (orange dashed lines on the plan).', choices: [
         { v: '0', t: 'No' }, { v: '16', t: '16 x 16 studs' }, { v: '32', t: '32 x 32 studs' }, { v: '48', t: '48 x 48 studs' }, { v: '64', t: '64 x 64 studs' }, { v: '96', t: '96 x 96 studs' }] },
-      { key: 'baseplateX', label: 'Baseplate corner x, studs', step: 1, off: (c) => ((c.o.baseplate ?? 0) > 0 ? undefined : 'Cut at baseplate edges is No'), help: 'Where a baseplate corner is on the grid.' },
-      { key: 'baseplateY', label: 'Baseplate corner y, studs', step: 1, off: (c) => ((c.o.baseplate ?? 0) > 0 ? undefined : 'Cut at baseplate edges is No'), help: 'Where a baseplate corner is on the grid.' },
+      { key: 'baseplateX', label: 'Baseplate corner x, studs', step: 1, min: -96, max: 96, off: (c) => ((c.o.baseplate ?? 0) > 0 ? undefined : 'Cut at baseplate edges is No'), help: 'Where a baseplate corner is on the grid.' },
+      { key: 'baseplateY', label: 'Baseplate corner y, studs', step: 1, min: -96, max: 96, off: (c) => ((c.o.baseplate ?? 0) > 0 ? undefined : 'Cut at baseplate edges is No'), help: 'Where a baseplate corner is on the grid.' },
       { key: 'studsAtCuts', label: 'Studs a cut goes through', choices: [
         { v: 'off', t: 'Taken off', tip: 'No stud is cut in half: one a cut would go through is left off, on both parts.', con: 'A stud missing here and there along each cut.' },
         { v: 'whole', t: 'Whole on one part', tip: 'Each one whole on the part its middle is on, standing a little over the next part\'s edge.', con: 'Those studs overhang the joint: printed on the edge, they can snap off.' },

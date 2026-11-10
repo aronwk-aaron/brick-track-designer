@@ -14,6 +14,7 @@ import { freeStart, PALETTE, placePart } from './palette';
 import { BuildRunner, type WorkerPort } from './buildrun';
 import { History } from './history';
 import { fileBase as fileBaseOf, partsDownload, printedKinds, stlDownload } from './exports';
+import { clamp, LIMITS, type Range, rangeText } from './limits';
 import { mirrorRoute } from './routeedits';
 import { followTrackwork, isEdit, leftOver, mirrorAnchors, reconcileTrackwork, renameAnchors } from './twfollow';
 import { type OptChoice, optionForm, type OptCtx, type OptField } from './settings';
@@ -65,12 +66,21 @@ const midEdit = (box: HTMLElement) => !!typing && typing.isConnected && box.cont
 const soon = (f: () => void) => { setTimeout(f); };
 
 // ---------- the form ----------
-const num = (v: number, set: (n: number) => void, step = 1, label = '') => {
+/** A number field. range: what it takes (its tip says so; a number outside it is held to it, and shown as kept). */
+const num = (v: number, set: (n: number) => void, step = 1, label = '', range?: Range) => {
   const i = document.createElement('input');
   i.type = 'number'; i.step = String(step); i.value = String(Math.round(v * 1000) / 1000); i.title = label; // (shown to 3 places: the full value's kept till it's changed)
-  i.addEventListener('change', () => { const n = Number(i.value); if (Number.isFinite(n)) { set(n); changed(); } });
+  if (range) { i.min = String(range[0]); i.max = String(range[1]); i.title = [label, rangeText(range)].filter(Boolean).join(' '); }
+  i.addEventListener('change', () => {
+    let n = Number(i.value);
+    if (!Number.isFinite(n)) return;
+    if (range && n !== clamp(n, range)) { n = clamp(n, range); i.value = String(n); }
+    set(n); changed();
+  });
   return i;
 };
+/** A small line under fields saying what they take. */
+const rangeNote = (text: string) => { const n = document.createElement('small'); n.className = 'desc'; n.style.color = 'var(--muted)'; n.textContent = text; return n; };
 const btn = (text: string, fn: () => void, title = '') => {
   const b = document.createElement('button'); b.type = 'button'; b.textContent = text; b.title = title;
   b.addEventListener('click', () => { fn(); changed(true); });
@@ -83,9 +93,9 @@ const field = (label: string, ...els: HTMLElement[]) => {
 
 function segRow(r: DRoute, k: number): HTMLElement {
   const sg = r.segs[k], row = document.createElement('div'); row.className = 'seg';
-  if (sg.kind === 'straight') row.append(field('Straight, studs', (() => { const i = num(sg.studs, (n) => { sg.studs = Math.max(0, n); soon(render); }, 1); i.min = '0'; i.title = 'Length in studs, 0 or more'; return i; })()));
-  else row.append(field('Curve: radius, studs', (() => { const i = num(sg.radius, (n) => { const x = Math.min(1000, Math.max(24, n)); (sg as Extract<DSeg, { kind: 'curve' }>).radius = x; i.value = String(x); soon(render); }, 8); i.min = '24'; i.max = '1000'; i.title = 'Radius in studs, 24 to 1000 (the usual curves run 24 + 8k)'; return i; })()),
-    field('angle ° (+ left)', num(sg.angle, (n) => { (sg as Extract<DSeg, { kind: 'curve' }>).angle = n; soon(render); }, 0.5)));
+  if (sg.kind === 'straight') row.append(field('Straight, studs', num(sg.studs, (n) => { sg.studs = n; soon(render); }, 1, 'Length in studs.', LIMITS.straight)));
+  else row.append(field('Curve: radius, studs', num(sg.radius, (n) => { (sg as Extract<DSeg, { kind: 'curve' }>).radius = n; soon(render); }, 8, 'Radius in studs (the usual curves run 24 + 8k).', LIMITS.radius)),
+    field('angle ° (+ left)', num(sg.angle, (n) => { (sg as Extract<DSeg, { kind: 'curve' }>).angle = n; soon(render); }, 0.5, 'How far it turns, degrees: + left, - right. A whole turn at most: add another curve to go on.', LIMITS.angle)));
   row.append(btn('✕', () => { r.segs.splice(k, 1); }, 'Remove this segment'));
   row.append(...bankFields(sg, isMono(r)));
   return row;
@@ -250,12 +260,12 @@ function renderTables() {
     head.append(col, name, btn('✕', () => { design.tables = ts.filter((x) => x !== t); if (!design.tables.length) delete design.tables; }, 'Remove this table'));
     const f = document.createElement('div'); f.className = 'tfields';
     // (drawn again once it's taken: the number shown is the one kept, a width under 1 as 1)
-    const n = (label: string, v: number, set: (x: number) => void, step = 1) => f.append(field(label, num(v, (x) => { set(x); soon(render); }, step)));
-    if (t.shape === 'rect') { n('x', t.x, (v) => { t.x = v; }); n('y', t.y, (v) => { t.y = v; }); n('width', t.w, (v) => { t.w = Math.max(1, v); }); n('length', t.h, (v) => { t.h = Math.max(1, v); }); }
+    const n = (label: string, v: number, set: (x: number) => void, range: Range, step = 1) => f.append(field(label, num(v, (x) => { set(x); soon(render); }, step, '', range)));
+    if (t.shape === 'rect') { n('x', t.x, (v) => { t.x = v; }, LIMITS.tablePlace); n('y', t.y, (v) => { t.y = v; }, LIMITS.tablePlace); n('width', t.w, (v) => { t.w = v; }, LIMITS.tableSize); n('length', t.h, (v) => { t.h = v; }, LIMITS.tableSize); }
     else if (t.shape === 'arc') {
-      n('centre x', t.cx, (v) => { t.cx = v; }); n('centre y', t.cy, (v) => { t.cy = v; });
-      n('inner radius', t.r0, (v) => { t.r0 = Math.max(0, v); }, 8); n('outer radius', t.r1, (v) => { t.r1 = Math.max(0, v); }, 8);
-      n('from °', t.a0, (v) => { t.a0 = v; }, 11.25); n('to °', t.a1, (v) => { t.a1 = v; }, 11.25);
+      n('centre x', t.cx, (v) => { t.cx = v; }, LIMITS.tablePlace); n('centre y', t.cy, (v) => { t.cy = v; }, LIMITS.tablePlace);
+      n('inner radius', t.r0, (v) => { t.r0 = v; }, LIMITS.tableRadius, 8); n('outer radius', t.r1, (v) => { t.r1 = v; }, LIMITS.tableRadius, 8);
+      n('from °', t.a0, (v) => { t.a0 = v; }, LIMITS.tableAngle, 11.25); n('to °', t.a1, (v) => { t.a1 = v; }, LIMITS.tableAngle, 11.25);
     } else {
       const ta = document.createElement('textarea'); ta.rows = 2; ta.value = t.pts.map((p) => `${+p[0].toFixed(3)}, ${+p[1].toFixed(3)}`).join('; ');
       ta.title = 'Its corners in studs, x, y each, in order round it, separated by ;';
@@ -264,12 +274,12 @@ function renderTables() {
         const parts = ta.value.split(';').map((v) => v.trim()).filter(Boolean), pts = parts.map((v) => v.split(',').map((x) => Number(x.trim())));
         const wrong = parts.filter((_, k) => pts[k].length !== 2 || !pts[k].every(Number.isFinite));
         bad.textContent = wrong.length ? `Not x, y: ${wrong.slice(0, 3).join('; ')}. Kept the corners as they were.` : pts.length < 3 ? 'It needs 3 corners at least. Kept the corners as they were.' : '';
-        if (!bad.textContent) { t.pts = pts as [number, number][]; changed(); soon(render); }
+        if (!bad.textContent) { t.pts = pts.map(([x, y]) => [clamp(x, LIMITS.tablePlace), clamp(y, LIMITS.tablePlace)] as [number, number]); changed(); soon(render); }
       });
       f.append(field('corners (x, y; …)', ta), bad);
     }
     const note = document.createElement('div'); note.className = 'tnote';
-    note.textContent = t.shape === 'rect' ? 'Studs: its corner (x, y), width (x) and length (y).' : t.shape === 'arc' ? 'Studs: round its centre, from the inner radius to the outer. Angles: 0° points right (+x), 90° up (+y), counterclockwise (not a route\'s heading, where 0° is up). A centre on a curve\'s centre puts the seams square across the track.' : '';
+    note.textContent = t.shape === 'rect' ? 'Studs: its corner (x, y), width (x) and length (y). Place -10000 to 10000; width and length 1 to 2000.' : t.shape === 'arc' ? 'Studs: round its centre (-10000 to 10000), from the inner radius to the outer (0 to 2000); angles -360 to 360. Angles: 0° points right (+x), 90° up (+y), counterclockwise (not a route\'s heading, where 0° is up). A centre on a curve\'s centre puts the seams square across the track.' : '';
     card.append(head, f, ...(note.textContent ? [note] : []));
     body.append(card);
   });
@@ -364,9 +374,10 @@ function drawForms() {
       changed(false, true, false); soon(render);
     });
     place.append(field('Name', name),
-      field('Start x, studs', num(r.x, (n) => { r.x = n; soon(render); }, 1)),
-      field('Start y, studs', num(r.y, (n) => { r.y = n; soon(render); }, 1)),
-      field('Heading ° (0 = up, + = left)', num(r.heading, (n) => { r.heading = n; soon(render); }, 22.5)));
+      field('Start x, studs', num(r.x, (n) => { r.x = n; soon(render); }, 1, 'Where it starts, studs across the plan.', LIMITS.start)),
+      field('Start y, studs', num(r.y, (n) => { r.y = n; soon(render); }, 1, 'Where it starts, studs up the plan.', LIMITS.start)),
+      field('Heading ° (0 = up, + = left)', num(r.heading, (n) => { r.heading = n; soon(render); }, 22.5, 'The way it sets off, degrees: 0 up the plan, + turned left.', LIMITS.heading)),
+      rangeNote('Start -10000 to 10000 studs; heading -360 to 360°.'));
     {
       // (what runs on it: train track or the monorail beam)
       const sys = document.createElement('select');
@@ -376,18 +387,18 @@ function drawForms() {
       sys.addEventListener('change', () => { if (sys.value === 'monorail') r.system = 'monorail'; else delete r.system; changed(true); renderOptions(); });
       place.append(field('Track', sys));
       // (monorail: the beam's height off the baseplate, in plates; empty: the supports' height in Settings, or on the baseplate)
-      const hi = document.createElement('input'); hi.type = 'number'; hi.step = '1'; hi.min = '0'; hi.max = '60';
+      const hi = document.createElement('input'); hi.type = 'number'; hi.step = '1'; hi.min = '0'; hi.max = String(LIMITS.plates[1]);
       hi.value = r.monoHeight === undefined ? '' : String(r.monoHeight); hi.placeholder = 'auto';
       hi.title = isMono(r) ? 'The beam\'s height off the baseplate in plates (3.2 mm). Empty: the supports\' height (Settings › Monorail), or on the baseplate. Raise it to pass over train track or another monorail (5 plates clear of a beam, more over track).'
         : 'Train track: its height off the baseplate at its start, in plates (3.2 mm), on risers (LEGO 2 x 8 bricks and plates, in the parts list). The pieces are printed level and laid on them. Empty: on the baseplate.';
-      hi.addEventListener('change', () => { const n = Math.round(Number(hi.value)); if (hi.value.trim() === '' || !Number.isFinite(n)) { delete r.monoHeight; delete r.monoHeightEnd; /* (its end height is locked without it: not kept, to take effect unseen) */ } else r.monoHeight = Math.min(60, Math.max(0, n)); changed(); soon(render); });
+      hi.addEventListener('change', () => { const n = Math.round(Number(hi.value)); if (hi.value.trim() === '' || !Number.isFinite(n)) { delete r.monoHeight; delete r.monoHeightEnd; /* (its end height is locked without it: not kept, to take effect unseen) */ } else r.monoHeight = clamp(n, LIMITS.plates); changed(); soon(render); });
       place.append(field(isMono(r) && r.monoHeightEnd !== undefined ? 'Start height, plates' : 'Height, plates', hi));
       // (a ramp: its height at its end; empty: level)
-      const he = document.createElement('input'); he.type = 'number'; he.step = '1'; he.min = '0'; he.max = '60';
+      const he = document.createElement('input'); he.type = 'number'; he.step = '1'; he.min = '0'; he.max = String(LIMITS.plates[1]);
       he.value = r.monoHeightEnd === undefined ? '' : String(r.monoHeightEnd); he.placeholder = 'level';
       he.disabled = r.monoHeight === undefined;
       he.title = r.monoHeight === undefined ? 'Locked: set its Height first' : !isMono(r) ? 'Train track: its height at its end, in plates: an even grade from its start height to this. The standard is 2.5% (a plate a 16-stud straight; a whole turn of R40 rises 15.7 plates, R104 40.8). Empty: level.' : 'Its height at its end, in plates: it ramps from its start height to this, easing in and out (level at both ends). Empty: level. It may be as steep as LEGO\'s monorail ramps (21° at the steepest): those rise 5 bricks over each 32-stud piece.';
-      he.addEventListener('change', () => { const n = Math.round(Number(he.value)); if (he.value.trim() === '' || !Number.isFinite(n)) delete r.monoHeightEnd; else r.monoHeightEnd = Math.min(60, Math.max(0, n)); changed(); soon(render); });
+      he.addEventListener('change', () => { const n = Math.round(Number(he.value)); if (he.value.trim() === '' || !Number.isFinite(n)) delete r.monoHeightEnd; else r.monoHeightEnd = clamp(n, LIMITS.plates); changed(); soon(render); });
       place.append(field(isMono(r) ? 'End height, plates (a ramp)' : 'End height, plates (a grade)', he));
       // (train track on a grade: how steep, against the standard 2.5%)
       if (!isMono(r) && r.monoHeight !== undefined && r.monoHeightEnd !== undefined && r.monoHeightEnd !== r.monoHeight) {
@@ -396,6 +407,7 @@ function drawForms() {
         if (g > 2.5 + 1e-6) n5.style.color = 'var(--warn)';
         place.append(n5);
       }
+      place.append(rangeNote('Heights: 0 to 250 plates; empty: none.'));
       if (r.monoHeight === undefined) { const n4 = document.createElement('small'); n4.className = 'desc'; n4.textContent = 'End height: locked until Height is set.'; n4.style.color = 'var(--warn)'; place.append(n4); }
     }
     r.segs.forEach((_, k) => {
@@ -456,7 +468,7 @@ function drawForms() {
       }),
     );
     more.lastElementChild!.className = 'danger';
-    shape.append(add); body.append(more);
+    shape.append(add, rangeNote('A straight: 0 to 2000 studs. A curve: radius 24 to 1000 studs, up to 360° either way (add another to go on round).')); body.append(more);
     box.append(sum, body);
     routesEl.append(box);
   });
@@ -1510,7 +1522,7 @@ function drawTrackwork(list: TwItem[]) {
             const drop = (cur.drop ?? []).filter((d2) => d2 !== id).concat(v ? [] : [id]);
             edit('points', key, { drop: drop.length ? drop : undefined });
           });
-          if (st.state === 'built') { const i = num((cur.toe ?? 0) / 8, (v) => edit('points', key, { toe: v * 8 }), 0.125); row.append(field('Moved along, studs', i)); }
+          if (st.state === 'built') { const i = num((cur.toe ?? 0) / 8, (v) => edit('points', key, { toe: v * 8 }), 0.125, 'How far the points are moved along their track from where they\'re worked out, studs.', LIMITS.twToe); row.append(field('Moved along, studs', i)); }
         }
       }
     }
@@ -1528,17 +1540,15 @@ function drawTrackwork(list: TwItem[]) {
       else sub = [it.len ? `${studsOf(it.len)} studs` : '', it.off ? 'taken out' : '', cur.d0 ? `start ${Number(cur.d0) > 0 ? '+' : ''}${studsOf(Number(cur.d0))}` : '', cur.d1 ? `end ${Number(cur.d1) > 0 ? '+' : ''}${studsOf(Number(cur.d1))}` : '', cur.shift ? `moved in ${cur.shift} mm` : ''].filter(Boolean).join(' · ');
       const row = item(g, it.key, `${names[kind][1]} ${n + 1}`, sub, ed, kind);
       // (studs: the value kept in mm, shown and set in studs)
-      const numField = (label: string, prop: string, step: number, min?: number, studs = false) => {
+      const numField = (label: string, prop: string, step: number, range: Range, studs = false) => {
         const k = studs ? 8 : 1;
-        const i = num(((cur[prop] as number) ?? 0) / k, (v) => edit(kind, it.key, { [prop]: min === undefined ? v * k : Math.max(min, v * k) }), step);
-        if (min !== undefined) i.min = String(min);
-        row.append(field(label, i));
+        row.append(field(label, num(((cur[prop] as number) ?? 0) / k, (v) => edit(kind, it.key, { [prop]: v * k }), step, '', range)));
       };
       if (kind === 'check') {
-        numField('Longer at the start, studs', 'd0', 0.125, undefined, true); numField('Longer at the end, studs', 'd1', 0.125, undefined, true); numField('Moved in from the rail, mm', 'shift', 0.1);
+        numField('Longer at the start, studs', 'd0', 0.125, LIMITS.twEnd, true); numField('Longer at the end, studs', 'd1', 0.125, LIMITS.twEnd, true); numField('Moved in from the rail, mm', 'shift', 0.1, LIMITS.twShift);
         check(row, 'Take it out', !!cur.off, (v) => edit(kind, it.key, { off: v }));
       } else if (kind === 'groove') {
-        numField('Longer at the start, studs', 'd0', 0.125, 0, true); numField('Longer at the end, studs', 'd1', 0.125, 0, true);
+        numField('Longer at the start, studs', 'd0', 0.125, LIMITS.twGrooveEnd, true); numField('Longer at the end, studs', 'd1', 0.125, LIMITS.twGrooveEnd, true);
       } else if (kind === 'throw' && it.lever) {
         // (drag the lever on the plan, or set it here; Auto: as the route or the options say)
         const lv = it.lever, ls = leverSide(design, it as unknown as OverlayItem, (canvas.overlay?.items ?? []));
@@ -1554,7 +1564,7 @@ function drawTrackwork(list: TwItem[]) {
           changed(true);
         });
         const sf = field('Side', side); sf.classList.add('stack'); row.append(sf);
-        const out = num(lv.leverOffset / 8, (v) => edit('throw', it.key, { leverOffset: Math.max(0, v * 8) }), 0.125); out.min = '0';
+        const out = num(lv.leverOffset / 8, (v) => edit('throw', it.key, { leverOffset: v * 8 }), 0.125, 'How far out past the track the lever is, studs.', LIMITS.twLeverOut);
         row.append(field('Out past the track, studs', out));
         if (leverSlides(design)) {
           const tine = num(lv.springLength / 8, (v) => edit('throw', it.key, { springLength: Math.min(lv.maxTine, Math.max(16, v * 8)) }), 0.125); tine.min = '2'; tine.max = String(Math.floor(lv.maxTine / 8 * 8) / 8);

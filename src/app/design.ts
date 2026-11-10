@@ -1,6 +1,7 @@
 // The editor's document: routes in studs and degrees, as people enter them,
 // and their conversion to the solver's routes in mm.
 import type { Table } from './tables';
+import { clampDesign } from './limits';
 import type { ExtraRails, Roll, Route, RouteEnds, Segment } from '../route/route';
 import { routeLength, routePose } from '../route/route';
 
@@ -239,7 +240,8 @@ export function readDesign(v: unknown): Design {
       : t.shape === 'poly' && Array.isArray(t.pts) && t.pts.length >= 3 && t.pts.every((q: unknown) => Array.isArray(q) && q.length === 2 && q.every(fin))));
     if (tables.length) d.tables = tables; else delete d.tables;
   } else delete d.tables;
-  return upgradeDesign(d as unknown as Design);
+  // (its numbers held to their ranges, as the fields hold what's typed: limits.ts)
+  return upgradeDesign(clampDesign(d as unknown as Design));
 }
 export const OPTION_DEFAULTS: PieceOptions = {
   throwSide: 'auto', leverOffset: 8, pointThrow: 3, pointClearance: 0.3, springPreload: 1, springThickness: 0.9, springLength: 40,
