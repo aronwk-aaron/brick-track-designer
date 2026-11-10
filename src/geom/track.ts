@@ -8,6 +8,19 @@ import { Scad, T, R, M, type Man, type Vec2 } from './scad';
 
 export const STUD = 8;
 export const PLATE_H = 3.2;
+/** (mm) How far a cut's rail-end tongue runs on into its own rail (Track.cutTongueEnd). */
+const TONGUE_ROOT = 0.05;
+/** (degrees) A rail crossing a cut at more of a slant than this, the way that binds, has its tongues the other way round (tongueLeans). */
+const TONGUE_LEAN = 2;
+/**
+ * Does a rail crossing a cut at this heading (degrees from square to it, in the cut's frame) get its tongues the
+ * other way round (mirrored, both parts')? The far part's tongue lies on one side of its rail's middle, the near
+ * part's on the other. Parts go together square to the cut, their pegs into their clips: with the rail leaning one
+ * way that draws each tongue off the other's face; leaning the other way it pushed them into each other (a curved
+ * switch's last cut, its rails at 17 to 28 degrees: 17 mm3 in the way however the parts were drawn apart). Mirrored,
+ * those come apart too.
+ */
+export const tongueLeans = (heading: number) => ((((heading + 90) % 180) + 180) % 180) - 90 > TONGUE_LEAN && !parity;
 
 /** The settings the shapes depend on (OpenSCAD's Customizer values). */
 export interface TrackOptions {
@@ -113,6 +126,18 @@ export class Track {
     const poly: Vec2[] = [[3 + offH, 8], [3 + offH, 4], [9.6, 4], [9.6, 3.05],
       [7.6, 3.05], [4, 1], [3 + offH, 1]];
     return R(this.s.polygon(poly).extrude(8), [90, -90, 180]);
+  }
+
+  /**
+   * A cut's rail-end tongue (type -1: the left-hand kind, +1 the right), about the cut's middle, its root (+y) run on
+   * TONGUE_ROOT into its own rail. Flush with the rail's cut end, on a rail at a slant to the cut the two faces only
+   * nearly met: a crack no wider than the kernel's rounding, which a part's mesh read back in closed up wrongly
+   * (a wedge of rail, some 20 mm3, where the next part's tongue lies).
+   */
+  cutTongueEnd(type: number): Man {
+    const e = T(type < 0 ? this.railEndpointLeft() : this.railEndpointRight(), [-4, -4, 0]);
+    // (not when matching the OpenSCAD output: its tongues are flush)
+    return scadParity() ? e : this.s.union([e, T(e, [0, TONGUE_ROOT, 0])]);
   }
 
   /** attach_poly(h): the dovetail prism. */

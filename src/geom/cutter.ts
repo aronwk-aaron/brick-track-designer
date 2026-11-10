@@ -7,7 +7,7 @@
 // cuts along the stud grid (pathsplit.ts, via pathJoints).
 import { clipNear, M, R, T, type CS, type Man, type Scad } from './scad';
 import { flat } from './kernel';
-import { PLATE_H, type Track } from './track';
+import { PLATE_H, tongueLeans, type Track } from './track';
 import type { Route } from '../route/route';
 import { railPoint, routeLat, routeLength, routePose } from '../route/route';
 
@@ -76,10 +76,11 @@ export function jointKit(s: Scad, t: Track, bz: number) {
     const cross = s.w.CrossSection.union([s.square([4.9, 1.9], true), s.square([1.9, 4.9], true)]);
     return T(R(T(s.extrude(cross, 2 * axleHalf + 0.4), [0, 0, -(axleHalf + 0.2)]), [90, 0, 0]), [0, 0, axleZ]);
   };
-  const cutTongue = (type: number, z0: number) => s.union([
-    T(type < 0 ? t.railEndpointLeft() : t.railEndpointRight(), [-4, -4, 0]),
+  /** lean: the other way round, for a rail at a slant the way that binds (track.ts tongueLeans) */
+  const cutTongue = (type: number, z0: number, lean = false) => { const m = s.union([
+    t.cutTongueEnd(type),
     type < 0 ? T(t.railSupport(3, 3.23 - z0), [-3.3, -3, z0]) : T(t.railSupport(4, 2.08 - z0), [-2.2, -3, z0]),
-  ]);
+  ]); return lean ? M(m, [1, 0, 0]) : m; };
   /** The coupler a cut gets: cut flat, pinned with axles where they fit, or nothing (never a peg and clip: nothing sticks out); an axle joint where the piece is too thin for the hole, peg and clip. */
   const kindOf = (joint: Joint, flatRails: boolean): Joint => (flatRails ? (axleFits ? 'axle' : 'butt') : joint === 'axle' && !axleFits ? 'lego' : joint);
   /** Rail-end tongues where rails cross it (not cut flat, nor butted). */
@@ -93,7 +94,7 @@ export function jointKit(s: Scad, t: Track, bz: number) {
   /** A rail-end tongue joint at a crossing r: what it takes away (both sides), and adds on a side. */
   // (the joint's column down to the bottom: on ballast the tongue's breakaway support stands on the bed, not in the air)
   const tongueCut = (r: RailCross) => R(cube([8, 8, 30 - bz], [-4, -4, Math.min(-1, bz - 1)]), [0, 0, r[1]]);
-  const tonguePart = (r: RailCross, side: number) => R(cutTongue(side > 0 ? r[2] : -r[2], Math.min(0, bz) - 0.02), [0, 0, r[1] + (side < 0 ? 180 : 0)]);
+  const tonguePart = (r: RailCross, side: number) => R(cutTongue(side > 0 ? r[2] : -r[2], Math.min(0, bz) - 0.02, tongueLeans(r[1])), [0, 0, r[1] + (side < 0 ? 180 : 0)]);
   // (the levels an axle hole must be in solid at, and the wall it keeps round it: 1.2 mm, three perimeters)
   const axleWall = 1.2, axleLevels = [axleZ, axleZ + 2.45 + axleWall, axleZ - 2.45 - axleWall];
   return { axleFits, axleZ, axleHalf, axleWall, axleLevels, kindOf, tongues, couplerCut, couplerPart, couplerReach, tongueCut, tonguePart };
@@ -398,14 +399,16 @@ export function pathJoints(s: Scad, t: Track, body: Man, routes: Route[], runs: 
     const band = s.polygon([f.at(-10, -7), f.at(f.len + 10, -7), f.at(f.len + 10, 7), f.at(-10, 7)]);
     return railCrossings(s, routes, G, f, railSl.intersect(band), 0, f.len, noTongue);
   });
-  const railPts = rails.flatMap((rs, k) => rs.map((r) => fs[k].at(r[0])));
+  const railPts = rails.flatMap((rs, k) => rs.map((r) => ({ r, q: fs[k].at(r[0]) })));
   if (tongues) rails.forEach((rs, k) => {
     for (const r of rs.filter(tongueOk(t))) {
       // (the joint's 8 mm square, turned to the rail: how far it reaches along the run and across it)
       const h = (r[1] * Math.PI) / 180, e = 4 * (Math.abs(Math.cos(h)) + Math.abs(Math.sin(h)));
       // (too near a turn, or another rail's joint (where rails meet at a crossing): the rail cut plain)
       const q = fs[k].at(r[0]);
-      if (!clear(k, r[0], e, e, e) || railPts.some((p) => p !== q && Math.hypot(p[0] - q[0], p[1] - q[1]) > 1e-6 && Math.hypot(p[0] - q[0], p[1] - q[1]) < 12)) continue;
+      // (another rail's, even at the very same spot: two rails meeting on the cut itself, down a wye's or a crossing's
+      // middle, each got a tongue there, one through the other and in both parts)
+      if (!clear(k, r[0], e, e, e) || railPts.some((p) => p.r !== r && Math.hypot(p.q[0] - q[0], p.q[1] - q[1]) < 12)) continue;
       cut.push(fs[k].place(kit.tongueCut(r), r[0]));
       add[0].push(fs[k].place(kit.tonguePart(r, 1), r[0])); add[1].push(fs[k].place(kit.tonguePart(r, -1), r[0]));
       nTongues++;
@@ -425,7 +428,7 @@ export function pathJoints(s: Scad, t: Track, body: Man, routes: Route[], runs: 
     const cand: [number, number, [number, number]][] = [];
     fs.forEach((f, k) => {
       // (anywhere there's solid all along it: in the ballast between tracks too, not only by a track)
-      const ok = (u: number) => clear(k, u, ra, rn0, rn1) && railPts.every((p) => Math.hypot(p[0] - f.at(u)[0], p[1] - f.at(u)[1]) >= RAIL_CLEAR)
+      const ok = (u: number) => clear(k, u, ra, rn0, rn1) && railPts.every(({ q: p }) => Math.hypot(p[0] - f.at(u)[0], p[1] - f.at(u)[1]) >= RAIL_CLEAR)
         && floorAt(s, floor, f.at(u, 2.5), 2.5) && floorAt(s, floor, f.at(u, -2.5), 2.5) && solids.every((sl) => filled(sl, k, u, ra + wall, rn0 + wall, rn1 + wall));
       for (let u = 0; u <= f.len + 1e-9; u += 1) if (ok(u)) cand.push([k, u, f.at(u)]);
     });
@@ -446,7 +449,7 @@ export function pathJoints(s: Scad, t: Track, body: Man, routes: Route[], runs: 
   } else if (kind !== 'butt') fs.forEach((f, k) => {
     const ok = (u: number) => {
       const q = f.at(u);
-      return railPts.every((p) => Math.hypot(p[0] - q[0], p[1] - q[1]) >= RAIL_CLEAR) && clear(k, u, ra, rn0, rn1)
+      return railPts.every(({ q: p }) => Math.hypot(p[0] - q[0], p[1] - q[1]) >= RAIL_CLEAR) && clear(k, u, ra, rn0, rn1)
         && routes.some((rt) => Math.abs(routeLat(rt, q)) <= half - 5) && floorAt(s, nearOf(floor)(f.at(u, 2.5)), f.at(u, 2.5), 2.5) && floorAt(s, nearOf(floor)(f.at(u, -2.5)), f.at(u, -2.5), 2.5)
         && solids.every((sl) => filled(sl, k, u, ra + wall, rn0 + wall, rn1 + wall));
     };

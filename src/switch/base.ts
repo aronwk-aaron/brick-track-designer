@@ -12,7 +12,7 @@ import { poseToWorld, railPoint, routeLat, routeLength, routePose, routeSOf, seg
 import { M, R, T, type CS, type Man, type Scad, type Vec2, type Vec3 } from '../geom/scad';
 import { sweepRoute } from '../geom/sweep';
 import { ANTISTUD_FIT, connectorUnderside, hollowGrid, type Spot, studSpots, TUBE_OD } from '../geom/underside';
-import { DEFAULTS as TRACK_DEFAULTS, getSocketShape, scadParity, PLATE_H, RAIL_PROFILE, STUD, Track } from '../geom/track';
+import { DEFAULTS as TRACK_DEFAULTS, getSocketShape, scadParity, PLATE_H, RAIL_PROFILE, STUD, tongueLeans, Track } from '../geom/track';
 import { couplerSupports, trackSeat } from '../geom/extras';
 import { type P2, SNAP, snapGeo, type SnapGeo, snapHalf } from './snap';
 import { SPRUNG_SLIDER, type FdbBladeLayout, sprungLow, squareGrid, HEAD_HW, type Notch, pointsSet, type PointsSetValues, STAND, SWITCH_DEFAULTS, type SwitchParams, switchGlobals } from './context';
@@ -2336,17 +2336,18 @@ export function switchGeometry(s: Scad, plan: SwitchPlan, extraCuts: Man[] = [])
   const couplerNotch = () => T(t.attachPoly(ch + 1), [-4, -0.11, cz0 - 0.5]);
   const couplerPeg = () => s.difference(s.union([T(s.cylinder(ch, 1, 1, 32), [0, 1.8, cz0]), T(s.cylinder(ch, 1.9, 2.1, 32), [0, 0, cz0])]), [T(s.cylinder(ch + 1, 0.8, 0.8, 32), [0, 0, cz0 - 0.5])]);
   const couplerTab = () => s.difference(T(M(s.extrude(s.polygon([[-0.3, 0], [1.7, 1.9], [6.3, 1.9], [8.3, 0]]), ch), [0, 1, 0]), [-4, 0.3, cz0]), [couplerSocket()]);
-  const cutTongue = (type: number, z0: number) => s.union([
-    T(type < 0 ? t.railEndpointLeft() : t.railEndpointRight(), [-4, -4, 0]),
+  /** lean: the other way round, for a rail at a slant the way that binds (track.ts tongueLeans) */
+  const cutTongue = (type: number, z0: number, lean = false) => { const m = s.union([
+    t.cutTongueEnd(type),
     type < 0 ? T(t.railSupport(3, 3.23 - z0), [-3.3, -3, z0]) : T(t.railSupport(4, 2.08 - z0), [-2.2, -3, z0]),
-  ]);
+  ]); return lean ? M(m, [1, 0, 0]) : m; };
   const cutRemovals = (yc: number) => s.union([
     // (down to the bottom: on ballast the tongue's breakaway support stands on the bed, clear of the other part's ballast)
     ...tongueRails(yc).map((r) => atCut(cube([8, 8, 30 - Math.min(0, pieceBottomZ)], [-4, -4, Math.min(-1, pieceBottomZ - 1)]), r[0], yc, 1, r[1])),
     ...couplerXs(yc).flatMap((x) => [atCut(couplerNotch(), x, yc, 1), atCut(couplerSocket(), x, yc, 1)]),
   ]);
   const cutJoint = (yc: number, side: number) => s.union([
-    ...tongueRails(yc).map((r) => atCut(cutTongue(side > 0 ? r[2] : -r[2], pieceBottomZ - 0.02), r[0], yc, side, r[1])),
+    ...tongueRails(yc).map((r) => atCut(cutTongue(side > 0 ? r[2] : -r[2], pieceBottomZ - 0.02, tongueLeans(r[1])), r[0], yc, side, r[1])),
     ...couplerXs(yc).map((x) => (side > 0 ? atCut(couplerPeg(), x, yc, 1) : atCut(couplerTab(), x, yc, -1))),
   ]);
   /** The base in pieces that fit the print bed (one piece if it fits whole). */
