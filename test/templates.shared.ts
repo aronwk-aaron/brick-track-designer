@@ -49,7 +49,7 @@ export function templatesBuild(groups: string[], only?: string[]) {
       expect(ms2, `${name}: built again unchanged in ${(ms2 / 1000).toFixed(2)} s`).toBeLessThan(limit);
       expect(again.pieces.length).toBe(b.pieces.length);
       expect(b.pieces.length).toBeGreaterThan(0);
-      const extra = b.info.warnings.filter((w) => !/experimental/.test(w) && !/at an angle to the baseplate grid/.test(w) && !(/Double slip/.test(name) && /blades are rigid/.test(w)) && !(/Helix/.test(name) && /stands over other track/.test(w)) && !(/X yard/.test(name) && /lever of the points at 67, 209|sprung blade's front has no lip|blades are rigid|printed track on from both ends of the bought switch at (80, 27|0, 261) \(studs\) is one part/.test(w)));
+      const extra = b.info.warnings.filter((w) => !/experimental/.test(w) && !/at an angle to the baseplate grid/.test(w) && !(/Double slip/.test(name) && /blades are rigid/.test(w)) && !(/Helix/.test(name) && /stands over other track/.test(w)) && !(/X yard/.test(name) && /lever of the points at 67, 209|sprung blade's front has no lip|blades are rigid/.test(w)));
       // (said in full when it fails)
       expect(extra.join(' | ')).toBe('');
     } finally { Object.assign(OPTION_DEFAULTS, saved); clearBuildCache(); }

@@ -1432,7 +1432,7 @@ function sectioned(b: PieceBuild, name: string, all: Route[], checks: CheckRail[
     if ((sb[2] - sb[0]) * (sb[3] - sb[1]) > 8 * o.printBedX * o.printBedY && tiled(b, name, rts, cChecks, mine, copt, true)) return;
     const zs = cx.zones.filter((z) => z.box[2] >= sb[0] && z.box[0] <= sb[2] && z.box[3] >= sb[1] && z.box[1] <= sb[3]).map((z) => [z.rt.id, z.s0, z.s1, z.box]);
     const sk = `sec:${JSON.stringify({ rts, cChecks, m: mine.map((x) => [x.key, x.inner, x.bladeCuts.map(([i]) => i)]), copt, g: b.grooveCuts.length ? b.grooveEdits : 0, di: [...secInner],
-      gp: gridPose, bp, bxy: [o.baseplateX, o.baseplateY], joint: o.joint, ...(apart && { seat: o.trackFitTol ?? 0.2, seated, bb: o.boughtBallast }), ...(o.ballast !== 'none' && (b.boughtSw.length || seated) && { sw: groundKey(b, routesBox(rts, bandHalf + 64), seated) }), bed: [o.printBedX, o.printBedY], zs, ...(b.labelOn && { lab: [o.labelText, o.labelSize, o.labelGauge, o.labelParts, base + si + 1] }) })}`;
+      gp: gridPose, bp, bxy: [o.baseplateX, o.baseplateY], joint: o.joint, ...(apart && { seat: o.trackFitTol ?? 0.2, seated, bb: o.boughtBallast }), ...(o.ballast !== 'none' && (b.boughtSw.length || seated) && { sw: groundKey(b, routesBox(rts, bandHalf + 64), seated) }), bed: [o.printBedX, o.printBedY], zs, ...(b.boughtSw.length > 0 && { pt: partingsNear(b, sb) }), ...(b.labelOn && { lab: [o.labelText, o.labelSize, o.labelGauge, o.labelParts, base + si + 1] }) })}`;
     let part: { ms: (Baked & { id?: string; lego?: LegoPart[]; seats?: Pose[] })[]; grips: [number, number][] };
     const cost = rts.reduce((t, rt) => t + routeLength(rt), 0) + 400 * mine.length;
     try { part = b.job(sk, cost, () => arena(w, () => {
@@ -1529,8 +1529,9 @@ function sectioned(b: PieceBuild, name: string, all: Route[], checks: CheckRail[
         const bottom = body.boundingBox().min[2] + 0.02;
         parts2 = parts2.flatMap((m) => (fitsBed(m) ? [m] : step(() => cx.whole(m, step(() => cx.bedCut(flat(w, m), rts, taken))).map((m2) => (b.alongTrack ? m2 : edgeGrip(scad, track, m2, gridPose, bottom))))));
       }
+      // (the track on from each far end of a bought switch a part of its own: partedAtSwitches)
       // (pieces of it that don't touch, each a part of its own: a file held two or three loose ones (past a three-way's frogs, the middle track and each branch's end))
-      const kept = parts2.filter((m) => m.numTri() > 0).flatMap((m) => cx.bodies(m, 600)), id = (k: number) => (kept.length > 1 ? `${base + si + 1}-${k + 1}` : `${base + si + 1}`);
+      const kept = parts2.filter((m) => m.numTri() > 0).flatMap((m) => partedAtSwitches(b, m)).flatMap((m) => cx.bodies(m, 600)), id = (k: number) => (kept.length > 1 ? `${base + si + 1}-${k + 1}` : `${base + si + 1}`);
       return { ms: kept.map((m, k) => arena(w, () => ({ ...bake(b, labelled(b, m, rts, kept.length > 1 ? undefined : sizeOf(rts), id(k))), ...(b.labelOn && { id: id(k) }) }), () => [])), grips };
     }, () => []), { ms: [], grips: [] }); } catch (err) {
       if (kernelBroke(err)) throw err;
@@ -1599,7 +1600,7 @@ function tiled(b: PieceBuild, name: string, all: Route[], checks: CheckRail[], s
     // it by what each is made from, network.ts SplitParts key; where no rail-end tongue goes, near it))
     const zs = cx.zones.filter((z) => z.box[2] >= R[0] - MARGIN && z.box[0] <= R[2] + MARGIN && z.box[3] >= R[1] - MARGIN && z.box[1] <= R[3] + MARGIN).map((z) => [z.rt.id, z.s0, z.s1, z.box]);
     const tk = `tile:${JSON.stringify({ r: cr.routes, c: cr.checks, i: [...tileInner], R, lines, near: tileSplits.map((sp) => [sp.key, sp.inner, sp.bladeCuts.map(([i]) => i)]),
-      copt, joint: o.joint, tongueRails: o.tongueRails, g: b.grooveCuts.length ? b.grooveEdits : 0, gp: gridPose, bed: [o.printBedX, o.printBedY], zs, ...(nearSw && { sw: groundKey(b, kbox) }), ...(b.labelOn && { lab: [o.labelText, o.labelSize, o.labelGauge, o.labelParts, base + ci + 1] }) })}`;
+      copt, joint: o.joint, tongueRails: o.tongueRails, g: b.grooveCuts.length ? b.grooveEdits : 0, gp: gridPose, bed: [o.printBedX, o.printBedY], zs, ...(b.boughtSw.length > 0 && { pt: partingsNear(b, kbox) }), ...(nearSw && { sw: groundKey(b, kbox) }), ...(b.labelOn && { lab: [o.labelText, o.labelSize, o.labelGauge, o.labelParts, base + ci + 1] }) })}`;
     let part: { ms: (Baked & { id?: string; bought?: boolean })[]; grips: [number, number][] };
     // (how long it takes, about: its track, and points most of all)
     const cost = cr.routes.reduce((t, rt) => t + routeLength(rt), 0) + 400 * near.length;
@@ -1618,7 +1619,8 @@ function tiled(b: PieceBuild, name: string, all: Route[], checks: CheckRail[], s
       const bottom = body.boundingBox().min[2] + 0.02;
       // (and a part still too big, or in pieces that don't touch, fitted as addTrack's are: the straight cuts can't
       // always get round a curvy track without running along it)
-      const fit = cx.fitter(cr.routes, holes, taken), parts = step(() => cx.whole(body, got.filter((m) => m.numTri() > 0).flatMap((m) => step(() => fit(m)))));
+      // (and the track on from each far end of a bought switch a part of its own: partedAtSwitches)
+      const fit = cx.fitter(cr.routes, holes, taken), parts = step(() => cx.whole(body, got.filter((m) => m.numTri() > 0).flatMap((m) => step(() => fit(m))))).flatMap((m) => partedAtSwitches(b, m));
       return { ms: parts.map((m, k) => arena(w, () => ({ ...bake(b, labelled(b, b.alongTrack ? m : edgeGrip(scad, track, m, gridPose, bottom), cr.routes, undefined, `${base + ci + 1}-${k + 1}`)), ...(b.labelOn && { id: `${base + ci + 1}-${k + 1}` }) }), () => [])),
         grips: grips.filter((q) => q[0] > R[0] && q[0] <= R[2] && q[1] > R[1] && q[1] <= R[3]) };
     }, () => []), { ms: [], grips: [] }); } catch (err) {
@@ -1877,11 +1879,85 @@ function boughtSwitches(b: PieceBuild, bought: BoughtSwitch[], copt: typeof CROS
   });
 }
 
+/** (mm) The cut between the two tracks on from a bought switch (partedAtSwitches): this wide, as the stepped cuts' (pathsplit.ts). */
+const PARTING_KERF = 0.1;
+/** A parting: its line, and a spot just past each of the switch's far ends (the track on from each is there). */
+interface Parting { pts: [number, number][]; ends: [number, number][] }
+const partings = new WeakMap<PieceBuild, Parting[]>();
+/**
+ * Where the two tracks on from a bought switch's far ends part: for each switch a line (mm) down the middle of the gap
+ * between them, from a stud behind the ends on to where their bases stand a stud clear of each other. Printed, the two
+ * are cut apart along it (partedAtSwitches). None where an end has no track on from it, or the two stand clear from
+ * the start (LEGO's switch, its ends 13 studs apart).
+ */
+function switchPartings(b: PieceBuild): Parting[] {
+  const had = partings.get(b);
+  if (had) return had;
+  const out: Parting[] = [], clear = 2 * b.cut.bandHalf + 8;
+  for (const bs of b.boughtSw) {
+    // (the track on from each far end: a route that starts or ends there, taken from that end on)
+    const on = bs.legs.map((lg) => {
+      const e = routePose(lg, routeLength(lg));
+      for (const rt of b.trackRoutes) {
+        const L = routeLength(rt), a = routePose(rt, 0), z = routePose(rt, L);
+        if (Math.hypot(a[0] - e[0], a[1] - e[1]) < 1) return { rt, L, at: (s: number) => routePose(rt, Math.min(L, s)) };
+        if (Math.hypot(z[0] - e[0], z[1] - e[1]) < 1) return { rt, L, at: (s: number) => routePose(rt, Math.max(0, L - s)) };
+      }
+      return undefined;
+    });
+    const [A, B] = on;
+    if (!A || !B) continue;
+    // (half way between the one track and the nearest of the other, every 4 mm along the first)
+    const pts: [number, number][] = [];
+    for (let s = 0; s <= A.L + 1e-6; s += 4) {
+      const p = A.at(s), q = routePose(B.rt, routeSOf(B.rt, [p[0], p[1]]));
+      pts.push([(p[0] + q[0]) / 2, (p[1] + q[1]) / 2]);
+      if (Math.hypot(p[0] - q[0], p[1] - q[1]) >= clear) break;
+    }
+    if (pts.length < 2) continue;
+    const d = [pts[1][0] - pts[0][0], pts[1][1] - pts[0][1]], dl = Math.hypot(d[0], d[1]) || 1;
+    out.push({ pts: [[pts[0][0] - (8 * d[0]) / dl, pts[0][1] - (8 * d[1]) / dl], ...pts], ends: bs.legs.map((lg) => poseToWorld(routePose(lg, routeLength(lg)), [0, 4])) });
+  }
+  partings.set(b, out);
+  return out;
+}
+/** The partings (switchPartings) near a box (mm): for a cache key, and the ones a part there may be cut along. */
+const partingsNear = (b: PieceBuild, box: number[]) => switchPartings(b).filter(({ pts }) => pts.some((q) => q[0] >= box[0] - 16 && q[0] <= box[2] + 16 && q[1] >= box[1] - 16 && q[1] <= box[3] + 16));
+/**
+ * A printed track part that is the track on from both far ends of a bought switch, in two: cut down the middle of the
+ * gap between the two tracks (switchPartings), each track's a part of its own from the switch on. In one, it had to go
+ * onto both of the switch's ends at once, which point different ways: on a left-hand switch it couldn't (twoEndedParts).
+ * The cut is in the gap, past both tracks' sleepers' ends; a stud of the ballast it passes through goes as any cut's
+ * (cutContext whole). Only where the cut does part it in two, one end's track in each: else the part's left whole.
+ */
+function partedAtSwitches(b: PieceBuild, m: Man): Man[] {
+  if (!b.boughtSw.length || m.numTri() === 0) return [m];
+  const { scad, w } = b, hk = PARTING_KERF / 2;
+  let parts = [m];
+  for (const { pts, ends } of switchPartings(b)) parts = parts.flatMap((p) => {
+    const bb = p.boundingBox();
+    // (a part with track just past both ends: within 6 mm of the spot, as twoEndedParts looks)
+    const has = (h: Man, q: [number, number]) => { const c = h.boundingBox(); return q[0] > c.min[0] && q[0] < c.max[0] && q[1] > c.min[1] && q[1] < c.max[1] && scad.intersection(h, T(scad.cube([12, 12, 400]), [q[0] - 6, q[1] - 6, -200])).volume() > 1; };
+    if (!ends.every((q) => has(p, q))) return [p];
+    const quads = pts.slice(1).map((q, k) => {
+      const a = pts[k], dx = q[0] - a[0], dy = q[1] - a[1], l = Math.hypot(dx, dy) || 1, n = [(-dy / l) * hk, (dx / l) * hk], e = [(dx / l) * hk, (dy / l) * hk];
+      return scad.polygon([[a[0] - e[0] - n[0], a[1] - e[1] - n[1]], [q[0] + e[0] - n[0], q[1] + e[1] - n[1]], [q[0] + e[0] + n[0], q[1] + e[1] + n[1]], [a[0] - e[0] + n[0], a[1] - e[1] + n[1]]]);
+    });
+    const slit = T(scad.extrude(w.CrossSection.union(quads), bb.max[2] - bb.min[2] + 2), [0, 0, bb.min[2] - 1]);
+    const halves = b.cut.bodies(scad.difference(p, [slit]), 600);
+    // (in two, the track on from one end in each)
+    if (halves.length !== 2 || !halves.every((h) => ends.filter((q) => has(h, q)).length === 1)) return [p];
+    return b.cut.whole(p, halves);
+  });
+  return parts;
+}
+
 /**
  * A printed part that's the track on from both far ends of a left-hand bought switch: said. A track end's peg is on
  * its right, looking out of the piece, so a part on both ends of a right-hand switch slides off along the straight
  * (the branch's peg slips out of its clip's mouth sideways); a left-hand one's is behind its clip's wall that way, and
- * the part comes off no straight way. (Each end's track a part of its own goes on as any piece does.)
+ * the part comes off no straight way. (Each end's track a part of its own goes on as any piece does: the two are cut
+ * apart down the gap between them, partedAtSwitches; this is said only where that cut couldn't part them.)
  */
 function twoEndedParts(b: PieceBuild, bought: BoughtSwitch[]) {
   const lefts = bought.filter((bs) => bs.hand === 'left');

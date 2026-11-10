@@ -144,6 +144,15 @@ describe('switches bought as track pieces, as plain track is', { timeout: 600000
       { name: 'Lead', x: 8, y: -4, heading: 90, segs: [{ kind: 'curve', radius: 60, angle: 20 }] },
       { name: 'Straight', x: 8, y: -4, heading: 270, segs: [{ kind: 'straight', studs: 40 }, { kind: 'curve', radius: 60, angle: 15 }] },
       { name: 'Branch', x: 8, y: -4, heading: 270, segs: [{ kind: 'curve', radius: 104, angle: -22.5 }, { kind: 'straight', studs: LEAD }, { kind: 'curve', radius: 60, angle: 22.5 }] }]],
+    // (left hand, printed track on from both far ends: each end's track a part of its own, cut apart down the gap between
+    // them (build.ts partedAtSwitches). In one part it wouldn't slide onto the switch's two ends: 22 mm3 in the way)
+    ['their R104 switch, left hand, printed track on from both far ends', [
+      { name: 'Lead', x: 0, y: -16, heading: 0, segs: [{ kind: 'straight', studs: 16 }] },
+      { name: 'Straight', x: 0, y: 0, heading: 0, segs: [{ kind: 'straight', studs: 40 }, { kind: 'curve', radius: 60, angle: -15 }] },
+      { name: 'Branch', x: 0, y: 0, heading: 0, segs: [{ kind: 'curve', radius: 104, angle: 22.5 }, { kind: 'straight', studs: LEAD }, { kind: 'curve', radius: 60, angle: -22.5 }] }]],
+    ['LEGO\'s switch, left hand, printed track on from both far ends', [
+      { name: 'Straight', x: 0, y: 0, heading: 0, segs: [{ kind: 'straight', studs: 32 }, { kind: 'straight', studs: 13 }] },
+      { name: 'Branch', x: 0, y: 0, heading: 0, segs: [{ kind: 'curve', radius: 40, angle: 36.8699 }, { kind: 'curve', radius: 40, angle: -14.3699 }, { kind: 'curve', radius: 60, angle: -22.5 }] }]],
     ['LEGO\'s switch, a LEGO curve and a printed straight on from it', [
       { name: 'Straight', x: 0, y: 0, heading: 0, segs: [{ kind: 'straight', studs: 32 }, { kind: 'straight', studs: 13 }] },
       { name: 'Branch', x: 0, y: 0, heading: 0, segs: [{ kind: 'curve', radius: 40, angle: 36.8699 }, { kind: 'curve', radius: 40, angle: -14.3699 }, { kind: 'curve', radius: 40, angle: -22.5 }] }]],
@@ -164,4 +173,28 @@ describe('switches bought as track pieces, as plain track is', { timeout: 600000
         expect(assembledProblems(w, b.pieces, { ...APP, ...d.options }).join('; ')).toBe('');
       } finally { Object.assign(OPTION_DEFAULTS, saved); clearBuildCache(); }
     });
+  // (their switch's far ends are 8 studs apart, so on ballast the two tracks on from them share ground: built as one
+  // section, they came as one part on both ends. Either hand, each make of ballast: no printed part has track just past
+  // both far ends, each end has a part that does, and nothing's said)
+  for (const hand of [1, -1]) it(`their R104 switch, ${hand > 0 ? 'left' : 'right'} hand: the printed track on from each far end is a part of its own`, async () => {
+    const saved = { ...OPTION_DEFAULTS };
+    Object.assign(OPTION_DEFAULTS, APP);
+    try {
+      const w = await kernel();
+      const routes: Design['routes'] = [
+        { name: 'Straight', x: 0, y: 0, heading: 0, segs: [{ kind: 'straight', studs: 40 }, { kind: 'curve', radius: 60, angle: -15 * hand }] },
+        { name: 'Branch', x: 0, y: 0, heading: 0, segs: [{ kind: 'curve', radius: 104, angle: 22.5 * hand }, { kind: 'straight', studs: LEAD }, { kind: 'curve', radius: 60, angle: -22.5 * hand }] }];
+      // (4 mm past each far end, on its centre line: the straight's 40 studs on, the branch's 8 over and turned 22.5 degrees)
+      const a = (22.5 * Math.PI) / 180, ends: [number, number][] = [[0, 324], [-hand * (64 + 4 * Math.sin(a)), 320 + 4 * Math.cos(a)]];
+      const on = (p: Built['pieces'][number], q: [number, number]) => { const v = p.positions; for (let i = 0; i < v.length; i += 3) if (Math.abs(v[i] - q[0]) < 6 && Math.abs(v[i + 1] - q[1]) < 6) return true; return false; };
+      for (const options of [{ ballast: 'ballast' }, { ballast: 'buddy' }, { ballast: 'ballast', boughtBallast: 'together' }, {}] as Design['options'][]) {
+        clearBuildCache();
+        const b = buildDesign(w, { version: 1, gaugeStuds: 4, options, routes });
+        expect(b.info.warnings, JSON.stringify(options)).toEqual([]);
+        const track = b.pieces.filter((p) => /^track[\d-]*$/.test(p.name));
+        expect(track.filter((p) => ends.every((q) => on(p, q))).map((p) => p.name), JSON.stringify(options)).toEqual([]);
+        for (const q of ends) expect(track.filter((p) => on(p, q)), JSON.stringify(options)).toHaveLength(1);
+      }
+    } finally { Object.assign(OPTION_DEFAULTS, saved); clearBuildCache(); }
+  });
 });
