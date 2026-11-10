@@ -8,7 +8,7 @@
 // Units: mm and degrees, switch.scad's frame (the routes start at the origin
 // heading +y). Routes are right to left, as switch.scad's `routes`.
 import type { Pose, Pt, Route } from '../route/route';
-import { poseToWorld, railPoint, routeLat, routeLength, routePose, routeSOf, segStarts, worldToPose } from '../route/route';
+import { poseToWorld, railOffsetOf, railPoint, routeLat, routeLength, routePose, routeSOf, segStarts, worldToPose } from '../route/route';
 import { M, R, T, type CS, type Man, type Scad, type Vec2, type Vec3 } from '../geom/scad';
 import { sweepRoute } from '../geom/sweep';
 import { ANTISTUD_FIT, connectorUnderside, hollowGrid, type Spot, studSpots, TUBE_OD } from '../geom/underside';
@@ -852,7 +852,8 @@ export function switchPlan(routes: Route[], specs: SetSpec[], p: BaseParams = BA
     const own = v.three ? [v.three.S, v.three.L, v.three.R] : [v.ra, v.rb];
     const rails: [Route, number, number][] = [];
     routes.forEach((rt, i) => { if (!own.includes(rt)) for (const o of [-G, G]) rails.push([rt, o, isStock(i, o) ? 0 : railFixS(i, o) + p.pointClearance]); });
-    for (const rt of foreign) for (const o of [-G, G]) rails.push([rt, o, 0]);
+    // (other track's rails at its own gauge, mixed gauges)
+    for (const rt of foreign) for (const o of [-railOffsetOf(rt, G), railOffsetOf(rt, G)]) rails.push([rt, o, 0]);
     // (a dual-gauge route's third rail between the points' own rails (extrarails.ts: it runs on through points whose branch
     // leaves on its side): the blades' plates are kept clear of it, as of any other rail there)
     for (const rt of own) { const o = thirdRailAt(rt, v.sHeel, p.gaugeStuds); if (o !== undefined) rails.push([rt, o, 0]); }
@@ -916,7 +917,7 @@ export function switchPlan(routes: Route[], specs: SetSpec[], p: BaseParams = BA
     }
     return false;
   });
-  const fRails: [Route, number, number][] = foreign.flatMap((rt) => [[rt, -G, 0], [rt, G, 0]] as [Route, number, number][]);
+  const fRails: [Route, number, number][] = foreign.flatMap((rt) => [[rt, -railOffsetOf(rt, G), 0], [rt, railOffsetOf(rt, G), 0]] as [Route, number, number][]);
   // (the snap clamp's place between the blades, before the slider's worked out: its post is on it)
   const clampAsked = p.mechStyle === 'plates' && p.throwAction === 'snap';
   if (clampAsked) for (const v of sets as SetLike[]) if (!v.three) v.snap = snapPlace(v, p);

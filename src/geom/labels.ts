@@ -6,7 +6,7 @@
 // are a sans bold font's outlines bundled with the app (labelfont.ts), so no
 // font is fetched.
 import type { Pt, Route } from '../route/route';
-import { railPoint, routeLength, routePose } from '../route/route';
+import { railPoint, routeLength, routePose, sleeperLenOf } from '../route/route';
 import type { CS, Man, Scad } from './scad';
 import { made } from './kernel';
 import { CAP_HEIGHT, GLYPHS, UNITS } from './labelfont';
@@ -137,7 +137,8 @@ export function labelCut(s: Scad, part: Man, routes: Route[], lines: LabelLine[]
  * OpenSCAD files put them (half a stud in from the sleepers' ends).
  */
 export function labelLines(sleeperLen: number, name: string, info: string[], routes: Route[]): LabelLine[] {
-  const off = sleeperLen / 2 - 4;
+  // (a piece all of one gauge of its own, mixed gauges: its sleepers' ends)
+  const off = sleeperLenOf(routes[0] ?? ({} as Route), sleeperLen) / 2 - 4;
   // (which way the track turns, overall: the name goes on the outside)
   let turn = 0;
   for (const rt of routes) turn += ((((routePose(rt, routeLength(rt))[2] - rt.start[2]) % 360) + 540) % 360) - 180;

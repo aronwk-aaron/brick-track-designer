@@ -10,7 +10,7 @@ import { type CrossingOptions, crossingPiece } from '../geom/crossing';
 import { segDist } from '../geom/pathsplit';
 import { R, T, type Man, type Scad } from '../geom/scad';
 import type { Pose, Pt, Route } from '../route/route';
-import { poseToWorld, railPoint, routeLat, routeLength, routePose, routeSOf, worldToPose } from '../route/route';
+import { poseToWorld, railOffsetOf, railPoint, routeLat, routeLength, routePose, routeSOf, worldToPose } from '../route/route';
 import type { Solution } from '../route/solver';
 import { reversedRoute } from './reverse';
 import { type BaseParams, fdbFootprint, type SetOver, type SetSpec, switchGeometry, switchPlan, type SwitchPlan, thirdRailAt } from './base';
@@ -84,11 +84,11 @@ export function networkSplits(s: Scad, routes: Route[], sol: Solution, p: BasePa
   });
   // (points with another track's rail between their stock rails, toe to heels: their blades would lie on it. Say so:
   // a switch whose points start in another's frog, or a tandem's second points in the first's lead, as drawn, can't work)
-  const G = ((p.gaugeStuds + 1) * 8) / 2;
+  const G0 = ((p.gaugeStuds + 1) * 8) / 2, G = G0;
   const through = (k: number, rt: Route) => {
-    const sp = sol.splits[k], A = routes[sp.routes[0]], [s0, s1] = sp.spans[0], lo = s0 + (sp.merge ? 0 : 4), hi = s1 - (sp.merge ? 4 : 0);
+    const sp = sol.splits[k], A = routes[sp.routes[0]], [s0, s1] = sp.spans[0], lo = s0 + (sp.merge ? 0 : 4), hi = s1 - (sp.merge ? 4 : 0), G = railOffsetOf(A, G0), Gr = railOffsetOf(rt, G0);
     const a0 = routePose(A, lo), a1 = routePose(A, hi), box = [Math.min(a0[0], a1[0]) - 2 * G, Math.min(a0[1], a1[1]) - 2 * G, Math.max(a0[0], a1[0]) + 2 * G, Math.max(a0[1], a1[1]) + 2 * G];
-    return [-G, G].some((o) => {
+    return [-Gr, Gr].some((o) => {
       const L = routeLength(rt);
       for (let t = 0; t <= L; t += 2) {
         const q = railPoint(rt, t, o);
@@ -208,12 +208,16 @@ export function networkSplits(s: Scad, routes: Route[], sol: Solution, p: BasePa
     // (the blades as chosen, else, where they don't fit: first rigid blades on top, where the chosen shape's plate, with
     // its spring's pocket and the pocket's walls, doesn't fit beside other track's rails running between its stock rails
     // or other points' plates (keep: fdbLayout): a double slip's, a tandem's, a slip's; then on tines; said, where, below)
-    const pg = sprungOnGrid(gw ? { ...p, grid: gridIn(P, gw) } : p);
+    // (points on routes with a gauge of their own, mixed gauges: built at that gauge; under 4 studs, one moving blade,
+    // as a narrow-gauge design's)
+    const gsOwn = A.gauge !== undefined ? A.gauge / 8 - 1 : p.gaugeStuds;
+    const p0 = gsOwn === p.gaugeStuds ? p : { ...p, gaugeStuds: gsOwn, ...(gsOwn < 4 && { pointBlades: 1 as const }) };
+    const pg = sprungOnGrid(gw ? { ...p0, grid: gridIn(P, gw) } : p0);
     const choose = (keep: Pt[][]) => {
       let pp = pg.p, plan = switchPlan(rts, [used], pp, 1, foreign, keep), how: 'rigid' | 'tines' | 'angled' | undefined = pg.angled ? 'angled' : undefined;
       // (and where a dual-gauge track's third rail runs between the stock rails: a sprung plate cut back clear of it has no
       // room for its spring's pocket and the lip over its front)
-      const third = rts.some((rt) => thirdRailAt(rt, plan.sets[0].sHeel, p.gaugeStuds) !== undefined);
+      const third = rts.some((rt) => thirdRailAt(rt, plan.sets[0].sHeel, pg.p.gaugeStuds) !== undefined);
       if (fdb && !three && (blockedOf(plan) || third) && p.bladeStyle && p.bladeStyle !== 'simple') {
         const p1 = { ...pg.p, bladeStyle: 'simple' as const }, plan1 = switchPlan(rts, [used], p1, 1, foreign, keep);
         if (blockedOf(plan1) === false || (third && !blockedOf(plan1))) { pp = p1; plan = plan1; how = 'rigid'; }

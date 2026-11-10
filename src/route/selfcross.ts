@@ -7,8 +7,9 @@ import { routeLength, routePose, segLength } from './route';
 import { subRoute } from '../switch/pieces';
 
 /** Each route, or the routes it's cut into where it meets itself (within gauge g of its own centre line, further than 3 g along it). */
-export function splitSelfCrossing(routes: Route[], g: number): Route[] {
+export function splitSelfCrossing(routes: Route[], g0: number): Route[] {
   return routes.flatMap((rt) => {
+    const g = rt.gauge ?? g0; // (its own gauge, mixed gauges)
     const L = routeLength(rt), step = 4, pts: [number, number, number][] = [];
     for (let s = 0; s <= L + 1e-9; s += step) { const p = routePose(rt, Math.min(s, L)); pts.push([p[0], p[1], Math.min(s, L)]); }
     // (where it comes back near itself: each such pair of places along it)

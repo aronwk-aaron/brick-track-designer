@@ -5,7 +5,7 @@
 // an edit rebuilds only the tiles it touches.
 import type { CheckRail } from '../route/solver';
 import type { Route } from '../route/route';
-import { routeLength, routePose, routesBox } from '../route/route';
+import { railOffsetOf, routeLength, routePose, routesBox } from '../route/route';
 import { subRoute } from '../switch/pieces';
 import type { Keep } from '../geom/pathsplit';
 
@@ -43,7 +43,8 @@ export function planCuts(b: Rect, bedX: number, bedY: number, bp: number, ox: nu
   // bed lengthwise). Points and frogs are kept clear too.
   const samples = routes.flatMap((rt) => {
     const L = routeLength(rt), n = Math.max(1, Math.ceil(L / 4));
-    return Array.from({ length: n + 1 }, (_, k) => routePose(rt, (L * k) / n));
+    // (with its rails' offset: its own gauge's, mixed gauges)
+    return Array.from({ length: n + 1 }, (_, k) => [...routePose(rt, (L * k) / n), railOffsetOf(rt, railG)]);
   });
   const along = (v: number, axis: 0 | 1) => {
     let mm = 0;
@@ -65,7 +66,7 @@ export function planCuts(b: Rect, bedX: number, bedY: number, bp: number, ox: nu
       const h = ((p[2] % 180) + 180) % 180, alongY = h < 45 || h > 135;
       if (axis === 0 ? !alongY : alongY) continue;
       const c = axis === 0 ? Math.cos((p[2] * Math.PI) / 180) : Math.sin((p[2] * Math.PI) / 180);
-      for (const sd of [-1, 1]) near = Math.min(near, Math.abs(p[axis] + sd * railG * Math.abs(c) - v));
+      for (const sd of [-1, 1]) near = Math.min(near, Math.abs(p[axis] + sd * p[3] * Math.abs(c) - v));
     }
     return clearOf(v, axis) ? near : -1;
   };

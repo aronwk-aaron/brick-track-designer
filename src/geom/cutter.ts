@@ -9,7 +9,7 @@ import { clipNear, M, R, T, type CS, type Man, type Scad } from './scad';
 import { flat } from './kernel';
 import { PLATE_H, tongueLeans, type Track } from './track';
 import type { Route } from '../route/route';
-import { railPoint, routeLat, routeLength, routePose } from '../route/route';
+import { railOffsetOf, railPoint, routeLat, routeLength, routePose, sleeperLenOf } from '../route/route';
 
 export type Joint = 'lego' | 'dovetail' | 'butt' | 'axle';
 /** A cut: through point p, along unit direction d; span: only the stretch from p + span[0] d to p + span[1] d gets couplers (a tile's edge, so the tiles either side agree). */
@@ -109,7 +109,8 @@ export function railCrossings(s: Scad, routes: Route[], G: number, f: CutFrame, 
   const rails: RailCross[] = [];
   routes.forEach((rt) => {
     const len = routeLength(rt), step = 0.5;
-    for (const o of [-G, G]) {
+    // (its own rails' offset, mixed gauges)
+    for (const o of [-railOffsetOf(rt, G), railOffsetOf(rt, G)]) {
       let prev = f.toLocal(railPoint(rt, 0, o))[1];
       for (let sx = step; sx <= len + 1e-9; sx += step) {
         const v = f.toLocal(railPoint(rt, Math.min(sx, len), o))[1];
@@ -226,7 +227,7 @@ export function cutPiece(s: Scad, t: Track, body: Man, routes: Route[], lines: C
     const strip = floor.intersect(band), nearStrip = clipNear(s.w, strip, 4);
     const onBed = (u: number) => {
       const q = f.at(u), a = f.at(u, 2.5), b = f.at(u, -2.5);
-      return routes.some((rt) => Math.abs(routeLat(rt, q)) <= half - 5) && floorAt(s, nearStrip(a), a, 2.5) && floorAt(s, nearStrip(b), b, 2.5);
+      return routes.some((rt) => Math.abs(routeLat(rt, q)) <= sleeperLenOf(rt, 2 * half) / 2 - 5) && floorAt(s, nearStrip(a), a, 2.5) && floorAt(s, nearStrip(b), b, 2.5);
     };
     // (along the whole of the piece the line crosses: by the rails crossing it missed a cut that runs along between tracks, crossing none)
     const ends = [[fb.min[0], fb.min[1]], [fb.max[0], fb.min[1]], [fb.min[0], fb.max[1]], [fb.max[0], fb.max[1]]].map(([x, y]) => (x - L.p[0]) * L.d[0] + (y - L.p[1]) * L.d[1]);
@@ -457,7 +458,7 @@ export function pathJoints(s: Scad, t: Track, body: Man, routes: Route[], runs: 
     const ok = (u: number) => {
       const q = f.at(u);
       return railPts.every(({ q: p }) => Math.hypot(p[0] - q[0], p[1] - q[1]) >= RAIL_CLEAR) && clear(k, u, ra, rn0, rn1)
-        && routes.some((rt) => Math.abs(routeLat(rt, q)) <= half - 5) && floorAt(s, nearOf(floor)(f.at(u, 2.5)), f.at(u, 2.5), 2.5) && floorAt(s, nearOf(floor)(f.at(u, -2.5)), f.at(u, -2.5), 2.5)
+        && routes.some((rt) => Math.abs(routeLat(rt, q)) <= sleeperLenOf(rt, 2 * half) / 2 - 5) && floorAt(s, nearOf(floor)(f.at(u, 2.5)), f.at(u, 2.5), 2.5) && floorAt(s, nearOf(floor)(f.at(u, -2.5)), f.at(u, -2.5), 2.5)
         && solids.every((sl) => filled(sl, k, u, ra + wall, rn0 + wall, rn1 + wall));
     };
     for (const u of pickSpots(0, f.len, ok)) {

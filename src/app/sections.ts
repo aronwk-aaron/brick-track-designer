@@ -32,10 +32,12 @@ export type RoutePiece = [number, number, number];
  * points and where tracks cross. lead: the short straight on a BrickTracks R104B curve (mm): one piece with the curve
  * beside it, not cut from it.
  */
-export function planSections(routes: Route[], splits: Split[], half: number, room: number, minPart = 40, exact = 0, plates?: { size: number; x: number; y: number }, std?: Map<number, number>, stdStraights: number[] = [], lead = 0, seamOf?: (q: [number, number]) => number) {
+export function planSections(routes: Route[], splits: Split[], half: number, room: number, minPart = 40, exact = 0, plates?: { size: number; x: number; y: number }, std?: Map<number, number>, stdStraights: number[] = [], lead = 0, seamOf?: (q: [number, number]) => number, gauge0?: number) {
+  // (mixed gauges: a route with a gauge of its own reaches that much less, or more, each side than the design's (half, at gauge0))
+  const halves = routes.map((rt) => (rt.gauge !== undefined && gauge0 !== undefined ? half + (rt.gauge - gauge0) / 2 : half));
   /** where a table seam crosses the track: cut there ('cut'), or not, through points or a crossing ('blocked'); 'split': cut, but between its pieces' joints (a bought piece printed in two) */
   const seams: { at: [number, number]; kind: 'blocked' | 'split' }[] = [];
-  const boxes = routes.map((rt) => routesBox([rt], half + 16, 8));
+  const boxes = routes.map((rt, i) => routesBox([rt], halves[i] + 16, 8));
   const inBox = (j: number, q: [number, number]) => q[0] >= boxes[j][0] && q[0] <= boxes[j][2] && q[1] >= boxes[j][1] && q[1] <= boxes[j][3];
   // (track on a grade: route i at s and route j where it's level with q pass one over the other, GRADE_APART or more apart in height)
   const graded = routes.some((rt) => !!rt.grade);
@@ -47,9 +49,9 @@ export function planSections(routes: Route[], splits: Split[], half: number, roo
   const free = (i: number, s: number) => {
     const rt = routes[i], L = routeLength(rt);
     if (s < minPart || s > L - minPart || busy[i].some(([a, b]) => s >= a && s <= b)) return false;
-    for (const ds of [-10, 0, 10]) for (let o = -half; o <= half + 1e-9; o += 8) {
+    for (const ds of [-10, 0, 10]) for (let o = -halves[i]; o <= halves[i] + 1e-9; o += 8) {
       const q = railPoint(rt, s + ds, o);
-      for (let j = 0; j < routes.length; j++) if (j !== i && inBox(j, q) && Math.abs(routeLat(routes[j], q)) < half + 2 && !over(i, s + ds, j, q)) return false;
+      for (let j = 0; j < routes.length; j++) if (j !== i && inBox(j, q) && Math.abs(routeLat(routes[j], q)) < halves[j] + 2 && !over(i, s + ds, j, q)) return false;
     }
     return true;
   };
@@ -178,7 +180,7 @@ export function planSections(routes: Route[], splits: Split[], half: number, roo
   // (its base: points across it, every 6 mm along it, kept a hair inside its cut ends)
   const samples = pieces.map(([i, a, b]) => {
     const n = Math.max(1, Math.ceil((b - a) / 6)), out: [number, number][] = [];
-    for (let k = 0; k <= n; k++) for (let o = -half; o <= half + 1e-9; o += 8) out.push(railPoint(routes[i], a + 0.5 + ((b - a - 1) * k) / n, o));
+    for (let k = 0; k <= n; k++) for (let o = -halves[i]; o <= halves[i] + 1e-9; o += 8) out.push(railPoint(routes[i], a + 0.5 + ((b - a - 1) * k) / n, o));
     return out;
   });
   const sAt = (i: number, q: [number, number]) => {
@@ -189,7 +191,7 @@ export function planSections(routes: Route[], splits: Split[], half: number, roo
     const [ip] = pieces[p], [ir, ar, br] = pieces[r];
     if (find(p) === find(r)) continue;
     if (ip === ir) continue; // (two pieces of one track join only at an ordinary end)
-    const hit = samples[p].some((q) => inBox(ir, q) && Math.abs(routeLat(routes[ir], q)) < half && (() => { const s = sAt(ir, q); return s >= ar - 1 && s <= br + 1; })() && !over(ir, sAt(ir, q), ip, q));
+    const hit = samples[p].some((q) => inBox(ir, q) && Math.abs(routeLat(routes[ir], q)) < halves[ir] && (() => { const s = sAt(ir, q); return s >= ar - 1 && s <= br + 1; })() && !over(ir, sAt(ir, q), ip, q));
     if (hit) parent[find(p)] = find(r);
   }
   // (and two tracks' pieces that meet end to end where one's points begin (within a connector's length of the joint: a

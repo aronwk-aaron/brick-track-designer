@@ -11,7 +11,7 @@ import { T, type Man, type Scad } from './scad';
 import { PLATE_H, type Track } from './track';
 import { jointKit, pathJoints, tidy, type Joint, type Run } from './cutter';
 import type { Route } from '../route/route';
-import { routeLength, routePose } from '../route/route';
+import { railOffsetOf, routeLength, routePose } from '../route/route';
 
 const STEP = 8;
 /** What running along a part's edge, two studs or less in from it, costs (a stud's worth of cut is 1). */
@@ -68,7 +68,7 @@ export function pathSplit(s: Scad, m: Man, routes: Route[], railG: number, avoid
     const L = routeLength(rt), n = Math.max(1, Math.ceil(L / 3));
     for (let k = 0; k <= n; k++) {
       const p = routePose(rt, (L * k) / n), h = (p[2] * Math.PI) / 180, d: [number, number] = [-Math.sin(h), Math.cos(h)];
-      for (const sd of [-1, 1]) rails.push({ p: [p[0] + sd * railG * Math.cos(h), p[1] + sd * railG * Math.sin(h)], d });
+      for (const sd of [-1, 1]) rails.push({ p: [p[0] + sd * railOffsetOf(rt, railG) * Math.cos(h), p[1] + sd * railOffsetOf(rt, railG) * Math.sin(h)], d });
     }
   }
   // (all of it seen from above: a slice through the bed missed the ballast

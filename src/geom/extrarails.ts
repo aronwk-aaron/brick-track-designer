@@ -13,7 +13,7 @@
 // rail's side) through that track's rails (geom/crossing.ts). Through a
 // switch, or beside track alongside, it's still left out (said by the build).
 import type { ExtraRails, Route, RouteEnds } from '../route/route';
-import { poseToWorld, railPoint, routeLat, routeLength, routePose, routeSOf, routesBox } from '../route/route';
+import { poseToWorld, railPoint, routeLat, routeLength, routePose, routeSOf, routesBox, sleeperLenOf } from '../route/route';
 import { R, T, type Man, type Scad, type Vec2 } from './scad';
 import { segDist } from './pathsplit';
 import { bankAlong, sweepRoute, trackBank } from './sweep';
@@ -95,15 +95,15 @@ export function clearStretches(routes: Route[], i: number, sleeperLen: number, s
   return out.filter(([p, q]) => q - p > STUD);
 }
 
-/** Each route's extra rails told where they may run (Route.extra.clear, in drawn arc lengths), clear of all the others. */
+/** Each route's extra rails told where they may run (Route.extra.clear, in drawn arc lengths), clear of all the others. sleeperLen: the design's (a route with its own gauge: its own). */
 export function markClear(routes: Route[], sleeperLen: number): Route[] {
   return routes.map((rt, i) => {
     const x = rt.extra;
     if (!x) return rt;
     const d = x.to >= x.from ? 1 : -1;
-    const clear = clearStretches(routes, i, sleeperLen).map(([a, b]) => (d > 0 ? [x.from + a, x.from + b] : [x.from - b, x.from - a]) as [number, number]).sort((p, q) => p[0] - q[0]);
+    const clear = clearStretches(routes, i, sleeperLenOf(rt, sleeperLen)).map(([a, b]) => (d > 0 ? [x.from + a, x.from + b] : [x.from - b, x.from - a]) as [number, number]).sort((p, q) => p[0] - q[0]);
     // (the third rail's: on through crossings)
-    const clearDual = x.dual ? clearStretches(routes, i, sleeperLen, 2, true).map(([a, b]) => (d > 0 ? [x.from + a, x.from + b] : [x.from - b, x.from - a]) as [number, number]).sort((p, q) => p[0] - q[0]) : undefined;
+    const clearDual = x.dual ? clearStretches(routes, i, sleeperLenOf(rt, sleeperLen), 2, true).map(([a, b]) => (d > 0 ? [x.from + a, x.from + b] : [x.from - b, x.from - a]) as [number, number]).sort((p, q) => p[0] - q[0]) : undefined;
     return { ...rt, extra: { ...x, clear, ...(clearDual && { clearDual }) } };
   });
 }

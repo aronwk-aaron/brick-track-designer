@@ -12,7 +12,7 @@ import { arena, flat, kernelBroke, made, type Wasm } from '../geom/kernel';
 import { stlBytes } from '../geom/stl';
 import { splitSelfCrossing } from '../route/selfcross';
 import { FORCE_ANGLE, FORCE_LAT, solve, type SplitEdits } from '../route/solver';
-import { GRADE_APART, hasRoll, heightAt, poseToWorld, railPoint, routeLat, routeLength, routePose, routeRoll, routeSOf, type Pose, worldToPose } from '../route/route';
+import { GRADE_APART, hasRoll, heightAt, poseToWorld, railOffsetOf, railPoint, routeLat, routeLength, routePose, routeRoll, routeSOf, sleeperLenOf, type Pose, worldToPose } from '../route/route';
 import { reversedRoute } from '../switch/reverse';
 import { BASE_DEFAULTS, switchGeometry } from '../switch/base';
 import { switchGlobals } from '../switch/context';
@@ -26,7 +26,7 @@ import { cutPiece, type CutLine } from '../geom/cutter';
 import { edgeGrip } from '../geom/underside';
 import { pathSplit, splitOnPath, type Keep } from '../geom/pathsplit';
 import { findStuds, wholeStuds } from '../geom/studs';
-import { bankRolls, type Design, OPTION_DEFAULTS, type PieceOptions, type Trackwork, bufferEnds, isMono, toRoutes, upgradeDesign } from './design';
+import { bankRolls, type Design, OPTION_DEFAULTS, type PieceOptions, type Trackwork, bufferEnds, isMono, routeGaugeStuds, toRoutes, upgradeDesign } from './design';
 import { labelCut, labelLines } from '../geom/labels';
 import { buildMonorail, clearMonoCache } from './monobuild';
 import { tableAt, tableOf, tableOutline, type Table } from './tables';
@@ -465,7 +465,8 @@ function buildAll(w: Wasm, design: Design, report: (what: string, frac: number) 
   if (!tr) { withMono(overlay); if (opts.planOnly) throw PLAN_ONLY; }
   let top = 0;
   for (const p of tr?.pieces ?? []) for (let i = 2; i < p.positions.length; i += 3) top = Math.max(top, p.positions[i]);
-  const sleeperLen = (design.gaugeStuds + 1) * 8 + 24, half = (o.ballast === 'buddy' ? sleeperLen + 32 : o.ballast === 'ballast' ? sleeperLen + 16 : sleeperLen) / 2;
+  // (the widest train track's, mixed gauges)
+  const sleeperLen = (Math.max(...trainD.routes.map((r) => routeGaugeStuds(trainD, r)), design.gaugeStuds) + 1) * 8 + 24, half = (o.ballast === 'buddy' ? sleeperLen + 32 : o.ballast === 'ballast' ? sleeperLen + 16 : sleeperLen) / 2;
   const mr = buildMonorail(w, monoRoutes, o, design.name, hasTrain ? { routes: toRoutes(trainD).filter((r) => r.segments.length), half, top } : undefined, (what) => report(what, share + (1 - share) * 0.5));
   overlay.splits.push(...mr.splits);
   (overlay as { monoPoints?: [number, number][] }).monoPoints = mr.splits;
@@ -788,7 +789,7 @@ function solveTrackwork(w: Wasm, design: Design, o: PieceOptions, step: (what: s
   if (routes.length === 0) throw new Error('Draw some track: click a grid point to start, then click where it should go.');
   // (banked curves: level where other track comes near; ramps cut short)
   const bankWarnings = design.routes.flatMap((r) => bankRolls(design, r).warnings);
-  if (routes.some(hasRoll)) { const lv = levelBankedNearOthers(routes, (design.gaugeStuds + 1) * 8 + 24); routes = lv.routes; bankWarnings.push(...lv.warnings); }
+  if (routes.some(hasRoll)) { const lv = levelBankedNearOthers(routes, Math.max(...routes.map((rt) => sleeperLenOf(rt, (design.gaugeStuds + 1) * 8 + 24)))); routes = lv.routes; bankWarnings.push(...lv.warnings); }
   const gauge = (design.gaugeStuds + 1) * 8;
   const solverOpts = { gauge, step: 0.5, flangeway: o.flangeway, checkRailLen: o.checkRailLen, checkRailW: o.checkRailW };
   step('Working out the trackwork');
@@ -808,11 +809,13 @@ function solveTrackwork(w: Wasm, design: Design, o: PieceOptions, step: (what: s
   // (switches that are bought pieces (Bought track: Bought), LEGO's or BrickTracks': cut out of the routes, the rest
   // worked out without them, joining them at ordinary track ends; the stud grid where it was)
   const gridPose = routePose(routes[0], 0);
-  const kinds = o.splitTrack === 'lengths' && design.gaugeStuds === 4 ? ({ lego: [LEGO_SWITCH, BRICKTRACKS_SWITCH], 'lego-only': [LEGO_SWITCH], print: [] }[o.legoTrack ?? 'lego'] ?? []) : [];
+  // (only track at LEGO's gauge, 4 studs: the design's, or a route's own)
+  const isStd = (rt: Route) => (rt.gauge ?? gauge) === 40;
+  const kinds = o.splitTrack === 'lengths' && routes.some(isStd) ? ({ lego: [LEGO_SWITCH, BRICKTRACKS_SWITCH], 'lego-only': [LEGO_SWITCH], print: [] }[o.legoTrack ?? 'lego'] ?? []) : [];
   let bought: BoughtSwitch[] = [];
   if (kinds.length && sol.splits.length) {
-    const sl = (design.gaugeStuds + 1) * 8 + 24, half = (o.ballast === 'buddy' ? sl + 32 : o.ballast === 'ballast' ? sl + 16 : sl) / 2;
-    bought = findBoughtSwitches(routes, sol.splits, kinds, half);
+    const sl = 40 + 24, half = (o.ballast === 'buddy' ? sl + 32 : o.ballast === 'ballast' ? sl + 16 : sl) / 2;
+    bought = findBoughtSwitches(routes, sol.splits.filter((sp) => sp.routes.every((ri) => isStd(routes[ri]))), kinds, half);
     if (bought.length) { routes = cutOut(routes, bought); sol = solve(routes, solverOpts, splitEdits); }
   }
   // (track only with sleepers: each route's own, so a stretch of it (cut into tiles, sections, a switch's cover) has its sleepers where the whole route has them)
@@ -826,7 +829,7 @@ function solveTrackwork(w: Wasm, design: Design, o: PieceOptions, step: (what: s
   // and across a shallow crossing it's left out, and it's said: where, and that narrow-gauge trains can't run there)
   for (const rt of routes) {
     const xr = rt.extra;
-    if (!xr?.dual || !(xr.dualStuds < design.gaugeStuds) || !xr.clearDual) continue;
+    if (!xr?.dual || !(xr.dualStuds < (rt.gauge ?? gauge) / 8 - 1) || !xr.clearDual) continue;
     const lo = Math.min(xr.from, xr.to), hi = Math.max(xr.from, xr.to), gaps: [number, number][] = [];
     let at = lo;
     for (const [a, b] of xr.clearDual) { if (a - at > 8 && a <= hi) gaps.push([at, a]); at = Math.max(at, b); }
@@ -839,7 +842,7 @@ function solveTrackwork(w: Wasm, design: Design, o: PieceOptions, step: (what: s
   }
   // What the canvas draws over the track, in mm: flangeway cuts, check rails,
   // rail crossings and points.
-  const g = gauge / 2;
+  const g = gauge / 2, gOf = (i: number) => railOffsetOf(routes[i], g);
   const along = (i: number, off: number, s0: number, s1: number) => {
     const n = Math.max(2, Math.ceil(s1 - s0));
     return Array.from({ length: n + 1 }, (_, k) => railPoint(routes[i], s0 + ((s1 - s0) * k) / n, off));
@@ -850,7 +853,7 @@ function solveTrackwork(w: Wasm, design: Design, o: PieceOptions, step: (what: s
   const grooveCuts: Man[] = [];
   const scad0 = new Scad(w);
   for (const gr of sol.grooves) {
-    const mid = railPoint(routes[gr.route], (gr.s0 + gr.s1) / 2, gr.side * g), key = keyOf(mid), e = tw.groove?.[key] ?? {};
+    const g = gOf(gr.route), mid = railPoint(routes[gr.route], (gr.s0 + gr.s1) / 2, gr.side * g), key = keyOf(mid), e = tw.groove?.[key] ?? {};
     const d0 = Math.max(0, e.d0 ?? 0), d1 = Math.max(0, e.d1 ?? 0);
     const a0 = Math.max(0, gr.s0 - d0), a1 = Math.min(routeLength(routes[gr.route]), gr.s1 + d1);
     items.push({ kind: 'groove', key, at: mid, len: a1 - a0, pts: along(gr.route, gr.side * g, a0, a1), routes: [routes[gr.route].id, routes[gr.by].id] });
@@ -866,9 +869,14 @@ function solveTrackwork(w: Wasm, design: Design, o: PieceOptions, step: (what: s
     // (dir: the way "moved along" goes, on the plan)
     items.push({ kind: 'points', key, at, pts: [at], toe: tw.points?.[key]?.toe ?? 0, dir: [-Math.sin(h) * k, Math.cos(h) * k], routes: idsOf(sp.routes), ...(sp.forced && { forced: true }) });
   }
-  for (const sp of sol.dropped ?? []) { const at = splitAt(sp); items.push({ kind: 'points', key: keyOf(at), at, pts: [at], off: true, routes: idsOf(sp.routes) }); }
-  // (near misses: where points could be forced, unless they are; and a warning where they're forced but too far off to build)
+  // (mixed gauges: points between routes of different gauges aren't built; said, with where and which routes)
   const forceWarnings: string[] = [];
+  for (const sp of sol.refused ?? []) {
+    const at = splitAt(sp), [ra, rb] = sp.routes.map((ri) => routes[ri]), name = (rt: Route) => `${rt.id.replace(/[:~]\d+$/, '')} (${(rt.gauge ?? gauge) / 8 - 1} studs)`;
+    forceWarnings.push(`points between tracks of different gauges aren't built: ${name(rb)} ${sp.merge ? 'ends' : 'starts'} on ${name(ra)} at ${(at[0] / 8).toFixed(0)}, ${(at[1] / 8).toFixed(0)} (studs); its rails run on to it as plain track, and trains can't take the turn`);
+  }
+  for (const sp of sol.dropped ?? []) { if (sol.refused?.includes(sp)) continue; const at = splitAt(sp); items.push({ kind: 'points', key: keyOf(at), at, pts: [at], off: true, routes: idsOf(sp.routes) }); }
+  // (near misses: where points could be forced, unless they are; and a warning where they're forced but too far off to build)
   for (const c of sol.near ?? []) {
     const key = keyOf(c.at), forced = splitEdits.force!(c.at);
     if (sol.splits.some((sp) => sp.forced && keyOf(splitAt(sp)) === key)) continue;
@@ -949,7 +957,7 @@ type SwitchParams = ReturnType<typeof switchParams>;
  * they are (mm), one spot for each place.
  */
 function tracksOverEachOther(routes: Route[], sol: { splits: Split[]; dropped?: Split[] }, gap: number) {
-  const step = 8, cos15 = Math.cos((15 * Math.PI) / 180);
+  const step = 8, cos15 = Math.cos((15 * Math.PI) / 180), mixed = routes.some((rt) => rt.gauge !== undefined);
   const ends = routes.flatMap((rt) => [routePose(rt, 0), routePose(rt, routeLength(rt))]);
   // (where two routes join end to end, or a route's end lies on another: the same track carrying on, or a switch)
   const joints = ends.filter((e, i) => ends.some((f, j) => j !== i && Math.hypot(e[0] - f[0], e[1] - f[1]) < 1));
@@ -971,7 +979,9 @@ function tracksOverEachOther(routes: Route[], sol: { splits: Split[]; dropped?: 
   const spots: number[][] = [];
   for (let a2 = 0; a2 < pts.length; a2++) for (let b2 = a2 + 1; b2 < pts.length; b2++) {
     const p = pts[a2], q = pts[b2];
-    if (Math.abs(p[0] - q[0]) > gap || Math.abs(p[1] - q[1]) > gap || Math.hypot(p[0] - q[0], p[1] - q[1]) >= gap) continue;
+    // (closer than their sleepers: half of each one's, mixed gauges)
+    const gap2 = mixed ? (sleeperLenOf(routes[p[4]], gap) + sleeperLenOf(routes[q[4]], gap)) / 2 : gap;
+    if (Math.abs(p[0] - q[0]) > gap2 || Math.abs(p[1] - q[1]) > gap2 || Math.hypot(p[0] - q[0], p[1] - q[1]) >= gap2) continue;
     if (p[4] === q[4] && Math.abs(p[3] - q[3]) < 4 * gap) continue; // (the same stretch of one route)
     if (Math.abs(heightAt(routes[p[4]], p[3]) - heightAt(routes[q[4]], q[3])) >= GRADE_APART) continue; // (one over the other, on a grade)
     if (parting(p, q)) continue;
@@ -989,7 +999,11 @@ function cutContext(w: Wasm, scad: Scad, o: PieceOptions, track: Track, routes: 
   };
   const bp = (o.baseplate ?? 0) * 8;
   // (how far each side of a centre line the track's base reaches: its sleepers, or its widest ballast layer)
-  const bandHalf = (o.ballast === 'buddy' ? track.c.sleeperLen + 32 : o.ballast === 'ballast' ? track.c.sleeperLen + 16 : track.c.sleeperLen) / 2;
+  // (the widest track's, mixed gauges)
+  const slMax = Math.max(...routes.map((rt) => sleeperLenOf(rt, track.c.sleeperLen)), track.c.sleeperLen);
+  const bandOf = (sl: number) => (o.ballast === 'buddy' ? sl + 32 : o.ballast === 'ballast' ? sl + 16 : sl) / 2;
+  // (bandHalf0: the design's own, which each route's is worked out from where it matters: sections.ts)
+  const bandHalf = bandOf(slMax), bandHalf0 = bandOf(track.c.sleeperLen);
   // (what the joints stick out past a cut, both ends of a part: rail tongues, and the peg or dovetail)
   const jointRoom = o.joint === 'dovetail' ? 14 : o.joint === 'butt' || o.joint === 'axle' ? 4 : o.joint === 'flataxle' ? 0 : 8;
   // (where no cut goes: the crossings, and every points set from before its toe to past its heels,
@@ -1009,7 +1023,7 @@ function cutContext(w: Wasm, scad: Scad, o: PieceOptions, track: Track, routes: 
   const G0 = track.c.railOffset, zones = splits.flatMap((sp) => sp.routes.map((r, n) => {
     const rt = routes[r], [a0, a1] = sp.spans[n], s0 = sp.merge ? a0 - 12 : a0 - 8, s1 = sp.merge ? a1 + 8 : a1 + 12, L = routeLength(rt);
     const pts = Array.from({ length: 9 }, (_, k) => routePose(rt, Math.max(0, Math.min(L, s0 + ((s1 - s0) * k) / 8))));
-    const pad = G0 + 8, box = [Math.min(...pts.map((q) => q[0])) - pad, Math.min(...pts.map((q) => q[1])) - pad, Math.max(...pts.map((q) => q[0])) + pad, Math.max(...pts.map((q) => q[1])) + pad];
+    const pad = railOffsetOf(rt, G0) + 8, box = [Math.min(...pts.map((q) => q[0])) - pad, Math.min(...pts.map((q) => q[1])) - pad, Math.max(...pts.map((q) => q[0])) + pad, Math.max(...pts.map((q) => q[1])) + pad];
     return { rt, s0, s1, box };
   }));
   // (nor on a banked stretch, the rails there tilted: cut plain)
@@ -1099,7 +1113,7 @@ function cutContext(w: Wasm, scad: Scad, o: PieceOptions, track: Track, routes: 
     return cells.filter((c2) => c2.numTri() > 0).flatMap((c2) => fit(c2));
   };
   // (pointsAvoid: the plate-style levers' keep-outs are added as each is placed (leverItem); crossings: the overlay's, no straight cut through them)
-  return { fitsBed, pointsAvoid, zones, noTongue, join, jointRoom, bandHalf, bp, crossings, fitter, bedCut, whole, bodies };
+  return { fitsBed, pointsAvoid, zones, noTongue, join, jointRoom, bandHalf, bandHalf0, bp, crossings, fitter, bedCut, whole, bodies };
 }
 /** How cutting a part to fit goes: the bed, where no cut goes, how cuts join, and the cutters. */
 type CutContext = ReturnType<typeof cutContext>;
@@ -1192,7 +1206,9 @@ function labelled(b: PieceBuild, m: Man, rts: Route[], size?: string, num?: stri
   const o = b.o;
   if (!b.labelOn || !rts.length) return m;
   const no = o.labelParts !== false && num ? `#${num}` : undefined;
-  const lines = labelLines(b.track.c.sleeperLen, o.labelText ?? '', [o.labelSize !== false ? size ?? '' : '', o.labelGauge ? `Ln${b.gaugeStuds}` : '', no ?? ''], rts);
+  // (the gauge: the piece's routes' own, mixed gauges; the design's where they differ among themselves)
+  const gs = new Set(rts.map((rt) => rt.gauge)), ln = gs.size === 1 && rts[0].gauge !== undefined ? rts[0].gauge / 8 - 1 : b.gaugeStuds;
+  const lines = labelLines(b.track.c.sleeperLen, o.labelText ?? '', [o.labelSize !== false ? size ?? '' : '', o.labelGauge ? `Ln${ln}` : '', no ?? ''], gs.size === 1 ? rts : rts.map(({ gauge: _g, ...rt }) => rt));
   const cut = labelCut(b.scad, m, rts, lines, no);
   return cut ? b.scad.difference(m, [cut]) : m;
 }
@@ -1302,11 +1318,13 @@ function sectioned(b: PieceBuild, name: string, all: Route[], checks: CheckRail[
   // (bought pieces on: plain stretches cut where LEGO's straights, its R40 curves and BrickTracks' curves would join,
   // so those pieces are them; on ballast, a curve's ballast printed alone under it)
   // ('lego-only': LEGO's straights and R40 curves bought, BrickTracks' radii printed)
-  const bought = (o.legoTrack ?? 'lego') !== 'print' && b.gaugeStuds === 4, legoOnly = o.legoTrack === 'lego-only';
+  // (bought: only track at LEGO's gauge, 4 studs, the design's or a route's own)
+  const isStd = (rt: Route) => (rt.gauge ?? track.c.trackGauge) === 40;
+  const bought = (o.legoTrack ?? 'lego') !== 'print' && all.some(isStd), legoOnly = o.legoTrack === 'lego-only';
   const std = bought ? (legoOnly ? new Map([[40 * 8, STD_CURVES.get(40 * 8)!]]) : STD_CURVES) : undefined;
   const stdStraights = bought && !legoOnly ? BT_STRAIGHTS.map(([l]) => l) : [], lead = bought && !legoOnly ? BT_LEAD : 0;
   const tables = b.tables, seamOf = tables.length ? (q: [number, number]) => tableAt(tables, q) : undefined;
-  const plan = cached(`secplan:${key}:${room}:${bandHalf}:${ex}:${JSON.stringify(plates)}:${JSON.stringify(std && [...std])}:${stdStraights}:${lead}:${JSON.stringify(tables)}`, () => planSections(all, solSplits, bandHalf, room, 40, ex, plates, std, stdStraights, lead, seamOf));
+  const plan = cached(`secplan:${key}:${room}:${bandHalf}:${ex}:${JSON.stringify(plates)}:${JSON.stringify(std && [...std])}:${stdStraights}:${lead}:${JSON.stringify(tables)}`, () => planSections(all, solSplits, cx.bandHalf0, room, 40, ex, plates, std, stdStraights, lead, seamOf, track.c.trackGauge));
   const st = (q: [number, number]) => `${(q[0] / 8).toFixed(0)}, ${(q[1] / 8).toFixed(0)}`;
   for (const sm of plan.seams) b.bedWarnings.add(sm.kind === 'blocked' ? `a table's seam crosses points or a crossing at ${st(sm.at)} (studs): the track isn't cut there (move the table's edge)`
     : `a table's seam at ${st(sm.at)} (studs) isn't where two track pieces join: the piece there is printed in two (move the table's edge to a joint to buy it)`);
@@ -1393,7 +1411,7 @@ function sectioned(b: PieceBuild, name: string, all: Route[], checks: CheckRail[
     // BrickTracks' 1/2, 1/4 and 1/10 straights, LEGO's R40 curves and BrickTracks' R56 to R120 ones; none crossing another)
     const plainSec = bought && !mine.length && !cChecks.length && !secInner.size
       && !rts.some((rt) => [routePose(rt, 0), routePose(rt, routeLength(rt))].some((e) => b.bufs.some((bq) => Math.hypot(bq[0] - e[0], bq[1] - e[1]) < 1)));
-    const each = plainSec ? rts.map((rt) => stdPiece(rt, legoOnly)) : [];
+    const each = plainSec ? rts.map((rt) => (isStd(rt) ? stdPiece(rt, legoOnly) : undefined)) : [];
     const allBought = plainSec && each.every((e) => !!e) && !piecesCross(rts);
     const one = allBought && rts.length === 1 ? each[0]! : undefined, sg0 = rts[0].segments[0];
     // (one piece, and its ballast bought too: a LEGO straight on LEGO plates (6 x 16 and two 2 x 16, two more 6 x 16 for
@@ -1451,8 +1469,7 @@ function sectioned(b: PieceBuild, name: string, all: Route[], checks: CheckRail[
           // route's that comes first)
           const routeOf = (p: Route) => b.trackRoutes.findIndex((rt) => { const q = routePose(p, routeLength(p) / 2), at = routePose(rt, routeSOf(rt, [q[0], q[1]])); return Math.hypot(at[0] - q[0], at[1] - q[1]) < 0.5; });
           const sbox = routesBox(rts, bandHalf + 64), keep = switchKeepOut(b, sbox);
-          const hwBed = track.c.sleeperLen / 2 + tol;
-          const bedOf = (rt: Route) => { const L = routeLength(rt), n2 = Math.max(2, Math.ceil(L / 4)), side = (off: number) => Array.from({ length: n2 + 1 }, (_, k) => railPoint(rt, (L * k) / n2, off)); return scad.polygon([...side(-hwBed), ...side(hwBed).reverse()]); };
+          const bedOf = (rt: Route) => { const hwBed = sleeperLenOf(rt, track.c.sleeperLen) / 2 + tol, L = routeLength(rt), n2 = Math.max(2, Math.ceil(L / 4)), side = (off: number) => Array.from({ length: n2 + 1 }, (_, k) => railPoint(rt, (L * k) / n2, off)); return scad.polygon([...side(-hwBed), ...side(hwBed).reverse()]); };
           const done: CS[] = [], doneBeds: CS[] = [];
           rts.forEach((rt, k) => {
             const own = crossingPiece(scad, [rt], { ...copt, sleepers: 'sleepers', sleeperGapStuds: 2, sleeperWidthStuds: 2, ballastOnly: tol, supports: false }, none, grips, { gridPose, seat });
@@ -1534,7 +1551,7 @@ function sectioned(b: PieceBuild, name: string, all: Route[], checks: CheckRail[
 // needs no cutting (build it whole).
 function tiled(b: PieceBuild, name: string, all: Route[], checks: CheckRail[], splits: SplitParts[], copt: typeof CROSSING_DEFAULTS, big = false) {
   const { w, scad, o, track, cut: cx } = b, { join } = cx;
-  let bx = routesBox(all, track.c.sleeperLen / 2 + 24);
+  let bx = routesBox(all, Math.max(...all.map((rt) => sleeperLenOf(rt, track.c.sleeperLen))) / 2 + 24);
   for (const sp of splits) for (const m of sp.adds) { const bb = m.boundingBox(); bx = [Math.min(bx[0], bb.min[0]), Math.min(bx[1], bb.min[1]), Math.max(bx[2], bb.max[0]), Math.max(bx[3], bb.max[1])]; }
   const plan = planCuts(bx, o.printBedX, o.printBedY, cx.bp, (o.baseplateX ?? 0) * 8, (o.baseplateY ?? 0) * 8, cx.pointsAvoid, all, cx.bandHalf, cx.jointRoom, track.c.railOffset, cx.crossings);
   if (!plan.xs.length && !plan.ys.length) return false;
@@ -1671,10 +1688,10 @@ function buildSwitches(b: PieceBuild, switches: ReturnType<typeof planPieces>['s
  */
 /** The ground under track's own sleepers near a box (mm), in plan: every route's but the bought switches' legs (not: nor these). */
 function trackBeds(b: PieceBuild, box: number[], not?: (rt: Route) => boolean): CS | undefined {
-  const { scad, w } = b, hw = ((b.gaugeStuds + 1) * 8 + 24) / 2 + (b.o.trackFitTol ?? 0.2);
+  const { scad, w } = b, hwOf = (rt: Route) => sleeperLenOf(rt, (b.gaugeStuds + 1) * 8 + 24) / 2 + (b.o.trackFitTol ?? 0.2);
   const bands = b.trackRoutes.flatMap((rt) => {
     if (not?.(rt)) return [];
-    const r = routesBox([rt], hw);
+    const hw = hwOf(rt), r = routesBox([rt], hw);
     if (r[0] > box[2] || r[2] < box[0] || r[1] > box[3] || r[3] < box[1]) return [];
     // (only its stretch near the box: a yard's tracks are long)
     const L = routeLength(rt);
@@ -1693,7 +1710,8 @@ function trackBeds(b: PieceBuild, box: number[], not?: (rt: Route) => boolean): 
 
 /** Where the bought switches' ballast is, near a box (mm), in plan: each leg's widest ballast band, from its toe to its ends, less the ground under other track's own sleepers. */
 function switchKeepOut(b: PieceBuild, box: number[]): CS | undefined {
-  const { scad, w, o } = b, sl = (b.gaugeStuds + 1) * 8 + 24, hw = (o.ballast === 'buddy' ? sl + 32 : sl + 16) / 2 + 0.01;
+  // (a bought switch is at LEGO's gauge, whatever the design's)
+  const { scad, w, o } = b, sl = b.boughtSw.length ? 64 : (b.gaugeStuds + 1) * 8 + 24, hw = (o.ballast === 'buddy' ? sl + 32 : sl + 16) / 2 + 0.01;
   const bands = b.boughtSw.flatMap((bs) => bs.legs).filter((lg) => { const r = routesBox([lg], hw); return r[0] <= box[2] && r[2] >= box[0] && r[1] <= box[3] && r[3] >= box[1]; }).map((lg) => {
     const L = routeLength(lg), n = Math.max(2, Math.ceil(L / 4)), side = (off: number) => Array.from({ length: n + 1 }, (_, k) => railPoint(lg, (L * k) / n, off));
     return scad.polygon([...side(-hw), ...side(hw).reverse()]);
@@ -1777,7 +1795,7 @@ function halvesOf(b: PieceBuild, m: Man, bs: BoughtSwitch, under: [number, numbe
   // (joined, unless Parts join with is Straight cuts: a dovetail each side of the switch, in the ballast past its sleepers'
   // ends, from the ballast's bottom to the top of its lower layer, the tab on the half before the cut, its socket 0.15
   // clear in the half after)
-  const bb = m.boundingBox(), sl = (b.gaugeStuds + 1) * 8 + 24, xs = [-(sl / 2 + 4), sl / 2 + 4];
+  const bb = m.boundingBox(), sl = 40 + 24, xs = [-(sl / 2 + 4), sl / 2 + 4]; // (a bought switch is at LEGO's gauge)
   const tail = (y: number, x: number, grow: number) => {
     const pts: [number, number][] = [[x - 2.2 - grow, y - 0.01], [x + 2.2 + grow, y - 0.01], [x + 3.4 + grow, y + 4.5 + grow], [x - 3.4 - grow, y + 4.5 + grow]];
     return scad.extrude(scad.polygon(pts.map((q) => poseToWorld(bs.toe, q))), -bb.min[2] + (grow ? 1 : 0)).translate([0, 0, bb.min[2] - (grow ? 0.5 : 0)]);
@@ -1815,7 +1833,7 @@ function boughtSwitches(b: PieceBuild, bought: BoughtSwitch[], copt: typeof CROS
       const rails = scad.intersection(legs, T(scad.cube([lb.max[0] - lb.min[0] + 2, lb.max[1] - lb.min[1] + 2, 50]), [lb.min[0] - 1, lb.min[1] - 1, PLATE_H + 0.01]));
       // (its three ends as a track piece's are: each leg built as bought, what of it is within a stud of an end, in
       // place of the footprint there and of anything traced past the end: the next piece's end goes in it as in any)
-      const hwE = (b.gaugeStuds + 1) * 4 + 12 + 8;
+      const hwE = 20 + 12 + 8; // (a bought switch is at LEGO's gauge)
       const endBox = (P: Pose) => place(T(scad.cube([2 * hwE, 8 + 24, 60]), [-hwE, -8, -10]), P);
       // (the toe's from the leg whose route runs on through it: forced points' other leg ends a hair off it, and the two
       // ends, one over the other, narrowed the clip the next piece's peg goes in)
@@ -1909,8 +1927,10 @@ function buildOne(w: Wasm, design: Design, report: (what: string, frac: number) 
   // (guard rails or a third rail on a switch's routes: built as a network piece too, so their ends meet the switch's in
   // one piece; a switch built on its own has none, and the track's connector there had extra rail ends that met nothing)
   const extraOnSwitch = pc.switches.some((sw) => sw.covers.some(([ri]) => !!routes[ri].extra));
+  // (points on routes with a gauge of their own, mixed gauges: a network piece, each points set built at its routes' gauge)
+  const ownGaugeSwitch = sol.splits.some((sp) => sp.routes.some((ri) => routes[ri].gauge !== undefined));
   const network = sol.splits.length > 0 && (sol.splits.some((sp) => sp.merge) || pc.warnings.some((w2) => !/print bed/.test(w2))
-    || sol.crossings.some((c) => groupOf(c.a.route) !== groupOf(c.b.route)) || bufOnSwitch || extraOnSwitch);
+    || sol.crossings.some((c) => groupOf(c.a.route) !== groupOf(c.b.route)) || bufOnSwitch || extraOnSwitch || ownGaugeSwitch);
   const bedWarnings = new Set<string>();
   const track = new Track(scad, { ...TRACK_DEFAULTS, gaugeStuds: design.gaugeStuds, studFit: o.studFit, antistudFit: o.antistudFit, sleeperWidthStuds: o.sleeperWidthStuds, axleStuds: o.axleStuds, ...(o.tongueRails === 'square' && { tongueMaxAngle: 12 }) });
   {
@@ -2031,7 +2051,7 @@ function buildOne(w: Wasm, design: Design, report: (what: string, frac: number) 
         // the track every count up to 20 was built in turn, 209 pieces for the 20 kept: a 64-stud straight on a 40 x 40
         // bed took 21 s)
         const over = (sub: Route) => {
-          const Ls = routeLength(sub), hw = track.c.sleeperLen / 2 - 0.5, lo = [Infinity, Infinity], hi = [-Infinity, -Infinity];
+          const Ls = routeLength(sub), hw = sleeperLenOf(sub, track.c.sleeperLen) / 2 - 0.5, lo = [Infinity, Infinity], hi = [-Infinity, -Infinity];
           for (let k = 0, m = Math.max(1, Math.ceil(Ls / 4)); k <= m; k++) for (const off of [-hw, hw]) { const q = railPoint(sub, (Ls * k) / m, off); for (const j of [0, 1]) { lo[j] = Math.min(lo[j], q[j]); hi[j] = Math.max(hi[j], q[j]); } }
           const wd = hi[0] - lo[0], ht = hi[1] - lo[1];
           return !((wd <= o.printBedX && ht <= o.printBedY) || (wd <= o.printBedY && ht <= o.printBedX));
