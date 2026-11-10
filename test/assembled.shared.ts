@@ -39,6 +39,12 @@ const boxesMeet = (a: Man, b: Man, by = 0) => { const p = a.boundingBox(), q = b
 export const where = (m: Man) => { const b = m.boundingBox(); return `at ${[0, 1, 2].map((k) => ((b.min[k] + b.max[k]) / 2).toFixed(1)).join(', ')} (${[0, 1, 2].map((k) => (b.max[k] - b.min[k]).toFixed(1)).join(' x ')})`; };
 
 export interface Part { p: Piece; m: Man }
+/**
+ * What a big layout's strips have looked at already (assembledProblems): a pair of parts is the same two solids
+ * whichever strip loads them, so it's compared once; a set of points is worked in the strips that hold a part of it
+ * (own), where everything within ROUND of it is loaded, not again in the next strip's margin.
+ */
+export interface Seen { pair: (what: string, a: Piece, b: Piece) => boolean; own: (p: Piece) => boolean }
 /** The pieces as solids, as assembled. unsolid: the ones whose triangles don't make one. */
 export function parts(w: Wasm, pieces: Piece[]) {
   const out: Part[] = [], unsolid: string[] = [];
@@ -74,10 +80,10 @@ function mayShare(A: Piece, B: Piece, size: number[], v: number, o: PieceOptions
 }
 
 /** 1. As assembled, no two parts overlap: each pair that does, by how much and where. */
-export function overlaps(w: Wasm, ps: Part[], o: PieceOptions) {
+export function overlaps(w: Wasm, ps: Part[], o: PieceOptions, seen?: Seen) {
   const out: string[] = [];
   for (let i = 0; i < ps.length; i++) for (let j = i + 1; j < ps.length; j++) {
-    if (!boxesMeet(ps[i].m, ps[j].m)) continue;
+    if (!boxesMeet(ps[i].m, ps[j].m) || seen?.pair('overlap', ps[i].p, ps[j].p)) continue;
     // (each pair's solids let go as it's done: a big layout's ran the kernel out of memory)
     arena(w, () => {
     const x = ps[i].m.intersect(ps[j].m);
@@ -113,11 +119,11 @@ const STEPS = [0.25, 0.5, 0.75, 1];
  *   rest (the preload, sprung; nothing, rigid), and left where it was as the slider goes to its other end, its post runs into it.
  * (The over-centre spring bends as the slider moves: its shape between isn't modelled, so it's checked as assembled only.)
  */
-export function moves(w: Wasm, ps: Part[], o: PieceOptions) {
+export function moves(w: Wasm, ps: Part[], o: PieceOptions, seen?: Seen) {
   const out: string[] = [];
   const sets = new Map<string, Part[]>();
   for (const q of ps) if (isMoving(q.p.name)) { const k = setOf(q.p.name); sets.set(k, [...(sets.get(k) ?? []), q]); }
-  for (const [, mine] of sets) arena(w, () => {
+  for (const [, mine] of sets) if (!seen || mine.some((q) => seen.own(q.p))) arena(w, () => {
     const others = ps.filter((q) => !mine.includes(q)), blades = mine.filter((q) => q.p.turn?.swing), throws = mine.filter((q) => q.p.slide);
     const lever = mine.find((q) => q.p.hinge), bar = throws.find((q) => /throw\d*$/.test(q.p.name));
     const hits = (m: Man, name: string, what: string, against: Part[]) => {
@@ -163,12 +169,12 @@ const SNAP_IN = 3;
  * up, or down) they share no more on the way than as assembled, but a peg snapping past its clip (SNAP_IN each).
  * Only what's near where they meet is looked at (16 mm round it).
  */
-export function mates(w: Wasm, ps: Part[], o: PieceOptions, log?: (s: string) => void) {
+export function mates(w: Wasm, ps: Part[], o: PieceOptions, log?: (s: string) => void, seen?: Seen) {
   const out: string[] = [], tr = ps.filter((q) => !isMoving(q.p.name));
   const dirs: [number, number, number][] = [[0, 0, 1], [0, 0, -1], ...Array.from({ length: 16 }, (_, k): [number, number, number] => [Math.cos((k * Math.PI) / 8), Math.sin((k * Math.PI) / 8), 0])];
   for (let i = 0; i < tr.length; i++) for (let j = i + 1; j < tr.length; j++) {
     const A = tr[i].m, B = tr[j].m;
-    if (!boxesMeet(A, B, 0.5)) continue;
+    if (!boxesMeet(A, B, 0.5) || seen?.pair('mate', tr[i].p, tr[j].p)) continue;
     arena(w, () => {
     const p = A.boundingBox(), q = B.boundingBox(), lo = [0, 1, 2].map((k) => Math.max(p.min[k], q.min[k]) - 16), hi = [0, 1, 2].map((k) => Math.min(p.max[k], q.max[k]) + 16);
     const box = w.Manifold.cube([hi[0] - lo[0], hi[1] - lo[1], hi[2] - lo[2]]).translate(lo as [number, number, number]);
@@ -179,12 +185,16 @@ export function mates(w: Wasm, ps: Part[], o: PieceOptions, log?: (s: string) =>
     const pegs = bodies.filter((m) => { const bb = m.boundingBox(); return mayShare(tr[i].p, tr[j].p, [0, 1, 2].map((k) => bb.max[k] - bb.min[k]), m.volume(), o, x.volume()); }).length;
     // (a peg whose clip clears it as assembled shares nothing then, and isn't counted: one at least)
     const rest = bodies.reduce((t, m) => t + m.volume(), 0), may = rest + OVERLAP + Math.max(1, pegs) * SNAP_IN;
+    // (the ways tried in the likeliest order: along the bed square to where they meet first (the long side of the box
+    // they share lies along the joint), then up and down, then the rest; and no further once one way does: any one is
+    // enough. Every way for every pair, the X yard's joints alone took minutes)
+    const along = hi[0] - lo[0] >= hi[1] - lo[1] ? [1, 0] : [0, 1], flat2 = dirs.slice(2).sort((p2, q2) => Math.abs(p2[0] * along[0] + p2[1] * along[1]) - Math.abs(q2[0] * along[0] + q2[1] * along[1]));
     let best = Infinity, bestD = dirs[0];
-    for (const d of dirs) {
+    for (const d of [...flat2.slice(0, 2), dirs[0], dirs[1], ...flat2.slice(2)]) {
       let worst = 0;
       for (const t of PULL) { worst = Math.max(worst, shared(a, b.translate([d[0] * t, d[1] * t, d[2] * t]))); if (worst > may && worst > best) break; }
       if (worst < best) { best = worst; bestD = d; }
-      if (best <= rest + OVERLAP) break;
+      if (best <= may) break;
     }
     log?.(`${tr[i].p.name} ${tr[j].p.name}: rest ${rest.toFixed(2)} pegs ${pegs} best ${best.toFixed(2)} along ${bestD.map((v) => v.toFixed(2)).join(' ')}`);
     if (best > may) out.push(`${tr[i].p.name} and ${tr[j].p.name} can't be brought together: drawn apart any straight way, ${best.toFixed(1)} mm3 is in the way at least (${rest.toFixed(1)} as assembled, ${pegs} peg${pegs === 1 ? '' : 's'})`);
@@ -231,30 +241,37 @@ export function assembledProblems(w: Wasm, pieces: Piece[], o: PieceOptions, log
   const boxes = pieces.map(box), all = [0, 1].map((k) => Math.max(...boxes.map((b) => b[k + 2])) - Math.min(...boxes.map((b) => b[k])));
   const ax = all[0] > all[1] ? 0 : 1, n = Math.max(1, Math.ceil(tris / AT_ONCE));
   const order = pieces.map((_, k) => k).filter((k) => pieces[k].positions.length).sort((a, b) => boxes[a][ax] + boxes[a][ax + 2] - boxes[b][ax] - boxes[b][ax + 2]);
+  // (what the strips before have done: Seen)
+  const id = new Map(pieces.map((p, k) => [p, k])), pairs = new Set<string>();
+  let own = new Set<Piece>();
+  const seen: Seen | undefined = n === 1 ? undefined : {
+    pair: (what, a2, b2) => { const k = `${what}:${Math.min(id.get(a2)!, id.get(b2)!)}:${Math.max(id.get(a2)!, id.get(b2)!)}`; if (pairs.has(k)) return true; pairs.add(k); return false; },
+    own: (p) => own.has(p) };
   for (let g = 0; g < n; g++) {
     const mine = order.slice(Math.floor((order.length * g) / n), Math.floor((order.length * (g + 1)) / n));
     if (!mine.length) continue;
+    own = new Set(mine.map((k) => pieces[k]));
     const lo = Math.min(...mine.map((k) => boxes[k][ax])) - ROUND, hi = Math.max(...mine.map((k) => boxes[k][ax + 2])) + ROUND;
     const some = n === 1 ? pieces : pieces.filter((_, k) => boxes[k][ax + 2] >= lo && boxes[k][ax] <= hi);
     // (every solid made on the way let go after: one kernel checks a file's worth of templates)
     const { parts: ps, unsolid } = parts(w, some);
-    try { for (const q of arena(w, () => problemsOf(w, some, ps, unsolid, o, log), () => [])) out.add(q); } finally { for (const q of ps) drop(q.m); }
+    try { for (const q of arena(w, () => problemsOf(w, some, ps, unsolid, o, log, seen), () => [])) out.add(q); } finally { for (const q of ps) drop(q.m); }
   }
   for (const p of pieces) for (const q of arena(w, () => prints(w, p, o.printBedX!, o.printBedY!), () => [])) out.add(q);
   return [...out];
 }
-function problemsOf(w: Wasm, pieces: Piece[], ps: Part[], unsolid: string[], o: PieceOptions, log?: (s: string) => void) {
+function problemsOf(w: Wasm, pieces: Piece[], ps: Part[], unsolid: string[], o: PieceOptions, log?: (s: string) => void, seen?: Seen) {
   const out: string[] = [];
   // (a bought piece is shown as a stand-in; a printed one must be a solid: said by prints)
   for (const n of unsolid) if (!pieces.find((p) => p.name === n)!.lego) out.push(`${n} isn't a closed solid as assembled`);
-  out.push(...overlaps(w, ps, o));
-  out.push(...moves(w, ps, o));
+  out.push(...overlaps(w, ps, o, seen));
+  out.push(...moves(w, ps, o, seen));
   // (3. each moving part can be put in, the way it's built to go: assembly.shared.ts putTogether, with the app's defaults'
   // plate-style points: the slider down through the lever's opening and along its tunnel, the blades on from above (or
   // tilted in under their lip, or on open), the lever between its ears, a lid last)
   // (not the monorail's points, nor an over-centre spring, whose rings snap over its pins' lips: not modelled going on)
-  if (ps.some((q) => isMoving(q.p.name))) out.push(...arena(w, () => putTogether(w, ps.map((q) => q.p).filter((p) => !/^monorail|-spring$/.test(p.name)), { fromTop: o.pointsModule === 'layers', bladesTop: o.mechStyle !== 'tines' }, new Map(ps.map((q) => [q.p.positions, q.m]))), () => []));
-  out.push(...mates(w, ps, o, log));
+  if (ps.some((q) => isMoving(q.p.name))) out.push(...arena(w, () => putTogether(w, ps.map((q) => q.p).filter((p) => !/^monorail|-spring$/.test(p.name)), { fromTop: o.pointsModule === 'layers', bladesTop: o.mechStyle !== 'tines' }, new Map(ps.map((q) => [q.p.positions, q.m])), seen && ((p) => seen.own(p))), () => []));
+  out.push(...mates(w, ps, o, log, seen));
   return out;
 }
 

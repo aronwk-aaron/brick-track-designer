@@ -66,7 +66,9 @@ export function hanging(w: Awaited<ReturnType<typeof kernel>>, solid: InstanceTy
  * fromTop: layered points (the parts from above, a lid over them); bladesTop: the plate-style points (blades on top).
  * have: the pieces' solids where they're made already, by their positions.
  */
-export function putTogether(w: Awaited<ReturnType<typeof kernel>>, pieces: Piece[], how: { fromTop: boolean; bladesTop: boolean }, have?: Map<Float32Array, ReturnType<Awaited<ReturnType<typeof kernel>>['Manifold']['cube']>>): string[] {
+export function putTogether(w: Awaited<ReturnType<typeof kernel>>, pieces: Piece[], how: { fromTop: boolean; bladesTop: boolean }, have?: Map<Float32Array, ReturnType<Awaited<ReturnType<typeof kernel>>['Manifold']['cube']>>, only?: (p: Piece) => boolean): string[] {
+  // (only: just these parts are checked, against all of pieces: a big layout's strip checks its own, with what's round them loaded)
+  const mine = (p: Piece) => !only || only(p);
   // (each piece's solid made once, and let go at the end: one kernel checks many designs)
   const made = new Map<Float32Array, ReturnType<typeof w.Manifold.cube>>();
   const man = (p: { positions: Float32Array }) => {
@@ -92,7 +94,7 @@ export function putTogether(w: Awaited<ReturnType<typeof kernel>>, pieces: Piece
   const moving = pieces.filter((q) => /points|throw/.test(q.name)).map(man); // (the lever goes in after the lid)
   const { fromTop, bladesTop } = how;
   const problems: string[] = [];
-  for (const p of pieces.filter((q) => /points|throw|lever|bracket/.test(q.name))) {
+  for (const p of pieces.filter((q) => /points|throw|lever|bracket/.test(q.name) && mine(q))) {
     // (each moving part one piece, but for break-out supports inside it: the sprung blades', in the spring pocket)
     const m = man(p), bodies = m.decompose().sort((x, y) => y.volume() - x.volume()), bb = bodies[0].boundingBox();
     const track = trackNear(m);
@@ -170,25 +172,25 @@ export function putTogether(w: Awaited<ReturnType<typeof kernel>>, pieces: Piece
   // steeper than 45 degrees, above the first layer with nothing under it. Held: the part's own break-out supports
   // within 0.45 below (the sprung blades' spring pocket), a slope of 45 degrees or less, a bridge (held both sides, 10 or
   // less across). Sampled over each face, not just its middle)
-  if (bladesTop) for (const p of pieces.filter((q) => /points|throw/.test(q.name) && !/lever|bracket/.test(q.name))) {
+  if (bladesTop) for (const p of pieces.filter((q) => /points|throw/.test(q.name) && !/lever|bracket/.test(q.name) && mine(q))) {
     const area = hanging(w, man({ positions: stlPositions(p.stl) }));
     if (area > 1) problems.push(`${p.name} has ${area.toFixed(1)} mm2 hanging as printed`);
   }
   // (the moving parts clear of each other at rest (a blade's tongue on the slider's post is the blades' check above))
   const mv = pieces.filter((q) => /points|throw/.test(q.name) && !/lever|bracket/.test(q.name));
   for (let i = 0; i < mv.length; i++) for (let j = i + 1; j < mv.length; j++) {
-    if (/throw/.test(mv[i].name) || /throw/.test(mv[j].name)) continue;
+    if (/throw/.test(mv[i].name) || /throw/.test(mv[j].name) || !(mine(mv[i]) || mine(mv[j]))) continue;
     const v = man(mv[i]).intersect(man(mv[j])).volume();
     if (v > 0.5) problems.push(`${mv[i].name} and ${mv[j].name} overlap: ${v.toFixed(1)} mm3`);
   }
   // (a lever or stand is held by its ears (on the lid, with layered points): slid along its pivot it runs into them)
   const lids = pieces.filter((q) => /lid/.test(q.name)).map(man);
-  for (const p of pieces.filter((q) => /lever/.test(q.name))) {
+  for (const p of pieces.filter((q) => /lever/.test(q.name) && mine(q))) {
     // (and on its bracket, where it's on one)
     const m = man(p), withLids = w.Manifold.union([trackNear(m), ...lids, ...pieces.filter((q) => /bracket/.test(q.name)).map(man)]);
     if ([-0.6, 0.6].some((dy) => m.translate([0, dy, 0]).intersect(withLids).volume() < 0.5)) problems.push(`${p.name} isn't held by its ears`);
   }
-  for (const p of pieces.filter((q) => /lid/.test(q.name))) {
+  for (const p of pieces.filter((q) => /lid/.test(q.name) && mine(q))) {
     const m = man(p), others = w.Manifold.union([trackNear(m), ...moving]);
     for (const dz of [0, 1, 2, 4, 8, 16]) { const v = m.translate([0, 0, dz]).intersect(others).volume(); if (v > 0.5) { problems.push(`${p.name} ${dz} mm up: ${v.toFixed(1)} mm3 in the rest`); break; } }
   }
@@ -196,7 +198,7 @@ export function putTogether(w: Awaited<ReturnType<typeof kernel>>, pieces: Piece
   // lever's opening, and along its tunnel and the posts' groove: everything ahead of where its end is, clear
   // all the way as it slides in (the part of it still out of the tunnel is in the opening, bent up out of it))
   // (in two parts: the piece with the posts on the bar, pegged into it, clear of it)
-  for (const p of pieces.filter((q) => /throw.*posts/.test(q.name))) {
+  for (const p of pieces.filter((q) => /throw.*posts/.test(q.name) && mine(q))) {
     const m = man(p), bar = pieces.find((q) => q.name === p.name.replace(/-posts$/, ''));
     if (!bar) { problems.push(`${p.name} has no bar`); continue; }
     const mb = man(bar), v = m.intersect(mb).volume();
@@ -205,7 +207,7 @@ export function putTogether(w: Awaited<ReturnType<typeof kernel>>, pieces: Piece
     // (a peg in its hole: moved 1 mm any way across, it's in the bar)
     if ([[1, 0], [-1, 0], [0, 1], [0, -1]].some(([dx, dy]) => m.translate([dx, dy, 0]).intersect(mb).volume() < 0.05)) problems.push(`${p.name} isn't pegged to its bar`);
   }
-  if (bladesTop) for (const p of pieces.filter((q) => /throw/.test(q.name) && !/posts/.test(q.name))) {
+  if (bladesTop) for (const p of pieces.filter((q) => /throw/.test(q.name) && !/posts/.test(q.name) && mine(q))) {
     // (along its own throw, whichever way that lies in the design: turned to lie along x, and the track with it)
     const ang = p.slide ? (Math.atan2(p.slide.dir[1], p.slide.dir[0]) * 180) / Math.PI : 0;
     const m = man(p).rotate([0, 0, -ang]), bb = m.boundingBox(), len = bb.max[0] - bb.min[0];
