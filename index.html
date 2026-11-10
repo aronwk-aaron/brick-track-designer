@@ -60,6 +60,8 @@
     #template { width: 116px; } #radius { width: 150px; }
     @media (max-width: 1240px) { #radius { width: 120px; } #template { width: 104px; } }
     button, select, input { font: inherit; color: inherit; }
+    /* (hidden means hidden, whatever a rule below gives the element to be laid out as: the Rebuild button showed all the time) */
+    [hidden] { display: none !important; }
     button, select, a.icon { display: inline-flex; align-items: center; justify-content: center; gap: 6px; height: 30px; background: var(--panel); border: 1px solid var(--line);
       border-radius: var(--radius); padding: 0 10px; cursor: pointer; white-space: nowrap; transition: background 0.12s, border-color 0.12s, color 0.12s; }
     select { padding: 0 6px 0 9px; }
