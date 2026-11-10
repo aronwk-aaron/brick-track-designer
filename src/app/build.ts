@@ -1268,12 +1268,21 @@ function bake(b: PieceBuild, m: Man): Baked {
 /**
  * A test-print coupon's number (BuildOpts.mark), to tell it by once it's off the bed: that many upright ribs (1.5 wide,
  * 0.55 proud, 2.4 high, 3 apart) on its side at its +x edge, about its middle: a sleeper's end, on a short straight
- * laid along y (the kit's). Left off where they wouldn't all be part of it (no wall there).
+ * laid along y (the kit's); on a curve's or a crossing's end where its wall is. Left off where they wouldn't all be part of it.
  */
 function marked(b: PieceBuild, m: Man): Man {
   const bb = m.boundingBox(), cy = (bb.min[1] + bb.max[1]) / 2, n = Math.min(5, Math.round(b.mark!));
-  const out = b.scad.union([m, ...Array.from({ length: n }, (_, i) => b.scad.cylinder(2.4, 0.75).translate([bb.max[0] - 0.2, cy + (i - (n - 1) / 2) * 3, bb.min[2]]))]);
-  return out.decompose().length === m.decompose().length ? out : m;
+  // (each rib on the part's outline where it is at its own y, 1.2 up: on a straight's sleeper end that is the bounding box's
+  // +x edge; on a curve's end or a crossing's arm it's where the wall is. Tried at the middle, then each side of it along y)
+  const sl = m.slice(bb.min[2] + 1.2), wide = bb.max[0] - bb.min[0] + 2, parts = m.decompose().length;
+  const xAt = (y: number) => { const row = b.w.CrossSection.square([wide, 0.2]).translate([bb.min[0] - 1, y - 0.1]).intersect(sl); return row.isEmpty() ? undefined : row.bounds().max[0]; };
+  for (let k = 0; k < 40; k++) {
+    const y0 = cy + (k % 2 ? 1 : -1) * Math.ceil(k / 2) * 1.5, ys = Array.from({ length: n }, (_, i) => y0 + (i - (n - 1) / 2) * 3), xs = ys.map(xAt);
+    if (xs.some((x) => x === undefined)) continue;
+    const out = b.scad.union([m, ...ys.map((y, i) => b.scad.cylinder(2.4, 0.75).translate([xs[i]! - 0.2, y, bb.min[2]]))]);
+    if (out.decompose().length === parts) return out;
+  }
+  return m;
 }
 
 /** A piece added: local, as printed; world, where it sits in the design. */

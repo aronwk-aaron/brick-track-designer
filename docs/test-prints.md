@@ -1,7 +1,7 @@
 # Test prints: what to print, and what to report
 
 Nothing in the switch has been printed since it was last changed, and the fit numbers come from one straight printed
-in October. This kit is five templates (Templates › Test prints). Print them, try them with real track and wheels,
+in October. This kit is nine templates (Templates › Test prints): five that check the whole, and four fit ladders. Print them, try them with real track and wheels,
 fill in the form at the bottom and send it back: each answer changes one setting's default.
 
 ## What to print
@@ -13,10 +13,16 @@ fill in the form at the bottom and send it back: each answer changes one setting
 | **3: switch as built** | LEGO-geometry left switch, nothing changed: 2 track parts, 2 blades, slider, lever | 59 cm³, 73 g | 4 h | Wheels through every route; lever click; do the parts go together |
 | **4: points three ways** | 3 points coupons (toe to just past the blades, 12 studs, no frog), 5 or 6 parts each | 74 cm³, 92 g (31 g each) | 5 h | Flange relief; rigid blades; the snap clamp both ways; 4 mm throw |
 | **5: seat for a LEGO curve** | Ballast for one bought R40 curve | 25 cm³, 31 g | 1¾ h | Does bought track drop into its seat |
+| **6: seat fits** (ladder) | 3 ballast pieces for a bought R40 curve, Track fit in the seat 0.1, 0.2, 0.3 mm | 76 cm³, 94 g | 5 h | Which seat fit is right: the setting Track fit in the seat |
+| **7: clearance round the points** (ladder) | 3 points coupons as in 4, Clearance 0.2, 0.3, 0.4 mm | 73 cm³, 90 g | 5 h | Which clearance lets the moving parts move without slop: Clearance |
+| **8: flangeway width** (ladder) | 3 small 90° crossings, Flangeway width 2.5, 3, 3.5 mm | 39 cm³, 48 g | 2½ h | Which width lets your wheels through a crossing: Flangeway width |
+| **9: monorail hole fit** (ladder) | 5 four-stud monorail straights, Hole fit 0, 0.05, 0.1, 0.15, 0.2 mm | 40 cm³, 49 g | 2½ h | Which hole fit takes a LEGO axle and anti-studs right: Hole fit |
 
-196 cm³ in all, about 245 g of PLA and 13 hours (grams are the parts' solid volume, so an upper figure; hours a guess
+The first five: 196 cm³ in all, about 245 g of PLA and 13 hours (grams are the parts' solid volume, so an upper figure; hours a guess
 at 15 cm³ an hour). Three plates on a 256 mm bed: **plate 1** = templates 1, 2 and 5; **plate 2** = template 3;
 **plate 3** = template 4. If there's one evening: plates 1 and 2. Coupon C of template 4 matters least.
+
+**Reading a ladder.** In 1, 6, 7 and 8 each part has ribs (small upright ribs on the side of a sleeper's end, or of the ballast's): the rung's number, 1 to 3 or 5, the first rung one rib. The middle rung is today's setting. The part's file name says the value too (`seat2-fit0.2-…`) and the zip's README.txt lists each. Template 9 has no ribs (a monorail beam has no room): its value is engraved underneath, `H0.1`. Try every rung, and report the rung that is right. If it is the first or the last, the right value may be past it: say so.
 
 For each: pick the template, wait for it to build, press STL. The zip's files are named for the coupon and its values,
 and its README.txt lists them.
@@ -56,7 +62,10 @@ on purpose: leave them in.
    ears, its foot in the slider.
 4. **Points coupons.** As the switch. The clamp goes on last, dropped over its two bosses: on the lever's arm (A),
    between the blades (B). C has none.
-5. **Seat.** Lay a LEGO R40 curve in it.
+5. **Seat.** Lay a LEGO R40 curve in it. In 6, in each of the three.
+6. **Clearance** (7). As the switch. Move each lever by hand: the blades should go over and close freely, with no slop.
+7. **Flangeways** (8). Roll a wheelset through each crossing, both ways, along each track.
+8. **Monorail** (9). Push a LEGO axle into the holes in an end, and a stud into its anti-stud: it should go in without force and hold.
 
 Then, for 3 and 4: roll a wheelset (and a bogie, and your longest-wheelbase loco) by hand through every route, both
 ways, points set each way. For trailing: set the points against the wheels and push through from the heel end.
@@ -108,6 +117,18 @@ Printer: ________  Material: ________  Layer: ____ mm
    Sprung blade gaps:   [ ] came out clean  [ ] left bits  [ ] fused (spring doesn't flex)
    Anything that drooped, strung or lifted: ________________
 
+6. SEAT FITS (template 6; ribs 1 tightest .. 3 loosest; 2 = today)
+   Right fit is ribs: [ ]1 [ ]2 [ ]3   [ ] none (all too tight / all too loose)
+
+7. CLEARANCE ROUND THE POINTS (template 7; ribs 1 = 0.2 mm .. 3 = 0.4; 2 = today)
+   Right clearance is ribs: [ ]1 [ ]2 [ ]3   [ ] none (all too tight / all too loose)
+
+8. FLANGEWAYS (template 8; ribs 1 = 2.5 mm .. 3 = 3.5; 2 = today)
+   Right width is ribs: [ ]1 [ ]2 [ ]3   [ ] none (all too tight: wheels rub / all too wide: a wheel drops in)
+
+9. MONORAIL HOLES (template 9; engraved H0 .. H0.2; H0.1 = today)
+   Right fit is: [ ]H0 [ ]H0.05 [ ]H0.1 [ ]H0.15 [ ]H0.2   [ ] none (all too tight / all too loose)
+
 Anything else: ________________
 ```
 
@@ -124,6 +145,10 @@ Anything else: ________________
 | 3 against 4A and 4B, holding and trailing | Points kept set by | Lever click |
 | 3 against 4C | Blade throw, mm | 3 |
 | 5 | Track fit in the seat, mm | 0.2 |
+| 6 | Track fit in the seat, mm (ribs 1 to 3 = 0.1, 0.2, 0.3) | 0.2 |
+| 7 | Clearance, mm (ribs 1 to 3 = 0.2, 0.3, 0.4) | 0.3 |
+| 8 | Flangeway width, mm (ribs 1 to 3 = 2.5, 3, 3.5) | 3 |
+| 9 | Hole fit, mm (the monorail section) | 0.1 |
 | 6 | Supports under rail ends; the sprung blades' gaps | on |
 
 ## Round two (not in this kit)

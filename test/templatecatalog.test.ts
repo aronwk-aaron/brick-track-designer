@@ -176,7 +176,7 @@ describe('search and filters', () => {
     expect(names({ kinds: new Set(['wye']) }).every((n) => /wye/i.test(n))).toBe(true);
     expect(names({ kinds: new Set(['wye', 'three-way']) }).length).toBeGreaterThan(names({ kinds: new Set(['wye']) }).length);
     expect(names({ gauges: new Set(['narrow']) }).every((n) => /^Narrow-gauge/.test(n))).toBe(true);
-    expect(names({ systems: new Set(['monorail']) }).length).toBe(4);
+    expect(names({ systems: new Set(['monorail']) }).length).toBe(5); // (the Monorail group's four, and the monorail hole-fit coupons)
     const r104 = names({ radii: new Set([104]) });
     expect(r104.length).toBeGreaterThan(3);
     const both = names({ radii: new Set([104]), kinds: new Set(['switch']), query: 'lever' });
