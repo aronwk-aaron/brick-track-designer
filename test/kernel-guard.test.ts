@@ -9,8 +9,11 @@ import { Scad } from '../src/geom/scad';
 import { serveHelper, type FromHelper } from '../src/app/parallel';
 
 describe('the kernel\'s memory watched', { timeout: 300000 }, () => {
-  it('its size is known once it\'s loaded, and the limit leaves room under its 4 GB', async () => {
+  it('its size is known once it\'s loaded; the workers\' limit leaves room under its 4 GB; no limit till one\'s set (a test may take it all)', async () => {
     await kernel();
+    const was = setKernelFull(KERNEL_FULL);
+    expect(was).toBe(Infinity);
+    setKernelFull(was);
     expect(kernelBytes()).toBeGreaterThan(1e6);
     expect(kernelBytes()).toBeLessThan(KERNEL_FULL);
     expect(KERNEL_FULL).toBeLessThan(4294901760 - 5e8);

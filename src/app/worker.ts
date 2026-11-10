@@ -1,7 +1,10 @@
 // Solves and builds a design off the main thread (src/app/build.ts), a big
 // one's heavy jobs shared out among helper workers (parallel.ts, helper.ts).
 import wasmUrl from 'manifold-3d/manifold.wasm?url';
-import { kernel, kernelBroke } from '../geom/kernel';
+import { kernel, KERNEL_FULL, kernelBroke, setKernelFull } from '../geom/kernel';
+
+// (a build that takes nearly all the kernel's memory is stopped, not left to crawl: kernel.ts)
+setKernelFull(KERNEL_FULL);
 import type { Design } from './design';
 import { buildDesign, PLAN_ONLY } from './build';
 import { buildShared, CANCELLED, type FromHelper, helperCount, type HelperPort } from './parallel';

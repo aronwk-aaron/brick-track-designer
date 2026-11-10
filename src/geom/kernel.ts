@@ -31,10 +31,12 @@ export class KernelNotLoaded extends Error {
 let memory: WebAssembly.Memory | undefined;
 /** The kernel's memory now (bytes; 0 before it's loaded). */
 export const kernelBytes = () => memory?.buffer.byteLength ?? 0;
-/** More of the kernel's memory in use than this: the build's stopped (KernelFull). */
+/** More of the kernel's memory in use than this, in the page's workers: the build's stopped (KernelFull). */
 export const KERNEL_FULL = 3.6e9;
-let full = KERNEL_FULL;
-/** (tests) Another limit; hands back the one it was. */
+// (no limit till it's set: the page's workers set it (worker.ts, helper.ts), where a build that crawls is waited on;
+// a test that puts a whole yard together in one kernel may take all 4 GB and still end)
+let full = Infinity;
+/** The limit set (the workers: KERNEL_FULL; tests: what they like); hands back the one it was. */
 export function setKernelFull(bytes: number) { const was = full; full = bytes; return was; }
 export class KernelFull extends Error {
   constructor() { super('the geometry kernel ran out of memory'); this.name = 'KernelFull'; }
