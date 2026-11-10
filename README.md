@@ -40,7 +40,9 @@ rails, rail crossings, points (click to take them out or force them) and each
 switch's lever (drag it across to swap sides; hover it to see what set its
 side); below it, the pieces in 3D, which download as STL, with a list of the
 parts to buy and to print, and as a parts library for a layout designer.
-Templates give starting points (switches, crossings, yards, monorail).
+Templates give starting points (switches, crossings, yards, monorail): a
+browser with a picture for each, in sections, with search and filters, left and
+right hands on one card, and starred and recent ones kept on top.
 Designs save and open as JSON, and the last one is kept in the browser. The
 page can be installed and works offline once opened.
 

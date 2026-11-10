@@ -3,7 +3,7 @@
 import * as THREE from 'three';
 import wasmUrl from 'manifold-3d/manifold.wasm?url';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
-import { BANK_MAX, type BankRamps, type Design, type DRoute, type DSeg, OPTION_DEFAULTS, type PieceOptions, RAIL_DEFAULTS, TEMPLATE_GROUPS, TEMPLATES, type Trackwork, endOf, freeName, isMono, readDesign, routeGaugeStuds, setSystem } from './design';
+import { BANK_MAX, type BankRamps, type Design, type DRoute, type DSeg, OPTION_DEFAULTS, type PieceOptions, RAIL_DEFAULTS, TEMPLATES, type Trackwork, endOf, freeName, isMono, readDesign, routeGaugeStuds, setSystem } from './design';
 import { TrackCanvas, type OverlayItem, dialogOpen, eachLever, leverSide, leverSlides, typingIn } from './canvas';
 import { describe } from './planner';
 import { BRICKTRACKS_COLOR, gradeOf, LEGO_COLOR, type LegoPart, legoParts, type Piece } from './build';
@@ -17,6 +17,7 @@ import { fileBase as fileBaseOf, partsDownload, plainKind, printedKinds, stlDown
 import { clamp, LIMITS, type Range, rangeText } from './limits';
 import { mirrorRoute } from './routeedits';
 import { TabStore, unsaved } from './session';
+import { initTemplateBrowser } from './templatebrowser';
 import { type CopiedEdit, copyEdits, followTrackwork, isEdit, leftOver, mirrorAnchors, pasteEdits, reconcileTrackwork, renameAnchors } from './twfollow';
 import { type OptChoice, optionForm, type OptCtx, type OptField } from './settings';
 
@@ -875,13 +876,11 @@ renderer.domElement.addEventListener('dblclick', () => { if (meshes.length) fram
 renderer.setAnimationLoop(() => { if (!dirty3d) return; dirty3d = false; renderer.render(scene, camera); });
 
 // ---------- toolbar ----------
-const tpl = $<HTMLSelectElement>('template');
-// (in groups: crossings, switches, layouts, features, monorail)
-for (const [g, names] of TEMPLATE_GROUPS) { const og = document.createElement('optgroup'); og.label = g; for (const name of names) if (TEMPLATES[name]) og.append(new Option(name, name)); tpl.append(og); }
-tpl.addEventListener('change', async () => {
-  const name = tpl.value; tpl.value = '';
-  if (!name || !(await mayReplace())) return;
+// The template browser (a dialog: templatebrowser.ts) picks one; it replaces the design, after asking if the design has changes in no file.
+initTemplateBrowser(async (name) => {
+  if (!TEMPLATES[name] || !(await mayReplace())) return false;
   design = structuredClone(TEMPLATES[name]); replaced(); framed = false; changed(true); markClean(); canvas.fit();
+  return true;
 });
 $('add-route').addEventListener('click', () => {
   design.routes.push({ name: nextName(), ...freeStart(design), segs: [{ kind: 'straight', studs: 16 }] });

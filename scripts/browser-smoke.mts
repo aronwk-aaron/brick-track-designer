@@ -35,7 +35,14 @@ try {
   check(await says(/Nothing to build yet/, 20_000), 'an empty plan says there is nothing to build');
 
   at = 'a template';
-  await page.selectOption('#template', 'Left switch (LEGO)');
+  // (the template browser: search for a name, press its card)
+  await page.click('#templates-open');
+  check(await page.locator('#tpl-dlg').evaluate((d: HTMLDialogElement) => d.open), 'the template browser opens');
+  check((await page.locator('#tpl-body .tcard').count()) > 50, 'it lists the templates');
+  await page.fill('#tpl-search', 'switch lego');
+  check((await page.locator('#tpl-body .tcard').count()) === 1, 'a search narrows them to the card');
+  await page.click('#tpl-body button[data-template="Left switch (LEGO)"]');
+  check(!(await page.locator('#tpl-dlg').evaluate((d: HTMLDialogElement) => d.open)), 'pressing the card closes the browser');
   check(await says(/1 switch.*parts? to print.*built in/), `a template loads and builds (${await status()})`);
   check(await routes() === 2, 'the template has its two routes');
 
@@ -74,11 +81,16 @@ try {
   check(!(await page.isDisabled('#export-stl')), 'and the STL download is there again');
 
   at = 'replacing a changed design';
-  await page.selectOption('#template', 'Oval (LEGO R40)');
+  await page.click('#templates-open');
+  await page.fill('#tpl-search', 'oval');
+  await page.click('#tpl-body button[data-template="Oval (LEGO R40)"]');
   await page.waitForSelector('#ask-dlg[open]', { timeout: 10_000 }).catch(() => undefined);
   check(await page.locator('#ask-dlg').evaluate((d: HTMLDialogElement) => d.open), 'a template over a changed design asks first');
   await page.click('#ask-no');
   check(await routes() === 2, 'Keep it keeps it');
+  check(await page.locator('#tpl-dlg').evaluate((d: HTMLDialogElement) => d.open), 'and the browser stays open');
+  await page.keyboard.press('Escape');
+  check(!(await page.locator('#tpl-dlg').evaluate((d: HTMLDialogElement) => d.open)), 'Esc closes the browser');
 
   check(errors.length === 0, `no errors on the page${errors.length ? `: ${errors.join(' | ').slice(0, 600)}` : ''}`);
 } catch (err) {

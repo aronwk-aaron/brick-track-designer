@@ -22,8 +22,12 @@ console.log('error:', await page.textContent('#error'));
 console.log('plan svg:', (await page.innerHTML('#plan')).length, 'chars');
 if (errors.length) console.log('errors:\n' + errors.join('\n'));
 // Every template builds without errors.
-for (const name of await page.$$eval('#template option', (os) => os.map((o) => (o as HTMLOptionElement).value).filter(Boolean))) {
-  await page.selectOption('#template', name);
+await page.click('#templates-open');
+const names = [...new Set(await page.$$eval('#tpl-body button[data-template]', (bs) => bs.map((b) => (b as HTMLElement).dataset.template!)))];
+await page.keyboard.press('Escape');
+for (const name of names) {
+  await page.click('#templates-open');
+  await page.click(`#tpl-body button[data-template="${name.replace(/"/g, '\\"')}"]`);
   await page.waitForFunction(() => /built in|\S/.test(document.getElementById('error')?.textContent ?? '') || /built in/.test(document.getElementById('info')?.textContent ?? ''), null, { timeout: 30000 });
   await page.waitForTimeout(300);
   await page.waitForFunction(() => !/Building/.test(document.getElementById('info')?.textContent ?? ''), null, { timeout: 30000 }).catch(() => {});
