@@ -1425,7 +1425,7 @@ function addRoutes(list: DRoute[], dx: number, dy: number) {
   canvas.setSelection(list.map((_, k) => first + k));
   changed(true);
 }
-function copySel(cut = false) {
+function copySel(cut = false, toBrowser = true) {
   // (nothing selected: what was copied stays copied)
   if (!selected().length) return false;
   clipboard = selected().map((i) => structuredClone(design.routes[i]));
@@ -1433,8 +1433,15 @@ function copySel(cut = false) {
   // (cut: the edits go with the routes, not left behind with nothing to be on)
   clipEdits = copyEdits(design, clipNames, cut);
   // (the browser may refuse to write to its own clipboard: not a problem, the copy is kept here)
-  try { void navigator.clipboard?.writeText(JSON.stringify({ btdRoutes: clipboard })).catch(() => { /* fine */ }); } catch { /* fine */ }
+  if (toBrowser) try { void navigator.clipboard?.writeText(JSON.stringify({ btdRoutes: clipboard })).catch(() => { /* fine */ }); } catch { /* fine */ }
   return true;
+}
+/** A copy of the selection beside it, the clipboard left as it was. */
+function duplicateSel() {
+  const keep = [clipboard, clipNames, clipEdits] as const;
+  if (!copySel(false, false)) return;
+  addRoutes(clipboard, 8, 0);
+  [clipboard, clipNames, clipEdits] = keep as [DRoute[], string[], CopiedEdit[]];
 }
 function deleteSel() {
   for (const i of selected().sort((a, b) => b - a)) design.routes.splice(i, 1);
@@ -1474,7 +1481,7 @@ function updateSelbar() {
 $('sel-copy').addEventListener('click', () => { copySel(); updateSelbar(); });
 $('sel-cut').addEventListener('click', () => { if (copySel(true)) deleteSel(); updateSelbar(); });
 $('sel-paste').addEventListener('click', () => { pasteClip(); updateSelbar(); });
-$('sel-dup').addEventListener('click', () => { if (copySel()) addRoutes(clipboard, 8, 0); updateSelbar(); });
+$('sel-dup').addEventListener('click', () => { duplicateSel(); updateSelbar(); });
 $('sel-mirror').addEventListener('click', mirrorSel);
 $('sel-rotl').addEventListener('click', () => turnSel(90));
 $('sel-rotr').addEventListener('click', () => turnSel(-90));
@@ -1485,7 +1492,7 @@ addEventListener('keydown', (e) => {
   if (mod && k === 'c') { e.preventDefault(); copySel(); }
   else if (mod && k === 'x') { e.preventDefault(); if (copySel(true)) deleteSel(); }
   else if (mod && k === 'v') { e.preventDefault(); pasteClip(); }
-  else if (mod && k === 'd') { e.preventDefault(); if (copySel()) addRoutes(clipboard, 8, 0); }
+  else if (mod && k === 'd') { e.preventDefault(); duplicateSel(); }
   else if (mod && k === 'a') { e.preventDefault(); canvas.setSelection(design.routes.map((_, i) => i)); }
   else if (!mod && k === 'm') mirrorSel();
   else if (!mod && k === 'r') turnSel(e.shiftKey ? 90 : -90);

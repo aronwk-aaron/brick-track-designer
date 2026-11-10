@@ -1,5 +1,6 @@
 // A route turned end for end, or mirrored: its track, and with it everything on its card that's said by its ends
 // (start, end) or its sides (left, right), so it stays the track it was.
+import type { RouteEnds } from '../route/route';
 import { type BankRamps, type Design, type DRoute, isMono, routeGaugeStuds } from './design';
 import { reversed } from './planner';
 
@@ -51,4 +52,16 @@ export function joinProblem(d: Design, a: DRoute, b: DRoute): string | undefined
   if (!!a.dualGauge !== !!b.dualGauge || (a.dualGauge && !same('dualGaugeStuds', 'dualShared'))) return 'their third rails differ';
   if (isMono(a) && !same('monoHeight')) return 'their heights differ';
   return undefined;
+}
+
+/**
+ * What a "which ends" setting (guard rails coming to a point, the third rail stopping short) is on two routes made one track, route b's
+ * track added to the end of route a's: a's start stays the start; a's old end and b's end that met it are inside the track now (nothing
+ * there); b's far end is the new end (bEnd: which end of b met a: 'start' leaves b's end as the far one).
+ */
+export function joinedEnds(a: RouteEnds | undefined, b: RouteEnds | undefined, bEnd: 'start' | 'end'): RouteEnds | undefined {
+  if (a === undefined && b === undefined) return undefined;
+  const has = (e: RouteEnds | undefined, w: 'start' | 'end') => e === 'both' || e === w;
+  const start = has(a, 'start'), end = has(b, bEnd === 'start' ? 'end' : 'start');
+  return start && end ? 'both' : start ? 'start' : end ? 'end' : 'none';
 }

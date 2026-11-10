@@ -11,7 +11,7 @@ import { type Design, type DRoute, type DSeg, dualRailOffsets, freeName, isMono,
 import { sleeperSpots } from '../geom/crossing';
 import { poseToWorld, routeLength, routePose, worldToPose } from '../route/route';
 import { forFingers } from './hints';
-import { joinProblem, reversedRoute } from './routeedits';
+import { joinedEnds, joinProblem, reversedRoute } from './routeedits';
 import { dragValue, END_INSET_PX, type Handle, type HandleKind, handleLabel, segmentHandles, visibleHandles, withValue } from './handles';
 import { isEdit, joinAnchors, reverseAnchors } from './twfollow';
 import { describe, follow, plan, planAnyway, planAuto, planFreeTurning, planToPose, reversed, trace as traceRaw, type Pose } from './planner';
@@ -829,6 +829,8 @@ export class TrackCanvas {
       if (last?.kind === 'straight' && sg.kind === 'straight') last.studs = Math.round((last.studs + sg.studs) * 1e6) / 1e6;
       else segs.push(sg);
     }
+    // (the ends its guard rails and third rail stop at: the joined ends are inside the track now; b's far end is the new end)
+    for (const k of ['guardRailEnds', 'dualPlainEnds'] as const) { const v = joinedEnds(routes[a][k], rb[k], bEnd); if (v === undefined || v === 'none') delete routes[a][k]; else routes[a][k] = v; }
     // (its far end, connector or buffer stop, is the joined track's end now)
     const far = bEnd === 'start' ? rb.endEnd : rb.startEnd;
     if (far) routes[a].endEnd = far; else delete routes[a].endEnd;

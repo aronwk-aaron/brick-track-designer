@@ -31,3 +31,20 @@ describe('which routes can be made one track', () => {
     expect(joinProblem(d([]), r('A', { system: 'monorail', monoHeight: 3 }), r('B', { system: 'monorail', monoHeight: 3 }))).toBeUndefined();
   });
 });
+
+import { joinedEnds } from '../src/app/routeedits';
+describe('the ends a setting names, after a join', () => {
+  it('keeps the start and takes the other route\'s far end', () => {
+    // b's start meets a's end: b's end is the far one
+    expect(joinedEnds('end', 'end', 'start')).toBe('end');
+    expect(joinedEnds('start', 'end', 'start')).toBe('both');
+    expect(joinedEnds('both', 'start', 'start')).toBe('start');
+    expect(joinedEnds('end', undefined, 'start')).toBe('none');
+    // b's end meets a's end: b's start is the far one
+    expect(joinedEnds('start', 'start', 'end')).toBe('both');
+    expect(joinedEnds(undefined, 'end', 'end')).toBe('none');
+  });
+  it('says nothing when neither said anything', () => {
+    expect(joinedEnds(undefined, undefined, 'start')).toBeUndefined();
+  });
+});
