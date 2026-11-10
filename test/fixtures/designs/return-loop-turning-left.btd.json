@@ -1,0 +1,78 @@
+{
+ "version": 1,
+ "gaugeStuds": 4,
+ "routes": [
+  {
+   "name": "Loop",
+   "x": 0,
+   "y": 0,
+   "heading": 0,
+   "segs": [
+    {
+     "kind": "straight",
+     "studs": 264
+    },
+    {
+     "kind": "curve",
+     "radius": 120,
+     "angle": 244.585379
+    },
+    {
+     "kind": "straight",
+     "studs": 106.433078
+    },
+    {
+     "kind": "curve",
+     "radius": 104,
+     "angle": -64.585379
+    },
+    {
+     "kind": "straight",
+     "studs": 16
+    }
+   ]
+  },
+  {
+   "name": "Inner",
+   "x": 0,
+   "y": 24,
+   "heading": 0,
+   "segs": [
+    {
+     "kind": "curve",
+     "radius": 104,
+     "angle": 22.619865
+    },
+    {
+     "kind": "curve",
+     "radius": 104,
+     "angle": -22.619865
+    },
+    {
+     "kind": "straight",
+     "studs": 160
+    },
+    {
+     "kind": "curve",
+     "radius": 104,
+     "angle": 244.585379
+    },
+    {
+     "kind": "straight",
+     "studs": 10.433078
+    },
+    {
+     "kind": "curve",
+     "radius": 104,
+     "angle": -22.619865
+    },
+    {
+     "kind": "curve",
+     "radius": 104,
+     "angle": 22.619865
+    }
+   ]
+  }
+ ],
+ "name": "Double-track return loop (turning left)"
+}

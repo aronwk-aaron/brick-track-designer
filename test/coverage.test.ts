@@ -23,6 +23,10 @@ describe('nothing left out of the tests', () => {
     const missing = TEMPLATE_GROUPS.flatMap(([g, names]) => names.filter((n) => !calls.some((c) => c.groups.includes(g) && (!c.listed || c.names.has(n)))));
     expect(missing).toEqual([]);
   });
+  it('every saved design is in a designs test', () => {
+    const named = new Set(files(/^designs-.*\.test\.ts$/).flatMap((src) => [...strings(src)]));
+    expect(readdirSync('test/fixtures/designs').filter((f) => !named.has(f))).toEqual([]);
+  });
   it('every setting is in a settings test', () => {
     const { form } = optionForm(() => ({ version: 1, gaugeStuds: 4, routes: [] }));
     const calls = files(/^settings-.*\.test\.ts$/).flatMap((src) => [...src.matchAll(/checkSettings\(\[([^\]]*)\](?:\s*,\s*\[([^\]]*)\])?/g)].map((m) => ({ sections: strings(m[1]), only: m[2] === undefined ? undefined : strings(m[2]) })));

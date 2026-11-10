@@ -1,0 +1,310 @@
+{
+ "version": 1,
+ "gaugeStuds": 4,
+ "name": "Monster switch",
+ "routes": [
+  {
+   "name": "T1",
+   "x": 0,
+   "y": 0,
+   "heading": 0,
+   "segs": [
+    {
+     "kind": "straight",
+     "studs": 288
+    }
+   ]
+  },
+  {
+   "name": "T2",
+   "x": 16,
+   "y": 0,
+   "heading": 0,
+   "segs": [
+    {
+     "kind": "straight",
+     "studs": 288
+    }
+   ]
+  },
+  {
+   "name": "T3",
+   "x": 32,
+   "y": 0,
+   "heading": 0,
+   "segs": [
+    {
+     "kind": "straight",
+     "studs": 288
+    }
+   ]
+  },
+  {
+   "name": "T4",
+   "x": 48,
+   "y": 0,
+   "heading": 0,
+   "segs": [
+    {
+     "kind": "straight",
+     "studs": 288
+    }
+   ]
+  },
+  {
+   "name": "T5",
+   "x": 64,
+   "y": 0,
+   "heading": 0,
+   "segs": [
+    {
+     "kind": "straight",
+     "studs": 288
+    }
+   ]
+  },
+  {
+   "name": "T6",
+   "x": 80,
+   "y": 0,
+   "heading": 0,
+   "segs": [
+    {
+     "kind": "straight",
+     "studs": 288
+    }
+   ]
+  },
+  {
+   "name": "X1",
+   "x": 0,
+   "y": 26.744571,
+   "heading": 0,
+   "segs": [
+    {
+     "kind": "curve",
+     "radius": 104.0,
+     "angle": -22.5
+    },
+    {
+     "kind": "straight",
+     "studs": 167.676302
+    },
+    {
+     "kind": "curve",
+     "radius": 104.0,
+     "angle": 22.5
+    }
+   ]
+  },
+  {
+   "name": "X2",
+   "x": 80,
+   "y": 26.744571,
+   "heading": 0,
+   "segs": [
+    {
+     "kind": "curve",
+     "radius": 104.0,
+     "angle": 22.5
+    },
+    {
+     "kind": "straight",
+     "studs": 167.676302
+    },
+    {
+     "kind": "curve",
+     "radius": 104.0,
+     "angle": -22.5
+    }
+   ]
+  },
+  {
+   "name": "X1-on2",
+   "x": 16,
+   "y": 78.10238,
+   "heading": 0,
+   "segs": [
+    {
+     "kind": "curve",
+     "radius": 40.0,
+     "angle": -22.5
+    }
+   ]
+  },
+  {
+   "name": "X1-off2",
+   "x": 12.955181,
+   "y": 78.708032,
+   "heading": -22.5,
+   "segs": [
+    {
+     "kind": "curve",
+     "radius": 40.0,
+     "angle": 22.5
+    }
+   ]
+  },
+  {
+   "name": "X2-on2",
+   "x": 16,
+   "y": 193.984631,
+   "heading": 0,
+   "segs": [
+    {
+     "kind": "curve",
+     "radius": 40.0,
+     "angle": 22.5
+    }
+   ]
+  },
+  {
+   "name": "X2-off2",
+   "x": 19.044819,
+   "y": 194.590283,
+   "heading": 22.5,
+   "segs": [
+    {
+     "kind": "curve",
+     "radius": 40.0,
+     "angle": -22.5
+    }
+   ]
+  },
+  {
+   "name": "X1-on3",
+   "x": 32,
+   "y": 116.729797,
+   "heading": 0,
+   "segs": [
+    {
+     "kind": "curve",
+     "radius": 40.0,
+     "angle": -22.5
+    }
+   ]
+  },
+  {
+   "name": "X1-off3",
+   "x": 28.955181,
+   "y": 117.335449,
+   "heading": -22.5,
+   "segs": [
+    {
+     "kind": "curve",
+     "radius": 40.0,
+     "angle": 22.5
+    }
+   ]
+  },
+  {
+   "name": "X2-on3",
+   "x": 32,
+   "y": 155.357214,
+   "heading": 0,
+   "segs": [
+    {
+     "kind": "curve",
+     "radius": 40.0,
+     "angle": 22.5
+    }
+   ]
+  },
+  {
+   "name": "X1-on4",
+   "x": 48,
+   "y": 155.357214,
+   "heading": 0,
+   "segs": [
+    {
+     "kind": "curve",
+     "radius": 40.0,
+     "angle": -22.5
+    }
+   ]
+  },
+  {
+   "name": "X1-off4",
+   "x": 44.955181,
+   "y": 155.962866,
+   "heading": -22.5,
+   "segs": [
+    {
+     "kind": "curve",
+     "radius": 40.0,
+     "angle": 22.5
+    }
+   ]
+  },
+  {
+   "name": "X2-off4",
+   "x": 51.044819,
+   "y": 117.335449,
+   "heading": 22.5,
+   "segs": [
+    {
+     "kind": "curve",
+     "radius": 40.0,
+     "angle": -22.5
+    }
+   ]
+  },
+  {
+   "name": "X1-on5",
+   "x": 64,
+   "y": 193.984631,
+   "heading": 0,
+   "segs": [
+    {
+     "kind": "curve",
+     "radius": 40.0,
+     "angle": -22.5
+    }
+   ]
+  },
+  {
+   "name": "X1-off5",
+   "x": 60.955181,
+   "y": 194.590283,
+   "heading": -22.5,
+   "segs": [
+    {
+     "kind": "curve",
+     "radius": 40.0,
+     "angle": 22.5
+    }
+   ]
+  },
+  {
+   "name": "X2-on5",
+   "x": 64,
+   "y": 78.10238,
+   "heading": 0,
+   "segs": [
+    {
+     "kind": "curve",
+     "radius": 40.0,
+     "angle": 22.5
+    }
+   ]
+  },
+  {
+   "name": "X2-off5",
+   "x": 67.044819,
+   "y": 78.708032,
+   "heading": 22.5,
+   "segs": [
+    {
+     "kind": "curve",
+     "radius": 40.0,
+     "angle": -22.5
+    }
+   ]
+  }
+ ],
+ "options": {
+  "pointBlades": 1,
+  "ballast": "ballast",
+  "bladeStyle": "sprung"
+ }
+}

@@ -1,0 +1,94 @@
+{
+  "version": 1,
+  "gaugeStuds": 4,
+  "routes": [
+    {
+      "name": "Left Straight",
+      "x": -8,
+      "y": 0,
+      "heading": 0,
+      "segs": [
+        {
+          "kind": "straight",
+          "studs": 128
+        }
+      ],
+      "throwSide": "auto"
+    },
+    {
+      "name": "Right Striaght",
+      "x": 8,
+      "y": 0,
+      "heading": 0,
+      "segs": [
+        {
+          "kind": "straight",
+          "studs": 128
+        }
+      ],
+      "throwSide": "auto"
+    },
+    {
+      "name": "L->R",
+      "x": -8,
+      "y": 8,
+      "heading": 0,
+      "segs": [
+        {
+          "kind": "curve",
+          "radius": 200,
+          "angle": -16.260205
+        },
+        {
+          "kind": "curve",
+          "radius": 200,
+          "angle": 16.260205
+        }
+      ]
+    },
+    {
+      "name": "R->L",
+      "x": -8,
+      "y": 120,
+      "heading": -180,
+      "segs": [
+        {
+          "kind": "curve",
+          "radius": 200,
+          "angle": 16.260205
+        },
+        {
+          "kind": "curve",
+          "radius": 200,
+          "angle": -16.260205
+        }
+      ]
+    }
+  ],
+  "name": "128s-112x",
+  "options": {
+    "grip": "edges",
+    "pointsPieces": 1,
+    "bottomStyle": "antistud",
+    "ballast": "buddy",
+    "baseplate": 64,
+    "printBedX": 128,
+    "printBedY": 128,
+    "joint": "flataxle",
+    "pegOnBallast": true
+  },
+  "trackwork": {
+    "throw": {
+      "192,1024": {
+        "side": "right",
+        "leverOffset": 12,
+        "springLength": 38.7
+      },
+      "320,0": {
+        "side": "right",
+        "leverOffset": 3.51,
+        "springLength": 39.04
+      }
+    }
+  }
+}

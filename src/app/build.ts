@@ -2182,12 +2182,14 @@ function buildOne(w: Wasm, design: Design, report: (what: string, frac: number) 
     if (plan) { boughtSwitches(b, bought, copt, gridPose); throw PLANNED; }
     // (each points set's moving parts baked, by what they're made from: an edit bakes only the ones it changes)
     for (const sp of net.splits) {
-      const ms = cachedData(`mov:${sp.key}`, () => sp.moving.map((m) => {
+      const ms = cachedData(`mov:${sp.key}:${o.printBedX}x${o.printBedY}`, () => sp.moving.map((m) => {
         // (its break-out supports apart, as a switch's own parts': the sprung blades' spring pockets')
         const { positions, supports } = viewOf(w, m.world);
-        return { positions, supports, stl: stlBytes((m.local === m.world ? m.world : m.local).getMesh(), true), volume: m.local.volume() };
+        // (its file turned to lie within the bed, a part that fits it only on the slant: long blades on a small bed)
+        const turn = cut.turnOf(m.local);
+        return { positions, supports, stl: stlBytes((m.local === m.world ? m.world : m.local).getMesh(), true, turn), volume: m.local.volume(), turn };
       }));
-      sp.moving.forEach((m, k) => { b.pieces.push({ name: m.name, color: m.color, positions: ms[k].positions.slice(), stl: ms[k].stl.slice(), ...(ms[k].supports && { supports: ms[k].supports!.slice() }), ...(m.turn && { turn: m.turn }), ...(m.slide && { slide: m.slide }), ...(m.hinge && { hinge: m.hinge }) }); b.volume += ms[k].volume; });
+      sp.moving.forEach((m, k) => { b.pieces.push({ name: m.name, color: m.color, positions: ms[k].positions.slice(), stl: ms[k].stl.slice(), ...(ms[k].supports && { supports: ms[k].supports!.slice() }), ...(m.turn && { turn: m.turn }), ...(m.slide && { slide: m.slide }), ...(m.hinge && { hinge: m.hinge }), ...(ms[k].turn && { bedTurn: ms[k].turn }) }); b.volume += ms[k].volume; });
     }
     pc = { switches: [], rest: [], warnings: [...net.warnings] };
 

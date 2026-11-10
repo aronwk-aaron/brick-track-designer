@@ -7,8 +7,8 @@ import { createHash } from 'node:crypto';
 import { readdirSync, readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 
-/** The files that take minutes: the big layouts put together, and built; the X yard built shared out among helpers (two files of it). */
-const SLOW = ['assembled-xyard', 'assembled-loop-left', 'assembled-loop-right', 'assembled-yard', 'templates-xyard', 'templates-heavy', 'parallel', 'build-workers'];
+/** The files that take minutes: the big layouts put together, and built; the X yard built shared out among helpers (two files of it); the saved monster switches (designs.shared.ts). */
+const SLOW = ['assembled-xyard', 'assembled-loop-left', 'assembled-loop-right', 'assembled-yard', 'templates-xyard', 'templates-heavy', 'parallel', 'build-workers', 'designs-monster-plain', 'designs-monster-double-slips'];
 
 /** The shards as vitest deals them (its BaseSequencer.shard): n runs of the files sorted by their paths' hashes, the first ones a file longer where they don't divide. */
 export function shards(files: string[], n: number): string[][] {

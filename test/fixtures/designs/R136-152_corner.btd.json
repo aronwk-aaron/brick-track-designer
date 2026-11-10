@@ -1,0 +1,39 @@
+{
+  "version": 1,
+  "gaugeStuds": 4,
+  "routes": [
+    {
+      "name": "T3",
+      "x": -40,
+      "y": -32,
+      "heading": 0,
+      "segs": [
+        {
+          "kind": "curve",
+          "radius": 136,
+          "angle": -90
+        }
+      ]
+    },
+    {
+      "name": "T4",
+      "x": -56,
+      "y": -32,
+      "heading": 0,
+      "segs": [
+        {
+          "kind": "curve",
+          "radius": 152,
+          "angle": -90
+        }
+      ]
+    }
+  ],
+  "options": {
+    "curveStuds": "follow",
+    "undersideGrid": "baseplate",
+    "baseplate": 32,
+    "ballast": "buddy"
+  },
+  "name": "R136-152_corner"
+}

@@ -1,0 +1,61 @@
+{
+  "version": 1,
+  "gaugeStuds": 4,
+  "routes": [
+    {
+      "name": "A",
+      "x": 0,
+      "y": -16,
+      "heading": 0,
+      "segs": [
+        {
+          "kind": "straight",
+          "studs": 32
+        }
+      ]
+    },
+    {
+      "name": "B",
+      "x": 16,
+      "y": 0,
+      "heading": 90,
+      "segs": [
+        {
+          "kind": "straight",
+          "studs": 32
+        }
+      ]
+    },
+    {
+      "name": "T3",
+      "x": -12,
+      "y": 12,
+      "heading": -135,
+      "segs": [
+        {
+          "kind": "straight",
+          "studs": 33.941126
+        }
+      ]
+    },
+    {
+      "name": "T4",
+      "x": -12,
+      "y": -12,
+      "heading": -45,
+      "segs": [
+        {
+          "kind": "straight",
+          "studs": 33.941125
+        }
+      ]
+    }
+  ],
+  "options": {
+    "ballast": "buddy",
+    "studsAtCuts": "split",
+    "joint": "flataxle",
+    "baseplate": 32
+  },
+  "name": "8-way_intersection"
+}
