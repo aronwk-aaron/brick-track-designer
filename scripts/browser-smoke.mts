@@ -140,6 +140,13 @@ try {
     check(await says(/7 parts to print.*built in|8 parts to print.*built in/), `and it builds (${await status()})`);
   }
 
+  // (two ready-made tables, one after the other: the second lands beside the first, not on it)
+  at = 'tables';
+  await page.click('#tables > summary');
+  for (let k = 0; k < 2; k++) { await page.locator('#tables-body select').first().selectOption('0'); await page.waitForTimeout(200); }
+  const tbs = await page.evaluate(() => (JSON.parse(localStorage.getItem('btd-design') ?? '{}').tables ?? []) as { x: number; w: number }[]);
+  check(tbs.length === 2 && tbs[1].x >= tbs[0].x + tbs[0].w, `a second ready-made table lands clear of the first (${JSON.stringify(tbs.map((t) => t.x))})`);
+
   check(errors.length === 0, `no errors on the page${errors.length ? `: ${errors.join(' | ').slice(0, 600)}` : ''}`);
 } catch (err) {
   fails.push(`${at}: ${err instanceof Error ? err.message : err}`);
