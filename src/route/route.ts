@@ -71,6 +71,8 @@ export interface ExtraRails {
   from: number; to: number; len: number;
   /** where along the drawn route they may run (clear of other routes), drawn arc lengths; unset: worked out from the routes in the piece */
   clear?: [number, number][];
+  /** where the third rail may run: as clear, and on through where other track crosses it at an angle (geom/extrarails.ts DUAL_CROSS), with flangeways cut both ways */
+  clearDual?: [number, number][];
 }
 
 /** The extra rails of a route's stretch s0..s1 (subRoute), or of it turned round. */

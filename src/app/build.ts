@@ -7,7 +7,7 @@ import { sweepRoute } from '../geom/sweep';
 import { DEFAULTS as TRACK_DEFAULTS, PLATE_H, Track } from '../geom/track';
 import { CROSSING_DEFAULTS, crossingPiece, joinedEnds } from '../geom/crossing';
 import { trackSeat } from '../geom/extras';
-import { markClear } from '../geom/extrarails';
+import { DUAL_CROSS, markClear } from '../geom/extrarails';
 import { arena, flat, kernelBroke, made, type Wasm } from '../geom/kernel';
 import { stlBytes } from '../geom/stl';
 import { splitSelfCrossing } from '../route/selfcross';
@@ -747,6 +747,21 @@ function solveTrackwork(w: Wasm, design: Design, o: PieceOptions, step: (what: s
   }
   // (guard rails and third rails: where each may run, clear of the other routes, worked out on the whole design so its parts agree)
   if (routes.some((rt) => rt.extra)) routes = markClear(routes, gauge + 24);
+  // (a third rail runs on through track that crosses it (extrarails.ts DUAL_CROSS); through points, beside track alongside
+  // and across a shallow crossing it's left out, and it's said: where, and that narrow-gauge trains can't run there)
+  for (const rt of routes) {
+    const xr = rt.extra;
+    if (!xr?.dual || !(xr.dualStuds < design.gaugeStuds) || !xr.clearDual) continue;
+    const lo = Math.min(xr.from, xr.to), hi = Math.max(xr.from, xr.to), gaps: [number, number][] = [];
+    let at = lo;
+    for (const [a, b] of xr.clearDual) { if (a - at > 8 && a <= hi) gaps.push([at, a]); at = Math.max(at, b); }
+    if (hi - at > 8) gaps.push([at, hi]);
+    const dr = xr.to >= xr.from ? 1 : -1;
+    for (const [a, b] of gaps) {
+      const q = routePose(rt, Math.max(0, Math.min(routeLength(rt), (((a + b) / 2) - xr.from) * dr)));
+      bankWarnings.push(`dual gauge isn't built through points, beside track running alongside, or across track crossing at under ${DUAL_CROSS}°: the third rail of ${rt.id.split(':')[0]} is left out for ${((b - a) / 8).toFixed(0)} studs at ${(q[0] / 8).toFixed(0)}, ${(q[1] / 8).toFixed(0)} (studs), and narrow-gauge trains can't run through there`);
+    }
+  }
   // What the canvas draws over the track, in mm: flangeway cuts, check rails,
   // rail crossings and points.
   const g = gauge / 2;

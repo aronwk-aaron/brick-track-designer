@@ -132,7 +132,7 @@ describe('guard rails and dual gauge', { timeout: 60000 }, () => {
     expect(cr.routes[0].extra).toMatchObject({ from: cr.ranges[0][0], to: cr.ranges[0][1], guardEnds: 'start' });
   });
 
-  it('left out where another route crosses (a design built whole: one track piece)', async () => {
+  it('where another route crosses (a design built whole: one track piece): the guard rails left out, the third rail on through', async () => {
     const d = design({ segs: [{ kind: 'straight', studs: 48 }], y: -24, guardRails: true, guardRailEnds: 'both', dualGauge: true },
       [{ name: 'B', x: 24, y: 0, heading: 90, segs: [{ kind: 'straight', studs: 48 }] }]);
     const b = buildDesign(await kernel(), { ...d, options: { printBedX: 600, printBedY: 600 } });
@@ -143,7 +143,10 @@ describe('guard rails and dual gauge', { timeout: 60000 }, () => {
     // (worked out on the whole design: A's rails stop a sleeper length either side of B)
     const rts = toRoutes(d), s = new Scad(await kernel());
     const ex = extraRails(s, new Track(s, CROSSING_DEFAULTS), rts, 0, false, false)!;
-    expect(ex.clearOf([-4, 0])).toBe(true);
+    // (the guard rails, 11.1 off the middle; the third rail, at -4, runs on through the crossing: dual-gauge-crossing.test.ts)
+    expect(ex.clearOf([11.1, 0])).toBe(true);
+    expect(ex.clearOf([11.1, -100])).toBe(false);
+    expect(ex.clearOf([-4, 0])).toBe(false);
     expect(ex.clearOf([-4, -100])).toBe(false);
   });
 });

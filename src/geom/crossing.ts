@@ -282,7 +282,10 @@ export function crossingPiece(s: Scad, routes: Route[], o: CrossingOptions = CRO
   };
   const tieStuds: Vec2[] = [];
   // (each route's guard rails and third rail, if it has them: extrarails.ts)
-  const extras = routes.map((_, i) => extraRails(s, t, routes, i, !!x.innerEnds?.has(`${i}:start`), !!x.innerEnds?.has(`${i}:end`)));
+  const extras = routes.map((_, i) => extraRails(s, t, routes, i, !!x.innerEnds?.has(`${i}:start`), !!x.innerEnds?.has(`${i}:end`), { w: o.flangeway, depth: o.flangewayDepth }));
+  // (a third rail through a crossing: its own flangeway (the narrow gauge's wheels') cut through the other routes' rails
+  // and third rails, as each route's flangeways are; and theirs through it)
+  const dualBands = (i: number) => extras.flatMap((ex, j) => (j !== i && ex?.dualBand && meet(boxes[i], boxes[j]) ? [ex.dualBand] : []));
   routes.forEach((rt, i) => {
     const L = routeLength(rt), ex: ExtraBuilt | undefined = extras[i];
     // Rails and this route's check rails, grooved by the other routes' flangeways.
@@ -309,7 +312,7 @@ export function crossingPiece(s: Scad, routes: Route[], o: CrossingOptions = CRO
       return [sweepRoute(s, sec(0), rt, cr.s0 + fl, cr.s1 - fl, bk),
         s.w.Manifold.hull([slice(cr.s0 + 0.05, away), slice(cr.s0 + fl, 0)]), s.w.Manifold.hull([slice(cr.s1 - fl, 0), slice(cr.s1 - 0.05, away)])];
     });
-    const railsAll = s.difference(s.union([rails, ...checks]), [...othersBands(i), ...nearCuts(i, x.railCuts?.get(i) ?? [])]);
+    const railsAll = s.difference(s.union([rails, ...checks]), [...othersBands(i), ...dualBands(i), ...nearCuts(i, x.railCuts?.get(i) ?? [])]);
     parts.push(hasRoll(rt) ? aboveZ(s, railsAll, 0) : railsAll); // (banked: the rails' feet, run down through the bed, turned, kept above its bottom)
     const banked = hasRoll(rt), roll0 = banked ? routeRoll(rt, 0) : 0, roll1 = banked ? routeRoll(rt, L) : 0;
     const bedAlong = (a = 0, b = Infinity) => (banked ? bankedBed(s, rt, trackBank(c.sleeperLen), c.sleeperLen / 2, onBallast ? -1 : 0, a, b) : sweepRoute(s, rect(-c.sleeperLen / 2, c.sleeperLen / 2, 0, PLATE_H), rt, a, b));
@@ -371,7 +374,10 @@ export function crossingPiece(s: Scad, routes: Route[], o: CrossingOptions = CRO
       if (!inStart) parts.push(atPose(roll0 ? s.union([bankedSupports(s, (z) => t.startRailSupports(z, offClip(ex?.xfs[0])), trackBank(c.sleeperLen), roll0, zs), t.supportFooting(zs, 0, -1)]) : s.union([t.startRailSupports(zs, offClip(ex?.xfs[0])), t.supportFooting(zs, 0, -1)]), p0));
       if (!inEnd) parts.push(atPose(roll1 ? s.union([bankedSupports(s, (z) => t.endRailSupports(z, offClip(ex?.xfs[1])), trackBank(c.sleeperLen), roll1, zs), t.supportFooting(zs, 0, +1)]) : s.union([t.endRailSupports(zs, offClip(ex?.xfs[1])), t.supportFooting(zs, 0, +1)]), p1));
     }
-    if (ex?.solid) parts.push(banked ? aboveZ(s, ex.solid, 0) : ex.solid); // (banked: turned with the track, kept above the bed's bottom)
+    // (its third rail through a crossing, or another's through its own: the flangeways cut through it)
+    const exCuts = ex?.solid && (ex.dualBand || dualBands(i).length) ? [...othersBands(i), ...dualBands(i)] : [];
+    const exSolid = ex?.solid && exCuts.length ? s.difference(ex.solid, exCuts) : ex?.solid;
+    if (exSolid) parts.push(banked ? aboveZ(s, exSolid, 0) : exSolid); // (banked: turned with the track, kept above the bed's bottom)
   });
   // Studs on the bed, as on LEGO track's sleepers: on the stud grid (of the
   // grid pose), between and beside the rails, wherever they're clear of

@@ -6,10 +6,14 @@
 // / len), so a route that's been cut up or turned round has them in the same
 // places, its pointed and plain ends at the drawn route's start and end.
 // Where another route comes within a sleeper length (a switch, a crossing,
-// a track alongside) they're left out: the OpenSCAD files have no such case,
-// and a third rail across another track would need flangeways of its own.
+// a track alongside) they're left out: the OpenSCAD files have no such case.
+// But a third rail runs on through a crossing, where the other track crosses
+// at DUAL_CROSS degrees or more: that track's flangeways are cut through it,
+// and its own (the narrow gauge's wheels' flanges, inside it on the shared
+// rail's side) through that track's rails (geom/crossing.ts). Through a
+// switch, or beside track alongside, it's still left out (said by the build).
 import type { ExtraRails, Route, RouteEnds } from '../route/route';
-import { poseToWorld, railPoint, routeLat, routeLength, routePose, routesBox } from '../route/route';
+import { poseToWorld, railPoint, routeLat, routeLength, routePose, routeSOf, routesBox } from '../route/route';
 import { R, T, type Man, type Scad, type Vec2 } from './scad';
 import { segDist } from './pathsplit';
 import { bankAlong, sweepRoute, trackBank } from './sweep';
@@ -19,6 +23,8 @@ const V_IN = 10;          // guard_v_in: a point this far in from its end
 const GUARD_HW = 3.0;     // guard_hw: the guard rail's half width above the bed, for keeping studs clear
 const DUAL_END_IN = 2.3;  // dual_end_in: a third rail stops this far short of a plain end
 const TAPER_N = 16;       // guard_taper_n: segments along each pointed end
+/** A third rail runs on through other track that crosses its route at this angle or more (degrees); shallower, or alongside (a switch's branch), it stops. */
+export const DUAL_CROSS = 20;
 const RAIL_IN = 3.9;      // rails with rail ends stop here, just into them (curves.scad's 3.9)
 
 export const endsHas = (e: RouteEnds, atEnd: boolean) => e === 'both' || e === (atEnd ? 'end' : 'start');
@@ -31,17 +37,34 @@ export const hasExtraRails = (x: ExtraRails | undefined, gaugeStuds: number) => 
  * none of their centre lines within a sleeper length beside it. (A route
  * that runs on from its end isn't beside it.)
  */
-export function clearStretches(routes: Route[], i: number, sleeperLen: number, step = 2): [number, number][] {
+/** crossings: (a third rail's) clear of a route too where that route only crosses this one, at DUAL_CROSS or more all the while it's near. */
+export function clearStretches(routes: Route[], i: number, sleeperLen: number, step = 2, crossings = false): [number, number][] {
   const rt = routes[i], L = routeLength(rt), n = Math.max(1, Math.ceil(L / step));
   const boxes = routes.map((r2, j) => (j === i ? undefined : routesBox([r2], sleeperLen + 8, 8)));
   const out: [number, number][] = [];
+  const nearAt = (k: number, j: number) => {
+    const sk = Math.min(Math.max((L * k) / n, 0.5), L - 0.5), p = routePose(rt, sk), b = boxes[j];
+    return !!b && p[0] >= b[0] && p[0] <= b[2] && p[1] >= b[1] && p[1] <= b[3] && Math.abs(routeLat(routes[j], [p[0], p[1]])) < sleeperLen;
+  };
+  // (each other route, each run of samples it's near: crossing all the way along it, or not)
+  const crossed = new Set<string>();
+  if (crossings) routes.forEach((r2, j) => {
+    if (j === i) return;
+    let run: number[] = [], steep = true;
+    const flush = () => { if (run.length && steep) for (const k of run) crossed.add(`${j}:${k}`); run = []; steep = true; };
+    for (let k = 0; k <= n; k++) {
+      if (!nearAt(k, j)) { flush(); continue; }
+      const sk = Math.min(Math.max((L * k) / n, 0.5), L - 0.5), p = routePose(rt, sk), q = routePose(r2, Math.max(0, Math.min(routeLength(r2), routeSOf(r2, [p[0], p[1]]))));
+      const d = (((p[2] - q[2]) % 180) + 180) % 180;
+      if (Math.min(d, 180 - d) < DUAL_CROSS) steep = false;
+      run.push(k);
+    }
+    flush();
+  });
   let a = -1;
   for (let k = 0; k <= n; k++) {
-    const sk = Math.min(Math.max((L * k) / n, 0.5), L - 0.5), p = routePose(rt, sk);
-    const hit = routes.some((r2, j) => {
-      const b = boxes[j];
-      return !!b && p[0] >= b[0] && p[0] <= b[2] && p[1] >= b[1] && p[1] <= b[3] && Math.abs(routeLat(r2, [p[0], p[1]])) < sleeperLen;
-    });
+    const sk = Math.min(Math.max((L * k) / n, 0.5), L - 0.5);
+    const hit = routes.some((_, j) => j !== i && nearAt(k, j) && !crossed.has(`${j}:${k}`));
     const s = k === 0 ? 0 : k === n ? L : sk;
     if (!hit && a < 0) a = s;
     if (hit && a >= 0) { out.push([a, (L * (k - 1)) / n]); a = -1; }
@@ -57,7 +80,9 @@ export function markClear(routes: Route[], sleeperLen: number): Route[] {
     if (!x) return rt;
     const d = x.to >= x.from ? 1 : -1;
     const clear = clearStretches(routes, i, sleeperLen).map(([a, b]) => (d > 0 ? [x.from + a, x.from + b] : [x.from - b, x.from - a]) as [number, number]).sort((p, q) => p[0] - q[0]);
-    return { ...rt, extra: { ...x, clear } };
+    // (the third rail's: on through crossings)
+    const clearDual = x.dual ? clearStretches(routes, i, sleeperLen, 2, true).map(([a, b]) => (d > 0 ? [x.from + a, x.from + b] : [x.from - b, x.from - a]) as [number, number]).sort((p, q) => p[0] - q[0]) : undefined;
+    return { ...rt, extra: { ...x, clear, ...(clearDual && { clearDual }) } };
   });
 }
 
@@ -66,6 +91,8 @@ export interface ExtraBuilt {
   solid?: Man;
   /** the extra rails with rail ends at this route's start / end, as offsets in that end connector's frame (extra_rails()) */
   xfs: [number[], number[]];
+  /** (a third rail that runs through a crossing) the narrow gauge's flangeway beside it, on the shared rail's side: cut from the other routes' rails */
+  dualBand?: Man;
   /** the guard rails' offset, if it has them (the connectors' posts keep clear of them) */
   guardX?: number;
   /** Is a stud at q clear of them (guard_clear)? */
@@ -84,7 +111,7 @@ export interface ExtraBuilt {
  * through it).
  */
 
-export function extraRails(s: Scad, t: Track, routes: Route[], i: number, inStart: boolean, inEnd: boolean): ExtraBuilt | undefined {
+export function extraRails(s: Scad, t: Track, routes: Route[], i: number, inStart: boolean, inEnd: boolean, fw: { w: number; depth: number } = { w: 3, depth: 3 }): ExtraBuilt | undefined {
   const rt = routes[i], x = rt.extra, c = t.c, gs = t.o.gaugeStuds;
   if (!x || !hasExtraRails(x, gs)) return undefined;
   const L = routeLength(rt), dir = x.to >= x.from ? 1 : -1, lo = Math.min(x.from, x.to), hi = Math.max(x.from, x.to);
@@ -95,6 +122,11 @@ export function extraRails(s: Scad, t: Track, routes: Route[], i: number, inStar
   // (the stretches, drawn arc lengths)
   const clear = x.clear ?? clearStretches(routes, i, c.sleeperLen).map(([a, b]) => (dir > 0 ? [x.from + a, x.from + b] : [x.from - b, x.from - a]) as [number, number]);
   const near = clear.filter(([a, b]) => b > lo - 1e-6 && a < hi + 1e-6);
+  // (the third rail's stretches: on through crossings; the same as the guard rails' where there are none)
+  const clearD = x.clearDual ?? (x.dual ? clearStretches(routes, i, c.sleeperLen, 2, true).map(([a, b]) => (dir > 0 ? [x.from + a, x.from + b] : [x.from - b, x.from - a]) as [number, number]) : clear);
+  const nearD = clearD.filter(([a, b]) => b > lo - 1e-6 && a < hi + 1e-6);
+  const same = (p: [number, number][], q: [number, number][]) => p.length === q.length && p.every((e, k) => Math.abs(e[0] - q[k][0]) < 1e-6 && Math.abs(e[1] - q[k][1]) < 1e-6);
+  const through = dualOn && !same(near, nearD), bands: Man[] = [];
 
   // A point at local arc length sl (straight on past the ends), lat to the right.
   const ptAt = (sl: number, lat: number): Vec2 => {
@@ -166,11 +198,18 @@ export function extraRails(s: Scad, t: Track, routes: Route[], i: number, inStar
         }
       }
     }
+  }
+  for (const [A, B] of nearD) {
     if (dualOn) {
       const d0 = A <= 1e-3 && endsHas(x.dualPlainEnds, false) ? A + DUAL_END_IN : A;
       const d1 = B >= x.len - 1e-3 && endsHas(x.dualPlainEnds, true) ? B - DUAL_END_IN : B;
       if (d1 - d0 >= STUD) {
         run(dir * dualXd, d0, d1, dualClr);
+        // (through a crossing: the narrow gauge's flangeway inside it, as deep and wide as the running rails')
+        if (through) {
+          const a = Math.max(0, Math.min(loc(d0), loc(d1))), b = Math.min(L, Math.max(loc(d0), loc(d1))), xl = dir * dualXd, sd = dir * (x.dualShared === 'right' ? 1 : -1);
+          if (b - a >= 0.1) bands.push(sweepRoute(s, s.square([fw.w, fw.depth + 1]).translate([sd > 0 ? xl + 1.25 : xl - 1.25 - fw.w, PLATE_H + 6.4 - fw.depth]), rt, a, b, trackBank(c.sleeperLen)));
+        }
         if (covers(x.from, d0, d1)) dualXs0.push(dir * dualXd);
         if (covers(x.to, d0, d1)) dualXs1.push(-dir * dualXd);
       }
@@ -191,6 +230,7 @@ export function extraRails(s: Scad, t: Track, routes: Route[], i: number, inStar
   const pad = Math.max(guardClr, dualClr);
   const out: ExtraBuilt = {
     solid: parts.length ? s.union(parts) : undefined,
+    ...(bands.length && { dualBand: s.union(bands) }),
     xfs: [xs0, xs1],
     guardX: x.guard ? gr : undefined,
     clearOf: (q) => {
