@@ -5,7 +5,7 @@
 import { Scad, R, T, type Man } from '../geom/scad';
 import { sweepRoute } from '../geom/sweep';
 import { DEFAULTS as TRACK_DEFAULTS, PLATE_H, Track } from '../geom/track';
-import { CROSSING_DEFAULTS, crossingPiece, joinedEnds } from '../geom/crossing';
+import { CROSSING_DEFAULTS, crossingPiece, joinedEnds, ownSleeperSpots } from '../geom/crossing';
 import { trackSeat } from '../geom/extras';
 import { DUAL_CROSS, markClear } from '../geom/extrarails';
 import { arena, flat, kernelBroke, made, type Wasm } from '../geom/kernel';
@@ -58,6 +58,8 @@ export interface Piece {
   lego?: LegoPart[];
   /** (track on a grade) how it's lifted in the view: by h at its middle c, rising slope along dir (mm, a unit vector) */
   lift?: Lift;
+  /** (a bought track piece, track only) where a 2 x 2 of studs goes up into it from below: its sleepers' middles and its two ends (half of it in the next piece's end), each square to the track there */
+  seats?: Pose[];
 }
 
 /** A piece's lift onto its grade: its height at its middle c, and how it rises along dir. */
@@ -521,7 +523,9 @@ function graded(w: Wasm, design: Design, res: ReturnType<typeof buildLevel>): Re
   });
   // (what it stands on, every 16 studs from each route's start, as the reference's train track on pillars: a beam
   // across under the track, a stud's room past each rail's side, on two square pillars beside the track, from the
-  // baseplate up, each on a flared foot (printed, or LEGO 2 x 2 bricks under a 2 x 14 plate beam). Where track runs
+  // baseplate up, each on a flared foot (printed, or LEGO 2 x 2 bricks under a 2 x 14 plate beam). Under bought track
+  // (track only) each place is moved along, half a sleeper's pitch at most, to the piece's nearest sleeper or joint,
+  // where the beam's studs go up into it. Where track runs
   // over other track (round a helix), the upper track's beam is on the same pillars as the lower one's, carried on up
   // past it: the pillars stand beside the lower track, clear of its trains, and hold both. Lower than a brick (no room
   // for a foot and a beam), under nothing else: LEGO 2 x 8 bricks and plates under the track's middle, as before)
@@ -531,14 +535,53 @@ function graded(w: Wasm, design: Design, res: ReturnType<typeof buildLevel>): Re
   const addPart = (part: string, name: string, qty: number) => { if (qty <= 0) return; const e = risers.find((x) => x.part === part); if (e) e.qty += qty; else risers.push({ part, name, qty }); };
   // (the places, the lowest first: each one over another's, near enough along the same way, put on its pillars)
   // (slope: the track's climb there, mm a mm the way it runs: its beam's top is tilted to it)
-  type Spot = { q: Pose; h: number; slope: number; at: (d: number) => Spot };
-  const towers: { q: Pose; levels: number[]; slopes: number[] }[] = [];
+  // (slope: before its middle and after it, the way its pillars head: where a grade meets level track the two differ,
+  // and the beam under the joint is half under each piece)
+  // (near: the place d along, moved as the places themselves are, onto a bought piece's seat)
+  type Spot = { q: Pose; h: number; slope: [number, number]; at: (d: number) => Spot; near: (d: number) => Spot };
+  const towers: { q: Pose; levels: number[]; slopes: [number, number][]; plain: boolean[] }[] = [];
   const spots: Spot[] = [];
+  // (bought track, track only, is held where studs go up into it: under a sleeper's middle or a joint of two pieces,
+  // square to the track there (Piece.seats), each at its piece's height. A beam's studs anywhere else stood in its
+  // sleepers, which lie at their own angles round a curve)
+  const seats = pieces.flatMap((p) => (p.seats ?? []).map((q) => ({ q, h: p.lift ? p.lift.h + p.lift.slope * ((q[0] - p.lift.c[0]) * p.lift.dir[0] + (q[1] - p.lift.c[1]) * p.lift.dir[1]) : 0 })));
+  /** The bought track's seat nearest q (within reach mm) at height h (the track's bottom there). */
+  const seatNear = (q: [number, number], h: number, reach: number) => {
+    let best: (typeof seats)[number] | undefined, bd = reach;
+    for (const st of seats) { const d = Math.hypot(st.q[0] - q[0], st.q[1] - q[1]); if (d < bd && Math.abs(st.h - h) < GRADE_APART) { bd = d; best = st; } }
+    return best;
+  };
+  /** Is a seat of the bought track at height h square over a beam at q? plain: bought track is, but none of its seats (the beam's top has no studs there). */
+  const seatOver = (q: Pose, h: number) => {
+    const st = seatNear([q[0], q[1]], h, 0.6), dh = st ? turnDiff(st.q[2], q[2]) : 0;
+    return { square: !!st && (dh < 1 || dh > 179), plain: !(st && (dh < 1 || dh > 179)) && !!seatNear([q[0], q[1]], h, 40) };
+  };
   for (const { r, rt } of rts) {
-    const L = routeLength(rt);
-    const slopeAt = (sv: number) => { const a = Math.max(0, sv - 8), b = Math.min(L, sv + 8); return b > a ? (gradeAt(r, L, b) - gradeAt(r, L, a)) / (b - a) : 0; };
-    const spotAt = (sv: number): Spot => ({ q: routePose(rt, sv), h: gradeAt(r, L, sv) - ballastH, slope: slopeAt(sv), at: (d) => spotAt(Math.min(L, Math.max(0, sv + d))) });
-    for (let sv = 0; sv <= L + 1e-6; sv += 128) { const sp = spotAt(sv); if (sp.h >= 3.2 - 1e-6) spots.push(sp); }
+    const L = routeLength(rt), k = L > 0 ? (gradeAt(r, L, L) - gradeAt(r, L, 0)) / L : 0;
+    // (at the route's end: the climb of the raised track that runs on from there, if any does, the way this one heads)
+    const onFrom = (q: Pose, h: number, side: number) => {
+      const a = (q[2] * Math.PI) / 180, u = [-Math.sin(a) * side, Math.cos(a) * side];
+      for (const o2 of rts) {
+        if (o2.rt === rt) continue;
+        const L2 = routeLength(o2.rt);
+        for (const [sv, into] of [[0, 1], [L2, -1]]) {
+          const p = routePose(o2.rt, sv), b = (p[2] * Math.PI) / 180, along = (-Math.sin(b) * u[0] + Math.cos(b) * u[1]) * side;
+          if (Math.hypot(p[0] - q[0], p[1] - q[1]) < 1 && Math.abs(gradeAt(o2.r, L2, sv) - h) < 0.5 && along * into * side > 0.9) return L2 > 0 ? ((gradeAt(o2.r, L2, L2) - gradeAt(o2.r, L2, 0)) / L2) * Math.sign(along) : 0;
+        }
+      }
+      return k;
+    };
+    const slopeAt = (sv: number): [number, number] => { const q = routePose(rt, sv), h = gradeAt(r, L, sv); return [sv > 1e-6 ? k : onFrom(q, h, -1), sv < L - 1e-6 ? k : onFrom(q, h, 1)]; };
+    // (a place moved along onto the bought track's nearest seat there, if it's bought)
+    const snap = (sv: number) => {
+      const p = routePose(rt, sv), st = seatNear([p[0], p[1]], gradeAt(r, L, sv), 24);
+      if (!st) return sv;
+      let v = sv;
+      for (let n2 = 0; n2 < 4; n2++) { const c = routePose(rt, v), a = (c[2] * Math.PI) / 180; v = Math.min(L, Math.max(0, v - (st.q[0] - c[0]) * Math.sin(a) + (st.q[1] - c[1]) * Math.cos(a))); }
+      return v;
+    };
+    const spotAt = (sv: number): Spot => ({ q: routePose(rt, sv), h: gradeAt(r, L, sv) - ballastH, slope: slopeAt(sv), at: (d) => spotAt(Math.min(L, Math.max(0, sv + d))), near: (d) => spotAt(snap(Math.min(L, Math.max(0, sv + d)))) });
+    for (let sv = 0; sv <= L + 1e-6; sv += 128) { const sp = spotAt(snap(Math.min(L, sv))); if (sp.h >= 3.2 - 1e-6) spots.push(sp); }
   }
   spots.sort((a, b) => a.h - b.h);
   const turnDiff = (a: number, b: number) => Math.abs(((a - b + 540) % 360) - 180);
@@ -558,31 +601,37 @@ function graded(w: Wasm, design: Design, res: ReturnType<typeof buildLevel>): Re
   };
   const PILLAR_X = 44, PILLAR = 16 - 0.2, BEAM_T = 6.4, TRAIN_HW = 28;
   let skipped = 0;
-  for (const sp of spots) {
+  /** A place put on pillars already there (near enough along, the same way or back along it): true if it is. */
+  const onTower = (sp: Spot) => {
     const t = towers.find((tw) => Math.hypot(tw.q[0] - sp.q[0], tw.q[1] - sp.q[1]) < SNAP && (turnDiff(tw.q[2], sp.q[2]) < 10 || turnDiff(tw.q[2], sp.q[2]) > 170));
+    if (!t) return false;
     // (on another's pillars: its beam at the track's height there, where the pillars stand, not where its own place
     // would have been, up to SNAP along: on a grade that's a different height, and the beam stood in the track or under it)
     // (its climb along the pillars' own heading: a track running back the other way over them climbs the other way)
-    if (t) {
-      let h = sp.h, bd = Infinity;
-      for (let d = -SNAP; d <= SNAP; d += 2) { const c = sp.at(d), dd = Math.hypot(c.q[0] - t.q[0], c.q[1] - t.q[1]); if (dd < bd) { bd = dd; h = c.h; } }
-      if (h - t.levels[t.levels.length - 1] >= GRADE_APART) { t.levels.push(h); t.slopes.push(turnDiff(t.q[2], sp.q[2]) > 90 ? -sp.slope : sp.slope); }
-      continue; // (else as good as the same place, the same height: one beam holds it)
-    }
+    let h = sp.h, bd = Infinity;
+    for (let d = -SNAP; d <= SNAP; d += 2) { const c = sp.at(d), dd = Math.hypot(c.q[0] - t.q[0], c.q[1] - t.q[1]); if (dd < bd) { bd = dd; h = c.h; } }
+    // (else as good as the same place, the same height: one beam holds it)
+    if (h - t.levels[t.levels.length - 1] >= GRADE_APART) { t.levels.push(h); t.slopes.push(turnDiff(t.q[2], sp.q[2]) > 90 ? [-sp.slope[1], -sp.slope[0]] : sp.slope); t.plain.push(seatOver(t.q, h + ballastH).plain); }
+    return true;
+  };
+  for (const sp of spots) {
+    if (onTower(sp)) continue;
     // (a place over other track not on pillars of its own: its pillars beside it clear of that track's trains; else a
     // little along, up to half the way to the next place)
     // (and its feet off the sleepers of track on the baseplate there, 4 studs either side of it)
     const clear = (c: Spot) => [-1, 1].every((sd) => !lowerNear(poseToWorld(c.q, [sd * PILLAR_X, 0]) as [number, number], c.h + ballastH, TRAIN_HW + PILLAR / 2).length
       && !lowerNear(poseToWorld(c.q, [sd * (PILLAR_X - PILLAR / 2), 0]) as [number, number], c.h + ballastH, 33).some((l) => l.h < 12)
       && [-1, 1].every((e) => !lowerNear(poseToWorld(c.q, [sd * (PILLAR_X - PILLAR / 2), e * 16]) as [number, number], c.h + ballastH, 33).some((l) => l.h < 12)));
-    const at = [0, 16, -16, 32, -32, 48, -48, 64, -64].map((d) => sp.at(d)).find(clear);
+    const at = [0, 16, -16, 32, -32, 48, -48, 64, -64].map((d) => sp.near(d)).find(clear);
     if (!at) { skipped++; continue; }
-    towers.push({ q: at.q, levels: [at.h], slopes: [at.slope] });
+    // (moved along to where pillars stand already, the lower turn's moved there the same way: on those)
+    if (at !== sp && onTower(at)) continue;
+    towers.push({ q: at.q, levels: [at.h], slopes: [at.slope], plain: [seatOver(at.q, at.h + ballastH).plain] });
   }
   const scad = new Scad(w);
-  let n = 0;
+  let n = 0, unseated = 0;
   for (const tw of towers) {
-    const { q, levels, slopes } = tw, top = levels[levels.length - 1];
+    const { q, levels, slopes, plain } = tw, top = levels[levels.length - 1];
     // (one level, lower than a brick and a beam: LEGO plates under the track's middle, printed or not)
     if (levels.length === 1 && (o.raisedOn === 'lego' ? !lowerNear([q[0], q[1]], top + ballastH, 40).length : top < 9.6 - 1e-6)) {
       const pl = Math.round(top / 3.2); addPart('3007', 'Brick 2 x 8', Math.floor(pl / 3)); addPart('3034', 'Plate 2 x 8', pl % 3);
@@ -596,11 +645,12 @@ function graded(w: Wasm, design: Design, res: ReturnType<typeof buildLevel>): Re
         addPart('3003', 'Brick 2 x 2', Math.floor(pl / 3)); addPart('3022', 'Plate 2 x 2', pl % 3);
         stacks.push(...boxTris([pq[0], pq[1], q[2]], 16, 16, pl * 3.2));
       }
+      unseated += plain.filter(Boolean).length;
       for (const h of levels) { addPart('91988', 'Plate 2 x 14', 2); const b = boxTris(q, 112, 16, 6.4); for (let i = 2; i < b.length; i += 3) b[i] += Math.round(h / 3.2) * 3.2 - 6.4; stacks.push(...b); }
       continue;
     }
-    const sp = cachedData(`tpillar:${JSON.stringify([levels.map((h) => +h.toFixed(2)), slopes.map((k) => +k.toFixed(5))])}`, () => arena(w, () => {
-      const m = trainPillars(scad, levels, PILLAR_X, PILLAR, BEAM_T, slopes);
+    const sp = cachedData(`tpillar:${JSON.stringify([levels.map((h) => +h.toFixed(2)), slopes.map((k) => k.map((v) => +v.toFixed(5))), plain])}`, () => arena(w, () => {
+      const m = trainPillars(scad, levels, PILLAR_X, PILLAR, BEAM_T, slopes, plain);
       return { stl: stlBytes(m.getMesh(), true), positions: meshPositions(m.getMesh()) };
     }, () => []));
     const pos = sp.positions.slice(), a = (q[2] * Math.PI) / 180, c = Math.cos(a), sn = Math.sin(a);
@@ -608,6 +658,7 @@ function graded(w: Wasm, design: Design, res: ReturnType<typeof buildLevel>): Re
     pieces.push({ name: `track-support${++n}`, color: 0x5a6470, positions: pos, stl: sp.stl.slice() });
   }
   if (skipped) warnings.push(`${skipped} of the places a raised track crosses over other track: nothing's put there to hold it up (its pillars would stand in the lower track's way): cross where the track below runs alongside, or carry it on a bridge`);
+  if (unseated) warnings.push(`${unseated} of the beams under raised bought track ${unseated === 1 ? 'isn\'t' : 'aren\'t'} under one of its sleepers (the track shares the pillars of the track below it): put tiles on the beam there, so the track rests on it`);
   if (risers.length) pieces.push({ name: 'risers-bought', color: LEGO_COLOR, positions: Float32Array.from(stacks), stl: new Uint8Array(0), lego: risers });
   // (the size as it stands, lifted, with what it stands on; the printed pillars' volume with the track's)
   const mn = [Infinity, Infinity, Infinity], mx = [-Infinity, -Infinity, -Infinity];
@@ -631,8 +682,11 @@ function graded(w: Wasm, design: Design, res: ReturnType<typeof buildLevel>): Re
  * as it stands: the beams bridge from pillar to pillar, the feet slope at 45 degrees. slopes: each level's track's
  * climb along y (mm a mm): its beam's top and studs tilted to it, so the track sits flat on the beam (level, a beam
  * 2 studs wide was 0.4 mm off the track's underside at one edge on a 2.5% grade); the beam's underside stays level.
+ * A level's slope as two, [before its middle, after it]: where a grade meets level track over the beam, each half of
+ * its top to the piece on it. plain: the levels with no studs on top (bought track over them with no sleeper square
+ * to the beam there: it rests on it).
  */
-export function trainPillars(s: Scad, levels: number[], x: number, side: number, beamT: number, slopes: number[] = []): Man {
+export function trainPillars(s: Scad, levels: number[], x: number, side: number, beamT: number, slopes: (number | [number, number])[] = [], plain: boolean[] = []): Man {
   // (the flare less on a low one, the foot's slope kept under the beam)
   const top = levels[levels.length - 1], foot = 32 - 0.2, footT = 3.2, flare = Math.max(0.01, Math.min((foot - side) / 2, levels[0] - beamT - footT));
   const parts: Man[] = [];
@@ -644,19 +698,21 @@ export function trainPillars(s: Scad, levels: number[], x: number, side: number,
     parts.push(slope, T(s.cube([side, side, top - beamT - footT + 0.01]), [cx - side / 2, -side / 2, footT]));
   }
   levels.forEach((h, n) => {
-    const hw = x + side / 2, k = slopes[n] ?? 0;
-    if (Math.abs(k) < 1e-6) {
+    const hw = x + side / 2, sl = slopes[n] ?? 0, [k0, k1] = typeof sl === 'number' ? [sl, sl] : sl;
+    const studs = plain[n] ? [] : [[-4, -4], [4, -4], [-4, 4], [4, 4]];
+    if (Math.abs(k0) < 1e-6 && Math.abs(k1) < 1e-6) {
       parts.push(T(s.cube([2 * hw, side, beamT]), [-hw, -side / 2, h - beamT]));
-      for (const [sx, sy] of [[-4, -4], [4, -4], [-4, 4], [4, 4]]) parts.push(T(s.cylinder(1.8, 4.8 / 2, 4.8 / 2, 24), [sx, sy, h - 0.01]));
+      for (const [sx, sy] of studs) parts.push(T(s.cylinder(1.8, 4.8 / 2, 4.8 / 2, 24), [sx, sy, h - 0.01]));
       return;
     }
     // (the top tilted about the beam's middle, where the track's height is h: a wedge on a level underside; the studs
     // upright, each standing from the tilted top where it is)
-    const dz = (k * side) / 2, y0 = -side / 2, y1 = side / 2;
-    const wedge = s.extrude(s.polygon([[y0, h - beamT], [y1, h - beamT], [y1, h + dz], [y0, h - dz]]), 2 * hw);
+    // (two climbs, where a grade meets level track over it: each half to its own, the two meeting at the middle)
+    const y0 = -side / 2, y1 = side / 2;
+    const wedge = s.extrude(s.polygon([[y0, h - beamT], [y1, h - beamT], [y1, h + k1 * y1], ...(k0 === k1 ? [] : [[0, h] as [number, number]]), [y0, h + k0 * y0]]), 2 * hw);
     // (drawn in (y, z), pushed out along x: turned to stand across the track)
     parts.push(T(R(R(wedge, [90, 0, 0]), [0, 0, 90]), [-hw, 0, 0]));
-    for (const [sx, sy] of [[-4, -4], [4, -4], [-4, 4], [4, 4]]) parts.push(T(s.cylinder(1.8 + 0.2, 4.8 / 2, 4.8 / 2, 24), [sx, sy, h + k * sy - 0.2]));
+    for (const [sx, sy] of studs) parts.push(T(s.cylinder(1.8 + 0.2, 4.8 / 2, 4.8 / 2, 24), [sx, sy, h + (sy < 0 ? k0 : k1) * sy - 0.2]));
   });
   // (each foot hollow underneath, a rim round it)
   const holes = [-1, 1].map((sd) => { const inner = sd * x - (sd * side) / 2, w0 = foot / 2 + side / 2 - 2.4; return T(s.cube([w0, foot - 2.4, 1.8]), [sd > 0 ? inner + 1.2 : inner - 1.2 - w0, -(foot - 2.4) / 2, -0.01]); });
@@ -1311,7 +1367,8 @@ function sectioned(b: PieceBuild, name: string, all: Route[], checks: CheckRail[
     // (one piece, and its ballast bought too: a LEGO straight on LEGO plates (6 x 16 and two 2 x 16, two more 6 x 16 for
     // the buddy layer); a BrickTracks curve on a flat underside on BrickTracks' own ballast and buddy (theirs float on the
     // studs, they don't grip them))
-    const whole = !one ? undefined : one[0].part === '53401' ? legoStraight(o.ballast)
+    // (track only, a LEGO straight is shown as bought, as the curves are: its own sleepers and underside)
+    const whole = !one ? undefined : one[0].part === '53401' && o.ballast !== 'none' ? legoStraight(o.ballast)
       : sg0.kind === 'arc' && o.ballast !== 'none' && o.bottomStyle === 'float' && one[0].shop === 'bricktracks' ? [...one, ...brickTracksBallast(one, o.ballast)] : undefined;
     // (else each piece bought, as LEGO and BrickTracks make them (their sleepers), and on ballast its ballast printed, the
     // section's in one, with a seat each piece drops into)
@@ -1324,7 +1381,7 @@ function sectioned(b: PieceBuild, name: string, all: Route[], checks: CheckRail[
     const zs = cx.zones.filter((z) => z.box[2] >= sb[0] && z.box[0] <= sb[2] && z.box[3] >= sb[1] && z.box[1] <= sb[3]).map((z) => [z.rt.id, z.s0, z.s1, z.box]);
     const sk = `sec:${JSON.stringify({ rts, cChecks, m: mine.map((x) => [x.key, x.inner, x.bladeCuts.map(([i]) => i)]), copt, g: b.grooveCuts.length ? b.grooveEdits : 0, di: [...secInner],
       gp: gridPose, bp, bxy: [o.baseplateX, o.baseplateY], joint: o.joint, ...(apart && { seat: o.trackFitTol ?? 0.2, seated, bb: o.boughtBallast }), ...(b.boughtSw.length && o.ballast !== 'none' && { sw: b.boughtSw.map((bs) => bs.legs) }), bed: [o.printBedX, o.printBedY], zs, ...(b.labelOn && { lab: [o.labelText, o.labelSize, o.labelGauge, o.labelParts] }) })}`;
-    let part: { ms: (Baked & { id?: string; lego?: LegoPart[] })[]; grips: [number, number][] };
+    let part: { ms: (Baked & { id?: string; lego?: LegoPart[]; seats?: Pose[] })[]; grips: [number, number][] };
     const cost = rts.reduce((t, rt) => t + routeLength(rt), 0) + 400 * mine.length;
     try { part = b.job(sk, cost, () => arena(w, () => {
       const grips: [number, number][] = [];
@@ -1334,9 +1391,13 @@ function sectioned(b: PieceBuild, name: string, all: Route[], checks: CheckRail[
       // printed alone, seated for them all, cut for the bed if it has to be)
       if (apart) {
         const none = { crossings: [], grooves: [], splits: [], checkRails: [] }, tol = o.trackFitTol ?? 0.2;
-        const asBought = { ...copt, sleepers: 'sleepers' as const, sleeperGapStuds: 2, sleeperWidthStuds: 2, ballast: 'none' as const, ballastOnly: undefined };
+        // (its underside its own, lined up with the piece, each sleeper hollow as a plate: not the baseplate's grid's
+        // sockets, which a bought curve hasn't; studs under it go up into a sleeper square to them (Piece.seats))
+        const asBought = { ...copt, sleepers: 'sleepers' as const, sleeperGapStuds: 2, sleeperWidthStuds: 2, ballast: 'none' as const, ballastOnly: undefined, undersideGrid: 'track' as const };
         const trs = rts.map((rt) => networkBody(scad, [rt], none, asBought, [], grips, { gridPose }));
-        const ms: (Baked & { id?: string; lego?: LegoPart[] })[] = trs.map((m, k) => ({ ...bake(b, m), lego: each[k]! }));
+        // (track only: where studs under it go up into it (raised track's beams'): its sleepers, and its ends)
+        const seatsOf = (rt: Route) => [0, ...ownSleeperSpots(rt, false, false, 2, 2), routeLength(rt)].map((v) => routePose(rt, v));
+        const ms: (Baked & { id?: string; lego?: LegoPart[]; seats?: Pose[] })[] = trs.map((m, k) => ({ ...bake(b, m), lego: each[k]!, ...(!seated && { seats: seatsOf(rts[k]) }) }));
         // (each piece's ballast a part of its own, whole, as the piece is: clear of every piece's seat, and where two
         // pieces' ballast would overlap (beside a switch), the first's; clear of a bought switch's ballast too)
         if (seated && o.boughtBallast === 'together') {
@@ -1415,7 +1476,7 @@ function sectioned(b: PieceBuild, name: string, all: Route[], checks: CheckRail[
       // (bought pieces' ballast: printed, named for the track it's under)
       const lego = apart ? b2.lego : whole;
       const lift = liftOf(rts, b2.positions);
-      b.pieces.push({ name: lego ? `track-bought-${lego[0].part.replace(/\s+/g, '')}-${++n}` : seated ? `${name}${b2.id ?? ++n}-ballast` : b2.id ? `${name}${b2.id}` : `${name}${++n}`, color: lego ? boughtColor(lego) : TRACK_COLOR, positions: b2.positions.slice(), stl: b2.stl.slice(), ...(b2.supports && !lego && { supports: b2.supports.slice() }), ...(lego && { lego }), ...(lift && { lift }) });
+      b.pieces.push({ name: lego ? `track-bought-${lego[0].part.replace(/\s+/g, '')}-${++n}` : seated ? `${name}${b2.id ?? ++n}-ballast` : b2.id ? `${name}${b2.id}` : `${name}${++n}`, color: lego ? boughtColor(lego) : TRACK_COLOR, positions: b2.positions.slice(), stl: b2.stl.slice(), ...(b2.supports && !lego && { supports: b2.supports.slice() }), ...(lego && { lego }), ...(lift && { lift }), ...(apart && b2.seats && { seats: b2.seats }) });
       const bought = !!lego;
       if (!bought) b.volume += b2.volume;
       if (!b2.fits) b.bedWarnings.add(`some sections don't fit the ${o.printBedX} x ${o.printBedY} print bed: there's nowhere left to cut them`);

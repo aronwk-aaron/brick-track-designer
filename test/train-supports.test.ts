@@ -3,10 +3,11 @@
 // nothing in the lower track's trains' way (6 studs wide, as tall as a LEGO train and some).
 import { describe, expect, it } from 'vitest';
 import { buildDesign, clearBuildCache, gradeAt, trainPillars } from '../src/app/build';
-import { OPTION_DEFAULTS, type PieceOptions, TEMPLATES, toRoutes } from '../src/app/design';
-import { kernel } from '../src/geom/kernel';
+import { type Design, OPTION_DEFAULTS, type PieceOptions, TEMPLATES, toRoutes } from '../src/app/design';
+import { arena, kernel } from '../src/geom/kernel';
 import { routeLength, routePose } from '../src/route/route';
 import { Scad } from '../src/geom/scad';
+import { drop, mates, overlaps, parts } from './assembled.shared';
 
 const APP = (globalThis as { APP_DEFAULTS?: PieceOptions }).APP_DEFAULTS!;
 /** Half a LEGO train's width and a little, and how tall it is over its track's bottom (mm). */
@@ -98,5 +99,57 @@ describe('raised train track on pillars', { timeout: 600000 }, () => {
     const two = trainPillars(s, [H, H + 60], X, SIDE, BEAM, [K, -K]);
     expect(topAt(s.intersection(two, s.cube([200, 200, H + 10]).translate([-100, -100, 0])), 7.5)).toBeCloseTo(H + K * 7.5, 2);
     expect(topAt(two, 7.5)).toBeCloseTo(H + 60 - K * 7.5, 2);
+    // (where a grade meets level track over the beam: its top climbs to its middle and is level from there, as the two pieces on it)
+    const bent = trainPillars(s, [H], X, SIDE, BEAM, [[K, 0]]);
+    for (const y of [-7.5, -4, 0]) expect(topAt(bent, y)).toBeCloseTo(H + K * y, 2);
+    for (const y of [4, 7.5]) expect(topAt(bent, y)).toBeCloseTo(H, 2);
+    expect(bent.decompose()).toHaveLength(1);
+    // (a plain top: no studs, the beam as it was under them)
+    const bare = trainPillars(s, [H], X, SIDE, BEAM, [], [true]);
+    expect(bare.boundingBox().max[2]).toBeCloseTo(H, 6);
+    expect(level.boundingBox().max[2]).toBeCloseTo(H + 1.8 - 0.01, 6);
+  });
+  // (bought track is held where studs go up into it: under a sleeper's middle or a joint, square to the track there;
+  // a beam's studs anywhere else stood in the sleepers, which lie at their own angles round a curve. Not the
+  // templates' designs: other radii, level and climbing, and a grade's two ends)
+  const raised: [string, Design['routes']][] = [
+    ['LEGO R40 curves, level, 5 bricks up', [{ name: 'A', x: 0, y: 0, heading: 0, monoHeight: 15, monoHeightEnd: 15, segs: [{ kind: 'straight', studs: 16 }, { kind: 'curve', radius: 40, angle: 90 }, { kind: 'straight', studs: 16 }] }]],
+    ['R56 curves climbing to the right, 2.2%', [{ name: 'A', x: 8, y: 4, heading: 30, monoHeight: 6, monoHeightEnd: 12, segs: [{ kind: 'curve', radius: 56, angle: -90 }] }]],
+    ['level, a grade, level again (each a route)', [
+      { name: 'A', x: 0, y: 0, heading: 0, monoHeight: 6, monoHeightEnd: 6, segs: [{ kind: 'straight', studs: 32 }] },
+      { name: 'B', x: 0, y: 32, heading: 0, monoHeight: 6, monoHeightEnd: 10, segs: [{ kind: 'straight', studs: 64 }] },
+      { name: 'C', x: 0, y: 96, heading: 0, monoHeight: 10, monoHeightEnd: 10, segs: [{ kind: 'curve', radius: 104, angle: 22.5 }] }]],
+  ];
+  for (const [what, routes] of raised) it(`bought track raised (${what}): its beams under its sleepers or joints, their studs up into them; on LEGO risers too`, async () => {
+    const saved = { ...OPTION_DEFAULTS };
+    Object.assign(OPTION_DEFAULTS, APP);
+    try {
+      const w = await kernel();
+      clearBuildCache();
+      const d: Design = { version: 1, gaugeStuds: 4, routes };
+      const b = buildDesign(w, d);
+      clearBuildCache();
+      expect(b.info.warnings.filter((q) => !/climbs/.test(q))).toEqual([]);
+      const sup = b.pieces.filter((p) => /^track-support/.test(p.name)), seats = b.pieces.flatMap((p) => p.seats ?? []);
+      expect(sup.length).toBeGreaterThan(1);
+      expect(seats.length).toBeGreaterThan(4);
+      // (each support's middle (its two pillars' feet either side of it) on a seat)
+      for (const p of sup) {
+        let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+        for (let i = 0; i < p.positions.length; i += 3) { x0 = Math.min(x0, p.positions[i]); x1 = Math.max(x1, p.positions[i]); y0 = Math.min(y0, p.positions[i + 1]); y1 = Math.max(y1, p.positions[i + 1]); }
+        expect(Math.min(...seats.map((q) => Math.hypot(q[0] - (x0 + x1) / 2, q[1] - (y0 + y1) / 2))), p.name).toBeLessThan(0.5);
+      }
+      // (nothing of a beam in the track on it, nor of the track in the next piece; and they come apart)
+      const { parts: ps } = parts(w, b.pieces);
+      try {
+        const o = { ...APP, ...d.options };
+        expect(arena(w, () => overlaps(w, ps, o), () => []).join('; ')).toBe('');
+        expect(arena(w, () => mates(w, ps, o), () => []).join('; ')).toBe('');
+      } finally { for (const q of ps) drop(q.m); }
+      // (on LEGO bricks and plates: the same places, nothing said)
+      const lg = buildDesign(w, { ...d, options: { raisedOn: 'lego' } as Design['options'] });
+      expect(lg.info.warnings.filter((q) => !/climbs/.test(q))).toEqual([]);
+      expect(lg.pieces.some((p) => p.name === 'risers-bought')).toBe(true);
+    } finally { Object.assign(OPTION_DEFAULTS, saved); clearBuildCache(); }
   });
 });
