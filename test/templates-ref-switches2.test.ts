@@ -1,4 +1,4 @@
-// The reference range's curved switches, wyes, three-ways and parallel-track switches build (templates.shared.ts: no warnings, each within its time).
+// The reference range's curved switches, wyes, three-ways, parallel-track and narrow-gauge switches build (templates.shared.ts: no warnings, each within its time).
 import { describe } from 'vitest';
 import { templatesBuild } from './templates.shared';
 
@@ -29,4 +29,11 @@ describe('templates: reference switches2', { timeout: 900000 }, () => templatesB
   'Three-way, no gap',
   'Three-way, 2-stud gap',
   'Three-way, 4-stud gap',
+  'Narrow-gauge switch R36 left',
+  'Narrow-gauge switch R36 right',
+  'Narrow-gauge switch R48 left',
+  'Narrow-gauge switch R48 right',
+  'Narrow-gauge switch R84 left',
+  'Narrow-gauge switch R84 right',
+  'Narrow-gauge wye R36',
 ]));

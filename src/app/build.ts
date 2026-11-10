@@ -777,6 +777,9 @@ function switchParams(o: PieceOptions, gaugeStuds: number, alone: boolean) {
     throwModule: o.throwStyle === 'bracket', mechStyle: (o.mechStyle === 'tines' ? 'tines' : 'plates') as 'tines' | 'plates', // (anything else, an older name included: the default)
     throwStand: o.throwStyle === 'stand', throwNail: o.throwStyle === 'nail', boxedThrow: o.boxedThrow ?? 'slider', throwAction: o.throwAction ?? 'detent', bladeStyle: o.bladeStyle ?? 'simple',
     bladeLip: o.bladeLip === 'front' ? 'front' as const : 'pin' as const, // (unset, an older design: the snap lip on the pin)
+    // (narrow gauge: one moving blade. Two blades' plates, each on its own pin, don't fit side by side between rails
+    // under 4 studs apart: they lay over each other and on each other's pins)
+    ...(gaugeStuds < 4 && { pointBlades: 1 as const }),
     ...(alone && { ballastOnly: o.trackFitTol ?? 0.2 }) };
 }
 type SwitchParams = ReturnType<typeof switchParams>;

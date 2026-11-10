@@ -93,7 +93,7 @@ export function optionForm(d: () => Design): { form: OptSection[]; noMono: (c?: 
         { v: 'plates', t: 'Blades on top, on pins', tip: 'Each blade sits on a plate on top of the bed and turns on a pin. Everything goes in from above.' },
         { v: 'tines', t: 'Under the bed, on spring tines', tip: 'The points sit in pockets under the bed on springy tines. They go in from below.' }] },
       { key: 'pointBlades', label: 'Moving blades', numeric: true, off: onlyPlates, choices: [
-        { v: '2', t: 'Two', tip: 'Both blades move, as LEGO and most model switches.' },
+        { v: '2', t: 'Two', tip: 'Both blades move, as LEGO and most model switches.', no: () => (d().gaugeStuds < 4 ? 'the gauge is under 4 studs: two blades\' plates don\'t fit between the rails, so one moves' : undefined) },
         { v: '1', t: 'One (single point)', tip: 'Only the blade on the curved side moves; the other rail is fixed, with a flangeway beside its stock rail, as a tram\'s single-point switch.',
           con: 'The one blade steers both ways: a wheel can pick the wrong way if the wheels are loose. Three-ways keep both blades.' }] },
       { key: 'bladeStyle', label: 'Blade shape', off: onlyPlates, choices: [
