@@ -118,7 +118,7 @@ export interface PieceOptions {
   throwStyle?: 'bracket' | 'built-in' | 'stand' | 'nail';
   /** Points with no room for a throw (its arm across other track, a double slip's in its middle): a nail switch ('nail') or the slider under that track to a lever past it ('slider', default). */
   boxedThrow?: 'nail' | 'slider';
-  /** (plate-style points) What holds the points, and what a train trailing through them does: 'detent' (the lever's click), 'overcentre' (Peco's V spring: they snap over and stay), 'snap' (the snap clamp: a toggle on knife edges, for rigid blades). (the sprung blades spring back on their own.) */
+  /** (plate-style points) What holds the points, and what a train trailing through them does: 'detent' (the lever's click), 'overcentre' (Peco's V spring: they snap over and stay), 'snap' (the snap clamp: a toggle on knife edges). (the sprung blades spring back on their own.) */
   throwAction?: 'detent' | 'overcentre' | 'snap';
   /** (plate-style points) The blades: 'sprung' (a spring in each, so trains can trail through), 'simple' (rigid: the slider's post in a plain hole, no spring), or 'prototype' (rigid, planed to a point, tight under the stock rail's undercut head, the tie bar at the points). */
   bladeStyle?: 'simple' | 'prototype' | 'sprung';

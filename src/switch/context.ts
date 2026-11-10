@@ -6,6 +6,7 @@
 // (its inner rail, at -G, is blade 0) and "b" the left-hand one (blade 1, at
 // +G); the throw side is +1 for right, -1 for left.
 import { type Pose, type Pt, type Route, railPoint, routeLat, routeLength, routeSOf, worldToPose } from '../route/route';
+import { snapGeo } from './snap';
 
 export interface SwitchParams {
   gaugeStuds: number;
@@ -42,8 +43,8 @@ export interface SwitchParams {
    * 'overcentre' (Peco's V spring between the bed and the slider: the points
    * snap to either side, a train trailing through pushes them over and they
    * stay). (the sprung blades spring back on their own, their springs in them.)
-   * 'snap': the snap clamp (switch/snap.ts), a toggle on knife edges between the blades, where there's room for it
-   * (rigid blades: PointsSetValues' snap, switch/base.ts snapPlace).
+   * 'snap': the snap clamp (switch/snap.ts), a toggle on knife edges: between the blades where there's room for
+   * it (rigid blades), else on the lever's arm (sprung blades): PointsSetValues' snap, switch/base.ts snapPlace, snapOnArm.
    */
   throwAction?: 'detent' | 'overcentre' | 'snap';
   /** (the plate-style points) The throw as a switch stand (a ground throw, Caboose Industries' way): a handle swung over on an eccentric in the slider's yoke, locked past dead centre at each end. */
@@ -287,7 +288,10 @@ export function pointsSet(routes: Route[], ps: PointsSet, p: SwitchParams, defau
   const leverMinD = Math.max(throwDir * throwFaceX + Math.max(4 + 1.5, leverTravel / 2 + g.leverTipD / 2 + 2 * p.pointClearance + 1.2 + 1.5,
     // (the stand: its yoke, and its handle lying toward the track, clear of the stock rail's foot)
     stand ? Math.max(leverTravel / 2 + STAND.eccD / 2 + 2 * p.pointClearance + 1.2 + 1.5, STAND.handleLen + 1.5) : 0),
-    p.throwModule ? g.sleeperLen / 2 + 1.5 * STUD + 0.2 : 0); // (a bracket, 3 studs square, clear of the sleepers (the top of the bed): over a ballast's lower steps is fine)
+    p.throwModule ? g.sleeperLen / 2 + 1.5 * STUD + 0.2 : 0, // (a bracket, 3 studs square, clear of the sleepers (the top of the bed): over a ballast's lower steps is fine)
+    // (the snap clamp with sprung blades lies on the arm (switch/base.ts snapOnArm): room for it between the stock rail's foot and the fork's opening)
+    p.throwAction === 'snap' && low && !p.throwModule && !stand && !p.throwNail
+      ? throwDir * throwFaceX + snapGeo(leverTravel, p.pointClearance).back + snapGeo(leverTravel, p.pointClearance).front + leverTravel / 2 + g.leverTipD / 2 + g.forkWall + 4 * p.pointClearance + 1 : 0);
   const leverX = throwDir * Math.max(throwDir * throwEdgeX + p.leverOffset, leverMinD);
   const forkX = leverX - leverTravel / 2;
   const forkLipZ = leverTipZ + g.leverTipD / 2 + p.pointClearance;
@@ -318,8 +322,8 @@ export function pointsSet(routes: Route[], ps: PointsSet, p: SwitchParams, defau
     under: false, underOk: false,
     /** no room for a throw (it would run under other track) and p.boxedThrow 'nail': a nail switch (no lever; switch/base.ts) */
     nail: false,
-    /** (throwAction 'snap') the snap clamp, where there's room for it between the blades: where the slider's post for it is, as modelled (along the slider): filled in by switchPlan */
-    snap: undefined as { kx: number } | undefined,
+    /** (throwAction 'snap') the snap clamp, where there's room for it, between the blades (bed) or on the lever's arm: where the slider's post for it is, as modelled (along the slider): filled in by switchPlan */
+    snap: undefined as { kx: number; on: 'bed' | 'arm' } | undefined,
   };
 }
 export type PointsSetValues = ReturnType<typeof pointsSet>;

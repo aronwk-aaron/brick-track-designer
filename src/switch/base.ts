@@ -468,7 +468,7 @@ function fdbFootprintOf(v: SetLike, p: BaseParams): { plates: Pt[][]; rails: Pt[
  * slider goes on from there by its travel); undefined where there's no such room (sprung blades' plates are too
  * wide; a double slip's other rails).
  */
-function snapPlace(v: SetLike, p: BaseParams): { kx: number } | undefined {
+function snapPlace(v: SetLike, p: BaseParams): PointsSetValues['snap'] {
   const c = p.pointClearance, G = switchGlobals(p).G, q = snapGeo(v.leverTravel, c), m = c + 0.2;
   const y0 = v.throwY - q.along - m, y1 = v.throwY + q.along + m, within = (y: number) => y >= y0 && y <= y1;
   if (y0 < Math.max(v.toeY - 1, 8 + c) || y1 > v.pointsEndY - 1) return undefined;
@@ -494,7 +494,22 @@ function snapPlace(v: SetLike, p: BaseParams): { kx: number } | undefined {
   const need = q.back + q.front;
   if (!(hi - lo >= need) || xm < lo || xm > hi) return undefined;
   // (in the middle of the room: its post's travel's middle, then where the post is as modelled)
-  return { kx: (lo + hi - need) / 2 + q.back - v.leverTravel / 2 };
+  return { kx: (lo + hi - need) / 2 + q.back - v.leverTravel / 2, on: 'bed' };
+}
+/**
+ * (throwAction 'snap') The snap clamp on the lever's arm, where there's no room for it between the blades
+ * (sprung blades): astride the slider between the stock rail's foot and the lever's opening, the arm wide enough
+ * under all of it. Not with the lever on a bracket (it sits there), nor the arm under other track.
+ */
+function snapOnArm(v: SetLike, p: BaseParams): PointsSetValues['snap'] {
+  const c = p.pointClearance, g = switchGlobals(p), q = snapGeo(v.leverTravel, c), d = v.throwDir;
+  if (p.throwModule || v.under || v.nail || v.stand || q.along + c > g.armW / 2) return undefined;
+  // (from the rail's foot out to the opening the slider's fork moves in, the clearance each end)
+  const inner = d * v.throwFaceX + c, outer = Math.abs(v.leverX) - v.leverTravel / 2 - (g.leverTipD / 2 + c + g.forkWall) - c - 1 - c;
+  const need = q.back + q.front;
+  if (!(outer - inner >= need)) return undefined;
+  const x0 = d > 0 ? (inner + outer - need) / 2 : -(inner + outer + need) / 2;
+  return { kx: x0 + q.back - v.leverTravel / 2, on: 'arm' };
 }
 
 /**
@@ -850,8 +865,9 @@ export function switchPlan(routes: Route[], specs: SetSpec[], p: BaseParams = BA
     return false;
   });
   const fRails: [Route, number, number][] = foreign.flatMap((rt) => [[rt, -G, 0], [rt, G, 0]] as [Route, number, number][]);
-  // (the snap clamp's place, before the slider's worked out: its post is on it)
-  if (p.mechStyle === 'plates' && p.throwAction === 'snap') for (const v of sets as SetLike[]) if (!v.three) v.snap = snapPlace(v, p);
+  // (the snap clamp's place between the blades, before the slider's worked out: its post is on it)
+  const clampAsked = p.mechStyle === 'plates' && p.throwAction === 'snap';
+  if (clampAsked) for (const v of sets as SetLike[]) if (!v.three) v.snap = snapPlace(v, p);
   for (const v of sets as SetLike[]) {
     if (p.throwNail && p.mechStyle === 'plates' && !v.three) { v.nail = true; v.stand = false; continue; }
     const xIn = v.throwStockX + v.throwDir * 2 * 3.9, xOut = v.leverX + v.throwDir * 10;
@@ -873,13 +889,16 @@ export function switchPlan(routes: Route[], specs: SetSpec[], p: BaseParams = BA
       ...(v.fixed !== undefined ? [[v.fixed === 0 ? v.ra : v.rb, v.fixed === 0 ? -G : G, v.sMate!] as [Route, number, number]] : []), ...railsNear(v)];
     v.underOk = !railIn(rails, sp.o0, sp.o1, v.throwY - sp.hw, v.throwY + sp.hw);
   }
-  // (the snap clamp only where there's room for it between a set's blades: else as without it)
-  if (p.mechStyle === 'plates' && p.throwAction === 'snap') {
-    // (not with a switch stand: said above)
-    for (const v of sets as SetLike[]) if (v.stand) v.snap = undefined;
-    if ((sets as SetLike[]).some((v) => !v.three && !v.stand && !v.snap)) notes.push(fdbSprung(p)
-      ? "sprung blades' plates leave no room between them for the snap clamp (they spring back on their own): the lever clicks instead (a nail switch keeps the over-centre spring)"
-      : "there's no room between a set of points' blades for the snap clamp (other track too near, or the points too short): its lever clicks instead (a nail switch keeps the over-centre spring)");
+  // (not with a switch stand (said above). No room between the blades (sprung ones' plates; other track): on the
+  // lever's arm, if there's room there. Else the lever clicks, as without it, and it's said; a nail switch keeps the
+  // over-centre spring.)
+  if (clampAsked) {
+    for (const v of sets as SetLike[]) {
+      if (v.three || v.stand) v.snap = undefined;
+      else if (!v.snap) v.snap = snapOnArm(v, p);
+    }
+    if ((sets as SetLike[]).some((v) => !v.three && !v.stand && !v.snap)) notes.push(
+      "there's no room for a set of points' snap clamp, between its blades (sprung blades' plates, or other track, too near) or on its lever's arm (a bracket, ballast's narrower arm, or the lever too near the track): its lever clicks instead (a nail switch keeps the over-centre spring)");
   }
   // (a nail switch: no arm out to a lever, no steps round it)
   sets.forEach((v, k) => { if ((v as SetLike).nail) Object.assign(setData[k], { armX0: v.throwStockX, armX1: v.throwStockX, ...throwStepsData(v, g, false) }); });
@@ -1346,7 +1365,7 @@ export function switchGeometry(s: Scad, plan: SwitchPlan, extraCuts: Man[] = [])
    */
   const leverT = () => (scadParity() ? g.leverBossLen : Math.max(g.leverBossLen, g.leverTipD, ...(fdb ? [FDB.rodW + 2 * c] : [])));
   /** The lever clicks into dimples in its ear (not with Peco's spring: that holds the points instead). */
-  const leverDetent = (v: SetV) => !v.stand && !(fdb && (p.throwAction === 'overcentre' || !!v.snap) && !v.three);
+  const leverDetent = (v: SetV) => !v.stand && !(fdb && !v.three && (p.throwAction === 'overcentre' || snapOn(v)));
   const throwChannel = (v: SetV) => {
     if (fdb) return fdbChannel(v);
     const w = g.throwRodW + 1 + 2 * c;
@@ -1611,7 +1630,7 @@ export function switchGeometry(s: Scad, plan: SwitchPlan, extraCuts: Man[] = [])
       const xn = nailXs(v), lo = Math.min(...xn) - v.leverTravel - 4, hi = Math.max(...xn) + v.leverTravel + 4;
       return sq([hi - lo, rodW + 2 * (c + m)], [lo, v.throwY - rodW / 2 - c - m]);
     }
-    const xs = [...fdbPostAt(v).map((q) => q[0]), ...snapXs(v), v.forkX, ...fdbMouth(v), ...(split(v) ? [fdbSplit(v, p).a, fdbSplit(v, p).b] : [])];
+    const xs = [...fdbPostAt(v).map((q) => q[0]), ...snapXs(v), ...(ocOn(v) ? [ocGeo(v).P[0]] : []), v.forkX, ...fdbMouth(v), ...(split(v) ? [fdbSplit(v, p).a, fdbSplit(v, p).b] : [])];
     const x0 = Math.min(...xs) - v.leverTravel - 4, x1 = Math.max(...xs) + v.leverTravel + 4;
     const [m0, m1] = fdbMouth(v), a = Math.max(x0, Math.min(x1, v.throwDir > 0 ? m1 : m0));
     const lo = v.throwDir > 0 ? x0 : a, hi = v.throwDir > 0 ? a : x1;
@@ -1647,7 +1666,8 @@ export function switchGeometry(s: Scad, plan: SwitchPlan, extraCuts: Man[] = [])
       const posts = fdbPostAt(v).map((q) => T(s.extrude(fdbPost2d(q, 0).intersect(band), postTop - z1 + 0.01), [0, 0, z1 - 0.01]));
       return s.union([cube([Math.max(...xn) - Math.min(...xn) + 6, rodW, z1 - z0], [Math.min(...xn) - 3, v.throwY - rodW / 2, z0]), ...posts, ...fdbSliderExtra(v)]);
     }
-    const xs = [...fdbPostAt(v).map((q) => q[0]), ...snapXs(v), v.forkX], x0 = Math.min(...xs) - 3, x1 = Math.max(...xs) + forkHw;
+    // (the bar as far as the over-centre spring's post, or the snap clamp's: with one moving blade it's past that blade's)
+    const xs = [...fdbPostAt(v).map((q) => q[0]), ...snapXs(v), ...(ocOn(v) ? [ocGeo(v).P[0]] : []), v.forkX], x0 = Math.min(...xs) - 3, x1 = Math.max(...xs) + forkHw;
     const slotW = g.leverTipD + 2 * c, m = v.forkMouthHw;
     // (the posts up into the blades, to just under the plates' tops; no wider than the bar, which prints on its side:
     // a teardrop's tip past a narrow bar's side (the sprung blades' on track alone) would leave the bar hanging over the bed)
@@ -1690,8 +1710,9 @@ export function switchGeometry(s: Scad, plan: SwitchPlan, extraCuts: Man[] = [])
     // (wide enough for the slider to go down through, as well as the lever's tip)
     const wf = leverT() + 2 * c, [g0, g1] = fdbMouth(v);
     // (and the posts' groove: the arm's top is over it too)
+    // (the snap clamp on the arm: its pit)
     return s.union([T(s.extrude(fdbSlot2d(v, 0), g.layerTop + c - fdbFloor()), [0, 0, fdbFloor()]), cube([g1 - g0, wf, 30], [g0, v.throwY - wf / 2, fdbFloor()]), fdbGroove(v),
-      ...(v.stand ? [standPocket(v)] : [])]);
+      ...(v.stand ? [standPocket(v)] : []), ...(snapOn(v) && v.snap!.on === 'arm' ? [snapPocket(v)] : [])]);
   };
   /**
    * (sprung blades on track alone) What the slider's bar rests on over the
@@ -1776,7 +1797,10 @@ export function switchGeometry(s: Scad, plan: SwitchPlan, extraCuts: Man[] = [])
     const dEnd = Math.hypot(OC.D, T / 2), free = dEnd + OC.preload;
     return { P, A, T, dEnd, free };
   };
-  // (not where the snap clamp is: switchPlan's snap)
+  // (not where the snap clamp is: switchPlan's snap. As drawn this spring doesn't hold: its rings are slacker on
+  // their pins than it's squeezed, and squeezed harder its own bending and the rings' friction would outdo its push
+  // (switch/snap.ts). Left as it is, loose and harmless, for the designs that chose it and for nail switches; the
+  // settings say so.)
   const ocOn = (v: SetV) => fdb && (p.throwAction === 'overcentre' || v.nail) && !v.three && !v.stand && !v.snap;
   /** (a nail switch) where along the throw its slider has things on it: its posts, and the over-centre spring's. */
   const nailXs = (v: SetV) => [...fdbPostAt(v).map((q) => q[0]), ...(ocOn(v) ? [ocGeo(v).P[0]] : []), ...snapXs(v)];
@@ -1848,7 +1872,9 @@ export function switchGeometry(s: Scad, plan: SwitchPlan, extraCuts: Man[] = [])
       const my = (e: P2): P2 => [e[0], sg * e[1]], head = my(hf.head), dir = my(hf.dir), back = (d: number): P2 => [head[0] - d * dir[0], head[1] - d * dir[1]];
       // (its finger, as far as its link's ring; a neck on through the ring's opening; the bar across its end, the knife's seat in it)
       const bar = poly([[S.seat - S.tipD, -S.tipHw], [S.seat, -S.tipHw], [S.seat, S.tipHw], [S.seat - S.tipD, S.tipHw]]).subtract(vNotch(0, S.seat * Math.tan(rad(S.vHalf))));
-      return [stroke(hf.line.map(my), S.t), stroke([my(hf.line[hf.line.length - 1]), back(q.ringOut + c + S.fingerW / 2)], S.fingerW),
+      // (the arm on past the finger, as far out as the link's ring)
+      const e1 = my(hf.line[hf.line.length - 1]), e0 = my(hf.line[hf.line.length - 2]), ed = unit(sub(e1, e0)), past = q.ringOut + S.past - S.t / 2;
+      return [stroke(hf.line.map(my), S.t), stroke([e1, add(e1, mul(ed, past)) as P2], S.t), stroke([e1, back(q.ringOut + c + S.fingerW / 2)], S.fingerW),
         stroke([back(q.ringOut + c + S.fingerW / 2), back(S.tipD - S.seat)], S.neckW), laid(bar, head, dir)];
     }));
   };

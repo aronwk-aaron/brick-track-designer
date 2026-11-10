@@ -1,4 +1,4 @@
-// The snap clamp (throwAction 'snap'): what keeps rigid blades set, and lets a train trail through them.
+// The snap clamp (throwAction 'snap'): what keeps the points set, and lets a train trail through rigid blades.
 //
 // A toggle, as a light switch's: two short links, one each side of the slider along the track, each pressed
 // between a knife edge on the slider (a post of diamond section, its two points along the track) and a knife seat
@@ -9,15 +9,20 @@
 // The spring is one flat C: a spine along the track beside the slider's post, an arm across at each end, a finger
 // back in from each arm's end to its link. The links' push bends the spine all along (the arm's length is its
 // lever), so the spring is soft for its size and the links are squeezed by a millimetre or so, not a few tenths:
-// a print a little out changes the force by a fifth, not all of it. (The over-centre spring's rings have more
-// slack on their pins, 0.3 at each, than it's squeezed by, 0.35: as drawn it's loose at both ends. And its rings
-// turn on pins 4 and 3 across: with a friction of 0.3 their push can lean a millimetre off the line between
-// them, more than the post moves either side of the middle.)
+// a print a little out changes the force by a fifth, not all of it. (The over-centre spring, a meander each way
+// from a ring on the slider's post to a ring on a pin, has more slack in its rings, 0.3 at each, than it's squeezed
+// by, 0.35: as drawn it's loose at both ends. Squeezed harder it would do no better: its halves are one with their
+// middle ring, so each must bend as the post moves, and that takes more than their push along the slider gives
+// (3.5 N of squeeze each to break even, 1% strain and more); and the rings turn on pins 4 across, where a friction
+// of 0.3 can lean their push a millimetre off line, as far as the post moves. Rings on pins can't be made to work
+// at this travel: switch/base.ts ocOn.)
 //
 // The links rock on knife edges (a point in a wider notch), so nothing slides as they lean: no friction to lose
 // the push to. Each link is a ring round its finger's end, which is a bar across (it can't come out through the
 // ring's opening): the clamp prints as one part, flat, its links loose in it. It lies in a pocket in the bed
-// between the blades, over two bosses that keep it in place; it's sprung open over the slider's post.
+// between the blades, over two bosses that keep it in place; it's sprung open over the slider's post. Sprung
+// blades' plates leave no room between them: there it lies on the lever's arm, between the stock rail and the
+// lever, the same way.
 //
 // Units: mm, N, MPa. Its own frame: the origin where the post is in the middle of its travel, u along the slider
 // (the way it moves), w along the track; the spine at u = -arm.
@@ -30,17 +35,19 @@ export const SNAP = {
   /** each link's push at rest (the slider at either end) */
   F: 0.6,
   /** the spring: its beams' width (in plan, the way they bend) and its height; the arm's length (spine to the links' line) */
-  t: 0.8, h: 2, arm: 5,
+  t: 0.8, h: 2, arm: 4.7,
   /** the fingers' width, their necks', and the bar across each one's end (half its length; how deep along the finger) */
   fingerW: 1.6, neckW: 0.8, tipHw: 1.7, tipD: 1.1,
   /** the knife seat in the bar's end: how deep, and the notches' half angle (the knives' is 45) */
   seat: 0.3, vHalf: 70,
   /** a link: its ring (inside radius, wall), its nose to the slider's post (half width), its least length (knife to knife) and the most it leans, degrees */
-  ringIn: 2.5, ringWall: 0.8, noseHw: 0.8, linkMin: 4.5, rock: 13,
+  ringIn: 2.5, ringWall: 0.8, noseHw: 0.8, linkMin: 4.5, rock: 15,
   /** as printed: the links turned this far each way (their noses clear of each other), and off their knives by this much */
-  printRock: 15, printGap: 0.4,
+  printRock: 17, printGap: 0.4,
   /** the slider's post: a diamond, this far from its middle to each point */
   knife: 1.1,
+  /** the arms carried on past the fingers, out beyond the links' rings by this much: something to hold it by, and the links inside its outline */
+  past: 0.2,
   /** the bosses on the bed, in the corners between spine, arm and finger: their snap caps' overhang and height */
   capOver: 0.4, capH: 0.6,
 };
@@ -71,7 +78,7 @@ export function snapGeo(T: number, c: number) {
     hold: (2 * S.F * s) / link,
     boss: [-S.arm + S.t / 2 + c + bossR, half - S.t / 2 - c - bossR] as P2,
     /** the room it needs: across (from the spine's back to the links' rings, or the post at its travel's end) and along the track, each way from the post */
-    back: S.arm + S.t / 2, front: Math.max(ringOut, s + S.knife), along: half + S.t / 2,
+    back: S.arm + S.t / 2, front: Math.max(ringOut + S.past, s + S.knife), along: half + S.t / 2,
   };
 }
 export type SnapGeo = ReturnType<typeof snapGeo>;
