@@ -184,7 +184,8 @@ export function putTogether(w: Awaited<ReturnType<typeof kernel>>, pieces: Piece
   // (a lever or stand is held by its ears (on the lid, with layered points): slid along its pivot it runs into them)
   const lids = pieces.filter((q) => /lid/.test(q.name)).map(man);
   for (const p of pieces.filter((q) => /lever/.test(q.name))) {
-    const m = man(p), withLids = w.Manifold.union([trackNear(m), ...lids]);
+    // (and on its bracket, where it's on one)
+    const m = man(p), withLids = w.Manifold.union([trackNear(m), ...lids, ...pieces.filter((q) => /bracket/.test(q.name)).map(man)]);
     if ([-0.6, 0.6].some((dy) => m.translate([0, dy, 0]).intersect(withLids).volume() < 0.5)) problems.push(`${p.name} isn't held by its ears`);
   }
   for (const p of pieces.filter((q) => /lid/.test(q.name))) {

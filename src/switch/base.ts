@@ -766,7 +766,8 @@ export function switchPlan(routes: Route[], specs: SetSpec[], p: BaseParams = BA
     v.notches = cr.map((x) => x.notches); v.crossBlocked = cr.some((x) => x.blocked);
   }
   if (p.mechStyle === 'plates') {
-    // (a lip over the blades' fronts: rigid ones on ballast (simple, not prototype) have none, their plates kept off the
+    // (a lip over the blades' fronts: rigid ones (simple, not prototype) have none, on ballast or (the bed 3.9 up,
+    // SHALLOW_SLIDER) on track alone: the bed's top is below the stock rail's foot's top, and their plates are kept off the
     // stock rail's foot at the front (fdbBladePart's flare), down to a sliver there with nothing for it to hold)
     const lipOff = fdbLipOn(p) && !fdbSprung(p) && p.bladeStyle !== 'prototype' && g.bedTop + p.pointClearance < PLATE_H + 2.0, lipOn = fdbLipOn(p) && !lipOff;
     (sets as SetLike[]).forEach((v) => {
@@ -788,7 +789,7 @@ export function switchPlan(routes: Route[], specs: SetSpec[], p: BaseParams = BA
       // (sprung blades, or rigid ones with bladeLip 'front': the lip over each moving plate's front, unless other track's rail runs too near it)
       if (lipOn) v.fdb.forEach((f, b) => { if (b !== v.fixed && !f.blocked) f.lip = sprungLipFits(v, b, p, f); });
     });
-    if (lipOff) notes.push("rigid blades on ballast have no lip over the front: their plates are kept off the stock rail's foot, too narrow at the front to hold (their pins keep the snap lip)");
+    if (lipOff) notes.push("rigid blades have no lip over the front (rigid, realistic ones do): their plates are kept off the stock rail's foot, too narrow at the front to hold (their pins keep the snap lip)");
     if (sets.some((v) => v.fdb!.some((f) => f.lip === false)))
       notes.push(fdbSprung(p) ? "a sprung blade's front has no lip to hold it down: another track's rail runs too near it"
         : "a blade's front has no lip to hold it down: another track's rail runs too near it (its pin keeps its snap lip)");
@@ -1764,7 +1765,8 @@ export function switchGeometry(s: Scad, plan: SwitchPlan, extraCuts: Man[] = [])
     const sweep2d = W.CrossSection.union([W.CrossSection.hull([ocRing2d().translate(o.P as Vec2), ocRing2d().translate(Q as Vec2)]),
       ...o.A.map((a) => W.CrossSection.hull([ocSpring2d(o.P, [a]), ocSpring2d(Q, [a])]))]).offset(c + 0.2, 'Round', 2, 16);
     // (not where its pins stand: on a network's piece the pockets are cut after the pins go on)
-    return s.difference(T(s.extrude(sweep2d, bedTop + 2 - (ocZ0() - c)), [0, 0, ocZ0() - c]), ocPins(v));
+    // (up past the spring's top: with the shallow slider it stands higher over the bed than the bed's top and 2)
+    return s.difference(T(s.extrude(sweep2d, Math.max(bedTop + 2, ocZ0() + OC.h + c) - (ocZ0() - c)), [0, 0, ocZ0() - c]), ocPins(v));
   };
   /** The pins the spring's ends go on, standing on its pocket's floor, each with a snap lip. */
   const ocPins = (v: SetV) => ocGeo(v).A.flatMap((q) => [
@@ -1841,7 +1843,7 @@ export function switchGeometry(s: Scad, plan: SwitchPlan, extraCuts: Man[] = [])
   /** Its pocket in the bed: one pit round all of it, wherever its links lean, its bosses standing in it. */
   const snapPocket = (v: SetV) => {
     const q = snapG(v), T2 = v.leverTravel, pit = W.CrossSection.hull([-T2 / 2, 0, T2 / 2].map((s0) => snap2d(q, s0))).offset(c + 0.2, 'Round', 2, 16).translate(snapAt(v));
-    return s.difference(T(s.extrude(pit, bedTop + 2 - g.layerTop), [0, 0, g.layerTop]), snapBosses(v));
+    return s.difference(T(s.extrude(pit, Math.max(bedTop + 2, snapZ0() + SNAP.h + c) - g.layerTop), [0, 0, g.layerTop]), snapBosses(v));
   };
 
   // ---------- the moving parts (points, throw, lever) ----------

@@ -3,7 +3,7 @@
 // and open; the front free a little way up, then held, even pushed back by its pin's play; the lip's top
 // under the plate's top; nothing in it hanging as printed; a plain pin. The default: the snap lip on
 // the pin, no lip, as before. Prototype blades too (the lip filling the stock rail's undercut in front of
-// the plate). Not rigid blades on ballast: their plates are kept off the stock rail's foot, a sliver at the
+// the plate). Not rigid (simple) blades: their plates are kept off the stock rail's foot, a sliver at the
 // front: no lip, and a note.
 import { describe, expect, it } from 'vitest';
 import type { Route } from '../src/route/route';
@@ -20,7 +20,7 @@ const p = { ...BASE_DEFAULTS, mechStyle: 'plates' as const, throwAction: 'detent
 
 describe('rigid blades with a lip over the front', () => {
   const cases: [string, typeof p | (Omit<typeof p, 'bladeStyle'> & { bladeStyle: 'prototype' })][] = [
-    ['rigid, track alone', { ...p, generateBallast: false }], ['prototype, on ballast', { ...p, bladeStyle: 'prototype' }],
+    ['prototype, on ballast', { ...p, bladeStyle: 'prototype' }],
     ['prototype, track alone', { ...p, bladeStyle: 'prototype', generateBallast: false }]];
   for (const [name, q] of cases) it(`${name}: a lip over each plate's front, clear closed and open; the front can't lift; a plain pin; prints`, async () => {
     const plan = switchPlan([A, B], [[0, 1, 12]], q, 1), w = await kernel(), s = new Scad(w), gm = switchGeometry(s, plan), base = gm.base();
@@ -79,10 +79,11 @@ describe('rigid blades with a lip over the front', () => {
     expect(upgradeDesign(old)).toBe(old);
   }, 120000);
 
-  it('rigid blades on ballast: no lip (nothing at the front to hold), the snap lip on the pin, and a note', async () => {
-    const plan = switchPlan([A, B], [[0, 1, 12]], p, 1), gm = switchGeometry(new Scad(await kernel()), plan);
+  // (on track alone too: the bed's 3.9 up there, so the plates lie under the wheels' flanges, and below the stock rail's foot's top as on ballast)
+  for (const ballast of [true, false]) it(`rigid blades${ballast ? ' on ballast' : ', track alone'}: no lip (nothing at the front to hold), the snap lip on the pin, and a note`, async () => {
+    const plan = switchPlan([A, B], [[0, 1, 12]], { ...p, generateBallast: ballast }, 1), gm = switchGeometry(new Scad(await kernel()), plan);
     expect(plan.sets[0].fdb!.map((f) => f.lip)).toEqual([undefined, undefined]);
-    expect(plan.notes.join(' ')).toMatch(/rigid blades on ballast have no lip/);
+    expect(plan.notes.join(' ')).toMatch(/rigid blades have no lip/);
     expect(gm.pointsTurns(0)!.map((t2) => !!t2.tilt)).toEqual([false, false]);
   }, 120000);
 

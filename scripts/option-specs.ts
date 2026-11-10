@@ -85,7 +85,7 @@ export const SPECS: OptionSpec[] = [
   { key: 'pointBlades', values: ['2', '1'], base: D(sw), cam: toe },
   { key: 'bladeStyle', values: ['simple', 'prototype', 'sprung'], base: D(sw, { ballast: 'ballast' }), cam: toe },
   // (close on the blade's front, where the lip is, and its heel's pin in the distance)
-  { key: 'bladeLip', values: ['pin', 'front'], base: D(sw, { bladeStyle: 'simple' }), cam: { dir: '1,-1.1,1', r: 80, at: () => [-14, 22, 7] } },
+  { key: 'bladeLip', values: ['pin', 'front'], base: D(sw, { bladeStyle: 'prototype' }), cam: { dir: '1,-1.1,1', r: 80, at: () => [-14, 22, 7] } },
   { key: 'pointThrow', values: [3, 6], base: D(sw), cam: { dir: '0.3,-0.5,1', r: 120, at: () => [0, 40, 6] } },
   { key: 'pointClearance', values: [0.3, 0.8], base: D(sw), cam: { dir: '0.3,-0.5,1', r: 90, at: () => [0, 36, 6] } },
   { key: 'springPreload', values: [0, 3], base: D(sw, { bladeStyle: 'sprung' }), cam: { dir: '0.3,-0.5,1', r: 120, at: () => [0, 40, 6] } },

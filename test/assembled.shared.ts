@@ -276,7 +276,7 @@ export const KNOWN: Record<string, Known> = {
   'Curved switch R40 90° left': { problems: [/^switch-base1 and switch-base2 overlap: 9\.\d+ mm3/], why: 'a rail crossing the cut at a slant has its end in both parts (2.6 x 8.1 mm of rail)' },
   'Double crossover (R56)': { problems: [/^track1 and track3 overlap: 18\.\d+ mm3/], why: 'a rail end at the join of two sections is in both (2.0 x 8.1 mm of rail)' },
   'T-junction core R56': { problems: [/^track1 and track3 overlap: 33\.\d+ mm3/], why: 'where two routes\' rails run together at the join of two sections, each section has both (3.0 x 6.6 mm of rail, twice)' },
-  'Double slip R40 45°': { problems: [/^track1 and track2 overlap: 15\.\d+ mm3/, /^track1 and points3-throw overlap: 0\.7\d mm3/, /^points3-throw slid [\d.]+ mm: 0\.7\d mm3 in track1/, /^points3-throw can't slide in along its tunnel/],
+  'Double slip R40 45°': { problems: [/^track1 and track2 overlap: 5\.\d+ mm3/, /^track1 and points3-throw overlap: 0\.7\d mm3/, /^points3-throw slid [\d.]+ mm: 0\.7\d mm3 in track1/, /^points3-throw can't slide in along its tunnel/],
     why: 'a rail end at the cut between its two parts is in both (5.7 x 6.8 mm); one slider\'s bar is 0.5 into the floor of its groove over 12 mm, all along its travel' },
   'Three-way R40': { problems: [/^track1 is in 3 pieces/], why: 'the part past the frogs is three loose pieces in one file: the middle track and each branch\'s end, nothing joining them' },
   'Wye with a crossover': { problems: [/^track-bought-53401-1 and track2 overlap: 7\d\.\d+ mm3/, /^track19 and track-bought-53401-22 overlap: 6\d\.\d+ mm3/],

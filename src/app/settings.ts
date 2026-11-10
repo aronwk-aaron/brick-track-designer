@@ -107,7 +107,7 @@ export function optionForm(d: () => Design): { form: OptSection[]; noMono: (c?: 
           con: 'Only the heel is held. The point can lift a little, where a flange can catch it.' },
         { v: 'front', t: 'Lip over the front', tip: 'A low lip on the track leans over each blade\'s front, as on Sprung blades, so the point can\'t lift. The pin is plain. Fit each blade front first, tilted under the lip, then lower it onto its pin.',
           con: 'Each blade\'s rail starts a little further back (its front is bevelled under the lip). Where other track runs too close to a blade\'s front, that blade keeps the snap lip.',
-          no: (c) => (c.ballast && c.o.bladeStyle === 'simple' ? 'on ballast a Rigid blade\'s plate is kept off the stock rail\'s foot, so its front is too narrow to hold (Rigid, realistic works)' : undefined) }] },
+          no: (c) => (c.o.bladeStyle === 'simple' ? 'a Rigid blade\'s plate is kept off the stock rail\'s foot, so its front is too narrow to hold (Rigid, realistic works)' : undefined) }] },
       { key: 'pointThrow', label: 'Blade throw, mm', step: 0.25, min: 2, max: 6, help: 'How far the blade tips move.' },
       { key: 'pointClearance', label: 'Clearance, mm', step: 0.05, min: 0.1, max: 0.8, help: 'Gap round the moving parts.' },
       { key: 'springPreload', label: 'Spring preload, mm', step: 0.25, min: 0, max: 3, help: 'How far past closed the springs push the blades, to hold them shut.' },

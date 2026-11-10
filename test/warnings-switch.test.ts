@@ -13,8 +13,8 @@ describe('warnings: points', { timeout: 600000 }, () => {
     await fires(/the over-centre spring, the switch stand and the prototype blades are only built with blades on top: left out/, D(SWITCH(), { mechStyle: 'tines', throwAction: 'overcentre' }), D(SWITCH(), { throwAction: 'overcentre' }));
     await fires(/a three-way's points have three positions: the over-centre spring has two/, D(THREE_WAY(), { throwAction: 'overcentre' }), D(THREE_WAY()));
   });
-  it('rigid blades on ballast: no lip over the front', async () => {
-    await fires(/rigid blades on ballast have no lip over the front/, D(SWITCH(), { ballast: 'ballast', bladeStyle: 'simple', bladeLip: 'front' }), D(SWITCH(), { ballast: 'none', bladeStyle: 'simple', bladeLip: 'front' }));
+  it('rigid blades: no lip over the front', async () => {
+    await fires(/rigid blades have no lip over the front/, D(SWITCH(), { ballast: 'none', bladeStyle: 'simple', bladeLip: 'front' }), D(SWITCH(), { ballast: 'none', bladeStyle: 'prototype', bladeLip: 'front' }));
   });
   it('a track that ends in the points', async () => {
     await fires(/a track ends in the points at 0, 0 \(studs\): carry it on past the frog/, D([R('Straight', 0, 0, 0, [S(32)]), R('Branch', 0, 0, 0, [C(40, 12)])]), D(SWITCH()));

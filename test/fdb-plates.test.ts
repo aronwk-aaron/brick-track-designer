@@ -71,7 +71,8 @@ describe("the plate-style blade plates beside other track", () => {
     expect(f[0].blocked).toBeUndefined();
     expect(f[0].keep.length).toBeGreaterThan(0);
     expect(f[0].postIn).toBeLessThan(6.25);
-    expect(f[0].pivotIn).toBe(7);
+    // (its pin a little nearer its rail too: lower down, where the plates lie now, the other rail's foot is wider)
+    expect(f[0].pivotIn).toBeGreaterThan(6.5);
     const r = rims(f[0], 0);
     expect(r.pin).toBeGreaterThanOrEqual(2 - 1e-6);
     expect(r.post).toBeGreaterThanOrEqual(2 - 1e-6);

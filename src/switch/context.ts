@@ -104,6 +104,16 @@ export const STUD = 8;
  * top, not the reference's 1.8 (its bar lies on it).
  */
 export const SPRUNG_SLIDER = { barH: 1.6, under: 0.2, rodW: 2.4 };
+/**
+ * (rigid blades, track alone) LEGO's wheels' flanges reach 3.2 to 3.45 below the rail's top (LDraw's 57878, 55423
+ * and 85489: treads 8.4 to 9.1 in radius, flanges 11.6 to 12): a blade's plate, which lies inside its rail where the
+ * flange runs, must be under that. The slider used to be 2 thick in a closed tunnel over the underside's stud room,
+ * the bed 6 up and the plates' tops only 1.7 under the rail's: wheels rode up on their flanges. So the slider is
+ * shallow: a floor of two layers over the studs' room (0.4), the bar 1.0 thick, its top 0.2 under the bed's top in a
+ * groove open at the top, as the sprung blades'. The bed is then 3.9 up, the plates' tops 3.8 under the rail's top.
+ * Over the studs, so on any stud grid, at any angle to it.
+ */
+export const SHALLOW_SLIDER = { floor: 0.4, barH: 1.0, under: 0.2 };
 /** sprung blades on track alone: the bed at the sleepers' top, the slider in a groove through it (SPRUNG_SLIDER). */
 export const sprungLow = (p: { bladeStyle?: string; generateBallast?: boolean; mechStyle?: string }) => p.bladeStyle === 'sprung' && p.mechStyle === 'plates' && !p.generateBallast;
 
@@ -142,13 +152,15 @@ export function switchGlobals(p: SwitchParams) {
   // (with an anti-stud underside, or none at all, the parts sit above a baseplate's studs)
   // (the plate-style slider runs in a tunnel with a floor: room for one (0.6) under it)
   const fdb = p.mechStyle === 'plates', low = sprungLow(p);
+  // (rigid blades on track alone: the slider shallow, SHALLOW_SLIDER, so the blades' plates lie under the wheels' flanges)
+  const shallow = fdb && !ballast && !low && p.mechFloor === undefined;
   // (sprung blades on track alone: the bar in its groove from the bed's top down, between the underside's stud rows: SPRUNG_SLIDER)
   const layerZ0 = low ? PLATE_H - SPRUNG_SLIDER.under - SPRUNG_SLIDER.barH
-    : pieceBottomZ + (antistud || !ballast ? bottomCavity : 0) + (p.mechFloor ?? (fdb ? (ballast ? 1.2 : 0.9) : 0.2));
+    : pieceBottomZ + (antistud || !ballast ? bottomCavity : 0) + (p.mechFloor ?? (shallow ? SHALLOW_SLIDER.floor + p.pointClearance : fdb ? (ballast ? 1.2 : 0.9) : 0.2));
   // (the plate-style: the slider bar in the bed under the blade plates: 2.4 tall, 2 without ballast, where the bed's thinner)
-  const layerTop = layerZ0 + (low ? SPRUNG_SLIDER.barH : fdb ? (ballast ? 2.4 : 2) : 1.4);
+  const layerTop = layerZ0 + (low ? SPRUNG_SLIDER.barH : shallow ? SHALLOW_SLIDER.barH : fdb ? (ballast ? 2.4 : 2) : 1.4);
   const cavityTop = layerTop + p.pointClearance;
-  const bedTop = ballast || low ? PLATE_H : Math.max(PLATE_H, cavityTop + 0.8);
+  const bedTop = ballast || low ? PLATE_H : shallow ? layerTop + SHALLOW_SLIDER.under : Math.max(PLATE_H, cavityTop + 0.8);
   const leverTipD = 4.5, leverBossD = 5;
   const leverTipLow = layerZ0 + 0.6 + p.pointClearance + leverTipD / 2;
   // (on a bracket the pivot is a plate higher: over the arm's top, its studs and the bracket's plate)

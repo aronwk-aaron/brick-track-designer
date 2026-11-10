@@ -66,8 +66,8 @@ describe('the snap clamp on a switch', { timeout: 600000 }, () => {
         const [cx, cy] = turns[k].at, turned = m.translate([-cx, -cy, 0]).rotate([0, 0, turns[k].swing * at]).translate([cx, cy, 0]);
         expect(sp.intersect(turned).volume(), `in blade ${k} at ${at}`).toBeLessThan(0.01);
       });
-      // (under the flanges: no higher than the blades' plates)
-      expect(sp.boundingBox().max[2]).toBeLessThanOrEqual(Math.max(...blades.map((m) => m.boundingBox().min[2])) + 1.7);
+      // (no higher than the blades' plates, or by a layer: in the middle of the track, where no flange runs)
+      expect(sp.boundingBox().max[2]).toBeLessThanOrEqual(Math.max(...blades.map((m) => m.boundingBox().min[2])) + 1.9);
     }
   });
   it('prints flat as one part: the spring and its two links loose in it, 0.3 apart or more; its beams as its push is worked out from', async () => {
