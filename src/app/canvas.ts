@@ -1061,7 +1061,7 @@ export class TrackCanvas {
         c.fillStyle = ink.rail; c.beginPath(); c.arc(sx, sy, 3, 0, 2 * Math.PI); c.fill();
       }
       for (const [which, p, k] of [['startEnd', { x: r.x, y: r.y, heading: r.heading }, 1], ['endEnd', follow(r, r.segs), -1]] as const) {
-        if (r[which] !== 'buffer' || !r.segs.length) continue;
+        if (r[which] !== 'buffer' || !r.segs.length || r.system === 'monorail') continue;
         const h = (p.heading * Math.PI) / 180, ax = -Math.sin(h) * k, ay = Math.cos(h) * k, rx = Math.cos(h), ry = Math.sin(h);
         const at = (al: number, lat: number): [number, number] => [p.x + ax * al + rx * lat, p.y + ay * al + ry * lat];
         line([at(1, -(g + 1.5)), at(1, g + 1.5)], ink.rail, Math.max(3, 0.8 * this.scale));

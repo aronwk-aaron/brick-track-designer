@@ -3,7 +3,7 @@
 import * as THREE from 'three';
 import wasmUrl from 'manifold-3d/manifold.wasm?url';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
-import { BANK_MAX, type BankRamps, type Design, type DRoute, type DSeg, OPTION_DEFAULTS, type PieceOptions, RAIL_DEFAULTS, TEMPLATE_GROUPS, TEMPLATES, type Trackwork, endOf, freeName, isMono, readDesign } from './design';
+import { BANK_MAX, type BankRamps, type Design, type DRoute, type DSeg, OPTION_DEFAULTS, type PieceOptions, RAIL_DEFAULTS, TEMPLATE_GROUPS, TEMPLATES, type Trackwork, endOf, freeName, isMono, readDesign, setSystem } from './design';
 import { TrackCanvas, type OverlayItem, dialogOpen, leverSide, leverSlides, typingIn } from './canvas';
 import { describe } from './planner';
 import { BRICKTRACKS_COLOR, gradeOf, LEGO_COLOR, type LegoPart, legoParts, type Piece } from './build';
@@ -408,7 +408,7 @@ function drawForms() {
       sys.append(new Option('Train track', 'train'), new Option('Monorail', 'monorail'));
       sys.value = isMono(r) ? 'monorail' : 'train';
       sys.title = 'Train track, or LEGO monorail: the 4-stud beam with a rack down the middle.';
-      sys.addEventListener('change', () => { if (sys.value === 'monorail') r.system = 'monorail'; else delete r.system; changed(true); renderOptions(); });
+      sys.addEventListener('change', () => { setSystem(r, sys.value === 'monorail' ? 'monorail' : 'train'); changed(true); renderOptions(); });
       place.append(field('Track', sys));
       // (monorail: the beam's height off the baseplate, in plates; empty: the supports' height in Settings, or on the baseplate)
       const hi = document.createElement('input'); hi.type = 'number'; hi.step = '1'; hi.min = '0'; hi.max = String(LIMITS.plates[1]);
@@ -441,7 +441,7 @@ function drawForms() {
       row.addEventListener('mouseleave', () => { canvas.highlightSeg = undefined; canvas.draw(); });
       shape.append(row);
     });
-    const ends = part('Ends', [r.startEnd, r.endEnd].includes('buffer') ? 'buffer stop' : '');
+    const ends = part('Ends', !isMono(r) && [r.startEnd, r.endEnd].includes('buffer') ? 'buffer stop' : '');
     // (each end: an ordinary end connector, or a buffer stop)
     for (const [prop, label] of [['startEnd', 'Starts in'], ['endEnd', 'Ends in']] as const) {
       const es = document.createElement('select');

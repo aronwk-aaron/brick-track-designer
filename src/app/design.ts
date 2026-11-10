@@ -254,12 +254,18 @@ export const OPTION_DEFAULTS: PieceOptions = {
   monoSupportStuds: 0, monoSupportBricks: 5, monoSupportPlates: 0, monoSupportBaseXStuds: 4, monoSupportBaseYStuds: 4, monoSupportAntistud: true, monoSupportBaseStuds: true, monoSupportSolid: false, bankRampStuds: 40, bankClimb: 100, bankRampAt: 'straight',
 };
 
+/** A route made train track or monorail (its card's System): a monorail has no buffer stops, so its ends are ordinary again. */
+export function setSystem(r: DRoute, system: 'train' | 'monorail') {
+  if (system === 'monorail') { r.system = 'monorail'; delete r.startEnd; delete r.endEnd; } else delete r.system;
+}
+
 /** The buffer stops' positions (mm): the route ends set to end in one (by where they are, as routes are turned round and cut up). */
 export function bufferEnds(d: Design): [number, number][] {
   const out: [number, number][] = [];
   toRoutes(d).forEach((rt, i) => {
     const r = d.routes[i];
-    if (!rt.segments.length) return;
+    // (a monorail has none, whatever's left on its route from when it was train track)
+    if (!rt.segments.length || isMono(r)) return;
     if (r.startEnd === 'buffer') out.push([rt.start[0], rt.start[1]]);
     if (r.endEnd === 'buffer') { const p = routePose(rt, routeLength(rt)); out.push([p[0], p[1]]); }
   });
