@@ -19,6 +19,15 @@ describe('designs that can\'t be built', { timeout: 120000 }, () => {
     expect(unbuildable(D([R('A', 0, 0, 0, [C(40, 400)])]))).toMatch(/A runs along itself/);
     expect(unbuildable(D([R('A', 0, 0, 0, [S(32), C(40, 180), S(32), C(40, 180), S(32)])]))).toMatch(/A runs along itself/);
   });
+  it('a table that\'s no shape is turned away; one saved without its shape is taken for what its numbers say, and builds', async () => {
+    const line = D([R('A', 0, 0, 0, [S(32)])]);
+    expect(unbuildable({ ...line, tables: [{ shape: 'rect', x: -8, y: -8, w: 16, h: 48 }, { name: 'B' } as never] })).toBe('table 2 (B) isn\'t a rectangle, a ring section or an outline: delete it and draw it again');
+    // (as saved by hand, or by a version before tables had shapes: it failed the build outright, reading an outline it hasn't got)
+    const d = { ...line, options: { legoTrack: 'print' as const }, tables: [{ x: -8, y: -8, w: 16, h: 24 }, { x: -8, y: 16, w: 16, h: 24 }] as never };
+    expect(unbuildable(d)).toBeUndefined();
+    const w = await kernel(), b = buildDesign(w, d);
+    expect(b.pieces.filter((p) => /^track/.test(p.name)).length).toBe(2);
+  });
   it('more track than can be built', () => {
     expect(unbuildable(D([R('A', 0, 0, 0, [S(100000)])]))).toBe(`100000 studs of track is more than can be built (${MAX_TRACK_STUDS} at most): check the lengths typed in`);
     expect(unbuildable(D([R('A', 0, 0, 0, [S(MAX_TRACK_STUDS / 2)]), R('B', 16, 0, 0, [S(MAX_TRACK_STUDS / 2)])]))).toBeUndefined();

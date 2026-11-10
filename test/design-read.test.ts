@@ -36,6 +36,9 @@ describe('opening a design', () => {
     expect(d.options).toBeUndefined();
     expect(d.trackwork).toEqual({ check: { '1,2': { off: true } } });
     expect(d.tables).toEqual([{ shape: 'rect', x: 0, y: 0, w: 32, h: 64 }]);
+    // (a table saved with no shape: the one its numbers say; with a shape its numbers don't make, left out)
+    const t = readDesign(but({ tables: [{ name: 'A', x: 0, y: 0, w: 32, h: 64 }, { cx: 0, cy: 0, r0: 8, r1: 16, a0: 0, a1: 90 }, { pts: [[0, 0], [8, 0], [8, 8]] }, { name: 'B' }, { shape: 'arc', x: 0, y: 0, w: 32, h: 64 }] })).tables;
+    expect(t).toEqual([{ name: 'A', shape: 'rect', x: 0, y: 0, w: 32, h: 64 }, { shape: 'arc', cx: 0, cy: 0, r0: 8, r1: 16, a0: 0, a1: 90 }, { shape: 'poly', pts: [[0, 0], [8, 0], [8, 8]] }]);
     expect(d.routes[0].name).toBe('');
     expect(d.routes[0].segs).toEqual(ok.routes[0].segs);
   });

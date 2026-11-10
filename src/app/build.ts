@@ -29,7 +29,7 @@ import { findStuds, wholeStuds } from '../geom/studs';
 import { bankRolls, type Design, OPTION_DEFAULTS, type PieceOptions, type Trackwork, bufferEnds, isMono, toRoutes, upgradeDesign } from './design';
 import { labelCut, labelLines } from '../geom/labels';
 import { buildMonorail, clearMonoCache } from './monobuild';
-import { tableAt, tableOutline, type Table } from './tables';
+import { tableAt, tableOf, tableOutline, type Table } from './tables';
 import { buildScope, clearSolids, jobScope, SolidCache } from './solidcache';
 import { BRICKTRACKS_SWITCH, BT_LEAD, type BoughtSwitch, cutOut, findBoughtSwitches, footprint, LEGO_SWITCH } from './boughtswitch';
 
@@ -386,10 +386,13 @@ export const MAX_TRACK_STUDS = 30000;
 /**
  * What can't be built at all, said plainly before anything's worked out (undefined: nothing): more track than
  * MAX_TRACK_STUDS; a route that lies along itself (a flat curve of more than a full turn); a route that lies wholly on
- * another (the same route drawn twice). Each ran the kernel out of memory or never ended. Track at another height
+ * another (the same route drawn twice); a table that's no shape. Each ran the kernel out of memory, never ended or failed outright. Track at another height
  * (a helix's turns, a bridge) is not on top of what's under it; monorail routes aren't looked at.
  */
 export function unbuildable(design: Design): string | undefined {
+  // (a table that's no shape at all: reading its outline failed the build outright)
+  const noTable = (design.tables ?? []).findIndex((t) => !tableOf(t));
+  if (noTable >= 0) return `table ${noTable + 1}${design.tables![noTable]?.name ? ` (${design.tables![noTable].name})` : ''} isn't a rectangle, a ring section or an outline: delete it and draw it again`;
   const rts = toRoutes(design), idx = design.routes.map((r, i) => i).filter((i) => !isMono(design.routes[i]) && rts[i]?.segments.length);
   const total = idx.reduce((t, i) => t + routeLength(rts[i]), 0) / 8;
   if (total > MAX_TRACK_STUDS) return `${Math.round(total)} studs of track is more than can be built (${MAX_TRACK_STUDS} at most): check the lengths typed in`;

@@ -11,6 +11,19 @@ export type Table = { name?: string; color?: string } & (
   | { shape: 'arc'; cx: number; cy: number; r0: number; r1: number; a0: number; a1: number }
   | { shape: 'poly'; pts: [number, number][] });
 
+/**
+ * A table as saved, made sure of: itself where it's whole; with no shape (an older file's, or one written by hand),
+ * the shape its numbers say (x, y, w, h: a rectangle; cx, cy, r0, r1, a0, a1: a ring section; pts: an outline);
+ * undefined where it's none of them (a build with such a table failed outright, reading an outline it hasn't got).
+ */
+export function tableOf(v: unknown): Table | undefined {
+  if (!v || typeof v !== 'object' || Array.isArray(v)) return undefined;
+  const t = v as Record<string, unknown>, fin = (x: unknown) => typeof x === 'number' && Number.isFinite(x), nums = (...ks: string[]) => ks.every((k) => fin(t[k]));
+  const is = { rect: nums('x', 'y', 'w', 'h'), arc: nums('cx', 'cy', 'r0', 'r1', 'a0', 'a1'), poly: Array.isArray(t.pts) && t.pts.length >= 3 && t.pts.every((q: unknown) => Array.isArray(q) && q.length === 2 && q.every(fin)) };
+  const shape = t.shape === undefined ? (['rect', 'arc', 'poly'] as const).find((k) => is[k]) : (['rect', 'arc', 'poly'] as const).find((k) => k === t.shape && is[k]);
+  return shape ? (t.shape === shape ? (v as Table) : ({ ...t, shape } as unknown as Table)) : undefined;
+}
+
 /** The colours new tables take, in turn. */
 export const TABLE_COLORS = ['#f2a65a', '#f5e050', '#5cbf6e', '#4fb3e8', '#e8655a', '#b07fd6', '#7ed6c4', '#d6a07e'];
 

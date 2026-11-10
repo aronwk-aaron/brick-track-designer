@@ -1,6 +1,6 @@
 // The editor's document: routes in studs and degrees, as people enter them,
 // and their conversion to the solver's routes in mm.
-import type { Table } from './tables';
+import { type Table, tableOf } from './tables';
 import { clampDesign } from './limits';
 import type { ExtraRails, Roll, Route, RouteEnds, Segment } from '../route/route';
 import { routeLength, routePose } from '../route/route';
@@ -190,6 +190,8 @@ export interface PieceOptions {
  * which spring back on their own (leaf springs under the plate).
  */
 export function upgradeDesign(d0: Design): Design {
+  // (a table saved with no shape: the one its numbers say, tables.ts tableOf; one that's none is left for the build to turn away)
+  if (d0.tables?.some((t) => { const r = tableOf(t); return !!r && r !== t; })) return upgradeDesign({ ...d0, tables: d0.tables.map((t) => tableOf(t) ?? t) });
   const { grip, pointsPieces, ...d } = d0 as Design & { grip?: PieceOptions['grip']; pointsPieces?: PieceOptions['pointsPieces'] };
   const o = d.options as (Omit<Partial<PieceOptions>, 'joint'> & { joint?: string; cutRails?: string }) | undefined;
   // (a blade shape no longer offered: sprung; the blades' hold-down setting, gone: the sprung blades' lip holds them)
@@ -235,9 +237,8 @@ export function readDesign(v: unknown): Design {
   if (obj(d.trackwork)) d.trackwork = Object.fromEntries(Object.entries(d.trackwork).filter(([, g]) => obj(g)).map(([k, g]) => [k, Object.fromEntries(Object.entries(g as object).filter(([, e]) => obj(e)).map(([key, e]) => [key, 'on' in e && !anchor(e.on) ? Object.fromEntries(Object.entries(e).filter(([f]) => f !== 'on')) : e]))]));
   else delete d.trackwork;
   if (Array.isArray(d.tables)) {
-    const nums = (t: Record<string, unknown>, ...ks: string[]) => ks.every((k) => fin(t[k]));
-    const tables = d.tables.filter((t: unknown) => obj(t) && (t.shape === 'rect' ? nums(t, 'x', 'y', 'w', 'h') : t.shape === 'arc' ? nums(t, 'cx', 'cy', 'r0', 'r1', 'a0', 'a1')
-      : t.shape === 'poly' && Array.isArray(t.pts) && t.pts.length >= 3 && t.pts.every((q: unknown) => Array.isArray(q) && q.length === 2 && q.every(fin))));
+    // (a table with no shape, where its numbers say what it is: that shape; else left out, tables.ts tableOf)
+    const tables = d.tables.map(tableOf).filter((t): t is Table => !!t);
     if (tables.length) d.tables = tables; else delete d.tables;
   } else delete d.tables;
   // (its numbers held to their ranges, as the fields hold what's typed: limits.ts)
