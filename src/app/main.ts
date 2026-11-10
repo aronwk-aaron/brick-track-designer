@@ -17,7 +17,7 @@ import { fileBase as fileBaseOf, partsDownload, plainKind, printedKinds, stlDown
 import { clamp, LIMITS, type Range, rangeText } from './limits';
 import { mirrorRoute } from './routeedits';
 import { TabStore, unsaved } from './session';
-import { followTrackwork, isEdit, leftOver, mirrorAnchors, reconcileTrackwork, renameAnchors } from './twfollow';
+import { type CopiedEdit, copyEdits, followTrackwork, isEdit, leftOver, mirrorAnchors, pasteEdits, reconcileTrackwork, renameAnchors } from './twfollow';
 import { type OptChoice, optionForm, type OptCtx, type OptField } from './settings';
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
@@ -1215,18 +1215,24 @@ $('othertab-keep').addEventListener('click', () => { tabs.choose('mine'); $('oth
 
 // ---------- selection: copy, cut, paste, duplicate, mirror, turn ----------
 let clipboard: DRoute[] = [];
+// (and the trackwork's hand edits between them, by the names the routes had: they go with the copies)
+let clipEdits: CopiedEdit[] = [], clipNames: string[] = [];
 const selected = () => canvas.selection().filter((i) => i < design.routes.length);
 const nextName = () => freeName(design, 'R');
 const r3 = (v: number) => Math.round(v * 1000) / 1000;
 /** Add routes (copies), moved by (dx, dy) studs, and select them. */
 function addRoutes(list: DRoute[], dx: number, dy: number) {
-  const first = design.routes.length;
-  for (const r of list) design.routes.push({ ...structuredClone(r), name: nextName(), x: r3(r.x + dx), y: r3(r.y + dy) });
+  const first = design.routes.length, names = new Map<string, string>();
+  list.forEach((r, k) => { const name = nextName(); if (list === clipboard && clipNames[k] !== undefined) names.set(clipNames[k], name); design.routes.push({ ...structuredClone(r), name, x: r3(r.x + dx), y: r3(r.y + dy) }); });
+  if (list === clipboard) pasteEdits(design, clipEdits, names, dx * 8, dy * 8);
   canvas.setSelection(list.map((_, k) => first + k));
   changed(true);
 }
-function copySel() {
+function copySel(cut = false) {
   clipboard = selected().map((i) => structuredClone(design.routes[i]));
+  clipNames = selected().map((i) => design.routes[i].name || String(i));
+  // (cut: the edits go with the routes, not left behind with nothing to be on)
+  clipEdits = copyEdits(design, clipNames, cut);
   try { void navigator.clipboard?.writeText(JSON.stringify({ btdRoutes: clipboard })); } catch { /* fine */ }
 }
 function deleteSel() {
@@ -1260,7 +1266,7 @@ function updateSelbar() {
   ($('sel-paste') as HTMLButtonElement).disabled = clipboard.length === 0;
 }
 $('sel-copy').addEventListener('click', () => { copySel(); updateSelbar(); });
-$('sel-cut').addEventListener('click', () => { copySel(); deleteSel(); updateSelbar(); });
+$('sel-cut').addEventListener('click', () => { copySel(true); deleteSel(); updateSelbar(); });
 $('sel-paste').addEventListener('click', () => { pasteClip(); updateSelbar(); });
 $('sel-dup').addEventListener('click', () => { copySel(); addRoutes(clipboard, 8, 0); updateSelbar(); });
 $('sel-mirror').addEventListener('click', mirrorSel);
@@ -1271,7 +1277,7 @@ addEventListener('keydown', (e) => {
   if (typingIn(e) || dialogOpen()) return;
   const k = e.key.toLowerCase(), mod = e.ctrlKey || e.metaKey;
   if (mod && k === 'c') { e.preventDefault(); copySel(); }
-  else if (mod && k === 'x') { e.preventDefault(); copySel(); deleteSel(); }
+  else if (mod && k === 'x') { e.preventDefault(); copySel(true); deleteSel(); }
   else if (mod && k === 'v') { e.preventDefault(); pasteClip(); }
   else if (mod && k === 'd') { e.preventDefault(); copySel(); addRoutes(clipboard, 8, 0); }
   else if (mod && k === 'a') { e.preventDefault(); canvas.setSelection(design.routes.map((_, i) => i)); }

@@ -36,7 +36,9 @@ import { BRICKTRACKS_SWITCH, BT_LEAD, type BoughtSwitch, cutOut, findBoughtSwitc
 /** An item of trackwork the hand edits apply to: a check rail, a flangeway cut, a points set. */
 export interface TrackworkItem {
   kind: 'check' | 'groove' | 'points' | 'throw'; key: string; at: [number, number]; pts: [number, number][]; off?: boolean; len?: number; toe?: number; dir?: [number, number];
-  /** points: the two routes (their ids) whose points they are; made by hand (forced); a near miss where points could be forced (cand: whether they can, and how far off it is) */
+  /** routes: the routes it's between, by their ids (a hand edit is matched to its item by them when a route's reshaped: twfollow.ts): points, the
+   * two whose points they are; a flangeway cut, the rail's route and the one whose flanges cut it; a check rail, its route and the one crossing it.
+   * Points made by hand (forced); a near miss where points could be forced (cand: whether they can, and how far off it is) */
   routes?: string[]; forced?: boolean; cand?: { ok: boolean; why: string };
   /** a lever ('throw'): its points' frame (mm, degrees), side (+1 right), the track's edge beside it and the pivot's y (in the frame), the longest tines, and its settings now */
   lever?: { frame: Pose; side: number; stockX: number; edge: number; minD: number; pivotY: number; maxTine: number; leverOffset: number; springLength: number; edited: boolean;
@@ -791,7 +793,9 @@ function solveTrackwork(w: Wasm, design: Design, o: PieceOptions, step: (what: s
   const solverOpts = { gauge, step: 0.5, flangeway: o.flangeway, checkRailLen: o.checkRailLen, checkRailW: o.checkRailW };
   step('Working out the trackwork');
   // Hand edits (design.trackwork), by where each item is.
-  const tw = design.trackwork ?? {};
+  // (without where each is on its route and what its item is (twfollow.ts's, to follow the track): the build goes by
+  // the keys alone, and what's built is kept by what it's built from)
+  const tw = Object.fromEntries(Object.entries(design.trackwork ?? {}).map(([k, g]) => [k, Object.fromEntries(Object.entries(g as Record<string, object>).map(([key, e]) => [key, Object.fromEntries(Object.entries(e).filter(([f]) => f !== 'on' && f !== 'is'))]))])) as Trackwork;
   // (points taken out: all of them at a toe, or the ones a route takes part in; points forced where a route meets another a hair off)
   const splitEdits: SplitEdits = {
     drop: (toe, [i, j]) => { const e = tw.points?.[keyOf(toe)]; return !!e && (!!e.off || !!e.drop?.some((id) => id === routes[i].id || id === routes[j].id)); },
@@ -849,7 +853,7 @@ function solveTrackwork(w: Wasm, design: Design, o: PieceOptions, step: (what: s
     const mid = railPoint(routes[gr.route], (gr.s0 + gr.s1) / 2, gr.side * g), key = keyOf(mid), e = tw.groove?.[key] ?? {};
     const d0 = Math.max(0, e.d0 ?? 0), d1 = Math.max(0, e.d1 ?? 0);
     const a0 = Math.max(0, gr.s0 - d0), a1 = Math.min(routeLength(routes[gr.route]), gr.s1 + d1);
-    items.push({ kind: 'groove', key, at: mid, len: a1 - a0, pts: along(gr.route, gr.side * g, a0, a1) });
+    items.push({ kind: 'groove', key, at: mid, len: a1 - a0, pts: along(gr.route, gr.side * g, a0, a1), routes: [routes[gr.route].id, routes[gr.by].id] });
     const head = scad0.square([3.6, o.flangewayDepth + 1]).translate([gr.side * g - 1.8, PLATE_H + 6.4 - o.flangewayDepth]);
     if (d0 > 0) grooveCuts.push(sweepRoute(scad0, head, routes[gr.route], a0, gr.s0));
     if (d1 > 0) grooveCuts.push(sweepRoute(scad0, head, routes[gr.route], gr.s1, a1));
@@ -877,13 +881,14 @@ function solveTrackwork(w: Wasm, design: Design, o: PieceOptions, step: (what: s
 }
 
 /** Apply the check rail edits to a solution's check rails (in place), noting each for the Trackwork panel. */
-function editChecks(items: TrackworkItem[], tw: Trackwork, rs: Route[], checks: CheckRail[]) {
+function editChecks(items: TrackworkItem[], tw: Trackwork, rs: Route[], checks: CheckRail[], idOf = (rt: Route) => rt.id) {
   const out = checks.flatMap((cr) => {
     const mid = railPoint(rs[cr.route], (cr.s0 + cr.s1) / 2, cr.offset + cr.width / 2), key = keyOf(mid), e = tw.check?.[key] ?? {};
-    if (e.off) { items.push({ kind: 'check', key, at: mid, pts: [], off: true, len: cr.s1 - cr.s0 }); return []; }
+    const between = [idOf(rs[cr.route]), ...(cr.by !== undefined ? [idOf(rs[cr.by])] : [])];
+    if (e.off) { items.push({ kind: 'check', key, at: mid, pts: [], off: true, len: cr.s1 - cr.s0, routes: between }); return []; }
     const m = { ...cr, s0: cr.s0 - (e.d0 ?? 0), s1: cr.s1 + (e.d1 ?? 0), offset: cr.offset - cr.side * (e.shift ?? 0) };
     const n = Math.max(2, Math.ceil(m.s1 - m.s0));
-    items.push({ kind: 'check', key, at: mid, len: m.s1 - m.s0, pts: Array.from({ length: n + 1 }, (_, k) => railPoint(rs[m.route], m.s0 + ((m.s1 - m.s0) * k) / n, m.offset + m.width / 2)) });
+    items.push({ kind: 'check', key, at: mid, len: m.s1 - m.s0, routes: between, pts: Array.from({ length: n + 1 }, (_, k) => railPoint(rs[m.route], m.s0 + ((m.s1 - m.s0) * k) / n, m.offset + m.width / 2)) });
     return [m];
   });
   checks.splice(0, checks.length, ...out);
@@ -1948,7 +1953,8 @@ function buildOne(w: Wasm, design: Design, report: (what: string, frac: number) 
   }
   const rest = network ? [] : pc.rest;
   const restSol = rest.length ? solve(rest, solverOpts) : undefined;
-  if (restSol) editChecks(items, tw, rest, restSol.checkRails);
+  // (the track that's left, each stretch named for its route and which stretch of it (pieces.ts): the route's own id)
+  if (restSol) editChecks(items, tw, rest, restSol.checkRails, (rt) => rt.id.replace(/:\d+$/, ''));
   if (!network) pc.switches.forEach((sw) => {
     sw.sets.forEach((_, k) => lever(keyOf(sw.setAts[k]), sw.pose, sw.plan.sets[k]));
     // its check rails, with the hand edits (keyed where they are in the design)

@@ -69,17 +69,20 @@ export interface Design {
 
 /** Hand edits (each also says where on its route it is, on: twfollow.ts): check rails lengthened (+) or shortened (-) at each end, moved, or taken out; flangeway cuts lengthened; points moved along, taken out or forced; levers moved. */
 export interface Trackwork {
-  check?: Record<string, { d0?: number; d1?: number; shift?: number; off?: boolean; on?: TwAnchor }>;
-  groove?: Record<string, { d0?: number; d1?: number; on?: TwAnchor }>;
+  check?: Record<string, { d0?: number; d1?: number; shift?: number; off?: boolean; on?: TwAnchor; is?: TwIdent }>;
+  groove?: Record<string, { d0?: number; d1?: number; on?: TwAnchor; is?: TwIdent }>;
   /** each points set (by its toe): moved along (mm); taken out (off: no points, both routes' rails run through as fixed track); routes
    * taken out of it (drop, by id: a three-way's branch, leaving a two-way); or forced where a route meets another a hair off (force) */
-  points?: Record<string, { toe?: number; off?: boolean; drop?: string[]; force?: boolean; on?: TwAnchor }>;
+  points?: Record<string, { toe?: number; off?: boolean; drop?: string[]; force?: boolean; on?: TwAnchor; is?: TwIdent }>;
   /** each points set's lever, moved on the plan: its side, how far out (lever offset, mm), and how far along (its tines' length, mm);
    * each: a three-way's two levers (threeWayLevers 2), the left one's and the right one's own, where they differ (each is on its own side) */
-  throw?: Record<string, { side?: 'left' | 'right'; leverOffset?: number; springLength?: number; each?: { left?: { leverOffset?: number }; right?: { leverOffset?: number } }; on?: TwAnchor }>;
+  throw?: Record<string, { side?: 'left' | 'right'; leverOffset?: number; springLength?: number; each?: { left?: { leverOffset?: number }; right?: { leverOffset?: number } }; on?: TwAnchor; is?: TwIdent }>;
 }
 /** Where on the track a hand edit is, so it follows its track when that's moved (twfollow.ts): the route by name, from its start or end, mm along, mm to the right of its centre line. The build goes by the edit's key alone. */
 export type TwAnchor = [route: string, from: 's' | 'e', along: number, right: number];
+
+/** What a hand edit's item is, so it's found again when its track is reshaped (twfollow.ts Ident): the routes it's between (by name), its side of the first (-1, 0, 1), which of the ones like it along that route, of how many. The build goes by the edit's key alone. */
+export type TwIdent = [routes: string[], side: number, nth: number, of: number];
 
 /** Piece options the editor's Options panel sets (switch.scad's Customizer settings). */
 export interface PieceOptions {
@@ -239,7 +242,9 @@ export function readDesign(v: unknown): Design {
   else delete d.options;
   // (each edit's place on its route, where it isn't one, left out: it's worked out again from where the edit is)
   const anchor = (a: unknown) => Array.isArray(a) && a.length === 4 && typeof a[0] === 'string' && (a[1] === 's' || a[1] === 'e') && fin(a[2]) && fin(a[3]);
-  if (obj(d.trackwork)) d.trackwork = Object.fromEntries(Object.entries(d.trackwork).filter(([, g]) => obj(g)).map(([k, g]) => [k, Object.fromEntries(Object.entries(g as object).filter(([, e]) => obj(e)).map(([key, e]) => [key, 'on' in e && !anchor(e.on) ? Object.fromEntries(Object.entries(e).filter(([f]) => f !== 'on')) : e]))]));
+  // (and what its item is: noted again from the build's)
+  const ident = (a: unknown) => Array.isArray(a) && a.length === 4 && Array.isArray(a[0]) && a[0].length > 0 && a[0].every((n) => typeof n === 'string') && fin(a[1]) && fin(a[2]) && fin(a[3]);
+  if (obj(d.trackwork)) d.trackwork = Object.fromEntries(Object.entries(d.trackwork).filter(([, g]) => obj(g)).map(([k, g]) => [k, Object.fromEntries(Object.entries(g as object).filter(([, e]) => obj(e)).map(([key, e]) => [key, Object.fromEntries(Object.entries(e).filter(([f, x]) => (f !== 'on' || anchor(x)) && (f !== 'is' || ident(x))))]))]));
   else delete d.trackwork;
   if (Array.isArray(d.tables)) {
     // (a table with no shape, where its numbers say what it is: that shape; else left out, tables.ts tableOf)

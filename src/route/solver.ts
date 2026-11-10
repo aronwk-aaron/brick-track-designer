@@ -33,7 +33,7 @@ export interface Crossing { a: RailRef; b: RailRef; point: Pt; angle: number }
 export interface Groove { route: number; side: Side; s0: number; s1: number; by: number }
 
 /** A check rail inside a route's rail (side), over [s0, s1]: its edges at offset and offset + width from the centre line. */
-export interface CheckRail { route: number; side: Side; s0: number; s1: number; offset: number; width: number }
+export interface CheckRail { route: number; side: Side; s0: number; s1: number; offset: number; width: number; /** the route crossing it there (the first, where it serves more than one crossing) */ by?: number }
 
 /** Two routes that leave a shared stretch: points up to where they part. */
 /** Two routes that run together and part: the points' stretch, as arc lengths along each ([a, b] = routes). */
@@ -306,7 +306,7 @@ export function solve(routes: Route[], opts: Partial<SolverOptions> = {}, edits:
   };
   for (const c of crossings) {
     if (c.angle >= o.checkAngle) continue;
-    for (const ref of [c.a, c.b]) {
+    for (const [ref, other] of [[c.a, c.b], [c.b, c.a]]) {
       const span: [number, number] = ref.side < 0
         ? [g - o.headHw - o.flangeway - o.checkRailW, g - o.headHw - o.flangeway]
         : [-g + o.headHw + o.flangeway, -g + o.headHw + o.flangeway + o.checkRailW];
@@ -316,7 +316,7 @@ export function solve(routes: Route[], opts: Partial<SolverOptions> = {}, edits:
         return d;
       };
       const a = reach(-1), b = reach(+1);
-      if (a + b >= 12) raw.push({ route: ref.route, side: (-ref.side) as Side, s0: ref.s - a, s1: ref.s + b, offset: span[0], width: o.checkRailW });
+      if (a + b >= 12) raw.push({ route: ref.route, side: (-ref.side) as Side, s0: ref.s - a, s1: ref.s + b, offset: span[0], width: o.checkRailW, by: other.route });
     }
   }
   const checkRails: CheckRail[] = [];
