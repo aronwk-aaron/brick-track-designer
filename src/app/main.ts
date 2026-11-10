@@ -1075,6 +1075,7 @@ radiusSel.after(systemSel);
 const canvas = new TrackCanvas($<HTMLCanvasElement>('track'), {
   design: () => design,
   changed: (commit) => changed(commit, commit), // (one undo step per finished action, none for each mouse move)
+  live: () => render(), // (a handle being dragged: the route's card shows its numbers as they change)
   select: () => { render(); updateSelbar(); },
   radius: () => Number(radiusSel.value),
   system: () => (systemSel.value === 'monorail' ? 'monorail' : 'train'),
