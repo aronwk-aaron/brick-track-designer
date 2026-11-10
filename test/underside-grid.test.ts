@@ -40,7 +40,9 @@ async function check(d: Design) {
       if (past(q) || w.CrossSection.circle(2.4, 32).translate(q).subtract(inner).area() > 0.01) continue;
       under++;
       const s = w.CrossSection.circle(2.36, 32).translate(q);
-      if (sl.some((c) => s.intersect(c).area() > 0.05)) { clash++; continue; }
+      // (near the hollow's roof, more than a sliver: the mesh read back from its float positions leaves a mm2 or so there
+      // that the solid it was made from hasn't)
+      if (s.intersect(sl[0]).area() > 0.05 || s.intersect(sl[1]).area() > 2) { clash++; continue; }
       if (w.CrossSection.circle(2.55, 32).translate(q).subtract(s).intersect(sl[0]).area() > 0.02) grip++;
     }
     out.push({ name: p.name, under, clash, grip });

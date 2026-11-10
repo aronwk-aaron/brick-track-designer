@@ -596,9 +596,6 @@ export function crossingPiece(s: Scad, routes: Route[], o: CrossingOptions = CRO
     cuts.push(T(s.extrude(hollow, cavH), [0, 0, -0.01]));
   }
   for (const { i, j, x, y } of spots) if (!deep(i, j) && !inConn([x, y])) cuts.push(socket(x, y));
-  // (and room for every stud of the grid, whatever's added round the points reaching down into the hollow there (the
-  // points' bed and its pockets' walls, on a set's frame): a stud's own place kept clear, short of the tubes beside it)
-  cuts.push(T(s.extrude(s.w.CrossSection.union(spots.map(({ x, y }) => s.w.CrossSection.circle(o.studD / 2, 24).translate([x, y]))), cavH), [0, 0, -0.01]));
   if (connCut) cuts.push(connCut);
   return s.difference(body, [...roofed(cuts), ...(x.cuts ?? [])]);
 
