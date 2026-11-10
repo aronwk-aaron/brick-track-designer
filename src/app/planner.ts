@@ -25,20 +25,49 @@ function arcEnd(p: Pose, r: number, angle: number): Pose {
 /** LEGO and common third-party radii, in studs, for the planner's auto mode. */
 export const RADII = [24, 32, 40, 48, 56, 64, 72, 88, 104, 120];
 
-/**
- * Plan from p to t trying every radius in radii (auto mode): the path where
- * the curve does most of the work (least straight before and after it),
- * preferring the bigger radius on a tie.
- */
-export function planAuto(p: Pose, t: [number, number], radii = RADII, maxTurn = 90): DSeg[] | undefined {
+/** Is any straight in segs shorter than a stud (but not zero)? A sliver like that can't be a track. */
+const hasSliver = (segs: DSeg[]) => segs.some((sg) => sg.kind === 'straight' && sg.studs > 1e-6 && sg.studs < 1 - 1e-6);
+
+/** How far the auto planner will move the pointer's target to get rid of a sliver straight, studs. */
+export const SNAP_REACH = 2;
+
+function autoBest(p: Pose, t: [number, number], radii: number[], maxTurn: number, noSliver: boolean): DSeg[] | undefined {
   let best: { segs: DSeg[]; straight: number; r: number } | undefined;
   for (const r of radii) {
-    const segs = plan(p, t, r, maxTurn);
+    const segs = plan(p, t, r, maxTurn, noSliver);
     if (!segs) continue;
     const straight = segs.reduce((a, sg) => a + (sg.kind === 'straight' ? sg.studs : 0), 0);
     if (!best || straight < best.straight - 0.5 || (Math.abs(straight - best.straight) <= 0.5 && r > best.r)) best = { segs, straight, r };
   }
   return best?.segs;
+}
+
+/**
+ * Plan from p to t trying every radius in radii (auto mode): the path where
+ * the curve does most of the work (least straight before and after it),
+ * preferring the bigger radius on a tie. Never a straight shorter than a
+ * stud (unless there's none): a candidate without one wins even if it has
+ * more straight; if no plan to t is free of one, the plan to the nearest
+ * point within SNAP_REACH studs of t that is (so the track ends there), and
+ * failing that the plan to t as it is.
+ */
+export function planAuto(p: Pose, t: [number, number], radii = RADII, maxTurn = 90): DSeg[] | undefined {
+  const plain = autoBest(p, t, radii, maxTurn, false);
+  if (!plain || !hasSliver(plain)) return plain;
+  const clean = autoBest(p, t, radii, maxTurn, true);
+  if (clean) return clean;
+  const near: [number, number, number][] = [];
+  for (let i = -SNAP_REACH * 4; i <= SNAP_REACH * 4; i++)
+    for (let j = -SNAP_REACH * 4; j <= SNAP_REACH * 4; j++) {
+      const d = Math.hypot(i, j) / 4;
+      if (d > 0 && d <= SNAP_REACH + 1e-9) near.push([t[0] + i / 4, t[1] + j / 4, d]);
+    }
+  near.sort((u, v) => u[2] - v[2]);
+  for (const [x, y] of near) {
+    const segs = autoBest(p, [x, y], radii, maxTurn, true);
+    if (segs) return segs;
+  }
+  return plain;
 }
 
 /**
@@ -202,15 +231,16 @@ const fmt = (v: number) => String(Math.round(v * 100) / 100);
 /**
  * Plan from pose p to target t: [lead straight, curve, tail straight],
  * dropping empty pieces. radius in studs. Returns undefined when t can't be
- * reached going forward (behind the start, say).
+ * reached going forward (behind the start, say). noSliver: skip turns that
+ * leave a straight shorter than a stud.
  */
-export function plan(p: Pose, t: [number, number], radius: number, maxTurn = 90): DSeg[] | undefined {
+export function plan(p: Pose, t: [number, number], radius: number, maxTurn = 90, noSliver = false): DSeg[] | undefined {
   const d0 = dir(p.heading);
   const vx = t[0] - p.x, vy = t[1] - p.y;
   const ahead = vx * d0[0] + vy * d0[1], side = vx * d0[1] - vy * d0[0]; // side: + = right
   if (ahead <= 1e-6) return undefined;
   // Straight on, if the target is on the line.
-  if (Math.abs(side) < 1e-6) return [{ kind: 'straight', studs: round(ahead) }];
+  if (Math.abs(side) < 1e-6) return noSliver && ahead < 1 - 1e-6 ? undefined : [{ kind: 'straight', studs: round(ahead) }];
   let best: { segs: DSeg[]; len: number } | undefined;
   for (let k = 1; k * STEP <= maxTurn + 1e-9; k++)
     for (const sn of [1, -1]) {
@@ -223,6 +253,7 @@ export function plan(p: Pose, t: [number, number], radius: number, maxTurn = 90)
       if (Math.abs(det) < 1e-9) continue;
       const a = (rx * d1[1] - ry * d1[0]) / det, b = (d0[0] * ry - d0[1] * rx) / det;
       if (a < -1e-6 || b < -1e-6) continue;
+      if (noSliver && ((a > 1e-6 && a < 1 - 1e-6) || (b > 1e-6 && b < 1 - 1e-6))) continue;
       const len = a + b + (Math.abs(turn) * Math.PI * radius) / 180;
       if (!best || len < best.len)
         best = { len, segs: [

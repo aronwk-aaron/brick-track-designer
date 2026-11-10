@@ -54,3 +54,35 @@ describe('free planning turns back for points behind', () => {
     for (const sg of planAnyway({ x: 0, y: 0, heading: 0 }, [-10, -40])) if (sg.kind === 'curve') expect(Math.abs(sg.angle)).toBeLessThanOrEqual(180);
   });
 });
+
+import { planAuto, plan as planOne, RADII } from '../src/app/planner';
+describe('auto planner lays no sliver straights', () => {
+  const p = { x: 0, y: 0, heading: 0 };
+  const slivers = (segs: { kind: string; studs?: number }[]) => segs.filter((sg) => sg.kind === 'straight' && sg.studs! > 1e-6 && sg.studs! < 1 - 1e-6);
+  const cleanExists = (t: [number, number]) => RADII.some((r) => planOne(p, t, r, 90, true));
+  it('a sweep of targets on a grid', () => {
+    let swept = 0;
+    for (let x = -120; x <= 120; x += 3)
+      for (let y = 4; y <= 140; y += 3) {
+        const segs = planAuto(p, [x, y]);
+        if (!segs || !cleanExists([x, y])) continue;
+        swept++;
+        expect(slivers(segs), `target ${x},${y}`).toEqual([]);
+      }
+    expect(swept).toBeGreaterThan(200);
+  });
+  it('snaps a target that has no clean plan to one that does, within 2 studs', () => {
+    let snapped = 0;
+    for (let x = -100; x <= 100; x += 1.5)
+      for (let y = 10; y <= 120; y += 1.5) {
+        const segs = planAuto(p, [x, y]);
+        if (!segs) continue;
+        const e = follow(p, segs);
+        if (cleanExists([x, y]) || Math.hypot(e.x - x, e.y - y) < 1e-3) continue;
+        snapped++;
+        expect(Math.hypot(e.x - x, e.y - y)).toBeLessThanOrEqual(2 + 1e-6);
+        expect(slivers(segs)).toEqual([]);
+      }
+    expect(snapped).toBeGreaterThan(0);
+  });
+});
