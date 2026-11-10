@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { Route } from '../src/route/route';
 import { solve } from '../src/route/solver';
+import { planCuts } from '../src/app/tiles';
 
 const straight = (len: number): Route => ({ id: 'S', start: [0, 0, 0], segments: [{ kind: 'straight', length: len }] });
 
@@ -39,6 +40,27 @@ describe('crossings', () => {
     // every rail is grooved where the other track's flanges cross it
     expect(sol.grooves.length).toBeGreaterThanOrEqual(8);
     expect(sol.splits).toHaveLength(0);
+  });
+  it('four tracks through one point at 0, 90 and 45 degrees either way (a saved eight-way crossing): no check rails', () => {
+    // (as the app saved it: the slanted tracks' lengths to six places, so their rails cross the others' a millionth
+    // of a degree either side of 45: two of the 24 rail crossings got check rails, on one track's side only.)
+    const mk = (id: string, x: number, y: number, h: number, studs: number): Route => ({ id, start: [x * 8, y * 8, h], segments: [{ kind: 'straight', length: studs * 8 }] });
+    const sol = solve([mk('A', 0, -16, 0, 32), mk('B', 16, 0, 90, 32), mk('T3', -12, 12, -135, 33.941126), mk('T4', -12, -12, -45, 33.941125)]);
+    expect(sol.crossings).toHaveLength(24);
+    expect(sol.checkRails).toHaveLength(0);
+  });
+  it('a baseplate edge at a track\'s very end is no cut: nor one a few studs short of it; one in its middle is', () => {
+    // (a 64-stud straight from y 0, 64-stud baseplates from 0: the edges at 0 and 512 are its ends, the box round it
+    // (its connectors, 56 mm more) reaches past them)
+    const rt: Route = { id: 'S', start: [0, 0, 0], segments: [{ kind: 'straight', length: 512 }] };
+    const box = (r: Route, y0: number, y1: number): [number, number, number, number] => [r.start[0] - 56, y0 - 56, r.start[0] + 56, y1 + 56];
+    // (but for the cuts across the plate, which is bigger than the bed)
+    const ends = planCuts(box(rt, 0, 512), 256, 256, 512, 0, 0, [], [rt], 44).ys;
+    expect(ends).not.toContain(0);
+    expect(ends).not.toContain(512);
+    // (the plates from 24 mm on: the edge at 24 would leave 24 mm of track, and is no cut; from 256 on, it's one)
+    expect(planCuts(box(rt, 0, 512), 256, 256, 512, 0, 24, [], [rt], 44).ys).not.toContain(24);
+    expect(planCuts(box(rt, 0, 512), 256, 256, 512, 0, 256, [], [rt], 44).ys).toContain(256);
   });
   it('22.5 degree crossing: four crossings, check rails at the sharp ones', () => {
     const a: Route = { id: 'A', start: [0, -128, 0], segments: [{ kind: 'straight', length: 256 }] };

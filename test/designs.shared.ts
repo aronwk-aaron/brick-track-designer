@@ -21,8 +21,6 @@ export const saved = (file: string) => readDesign(JSON.parse(readFileSync(`${DIR
 export const KNOWN_SAVED: Record<string, Known & { warnings?: RegExp[] }> = {
   'R136-152_corner.btd.json': { problems: [/^track13 and track14 overlap/],
     why: 'two neighbouring pieces of the two curves (R136 and R152, on ballast with a buddy strip, cut at the 32-stud baseplate edges) share 5.75 mm3 at 721, 852: a sliver 6.7 x 1.6 x 2.3 mm where their ballast meets' },
-  '128s-112x.btd(2).json': { problems: [/^track7 is in 2 pieces/],
-    why: 'the 64-stud baseplate edge at y 0 cuts the track ends\' last 7 mm off as parts of their own (track7, track8 and two more: strips 88 x 7 and 64 x 6 mm, 200 to 270 mm3 each), one of them in two pieces' },
   'return-loop-turning-left.btd.json': { problems: [/^points2-lever isn't held by its ears/],
     warnings: [/sprung blades are on thinner plates/],
     why: 'the second points\' lever isn\'t held by its ears (the points lie at an angle to the baseplate grid, on the thinner plates the build warns of)' },

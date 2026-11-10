@@ -33,6 +33,12 @@ const RAIL_CLEAR = 9;
 const AXLE_GAP = 80, AXLE_GAP_PATH = 64;
 /** At most this many axles across a cut. */
 const MAX_AXLES = 6;
+/**
+ * (mm2) A piece of rail head a cut leaves standing at its edge, smaller than this in plan (3 mm of rail), is a nub: taken
+ * off (nubless). Where a cut runs through the middle of a crossing of several tracks, the bit of rail left between two
+ * flangeways (a few mm long) is cut in two, each half a wedge 1 to 3.5 mm long at the part's very edge.
+ */
+const NUB_AREA = 7.5;
 /** (mm) No rail-end tongue joint this near one an earlier cut made (jointsNear): each reaches 4.4 along its rail, its column 5.7. */
 const JOINT_GAP = 12;
 
@@ -351,8 +357,23 @@ export function cutPiece(s: Scad, t: Track, body: Man, routes: Route[], lines: C
     const m = r.m, bb = m.boundingBox(), near = removals.filter(({ bb: q }) => q.min[0] <= bb.max[0] && q.max[0] >= bb.min[0] && q.min[1] <= bb.max[1] && q.max[1] >= bb.min[1]).map(({ m: q }) => q);
     return near.length ? s.difference(m, near) : m;
   });
+  // (the rail tops: a nub at a cut's edge is taken off down to the flangeways' floor, the rail left running through
+  // under it as it does along the flangeways either side)
+  const railTop = PLATE_H + 6.4, zHead = railTop - 0.5, zFloor = railTop - (t.o.flangewayDepth ?? 3);
+  const straight = frames.filter((f) => !f.L.comb);
+  const nubless = (cell: Man) => {
+    if (!straight.length || cell.boundingBox().max[2] < zHead) return cell;
+    const nubs = cell.slice(zHead).decompose().filter((q) => {
+      if (q.area() >= NUB_AREA || q.area() < 0.01) return false;
+      const b = q.bounds(), cs: [number, number][] = [[b.min[0], b.min[1]], [b.max[0], b.min[1]], [b.min[0], b.max[1]], [b.max[0], b.max[1]]];
+      // (at a cut's edge: its box reaches the line)
+      return straight.some((f) => { const vs = cs.map((p) => f.toLocal(p)[1]); return Math.min(...vs.map(Math.abs)) < 0.3 || Math.min(...vs) * Math.max(...vs) < 0; });
+    });
+    return nubs.length ? s.difference(cell, nubs.map((q) => T(s.extrude(q.offset(0.05, 'Miter', 4), railTop + 2 - zFloor), [0, 0, zFloor]))) : cell;
+  };
   const cells: Man[] = [];
-  for (const cell of parts) {
+  for (const cell0 of parts) {
+    const cell = nubless(cell0);
     // which side of each line the cell is on (from a point of it off the line), and its joints on the lines it meets
     const mesh = cell.getMesh(), vp = mesh.vertProperties, np = mesh.numProp;
     const sideOf = (f: typeof frames[number]) => {

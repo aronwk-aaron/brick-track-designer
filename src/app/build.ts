@@ -2118,7 +2118,7 @@ function buildOne(w: Wasm, design: Design, report: (what: string, frac: number) 
   const network = sol.splits.length > 0 && (sol.splits.some((sp) => sp.merge) || pc.warnings.some((w2) => !/print bed/.test(w2))
     || sol.crossings.some((c) => groupOf(c.a.route) !== groupOf(c.b.route)) || bufOnSwitch || extraOnSwitch || ownGaugeSwitch);
   const bedWarnings = new Set<string>();
-  const track = new Track(scad, { ...TRACK_DEFAULTS, gaugeStuds: design.gaugeStuds, studFit: o.studFit, antistudFit: o.antistudFit, sleeperWidthStuds: o.sleeperWidthStuds, axleStuds: o.axleStuds, ...(o.tongueRails === 'square' && { tongueMaxAngle: 12 }) });
+  const track = new Track(scad, { ...TRACK_DEFAULTS, gaugeStuds: design.gaugeStuds, studFit: o.studFit, antistudFit: o.antistudFit, sleeperWidthStuds: o.sleeperWidthStuds, axleStuds: o.axleStuds, flangewayDepth: o.flangewayDepth, ...(o.tongueRails === 'square' && { tongueMaxAngle: 12 }) });
   {
     const spots = tracksOverEachOther(routes, sol, track.c.sleeperLen), gap = track.c.sleeperLen;
     for (const q of spots) overlay.issues.push({ at: [q[0], q[1]], r: 2 * gap, text: 'Tracks run over each other here: trains on them would hit' });

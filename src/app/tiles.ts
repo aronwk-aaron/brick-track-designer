@@ -177,7 +177,19 @@ export function planCuts(b: Rect, bedX: number, bedY: number, bp: number, ox: nu
       if (ev) out.push(...ev); else for (const d of sub.slice(1)) add(out, e + d, axis, false, lo0, hi0);
     }
   }
-  return { xs: spaced(xs, b[0], b[2], edges), ys: spaced(ys, b[1], b[3], edges), why: 'baseplate', edges };
+  // (no sliver of track: a cut leaves MIN_PART of track bed either side of it, measured to where the track itself ends,
+  // not the box round it, which has the end connectors' pegs and clips and the levers in it. A track ending on a
+  // baseplate's edge had its connectors' last 7 mm cut off there as parts of their own; one ending a few studs past
+  // an edge stays whole over it)
+  const tb = [...b] as Rect;
+  if (samples.length) {
+    tb[0] = tb[1] = Infinity; tb[2] = tb[3] = -Infinity;
+    for (const p of samples) {
+      const ex = half * Math.abs(Math.cos((p[2] * Math.PI) / 180)), ey = half * Math.abs(Math.sin((p[2] * Math.PI) / 180));
+      tb[0] = Math.min(tb[0], p[0] - ex); tb[2] = Math.max(tb[2], p[0] + ex); tb[1] = Math.min(tb[1], p[1] - ey); tb[3] = Math.max(tb[3], p[1] + ey);
+    }
+  }
+  return { xs: spaced(xs, tb[0], tb[2], edges), ys: spaced(ys, tb[1], tb[3], edges), why: 'baseplate', edges };
 }
 
 /**

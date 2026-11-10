@@ -452,9 +452,13 @@ export function crossingPiece(s: Scad, routes: Route[], o: CrossingOptions = CRO
       if (bufPoses.some(({ e, t: tb }) => inBufferPost(tb, worldToPose(e, q), c.postD / 2 + 0.6, (o.buffer ?? BUFFER_DEFAULTS).style ?? 'frame'))) continue;
       // (and of the check rails)
       if (sol.checkRails.some((cr) => {
-        const rt = routes[cr.route], lat = routeLat(rt, q), mid = cr.offset + cr.width / 2;
-        if (Math.abs(lat - mid) > c.postD / 2 + cr.width / 2 + 0.6) return false;
-        const sq2 = routeSOf(rt, q); return sq2 >= cr.s0 - 3 && sq2 <= cr.s1 + 3;
+        const rt = routes[cr.route], lat = routeLat(rt, q), mid = cr.offset + cr.width / 2, near = c.postD / 2 + cr.width / 2 + 0.6;
+        // (and of its flared ends, which lean away from the rail it guards by the flare: a stud beside one was sliced by it)
+        const flared = o.checkRailFlare ?? 1.5, away = -cr.side * (lat - mid);
+        if (Math.abs(lat - mid) > near && !(away > 0 && away <= near + flared)) return false;
+        const sq2 = routeSOf(rt, q);
+        if (Math.abs(lat - mid) > near) return (sq2 >= cr.s0 - 3 && sq2 <= cr.s0 + 4 + 3) || (sq2 >= cr.s1 - 4 - 3 && sq2 <= cr.s1 + 3);
+        return sq2 >= cr.s0 - 3 && sq2 <= cr.s1 + 3;
       })) continue;
       studPts.push(q);
     }

@@ -81,6 +81,8 @@ export interface Solution {
 }
 
 const sides: Side[] = [-1, 1];
+/** (degrees) A crossing of two tracks at checkAngle to within this is not sharper than it: no check rails. */
+const CHECK_ANGLE_TOL = 0.01;
 
 /** How far off the other route's heading a route may start (or end) on it and still make points, degrees: a branch drawn a hair off true (0.2 degrees, say) is meant as a switch, not a crossing. */
 const SPLIT_ANGLE = 0.5;
@@ -350,7 +352,11 @@ export function solve(routes: Route[], opts: Partial<SolverOptions> = {}, edits:
     return routes.every((_, j) => j === r || pts.every((q) => !inBox(j, q)) || pts.every((q) => sides.every((sd) => Math.abs(routeLat(routes[j], q) - sd * gs[j]) >= o.headHw + 0.3)));
   };
   for (const c of crossings) {
-    if (c.angle >= o.checkAngle) continue;
+    // (sharper by more than a hair: tracks drawn to cross at the angle itself came out a millionth of a degree either
+    // side of it, and two of an eight-way crossing's 24 rail crossings got check rails, the rest none. But the frog of
+    // points whose routes part at the angle itself (a wye of R24 curves: 45 degrees) is guarded, as switch.scad's is)
+    const frog = splits.some((sp) => sp.routes.includes(c.a.route) && sp.routes.includes(c.b.route));
+    if (c.angle >= o.checkAngle - (frog ? 0 : CHECK_ANGLE_TOL)) continue;
     for (const [ref, other] of [[c.a, c.b], [c.b, c.a]]) {
       const g = gs[ref.route];
       const span: [number, number] = ref.side < 0

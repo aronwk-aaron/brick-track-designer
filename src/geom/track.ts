@@ -35,6 +35,8 @@ export interface TrackOptions {
   antistudFit?: number;
   /** (cuts) only rails crossing a cut within this angle of square get tongues, the others cut flat (plate-style large switches); unset: every rail */
   tongueMaxAngle?: number;
+  /** (mm) how deep the flangeways are cut below the rail tops (3): for the cutter, which takes a nub of rail at a cut down to their floor */
+  flangewayDepth?: number;
 }
 
 export const DEFAULTS: TrackOptions = {

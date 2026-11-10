@@ -6,6 +6,8 @@
 // 4. joints mate: any two track parts that touch can be drawn apart some straight way, and so brought together (mates);
 // 5. every printed part prints: its file fits the print bed, lies on it (z 0) and is one solid (but for its break-out supports) (prints).
 // 6. every part's name is its own (its file's name in the zip).
+// 8. the rails are sound (railFaults): no nub of rail head standing on a part, no stud run into by a rail or a check
+//    rail, no check rail with no bed under it.
 // (Rebuilt from a piece's triangles a solid can have slivers the kernel's own didn't: hence a small volume, not none.)
 // What isn't checked: track parts going down onto a baseplate's studs; axle joints' holes lining up (no template has
 // them). (An over-centre spring going on over its pins and bending as the slider moves: nail-switch.test.ts.)
@@ -225,6 +227,82 @@ export function prints(w: Wasm, p: Piece, bedX: number, bedY: number) {
   return out;
 }
 
+/** (mm) The rail tops, the bed's top (a plate), and a stud's middle, on track that isn't raised. */
+const RAIL_TOP = 9.6, BED_TOP = 3.2, STUD_MID = 4.2;
+/**
+ * (mm2, mm) A piece of rail head smaller than this in plan (3 mm of rail) and no longer than this is a nub: too small to
+ * carry a wheel or to stay on (cutter.ts NUB_AREA). (A rail-end tongue at a cut is half a rail wide and 8 long: not one.)
+ */
+export const NUB = 7.5, NUB_LONG = 4;
+/** (mm3) A part of track smaller than this is a sliver: a cut left it (a 2 x 2-stud bit of bed a plate thick is 820). */
+export const SLIVER_PART = 1000;
+/** (mm) A check rail may run this far with no bed under it: a gap between sleepers (2 studs) crossed at a slant, its end a little past the last one. */
+const UNHELD = 24;
+/** A printed part with track on it (not raised: its heights are the bed's). */
+const hasTrack = (p: Piece) => !p.lego && !p.lift && !isMoving(p.name) && /^track(?!-support)|-base\d*$|^base/.test(p.name);
+/**
+ * 8. The rails are sound, a part at a time:
+ * - no sliver: the part itself is SLIVER_PART at least (a track's last few mm, cut off at a baseplate's edge);
+ * - no nub: at the rail heads' height nothing stands smaller than NUB in plan and shorter than NUB_LONG (a bit of
+ *   rail between two flangeways, cut in two by a cut through a crossing's middle); but a lever's ears, which are that small;
+ * - no stud run into: a stud on the bed (round, whole, at its middle's height) has nothing within 0.25 mm of its side
+ *   (a rail's foot is 0.3 clear of it at least; a check rail's flared end stood in one);
+ * - no check rail off the bed: where one of the build's check rails (checks: each one's line, mm) is in the part, the
+ *   part's bed or a sleeper is under it, but for a gap between sleepers (UNHELD).
+ * (A stud a flangeway or a cut took a bite out of isn't found: only whole ones are looked at.)
+ */
+export function railFaults(w: Wasm, pieces: Piece[], checks: [number, number][][] = []) {
+  const out: string[] = [];
+  const boxOf = (p: Piece) => { const lo = [Infinity, Infinity], hi = [-Infinity, -Infinity]; for (let k = 0; k < p.positions.length; k += 3) for (const j of [0, 1]) { lo[j] = Math.min(lo[j], p.positions[k + j]); hi[j] = Math.max(hi[j], p.positions[k + j]); } return { min: lo, max: hi }; };
+  const levers = pieces.filter((p) => p.hinge).map(boxOf);
+  // (a part's solid at a time, let go after: a big layout's all at once ran the kernel out of memory)
+  for (const p of pieces) if (hasTrack(p)) arena(w, () => {
+    const m = solid(w, p.positions);
+    if (!m) return;
+    if (m.volume() < SLIVER_PART) out.push(`${p.name} is a sliver: ${m.volume().toFixed(0)} mm3 ${where(m)}`);
+    const bb = m.boundingBox(), at = (b: { min: ArrayLike<number>; max: ArrayLike<number> }) => `${((b.min[0] + b.max[0]) / 2).toFixed(1)}, ${((b.min[1] + b.max[1]) / 2).toFixed(1)}`;
+    if (bb.max[2] > RAIL_TOP - 0.5 && bb.min[2] < BED_TOP) {
+      const nubs = m.slice(RAIL_TOP - 0.5).decompose().filter((q) => {
+        if (q.area() <= 0.05 || q.area() >= NUB) return false;
+        const b = q.bounds();
+        if (Math.max(b.max[0] - b.min[0], b.max[1] - b.min[1]) >= NUB_LONG) return false;
+        return !levers.some((l) => b.max[0] > l.min[0] - 3 && b.min[0] < l.max[0] + 3 && b.max[1] > l.min[1] - 3 && b.min[1] < l.max[1] + 3);
+      });
+      for (const q of nubs.slice(0, 4)) { const b = q.bounds(); out.push(`${p.name} has a nub of rail ${q.area().toFixed(1)} mm2 (${(b.max[0] - b.min[0]).toFixed(1)} x ${(b.max[1] - b.min[1]).toFixed(1)}) at ${at(b)}${nubs.length > 4 ? ` (and ${nubs.length - 4} more)` : ''}`); if (nubs.length > 4) break; }
+    }
+    if (bb.max[2] > STUD_MID && bb.min[2] < BED_TOP) {
+      const sl = m.slice(STUD_MID), over = m.slice(STUD_MID + 1.6), round = sl.offset(-2, 'Round', 2, 32).offset(2, 'Round', 2, 32).decompose();
+      let n = 0;
+      for (const q of round) {
+        const b = q.bounds(), dx = b.max[0] - b.min[0], dy = b.max[1] - b.min[1], r = (dx + dy) / 4;
+        // (a stud: round, 4 to 5.5 across)
+        if (Math.abs(dx - dy) > 0.1 || r < 2 || r > 2.75 || Math.abs(q.area() - Math.PI * r * r) > 0.5) continue;
+        // (and no higher than one: where several rails' feet cross they make a round of that size too, rail above it)
+        if (q.intersect(over).area() > q.area() / 2) continue;
+        const c: [number, number] = [(b.min[0] + b.max[0]) / 2, (b.min[1] + b.max[1]) / 2];
+        const ring = w.CrossSection.circle(r + 0.25, 48).subtract(w.CrossSection.circle(r + 0.05, 48)).translate(c), a = ring.intersect(sl).area();
+        if (a > 0.1 && n++ < 4) out.push(`${p.name}'s stud at ${at(b)} is run into: ${a.toFixed(2)} mm2 of something within 0.25 mm of its side`);
+      }
+      if (n > 4) out.push(`${p.name}: ${n - 4} more studs run into`);
+    }
+    const mine = checks.map((line) => line.filter((q) => q[0] > bb.min[0] && q[0] < bb.max[0] && q[1] > bb.min[1] && q[1] < bb.max[1])).filter((l) => l.length);
+    if (mine.length && bb.min[2] < BED_TOP - 0.3) {
+      const rail = m.slice(BED_TOP + 2), bed = m.slice(BED_TOP - 0.3), spot = (q: [number, number], sl: typeof rail) => w.CrossSection.square([0.4, 0.4], true).translate(q).intersect(sl).area();
+      for (const line of mine) {
+        // (the longest run of it with rail and no bed: over a gap between sleepers it's carried as the running rails are)
+        let run = 0, worst = 0, at2 = line[0];
+        for (let k = 0; k < line.length; k++) {
+          const off = spot(line[k], rail) > 0.1 && spot(line[k], bed) < 0.1;
+          run = off ? run + (k ? Math.hypot(line[k][0] - line[k - 1][0], line[k][1] - line[k - 1][1]) : 0) : 0;
+          if (run > worst) { worst = run; at2 = line[k]; }
+        }
+        if (worst > UNHELD) out.push(`${p.name}'s check rail has no bed under it for ${worst.toFixed(0)} mm, to ${at2.map((v) => v.toFixed(1)).join(', ')}`);
+      }
+    }
+  }, () => []);
+  return out;
+}
+
 /** (triangles) More than this in a build and it's checked a strip at a time: all of a big layout's solids at once ran the kernel out of memory. */
 const AT_ONCE = 1.5e6;
 /** (mm) What's loaded round a strip: everything near enough to touch what's in it, as it moves or goes in. */
@@ -288,6 +366,19 @@ export const KNOWN: Record<string, Known> = {
     why: 'its four sections are cut across only, each three tracks wide (320 to 368 mm): between the tracks the crossovers\' diamonds fill the gap from rail to rail, so no cut runs along it clear of a frog. The reference cuts its middle sections along the track centre lines (clear of every rail from 28 to 52 studs along, 20 mm from the three-ways\' frogs): a cut the cutter doesn\'t make yet' },
 };
 
+/** The kinds of rail fault (railFaults) a design may be known for. */
+const RAIL_KINDS = { nub: /has a nub of rail/, stud: /stud at .* is run into|more studs run into/, sliver: /is a sliver/, check: /check rail has no bed under it/ };
+/**
+ * 8. The rail faults known, by template or saved design, as found when the checks were written; each must still be
+ * found, so the list comes down. nub: bits of rail head a few mm2 between flangeways or at blades' heels (double and
+ * single slips, 0.2 to 5.7 mm2; a 45 degree crossing cut across its middle, 5.7); stud: a stud with a rail's foot or
+ * a wing rail within 0.25 mm of its side (the wyes' two studs at the toe, 0.2 to 0.4 mm2; the slips' and the R56
+ * crossovers', 0.7 to 1.3); sliver: a part of track under 1000 mm3 (the yards' ladders: 608 to 884 mm3); check: a
+ * check rail with no bed or sleeper under it for 26 mm (the R72 pass-through crossings', at 64, -52).
+ * ('the double slip as nail switches': nail-switch.test.ts's, the 22.5 degree double slip.)
+ */
+export const RAIL_KNOWN: Record<string, (keyof typeof RAIL_KINDS)[]> = { 'Double crossover (R56)': ['stud'], 'Double slip (22.5°)': ['nub'], 'the double slip as nail switches': ['nub'], 'Double slip (45°, R40)': ['nub', 'stud'], 'Double slip R40 45°': ['nub', 'stud'], 'Dual gauge crossing 45°': ['nub'], 'Narrow-gauge wye R36': ['stud'], 'Pass-through crossing R72 (A) left': ['check'], 'Pass-through crossing R72 (A) right': ['check'], 'Single slip R40 45°': ['nub', 'stud'], 'Wye R40': ['stud'], 'Wye R40 left, R56 right': ['stud'], 'Wye R40, 8-stud spacing': ['stud'], 'Wye R56 left, R40 right': ['stud'], 'X yard (6 tracks, single slips)': ['nub'], 'Yard (R56)': ['nub', 'stud', 'sliver'], 'Yard ladder (R40)': ['nub', 'sliver'], 'monster-switch-6-tracks-double-slips.btd.json': ['nub'], 'monster-switch-6-tracks.btd.json': ['nub'], 'return-loop-turning-left.btd.json': ['nub'], 'return-loop-turning-right.btd.json': ['nub'] };
+
 /**
  * 7. Edges shared by more than two triangles in the printed parts' files (assembly.shared.ts sharedEdges), a template's
  * in all: no more than these, and no more than EDGES_FEW where it isn't here. Two kinds are put right (a cut part's
@@ -314,8 +405,9 @@ export async function goesTogether(name: string, design: Design, k?: Known, edge
     const d = structuredClone(design), b = buildDesign(w, d);
     // (its pieces are plain data: the build's own solids let go before the checks make theirs)
     clearBuildCache();
-    const problems = assembledProblems(w, b.pieces, { ...APP, ...d.options });
-    const allowed = k?.problems ?? [];
+    // (8. the rails are sound, but for what's known of this design: RAIL_KNOWN)
+    const problems = [...assembledProblems(w, b.pieces, { ...APP, ...d.options }), ...railFaults(w, b.pieces, b.overlay?.checkRails)];
+    const allowed = [...(k?.problems ?? []), ...(RAIL_KNOWN[name] ?? []).map((q) => RAIL_KINDS[q])];
     expect(problems.filter((q) => !allowed.some((re) => re.test(q))).join('; ')).toBe('');
     // (what's allowed is still there (else it comes off the list), and said by the build where it's a limit)
     for (const re of allowed) expect(problems.some((q) => re.test(q)), `${name}: ${re} is no longer found: take it off the list`).toBe(true);
