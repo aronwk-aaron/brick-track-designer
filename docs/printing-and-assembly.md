@@ -68,7 +68,7 @@ If you'd rather your slicer made the rail-end supports, turn Supports under rail
 - **The underside is hollow** (anti-stud tubes that grip a baseplate), so each track part has a roof over the
   hollows, 2 mm up, which prints as a bridge. The project's overhang check
   (`test/printable.*.test.ts`, [what it checks](#what-the-ci-checks-about-printing)) finds roof that nothing
-  holds (more than 10 mm across) in every track part it looks at, a few hundred to a few thousand mm2 a part. *Not yet confirmed
+  holds (more than 10 mm across) in every track part it looks at, from about 60 mm2 (plain sleepered track) to a few thousand (ballast, switch bases). *Not yet confirmed
   by a test print:* watch the layers over the hollows, and use your slicer's bridge settings.
 - **Sleepers with gaps** (Settings › Track › Under the rails): the rails print as bridges over the gaps between
   sleepers. Solid bed has none.
@@ -264,7 +264,7 @@ points are marked experimental in the app. Printing and assembly are as above: n
 
 ## What the CI checks about printing
 
-Every change is tested: each part of about fifteen representative designs, in the way up it is exported, has no
+Every change is tested: each part of eighteen representative designs, in the way up it is exported, has no
 overhang beyond what the project allows without supports (faces facing down steeper than 45 degrees, unless they are held by the
 part's own break-out supports, are a slope of 45 degrees or less, or are a bridge held both sides and 10 mm
 or less across), and no floating island (a bit of a layer, 0.2 mm, resting on nothing in the layer below). Where a design fails, the exact part and place is
