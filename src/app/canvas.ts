@@ -69,10 +69,12 @@ export function leverSide(d: Design, lever: OverlayItem, items: OverlayItem[]): 
   return { side, by: 'auto', main, branch, why: branches.length > 1 ? 'auto: a three-way\'s goes on the right' : branch ? `auto: away from ${branch}, the branch` : 'auto: away from the branch' };
 }
 
-/** A key pressed while typing in a field (a number, a name, a drop-down): not a shortcut. */
+/** A key pressed while typing in a field (a number, a name, a drop-down): not a shortcut. (A slider or a tick box isn't typed in: with
+ * the Explode slider last touched, no shortcut worked, and Ctrl+A selected the page's text.) */
 export function typingIn(e: KeyboardEvent) {
   const t = e.target as HTMLElement | null;
-  return !!t && (t.tagName === 'INPUT' || t.tagName === 'SELECT' || t.tagName === 'TEXTAREA' || t.isContentEditable);
+  if (t?.tagName === 'INPUT') return !['range', 'checkbox', 'radio', 'color', 'button', 'file'].includes((t as HTMLInputElement).type);
+  return !!t && (t.tagName === 'SELECT' || t.tagName === 'TEXTAREA' || t.isContentEditable);
 }
 /** A dialog open over the page (the parts list, Help, a setting's pictures): a key pressed then isn't one of the plan's shortcuts. */
 export const dialogOpen = () => !!document.querySelector('dialog[open], #help.open, #choices.open');
@@ -745,8 +747,8 @@ export class TrackCanvas {
   private key(e: KeyboardEvent, down: boolean) {
     if (e.code === 'Space' && !down) this.space = false;
     if (typingIn(e) || !down || dialogOpen()) return;
-    // (Space held pans; not when a button has the focus: Space presses it)
-    if (e.code === 'Space' && (e.target as HTMLElement)?.tagName !== 'BUTTON') { this.space = true; e.preventDefault(); }
+    // (Space held pans; not when a button, a tick box or a section's heading has the focus: Space presses it)
+    if (e.code === 'Space' && !['BUTTON', 'INPUT', 'SUMMARY', 'A'].includes((e.target as HTMLElement)?.tagName)) { this.space = true; e.preventDefault(); }
     if (e.key === 'Escape' && this.drag) {
       // put the dragged track back as it was
       this.host.design().routes[this.drag.route] = this.drag.orig;
