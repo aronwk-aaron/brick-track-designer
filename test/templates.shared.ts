@@ -19,8 +19,11 @@ const BUDGET: Record<string, number> = {
   'Banked curve': 25, 'Helix (R104, two turns)': 130, 'Siding ending in a buffer stop': 55, 'Grade up at 2.5%': 15,
   // (the heavy layouts, a file of their own)
   'Yard (R56)': 150, 'Double-track return loop (turning right)': 350, 'Double-track return loop (turning left)': 350,
-  // (the double slip with its levers outside)
+  // (the double slip with its levers outside, and the reference trackwork's bigger ones)
   'Double slip (22.5°, throws outside)': 60,
+  'Double slip R40 45°': 40, 'Single slip R40 45°': 30, 'Double crossover R40': 40, 'T-junction core R56': 40, 'Star crossing 22.5°': 20,
+  'Crossover, 4-stud gap, left': 20, 'Crossover, 4-stud gap, right': 20, 'Three-way, no gap': 20, 'Three-way, 2-stud gap': 20,
+  'Curved switch R104 90° left': 20, 'Curved switch R104 90° right': 20,
 };
 const BUDGET_SMALL = 10;
 /** only: just these templates of the groups */
