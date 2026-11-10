@@ -14,7 +14,7 @@ import { routeLength, routePose, type Route } from '../route/route';
 import { gifBytes } from '../geom/gif';
 
 /** What the export needs of a built piece. */
-export interface PieceLike { name: string; color: number; positions: Float32Array }
+export interface PieceLike { name: string; color: number; positions: Float32Array; /** a bought piece: what it is (LEGO's part number; shop: another maker's) */ lego?: { part: string; shop?: string }[] }
 
 /** Connection types in the library's parts (BlueBrick's ids). */
 export const CONNECTION_TYPE = { rail: '1', monorail: '3' } as const;
@@ -41,8 +41,67 @@ export interface LayoutPart {
   width: number; height: number; gif: Uint8Array;
   /** its connection points, studs from the picture's middle, y down */
   connections: LayoutConnection[];
+  /** a bought LEGO piece the library has as a part of its own: placed in the set as that part (its key, where and which way round), and not made again here */
+  standard?: { id: string; position: [number, number]; angle: number };
 }
 export interface LayoutExport { folder: string; prefix: string; parts: LayoutPart[]; setId: string; files: { name: string; data: Uint8Array }[] }
+
+/**
+ * LEGO's track as the layout designer's library has it (its Track folder; the 9V and the plastic track are the same
+ * shapes): each part's picture's size (px, 8 a stud), its outline in the picture where it has one (hull), and its
+ * connection points from the picture's middle (studs, y down; angle the way the track goes out).
+ */
+export interface StandardPart { id: string; w: number; h: number; hull: [number, number][]; conns: [x: number, y: number, angle: number][] }
+export const STANDARD: Record<string, StandardPart> = {
+  straight: { id: '2865.8', w: 136, h: 64, hull: [], conns: [[-8, 0, 180], [8, 0, 0]] },
+  curve: { id: '2867.8', w: 139, h: 86, hull: [[0, 0], [74, 5], [138, 26], [138, 38], [121, 77], [114, 85], [0, 64]], conns: [[-8.1875, -1.375, 180], [7.1198, 1.6698, 22.5]] },
+  switchRight: { id: '2859.8', w: 279, h: 166, hull: [[0, 0], [264, 0], [264, 63], [204, 63], [278, 107], [278, 115], [255, 165], [86, 76], [42, 67], [42, 112], [18, 112], [18, 63], [0, 63]], conns: [[-16.9375, -6.375, 180], [15.7552, 6.58018, 22.5], [15.0625, -6.375, 0]] },
+  switchLeft: { id: '2861.8', w: 279, h: 166, hull: [[0, 102], [18, 102], [18, 53], [42, 53], [42, 99], [111, 81], [248, 0], [258, 0], [278, 49], [278, 58], [204, 101], [263, 101], [263, 165], [0, 165]], conns: [[-16.9375, 6.375, 180], [15.0625, 6.375, 0], [15.7552, -6.58018, -22.5]] },
+};
+/** The library's parts a bought LEGO piece may be, by its part number. */
+const STANDARD_FOR: Record<string, StandardPart[]> = { 53401: [STANDARD.straight], 53400: [STANDARD.curve], 53407: [STANDARD.switchLeft, STANDARD.switchRight], 53404: [STANDARD.switchRight, STANDARD.switchLeft] };
+const turned = (x: number, y: number, deg: number): [number, number] => { const a = (deg * Math.PI) / 180, c = Math.cos(a), sn = Math.sin(a); return [x * c - y * sn, x * sn + y * c]; };
+const angleGap = (a: number, b: number) => Math.abs(((((a - b) % 360) + 540) % 360) - 180);
+/**
+ * How far a library part's picture's middle is from where a set puts the part, turned by deg (studs): a set places a
+ * part by the middle of its outline's box, as it's turned (the layout designer's own working: PartsLibrary footprint).
+ */
+export function standardOffset(sp: { w: number; h: number; hull: [number, number][] }, deg: number): [number, number] {
+  if (!sp.hull.length) return [0, 0];
+  const box = (pts: [number, number][]) => { const t = pts.map(([x, y]) => turned(x, y, deg)); return [Math.min(...t.map((q) => q[0])), Math.max(...t.map((q) => q[0])), Math.min(...t.map((q) => q[1])), Math.max(...t.map((q) => q[1]))]; };
+  const bb = box([[0.5, 0.5], [sp.w - 0.5, 0.5], [sp.w - 0.5, sp.h - 0.5], [0.5, sp.h - 0.5]]), hl = box(sp.hull);
+  return [((bb[1] - hl[1]) + (bb[0] - hl[0])) * 0.5 / PX_PER_STUD, ((bb[3] - hl[3]) + (bb[2] - hl[2])) * 0.5 / PX_PER_STUD];
+}
+/**
+ * A library part laid so its connection points are exactly a piece's (ends: where the track leaves the piece, studs,
+ * y down, and the angle it goes out at): which way round, where its picture's middle is, and where a set puts it.
+ * Undefined if it can't be: not that shape, or not as many ends.
+ */
+export function placeStandard(sp: StandardPart, ends: { x: number; y: number; angle: number }[]): { angle: number; centre: [number, number]; position: [number, number] } | undefined {
+  if (ends.length !== sp.conns.length) return undefined;
+  for (const e of ends) {
+    const angle = e.angle - sp.conns[0][2], [dx, dy] = turned(sp.conns[0][0], sp.conns[0][1], angle), cx = e.x - dx, cy = e.y - dy;
+    const left = [...ends];
+    const fits = sp.conns.every(([x, y, a]) => {
+      const [qx, qy] = turned(x, y, angle), k = left.findIndex((f) => Math.hypot(f.x - cx - qx, f.y - cy - qy) < 0.2 && angleGap(f.angle, a + angle) < 3);
+      if (k < 0) return false;
+      left.splice(k, 1); return true;
+    });
+    if (!fits) continue;
+    // (the ends are found by stepping along the track, so each is a hair out: the angle to the quarter degree it's
+    // near (track lies at multiples of 11.25), the middle from all the ends together)
+    let norm = ((angle % 360) + 540) % 360 - 180;
+    if (Math.abs(norm - Math.round(norm * 4) / 4) < 0.06) norm = Math.round(norm * 4) / 4;
+    let mx = 0, my = 0;
+    for (const [x, y, a] of sp.conns) {
+      const [qx, qy] = turned(x, y, norm), f = ends.reduce((b, g) => (Math.hypot(g.x - cx - qx, g.y - cy - qy) + angleGap(g.angle, a + norm) < Math.hypot(b.x - cx - qx, b.y - cy - qy) + angleGap(b.angle, a + norm) ? g : b));
+      mx += (f.x - qx) / sp.conns.length; my += (f.y - qy) / sp.conns.length;
+    }
+    const off = standardOffset(sp, norm);
+    return { angle: round(norm), centre: [mx, my], position: [mx - off[0], my - off[1]] };
+  }
+  return undefined;
+}
 
 /** A moving part (drawn on the track part it sits in, not a layout part of its own). */
 export const isMovingPart = (name: string) => /lid|bracket|lever|throw|points|spring/.test(name);
@@ -252,10 +311,20 @@ export function layoutParts(design: Design, pieces: PieceLike[], name = design.n
       if (mine.some((m) => m.type === c.type && Math.hypot(m.x - x, m.y - y) < 1 / STUD && Math.abs(((m.angle - angle + 540) % 360) - 180) < 2)) continue;
       mine.push({ type: c.type, x: round(x), y: round(y), angle });
     }
-    return {
+    const part: LayoutPart = {
       id: `${prefix}.${keyName(p.name)}`, piece: p.name, description: `${name}: ${p.name}`, guests: guests[k].map((g) => g.name),
       box, centre: [round(cx / STUD), round(-cy / STUD)], width: img.width, height: img.height, gif: img.gif, connections: mine,
     };
+    // (a bought LEGO piece by itself, nothing printed under it: the library's own part, laid where it is)
+    const bought = !guests[k].length ? (p.lego ?? []).filter((l) => !l.shop).flatMap((l) => STANDARD_FOR[l.part] ?? []) : [];
+    for (const sp of bought) {
+      const at = placeStandard(sp, mine.map((m) => ({ x: part.centre[0] + m.x, y: part.centre[1] + m.y, angle: m.angle })));
+      if (!at) continue;
+      const [w, h] = [Math.abs(turned(sp.w, 0, at.angle)[0]) + Math.abs(turned(0, sp.h, at.angle)[0]), Math.abs(turned(sp.w, 0, at.angle)[1]) + Math.abs(turned(0, sp.h, at.angle)[1])];
+      Object.assign(part, { standard: { id: sp.id, position: [round(at.position[0]), round(at.position[1])], angle: at.angle }, centre: [round(at.centre[0]), round(at.centre[1])], width: w, height: h });
+      break;
+    }
+    return part;
   });
   const setId = `${prefix}.whole`;
   return { folder, prefix, parts, setId, files: files(name, folder, prefix, parts, setId) };
@@ -293,18 +362,18 @@ ${n ? `\t<ConnexionList>\n${cs}\t</ConnexionList>\n` : ''}</part>
 `;
 }
 
-/** The set placing every part as designed (BlueBrick's <group>): each at its picture's middle, unturned. */
+/** The set placing every part as designed (BlueBrick's <group>): each at its picture's middle, unturned; a bought LEGO piece as the library's own part, where and which way round it lies. */
 export function setXml(name: string, parts: LayoutPart[]): string {
   // (around the middle of them all)
   const xs = parts.flatMap((p) => [p.centre[0] - p.width / PX_PER_STUD / 2, p.centre[0] + p.width / PX_PER_STUD / 2]);
   const ys = parts.flatMap((p) => [p.centre[1] - p.height / PX_PER_STUD / 2, p.centre[1] + p.height / PX_PER_STUD / 2]);
   const ox = (Math.min(...xs) + Math.max(...xs)) / 2, oy = (Math.min(...ys) + Math.max(...ys)) / 2;
-  const subs = parts.map((p) => `\t\t<SubPart id="${esc(p.id)}">
+  const subs = parts.map((p) => `\t\t<SubPart id="${esc(p.standard?.id ?? p.id)}">
 \t\t\t<position>
-\t\t\t\t<x>${round(p.centre[0] - ox)}</x>
-\t\t\t\t<y>${round(p.centre[1] - oy)}</y>
+\t\t\t\t<x>${round((p.standard?.position[0] ?? p.centre[0]) - ox)}</x>
+\t\t\t\t<y>${round((p.standard?.position[1] ?? p.centre[1]) - oy)}</y>
 \t\t\t</position>
-\t\t\t<angle>0</angle>
+\t\t\t<angle>${p.standard?.angle ?? 0}</angle>
 \t\t</SubPart>\n`).join('');
   return `<?xml version="1.0" encoding="utf-8"?>
 <group>
@@ -329,6 +398,12 @@ printed track part of the design, as cut for the print bed (the points,
 throws and levers drawn on the part they go in), each with its connection
 points where the track leaves it, so they snap together and onto other track.
 The set "${setId}" puts all of them down as designed.
+
+Bought track: LEGO's straights, R40 curves and switches are parts the
+library has already (2865.8, 2867.8, 2859.8 and 2861.8): the set places
+those, where they go, and they aren't made again here. A bought piece with
+printed ballast under it, and BrickTracks' pieces (which the library hasn't
+got), are parts in this folder, as the printed ones are.
 
 Collaborative Brick Layout Designer (desktop 1.4.0 or later)
   1. Tools > Parts > Add Parts from a Zip..., and choose this zip: it's
@@ -363,6 +438,7 @@ function files(name: string, folder: string, prefix: string, parts: LayoutPart[]
   const enc = new TextEncoder(), out: { name: string; data: Uint8Array }[] = [];
   const pad = String(parts.length).length;
   parts.forEach((p, k) => {
+    if (p.standard) return; // (the library's own part: nothing to make)
     out.push({ name: `${folder}/${p.id}.xml`, data: enc.encode(partXml(p, `${String(k + 1).padStart(pad, '0')} ${p.piece}`)) });
     out.push({ name: `${folder}/${p.id}.gif`, data: p.gif });
   });
