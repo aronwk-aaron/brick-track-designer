@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { buildDesign } from '../src/app/build';
 import { type Design, OPTION_DEFAULTS, type PieceOptions } from '../src/app/design';
-import { PALETTE, placePart } from '../src/app/palette';
+import { freeStart, PALETTE, placePart } from '../src/app/palette';
 import { kernel } from '../src/geom/kernel';
 
 const APP = (globalThis as { APP_DEFAULTS?: PieceOptions }).APP_DEFAULTS!;
@@ -43,5 +43,15 @@ describe('the parts palette', { timeout: 600000 }, () => {
       expect([count(c, 'BrickTracks S08'), count(c, 'BrickTracks S04'), count(c, 'BrickTracks R104'), c.pieces.filter((p) => !p.lego).length]).toEqual([1, 1, 1, 0]);
       expect(c.pieces.some((p) => p.lego?.some((l) => /switch/i.test(l.name)))).toBe(true);
     } finally { Object.assign(OPTION_DEFAULTS, saved); }
+  });
+});
+
+describe('a new route by itself', () => {
+  it('starts clear of the routes there are, not on one of them', () => {
+    const d: Design = { version: 1, gaugeStuds: 4, routes: [] };
+    expect(freeStart(d)).toEqual({ x: 0, y: 0, heading: 0 });
+    // (+ Route twice: the second below the first, not the same track again)
+    for (let k = 0; k < 3; k++) d.routes.push({ name: `R${k + 1}`, ...freeStart(d), segs: [{ kind: 'straight', studs: 16 }] });
+    expect(d.routes.map((r) => [r.x, r.y])).toEqual([[0, 0], [0, -24], [0, -48]]);
   });
 });

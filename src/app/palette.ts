@@ -36,6 +36,12 @@ export const PALETTE: PalettePart[] = [
   { id: 'bt-switch-r', name: 'R104 right switch', maker: 'BrickTracks', title: 'BrickTracks R104 switch: as the left one, to the right', segs: () => [S(40)], branch: [C(104, -22.5), S(LEAD)] },
 ];
 
+/** Where a new route by itself starts: the origin, or below the routes there are (not on one of them: two routes on one another are the same track twice, which can't be built). */
+export function freeStart(d: Design): { x: number; y: number; heading: number } {
+  const rs = d.routes;
+  return rs.length ? { x: Math.min(...rs.map((r) => r.x)), y: Math.round(Math.min(...rs.map((r) => r.y)) / 8) * 8 - 24, heading: 0 } : { x: 0, y: 0, heading: 0 };
+}
+
 /**
  * Lay a part: on from the end of route `at` (its segments added on; a switch's branch a new route from there), or, with
  * no route, as a new route (at the origin, or below the routes there are). Changes the design; returns the route to
@@ -53,7 +59,7 @@ export function placePart(d: Design, id: string, at: number | undefined, turn = 
     delete d.routes[at].endEnd;
   } else {
     const rs = d.routes;
-    start = rs.length ? { x: Math.min(...rs.map((r) => r.x)), y: Math.round(Math.min(...rs.map((r) => r.y)) / 8) * 8 - 24, heading: 0 } : { x: 0, y: 0, heading: 0 };
+    start = freeStart(d);
     rs.push({ name: freeName(d, 'R'), ...start, segs: structuredClone(segs) });
     at = rs.length - 1; added.push(at);
   }

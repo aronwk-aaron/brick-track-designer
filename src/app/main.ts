@@ -9,7 +9,7 @@ import { BRICKTRACKS_COLOR, gradeOf, LEGO_COLOR, type LegoPart, legoParts, type 
 import { TABLE_COLORS, type Table, tableAt } from './tables';
 import { zip } from '../geom/zip';
 import { layoutParts } from './layoutparts';
-import { PALETTE, placePart } from './palette';
+import { freeStart, PALETTE, placePart } from './palette';
 import { BuildRunner, type WorkerPort } from './buildrun';
 import { History } from './history';
 import { fileBase as fileBaseOf, partsDownload, printedKinds, stlDownload } from './exports';
@@ -815,7 +815,7 @@ tpl.addEventListener('change', () => {
   design = structuredClone(TEMPLATES[tpl.value]); tpl.value = ''; replaced(); framed = false; changed(true); canvas.fit();
 });
 $('add-route').addEventListener('click', () => {
-  design.routes.push({ name: nextName(), x: 0, y: 0, heading: 0, segs: [{ kind: 'straight', studs: 16 }] });
+  design.routes.push({ name: nextName(), ...freeStart(design), segs: [{ kind: 'straight', studs: 16 }] });
   canvas.setSelection([design.routes.length - 1]); // (its card open, to type its numbers)
   changed(true);
 });
