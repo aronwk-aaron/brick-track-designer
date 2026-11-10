@@ -102,8 +102,8 @@ function liftOf(rts: Route[], positions: Float32Array): Lift | undefined {
 /** A LEGO part (BrickLink's number and name) and how many. */
 export interface LegoPart { part: string; name: string; qty: number; /** where it's bought, if not a LEGO part (BrickLink's wanted list leaves it out) */ shop?: 'bricktracks' }
 
-/** Curves made as track pieces of their own: radius (mm) to each piece's angle: LEGO's R40, BrickTracks' R56 to R120 (injection moulded). */
-export const STD_CURVES = new Map<number, number>([[40 * 8, 22.5], [56 * 8, 11.25], [72 * 8, 11.25], [88 * 8, 11.25], [104 * 8, 11.25], [120 * 8, 11.25]]);
+/** Curves made as track pieces of their own: radius (mm) to each piece's angle: LEGO's R40, BrickTracks' R56 (22.5 degrees, 16 to a circle: their set of 8 is a half circle) and R72 to R120 (11.25, 32 to a circle). */
+export const STD_CURVES = new Map<number, number>([[40 * 8, 22.5], [56 * 8, 22.5], [72 * 8, 11.25], [88 * 8, 11.25], [104 * 8, 11.25], [120 * 8, 11.25]]);
 
 /** A plain curve piece that is a bought track piece (or a few of them): LEGO's R40 (53400), or a BrickTracks curve. */
 export function stdCurve(radius: number, angle: number): LegoPart[] | undefined {
@@ -111,7 +111,7 @@ export function stdCurve(radius: number, angle: number): LegoPart[] | undefined 
   if (r === undefined) return undefined;
   const step = STD_CURVES.get(r)!, n = Math.round(Math.abs(angle) / step);
   if (n < 1 || Math.abs(Math.abs(angle) - n * step) > 0.01) return undefined;
-  return r === 320 ? [{ part: '53400', name: 'Train, Track Plastic Curve (R40)', qty: n }] : [{ part: `BrickTracks R${r / 8}`, name: `BrickTracks R${r / 8} curve (11.25°)`, qty: n, shop: 'bricktracks' }];
+  return r === 320 ? [{ part: '53400', name: 'Train, Track Plastic Curve (R40)', qty: n }] : [{ part: `BrickTracks R${r / 8}`, name: `BrickTracks R${r / 8} curve (${step}°)`, qty: n, shop: 'bricktracks' }];
 }
 
 /** BrickTracks' short straights (their short straight track pack): 1/2, 1/4 and 1/10 of a 16-stud straight. */
@@ -156,9 +156,9 @@ function piecesCross(rts: Route[]): boolean {
 
 /** BrickTracks' own ballast for one of their curves (R56 to R120), and the buddy layer under it: for a flat underside (theirs rests on the studs, not gripping them). */
 export function brickTracksBallast(curve: LegoPart[], ballast: string | undefined): LegoPart[] {
-  const r = curve[0].part.replace(/^BrickTracks /, ''), qty = curve[0].qty;
-  return [{ part: `BrickTracks ${r} ballast`, name: `BrickTracks ${r} ballast (11.25°)`, qty, shop: 'bricktracks' },
-    ...(ballast === 'buddy' ? [{ part: `BrickTracks ${r} buddy`, name: `BrickTracks ${r} ballast buddy (11.25°)`, qty, shop: 'bricktracks' as const }] : [])];
+  const r = curve[0].part.replace(/^BrickTracks /, ''), qty = curve[0].qty, step = STD_CURVES.get(+r.slice(1) * 8) ?? 11.25;
+  return [{ part: `BrickTracks ${r} ballast`, name: `BrickTracks ${r} ballast (${step}°)`, qty, shop: 'bricktracks' },
+    ...(ballast === 'buddy' ? [{ part: `BrickTracks ${r} buddy`, name: `BrickTracks ${r} ballast buddy (${step}°)`, qty, shop: 'bricktracks' as const }] : [])];
 }
 
 /** The LEGO parts for a plain 16-stud straight: LEGO's track, and under it the ballast's layers as plates (10 studs wide, and 12 more for the buddy layer). */

@@ -3,8 +3,8 @@
 // as a printed copy. The curves and short straights are the app's bought pieces (build.ts STD_CURVES, BT_STRAIGHTS); the
 // R104B siding curve its short straight and an R104 curve (boughtswitch.ts BT_LEAD: worked out from the parts library's
 // 40 x 8 switch, not measured from the part). (The R104 switches are in design.ts, as they were.)
-// Where the parts library and the app differ: the library's R56 curve turns 22.5 degrees, the app's bought R56 11.25
-// (a template of each: the 22.5 one comes out as two bought pieces); the library's R104A turnout curve fits R103.07 for
+// The R56 curve turns 22.5 degrees (16 to a circle: BrickTracks sell 8 as a half circle), the others 11.25.
+// Where the parts library and the app differ: the library's R104A turnout curve fits R103.07 for
 // 11.25 degrees and 0.09 studs straight (0.09 studs shorter than an R104 curve), a part the app doesn't know as bought,
 // so its template prints.
 import type { Design } from './design';
@@ -15,8 +15,7 @@ const straight = (studs: number): Design => ({ version: 1, gaugeStuds: 4, routes
 const LEAD = (8 - 104 * (1 - Math.cos(Math.PI / 8))) / Math.sin(Math.PI / 8);
 
 export const BRICKTRACKS_PARTS: Record<string, Design> = {
-  'Curve R56 (BrickTracks)': curve(56),
-  'Curve R56, 22.5° (BrickTracks, as the parts library has it)': curve(56, 22.5),
+  'Curve R56 (BrickTracks)': curve(56, 22.5),
   'Curve R72 (BrickTracks)': curve(72),
   'Curve R88 (BrickTracks)': curve(88),
   'Curve R104 (BrickTracks)': curve(104),

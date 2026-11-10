@@ -21,7 +21,6 @@ const BOUGHT: Record<string, string[]> = {
   'Left switch (BrickTracks R104)': ['BrickTracks R104 switch left x1'],
   'Right switch (BrickTracks R104)': ['BrickTracks R104 switch right x1'],
   'Curve R56 (BrickTracks)': ['BrickTracks R56 x1'],
-  'Curve R56, 22.5° (BrickTracks, as the parts library has it)': ['BrickTracks R56 x2'],
   'Curve R72 (BrickTracks)': ['BrickTracks R72 x1'],
   'Curve R88 (BrickTracks)': ['BrickTracks R88 x1'],
   'Curve R104 (BrickTracks)': ['BrickTracks R104 x1'],

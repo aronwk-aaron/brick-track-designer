@@ -8,8 +8,8 @@ import { toRoutes } from './design';
 import { bedFit, END_REACH, tightBox, trackOutline } from '../geom/bedfit';
 
 export const PIECES = [4, 128, 16] as const;
-/** The usual pieces round a circle: R40 and smaller 16 of 22.5°, R56 to R120 32 of 11.25°, larger 64 of 5.625°. */
-export const defaultPieces = (radius: number) => (radius <= 40 ? 16 : radius <= 120 ? 32 : 64);
+/** The usual pieces round a circle: R56 and smaller 16 of 22.5° (as LEGO's R40 and BrickTracks' R56 are sold), R72 to R120 32 of 11.25°, larger 64 of 5.625°. */
+export const defaultPieces = (radius: number) => (radius <= 56 ? 16 : radius <= 120 ? 32 : 64);
 /** The angle of one piece, degrees. */
 export const pieceAngle = (pieces: number) => 360 / pieces;
 /** "32 pieces · 11.25° each" */

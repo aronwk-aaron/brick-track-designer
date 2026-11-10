@@ -10,7 +10,7 @@ import { stlPositions } from './assembly.shared';
 
 describe('a full circle', () => {
   it('uses the usual pieces', () => {
-    expect([24, 40, 56, 120, 121, 152].map(defaultPieces)).toEqual([16, 16, 32, 32, 64, 64]);
+    expect([24, 40, 56, 120, 121, 152].map(defaultPieces)).toEqual([16, 16, 16, 32, 64, 64]);
     expect(piecesText(32)).toBe('32 pieces · 11.25° each');
     expect(piecesText(16)).toBe('16 pieces · 22.5° each');
     expect(piecesText(64)).toBe('64 pieces · 5.625° each');
