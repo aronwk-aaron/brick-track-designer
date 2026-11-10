@@ -7,6 +7,8 @@
 // (Found by it: with 56-stud straights 9 apart, the crossover's rail left its section's middle cut 5 mm before the cut
 // across the left track, got a rail-end tongue at both, and the second reached back into the part beside it: 23 mm3 of
 // rail in two parts; with an R56 crossover and 64-stud straights, 29. cutter.ts jointsNear.)
+// (And, 8 studs apart: the bed under a set of points stood 0.01 mm past its sleepers' ends on its right, in the ends of
+// the sleepers of the track beside it, 1 mm3 at every length. switch/base.ts pointsBed.)
 import { expect, it } from 'vitest';
 import { arena, kernel } from '../src/geom/kernel';
 import { buildDesign, clearBuildCache } from '../src/app/build';
@@ -36,16 +38,6 @@ const lengths = (apart: number, radius: number) => {
   return out;
 };
 
-/**
- * What's known not to go together, by how far apart the tracks are: found by the sweep, not of the cuts' making, and
- * still to be put right (each must still be found: off the list when it's gone).
- * - 8 studs apart, the sleepers of two tracks end on the same line. The bed under a set of points (switch/base.ts
- *   pointsBed) is a hull of strips 0.01 mm wide, each drawn from its edge's place on in +x: so on the points' right
- *   the bed ends 0.01 mm past the sleepers' ends (x 32.01 for 32, from the toe to the points' end), in the ends of the
- *   sleepers of the track beside it there: 1 mm3 or so, in a sliver 0.01 mm thick (the right strip drawn from 0.01
- *   inside its edge would end it at 32). Trains can't pass on tracks 8 studs apart; the parts do go together.
- */
-const KNOWN: Record<number, RegExp> = { 8: /^track\d+ and track\d+ overlap: [01]\.\d\d mm3 at 32\.0, \d+\.\d, 1\.6 \(0\.0 x \d+\.\d x 3\.2\)$/ };
 
 /** The sweep for tracks so far apart (studs): each crossover, each length, a test. */
 export function crossoverSweep(apart: number) {
@@ -63,9 +55,7 @@ export function crossoverSweep(apart: number) {
         let problems: string[];
         try { problems = [...unsolid.map((n) => `${n} isn't a closed solid as assembled`), ...arena(w, () => [...overlaps(w, ps, o), ...mates(w, ps, o)], () => [])]; } finally { for (const q of ps) drop(q.m); }
         for (const p of b.pieces) problems.push(...arena(w, () => prints(w, p, o.printBedX!, o.printBedY!), () => []));
-        const known = KNOWN[apart];
-        expect(problems.filter((q) => !known?.test(q)).join('; ')).toBe('');
-        if (known) expect(problems.some((q) => known.test(q)), `${known} is no longer found: take it off the list`).toBe(true);
+        expect(problems.join('; ')).toBe('');
         // (the crossover joins the left track: points at both its ends)
         expect(b.pieces.filter((p) => /^points\d+-a$/.test(p.name))).toHaveLength(2);
       } finally { Object.assign(OPTION_DEFAULTS, saved); clearBuildCache(); }

@@ -1184,7 +1184,9 @@ export function switchGeometry(s: Scad, plan: SwitchPlan, extraCuts: Man[] = [])
     // (blades with a lip over the front: on under their lips, past the plates' fronts)
     const lipY = fdb && v.fdb!.some((f) => f.lip) ? Math.max(v.toeY - 1, 8 + c) - c - LP.thick - 0.5 : Infinity;
     const y0 = Math.min(lipY, v.toeY > 20 ? v.toeY - 2 : Math.min(v.toeY - 2, 7.9)), y1 = v.pointsEndY;
-    const thin = (x: number) => sq([0.01, bedTop], [x, 0]);
+    // (each edge's strip inside its edge: drawn from the edge on in +x, the right one stood 0.01 past the sleepers'
+    // ends (32.01 for 32), in the sleepers' ends of a track 8 studs beside the points. As it was when matching the OpenSCAD output)
+    const thin = (x: number) => sq([0.01, bedTop], [x > 0 && !scadParity() ? x - 0.01 : x, 0]);
     return s.intersection(
       cube([400, y1 - y0, bedTop], [-200, y0, 0]),
       W.Manifold.hull([
