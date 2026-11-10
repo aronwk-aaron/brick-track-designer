@@ -157,7 +157,9 @@ export function networkSplits(s: Scad, routes: Route[], sol: Solution, p: BasePa
     const sp = sol.splits[gr.main];
     // (a route of theirs that ends (or joins the next) before the points are done with it: its end connector on the blades)
     const left = sp.routes.map((r, n) => (sp.merge ? sp.spans[n][0] : routeLength(routes[r]) - sp.spans[n][1]));
-    if (Math.min(...left) < 24) warnings.push(`a track ends in the points at ${studsAt(gr.main)}: carry it on past the frog`);
+    // (which, and by how much: 3 studs of track past the points, for its end connector)
+    const short = sp.routes.flatMap((r, n) => (left[n] < 24 ? [`${routes[r].id.replace(/~\d+$/, '')} by ${Math.ceil((24 - left[n]) / 8 - 1e-6)} stud${Math.ceil((24 - left[n]) / 8 - 1e-6) === 1 ? '' : 's'}`] : []));
+    if (short.length) warnings.push(`a track ends in the points at ${studsAt(gr.main)}: carry it on past the frog: lengthen ${short.join(', ')}`);
   }
   // (each points set planned first; then the levers placed, the most hemmed in first, so one with few clear spots isn't
   // left with none by its neighbours; then built in the design's order)

@@ -31,6 +31,7 @@ import { labelCut, labelLines } from '../geom/labels';
 import { buildMonorail, clearMonoCache } from './monobuild';
 import { tableAt, tableOf, tableOutline, type Table } from './tables';
 import { buildScope, clearSolids, jobScope, SolidCache } from './solidcache';
+import { carriedOn } from './carryon';
 import { BRICKTRACKS_SWITCH, BT_LEAD, type BoughtSwitch, cutOut, findBoughtSwitches, footprint, LEGO_SWITCH } from './boughtswitch';
 
 /** An item of trackwork the hand edits apply to: a check rail, a flangeway cut, a points set. */
@@ -791,6 +792,8 @@ function solveTrackwork(w: Wasm, design: Design, o: PieceOptions, step: (what: s
   const bankWarnings = design.routes.flatMap((r) => bankRolls(design, r).warnings);
   if (routes.some(hasRoll)) { const lv = levelBankedNearOthers(routes, Math.max(...routes.map((rt) => sleeperLenOf(rt, (design.gaugeStuds + 1) * 8 + 24)))); routes = lv.routes; bankWarnings.push(...lv.warnings); }
   const gauge = (design.gaugeStuds + 1) * 8;
+  // (a track drawn short of where another joins its line: carried on to the join, and said; carryon.ts)
+  { const co = carriedOn(routes, gauge); routes = co.routes; bankWarnings.push(...co.warnings); }
   const solverOpts = { gauge, step: 0.5, flangeway: o.flangeway, checkRailLen: o.checkRailLen, checkRailW: o.checkRailW };
   step('Working out the trackwork');
   // Hand edits (design.trackwork), by where each item is.

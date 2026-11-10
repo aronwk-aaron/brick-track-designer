@@ -21,7 +21,7 @@ describe('warnings: points', { timeout: 600000 }, () => {
     await fires(/rigid blades have no lip over the front/, D(SWITCH(), { ballast: 'none', bladeStyle: 'simple', bladeLip: 'front' }), D(SWITCH(), { ballast: 'none', bladeStyle: 'prototype', bladeLip: 'front' }));
   });
   it('a track that ends in the points', async () => {
-    await fires(/a track ends in the points at 0, 0 \(studs\): carry it on past the frog/, D([R('Straight', 0, 0, 0, [S(32)]), R('Branch', 0, 0, 0, [C(40, 12)])]), D(SWITCH()));
+    await fires(/a track ends in the points at 0, 0 \(studs\): carry it on past the frog: lengthen Branch by \d+ studs?$/, D([R('Straight', 0, 0, 0, [S(32)]), R('Branch', 0, 0, 0, [C(40, 12)])]), D(SWITCH()));
   });
   it('two branches off one side at the same point', async () => {
     const two = [R('Straight', 0, 0, 0, [S(40)]), R('B1', 0, 0, 0, [C(40, 30), S(10)]), R('B2', 0, 0, 0, [C(72, 30), S(10)])];
