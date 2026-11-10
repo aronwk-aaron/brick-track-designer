@@ -81,9 +81,9 @@ const field = (label: string, ...els: HTMLElement[]) => {
 
 function segRow(r: DRoute, k: number): HTMLElement {
   const sg = r.segs[k], row = document.createElement('div'); row.className = 'seg';
-  if (sg.kind === 'straight') row.append(field('Straight, studs', num(sg.studs, (n) => { sg.studs = n; }, 1)));
-  else row.append(field('Curve: radius, studs', (() => { const i = num(sg.radius, (n) => { const x = Math.min(1000, Math.max(24, n)); (sg as Extract<DSeg, { kind: 'curve' }>).radius = x; i.value = String(x); }, 8); i.min = '24'; i.max = '1000'; i.title = 'Radius in studs, 24 to 1000 (the usual curves run 24 + 8k)'; return i; })()),
-    field('angle ° (+ left)', num(sg.angle, (n) => { (sg as Extract<DSeg, { kind: 'curve' }>).angle = n; }, 0.5)));
+  if (sg.kind === 'straight') row.append(field('Straight, studs', (() => { const i = num(sg.studs, (n) => { sg.studs = Math.max(0, n); soon(render); }, 1); i.min = '0'; i.title = 'Length in studs, 0 or more'; return i; })()));
+  else row.append(field('Curve: radius, studs', (() => { const i = num(sg.radius, (n) => { const x = Math.min(1000, Math.max(24, n)); (sg as Extract<DSeg, { kind: 'curve' }>).radius = x; i.value = String(x); soon(render); }, 8); i.min = '24'; i.max = '1000'; i.title = 'Radius in studs, 24 to 1000 (the usual curves run 24 + 8k)'; return i; })()),
+    field('angle ° (+ left)', num(sg.angle, (n) => { (sg as Extract<DSeg, { kind: 'curve' }>).angle = n; soon(render); }, 0.5)));
   row.append(btn('✕', () => { r.segs.splice(k, 1); }, 'Remove this segment'));
   row.append(...bankFields(sg, isMono(r)));
   return row;
@@ -247,7 +247,8 @@ function renderTables() {
     col.addEventListener('input', () => { t.color = col.value; changed(false, true, false); });
     head.append(col, name, btn('✕', () => { design.tables = ts.filter((x) => x !== t); if (!design.tables.length) delete design.tables; }, 'Remove this table'));
     const f = document.createElement('div'); f.className = 'tfields';
-    const n = (label: string, v: number, set: (x: number) => void, step = 1) => f.append(field(label, num(v, set, step)));
+    // (drawn again once it's taken: the number shown is the one kept, a width under 1 as 1)
+    const n = (label: string, v: number, set: (x: number) => void, step = 1) => f.append(field(label, num(v, (x) => { set(x); soon(render); }, step)));
     if (t.shape === 'rect') { n('x', t.x, (v) => { t.x = v; }); n('y', t.y, (v) => { t.y = v; }); n('width', t.w, (v) => { t.w = Math.max(1, v); }); n('length', t.h, (v) => { t.h = Math.max(1, v); }); }
     else if (t.shape === 'arc') {
       n('centre x', t.cx, (v) => { t.cx = v; }); n('centre y', t.cy, (v) => { t.cy = v; });
@@ -357,9 +358,9 @@ function drawForms() {
       changed(false, true, false); soon(render);
     });
     place.append(field('Name', name),
-      field('Start x, studs', num(r.x, (n) => { r.x = n; }, 1)),
-      field('Start y, studs', num(r.y, (n) => { r.y = n; }, 1)),
-      field('Heading ° (0 = up, + = left)', num(r.heading, (n) => { r.heading = n; }, 22.5)));
+      field('Start x, studs', num(r.x, (n) => { r.x = n; soon(render); }, 1)),
+      field('Start y, studs', num(r.y, (n) => { r.y = n; soon(render); }, 1)),
+      field('Heading ° (0 = up, + = left)', num(r.heading, (n) => { r.heading = n; soon(render); }, 22.5)));
     {
       // (what runs on it: train track or the monorail beam)
       const sys = document.createElement('select');
@@ -373,7 +374,7 @@ function drawForms() {
       hi.value = r.monoHeight === undefined ? '' : String(r.monoHeight); hi.placeholder = 'auto';
       hi.title = isMono(r) ? 'The beam\'s height off the baseplate in plates (3.2 mm). Empty: the supports\' height (Settings › Monorail), or on the baseplate. Raise it to pass over train track or another monorail (5 plates clear of a beam, more over track).'
         : 'Train track: its height off the baseplate at its start, in plates (3.2 mm), on risers (LEGO 2 x 8 bricks and plates, in the parts list). The pieces are printed level and laid on them. Empty: on the baseplate.';
-      hi.addEventListener('change', () => { const n = Math.round(Number(hi.value)); if (hi.value.trim() === '' || !Number.isFinite(n)) delete r.monoHeight; else r.monoHeight = Math.min(60, Math.max(0, n)); changed(); soon(render); });
+      hi.addEventListener('change', () => { const n = Math.round(Number(hi.value)); if (hi.value.trim() === '' || !Number.isFinite(n)) { delete r.monoHeight; delete r.monoHeightEnd; /* (its end height is locked without it: not kept, to take effect unseen) */ } else r.monoHeight = Math.min(60, Math.max(0, n)); changed(); soon(render); });
       place.append(field(isMono(r) && r.monoHeightEnd !== undefined ? 'Start height, plates' : 'Height, plates', hi));
       // (a ramp: its height at its end; empty: level)
       const he = document.createElement('input'); he.type = 'number'; he.step = '1'; he.min = '0'; he.max = '60';
