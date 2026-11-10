@@ -53,7 +53,7 @@ const MONO_HW = 15.9, MONO_RIDGE_HW = 3.2; // the monorail beam's and its ridge'
 /** Can a lever be moved along the points (its spring tines longer or shorter)? Only on tines: the plate-style lever is level with the slider bar. */
 export const leverSlides = (d: Design) => d.options?.mechStyle === 'tines';
 
-/** Which way round a lever is, and what set it: dragged across by hand, the branch route's own setting, the Piece options', or auto (away from the branch). */
+/** Which way round a lever is, and what set it: dragged across by hand, the branch route's own setting, the Settings' Lever side, or auto (away from the branch). */
 export interface LeverSide { side: 'left' | 'right'; by: 'hand' | 'route' | 'options' | 'auto'; main?: string; branch?: string; why: string }
 export function leverSide(d: Design, lever: OverlayItem, items: OverlayItem[]): LeverSide {
   const side = (lever.lever?.side ?? 1) > 0 ? 'right' : 'left';
@@ -65,7 +65,7 @@ export function leverSide(d: Design, lever: OverlayItem, items: OverlayItem[]): 
   const branch = own ?? branches[0], opt = d.options?.throwSide ?? 'auto';
   if (d.trackwork?.throw?.[lever.key]?.side) return { side, by: 'hand', main, branch, why: 'dragged there on the plan' };
   if (own) return { side, by: 'route', main, branch, why: `${own}'s own Lever side (on its card)` };
-  if (opt === side) return { side, by: 'options', main, branch, why: 'the Piece options\' Lever side' };
+  if (opt === side) return { side, by: 'options', main, branch, why: 'Lever side in the Settings' };
   return { side, by: 'auto', main, branch, why: branches.length > 1 ? 'auto: a three-way\'s goes on the right' : branch ? `auto: away from ${branch}, the branch` : 'auto: away from the branch' };
 }
 

@@ -380,7 +380,7 @@ function render() {
     if (keys.size || (r.throwSide && r.throwSide !== 'auto')) {
       const sel = document.createElement('select');
       const opt = design.options?.throwSide ?? 'auto';
-      for (const [v, t] of [['auto', opt === 'auto' ? 'Auto: away from this branch' : `As the Piece options say (${opt})`], ['left', 'Left'], ['right', 'Right']]) sel.append(new Option(t, v));
+      for (const [v, t] of [['auto', opt === 'auto' ? 'Auto: away from this branch' : `As the Settings say (${opt})`], ['left', 'Left'], ['right', 'Right']]) sel.append(new Option(t, v));
       sel.value = r.throwSide ?? 'auto';
       sel.title = 'Which side the lever goes at the points where this track branches off another, as you face along them from their toe';
       sel.addEventListener('change', () => { r.throwSide = sel.value as DRoute['throwSide']; changed(true); });
