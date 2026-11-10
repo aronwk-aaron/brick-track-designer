@@ -209,6 +209,16 @@ try {
   await page.mouse.move(...(await scr(0, -30))); await page.keyboard.press('Control+v'); await page.keyboard.press('Control+v');
   const pasted = await page.evaluate(() => (JSON.parse(localStorage.getItem('btd-design') ?? '{}').routes as { x: number; y: number }[]).slice(3).map((q) => `${q.x},${q.y}`));
   check(pasted.length === 2 && pasted[0] !== pasted[1], `pasting twice at one spot doesn't stack the routes (${pasted.join(' ')})`);
+  // resizing the window keeps the plan point at the middle of the plan where it was (the route's screen position moves by half the change)
+  at = 'resize';
+  const viewOf = () => page.evaluate(() => { const c = document.getElementById('track')!.getBoundingClientRect(); const v = (window as unknown as { btdCanvas: { view(): { scale: number; ox: number; oy: number } } }).btdCanvas.view(); return { ...v, w: c.width, h: c.height }; });
+  const v0 = await viewOf();
+  await page.setViewportSize({ width: 1400 - 240, height: 900 - 120 }); await page.waitForTimeout(400);
+  const v1 = await viewOf();
+  check(Math.abs((v1.w - v0.w)) > 100 && Math.abs(v1.ox - v0.ox - (v1.w - v0.w) / 2) < 1 && Math.abs(v1.oy - v0.oy - (v1.h - v0.h) / 2) < 1 && v1.scale === v0.scale,
+    `a resize moves the route by half the change and keeps the zoom (${(v1.ox - v0.ox).toFixed(1)} of ${(v1.w - v0.w).toFixed(1)}, ${(v1.oy - v0.oy).toFixed(1)} of ${(v1.h - v0.h).toFixed(1)})`);
+  await page.setViewportSize({ width: 1400, height: 900 }); await page.waitForTimeout(400);
+
   // select all takes the tables too: mirror, nudge, copy and paste carry them with the route
   at = 'tables with the selection';
   await page.evaluate(() => localStorage.setItem('btd-design', JSON.stringify({ version: 1, gaugeStuds: 4, routes: [

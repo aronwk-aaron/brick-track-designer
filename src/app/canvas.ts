@@ -315,11 +315,18 @@ export class TrackCanvas {
   }
 
   // ---------- view ----------
+  /** The plan's size (CSS px) the last time it was laid out: a resize keeps the plan point at the middle where it was. */
+  private size: [number, number] | undefined;
   private resize() {
     const p = this.el.parentElement!, dpr = devicePixelRatio;
+    const first = this.ox === 0 && this.oy === 0;
+    if (p.clientWidth > 0 && p.clientHeight > 0) {
+      if (this.size && !first) { this.ox += (p.clientWidth - this.size[0]) / 2; this.oy += (p.clientHeight - this.size[1]) / 2; }
+      this.size = [p.clientWidth, p.clientHeight];
+    }
     this.el.width = p.clientWidth * dpr; this.el.height = p.clientHeight * dpr;
     this.el.style.width = `${p.clientWidth}px`; this.el.style.height = `${p.clientHeight}px`;
-    if (this.ox === 0 && this.oy === 0) this.fit();
+    if (first) this.fit();
     this.draw();
   }
   /** Fit the whole design in view (or, with part: just the selected routes, when some are). */
