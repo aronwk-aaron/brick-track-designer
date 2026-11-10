@@ -658,6 +658,10 @@ const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'hi
 // (no more than twice the screen's pixels: a 3x phone screen drew 9 times as many as it needed)
 renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
 view.append(renderer.domElement);
+// (the graphics card taken away, as browsers do to a tab left in the background or when the driver restarts: said so in
+// the view, and drawn again when it's given back, where the view stayed blank until the page was reloaded)
+renderer.domElement.addEventListener('webglcontextlost', (e) => { e.preventDefault(); view.classList.add('lost'); });
+renderer.domElement.addEventListener('webglcontextrestored', () => { view.classList.remove('lost'); redraw3d(); });
 const scene = new THREE.Scene();
 const cssColor = (v: string, fallback: string) => getComputedStyle(document.documentElement).getPropertyValue(v).trim() || fallback;
 scene.background = new THREE.Color(cssColor('--view-bg', '#f4f4f2'));

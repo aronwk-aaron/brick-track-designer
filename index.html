@@ -275,6 +275,7 @@
     #buildstatus:not([hidden]) ~ #status { display: none; }
     #buildstatus button, #status button { padding: 1px 8px; font-size: 12px; pointer-events: auto; margin-left: 6px; }
     #view3d.stale canvas { opacity: 0.45; filter: grayscale(0.6); }
+    #view3d.lost::after { content: 'The 3D view lost the graphics card: it comes back by itself; if it doesn\'t, reload the page (your design is kept).'; position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; padding: 20px; text-align: center; color: var(--muted); background: var(--view-bg); }
     #buildstatus .bar { width: 120px; height: 6px; border-radius: 3px; background: var(--line); overflow: hidden; }
     #buildstatus .bar i { display: block; height: 100%; width: 0; background: var(--accent); transition: width 0.2s; }
     #build-time { color: var(--muted); font-variant-numeric: tabular-nums; }

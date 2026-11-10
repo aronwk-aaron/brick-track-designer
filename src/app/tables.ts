@@ -47,13 +47,6 @@ export function tableAt(tables: Table[], q: Pt): number {
   return tables.findIndex((t) => onTable(t, s));
 }
 
-/** A short description of a table, for the panel. */
-export function tableSummary(t: Table): string {
-  if (t.shape === 'rect') return `${+t.w.toFixed(2)} × ${+t.h.toFixed(2)} studs`;
-  if (t.shape === 'arc') return `radius ${+t.r0.toFixed(2)} to ${+t.r1.toFixed(2)}, ${+Math.abs(t.a1 - t.a0).toFixed(2)}°`;
-  return `${t.pts.length} corners`;
-}
-
 /** Where a table's handle goes (its name on the plan, to drag it by): an arc's middle, else its outline's corners' average. */
 export function tableMiddle(t: Table): [number, number] {
   if (t.shape === 'arc') { const a = (((t.a0 + t.a1) / 2) * Math.PI) / 180, r = (t.r0 + t.r1) / 2; return [t.cx + r * Math.cos(a), t.cy + r * Math.sin(a)]; }

@@ -136,8 +136,6 @@ export class TrackCanvas {
   highlight: string | undefined;
   /** A route's straight or curve to pick out (hovered in its card's Shape): [route, piece]. */
   highlightSeg: [number, number] | undefined;
-  /** Show where the underside grips (only when not gripping everywhere). */
-  showGrips = true;
   /** Plan layers turned off from the legend: grooves, checks, crossings, ballast, baseplate, points, levers, grips. */
   hidden = new Set<string>();
   /** Dragging a track's end: which route and end, where the press was, and the route as it was. */
@@ -1097,7 +1095,7 @@ export class TrackCanvas {
       if (!this.hidden.has('checks')) for (const cr of this.overlay.checkRails) line(w(cr), '#2b6fe0', Math.max(1, (1 / MM) * this.scale));
       if (!this.hidden.has('crossings')) for (const p of this.overlay.crossings) { const [sx, sy] = this.toScreen(p[0] / MM, p[1] / MM); c.strokeStyle = ink.mark; c.lineWidth = 1.2; c.beginPath(); c.arc(sx, sy, 5, 0, 2 * Math.PI); c.stroke(); }
       // the anti-stud tubes underneath that grip the plate (Grip: Edges)
-      if (this.showGrips && !this.hidden.has('grips') && this.scale >= 3) {
+      if (!this.hidden.has('grips') && this.scale >= 3) {
         c.strokeStyle = '#2b9e4a'; c.lineWidth = 1.5;
         const r = Math.max(2, (3.2 / MM) * this.scale);
         for (const p of this.overlay.grips ?? []) { const [sx, sy] = this.toScreen(p[0] / MM, p[1] / MM); c.beginPath(); c.arc(sx, sy, r, 0, 2 * Math.PI); c.stroke(); }
