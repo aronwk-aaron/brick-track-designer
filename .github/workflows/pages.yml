@@ -1,28 +1,65 @@
 # The app is static (Vite: HTML, JS, the manifold WASM kernel): built and
-# published to GitHub Pages, at https://aronwk-aaron.github.io/brick-track-designer/,
-# on every push to main that passes the checks.
+# published to GitHub Pages, at https://aronwk-aaron.github.io/brick-track-designer/.
+#
+# Only what CI has passed is published: this runs when a CI run on main
+# finishes, and publishes the newest commit on main whose CI run succeeded
+# (every job: typecheck, lint, build, the tests, the browser smoke test, the
+# OSV scan). A commit that fails CI is never published: the site stays at the
+# last one that passed. CI runs finish in any order, and a run here that's
+# still waiting is dropped when a newer one arrives; publishing the newest
+# passed commit each time (not "the commit that started this run") means the
+# site never goes back to an older one, and no passed commit is left out.
+# Nothing here starts CI, so the two can't wait on each other.
 name: Pages
 
 on:
-  push:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
     branches: [main]
+  # (by hand: publishes the newest passed commit again, the same way)
   workflow_dispatch:
 
 permissions:
   contents: read
+  actions: read
   pages: write
   id-token: write
 
-# One deploy at a time; a newer push cancels an older one still waiting.
+# One deploy at a time, each let finish (a half-done deploy isn't cut off).
 concurrency:
   group: pages
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 jobs:
   build:
+    # (a CI run of a push to main that passed, or by hand)
+    if: github.event_name == 'workflow_dispatch' || (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push')
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v7
+        with:
+          ref: main
+          fetch-depth: 0
+
+      # The newest commit on main that CI has passed: of the CI runs that
+      # succeeded, the one every other is an ancestor of.
+      - name: Find the newest commit CI has passed
+        id: passed
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          best=""
+          for sha in $(gh api "repos/$GITHUB_REPOSITORY/actions/workflows/ci.yml/runs?branch=main&event=push&status=success&per_page=50" --jq '.workflow_runs[].head_sha'); do
+            git cat-file -e "$sha^{commit}" 2>/dev/null || continue
+            git merge-base --is-ancestor "$sha" origin/main || continue
+            if [ -z "$best" ] || git merge-base --is-ancestor "$best" "$sha"; then best="$sha"; fi
+          done
+          if [ -z "$best" ]; then echo "::error::no commit on main has passed CI: nothing to publish"; exit 1; fi
+          echo "Publishing $best"
+          echo "sha=$best" >> "$GITHUB_OUTPUT"
+          git checkout --detach "$best"
 
       - uses: pnpm/action-setup@v6
 
@@ -32,8 +69,6 @@ jobs:
           cache: pnpm
 
       - run: pnpm install --frozen-lockfile
-      - run: pnpm typecheck
-      - run: pnpm lint
       # (served from the repo's path, not a domain's root)
       - run: pnpm build --base=/brick-track-designer/
 
@@ -45,6 +80,7 @@ jobs:
   deploy:
     needs: build
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}

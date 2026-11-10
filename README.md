@@ -7,8 +7,8 @@ in 3D and exporting STL for printing.
 How it was planned, as written at the time (not kept up to date with the app): [PLAN.md](PLAN.md),
 [PHASE2.md](PHASE2.md), [PHASE3.md](PHASE3.md) and [THREEWAY.md](THREEWAY.md).
 
-Live at **https://aronwk-aaron.github.io/brick-track-designer/** (GitHub Pages, deployed from
-`main` by `.github/workflows/pages.yml`). It runs entirely in the browser:
+Live at **https://aronwk-aaron.github.io/brick-track-designer/** (GitHub Pages: `.github/workflows/pages.yml`
+publishes the newest commit on `main` that CI has passed, never one that failed). It runs entirely in the browser:
 the geometry kernel is WebAssembly, and nothing is uploaded anywhere.
 
 ```
@@ -47,7 +47,8 @@ page can be installed and works offline once opened.
 ## Contributing
 
 Pull requests run CI (`.github/workflows/ci.yml`): Conventional Commits
-(`feat:`, `fix:`, `docs:` ...), typecheck, lint, build and the tests, and an
+(`feat:`, `fix:`, `docs:` ...), typecheck, lint, build, the tests, a browser
+smoke test (`scripts/browser-smoke.mts`) and an
 OSV scan of the dependencies; every push gets a gitleaks secret scan.
 
 ## Licence
