@@ -13,6 +13,7 @@ import { PALETTE, placePart } from './palette';
 import { BuildRunner, type WorkerPort } from './buildrun';
 import { History } from './history';
 import { fileBase as fileBaseOf, partsDownload, printedKinds, stlDownload } from './exports';
+import { mirrorRoute } from './routeedits';
 import { type OptChoice, optionForm, type OptCtx, type OptField } from './settings';
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
@@ -1110,10 +1111,7 @@ function transformSel(f: (r: DRoute, px: number, py: number) => void) {
   for (const i of sel) f(design.routes[i], px, py);
   changed(true);
 }
-const mirrorSel = () => transformSel((r, px) => {
-  r.x = r3(2 * px - r.x); r.heading = r3(-r.heading);
-  for (const sg of r.segs) if (sg.kind === 'curve') sg.angle = -sg.angle;
-});
+const mirrorSel = () => transformSel((r, px) => mirrorRoute(r, px));
 const turnSel = (a: number) => transformSel((r, px, py) => {
   const c = Math.cos((a * Math.PI) / 180), sn = Math.sin((a * Math.PI) / 180), dx = r.x - px, dy = r.y - py;
   r.x = r3(px + dx * c - dy * sn); r.y = r3(py + dx * sn + dy * c);

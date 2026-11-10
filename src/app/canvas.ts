@@ -10,6 +10,7 @@ import { movedTable, type Table, TABLE_COLORS, tableMiddle, tableOutline } from 
 import { type Design, type DRoute, type DSeg, freeName, isMono, toRoutes } from './design';
 import { sleeperSpots } from '../geom/crossing';
 import { poseToWorld, routeLength, routePose, worldToPose } from '../route/route';
+import { reversedRoute } from './routeedits';
 import { describe, follow, plan, planAnyway, planAuto, planFreeTurning, planToPose, reversed, trace as traceRaw, type Pose } from './planner';
 
 // Track outlines traced once and kept (they're in studs, the same at any
@@ -602,7 +603,7 @@ export class TrackCanvas {
       else if (this.dragSnap) {
         // joined: make the two one track (the dragged end meeting the other's end)
         const routes = this.host.design().routes;
-        if (dr.end === 'start') { const r0 = routes[dr.route]; routes[dr.route] = { ...r0, ...reversed(r0), startEnd: r0.endEnd, endEnd: r0.startEnd }; }
+        if (dr.end === 'start') routes[dr.route] = reversedRoute(routes[dr.route]);
         this.extra.clear(); this.selected = this.join(dr.route, this.dragSnap.route, this.dragSnap.end);
         this.host.select(this.selected);
       }
@@ -692,7 +693,7 @@ export class TrackCanvas {
     const routes = this.host.design().routes, rb = routes[b];
     // (train track and monorail only meet: a route is one or the other)
     if (isMono(routes[a]) !== isMono(rb)) return a;
-    const more = bEnd === 'start' ? rb.segs.map((sg) => ({ ...sg })) : reversed(rb).segs;
+    const more = bEnd === 'start' ? rb.segs.map((sg) => ({ ...sg })) : reversedRoute(rb).segs;
     const segs = routes[a].segs;
     for (const sg of more) {
       const last = segs[segs.length - 1];
