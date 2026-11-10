@@ -75,4 +75,14 @@ describe('designs into pieces', { timeout: 60000 }, () => {
     expect(b.info.switches).toBe(2);
     expect(b.pieces.map((p) => p.name)).toEqual(['track', 'points1-a', 'points1-b', 'points1-throw', 'points1-lever', 'points2-a', 'points2-b', 'points2-throw', 'points2-lever']);
   });
+  it('a straight on a bed narrower than the track: in 20 lengths, said, and not every count before that built to find out (21 s once)', async () => {
+    const line = (bed: number) => ({ version: 1 as const, gaugeStuds: 4, options: { printBedX: bed, printBedY: bed }, routes: [{ name: 'A', x: 0, y: 0, heading: 0, segs: [{ kind: 'straight' as const, studs: 64 }] }] });
+    const w = await kernel(), t0 = performance.now(), b = buildDesign(w, line(40));
+    expect((performance.now() - t0) / 1000).toBeLessThan(8);
+    expect(b.pieces.map((p) => p.name)).toEqual(Array.from({ length: 20 }, (_, k) => `track${k + 1}`));
+    expect(b.info.warnings).toEqual(['the track doesn\'t fit the 40 x 40 print bed however short it\'s cut: the bed is narrower than the track']);
+    // (a bed it fits: as few lengths as fit, nothing said)
+    const fits = buildDesign(w, line(200));
+    expect([fits.pieces.length, fits.info.warnings]).toEqual([3, []]);
+  });
 });

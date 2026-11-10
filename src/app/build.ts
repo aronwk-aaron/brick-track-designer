@@ -1806,7 +1806,19 @@ function buildOne(w: Wasm, design: Design, report: (what: string, frac: number) 
         // L / n each were off it, their sockets and tubes beside the baseplate's studs)
         const at = (k: number) => (k === n ? L : Math.round((L * k) / n / 8) * 8);
         const subs = Array.from({ length: n }, (_, k) => subRoute(rt, at(k), at(k + 1)));
+        // (lengths whose sleepers' ends alone are over the bed aren't built to find that out: on a bed narrower than
+        // the track every count up to 20 was built in turn, 209 pieces for the 20 kept: a 64-stud straight on a 40 x 40
+        // bed took 21 s)
+        const over = (sub: Route) => {
+          const Ls = routeLength(sub), hw = track.c.sleeperLen / 2 - 0.5, lo = [Infinity, Infinity], hi = [-Infinity, -Infinity];
+          for (let k = 0, m = Math.max(1, Math.ceil(Ls / 4)); k <= m; k++) for (const off of [-hw, hw]) { const q = railPoint(sub, (Ls * k) / m, off); for (const j of [0, 1]) { lo[j] = Math.min(lo[j], q[j]); hi[j] = Math.max(hi[j], q[j]); } }
+          const wd = hi[0] - lo[0], ht = hi[1] - lo[1];
+          return !((wd <= o.printBedX && ht <= o.printBedY) || (wd <= o.printBedY && ht <= o.printBedX));
+        };
+        if (n < 20 && subs.some(over)) continue;
         const bits = subs.map((sub) => cached(`cx1:${JSON.stringify({ sub, copt, gridPose })}`, () => crossingPiece(scad, [sub], copt, undefined, undefined, { gridPose }), true));
+        // (still over the bed in 20 lengths: it's the track's width that doesn't fit; said, not left to be found on the printer)
+        if (n === 20 && !bits.every(cut.fitsBed)) bedWarnings.add(`the track doesn't fit the ${o.printBedX} x ${o.printBedY} print bed however short it's cut: the bed is narrower than the track`);
         if (bits.every(cut.fitsBed) || n === 20) { bits.forEach((m, k) => { const lm = labelled(b, m, [subs[k]], sizeOf([subs[k]]), `${k + 1}`); add(b, `track${k + 1}`, TRACK_COLOR, lm, lm); }); break; }
       }
     }
