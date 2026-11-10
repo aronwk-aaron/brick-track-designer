@@ -350,6 +350,8 @@ export function buildMonorail(w: Wasm, routes: Route[], o: Partial<PieceOptions>
   // (both beams through it, each with proper ends on its arms; each rack's ridge cut back where it's on the other beam,
   // the middle flat, so either train runs across: its gear coasts over the gap)
   const crossings: { at: [number, number]; arms: { c: number; a: number; b: number }[] }[] = [];
+  /** where beams cross at heights too close to pass: said once, as that (not again as beams running along each other) */
+  const tooClose: [number, number][] = [];
   {
     const poly = chains.map((c) => { const out: { q: Pose; s: number }[] = []; for (let s2 = 0; s2 <= c.L + 1e-6; s2 += 2) out.push({ q: routePose(c.route, s2), s: s2 }); return out; });
     const hits: { at: [number, number]; ci: number; si: number; cj: number; sj: number; ang: number }[] = [];
@@ -373,7 +375,7 @@ export function buildMonorail(w: Wasm, routes: Route[], o: Partial<PieceOptions>
       const dz = Math.abs(zAt(h.ci, h.si) - zAt(h.cj, h.sj));
       if (dz >= MONO.ridgeTop + 3) continue;
       if (dz > 0.01 && res.issues.some((q) => Math.hypot(q.at[0] - h.at[0], q.at[1] - h.at[1]) < 32)) continue;
-      if (dz > 0.01) { issue(h.at, 48, 'Monorail beams cross here at heights too close to pass'); res.warnings.push(`monorail beams cross at ${studs(h.at)} (studs) ${(dz / 3.2).toFixed(0)} plates apart in height: too close to pass over each other (5 plates at least), and not level for a crossing`); continue; }
+      if (dz > 0.01) { if (h.ang >= 15) tooClose.push(h.at); issue(h.at, 48, 'Monorail beams cross here at heights too close to pass'); res.warnings.push(`monorail beams cross at ${studs(h.at)} (studs) ${(dz / 3.2).toFixed(0)} plates apart in height: too close to pass over each other (5 plates at least), and not level for a crossing`); continue; }
       if (crossings.some((x) => Math.hypot(x.at[0] - h.at[0], x.at[1] - h.at[1]) < 32)) continue;
       if (res.splits.some((t) => Math.hypot(t[0] - h.at[0], t[1] - h.at[1]) < 400)) continue;
       if (h.ang < 15) { issue(h.at, 48, 'Monorail beams cross here at too shallow an angle for a crossing'); res.warnings.push(`monorail beams cross at ${studs(h.at)} (studs) at ${h.ang.toFixed(0)}°: too shallow for a level crossing (15° at least)`); continue; }
@@ -557,6 +559,7 @@ export function buildMonorail(w: Wasm, routes: Route[], o: Partial<PieceOptions>
       if (Math.hypot(p.q[0] - q.q[0], p.q[1] - q.q[1]) >= 31) continue;
       if (toes.some((t) => Math.hypot(t[0] - p.q[0], t[1] - p.q[1]) < 400)) continue;
       if (crossings.some((x) => Math.hypot(x.at[0] - p.q[0], x.at[1] - p.q[1]) < 80)) continue;
+      if (tooClose.some((x) => Math.hypot(x[0] - p.q[0], x[1] - p.q[1]) < 80)) continue;
       if (!spots.some((s) => near(s, p.q, 64))) spots.push(p.q);
     }
     for (const q of spots) issue([q[0], q[1]], 48, 'Monorail beams run over each other here');

@@ -27,7 +27,9 @@ describe('warnings: monorail', { timeout: 300000 }, () => {
   });
   it('beams that cross too close in height, or at too shallow an angle, or run along each other', async () => {
     const cross = (h: number) => D([R('A', 0, -24, 0, [S(48)], { ...MONO, monoHeight: 0 }), R('B', 24, 0, 90, [S(48)], { ...MONO, monoHeight: h })], { monoSupportStuds: 32 });
-    await fires(/monorail beams cross at 0, 0 \(studs\) 2 plates apart in height: too close to pass over each other/, cross(2), cross(0));
+    const close = await fires(/monorail beams cross at 0, 0 \(studs\) 2 plates apart in height: too close to pass over each other/, cross(2), cross(0));
+    // (said once: square across each other, they don't run along each other as well)
+    expect(close.warnings.filter((s) => /monorail beams/.test(s))).toHaveLength(1);
     const two = (x: number, heading: number) => D([R('A', 0, -40, 0, [S(80)], MONO), R('B', x, -40, heading, [S(80)], MONO)]);
     await fires(/monorail beams cross at 0, -2 \(studs\) at 6°: too shallow for a level crossing/, two(4, 6), two(16, 0));
     await fires(/monorail beams run over each other at .*: they run along each other/, two(2, 0), two(16, 0));
