@@ -3,7 +3,7 @@
 import * as THREE from 'three';
 import wasmUrl from 'manifold-3d/manifold.wasm?url';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
-import { BANK_MAX, type BankRamps, type Design, type DRoute, type DSeg, OPTION_DEFAULTS, type PieceOptions, RAIL_DEFAULTS, TEMPLATE_GROUPS, TEMPLATES, type Trackwork, endOf, freeName, isMono, readDesign, setSystem } from './design';
+import { BANK_MAX, type BankRamps, type Design, type DRoute, type DSeg, OPTION_DEFAULTS, type PieceOptions, RAIL_DEFAULTS, TEMPLATE_GROUPS, TEMPLATES, type Trackwork, endOf, freeName, isMono, readDesign, routeGaugeStuds, setSystem } from './design';
 import { TrackCanvas, type OverlayItem, dialogOpen, eachLever, leverSide, leverSlides, typingIn } from './canvas';
 import { describe } from './planner';
 import { BRICKTRACKS_COLOR, gradeOf, LEGO_COLOR, type LegoPart, legoParts, type Piece } from './build';
@@ -179,7 +179,7 @@ function extraRailFields(r: DRoute, body: HTMLElement) {
     { v: 'curve', t: 'Curve', tip: 'One smooth curve from the point into the parallel guard rails.', con: 'Wider sooner, so fewer studs near the point.' }],
   (v) => { r.guardRailTaperShape = v as DRoute['guardRailTaperShape']; }, pOff);
   studs('Nose ramp, studs', d.guardRailNoseRampStuds, RAIL_DEFAULTS.guardRailNoseRampStuds, 0.25, 0, 5, (n) => { r.guardRailNoseRampStuds = n; }, 'The point\'s nose slopes from just above the bed up to the rail top over this length, so anything dragging rides over it. 0: no slope.', pOff);
-  const gs = design.gaugeStuds, dOff = r.dualGauge ? undefined : 'only with Dual gauge on';
+  const gs = routeGaugeStuds(design, r), dOff = r.dualGauge ? undefined : 'only with Dual gauge on';
   pick('Dual gauge', r.dualGauge ? 'on' : 'off', 'off', [
     { v: 'off', t: 'Off', tip: 'One gauge.' },
     { v: 'on', t: 'On', tip: 'A third rail, so trains of a narrower gauge run on it and one running rail.', con: 'More to print. No studs near the third rail.' }],
@@ -383,7 +383,7 @@ function drawForms() {
       const b2 = document.createElement('div'); d2.append(s2, b2); body.append(d2); return b2;
     };
     const shape = part('Shape', `${r.segs.length} piece${r.segs.length === 1 ? '' : 's'}`);
-    const place = part('Place', `${r.x}, ${r.y} · ${r.heading}°${isMono(r) ? ' · monorail' : ''}${r.monoHeight !== undefined ? ` · ${r.monoHeight}${r.monoHeightEnd !== undefined && r.monoHeightEnd !== r.monoHeight ? `→${r.monoHeightEnd}` : ''} plates up` : ''}`);
+    const place = part('Place', `${r.x}, ${r.y} · ${r.heading}°${isMono(r) ? ' · monorail' : ''}${!isMono(r) && r.gaugeStuds !== undefined && r.gaugeStuds !== design.gaugeStuds ? ` · gauge ${r.gaugeStuds}` : ''}${r.monoHeight !== undefined ? ` · ${r.monoHeight}${r.monoHeightEnd !== undefined && r.monoHeightEnd !== r.monoHeight ? `→${r.monoHeightEnd}` : ''} plates up` : ''}`);
     const name = document.createElement('input'); name.value = r.name; name.type = 'text';
     // (routes are known by their names, in the trackwork and the switches: no two the same)
     name.addEventListener('change', () => {
@@ -410,6 +410,18 @@ function drawForms() {
       sys.title = 'Train track, or LEGO monorail: the 4-stud beam with a rack down the middle.';
       sys.addEventListener('change', () => { setSystem(r, sys.value === 'monorail' ? 'monorail' : 'train'); changed(true); renderOptions(); });
       place.append(field('Track', sys));
+      // (its own gauge: empty, the design's (Settings › Track › Gauge), shown; locked on a monorail, with why)
+      {
+        const gi = document.createElement('input'); gi.type = 'number'; gi.step = '1'; gi.min = String(LIMITS.gauge[0]); gi.max = String(LIMITS.gauge[1]);
+        gi.value = r.gaugeStuds === undefined || isMono(r) ? '' : String(r.gaugeStuds); gi.placeholder = String(design.gaugeStuds); gi.disabled = isMono(r);
+        gi.title = `Studs between this route's rails, if not the design's ${design.gaugeStuds} (Settings › Track › Gauge). Range ${LIMITS.gauge[0]} to ${LIMITS.gauge[1]}.`;
+        gi.addEventListener('change', () => { const n = Math.round(Number(gi.value)); if (gi.value.trim() === '' || !Number.isFinite(n)) delete r.gaugeStuds; else r.gaugeStuds = clamp(n, LIMITS.gauge); changed(true); });
+        place.append(field('Gauge, studs', gi));
+        const n5 = document.createElement('small'); n5.className = 'desc';
+        if (isMono(r)) { n5.textContent = 'Gauge: locked, a monorail beam has none (Place › Track).'; n5.style.color = 'var(--warn)'; }
+        else { n5.style.color = 'var(--muted)'; n5.textContent = `Gauge: studs between this route's rails, ${LIMITS.gauge[0]} to ${LIMITS.gauge[1]}; empty: the design's, ${design.gaugeStuds} (Settings › Track › Gauge). Tracks of different gauges cross and run side by side; points between them aren't built.`; }
+        place.append(n5);
+      }
       // (monorail: the beam's height off the baseplate, in plates; empty: the supports' height in Settings, or on the baseplate)
       const hi = document.createElement('input'); hi.type = 'number'; hi.step = '1'; hi.min = '0'; hi.max = String(LIMITS.plates[1]);
       hi.value = r.monoHeight === undefined ? '' : String(r.monoHeight); hi.placeholder = 'auto';

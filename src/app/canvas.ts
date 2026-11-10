@@ -7,7 +7,7 @@
 // Drag with the right or middle button (or Space + drag) to pan; the wheel
 // zooms.
 import { movedTable, type Table, TABLE_COLORS, tableMiddle, tableOutline } from './tables';
-import { type Design, type DRoute, type DSeg, freeName, isMono, toRoutes, type Trackwork } from './design';
+import { type Design, type DRoute, type DSeg, freeName, isMono, routeGaugeStuds, toRoutes, type Trackwork } from './design';
 import { sleeperSpots } from '../geom/crossing';
 import { poseToWorld, routeLength, routePose, worldToPose } from '../route/route';
 import { reversedRoute } from './routeedits';
@@ -311,9 +311,10 @@ export class TrackCanvas {
   /** (select) The track whose bed, sleepers or ballast p is on: a click anywhere on it picks it, not only near its centre line. */
   private onBand(p: [number, number]) {
     const d = this.host.design(), bal = d.options?.ballast ?? 'none';
-    const half = (d.gaugeStuds + 1) / 2 + 1.5 + (bal === 'buddy' ? 2 : bal === 'ballast' ? 1 : 0);
-    const h = this.nearTrack(p, half);
-    return h && Math.hypot(h.pose.x - p[0], h.pose.y - p[1]) <= half + 0.25 ? { ...h, end: undefined } : undefined;
+    // (each track's own width: its own gauge's, mixed gauges; looked for as far as the widest reaches)
+    const halfOf = (gs: number) => (gs + 1) / 2 + 1.5 + (bal === 'buddy' ? 2 : bal === 'ballast' ? 1 : 0);
+    const h = this.nearTrack(p, halfOf(Math.max(d.gaugeStuds, ...d.routes.map((r) => routeGaugeStuds(d, r)))));
+    return h && Math.hypot(h.pose.x - p[0], h.pose.y - p[1]) <= halfOf(routeGaugeStuds(d, d.routes[h.route])) + 0.25 ? { ...h, end: undefined } : undefined;
   }
   private nearTrack(p: [number, number], reach = this.reach(), skip?: number): { route: number; pose: Pose; end: 'start' | 'end' | undefined } | undefined {
     let best: { route: number; pose: Pose; end: 'start' | 'end' | undefined; d: number } | undefined;
@@ -739,6 +740,8 @@ export class TrackCanvas {
     const routes = this.host.design().routes, rb = routes[b];
     // (train track and monorail only meet: a route is one or the other)
     if (isMono(routes[a]) !== isMono(rb)) return a;
+    // (nor tracks of different gauges: a route is one gauge)
+    if (routeGaugeStuds(this.host.design(), routes[a]) !== routeGaugeStuds(this.host.design(), rb)) return a;
     // (b's hand edits to the trackwork are the joined track's)
     { const d = this.host.design(), rts = toRoutes(d); joinAnchors(d, routes[a].name || String(a), rb.name || String(b), routeLength(rts[a]), routeLength(rts[b]), bEnd === 'end'); }
     const more = bEnd === 'start' ? rb.segs.map((sg) => ({ ...sg })) : reversedRoute(rb).segs;
@@ -912,7 +915,8 @@ export class TrackCanvas {
       for (let y = Math.ceil(wy0 / step) * step; y <= wy1; y += step) { const [, sy] = this.toScreen(0, y); c.moveTo(0, Math.round(sy) + 0.5); c.lineTo(W, Math.round(sy) + 0.5); }
       c.stroke();
     }
-    const d = this.host.design(), g = (d.gaugeStuds + 1) / 2;
+    // (g: half the design's gauge, rail to rail, studs; gOf: a route's, its own gauge's where it has one)
+    const d = this.host.design(), g = (d.gaugeStuds + 1) / 2, gOf = (r: DRoute) => (routeGaugeStuds(d, r) + 1) / 2;
     // the tables, under everything: each filled in its colour, outlined, named
     if (d.tables?.length && !this.hidden.has('tables')) d.tables.forEach((t, k) => {
       const pts = tableOutline(t);
@@ -983,7 +987,7 @@ export class TrackCanvas {
       c.fillStyle = color; c.fillText(txt, x + 5, y + 13);
     };
     /** Draw segments from pose p, each in its colour: bad ones red. */
-    const drawSegs = (p: Pose, segs: DSeg[], isBad: (k: number) => boolean, band: string, rail: string) => {
+    const drawSegs = (p: Pose, segs: DSeg[], isBad: (k: number) => boolean, band: string, rail: string, g = (d.gaugeStuds + 1) / 2) => {
       let q = p;
       segs.forEach((sg, k) => {
         const bad = isBad(k);
@@ -997,11 +1001,11 @@ export class TrackCanvas {
     // another stud wider each side
     const ballast = d.options?.ballast ?? 'none';
     if (ballast !== 'none' && !this.hidden.has('ballast')) {
-      const wide = (2 * g + 3 + (ballast === 'buddy' ? 4 : 2)) * this.scale;
-      layer(ink.ballastLow, (draw) => { for (const r of d.routes) if (!isMono(r)) draw(trace(r, r.segs, 0.5), wide); });
-      if (ballast === 'buddy') layer(ink.ballast, (draw) => { for (const r of d.routes) if (!isMono(r)) draw(trace(r, r.segs, 0.5), (2 * g + 5) * this.scale); });
+      const wide = (r: DRoute) => (2 * gOf(r) + 3 + (ballast === 'buddy' ? 4 : 2)) * this.scale;
+      layer(ink.ballastLow, (draw) => { for (const r of d.routes) if (!isMono(r)) draw(trace(r, r.segs, 0.5), wide(r)); });
+      if (ballast === 'buddy') layer(ink.ballast, (draw) => { for (const r of d.routes) if (!isMono(r)) draw(trace(r, r.segs, 0.5), (2 * gOf(r) + 5) * this.scale); });
       // (the selected tracks' ballast picked out with them, as their band)
-      layer('rgba(43,111,224,0.16)', (draw) => d.routes.forEach((r, i) => { if (!isMono(r) && (i === this.selected || this.extra.has(i))) draw(trace(r, r.segs, 0.5), wide); }));
+      layer('rgba(43,111,224,0.16)', (draw) => d.routes.forEach((r, i) => { if (!isMono(r) && (i === this.selected || this.extra.has(i))) draw(trace(r, r.segs, 0.5), wide(r)); }));
     }
     // the sleeper bands, each colour as one layer (red where a drag can't bend the track)
     {
@@ -1014,7 +1018,7 @@ export class TrackCanvas {
         if (isMono(r)) return; // (the monorail's beam: drawn below)
         let q: Pose = r; const bad = badOf(i);
         r.segs.forEach((sg, k) => {
-          if ((bad(k) ? 'rgba(224,69,43,0.22)' : bandOf(i)) === color) draw(trace(q, [sg], 0.5), (2 * g + 3) * this.scale);
+          if ((bad(k) ? 'rgba(224,69,43,0.22)' : bandOf(i)) === color) draw(trace(q, [sg], 0.5), (2 * gOf(r) + 3) * this.scale);
           q = follow(q, [sg]);
         });
       }));
@@ -1024,9 +1028,10 @@ export class TrackCanvas {
     {
       const op = d.options ?? {};
       if (op.sleepers === 'sleepers' && (op.ballast ?? 'none') === 'none') {
-        const gapS = op.sleeperGapStuds ?? 2, sw = op.sleeperWidthStuds ?? 2, half = g + 1.5;
+        const gapS = op.sleeperGapStuds ?? 2, sw = op.sleeperWidthStuds ?? 2;
         toRoutes(d).forEach((rt, i) => {
           if (isMono(d.routes[i]) || !rt.segments.length) return;
+          const half = gOf(d.routes[i]) + 1.5;
           for (const sAt of sleeperSpots(routeLength(rt), false, false, gapS, sw, rt.segments.every((sg) => sg.kind === 'arc'))) {
             const p = routePose(rt, sAt), h = (p[2] * Math.PI) / 180, rx = Math.cos(h), ry = Math.sin(h), x = p[0] / MM, y = p[1] / MM;
             line([[x - rx * half, y - ry * half], [x + rx * half, y + ry * half]], 'rgba(140,128,110,0.42)', sw * this.scale);
@@ -1051,7 +1056,7 @@ export class TrackCanvas {
       const isBad = (k: number) => !!dragging && (this.dragBadFrom >= 0 ? k >= this.dragBadFrom : k < this.dragBadTo);
       // sleeper band, rails, centre line (the monorail's beam drawn above)
       if (!isMono(r)) {
-        drawSegs(r, r.segs, isBad, '', sel ? ink.sel : ink.rail); // (bands drawn above, as layers)
+        drawSegs(r, r.segs, isBad, '', sel ? ink.sel : ink.rail, gOf(r)); // (bands drawn above, as layers)
         line(trace(r, r.segs, 0.5), ink.centre, 1, [4, 4]);
       }
       // what each curve is, at its middle (and straights' lengths when zoomed in)
@@ -1061,13 +1066,13 @@ export class TrackCanvas {
         const show = sg.kind === 'curve' || this.scale > 10;
         if (show) {
           const mid = follow(q, [sg.kind === 'straight' ? { kind: 'straight', studs: sg.studs / 2 } : { ...sg, angle: sg.angle / 2 }]);
-          const off = ((isMono(r) ? monoHw : g) + 2.2) * (sg.kind === 'curve' ? -Math.sign(sg.angle) : 1);  // outside the curve
+          const off = ((isMono(r) ? monoHw : gOf(r)) + 2.2) * (sg.kind === 'curve' ? -Math.sign(sg.angle) : 1);  // outside the curve
           const [sx, sy] = this.toScreen(mid.x + off * Math.cos((mid.heading * Math.PI) / 180), mid.y + off * Math.sin((mid.heading * Math.PI) / 180));
           const txt = sg.kind === 'curve' ? `R${Math.round(sg.radius * 10) / 10} ${Math.round(Math.abs(sg.angle) * 10) / 10}°${sg.bank ? `, bank ${sg.bank}°` : ''}` : `${Math.round(sg.studs * 10) / 10}`;
           labels.push({ x: sx, y: sy, txt, sel });
         }
         // (a banked curve: a fine dotted line along its high, outer side)
-        if (sg.kind === 'curve' && sg.bank) line(offsetPts(q, [sg], (g + 1) * Math.sign(sg.angle)), 'rgba(200,120,40,0.75)', 1.5, [2, 3]);
+        if (sg.kind === 'curve' && sg.bank) line(offsetPts(q, [sg], (gOf(r) + 1) * Math.sign(sg.angle)), 'rgba(200,120,40,0.75)', 1.5, [2, 3]);
         q = follow(q, [sg]);
       }
       c.textAlign = 'start';
@@ -1080,8 +1085,8 @@ export class TrackCanvas {
         if (r[which] !== 'buffer' || !r.segs.length || r.system === 'monorail') continue;
         const h = (p.heading * Math.PI) / 180, ax = -Math.sin(h) * k, ay = Math.cos(h) * k, rx = Math.cos(h), ry = Math.sin(h);
         const at = (al: number, lat: number): [number, number] => [p.x + ax * al + rx * lat, p.y + ay * al + ry * lat];
-        line([at(1, -(g + 1.5)), at(1, g + 1.5)], ink.rail, Math.max(3, 0.8 * this.scale));
-        for (const sd of [-1, 1]) line([at(0, sd * (g + 0.5)), at(2, sd * (g + 0.5))], ink.rail, Math.max(3, 2 * this.scale));
+        line([at(1, -(gOf(r) + 1.5)), at(1, gOf(r) + 1.5)], ink.rail, Math.max(3, 0.8 * this.scale));
+        for (const sd of [-1, 1]) line([at(0, sd * (gOf(r) + 0.5)), at(2, sd * (gOf(r) + 0.5))], ink.rail, Math.max(3, 2 * this.scale));
       }
     });
     {
