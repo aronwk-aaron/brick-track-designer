@@ -1911,11 +1911,11 @@ function drawTrackwork(list: TwItem[]) {
   }
   // (monorail points: what they are, and that they're built as drawn)
   if (monoToes().length && !twOnlyEdited) {
-    const g = group('mono', 'Monorail points (experimental)', monoToes().length, 0);
+    const g = group('mono', 'Monorail points', monoToes().length, 0);
     monoToes().forEach((q, k) => {
       const row = item(g, `mono:${k}`, `Monorail points ${k + 1}`, `at ${(q[0] / 8).toFixed(0)}, ${(q[1] / 8).toFixed(0)} studs`, false);
       const n2 = document.createElement('div'); n2.className = 'none';
-      n2.textContent = 'Experimental: not test-printed yet. Built where the routes part, as drawn: the lever is on the main track\'s side, away from the branch (as LEGO\'s). To move them, redraw the branch; their slide and clearance are in Settings › Monorail.';
+      n2.textContent = 'LEGO\'s points, built where the routes part: 32 studs straight, the branch ending 20 studs on and 8 to the side. The lever is beside the straight exit, away from the branch. To move them, redraw the routes; their clearance is in Settings › Monorail.';
       row.append(n2);
     });
   }

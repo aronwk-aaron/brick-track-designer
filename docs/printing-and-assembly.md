@@ -239,8 +239,25 @@ to pillar, the feet slope at 45 degrees. Or choose LEGO bricks: stacks of 2 x 8 
 Monorail pieces (`monorail…`) are beams with ends you choose (Settings › Monorail): hollow studs out of the sides (like
 LEGO monorail), two studs on top in recesses, or plain. Each end has two LEGO cross-axle holes (Joining axle length 2 studs
 by default) to pin pieces together with axles. A **support** every so many studs (Support every, studs) is a part of its
-own: its base grips the baseplate and the beam sits on top. Parts are cut over a support where they can be. The monorail
-points are marked experimental in the app. Printing and assembly are as above: no supports.
+own: its base grips the baseplate and the beam sits on top. Parts are cut over a support where they can be. Printing is as above: no slicer supports.
+
+**Monorail points** are LEGO's own points (2889 right, 2890 left): 32 studs straight, the branch ending 20 studs on and
+8 studs to the side at 45°, so a set drops in where a LEGO one goes. Six parts (`monorail-points-…`): **base**, **deck**,
+**slide** (the two racks), **wheel**, **link** and **lever**. All print flat as their files lie. The slide's file has thin
+breakaway walls under its racks: snap them off. To put a set together:
+
+1. The **wheel** onto the post in the base, its two pins up.
+2. The **lever** into its housing beside the straight exit, its pin up and its two studs out to the side.
+3. The **link** down onto the wheel's short pin and the lever's pin.
+4. The **slide** into the **deck** from the side away from the branch: its three bars into the deck's three slots, the
+   racks on top, the bars' feet underneath.
+5. The deck, with the slide in it, down onto the base's studs, the wheel's tall pin up into the slot under the slide's
+   middle bar. Press it home.
+
+Push the lever along the track (25 mm) to set the points: it clicks into place at each end. A 1 x 2 plate on its two
+studs makes a handle, as on LEGO's. LEGO's points also set themselves when a train comes in from the exit they are not
+set for; these don't yet, so set them by hand first. Points clearance (Settings › Monorail) is the gap round the moving
+parts.
 *Not yet confirmed by a test print.*
 
 ## When it doesn't fit

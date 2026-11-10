@@ -9,7 +9,7 @@ import { sweepRoute } from '../geom/sweep';
 import { stlBytes } from '../geom/stl';
 import { bedFit } from '../geom/bedfit';
 import { MONO, MONO_DEFAULTS, Mono, type MonoOptions, rackGaps, type RackGap, SUPPORT_DEFAULTS, type SupportOptions, placeAt, subOf, supportHeight, supportPart, underLabel } from '../geom/monorail';
-import { monoSwitch, type SwitchPlan, planSwitch } from '../geom/monoswitch';
+import { monoSwitch, type PointsPart, type SwitchPlan, planSwitch } from '../geom/monoswitch';
 import { poseToWorld, routeLat, routeLength, routePose, routeSOf, segLength, segStarts, type Pose, type Route } from '../route/route';
 import { reversedRoute } from '../switch/reverse';
 import { type PieceOptions } from './design';
@@ -279,7 +279,7 @@ export function buildMonorail(w: Wasm, routes: Route[], o: Partial<PieceOptions>
   const X = o.printBedX ?? 256, Y = o.printBedY ?? 256, grid = MONO.stud;
   const every = Math.max(0, Math.round(o.monoSupportStuds ?? 0)) * MONO.stud, elev0 = every ? supportHeight(so) : 0;
   const labels = o.monoLabels ?? 'name';
-  const travel = o.monoSwitchTravel ?? 27, fit = o.monoSwitchFit ?? 0.3;
+  const fit = o.monoSwitchFit ?? 0.3;
   const res: MonoResult = { pieces: [], volume: 0, warnings: [], issues: [], splits: [] };
   const chains = monoChains(routes);
   if (!chains.length) return res;
@@ -328,27 +328,24 @@ export function buildMonorail(w: Wasm, routes: Route[], o: Partial<PieceOptions>
   const switches: { plan: SwitchPlan; P: Pose; key: string; elev: number }[] = [];
   for (const br of branches) {
     const M = chains[br.main], B = chains[br.branch];
-    // (the branch run from its toe end; the main from LEGO's 5 mm before the toe, as far as there's room)
-    const lead = Math.min(5, M.closed ? 5 : br.dir === 1 ? br.toeS : M.L - br.toeS);
-    // (on a loop: where it starts, in the twice-round route, with room behind and ahead of it)
-    let ms0 = br.toeS - br.dir * lead;
+    // (both run from the toe: LEGO's points, 32 studs of the main and the branch as far as LEGO's end)
+    let ms0 = br.toeS;
     if (M.closed) { ms0 = ((ms0 % M.L) + M.L) % M.L; if (br.dir === -1) ms0 += M.L; }
     const mainRoom = M.closed ? M.L - 64 : br.dir === 1 ? M.L - ms0 : ms0;
     const main = oriented(M, ms0, br.dir, Math.max(0, mainRoom));
     const bo = br.branchEnd === 0 ? oriented(B, 0, 1, B.L) : oriented(B, B.L, -1, B.L);
-    const plan = planSwitch(main.route, main.gaps, bo.route, bo.gaps, lead, travel, (((-br.dir * ms0) % grid) + grid) % grid);
+    const plan = planSwitch(main.route, main.gaps, bo.route, bo.gaps);
     const toe = routePose(M.route, br.toeS);
-    if (!plan) { res.warnings.push(`monorail points at ${studs([toe[0], toe[1]])} (studs): the routes don't part far enough for points (they need about 4 studs between them, and room for the lever); not built`); continue; }
+    if (!plan) { res.warnings.push(`monorail points at ${studs([toe[0], toe[1]])} (studs): points are LEGO's own shape, and these routes aren't: the main route straight for 32 studs from where they part, the branch ending 20 studs on and 8 studs to the side, turned 45° (start from the Monorail points templates); not built`); continue; }
     const P = routePose(M.route, ms0);
     const Pd: Pose = br.dir === 1 ? P : [P[0], P[1], P[2] + 180];
     // (what it takes of each chain)
     taken[br.main].push(br.dir === 1 ? [ms0, ms0 + plan.mainLen] : [ms0 - plan.mainLen, ms0]);
-    const bl = plan.branchLen - lead;
+    const bl = plan.branchLen;
     taken[br.branch].push(br.branchEnd === 0 ? [0, bl] : [B.L - bl, B.L]);
     res.splits.push([toe[0], toe[1]]);
-    if (res.splits.length === 1) res.warnings.push('monorail points are experimental: test-print a set before building more');
     const elev = zAt(br.main, ms0);
-    switches.push({ plan, P: Pd, elev, key: JSON.stringify({ m: main.route.segments, b: bo.route.segments, lead, travel, fit, mo, elev }) });
+    switches.push({ plan, P: Pd, elev, key: JSON.stringify({ m: plan.main.segments, b: plan.branch.segments, gm: plan.gm, gb: plan.gb, hand: plan.hand, fit, mo, elev }) });
   }
   if (pointsOnly) return res;
 
@@ -477,17 +474,22 @@ export function buildMonorail(w: Wasm, routes: Route[], o: Partial<PieceOptions>
     report(`Building monorail points ${k + 1} of ${switches.length}`);
     const tag = switches.length > 1 ? `monorail-points${k + 1}` : 'monorail-points';
     const pts = cached(`ms:${sw.key}`, () => arena(w, () => {
-      const g = monoSwitch(mono, sw.plan, fit);
-      const base = placeAt(g.base, sw.P), frame = placeAt(g.frame, sw.P), sup = placeAt(g.supports, sw.P), lever = placeAt(g.lever, sw.P);
-      const tb = fitAngle(outline(base), X, Y), tf = fitAngle(outline(frame), X, Y) ?? 0;
-      // (the frame's file with its breakaway supports; as assembled without them, the view's to show or hide)
-      return { base: bake(base, tb ?? 0, sw.elev), frame: { ...bake(frame, 0, sw.elev), stl: bake(scad.union([frame, sup]), tf).stl, supports: meshPositions(sup.getMesh(), sw.elev) },
-        lever: bake(lever, fitAngle(outline(lever), X, Y) ?? 0, sw.elev), fits: tb !== undefined };
+      const g = monoSwitch(mono, sw.plan, fit), at = (m: Man) => placeAt(m, sw.P);
+      const base = at(g.base), tb = fitAngle(outline(base), X, Y);
+      // (each part's file lies as it prints: flat, its underside on the bed; the slide's with its breakaway supports,
+      // as assembled without them: the view's to show or hide)
+      const part = (m: Man, turn?: number, sup?: Man) => {
+        const q = at(m), a = turn ?? fitAngle(outline(q), X, Y) ?? 0, lie = (x: Man) => x.rotate([0, 0, -a]).translate([0, 0, -q.boundingBox().min[2]]);
+        return { ...bake(q, 0, sw.elev), stl: stlBytes(lie(sup ? scad.union([q, at(sup)]) : q).getMesh(), true), supports: sup ? meshPositions(at(sup).getMesh(), sw.elev) : undefined };
+      };
+      return { base: part(g.base, tb ?? 0), deck: part(g.deck), slide: part(g.slide, undefined, g.supports), wheel: part(g.wheel), link: part(g.link), lever: part(g.lever), fits: tb !== undefined };
     }, () => []));
-    res.pieces.push({ name: `${tag}-base`, color: 0x9aa3ad, positions: pts.base.positions.slice(), stl: pts.base.stl.slice() });
-    res.pieces.push({ name: `${tag}-frame`, color: 0x4682b4, positions: pts.frame.positions.slice(), stl: pts.frame.stl.slice(), supports: pts.frame.supports.slice() });
-    res.pieces.push({ name: `${tag}-lever`, color: 0xd4af37, positions: pts.lever.positions.slice(), stl: pts.lever.stl.slice() });
-    res.volume += pts.base.volume + pts.frame.volume + pts.lever.volume;
+    const mp = (part?: PointsPart) => ({ P: sw.P, hand: sw.plan.hand, part });
+    const piece = (n: 'base' | 'deck' | 'slide' | 'wheel' | 'link' | 'lever', color: number) => {
+      res.pieces.push({ name: `${tag}-${n}`, color, positions: pts[n].positions.slice(), stl: pts[n].stl.slice(), supports: pts[n].supports?.slice(), monoPoints: mp(n === 'base' || n === 'deck' ? undefined : n) });
+      res.volume += pts[n].volume;
+    };
+    piece('base', 0x9aa3ad); piece('deck', 0x9aa3ad); piece('slide', 0x4682b4); piece('wheel', 0x4f8f5f); piece('link', 0x4f8f5f); piece('lever', 0xd4af37);
     if (!pts.fits) {
       const bb = pts.base.box;
       issue([(bb.min[0] + bb.max[0]) / 2, (bb.min[1] + bb.max[1]) / 2], Math.hypot(bb.max[0] - bb.min[0], bb.max[1] - bb.min[1]) / 2, `Monorail points too big for the ${X} x ${Y} print bed`);

@@ -32,7 +32,7 @@ const BUDGET: Record<string, number> = {
   'Narrow-gauge crossing 33.75° left': 3, 'Narrow-gauge crossing 33.75° right': 3, 'Grade up at 2.5%': 8, 'Helix (R104, two turns)': 71,
   'Siding ending in a buffer stop': 30, 'Bridge with guard rails': 4, 'Dual gauge track': 5, 'Dual gauge crossing 90°': 3,
   'Dual gauge crossing 45°': 12, 'Narrow gauge beside and across standard track': 22, 'Banked curve': 15, 'Crossing on sleepers': 5,
-  'Monorail oval on supports': 7, 'Monorail ramp (as LEGO\'s)': 6, 'Monorail switch (experimental)': 3, 'Monorail level crossing (experimental)': 3,
+  'Monorail oval on supports': 7, 'Monorail ramp (as LEGO\'s)': 6, 'Monorail points right (as LEGO\'s)': 6, 'Monorail points left (as LEGO\'s)': 6, 'Monorail siding (points and a short curve)': 9, 'Monorail level crossing (experimental)': 3,
   'Yard (R56)': 139, 'Double-track return loop (turning right)': 390, 'Double-track return loop (turning left)': 283, 'Yard ladder (R40)': 71,
   'Wye with a crossover': 58, '90° crossing': 3, '22.5° crossing': 14, 'Double slip (22.5°)': 16, 'Double slip (45°, R40)': 23,
   'Crossing on a curve': 3, 'Left switch (LEGO)': 7, 'Right switch (LEGO)': 7, 'Left switch (BrickTracks R104)': 7,

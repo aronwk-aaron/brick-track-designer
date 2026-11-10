@@ -203,8 +203,8 @@ export interface PieceOptions {
   /** Monorail (monorail_lib.scad's Details): studs at the ends (side, top in recesses, none); axle holes in the end faces; LEGO's 4 mm anti-studs; the joining axles' length (studs); the holes' fit (mm); what's engraved underneath. */
   monoEndStuds?: 'side' | 'top' | 'none'; monoAxleHoles?: boolean; monoLegoAntistud?: boolean; monoAxleLengthStuds?: number; monoHoleFit?: number;
   monoLabels?: 'name' | 'part' | 'none';
-  /** Monorail points: how far the frame slides (mm), the clearance round it (mm). */
-  monoSwitchTravel?: number; monoSwitchFit?: number;
+  /** Monorail points: the clearance round the moving parts (mm). */
+  monoSwitchFit?: number;
   /** Monorail supports (monorail_support.scad): one every this many studs along the beam (0: none); their height in bricks and plates; base size (studs); anti-stud underside; studs round the base; closed frame. */
   monoSupportStuds?: number; monoSupportBricks?: number; monoSupportPlates?: number; monoSupportBaseXStuds?: number; monoSupportBaseYStuds?: number;
   monoSupportAntistud?: boolean; monoSupportBaseStuds?: boolean; monoSupportSolid?: boolean;
@@ -291,7 +291,7 @@ export const OPTION_DEFAULTS: PieceOptions = {
   bladeDiscD: 14, throwBallast: false, axleHoles: false, pegOnBallast: false,
   bufferStyle: 'frame', bufferPostPlates: 8, bufferBeamBottom: 2, bufferBeamTop: 12, bufferPinHoles: true,
   trackBallast: 'together', trackFitTol: 0.2, labelText: '', labelSize: true, labelGauge: false, labelParts: true,
-  monoEndStuds: 'side', monoAxleHoles: true, monoLegoAntistud: false, monoAxleLengthStuds: 2, monoHoleFit: 0.1, monoLabels: 'name', monoSwitchTravel: 27, monoSwitchFit: 0.3,
+  monoEndStuds: 'side', monoAxleHoles: true, monoLegoAntistud: false, monoAxleLengthStuds: 2, monoHoleFit: 0.1, monoLabels: 'name', monoSwitchFit: 0.3,
   monoSupportStuds: 0, monoSupportBricks: 5, monoSupportPlates: 0, monoSupportBaseXStuds: 4, monoSupportBaseYStuds: 4, monoSupportAntistud: true, monoSupportBaseStuds: true, monoSupportSolid: false, bankRampStuds: 40, bankClimb: 100, bankRampAt: 'straight',
 };
 
@@ -530,7 +530,7 @@ export const TEMPLATE_GROUPS: [string, string[]][] = [
   ['Switches', ['Left switch (LEGO)', 'Right switch (LEGO)', 'Wye switch', 'Three-way switch (one throw)', 'Three-way switch (tandem, two throws)']],
   ['Layouts', ['Oval (LEGO R40)', 'Crossover (R40)', 'Double crossover (R56)', 'Yard ladder (R40)', 'Yard (R56)', 'X yard (6 tracks, single slips)', 'Wye with a crossover', 'Double-track return loop (turning right)', 'Double-track return loop (turning left)']],
   ['Features', ['Grade up at 2.5%', 'Helix (R104, two turns)', 'Siding ending in a buffer stop', 'Bridge with guard rails', 'Dual gauge track', 'Dual gauge crossing 90°', 'Dual gauge crossing 45°', 'Dual gauge track, narrow gauge centred', 'Dual gauge crossing 90°, narrow gauge centred', 'Narrow gauge beside and across standard track', 'Banked curve', 'Crossing on sleepers']],
-  ['Monorail', ['Monorail oval on supports', 'Monorail ramp (as LEGO\'s)', 'Monorail switch (experimental)', 'Monorail level crossing (experimental)']],
+  ['Monorail', ['Monorail oval on supports', 'Monorail ramp (as LEGO\'s)', 'Monorail points right (as LEGO\'s)', 'Monorail points left (as LEGO\'s)', 'Monorail siding (points and a short curve)', 'Monorail level crossing (experimental)']],
   ['Test prints', ['Test print 1: stud and anti-stud fits', 'Test print 2: track joints', 'Test print 3: switch as built', 'Test print 4: points three ways', 'Test print 5: seat for a LEGO curve', 'Test print 6: seat fits', 'Test print 7: clearance round the points', 'Test print 8: flangeway width', 'Test print 9: monorail hole fit']],
   ['TrixBrix trackwork', ['Switch R40 left', 'Switch R40 right', 'Switch R40 left, 28-stud straight', 'Switch R40 right, 28-stud straight', 'Yard switch R40 left', 'Yard switch R40 right', 'Switch R56 left', 'Switch R56 right', 'Switch R72 left', 'Switch R72 right', 'Switch R104 left', 'Switch R104 right', 'Switch R104 left, lever on the straight side', 'Switch R104 right, lever on the straight side', 'Switch R120 left', 'Switch R120 right', 'Switch R148 left', 'Switch R148 right', 'Switch R148 left, lever on the straight side', 'Switch R148 right, lever on the straight side', 'Curved switch R40 45° left', 'Curved switch R40 45° right', 'Curved switch R40 90° left', 'Curved switch R40 90° right', 'Curved switch R56 90° left', 'Curved switch R56 90° right', 'Curved switch R104 90° left', 'Curved switch R104 90° right', 'Wye R40', 'Wye R40, 8-stud spacing', 'Wye R104', 'Wye R40 left, R56 right', 'Wye R56 left, R40 right', 'Wye R104 left, R120 right', 'Wye R120 left, R104 right', 'Three-way R40', 'Three-way R104', 'Switch to the next track, no gap, left', 'Switch to the next track, no gap, right', 'Switch, 2-stud gap, left', 'Switch, 2-stud gap, right', 'Switch, 4-stud gap, left', 'Switch, 4-stud gap, right', 'Three-way, no gap', 'Three-way, 2-stud gap', 'Three-way, 4-stud gap', 'Crossing 90°, 8 studs', 'Crossing 45° left', 'Crossing 45° right', 'Crossing 45°, 27 studs', 'Crossing 22.5° left', 'Crossing 22.5° right', 'Star crossing 22.5°', 'Curved crossing R24', 'Curved crossing R40', 'Curved crossing R56', 'Curved crossing R72', 'Curved crossing R88', 'Curved crossing R104', 'Crossing of two R120 curves', 'Pass-through crossing R56 left', 'Pass-through crossing R72 (A) left', 'Pass-through crossing R72 (B) left', 'Pass-through crossing R120 left', 'Pass-through crossing R56 right', 'Pass-through crossing R72 (A) right', 'Pass-through crossing R72 (B) right', 'Pass-through crossing R120 right', 'T-junction core R56', 'Double slip R40 45°', 'Single slip R40 45°', 'Double crossover R40', 'Crossover, 4-stud gap, left', 'Crossover, 4-stud gap, right', 'Buffer stop', 'Narrow-gauge crossing 90°', 'Narrow-gauge crossing of standard track 90°', 'Narrow-gauge crossing of standard track 45° left', 'Narrow-gauge crossing of standard track 45° right', 'Narrow-gauge buffer stop', 'Narrow-gauge switch R36 left', 'Narrow-gauge switch R36 right', 'Narrow-gauge switch R48 left', 'Narrow-gauge switch R48 right', 'Narrow-gauge switch R84 left', 'Narrow-gauge switch R84 right', 'Narrow-gauge wye R36', 'Narrow-gauge switch R36 left, lever on the branch side', 'Narrow-gauge switch R36 right, lever on the branch side', 'Narrow-gauge double crossover R36', 'Narrow-gauge crossing 22.5° left', 'Narrow-gauge crossing 22.5° right', 'Narrow-gauge crossing 33.75° left', 'Narrow-gauge crossing 33.75° right', 'Wye R104, 8-stud gap', 'Dual gauge switch R40 left', 'Dual gauge switch R40 right', 'Dual gauge turnout R36 left', 'Dual gauge turnout R36 right', 'Dual gauge slide, centre to left', 'Dual gauge slide, centre to right', 'Dual gauge switch R36, narrow gauge branch, left', 'Dual gauge switch R36, narrow gauge branch, right', 'Crossover, three tracks, R104', ...Object.keys(REF1_PLAIN), ...Object.keys(REF1_SETS)]],
   ['4DBrix trackwork', Object.keys(RANGE2)],
@@ -775,9 +775,19 @@ export const TEMPLATES: Record<string, Design> = {
     { name: 'Ramp', x: 0, y: 16, heading: 0, system: 'monorail', monoHeight: 0, monoHeightEnd: 30, segs: [{ kind: 'straight', studs: 64 }] },
     { name: 'High', x: 0, y: 80, heading: 0, system: 'monorail', monoHeight: 30, segs: [{ kind: 'straight', studs: 16 }] },
   ] },
-  'Monorail switch (experimental)': { version: 1, gaugeStuds: 4, routes: [
+  // (LEGO's points 2889 and 2890: 32 studs straight; the branch ends 20 studs on and 8 across at 45 degrees, by the curve of
+  // LEGO's short curve (R22) between two short straights. The siding: the points, a short curve back, parallel 16 studs aside)
+  'Monorail points right (as LEGO\'s)': { version: 1, gaugeStuds: 4, routes: [
     { name: 'Main', x: 0, y: 0, heading: 0, system: 'monorail', segs: [{ kind: 'straight', studs: 32 }] },
-    { name: 'Branch', x: 0, y: 0, heading: 0, system: 'monorail', segs: [{ kind: 'curve', radius: 40, angle: 36.8699 }, { kind: 'curve', radius: 40, angle: -14.3699 }] },
+    { name: 'Branch', x: 0, y: 0, heading: 0, system: 'monorail', segs: [{ kind: 'straight', studs: 2.8873016 }, { kind: 'curve', radius: 22, angle: -45 }, { kind: 'straight', studs: 2.2010101 }] },
+  ] },
+  'Monorail points left (as LEGO\'s)': { version: 1, gaugeStuds: 4, routes: [
+    { name: 'Main', x: 0, y: 0, heading: 0, system: 'monorail', segs: [{ kind: 'straight', studs: 32 }] },
+    { name: 'Branch', x: 0, y: 0, heading: 0, system: 'monorail', segs: [{ kind: 'straight', studs: 2.8873016 }, { kind: 'curve', radius: 22, angle: 45 }, { kind: 'straight', studs: 2.2010101 }] },
+  ] },
+  'Monorail siding (points and a short curve)': { version: 1, gaugeStuds: 4, routes: [
+    { name: 'Main', x: 0, y: 0, heading: 0, system: 'monorail', segs: [{ kind: 'straight', studs: 64 }] },
+    { name: 'Siding', x: 0, y: 0, heading: 0, system: 'monorail', segs: [{ kind: 'straight', studs: 2.8873016 }, { kind: 'curve', radius: 22, angle: -45 }, { kind: 'straight', studs: 4.4020202 }, { kind: 'curve', radius: 22, angle: 45 }, { kind: 'straight', studs: 26.8873016 }] },
   ] },
   'Monorail level crossing (experimental)': { version: 1, gaugeStuds: 4, routes: [
     { name: 'A', x: 0, y: -24, heading: 0, system: 'monorail', segs: [{ kind: 'straight', studs: 48 }] },

@@ -66,6 +66,8 @@ export interface Piece {
   lift?: Lift;
   /** how far its file's turned from how it lies in the design (degrees, anticlockwise seen from above): a part that fits the print bed only on the slant, its file lying as it prints */
   bedTurn?: number;
+  /** (monorail points) where its set is (the toe's pose), which hand, and which moving part it is (the base and the deck: none): geom/monoswitch.ts's pointsMove says how each moves */
+  monoPoints?: { P: Pose; hand: 1 | -1; part?: 'slide' | 'wheel' | 'link' | 'lever' };
   /** (a test-print kit's part) its coupon's name, which its own name starts with (buildKit) */
   kit?: string;
   /** (a bought track piece, track only) where a 2 x 2 of studs goes up into it from below: its sleepers' middles and its two ends (half of it in the next piece's end), each square to the track there */

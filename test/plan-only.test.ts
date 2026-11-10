@@ -34,7 +34,7 @@ function plan(w: Wasm, name: string, planOnly: boolean) {
 const same = (ov: Record<string, unknown>) => JSON.stringify({ items: ov.items, splits: ov.splits, crossings: ov.crossings, checkRails: ov.checkRails, monoPoints: ov.monoPoints });
 
 describe('the plan alone (Auto off)', { timeout: 600000 }, () => {
-  for (const name of ['Double slip (22.5°)', 'Crossover (R40)', 'Monorail switch (experimental)', 'Helix (R104, two turns)'])
+  for (const name of ['Double slip (22.5°)', 'Crossover (R40)', 'Monorail points right (as LEGO\'s)', 'Helix (R104, two turns)'])
     it(`${name}: the plan's points and levers as the full build's, its parts not built`, async () => {
       const w = await kernel(), saved = { ...OPTION_DEFAULTS };
       Object.assign(OPTION_DEFAULTS, APP);
@@ -46,7 +46,7 @@ describe('the plan alone (Auto off)', { timeout: 600000 }, () => {
         const full = plan(w, name, false);
         expect(full.thrown).toBeUndefined();
         expect(same(p.ov)).toBe(same(full.ov));
-        if (/Monorail switch/.test(name)) expect((p.ov.monoPoints as unknown[]).length).toBe(1);
+        if (/Monorail points/.test(name)) expect((p.ov.monoPoints as unknown[]).length).toBe(1);
         // (next to none of the solids: at most the few a check of the points' throws against each other makes)
         expect(p.solids).toBeLessThan(full.solids / 20);
         expect(p.ms).toBeLessThan(full.ms);

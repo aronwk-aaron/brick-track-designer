@@ -6,6 +6,8 @@
 // 4. joints mate: any two track parts that touch can be drawn apart some straight way, and so brought together (mates);
 // 5. every printed part prints: its file fits the print bed, lies on it (z 0) and is one solid (but for its break-out supports) (prints).
 // 6. every part's name is its own (its file's name in the zip).
+// 7. monorail points work (monoPoints): their slide, wheel, link and lever across the travel, each driving the next, the
+//    lever stopped and held at each end, and every part put in the way it's built to go.
 // 8. the rails are sound (railFaults): no nub of rail head standing on a part, no stud run into by a rail or a check
 //    rail, no check rail with no bed under it.
 // (Rebuilt from a piece's triangles a solid can have slivers the kernel's own didn't: hence a small volume, not none.)
@@ -17,6 +19,7 @@ import { bedFit, tightBox } from '../src/geom/bedfit';
 import { buildDesign, clearBuildCache, type Piece } from '../src/app/build';
 import { type Design, OPTION_DEFAULTS, type PieceOptions, TEMPLATE_GROUPS, TEMPLATES } from '../src/app/design';
 import { putTogether, sharedEdges, stlPositions } from './assembly.shared';
+import { leverTravel, pointsMove, type PointsPart } from '../src/geom/monoswitch';
 
 type Wasm = Awaited<ReturnType<typeof kernel>>;
 type Man = InstanceType<Wasm['Manifold']>;
@@ -152,6 +155,59 @@ export function moves(w: Wasm, ps: Part[], o: PieceOptions, seen?: Seen) {
       }
       if (![0, ...STEPS].some((f) => shared(q.m, slid(bar.m, sl, sl.by * f)) > OVERLAP)) out.push(`${q.p.name} isn't moved by its slider: left where it was, it's clear of the slider all the way to its other end`);
     }
+  }, () => []);
+  return out;
+}
+
+/**
+ * 7. Monorail points (LEGO's, geom/monoswitch.ts): as assembled they're set straight. Each set:
+ * - across the travel (the wheel turned in eighths, the slide, link and lever where it puts them): every moving part
+ *   clear of the base, the deck and each other, but the lever's detent rib in the channel's wall between its grooves;
+ * - each drives the next: the wheel turned an eighth of the way and the slide or the link left behind run into each other, and so the link moved and the lever;
+ * - the lever's stopped at each end (a little further it's in its housing's wall), and held there: its rib's in a groove
+ *   (clear), and out of it at once either way;
+ * - the slide's held down (lifted, its feet are under the deck);
+ * - it goes together: the wheel, the lever and the link down from above, in that order; the slide into the deck from
+ *   the side away from the branch; then the deck, the slide in it, down onto the base.
+ */
+export function monoPoints(w: Wasm, ps: Part[], seen?: Seen) {
+  const out: string[] = [];
+  const sets = new Map<string, Part[]>();
+  for (const q of ps) if (q.p.monoPoints) { const k = q.p.name.replace(/-[a-z]+$/, ''); sets.set(k, [...(sets.get(k) ?? []), q]); }
+  for (const [name, mine] of sets) if (!seen || mine.some((q) => seen.own(q.p))) arena(w, () => {
+    const { P, hand } = mine[0].p.monoPoints!, a = (P[2] * Math.PI) / 180, co = Math.cos(a), si = Math.sin(a);
+    const world = (q: [number, number]): [number, number] => [P[0] + hand * q[0] * co - q[1] * si, P[1] + hand * q[0] * si + q[1] * co];
+    const vec = (q: [number, number], z = 0): [number, number, number] => [hand * q[0] * co - q[1] * si, hand * q[0] * si + q[1] * co, z];
+    const of = (n: string) => mine.find((q) => q.p.name.endsWith(`-${n}`))!.m;
+    const base = of('base'), deck = of('deck');
+    const at = (part: PointsPart, f: number) => { const mv = pointsMove(part, f); return turned(of(part), world(mv.at), hand * mv.deg).translate(vec(mv.move)); };
+    const say = (what: string, v: number) => out.push(`${name}: ${what}: ${v.toFixed(2)} mm3`);
+    const kinds: PointsPart[] = ['slide', 'wheel', 'link', 'lever'];
+    for (const f of [0, 0.125, 0.25, 0.375, 0.5, 0.625, 0.75, 0.875, 1]) {
+      const m = kinds.map((k) => at(k, f));
+      kinds.forEach((k, i) => {
+        for (const [n, fixed] of [['base', base], ['deck', deck]] as const) { const v = shared(m[i], fixed); if (v > (k === 'lever' && n === 'base' ? OVERLAP : SLIVER)) say(`its ${k} ${Math.round(f * 100)}% across is in its ${n}`, v); }
+        for (let j = i + 1; j < kinds.length; j++) { const v = shared(m[i], m[j]); if (v > SLIVER) say(`its ${k} ${Math.round(f * 100)}% across is in its ${kinds[j]}`, v); }
+      });
+    }
+    // (each drives the next)
+    for (const [a1, b1] of [['wheel', 'slide'], ['wheel', 'link'], ['link', 'lever']] as const) if (shared(at(a1, 0.125), of(b1)) < 0.05) out.push(`${name}: its ${a1} doesn't move its ${b1}: moved an eighth of the way, it's clear of it where it was`);
+    // (stopped and held at each end)
+    const lt = leverTravel(), lever = of('lever');
+    for (const [f, d] of [[0, -1.5], [1, 1.5]] as const) if (shared(lever.translate(vec([0, f * lt + d])), base) < 1) out.push(`${name}: its lever isn't stopped ${f ? 'set for the branch' : 'set straight'}: 1.5 mm further it's clear of its housing`);
+    for (const f of [0, 1]) {
+      if (shared(lever.translate(vec([0, f * lt])), base) > SLIVER) out.push(`${name}: its lever's detent rib isn't in its groove ${f ? 'set for the branch' : 'set straight'}`);
+      if (shared(lever.translate(vec([0, f * lt + (f ? -1.5 : 1.5)])), base) < 0.02) out.push(`${name}: its lever isn't held ${f ? 'set for the branch' : 'set straight'}: 1.5 mm back its rib's clear of the wall`);
+    }
+    if (shared(of('slide').translate([0, 0, 1]), deck) < 1) out.push(`${name}: its slide isn't held down: lifted 1 mm it's clear of the deck`);
+    // (going together)
+    const UP = [0.5, 1, 2, 4, 8, 14];
+    const down = (what: string, m: Man, onto: Man[]) => { for (const dz of UP) for (const q of onto) { const v = shared(m.translate([0, 0, dz]), q); if (v > SLIVER) { say(`its ${what} can't go down into place: ${dz} mm up it's in what's there`, v); return; } } };
+    down('wheel', of('wheel'), [base]);
+    down('lever', of('lever'), [base, of('wheel')]);
+    down('link', of('link'), [base, of('wheel'), lever]);
+    for (const dx of [2, 5, 10, 20, 40, 70, 100]) { const v = shared(of('slide').translate(vec([-dx, 0])), deck); if (v > SLIVER) { say(`its slide can't go into the deck from the side: ${dx} mm out it's in it`, v); break; } }
+    down('deck and slide', w.Manifold.union([deck, of('slide')]), [base, of('wheel'), of('link'), lever]);
   }, () => []);
   return out;
 }
@@ -348,6 +404,7 @@ function problemsOf(w: Wasm, pieces: Piece[], ps: Part[], unsolid: string[], o: 
   // tilted in under their lip, or on open), the lever between its ears, a lid last)
   // (not the monorail's points, nor an over-centre spring, whose rings snap over its pins' lips: nail-switch.test.ts)
   if (ps.some((q) => isMoving(q.p.name))) out.push(...arena(w, () => putTogether(w, ps.map((q) => q.p).filter((p) => !/^monorail|-spring$/.test(p.name)), { fromTop: o.pointsModule === 'layers', bladesTop: o.mechStyle !== 'tines' }, new Map(ps.map((q) => [q.p.positions, q.m])), seen && ((p) => seen.own(p))), () => []));
+  out.push(...monoPoints(w, ps, seen));
   out.push(...mates(w, ps, o, log, seen));
   return out;
 }

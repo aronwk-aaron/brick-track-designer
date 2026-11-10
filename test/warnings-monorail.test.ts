@@ -17,12 +17,14 @@ describe('warnings: monorail', { timeout: 300000 }, () => {
     const up = (every: number) => D([R('A', 0, 0, 0, [S(32)], { ...MONO, monoHeight: 10 })], { monoSupportStuds: every });
     await fires(/monorail A is raised 10 plates with nothing under it: set Support every/, up(0), up(32));
   });
-  it('points whose routes don\'t part far enough', async () => {
-    await fires(/monorail points at 0, 0 \(studs\): the routes don't part far enough for points/, D([R('Main', 0, 0, 0, [S(32)], MONO), R('Branch', 0, 0, 0, [C(104, 8)], MONO)]),
-      D([R('Main', 0, 0, 0, [S(32)], MONO), R('Branch', 0, 0, 0, [C(40, 36.8699), C(40, -14.3699)], MONO)]));
+  it('points that aren\'t LEGO\'s shape', async () => {
+    const lego = [S(2.8873016), C(22, 45), S(2.2010101)];
+    await fires(/monorail points at 0, 0 \(studs\): points are LEGO's own shape, and these routes aren't: .*not built/, D([R('Main', 0, 0, 0, [S(32)], MONO), R('Branch', 0, 0, 0, [C(104, 8)], MONO)]),
+      D([R('Main', 0, 0, 0, [S(32)], MONO), R('Branch', 0, 0, 0, lego, MONO)]));
+    await fires(/monorail points at 0, 0 \(studs\): points are LEGO's own shape/, D([R('Main', 0, 0, 0, [S(24)], MONO), R('Branch', 0, 0, 0, lego, MONO)]), D([R('Main', 0, 0, 0, [S(32)], MONO), R('Branch', 0, 0, 0, lego, MONO)]));
   });
   it('points too big for the print bed', async () => {
-    const pts = (bed: number) => D([R('Main', 0, 0, 0, [S(32)], MONO), R('Branch', 0, 0, 0, [C(40, 36.8699), C(40, -14.3699)], MONO)], { printBedX: bed, printBedY: bed });
+    const pts = (bed: number) => D([R('Main', 0, 0, 0, [S(32)], MONO), R('Branch', 0, 0, 0, [S(2.8873016), C(22, 45), S(2.2010101)], MONO)], { printBedX: bed, printBedY: bed });
     await fires(/the monorail points \(monorail-points\) don't fit the 100 x 100 print bed: points aren't cut/, pts(100), pts(256));
   });
   it('beams that cross too close in height, or at too shallow an angle, or run along each other', async () => {

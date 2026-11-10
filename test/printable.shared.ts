@@ -45,6 +45,8 @@ export const DESIGNS: Record<string, Design> = {
   'seat for bought track': TEMPLATES['Test print 5: seat for a LEGO curve'],
   'raised track on pillars and a beam': D([st(32, { monoHeight: 9 })], { splitTrack: 'lengths' }),
   'monorail with supports': D([st(16, { system: 'monorail' })], { monoSupportStuds: 8 }),
+  'monorail points, right': TEMPLATES['Monorail points right (as LEGO\'s)'],
+  'monorail points, left': TEMPLATES['Monorail points left (as LEGO\'s)'],
   'test-print coupon: fits': TEMPLATES['Test print 1: stud and anti-stud fits'],
 };
 
@@ -125,6 +127,9 @@ export const PINNED: Record<string, Record<string, Pin>> = {
     'track-support2': { hang: { area: 2400, where: '-56.6..56.6 -11.8..11.8 1.8..22.4' }, why: 'unheld by height (mm2 at z): 1258 at 1.8, 1141 at 22.4' },
     'track-support3': { hang: { area: 2400, where: '-56.6..56.6 -11.8..11.8 1.8..22.4' }, why: 'unheld by height (mm2 at z): 1258 at 1.8, 1141 at 22.4' },
   },
+  // (the points' base has the plain track's three ends: the same as monorail-A's two, below)
+  'monorail points, right': { 'monorail-points-base': { hang: { area: 33, where: '-125.7..125.7 -54.5..50.6 3.6..4.0' }, why: 'its three ends, as the plain beam\'s: unheld by height (mm2 at z): 12 at 3.6, 9 at 3.7, 5 at 3.8' } },
+  'monorail points, left': { 'monorail-points-base': { hang: { area: 31, where: '-54.9..54.6 -125.0..125.0 3.6..7.6' }, why: 'its three ends, as the plain beam\'s: unheld by height (mm2 at z): 10 at 3.6, 9 at 3.7, 5 at 3.9' } },
   'monorail with supports': {
     'monorail-A': { hang: { area: 28, where: '-14.4..14.4 -61.3..61.3 3.6..4.0' }, why: 'unheld by height (mm2 at z): 10 at 3.6, 8 at 3.7, 5 at 3.9' },
     'monorail-support1': { hang: { area: 48, where: '-4.0..4.0 -3.6..3.6 22.0..40.7' }, why: 'unheld by height (mm2 at z): 43 at 40.7, 2 at 22.1, 1 at 22.0' },
