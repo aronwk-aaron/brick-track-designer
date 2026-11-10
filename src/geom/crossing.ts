@@ -9,7 +9,7 @@ import { hasRoll, poseToWorld, railPoint, routeLat, routeLength, routePose, rout
 import { solve, type Solution, type SolverOptions, SOLVER_DEFAULTS } from '../route/solver';
 import { Scad, T, R, type CS, type Man, type Vec2 } from './scad';
 import { type Bank, bankPoint, sweepRoute, trackBank } from './sweep';
-import { hollowGrid } from './underside';
+import { connectorUnderside, hollowGrid } from './underside';
 import { type ExtraBuilt, extraRails } from './extrarails';
 import { DEFAULTS, PLATE_H, RAIL_PROFILE, STUD, Track, type TrackOptions } from './track';
 import { BUFFER_DEFAULTS, BUFFER_RAIL_END, type BufferOptions, bufferStop, couplerSupports, endAxleHoles, inBufferPost, trackSeat } from './extras';
@@ -346,7 +346,8 @@ export function crossingPiece(s: Scad, routes: Route[], o: CrossingOptions = CRO
     // (on ballast: no peg and clip, no stud recesses, as the switches')
     const peg = !onBallast || !!o.pegOnBallast || alone;
     // (at a banked end, a route left banked to its end: turned with the bed)
-    const conn0 = T(t.fullEndpoint(peg, !onBallast, ex?.xfs[0], ex?.guardX), [0, 4, 0]), conn1 = T(R(t.fullEndpoint(peg, !onBallast, ex?.xfs[1], ex?.guardX), [0, 0, 180]), [0, -4, 0]);
+    // (no stud recesses of their own: the underside's cut under them, on its grid, below)
+    const conn0 = T(t.fullEndpoint(peg, false, ex?.xfs[0], ex?.guardX), [0, 4, 0]), conn1 = T(R(t.fullEndpoint(peg, false, ex?.xfs[1], ex?.guardX), [0, 0, 180]), [0, -4, 0]);
     if (!inStart) parts.push(atPose(roll0 ? bankedEnd(s, conn0, trackBank(c.sleeperLen), roll0, c.sleeperLen, true) : conn0, p0));
     if (!inEnd) parts.push(atPose(roll1 ? bankedEnd(s, conn1, trackBank(c.sleeperLen), roll1, c.sleeperLen, false) : conn1, p1));
     // (buffer stops, in their end's frame; the peg and clip above the bed on ballast held up by breakaway supports)
@@ -478,6 +479,20 @@ export function crossingPiece(s: Scad, routes: Route[], o: CrossingOptions = CRO
   // tubes only)
   const lowCut = x.cuts?.length ? s.w.CrossSection.union(x.cuts.map((m) => m.slice(cavH - 0.06))) : undefined;
   const whole = (cs: CS) => !lowCut || cs.intersect(lowCut).area() < 0.01;
+  // (each end connector hollow underneath as a 1 x N plate, as the rest of the piece, its studs held between the
+  // channel's walls and pins (underside.ts): in its own frame where that's on the grid the underside is lined up with
+  // (the track's, always; the baseplate's where the end is square to it, on its studs); elsewhere the grid's sockets)
+  const connPoses = routes.flatMap((rt, i) => {
+    const L = routeLength(rt);
+    if (L < STUD) return [];
+    return ([['start', routePose(rt, 0), 4, 0], ['end', routePose(rt, L), -4, 180]] as const)
+      .filter(([end]) => !x.innerEnds?.has(`${i}:${end}`) && !bufEnd(i, end))
+      .map(([, e, dy, turn]): Pose => [...poseToWorld(e, [0, dy]), e[2] + turn] as Pose);
+  });
+  const onGrid = (P: Pose) => o.undersideGrid === 'track' || [4, 12].every((lx) => worldToPose(p0, poseToWorld(P, [lx, 0])).every((v) => { const e = (((v - 4) % STUD) + STUD) % STUD; return Math.min(e, STUD - e) < 1e-6; }));
+  const conns = connPoses.filter(onGrid), connCS = connectorUnderside(s, t);
+  const connCut = conns.length ? T(s.extrude(s.w.CrossSection.union(conns.map((P) => connCS.rotate(P[2]).translate([P[0], P[1]]))), cavH), [0, 0, -0.01]) : undefined;
+  const inConn = (q: [number, number]) => conns.some((P) => { const l = worldToPose(P, q); return Math.abs(l[0]) <= c.sleeperLen / 2 && Math.abs(l[1]) <= STUD / 2; });
   // (lined up with the track: hollow as LEGO track's underside, with anti-stud tubes in rows along each track a stud
   // apart, turned with it, between its rows of studs; none in the end connectors (they have their own), none two at a
   // place where tracks meet)
@@ -524,19 +539,8 @@ export function crossingPiece(s: Scad, routes: Route[], o: CrossingOptions = CRO
         const q = toW(lt, 0); socksT.push(T(R(t.studSocket(cavH), [0, 0, P[2]]), [q[0], q[1], -0.01]));
       }
     }
-    // (and under each end connector, a socket at each stud of its row, as the baseplate grid gives a track on it: the
-    // breakaway supports under the rail ends stand in them, apart from the part)
-    for (const [i, rt] of routes.entries()) {
-      const L = routeLength(rt);
-      for (const [end, sAt] of [['start', STUD / 2], ['end', L - STUD / 2]] as const) {
-        if (x.innerEnds?.has(`${i}:${end}`) || bufEnd(i, end) || L < STUD) continue;
-        const hd = routePose(rt, sAt)[2];
-        for (let lt = STUD / 2; lt <= c.sleeperLen / 2 - STUD / 2 + 1e-9; lt += STUD) for (const sd of [-1, 1]) {
-          const q = railPoint(rt, sAt, sd * lt); socksT.push(T(R(t.studSocket(cavH), [0, 0, hd]), [q[0], q[1], -0.01]));
-        }
-      }
-    }
-    const cutsT: Man[] = [...socksT];
+    // (and the end connectors: connCut)
+    const cutsT: Man[] = [...socksT, ...(connCut ? [connCut] : [])];
     if (beds.length) {
       let hollow = s.w.CrossSection.union(beds);
       const kept = tubesT.filter((q) => whole(q.cs));
@@ -587,7 +591,8 @@ export function crossingPiece(s: Scad, routes: Route[], o: CrossingOptions = CRO
     if (tubes.length || posts.length) hollow = hollow.subtract(s.w.CrossSection.union([...tubes, ...posts]));
     cuts.push(T(s.extrude(hollow, cavH), [0, 0, -0.01]));
   }
-  for (const { i, j, x, y } of spots) if (!deep(i, j)) cuts.push(socket(x, y));
+  for (const { i, j, x, y } of spots) if (!deep(i, j) && !inConn([x, y])) cuts.push(socket(x, y));
+  if (connCut) cuts.push(connCut);
   return s.difference(body, [...roofed(cuts), ...(x.cuts ?? [])]);
 
   /**

@@ -76,6 +76,34 @@ export function studSpots(s: Scad, t: Track, spots: Spot[], bed: (x: number, y: 
 }
 
 /**
+ * An end connector's underside, as a 1 x N plate's (hollow, as the rest of a
+ * track-only piece's, not a socket in a solid plate at each stud): in the
+ * connector's own frame (fullEndpoint's: its row of studs on y = 0 at
+ * 4 + 8k across, the end at y = -4), a channel along the row as wide as a
+ * gripping socket, each stud held between its walls, with a pin between each
+ * two studs (as a 1 x N brick's), the channel stopping a rim short of the
+ * connector's ends. Solid round the peg (its neck and the dovetail it stands
+ * in) and the C-clip's socket, so they keep their walls. In plan, to cut
+ * cavH deep from the bottom.
+ */
+export function connectorUnderside(s: Scad, t: Track): CS {
+  const W = s.w, c = t.c, half = c.sleeperLen / 2, sw = c.studSocketW;
+  const pinD = STUD - t.o.studD - (t.o.antistudFit ?? ANTISTUD_FIT);
+  let ch = W.CrossSection.square([2 * (half - BOTTOM_WALL), sw], true);
+  const studR = sw / 2, keep: CS[] = [];
+  for (let x = -half + STUD; x <= half - STUD + 1e-9; x += STUD) keep.push(W.CrossSection.circle(pinD / 2, 24).translate([x, 0]));
+  if (c.hasCoupler) {
+    const studs = (x: number) => W.CrossSection.union([-4, 4].map((d) => W.CrossSection.circle(studR, 24).translate([x + d, 0])));
+    // (the peg's side: its dovetail and neck to 3.6 in from the end, less room for the studs beside it)
+    keep.push(W.CrossSection.square([10.2, 3.6]).translate([-c.couplerX - 5.1, -4]).subtract(studs(-c.couplerX)));
+    // (the clip's: its socket's wall)
+    keep.push(W.CrossSection.circle(3.0, 32).translate([c.couplerX, -4]).subtract(studs(c.couplerX)));
+  }
+  ch = ch.subtract(W.CrossSection.union(keep));
+  return ch;
+}
+
+/**
  * A hollow underside on the stud grid (the ballast's bottom): cav is the
  * hollow (inside its rim), studs at wd(4 + 8i, 4 + 8j). 'edges': anti-stud
  * tubes where a stud next to the corner isn't wholly in the hollow (along

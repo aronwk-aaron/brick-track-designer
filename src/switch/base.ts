@@ -11,7 +11,7 @@ import type { Pose, Pt, Route } from '../route/route';
 import { railPoint, routeLat, routeLength, routePose, routeSOf, segStarts, worldToPose } from '../route/route';
 import { M, R, T, type CS, type Man, type Scad, type Vec2, type Vec3 } from '../geom/scad';
 import { sweepRoute } from '../geom/sweep';
-import { ANTISTUD_FIT, hollowGrid, type Spot, studSpots, TUBE_OD } from '../geom/underside';
+import { ANTISTUD_FIT, connectorUnderside, hollowGrid, type Spot, studSpots, TUBE_OD } from '../geom/underside';
 import { DEFAULTS as TRACK_DEFAULTS, getSocketShape, scadParity, PLATE_H, RAIL_PROFILE, STUD, Track } from '../geom/track';
 import { couplerSupports, trackSeat } from '../geom/extras';
 import { SPRUNG_SLIDER, type FdbBladeLayout, sprungLow, HEAD_HW, type Notch, pointsSet, type PointsSetValues, STAND, SWITCH_DEFAULTS, type SwitchParams, switchGlobals } from './context';
@@ -26,6 +26,8 @@ export interface BaseParams extends SwitchParams {
   printBedY: number;        // 256
   /** Underside (switch.scad's stud_grip): 'edges' = hollow with anti-stud tubes, 'all' = a gripping square socket at every stud. */
   studGrip: 'edges' | 'all';
+  /** (track alone) The underside lined up with the baseplate's stud grid (the switch's own frame), or with the track (its end connectors on their own ends' frames). */
+  undersideGrid?: 'baseplate' | 'track';
   /**
    * The points as one part (both blades on a heel bar, one pivot: switch.scad's)
    * or two (each blade on its own pivot with its own spring, as the plate-style).
@@ -1146,10 +1148,20 @@ export function switchGeometry(s: Scad, plan: SwitchPlan, extraCuts: Man[] = [])
     return s.union(out);
   };
   // (on ballast the peg and clip only with pegOnBallast, held up by breakaway supports; the ballast alone has them for its seat, see base())
+  // (their stud recesses only as switch.scad's: else the underside's cut under them, connUnder)
   const connectors = (peg = !g.ballast || !!p.pegOnBallast) => s.union([
-    T(t.fullEndpoint(peg, !g.ballast), [0, 4, 0]),
-    ...plan.endPoses.map((e) => atPose(T(R(t.fullEndpoint(peg, !g.ballast), [0, 0, 180]), [0, -4, 0]), e)),
+    T(t.fullEndpoint(peg, !g.ballast && scadParity()), [0, 4, 0]),
+    ...plan.endPoses.map((e) => atPose(T(R(t.fullEndpoint(peg, !g.ballast && scadParity()), [0, 0, 180]), [0, -4, 0]), e)),
   ]);
+  // (track alone: each end connector hollow underneath as a 1 x N plate (underside.ts), where it's on the stud grid
+  // (the start always), or everywhere with the underside lined up with the track; the grid's sockets elsewhere)
+  const connFrames = (): Pose[] => (g.ballast || scadParity() ? [] : [[0, 4, 0] as Pose, ...plan.endPoses.map((e): Pose => [e[0] + 4 * sind(e[2]), e[1] - 4 * cosd(e[2]), e[2] + 180])]
+    .filter((P) => p.undersideGrid === 'track' || [4, 12].every((lx) => [P[0] + lx * cosd(P[2]), P[1] + lx * sind(P[2])].every((v) => { const e = (((v - 4) % STUD) + STUD) % STUD; return Math.min(e, STUD - e) < 1e-6; }))));
+  const inConn = (q: Pt) => connFrames().some((P) => { const l = localOf(P, q); return Math.abs(l[0]) <= sleeperLen / 2 && Math.abs(l[1]) <= STUD / 2; });
+  const connUnder = () => {
+    const fr = connFrames(), cs = connectorUnderside(s, t);
+    return fr.length ? T(s.extrude(W.CrossSection.union(fr.map((P) => cs.rotate(P[2]).translate([P[0], P[1]]))), p.studH + 0.21), [0, 0, -0.01]) : undefined;
+  };
   const pegSupports = () => {
     const cs = g.ballast && p.pegOnBallast && p.endSupports !== false && p.ballastOnly === undefined ? couplerSupports(t, pieceBottomZ - 0.02) : undefined;
     return cs && s.union([T(cs, [0, 4, 0]), ...plan.endPoses.map((e) => atPose(T(R(cs, [0, 0, 180]), [0, -4, 0]), e))]);
@@ -1246,7 +1258,7 @@ export function switchGeometry(s: Scad, plan: SwitchPlan, extraCuts: Man[] = [])
   const underside = () => {
     const xr = plan.baseXRange(plan.baseY0, plan.baseY1), spots: Spot[] = [];
     for (let x = Math.floor(xr[0] / 8) * 8 - 4; x <= xr[1] + 4 + 1e-9; x += 8)
-      for (let y = 4; y <= plan.baseY1 + 1e-9; y += 8) spots.push([x, y, roundScad(x / 8), roundScad(y / 8)]);
+      for (let y = 4; y <= plan.baseY1 + 1e-9; y += 8) if (!inConn([x, y])) spots.push([x, y, roundScad(x / 8), roundScad(y / 8)]);
     // (the throw arms too: hollow with tubes underneath, like the rest)
     const onArm = (x: number, y: number, m: number) => !scadParity() && sets.some((v) => {
       if (v.nail) return false;
@@ -2038,7 +2050,7 @@ export function switchGeometry(s: Scad, plan: SwitchPlan, extraCuts: Man[] = [])
   const track = s.union(Object.values(named));
   const us = underside();
   grips.push(...us.grips);
-  const body = s.difference(s.union([track, ...sets.map(throwArm)]), [...sets.map(throwChannel), us.cut, ...extraCuts]);
+  const body = s.difference(s.union([track, ...sets.map(throwArm)]), [...sets.map(throwChannel), us.cut, connUnder(), ...extraCuts]);
   const supportZ = pieceBottomZ - 0.02;
   // The tubes, less the pockets, and only those that hold on to something
   // above them (a tube under a gap between ties, or a pocket, would print
