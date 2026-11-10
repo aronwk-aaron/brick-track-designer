@@ -407,7 +407,8 @@
     #tpl-body .tpic .beam { stroke: var(--accent); fill: none; stroke-linejoin: round; }
     #tpl-body .tname { font-weight: 600; font-size: 13px; line-height: 1.25; padding-right: 22px; overflow-wrap: anywhere; }
     #tpl-body .tsub { color: var(--muted); font-size: 12px; line-height: 1.3; }
-    #tpl-body .tact { display: flex; gap: 6px; margin-top: auto; padding-top: 4px; } #tpl-body .tact button { flex: 1; height: 26px; padding: 0 6px; }
+    #tpl-body .tact { display: flex; flex-direction: column; gap: 4px; margin-top: auto; padding-top: 4px; } #tpl-body .tact button { flex: 1; height: 26px; padding: 0 6px; }
+    #tpl-body .trow { display: flex; gap: 6px; align-items: center; } #tpl-body .thand { font-size: 11px; color: var(--muted); min-width: 2.6em; }
     #tpl-body .tstar { position: absolute; right: 4px; top: 4px; width: 26px; height: 26px; padding: 0; border: none; background: var(--panel); border-radius: 50%; font-size: 15px; line-height: 1; color: var(--muted); opacity: 0.9; }
     #tpl-body .tstar[aria-pressed="true"] { color: #e8a317; }
     #tpl-empty { text-align: center; color: var(--muted); padding: 40px 10px; line-height: 1.6; }
@@ -590,6 +591,8 @@
           <li>Split and merge: with one track selected, <kbd>S</kbd> with the pointer on it (or the Split button, then a click on it) cuts it in two at the nearest whole stud, at least a stud in from either end; the two halves keep everything that was on that part (guard rails, third rail, ends, hand edits, heights). Select two tracks that meet end to end and press Merge to make them one.</li>
           <li>Parallel…: with one track selected, a new track beside it, 6 to 200 studs over (default 16; 8 and 16 are the usual), to its left or right: straights as long, curves with the radius concentric with the original. It says why not where a curve would go under R24.</li>
           <li>Lock: tick Locked on a route's card (or a table's) and it can still be selected and copied, but not dragged, nudged, reshaped by its handles or ends, mirrored, turned, split, merged or deleted; the plan shows a small padlock on it, and the hint line says "R3 is locked" when you try. A copy isn't locked.</li>
+          <li>Templates: every card has Open (replaces the design) and Add to design (keeps it): the template follows the pointer, its open ends snap onto the design's open ends (hold <kbd>Alt</kbd> for no snapping), <kbd>R</kbd> / <kbd>Shift</kbd>+<kbd>R</kbd> turn it by 22.5°, <kbd>M</kbd> mirrors it, a click puts it down, <kbd>Esc</kbd> cancels. With one route selected it starts on that route's open end. <kbd>Enter</kbd> on a card opens it, <kbd>Shift</kbd>+<kbd>Enter</kbd> adds it. It's added with this design's settings; a template whose settings differ says so.</li>
+          <li>Measure: <kbd>T</kbd> or the Measure button, then click two points (they snap to track ends and centre lines): the distance in studs and mm, and the angle between the tracks there. <kbd>Esc</kbd> clears. Not saved. (<kbd>M</kbd> is Mirror.)</li>
           <li>Guides: drawing, or dragging a track's end, the point snaps to the line straight on from another track's end, to 8 and 16 studs beside a straight, to a whole number of studs straight on, and (Curves: free) to the usual radii. A dashed line and a small label give the value (studs, degrees, radius). Hold <kbd>Alt</kbd> for no snapping (the stud grid stays); it also stops the snap onto other tracks' ends.</li>
           <li><kbd>Esc</kbd> or a right-click stops drawing; <kbd>Esc</kbd> again goes back to Select.</li>
           <li>Start on the middle of a track to branch off it: a switch.</li>

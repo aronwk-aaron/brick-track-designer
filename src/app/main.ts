@@ -22,6 +22,7 @@ import { APP_VERSION, type BuiltEntry, pngBytes, pushBuilt, readBuilt, readRepor
 import { isZip } from '../geom/unzip';
 import { COMMON_RADII } from './guides';
 import { lockedWhy, setLocked } from './lock';
+import { addTemplate, openEnds } from './addtemplate';
 import { parallelRoute } from './parallelroute';
 import { mergeProblem, mergeRoutes, splitRoute } from './splitmerge';
 import { initTemplateBrowser } from './templatebrowser';
@@ -1013,9 +1014,19 @@ renderer.setAnimationLoop(() => { if (!dirty3d) return; dirty3d = false; rendere
 
 // ---------- toolbar ----------
 // The template browser (a dialog: templatebrowser.ts) picks one; it replaces the design, after asking if the design has changes in no file.
+const templateByName = (name: string): Design | undefined => TEMPLATES[name];
 initTemplateBrowser(async (name) => {
-  if (!TEMPLATES[name] || !(await mayReplace())) return false;
-  design = structuredClone(TEMPLATES[name]); replaced(); framed = false; changed(true); markClean(); canvas.fit();
+  if (!templateByName(name) || !(await mayReplace())) return false;
+  design = structuredClone(templateByName(name)!); replaced(); framed = false; changed(true); markClean(); canvas.fit();
+  return true;
+}, (name) => {
+  // (Add to design: the template follows the pointer, a click puts it down; with a route selected, it starts on that route's open end)
+  const t = templateByName(name);
+  if (!t) return false;
+  const sel = selected();
+  const onto = sel.length === 1 ? openEnds([design.routes[sel[0]]]).sort((a, b) => Number(b.end === 'end') - Number(a.end === 'end'))[0] : undefined;
+  const mine = onto && openEnds(design.routes).find((e) => e.route === onto.route && e.end === onto.end);
+  setMode('select'); canvas.startPlacing(structuredClone(t), mine);
   return true;
 });
 $('add-route').addEventListener('click', () => {
@@ -1185,6 +1196,12 @@ const canvas = new TrackCanvas($<HTMLCanvasElement>('track'), {
   system: () => (systemSel.value === 'monorail' ? 'monorail' : 'train'),
   leaveDraw: () => setMode('select'),
   split: (i, s) => splitRouteAt(i, s),
+  place: (tpl, pl) => {
+    const res = addTemplate(design, tpl, pl);
+    canvas.setSelection(res.routes, res.tables); openCards.clear(); changed(true);
+    const labels = (k: string) => OPTION_FORM.flatMap((s) => s.fields).find((f) => f.key === k)?.label ?? k;
+    canvas.say(res.differing.length ? `Added with this design's settings; the template alone uses: ${res.differing.map(labels).join(', ')}` : `Added ${res.routes.length} route${res.routes.length === 1 ? '' : 's'}`, res.differing.length ? 10000 : 3500);
+  },
   status: (hint, at) => {
     if (hintEl.textContent !== hint) { hintEl.textContent = hint; $('plan').style.setProperty('--hint-h', `${hintEl.offsetHeight}px`); }
     coordsEl.textContent = at ? `x ${at[0]}, y ${at[1]} studs` : '';
@@ -1251,6 +1268,7 @@ function updateHistoryButtons() {
 $('undo').addEventListener('click', undo);
 $('redo').addEventListener('click', redo);
 addEventListener('keydown', (e) => {
+  if (canvas.isPlacing) return; // (a template being placed takes R, M and Esc itself)
   // (a dialog open over the page: Esc closes Help (? too), and no other key is a shortcut: nothing's changed behind it)
   const dialog = dialogOpen(), helpOpen = helpEl.open;
   if (e.key === '?' && helpOpen && !typingIn(e)) { helpEl.close(); return; }
@@ -1607,7 +1625,7 @@ $('sel-rotl').addEventListener('click', () => turnSel(90));
 $('sel-rotr').addEventListener('click', () => turnSel(-90));
 $('sel-del').addEventListener('click', () => { deleteSel(); updateSelbar(); });
 addEventListener('keydown', (e) => {
-  if (typingIn(e) || dialogOpen()) return;
+  if (typingIn(e) || dialogOpen() || canvas.isPlacing) return;
   const k = e.key.toLowerCase(), mod = e.ctrlKey || e.metaKey;
   if (mod && k === 'c') { e.preventDefault(); copySel(); }
   else if (mod && k === 'x') { e.preventDefault(); if (!refuseLocked() && copySel(true)) deleteSel(); }

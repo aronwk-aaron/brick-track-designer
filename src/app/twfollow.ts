@@ -231,6 +231,18 @@ export function splitAnchors(d: Design, a: string, b: string, s: number, L: numb
   });
 }
 
+/** Every edit's key (where its item is, mm) moved by f: a design turned, mirrored or shifted as a whole (a template put on a plan). */
+export function moveEdits(d: Design, f: (q: [number, number]) => [number, number]) {
+  const tw = (d.trackwork ?? {}) as Groups;
+  for (const kind of KINDS) {
+    const g = tw[kind];
+    if (!g) continue;
+    const out: Record<string, Entry> = {};
+    for (const [key, e] of Object.entries(g)) { const q = posOf(key); out[q ? keyOf(f(q)) : key] = e; }
+    tw[kind] = out;
+  }
+}
+
 /** An edit copied with its routes: its kind, where it is (mm), and the edit (its routes by the names they had). */
 export interface CopiedEdit { kind: Kind; at: [number, number]; e: Entry }
 /**

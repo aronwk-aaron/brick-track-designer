@@ -34,7 +34,7 @@ export function pictureSvg(p: PlanPicture): string {
  * Sets the browser up. pick(name) puts the template on the plan, asking first if the design has changes in no file; it
  * says whether it did (the browser then closes; if not, it stays open).
  */
-export function initTemplateBrowser(pick: (name: string) => Promise<boolean>) {
+export function initTemplateBrowser(pick: (name: string) => Promise<boolean>, add: (name: string) => boolean) {
   const dlg = $<HTMLDialogElement>('tpl-dlg'), body = $('tpl-body'), search = $<HTMLInputElement>('tpl-search');
   const chipsEl = $('tpl-chips'), countEl = $('tpl-count'), clearBtn = $<HTMLButtonElement>('tpl-clear');
   const filtersBtn = $<HTMLButtonElement>('tpl-filters');
@@ -99,6 +99,12 @@ export function initTemplateBrowser(pick: (name: string) => Promise<boolean>) {
     if (c) { recent = [c.name, ...recent.filter((n) => n !== c.name)].slice(0, RECENT_MAX); writeList(RECENT, recent); }
     dlg.close();
   };
+  const addChoose = (name: string) => {
+    if (!add(name)) return;
+    const c = cardFor(infos, name);
+    if (c) { recent = [c.name, ...recent.filter((n) => n !== c.name)].slice(0, RECENT_MAX); writeList(RECENT, recent); }
+    dlg.close();
+  };
   function cardEl(c: Card): HTMLElement {
     const el = document.createElement('div'); el.className = `tcard${c.twin ? '' : ' single'}`; el.dataset.card = c.name;
     const star = document.createElement('button'); star.type = 'button'; star.className = 'tstar'; star.textContent = '★';
@@ -119,13 +125,18 @@ export function initTemplateBrowser(pick: (name: string) => Promise<boolean>) {
     const name = document.createElement('div'); name.className = 'tname'; name.textContent = c.title;
     const sub = document.createElement('div'); sub.className = 'tsub'; sub.textContent = describe(c);
     const act = document.createElement('div'); act.className = 'tact';
-    const button = (label: string, tpl: string, aria: string) => {
-      const b = document.createElement('button'); b.type = 'button'; b.className = 'tpick'; b.textContent = label; b.dataset.template = tpl; b.setAttribute('aria-label', aria); b.title = aria;
-      b.addEventListener('click', (e) => { e.stopPropagation(); void choose(tpl); });
-      return b;
+    // (every template: Open replaces the design, Add to design keeps it and brings the template in; a pair of hands has a row each)
+    const row = (hand: string | undefined, tpl: string, what: string) => {
+      const r = document.createElement('div'); r.className = 'trow';
+      if (hand) { const h = document.createElement('span'); h.className = 'thand'; h.textContent = hand; r.append(h); }
+      const open = document.createElement('button'); open.type = 'button'; open.className = 'tpick'; open.textContent = 'Open'; open.dataset.template = tpl; open.setAttribute('aria-label', `Open ${what}`); open.title = `Open ${what}: it replaces the design on the plan`;
+      open.addEventListener('click', (e) => { e.stopPropagation(); void choose(tpl); });
+      const addb = document.createElement('button'); addb.type = 'button'; addb.className = 'tadd'; addb.textContent = 'Add to design'; addb.dataset.template = tpl; addb.setAttribute('aria-label', `Add ${what} to the design`); addb.title = `Add ${what} to the design: it follows the pointer, a click puts it down`;
+      addb.addEventListener('click', (e) => { e.stopPropagation(); addChoose(tpl); });
+      r.append(open, addb); act.append(r);
     };
-    if (c.twin) act.append(button('Left', c.hand === 'left' ? c.name : c.twin, `${c.title}, left hand`), button('Right', c.hand === 'left' ? c.twin : c.name, `${c.title}, right hand`));
-    else { act.append(button('Use', c.name, `Use ${c.name}`)); el.addEventListener('click', () => void choose(c.name)); }
+    if (c.twin) { row('Left', c.hand === 'left' ? c.name : c.twin, `${c.title}, left hand`); row('Right', c.hand === 'left' ? c.twin : c.name, `${c.title}, right hand`); }
+    else { row(undefined, c.name, c.name); el.addEventListener('click', () => void choose(c.name)); }
     el.append(star, pic, name, sub, act);
     if (observer) observer.observe(pic); else drawPicture(pic);
     return el;
@@ -165,6 +176,12 @@ export function initTemplateBrowser(pick: (name: string) => Promise<boolean>) {
   // ---- the keys: arrows move between cards (Tab goes through every button)
   function firstOf(card: Element) { return card.querySelector<HTMLElement>('.tpick'); }
   body.addEventListener('keydown', (e) => {
+    // (Enter on a card's button does what it says; Shift+Enter anywhere on a card adds it)
+    if (e.key === 'Enter' && e.shiftKey) {
+      const card = (e.target as HTMLElement).closest('.tcard'), tgt = e.target as HTMLElement;
+      const addBtn = tgt.closest('.trow')?.querySelector<HTMLElement>('.tadd') ?? card?.querySelector<HTMLElement>('.tadd');
+      if (addBtn) { e.preventDefault(); addBtn.click(); return; }
+    }
     const dir = ({ ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] } as Record<string, [number, number]>)[e.key];
     const cur = (e.target as HTMLElement).closest('.tcard');
     if (!dir || !cur || e.ctrlKey || e.metaKey || e.altKey) return;

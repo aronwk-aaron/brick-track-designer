@@ -15,6 +15,7 @@ import { joinProblem, reversedRoute } from './routeedits';
 import { cutSegs, joinInto, nearestAlong, routeStuds, splitProblem } from './splitmerge';
 import { dragResult, END_INSET_PX, type Handle, type HandleKind, handleLabel, segmentHandles, visibleHandles, withValue } from './handles';
 import { isEdit, reverseAnchors } from './twfollow';
+import { type End, openEnds, type Placed, type Placement, placeTemplate, transformed } from './addtemplate';
 import { lockedWhy } from './lock';
 import { type MeasurePoint, measureBetween, measurePoint } from './measure';
 import { COMMON_RADII, type GuideEnd, type GuideResult, type GuideStraight, guidePoint } from './guides';
@@ -65,6 +66,8 @@ export interface CanvasHost {
   radius(): number;
   /** What a click or drag would do now, and where the mouse is (studs), for the status line. */
   status?(hint: string, at: [number, number] | undefined): void;
+  /** Put a template being placed (Add to design) on the design as placed: undefined to cancel it. */
+  place?(tpl: Design, placement: Placement): void;
   /** Split the route at studs along it (whole studs): undefined when done, else why not. */
   split?(route: number, studs: number): string | undefined;
   /** Esc with nothing being drawn: back to Select mode. */
@@ -199,6 +202,22 @@ export class TrackCanvas {
   private noteText: string | undefined;
   private noteTimer = 0;
   say(text: string, ms = 3500) { this.noteText = text; clearTimeout(this.noteTimer); this.noteTimer = window.setTimeout(() => { this.noteText = undefined; this.draw(); }, ms); this.draw(); }
+  /** A template being placed on the design (Add to design): the group follows the pointer, a click puts it down. */
+  private placing: { tpl: Design; turn: number; mirror: boolean; onto?: End; theirs: End[]; moved: boolean } | undefined;
+  get isPlacing() { return !!this.placing; }
+  /** Start placing a copy of a template: onto, the design end it starts on (before the pointer moves). */
+  startPlacing(tpl: Design, onto?: End) {
+    this.letGoSome();
+    this.placing = { tpl, turn: 0, mirror: false, onto, theirs: openEnds(this.host.design().routes), moved: false };
+    this.draw();
+  }
+  private letGoSome() { this.splitArmed = false; this.meas = {}; this.active = undefined; }
+  private placedNow(): Placed | undefined {
+    const p = this.placing;
+    if (!p) return undefined;
+    const at: [number, number] = this.mouse ?? this.toWorld(this.el.clientWidth / 2, this.el.clientHeight / 2);
+    return placeTemplate(this.host.design(), p.tpl, at, p.turn, p.mirror, this.reach(this.touching ? 28 : 18), p.moved || this.alt ? undefined : p.onto, this.alt ? [] : p.theirs);
+  }
   /** Split: the next click on the selected route cuts it there (from the selection bar's button). */
   splitArmed = false;
   /** Where the selected route would be cut for a point (studs along it, whole studs), if the point is on it. */
@@ -579,6 +598,11 @@ export class TrackCanvas {
       return;
     }
     const w = this.evWorld(e);
+    // a template being placed: the click puts it down
+    if (this.placing && e.button === 0) {
+      const pl = this.placedNow()!, tpl = this.placing.tpl;
+      this.placing = undefined; this.host.place?.(tpl, pl.placement); this.draw(); return;
+    }
     // Measure: the first click starts, the second ends, the next starts again
     if (this.mode === 'measure' && e.button === 0) {
       const mp = this.measureAt(w);
@@ -781,6 +805,7 @@ export class TrackCanvas {
     if (e.target !== this.el) return;
     this.alt = e.altKey;
     this.mouse = this.evWorld(e);
+    if (this.placing) this.placing.moved = true;
     this.aimEither();
     this.cursor();
     this.drawSoon();
@@ -977,6 +1002,12 @@ export class TrackCanvas {
     if (typingIn(e) || !down || dialogOpen()) return;
     // (Space held pans; not when a button, a tick box or a section's heading has the focus: Space presses it)
     if (e.code === 'Space' && !['BUTTON', 'INPUT', 'SUMMARY', 'A'].includes((e.target as HTMLElement)?.tagName)) { this.space = true; e.preventDefault(); }
+    if (this.placing) {
+      const k = e.key.toLowerCase(), p = this.placing;
+      if (e.key === 'Escape') { this.placing = undefined; this.draw(); return; }
+      if (k === 'r' && !e.ctrlKey && !e.metaKey) { p.turn = norm180(p.turn + (e.shiftKey ? 22.5 : -22.5)); p.moved = true; this.draw(); return; }
+      if (k === 'm' && !e.ctrlKey && !e.metaKey) { p.mirror = !p.mirror; p.moved = true; this.draw(); return; }
+    }
     if (e.key === 'Escape' && this.mode === 'measure') { if (this.meas.a) { this.meas = {}; return this.draw(); } return this.host.leaveDraw?.(); }
     if (e.key === 'Escape' && this.splitArmed) { this.splitArmed = false; return this.draw(); }
     if (e.key === 'Escape' && this.handleDrag) {
@@ -1036,7 +1067,7 @@ export class TrackCanvas {
       this.setSelection([]); this.host.changed(true);
     }
   }
-  stopDrawing() { this.active = undefined; this.meas = {}; this.draw(); }
+  stopDrawing() { this.active = undefined; this.meas = {}; this.placing = undefined; this.draw(); }
   /** Whatever's being drawn or dragged, let go of where it is (the design under it replaced: undone, a template, a file). */
   letGo() {
     this.guideNow = undefined; this.guideKey = '';
@@ -1088,6 +1119,7 @@ export class TrackCanvas {
     return this.touching || matchMedia('(pointer: coarse)').matches ? forFingers(h) : h;
   }
   private hintText(): string {
+    if (this.placing) { const pl = this.placedNow(); return `Click to put it down${pl?.snapped ? `, joining ${pl.snapped.design.route}` : ''}${pl?.why ? ` (${pl.why})` : ''} · R / Shift+R turn it · M mirrors it · hold Alt for no snapping · Esc cancels`; }
     if (this.noteText) return this.noteText;
     if (this.splitArmed) return 'Click on the route where to cut it · Esc cancels';
     if (this.mode === 'measure') return this.meas.b ? 'Click to measure again · Esc clears' : this.meas.a ? 'Click the second point · it snaps to track ends and centre lines · Esc clears' : 'Click the first point to measure from: it snaps to track ends and centre lines · Esc stops';
@@ -1482,6 +1514,14 @@ export class TrackCanvas {
         if (on && rt?.segs[h.seg]) tag(hx + 12, hy - 12, handleLabel(rt.segs[h.seg]), '#b25c00');
       }
     }
+    // a template being placed: the group where it would go, its joined end marked
+    if (this.placing) {
+      const pl = this.placedNow()!, tt = transformed(this.placing.tpl, pl.placement);
+      for (const tb of tt.tables ?? []) { const pts = tableOutline(tb); if (pts.length < 3) continue; c.beginPath(); pts.forEach(([x, y], i) => { const [sx, sy] = this.toScreen(x, y); if (i) c.lineTo(sx, sy); else c.moveTo(sx, sy); }); c.closePath(); c.globalAlpha = 0.3; c.fillStyle = '#4fb3e8'; c.fill(); c.globalAlpha = 1; c.strokeStyle = '#2b6fe0'; c.lineWidth = 1.5; c.stroke(); }
+      for (const r of tt.routes) { const pts = traceRaw(r, r.segs, 0.5); line(pts, 'rgba(43,111,224,0.28)', (2 * (r.system === 'monorail' ? 1 : (d.gaugeStuds + 1) / 2) + 3) * this.scale); line(pts, '#2b6fe0', 1.5, [6, 4]); }
+      if (pl.snapped) { const [sx, sy] = this.toScreen(pl.snapped.design.pose.x, pl.snapped.design.pose.y); c.fillStyle = '#2b9e4a'; c.beginPath(); c.arc(sx, sy, 6, 0, 2 * Math.PI); c.fill(); tag(sx, sy + 30, `joins ${pl.snapped.design.route}`, '#1d7a38'); }
+      this.el.dataset.placing = pl.snapped ? `snapped ${pl.snapped.design.route}` : 'free';
+    } else delete this.el.dataset.placing;
     // a small padlock on each locked route, in the middle of it
     for (const r of d.routes) {
       if (!r.locked) continue;

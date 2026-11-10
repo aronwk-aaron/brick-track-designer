@@ -43,7 +43,7 @@ try {
   check((await page.locator('#tpl-body .tcard').count()) > 50, 'it lists the templates');
   await page.fill('#tpl-search', 'switch lego');
   check((await page.locator('#tpl-body .tcard').count()) === 1, 'a search narrows them to the card');
-  await page.click('#tpl-body button[data-template="Left switch (LEGO)"]');
+  await page.click('#tpl-body .tpick[data-template="Left switch (LEGO)"]');
   check(!(await page.locator('#tpl-dlg').evaluate((d: HTMLDialogElement) => d.open)), 'pressing the card closes the browser');
   check(await says(/1 switch.*parts? to print.*built in/), `a template loads and builds (${await status()})`);
   check(await routes() === 2, 'the template has its two routes');
@@ -354,6 +354,36 @@ try {
     await page.click('#undo'); await page.waitForTimeout(150);
     await page.mouse.click(ax, ay); await page.waitForTimeout(150); await page.locator('.lockrow input').first().uncheck(); await page.waitForTimeout(150);
     check(!(await route()).includes('locked'), 'unticking Locked on its card unlocks it'); }
+
+  // measure: T, two clicks on tracks 16 studs apart: the distance and the angle between them; Esc clears
+  at = 'measure';
+  await page.evaluate(() => localStorage.setItem('btd-design', JSON.stringify({ version: 1, gaugeStuds: 4, routes: [{ name: 'A', x: 0, y: 0, heading: 0, segs: [{ kind: 'straight', studs: 20 }] }, { name: 'B', x: 16, y: 0, heading: 0, segs: [{ kind: 'straight', studs: 20 }] }] })));
+  await page.reload(); await page.waitForSelector('#track'); await page.click('#fit'); await page.waitForTimeout(300);
+  { const meas = () => page.locator('#track').evaluate((e) => (e as HTMLElement).dataset.measure ?? '');
+    await page.keyboard.press('t'); await page.waitForTimeout(100);
+    const [ax, ay] = await scr(0, 7), [bx, by] = await scr(16, 7);
+    await page.mouse.click(ax, ay); await page.mouse.click(bx, by); await page.waitForTimeout(250);
+    check(/^16 studs \(128 mm\) · 0° between the tracks · 16 studs apart/.test(await meas()), `Measure says the distance and the angle (${await meas()})`);
+    await page.keyboard.press('Escape'); await page.waitForTimeout(150);
+    check(await meas() === '', 'Esc clears it'); await page.keyboard.press('t'); }
+
+  // Add to design: a switch template follows the pointer, snaps onto the straight's end, one click puts it down, one undo takes it back
+  at = 'add a template';
+  await page.evaluate(() => localStorage.setItem('btd-design', JSON.stringify({ version: 1, gaugeStuds: 4, routes: [{ name: 'R1', x: 0, y: 0, heading: 0, segs: [{ kind: 'straight', studs: 16 }] }] })));
+  await page.reload(); await page.waitForSelector('#track'); await page.click('#mode-select'); await page.click('#fit'); await page.waitForTimeout(300);
+  { const placing = () => page.locator('#track').evaluate((e) => (e as HTMLElement).dataset.placing ?? 'none');
+    await page.click('#templates-open'); await page.fill('#tpl-search', 'switch lego');
+    await page.click('#tpl-body .tadd[data-template="Left switch (LEGO)"]'); await page.waitForTimeout(250);
+    const [px, py] = await scr(0.3, 16.4); await page.mouse.move(px, py); await page.waitForTimeout(250);
+    check(await placing() === 'snapped R1', `Add to design: the switch's toe snaps onto the straight's end (${await placing()})`);
+    await page.mouse.click(px, py); await page.waitForTimeout(300);
+    const added = await page.evaluate(() => JSON.parse(localStorage.getItem('btd-design')!).routes as { x: number; y: number }[]);
+    check(added.length === 3 && added[1].x === 0 && added[1].y === 16, `it's put down with its toe on the end (${JSON.stringify(added.map((r) => [r.x, r.y]))})`);
+    await page.click('#undo'); await page.waitForTimeout(150);
+    check(await routes() === 1, 'one Undo takes it back');
+    await page.click('#templates-open'); await page.fill('#tpl-search', 'switch lego'); await page.click('#tpl-body .tadd[data-template="Left switch (LEGO)"]'); await page.waitForTimeout(150);
+    await page.keyboard.press('Escape'); await page.waitForTimeout(100);
+    check(await placing() === 'none' && await routes() === 1, 'Esc cancels placing'); }
 
   check(errors.length === 0, `no errors on the page${errors.length ? `: ${errors.join(' | ').slice(0, 600)}` : ''}`);
 } catch (err) {
