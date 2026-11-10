@@ -85,11 +85,28 @@ export function putTogether(w: Awaited<ReturnType<typeof kernel>>, pieces: Piece
   // (the track near a part, 120 mm round it: a big layout's in one solid, and turned for each slider, ran the kernel out of memory)
   type Solid = ReturnType<typeof w.Manifold.cube>;
   const trackParts = pieces.filter((p) => !/points|throw|lever|bracket|lid/.test(p.name)).map(man), nearMemo = new Map<string, Solid>();
-  const trackNear = (m: Solid, by = 120) => {
+  const none = () => w.Manifold.cube([0.01, 0.01, 0.01]).translate([0, 0, -1e4]);
+  const trackNear = (m: Solid, by = 120, within?: Solid) => {
     const b = m.boundingBox(), ks = trackParts.flatMap((t, k) => { const c = t.boundingBox(); return [0, 1].every((j) => c.min[j] <= b.max[j] + by && b.min[j] - by <= c.max[j]) ? [k] : []; });
+    // (within: only what's in this solid, each part cut to it before they're joined: a slider's box along its tunnel)
+    if (within) {
+      const wb = within.boundingBox(), cut = ks.map((k) => trackParts[k]).filter((t) => { const c = t.boundingBox(); return [0, 1, 2].every((j) => c.min[j] <= wb.max[j] && wb.min[j] <= c.max[j]); }).map((t) => t.intersect(within));
+      return cut.length === 1 ? cut[0] : w.Manifold.union(cut.length ? cut : [none()]);
+    }
     const key = ks.join();
-    if (!nearMemo.has(key)) nearMemo.set(key, ks.length === 1 ? trackParts[ks[0]] : w.Manifold.union(ks.length ? ks.map((k) => trackParts[k]) : [w.Manifold.cube([0.01, 0.01, 0.01]).translate([0, 0, -1e4])]));
+    if (!nearMemo.has(key)) nearMemo.set(key, ks.length === 1 ? trackParts[ks[0]] : w.Manifold.union(ks.length ? ks.map((k) => trackParts[k]) : [none()]));
     return nearMemo.get(key)!;
+  };
+  // (the track right round a part, cut to a box about it (by mm round it on the plan, any height). A blade's tried in
+  // some forty places on its way in, each against the track: against every part within 120 mm in one solid that took
+  // 13 ms a time, two thirds of a yard's check; against what's in the box, a seventh of that. holds: a solid lies
+  // within the box, so what it shares with the track is what it shares with this; one that doesn't is tried against it all)
+  const trackBox = (m: Solid, by = 12) => {
+    const b = m.boundingBox(), lo = [b.min[0] - by, b.min[1] - by], hi = [b.max[0] + by, b.max[1] + by];
+    const box = w.Manifold.cube([hi[0] - lo[0], hi[1] - lo[1], 2000]).translate([lo[0], lo[1], -1000]);
+    const cut = trackParts.filter((t) => { const c = t.boundingBox(); return [0, 1].every((j) => c.min[j] <= hi[j] && lo[j] <= c.max[j]); }).map((t) => t.intersect(box));
+    return { cut: cut.length === 1 ? cut[0] : w.Manifold.union(cut.length ? cut : [none()]),
+      holds: (q: Solid) => { const c = q.boundingBox(); return [0, 1].every((j) => c.min[j] >= lo[j] && c.max[j] <= hi[j]) && c.min[2] > -1000 && c.max[2] < 1000; } };
   };
   const moving = pieces.filter((q) => /points|throw/.test(q.name)).map(man); // (the lever goes in after the lid)
   const { fromTop, bladesTop } = how;
@@ -97,7 +114,7 @@ export function putTogether(w: Awaited<ReturnType<typeof kernel>>, pieces: Piece
   for (const p of pieces.filter((q) => /points|throw|lever|bracket/.test(q.name) && mine(q))) {
     // (each moving part one piece, but for break-out supports inside it: the sprung blades', in the spring pocket)
     const m = man(p), bodies = m.decompose().sort((x, y) => y.volume() - x.volume()), bb = bodies[0].boundingBox();
-    const track = trackNear(m);
+    const round = trackBox(m), track = (q: typeof m) => (round.holds(q) ? round.cut : trackNear(m));
     const inside = (q: typeof m) => { const c = q.boundingBox(); return [0, 1, 2].every((k) => c.min[k] >= bb.min[k] - 1e-3 && c.max[k] <= bb.max[k] + 1e-3); };
     if (!bodies.slice(1).every(inside)) problems.push(`${p.name} is in ${bodies.length} pieces`);
     // (the plate-style slider goes in from the top and along its tunnel: checked below; its blades go on after it, from above)
@@ -106,12 +123,12 @@ export function putTogether(w: Awaited<ReturnType<typeof kernel>>, pieces: Piece
     const dir = /lever|bracket/.test(p.name) || fromTop || bladesTop ? 1 : -1;
     const blade = /points/.test(p.name) && !/throw|lever|bracket/.test(p.name);
     // (the plate-style blades each turn on a pin standing up through the hole in the plate: some of the track inside the blade's outline)
-    if (bladesTop && blade && m.hull().intersect(track).volume() < 10) problems.push(`${p.name} has no pin to turn on`);
+    if (bladesTop && blade && m.hull().intersect(round.cut).volume() < 10) problems.push(`${p.name} has no pin to turn on`);
     // (a blade goes on over the slider: in its post, as modelled, by the preload (its tongue bends aside going on); the
     // slider counts where it's in further than that, the track wherever it's in at all, each on its own: the post
     // coming out of the blade mustn't hide the blade going into the track)
     const sl = bladesTop && blade ? w.Manifold.union(pieces.filter((q) => /throw/.test(q.name)).map(man)) : undefined, vS0 = sl ? m.intersect(sl).volume() : 0;
-    const into = (q: typeof m, withSlider = true) => q.intersect(track).volume() + (withSlider && sl ? Math.max(0, q.intersect(sl).volume() - vS0) : 0);
+    const into = (q: typeof m, withSlider = true) => q.intersect(track(q)).volume() + (withSlider && sl ? Math.max(0, q.intersect(sl).volume() - vS0) : 0);
     // (a lever or stand snaps in between its ears, which flex apart: its pivot's domes and its detent bump
     // press into them on the way, a few mm3; nothing at rest)
     const snap = /lever/.test(p.name) ? 3 : 0.5;
@@ -164,7 +181,7 @@ export function putTogether(w: Awaited<ReturnType<typeof kernel>>, pieces: Piece
     if (bad) problems.push(bad);
     // (and swung to its other end, it's clear of the track)
     if (p.turn?.swing) {
-      const [cx, cy] = p.turn.at, v = m.translate([-cx, -cy, 0]).rotate([0, 0, p.turn.swing]).translate([cx, cy, 0]).intersect(track).volume();
+      const [cx, cy] = p.turn.at, over = m.translate([-cx, -cy, 0]).rotate([0, 0, p.turn.swing]).translate([cx, cy, 0]), v = over.intersect(track(over)).volume();
       if (v > 0.5) problems.push(`${p.name} swung over: ${v.toFixed(1)} mm3 in the track`);
     }
   }
@@ -187,11 +204,11 @@ export function putTogether(w: Awaited<ReturnType<typeof kernel>>, pieces: Piece
   const lids = pieces.filter((q) => /lid/.test(q.name)).map(man);
   for (const p of pieces.filter((q) => /lever/.test(q.name) && mine(q))) {
     // (and on its bracket, where it's on one)
-    const m = man(p), withLids = w.Manifold.union([trackNear(m), ...lids, ...pieces.filter((q) => /bracket/.test(q.name)).map(man)]);
+    const m = man(p), withLids = w.Manifold.union([trackBox(m, 2).cut, ...lids, ...pieces.filter((q) => /bracket/.test(q.name)).map(man)]);
     if ([-0.6, 0.6].some((dy) => m.translate([0, dy, 0]).intersect(withLids).volume() < 0.5)) problems.push(`${p.name} isn't held by its ears`);
   }
   for (const p of pieces.filter((q) => /lid/.test(q.name) && mine(q))) {
-    const m = man(p), others = w.Manifold.union([trackNear(m), ...moving]);
+    const m = man(p), others = w.Manifold.union([trackBox(m, 2).cut, ...moving]);
     for (const dz of [0, 1, 2, 4, 8, 16]) { const v = m.translate([0, 0, dz]).intersect(others).volume(); if (v > 0.5) { problems.push(`${p.name} ${dz} mm up: ${v.toFixed(1)} mm3 in the rest`); break; } }
   }
   // (the plate-style slider: a floor under it, nothing open underneath; it goes in from the top, down through the
@@ -211,7 +228,9 @@ export function putTogether(w: Awaited<ReturnType<typeof kernel>>, pieces: Piece
     // (along its own throw, whichever way that lies in the design: turned to lie along x, and the track with it)
     const ang = p.slide ? (Math.atan2(p.slide.dir[1], p.slide.dir[0]) * 180) / Math.PI : 0;
     const m = man(p).rotate([0, 0, -ang]), bb = m.boundingBox(), len = bb.max[0] - bb.min[0];
-    const near = trackNear(man(p)).rotate([0, 0, -ang]).intersect(w.Manifold.cube([2 * len + 20, 60, 1000]).translate([bb.min[0] - len / 2 - 10, (bb.min[1] + bb.max[1]) / 2 - 30, -500]));
+    // (the track beside it and on past its ends, in a box along it: each part near it cut to the box where it lies, then turned with it)
+    const box = w.Manifold.cube([2 * len + 20, 60, 1000]).translate([bb.min[0] - len / 2 - 10, (bb.min[1] + bb.max[1]) / 2 - 30, -500]);
+    const near = trackNear(man(p), 120, box.rotate([0, 0, ang])).rotate([0, 0, -ang]);
     if (m.translate([0, 0, -1]).intersect(near).volume() < 0.5) problems.push(`${p.name} isn't floored`);
     // (a nail switch's, under its points only, its tunnel shut at both ends: it goes down into its groove from above)
     const down = [1, 2, 4, 8, 16].every((dz) => m.translate([0, 0, dz]).intersect(near).volume() < 0.5);
