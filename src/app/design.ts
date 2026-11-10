@@ -200,6 +200,43 @@ export function upgradeDesign(d0: Design): Design {
     ...(oldBlade && { bladeStyle: 'sprung' as const }),
     ...((rest as { throwAction?: string }).throwAction === 'springback' && { throwAction: 'detent' as const, bladeStyle: 'sprung' as const }) } };
 }
+/**
+ * A design from a file or the browser's store, checked before the editor takes it (then brought up to date, as
+ * upgradeDesign). What the editor can't work without must be right: an error says what isn't (a file that's not a
+ * design, a route without its numbers or its pieces). The rest, where it's not what it should be, is left out: the
+ * settings (each one), the trackwork's hand edits, the tables, the name. Text cut short isn't JSON at all: that's said before this.
+ */
+export function readDesign(v: unknown): Design {
+  const obj = (x: unknown): x is Record<string, unknown> => !!x && typeof x === 'object' && !Array.isArray(x);
+  const fin = (x: unknown): x is number => typeof x === 'number' && Number.isFinite(x);
+  if (!obj(v) || !Array.isArray(v.routes)) throw new Error("it isn't a track design (.btd.json)");
+  if (fin(v.version) && v.version > 1) throw new Error('it was saved by a newer version of Brick Track Designer');
+  const routes = v.routes.map((r: unknown, i): DRoute => {
+    const what = `route ${i + 1}${obj(r) && typeof r.name === 'string' && r.name ? ` (${r.name})` : ''}`;
+    if (!obj(r)) throw new Error(`${what} isn't a route`);
+    for (const k of ['x', 'y', 'heading']) if (!fin(r[k])) throw new Error(`${what} has no ${k === 'heading' ? 'heading' : `start ${k}`}`);
+    if (!Array.isArray(r.segs)) throw new Error(`${what} has no pieces (segs)`);
+    r.segs.forEach((sg: unknown, k) => {
+      const ok = obj(sg) && ((sg.kind === 'straight' && fin(sg.studs)) || (sg.kind === 'curve' && fin(sg.radius) && sg.radius > 0 && fin(sg.angle)));
+      if (!ok) throw new Error(`${what}'s piece ${k + 1} is neither a straight (studs) nor a curve (radius, angle)`);
+    });
+    return { ...r, name: typeof r.name === 'string' ? r.name : '' } as unknown as DRoute;
+  });
+  const d = { ...v, version: 1, gaugeStuds: fin(v.gaugeStuds) ? v.gaugeStuds : 4, routes } as Record<string, unknown>;
+  if (typeof d.name !== 'string') delete d.name;
+  // (a setting that's not the kind of thing it should be, a number where a choice goes: left out, so its default)
+  if (obj(d.options)) d.options = Object.fromEntries(Object.entries(d.options).filter(([k, x]) => (k in OPTION_DEFAULTS ? typeof x === typeof (OPTION_DEFAULTS as unknown as Record<string, unknown>)[k] : ['string', 'number', 'boolean'].includes(typeof x)) && (typeof x !== 'number' || fin(x))));
+  else delete d.options;
+  if (obj(d.trackwork)) d.trackwork = Object.fromEntries(Object.entries(d.trackwork).filter(([, g]) => obj(g)).map(([k, g]) => [k, Object.fromEntries(Object.entries(g as object).filter(([, e]) => obj(e)))]));
+  else delete d.trackwork;
+  if (Array.isArray(d.tables)) {
+    const nums = (t: Record<string, unknown>, ...ks: string[]) => ks.every((k) => fin(t[k]));
+    const tables = d.tables.filter((t: unknown) => obj(t) && (t.shape === 'rect' ? nums(t, 'x', 'y', 'w', 'h') : t.shape === 'arc' ? nums(t, 'cx', 'cy', 'r0', 'r1', 'a0', 'a1')
+      : t.shape === 'poly' && Array.isArray(t.pts) && t.pts.length >= 3 && t.pts.every((q: unknown) => Array.isArray(q) && q.length === 2 && q.every(fin))));
+    if (tables.length) d.tables = tables; else delete d.tables;
+  } else delete d.tables;
+  return upgradeDesign(d as unknown as Design);
+}
 export const OPTION_DEFAULTS: PieceOptions = {
   throwSide: 'auto', leverOffset: 8, pointThrow: 3, pointClearance: 0.3, springPreload: 1, springThickness: 0.9, springLength: 40,
   flangeway: 3, flangewayDepth: 3, checkRailLen: 30, checkRailW: 1, checkRailFlare: 1.5, printBedX: 256, printBedY: 256, baseplate: 0, baseplateX: 0, baseplateY: 0, ballast: 'none', bottomStyle: 'antistud', joint: 'lego', pointsModule: 'built-in', endSupports: true, tongueRails: 'all', grip: 'edges', pointsPieces: 1, pointBlades: 2, throwStyle: 'built-in', mechStyle: 'plates', curveStuds: 'follow',

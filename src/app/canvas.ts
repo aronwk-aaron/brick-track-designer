@@ -257,8 +257,10 @@ export class TrackCanvas {
     const pts = this.host.design().routes.flatMap((r) => trace(r, r.segs, 2));
     const w = this.el.width / devicePixelRatio, h = this.el.height / devicePixelRatio;
     if (pts.length < 2) { this.scale = 6; this.ox = w / 2; this.oy = h / 2; return this.draw(); }
-    const xs = pts.map((p) => p[0]), ys = pts.map((p) => p[1]);
-    const x0 = Math.min(...xs) - 8, x1 = Math.max(...xs) + 8, y0 = Math.min(...ys) - 8, y1 = Math.max(...ys) + 8;
+    // (found one at a time: a big layout's points, all handed to Math.min at once, were more than it takes)
+    let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity;
+    for (const p of pts) { x0 = Math.min(x0, p[0]); x1 = Math.max(x1, p[0]); y0 = Math.min(y0, p[1]); y1 = Math.max(y1, p[1]); }
+    x0 -= 8; x1 += 8; y0 -= 8; y1 += 8;
     this.scale = Math.min(w / (x1 - x0), h / (y1 - y0), 40);
     this.ox = w / 2 - ((x0 + x1) / 2) * this.scale; this.oy = h / 2 + ((y0 + y1) / 2) * this.scale;
     this.draw();

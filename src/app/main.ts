@@ -2,7 +2,7 @@
 // 3D piece on the right, rebuilt in a worker as you edit.
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
-import { BANK_MAX, type BankRamps, type Design, type DRoute, type DSeg, OPTION_DEFAULTS, type PieceOptions, RAIL_DEFAULTS, TEMPLATE_GROUPS, TEMPLATES, type Trackwork, endOf, freeName, isMono, upgradeDesign } from './design';
+import { BANK_MAX, type BankRamps, type Design, type DRoute, type DSeg, OPTION_DEFAULTS, type PieceOptions, RAIL_DEFAULTS, TEMPLATE_GROUPS, TEMPLATES, type Trackwork, endOf, freeName, isMono, readDesign } from './design';
 import { TrackCanvas, type OverlayItem, leverSide, leverSlides, typingIn } from './canvas';
 import { describe } from './planner';
 import { BRICKTRACKS_COLOR, gradeOf, LEGO_COLOR, type LegoPart, legoParts, type Piece } from './build';
@@ -25,7 +25,7 @@ let design: Design = load() ?? { version: 1, gaugeStuds: 4, routes: [] };
 const history = new History(JSON.stringify(design));
 
 function load(): Design | undefined {
-  try { const s = localStorage.getItem(STORE); return s ? upgradeDesign(JSON.parse(s) as Design) : undefined; } catch { return undefined; }
+  try { const s = localStorage.getItem(STORE); return s ? readDesign(JSON.parse(s)) : undefined; } catch { return undefined; }
 }
 function save() { try { localStorage.setItem(STORE, JSON.stringify(design)); } catch { /* storage off: fine */ } }
 
@@ -881,11 +881,10 @@ $('load').addEventListener('click', () => loadInput.click());
 loadInput.addEventListener('change', async () => {
   const f = loadInput.files?.[0]; if (!f) return;
   try {
-    const d0 = JSON.parse(await f.text()) as Design;
-    if (!d0 || !Array.isArray(d0.routes)) throw new Error("it isn't a track design (.btd.json)");
-    const d = upgradeDesign(d0);
-    d.version = 1; if (!Number.isFinite(d.gaugeStuds)) d.gaugeStuds = 4;
-    design = d; replaced(); framed = false; changed(true); canvas.fit();
+    // (checked before it's taken: a file that isn't a design, or a damaged one, leaves the design there is as it was)
+    let d0: unknown;
+    try { d0 = JSON.parse(await f.text()); } catch { throw new Error("it isn't a track design (.btd.json): the file is cut short or isn't JSON"); }
+    design = readDesign(d0); replaced(); framed = false; changed(true); canvas.fit();
   } catch (err) { setStatus('', `Couldn't open ${f.name}: ${err instanceof Error ? err.message : err}`); }
   loadInput.value = '';
 });
