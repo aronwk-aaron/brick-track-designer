@@ -20,6 +20,7 @@ import { TabStore, unsaved } from './session';
 import { addCircle, cleanPieces, cleanRadius, defaultPieces, pieceFit, piecesText, PIECES } from './circle';
 import { APP_VERSION, type BuiltEntry, pngBytes, pushBuilt, readBuilt, readReportZip, type Report, reportName, type ReportInput, reportZip } from './report';
 import { isZip } from '../geom/unzip';
+import { COMMON_RADII } from './guides';
 import { initTemplateBrowser } from './templatebrowser';
 import { type CopiedEdit, copyEdits, followTrackwork, isEdit, leftOver, mirrorAnchors, pasteEdits, reconcileTrackwork, renameAnchors } from './twfollow';
 import { type OptChoice, optionForm, type OptCtx, type OptField } from './settings';
@@ -1143,7 +1144,7 @@ radiusSel.append(new Option('Curves: free', '-1', true, true));
 radiusSel.append(new Option('Curves: LEGO radii', '0'));
 // (every radius curves.scad makes, 24 + 8k studs, up to R1000: LEGO's and the common ones first, in a group of their own)
 {
-  const common = [24, 32, 40, 48, 56, 64, 72, 88, 104, 120], g1 = document.createElement('optgroup'), g2 = document.createElement('optgroup');
+  const common: readonly number[] = COMMON_RADII, g1 = document.createElement('optgroup'), g2 = document.createElement('optgroup');
   g1.label = 'LEGO and common radii'; g2.label = 'Every radius to R1000';
   for (const r of common) g1.append(new Option(`Curves: R${r}`, String(r)));
   for (let r = 24; r <= 1000; r += 8) if (!common.includes(r)) g2.append(new Option(`Curves: R${r}`, String(r)));

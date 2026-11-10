@@ -288,6 +288,19 @@ try {
   check(await routes() === 2, 'and they stay two routes');
   check(errors.length === errs0, `no errors from any of that${errors.length > errs0 ? `: ${errors.slice(errs0).join(' | ').slice(0, 300)}` : ''}`);
 
+  // guides while drawing: 8 studs beside a straight snaps, shows its label, and Alt turns it off
+  at = 'guides';
+  await page.evaluate(() => localStorage.setItem('btd-design', JSON.stringify({ version: 1, gaugeStuds: 4, routes: [{ name: 'A', x: 0, y: 0, heading: 0, segs: [{ kind: 'straight', studs: 30 }] }] })));
+  await page.reload(); await page.waitForSelector('#track'); await page.click('#fit'); await page.waitForTimeout(300); await page.click('#mode-draw');
+  const guide = () => page.locator('#track').evaluate((e) => (e as HTMLElement).dataset.guide ?? '');
+  { const [gx, gy] = await scr(8.2, 5); await page.mouse.click(gx, gy); const [hx, hy] = await scr(8.3, 22.2); await page.mouse.move(hx, hy); await page.waitForTimeout(250);
+    check(/8 studs from A/.test(await guide()), `drawing beside a straight snaps and says so (${await guide()})`);
+    await page.keyboard.down('Alt'); await page.waitForTimeout(250);
+    check(await guide() === '', 'Alt turns the guide off'); await page.keyboard.up('Alt');
+    await page.mouse.click(hx, hy); await page.waitForTimeout(200);
+    const rt = await page.evaluate(() => JSON.parse(localStorage.getItem('btd-design')!).routes[1]);
+    check(rt.x === 8 && rt.segs[0].studs === 17, `the track laid is exactly 8 studs from A, 17 long (${JSON.stringify(rt)})`); }
+
   check(errors.length === 0, `no errors on the page${errors.length ? `: ${errors.join(' | ').slice(0, 600)}` : ''}`);
 } catch (err) {
   fails.push(`${at}: ${err instanceof Error ? err.message : err}`);

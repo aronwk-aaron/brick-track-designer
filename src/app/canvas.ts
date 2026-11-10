@@ -14,6 +14,7 @@ import { forFingers } from './hints';
 import { joinedEnds, joinProblem, reversedRoute } from './routeedits';
 import { dragResult, END_INSET_PX, type Handle, type HandleKind, handleLabel, segmentHandles, visibleHandles, withValue } from './handles';
 import { isEdit, joinAnchors, reverseAnchors } from './twfollow';
+import { COMMON_RADII, type GuideEnd, type GuideResult, type GuideStraight, guidePoint } from './guides';
 import { describe, follow, plan, planAnyway, planAuto, planFreeTurning, planToPose, reversed, trace as traceRaw, type Pose } from './planner';
 
 // Track outlines traced once and kept (they're in studs, the same at any
@@ -347,6 +348,42 @@ export class TrackCanvas {
   private toWorld = (sx: number, sy: number): [number, number] => [(sx - this.ox) / this.scale, (this.oy - sy) / this.scale];
   private evWorld(e: MouseEvent) { const r = this.el.getBoundingClientRect(); return this.toWorld(e.clientX - r.left, e.clientY - r.top); }
   private snap = (p: [number, number]): [number, number] => [Math.round(p[0]), Math.round(p[1])];
+  /** Alt held: no snapping (the stud grid stays). */
+  private alt = false;
+  /** The guide the pointer is snapped to now (drawn dashed with its value), and what it was worked out for. */
+  private guideNow: GuideResult | undefined;
+  private guideKey = '';
+  /** What's near a point that a guide can come from: other routes' ends and straights (only the routes whose box is near: the rest aren't walked). */
+  private guideCands(p: [number, number], skip: number | undefined) {
+    const ends: GuideEnd[] = [], straights: GuideStraight[] = [], m = 26 + (this.touching ? 22 : 10) / this.scale;
+    this.host.design().routes.forEach((r, i) => {
+      if (i === skip) return;
+      // (further from its start than it's long, and the margin: skipped without a trace; far cheaper than a box kept per route's shape)
+      if (Math.hypot(p[0] - r.x, p[1] - r.y) > segsStuds(r.segs) + m) return;
+      const name = r.name || String(i), e = follow(r, r.segs);
+      ends.push({ pose: { x: r.x, y: r.y, heading: r.heading + 180 }, name }, { pose: e, name });
+      let q: Pose = { x: r.x, y: r.y, heading: r.heading };
+      for (const sg of r.segs) {
+        if (sg.kind === 'straight' && sg.studs >= 2) straights.push({ x: q.x, y: q.y, heading: q.heading, studs: sg.studs, name });
+        q = follow(q, [sg]);
+      }
+    });
+    return { ends, straights };
+  }
+  /**
+   * The snapped point for the pointer at w (studs): onto a guide when one is near (guides.ts), else the stud grid. from: where the
+   * track being laid starts (heading NaN: a new one from an empty point); skip: the route being dragged or extended. The guide
+   * is kept (guideNow) for draw() to show; the same pointer and start work it out once.
+   */
+  private guided(w: [number, number], from?: Pose, skip?: number): [number, number] {
+    const key = `${w[0]},${w[1]},${from ? `${from.x},${from.y},${from.heading}` : ''},${skip},${this.alt},${this.scale},${this.touching},${this.host.radius()},${this.host.design().routes.length}`;
+    if (key !== this.guideKey) {
+      this.guideKey = key;
+      const c = this.guideCands(w, skip);
+      this.guideNow = guidePoint({ p: w, scale: this.scale, snapPx: this.touching ? 22 : 10, from, ...c, radii: this.host.radius() < 0 ? COMMON_RADII : undefined, off: this.alt });
+    }
+    return this.guideNow!.point;
+  }
 
   // ---------- finding things ----------
   /** The nearest point on a track's centre line within reach (studs): its route, pose, and whether it's an end. */
@@ -355,6 +392,7 @@ export class TrackCanvas {
    * there along it, either way, merging in (trailing points), if it can.
    */
   private mergeOnto(p: [number, number], from: Pose, skip: number | undefined): DSeg[] | undefined {
+    if (this.alt) return undefined;
     const hit = this.nearTrack(p, this.reach(), skip);
     if (!hit || hit.end) return undefined;
     const r = this.host.radius() > 0 ? this.host.radius() : 24;
@@ -498,6 +536,7 @@ export class TrackCanvas {
     else this.extra.add(route);
   }
   private down(e: MouseEvent) {
+    this.alt = e.altKey;
     this.syncActive();
     // (the right button pans, drawing or not: a right click without a drag stops the track being drawn)
     if (e.button === 1 || e.button === 2 || this.space) {
@@ -581,7 +620,7 @@ export class TrackCanvas {
         this.active = { route: undefined, start: hit.pose, end: hit.pose, either: hit.pose.heading, from: hit.route };
         this.aimEither();
       }
-      else { const g = this.snap(w); this.active = { route: undefined, start: { x: g[0], y: g[1], heading: NaN } }; }
+      else { const g = this.guided(w); this.active = { route: undefined, start: { x: g[0], y: g[1], heading: NaN } }; }
       this.draw();
       return;
     }
@@ -680,13 +719,15 @@ export class TrackCanvas {
       return this.drawSoon();
     }
     if (this.drag) {
+      this.alt = e.altKey;
       if (!this.drag.moved && Math.hypot(e.clientX - this.drag.sx, e.clientY - this.drag.sy) < 4) return;
       this.drag.moved = true;
       this.mouse = this.evWorld(e);
-      this.reshape(this.snap(this.mouse));
+      this.reshape(this.mouse);
       return this.drawSoon();
     }
     if (e.target !== this.el) return;
+    this.alt = e.altKey;
     this.mouse = this.evWorld(e);
     this.aimEither();
     this.cursor();
@@ -764,11 +805,12 @@ export class TrackCanvas {
     this.draw();
   }
   /** Reshape the dragged route so the dragged end lands on t. */
-  private reshape(t: [number, number]) {
+  private reshape(w: [number, number]) {
     const dr = this.drag!, d = this.host.design();
     const work = dr.end === 'end' ? structuredClone(dr.orig) : reversed(dr.orig);
     const head = work.segs.slice(0, dr.anchor);
     const from = follow(work, head);
+    const t = this.guided(w, from, dr.route);
     // onto another track's end: join it, arriving heading into it
     let snap = this.snapEnd(this.mouse ?? t, dr.route);
     let good = snap ? planToPose(from, snap.pose, this.host.radius() > 0 ? this.host.radius() : 24) : this.planFrom(from, t);
@@ -827,6 +869,7 @@ export class TrackCanvas {
     let best: { route: number; end: 'start' | 'end'; pose: Pose; d: number } | undefined;
     const d0 = this.host.design(), mine = skip !== undefined ? d0.routes[skip] : undefined;
     this.joinBlocked = undefined;
+    if (this.alt) return undefined;
     d0.routes.forEach((r, i) => {
       if (i === skip) return;
       // (an end it can't be joined to isn't snapped to: and the reason is said when it's near)
@@ -894,6 +937,7 @@ export class TrackCanvas {
     this.drawPending = requestAnimationFrame(() => { this.drawPending = 0; this.draw(); });
   }
   private key(e: KeyboardEvent, down: boolean) {
+    if (e.key === 'Alt') { this.alt = down; this.guideKey = ''; this.drawSoon(); }
     if (e.code === 'Space' && !down) this.space = false;
     if (typingIn(e) || !down || dialogOpen()) return;
     // (Space held pans; not when a button, a tick box or a section's heading has the focus: Space presses it)
@@ -954,6 +998,7 @@ export class TrackCanvas {
   stopDrawing() { this.active = undefined; this.draw(); }
   /** Whatever's being drawn or dragged, let go of where it is (the design under it replaced: undone, a template, a file). */
   letGo() {
+    this.guideNow = undefined; this.guideKey = '';
     this.drag = undefined; this.dragBad = false; this.dragSnap = undefined; this.moving = undefined; this.box = undefined; this.tableDrag = undefined;
     this.itemDrag = undefined; this.handleDrag = undefined; this.leverDrag = undefined; this.leverPending = undefined; this.panning = undefined;
     this.stopDrawing();
@@ -984,7 +1029,7 @@ export class TrackCanvas {
     if (joined) return joined;
     const from0 = a.end ?? a.start;
     if (from0 && !Number.isNaN(from0.heading)) { const m = this.mergeOnto(w, from0, a.route ?? a.from); if (m) return m; }
-    const t = this.snap(w);
+    const t = this.guided(w, a.end ?? a.start, a.route ?? a.from);
     if (a.route === undefined && a.start && Number.isNaN(a.start.heading)) {
       // first piece from an empty point: straight, along the nearest direction
       const h = this.freeHeading(a.start, w);
@@ -1004,8 +1049,8 @@ export class TrackCanvas {
   private hintText(): string {
     if (this.handleDrag?.moved && this.handleDrag.why) return this.handleDrag.why;
     if (this.drag?.moved) return this.dragBad ? "Can't bend the track this way: release to keep the last good shape, Esc puts it back"
-      : this.dragSnap ? 'Release to join the two ends' : this.joinBlocked ? `Release to reshape (${this.joinBlocked}) · Esc puts it back` : 'Release to reshape · drop on another end to join · Esc puts it back';
-    if (this.active) return 'Click to lay track · keep clicking to go on · Esc or right-click stops · right-drag pans';
+      : this.dragSnap ? 'Release to join the two ends' : this.joinBlocked ? `Release to reshape (${this.joinBlocked}) · Esc puts it back` : 'Release to reshape · drop on another end to join · hold Alt for no snapping · Esc puts it back';
+    if (this.active) return 'Click to lay track · keep clicking to go on · hold Alt for no snapping · Esc or right-click stops · right-drag pans';
     // (over a lever: which side it's on and what put it there)
     const lv = this.leverDrag?.it ?? (this.mouse && !this.itemDrag ? this.leverAt(this.mouse) : undefined);
     if (lv) {
@@ -1132,6 +1177,25 @@ export class TrackCanvas {
       c.fillStyle = ink.tagBg; c.fillRect(x, y, tw + 10, 18);
       c.fillStyle = color; c.fillText(txt, x + 5, y + 13);
     };
+    /** The guide the pointer is snapped to: a thin dashed line (or arc) with a small label saying its value. */
+    const showGuides = () => {
+      const g = this.guideNow;
+      this.el.dataset.guide = g?.guides.length ? g.guides.map((x) => x.label).join(' | ') : '';
+      if (!g?.guides.length) return;
+      c.save(); c.setLineDash([6, 4]); c.lineWidth = 1.25; c.strokeStyle = '#d9480f'; c.beginPath();
+      for (const gd of g.guides) {
+        if (gd.line) { const [a, b] = gd.line.map((q) => this.toScreen(q[0], q[1])); c.moveTo(a[0], a[1]); c.lineTo(b[0], b[1]); }
+        if (gd.arc) for (let k = 0; k <= 40; k++) {
+          const an = ((gd.arc.a0 + (gd.arc.sweep * k) / 40) * Math.PI) / 180, q = this.toScreen(gd.arc.c[0] + gd.arc.r * Math.cos(an), gd.arc.c[1] + gd.arc.r * Math.sin(an));
+          if (k) c.lineTo(q[0], q[1]); else c.moveTo(q[0], q[1]);
+        }
+      }
+      c.stroke(); c.restore();
+      const [px, py] = this.toScreen(g.point[0], g.point[1]);
+      c.fillStyle = '#d9480f'; c.fillRect(px - 3, py - 3, 6, 6);
+      tag(px, py + 40, g.guides.map((x) => x.label).join(' · '), '#b23c0a');
+    };
+    if (!(this.drag?.moved) && !(this.mode === 'draw' && this.mouse)) { this.guideNow = undefined; this.guideKey = ''; }
     /** Draw segments from pose p, each in its colour: bad ones red. */
     const drawSegs = (p: Pose, segs: DSeg[], isBad: (k: number) => boolean, band: string, rail: string, g = (d.gaugeStuds + 1) / 2) => {
       let q = p;
@@ -1376,10 +1440,11 @@ export class TrackCanvas {
     // while dragging an end: what the reshaped track is, or why not
     if (this.drag?.moved && this.mouse) {
       const r = d.routes[this.drag.route];
-      const [mx, my] = this.toScreen(...this.snap(this.mouse));
+      const [mx, my] = this.toScreen(...(this.guideNow?.point ?? this.snap(this.mouse)));
       const txt = this.dragSnap && !this.dragBad ? `${describe(r.segs)}: joins ${d.routes[this.dragSnap.route].name}` : this.dragBad ? `Can't bend the track this way (red part: ${describe(this.dragBadFrom >= 0 ? r.segs.slice(this.dragBadFrom) : r.segs.slice(0, this.dragBadTo))}${this.host.radius() < 0 ? ', tighter than R24' : ''})` : this.joinBlocked ? `${describe(r.segs)}: ${this.joinBlocked}` : describe(r.segs);
       tag(mx, my, txt, this.dragBad ? '#e0452b' : ink.selInk);
       c.fillStyle = '#2b9e4a'; c.beginPath(); c.arc(mx, my, 5, 0, 2 * Math.PI); c.fill();
+      showGuides();
       return;
     }
     // the mouse: snapped point, and the planned track while drawing
@@ -1396,7 +1461,7 @@ export class TrackCanvas {
             line(trace(st, segs, 0.5), 'rgba(43,111,224,0.25)', (2 * g + 3) * this.scale);
             for (const o of [-g, g]) line(offsetPts(st, segs, o), '#2b6fe0', railW);
           }
-          const [mx, my] = this.toScreen(...this.snap(this.mouse));
+          const [mx, my] = this.toScreen(...(this.guideNow?.point ?? this.snap(this.mouse)));
           const sn = this.joinableEnd(this.mouse);
           // (carrying a route on: how long it is with this laid)
           const total = this.active.route !== undefined && d.routes[this.active.route] ? ` · route ${+(segsStuds(d.routes[this.active.route].segs) + segsStuds(segs)).toFixed(1)} studs` : '';
@@ -1417,10 +1482,11 @@ export class TrackCanvas {
         c.strokeStyle = '#2b6fe0'; c.lineWidth = 2; c.beginPath(); c.arc(sx, sy, 6, 0, 2 * Math.PI); c.stroke();
       }
       const hit = this.active ? undefined : this.nearTrack(this.mouse);
-      const p = hit ? [hit.pose.x, hit.pose.y] : this.snap(this.mouse);
+      const p = hit ? [hit.pose.x, hit.pose.y] : this.active ? (this.guideNow?.point ?? this.snap(this.mouse)) : this.guided(this.mouse);
       const [sx, sy] = this.toScreen(p[0], p[1]);
       c.fillStyle = hit ? (hit.end ? '#2b9e4a' : '#f0b400') : '#2b6fe0';
       c.beginPath(); c.arc(sx, sy, 4, 0, 2 * Math.PI); c.fill();
+      if (!hit) showGuides();
     }
   }
 }
