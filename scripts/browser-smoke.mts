@@ -140,6 +140,30 @@ try {
     check(await says(/7 parts to print.*built in|8 parts to print.*built in/), `and it builds (${await status()})`);
   }
 
+  // a curve's Flip button turns it the other way, in one undo step
+  at = 'flip';
+  const angleIn = { inputValue: () => page.evaluate(() => String((JSON.parse(localStorage.getItem('btd-design')!).routes[0].segs as { kind: string; angle?: number }[]).find((g) => g.kind === 'curve')?.angle)) };
+  await page.locator('#routes details.route').first().evaluate((d: HTMLDetailsElement) => { d.open = true; });
+  const was0 = await angleIn.inputValue();
+  await page.locator('#routes button', { hasText: /^Flip$/ }).first().click();
+  check(await angleIn.inputValue() === String(-Number(was0)), `Flip turns the curve the other way (${was0} then ${await angleIn.inputValue()})`);
+  await page.keyboard.press('Control+z'); await page.waitForTimeout(300);
+  check(await angleIn.inputValue() === was0, `and one undo puts it back (${await angleIn.inputValue()})`);
+  // a radius handle pulled in past the least says why it stopped
+  const hs2 = await handles(), rad = hs2.find((h) => h.seg === 0 && h.kind === 'radius');
+  if (rad) {
+    const tb2 = (await page.locator('#track').boundingBox())!;
+    await page.mouse.move(tb2.x + rad.x, tb2.y + rad.y); await page.mouse.down();
+    // (towards the route's start: the radius goes to nothing)
+    const st = await page.evaluate(() => { const r = JSON.parse(localStorage.getItem('btd-design')!).routes[0] as { x: number; y: number }; const v = (window as unknown as { btdCanvas: { view(): { scale: number; ox: number; oy: number } } }).btdCanvas.view(); return [v.ox + r.x * v.scale, v.oy - r.y * v.scale]; });
+    await page.mouse.move(tb2.x + (rad.x + st[0]) / 2, tb2.y + (rad.y + st[1]) / 2, { steps: 4 });
+    await page.mouse.move(tb2.x + st[0], tb2.y + st[1], { steps: 4 });
+    const hint = await page.locator('#hint').innerText();
+    await page.mouse.up();
+    check(/smallest radius is 24 studs/.test(hint), `a handle at a limit says why in the hint (${hint})`);
+    await page.keyboard.press('Control+z');
+  }
+
   // (two ready-made tables, one after the other: the second lands beside the first, not on it)
   at = 'tables';
   await page.click('#tables > summary');

@@ -12,7 +12,7 @@ import { sleeperSpots } from '../geom/crossing';
 import { poseToWorld, routeLength, routePose, worldToPose } from '../route/route';
 import { forFingers } from './hints';
 import { joinedEnds, joinProblem, reversedRoute } from './routeedits';
-import { dragValue, END_INSET_PX, type Handle, type HandleKind, handleLabel, segmentHandles, visibleHandles, withValue } from './handles';
+import { dragResult, END_INSET_PX, type Handle, type HandleKind, handleLabel, segmentHandles, visibleHandles, withValue } from './handles';
 import { isEdit, joinAnchors, reverseAnchors } from './twfollow';
 import { describe, follow, plan, planAnyway, planAuto, planFreeTurning, planToPose, reversed, trace as traceRaw, type Pose } from './planner';
 
@@ -185,7 +185,7 @@ export class TrackCanvas {
   /** Dragging a track's end: which route and end, where the press was, and the route as it was. */
   private drag: { route: number; end: 'start' | 'end'; sx: number; sy: number; moved: boolean; orig: DRoute; anchor: number; lastGood?: DRoute } | undefined;
   /** Dragging a curve's or straight's handle (angle, radius, length): which, and the segment as it was. */
-  private handleDrag: { route: number; seg: number; kind: HandleKind; orig: DSeg; moved: boolean; sx: number; sy: number } | undefined;
+  private handleDrag: { route: number; seg: number; kind: HandleKind; orig: DSeg; moved: boolean; sx: number; sy: number; why?: string } | undefined;
   /** The last press was a finger's, not a mouse's: bigger handles to grab. */
   private touching = false;
   /** The handles on the selected route (when one is selected, in Select mode, nothing being drawn): at least 10 px apart on the screen. */
@@ -632,9 +632,10 @@ export class TrackCanvas {
       this.mouse = this.evWorld(e);
       if (!hd.moved && Math.hypot(e.clientX - hd.sx, e.clientY - hd.sy) < 4) return;
       hd.moved = true;
-      const v = r && dragValue(r, hd, this.mouse, { shift: e.shiftKey, insetStuds: END_INSET_PX / this.scale });
-      if (r && v !== undefined) {
-        const next = withValue(r.segs[hd.seg], hd.kind, v);
+      const res = r && dragResult(r, hd, this.mouse, { shift: e.shiftKey, insetStuds: END_INSET_PX / this.scale });
+      hd.why = res?.why;
+      if (r && res) {
+        const next = withValue(r.segs[hd.seg], hd.kind, res.value);
         if (JSON.stringify(next) !== JSON.stringify(r.segs[hd.seg])) { r.segs[hd.seg] = next; this.host.changed(false); this.host.live?.(); }
       }
       return this.drawSoon();
@@ -994,6 +995,7 @@ export class TrackCanvas {
     return this.touching || matchMedia('(pointer: coarse)').matches ? forFingers(h) : h;
   }
   private hintText(): string {
+    if (this.handleDrag?.moved && this.handleDrag.why) return this.handleDrag.why;
     if (this.drag?.moved) return this.dragBad ? "Can't bend the track this way: release to keep the last good shape, Esc puts it back"
       : this.dragSnap ? 'Release to join the two ends' : this.joinBlocked ? `Release to reshape (${this.joinBlocked}) · Esc puts it back` : 'Release to reshape · drop on another end to join · Esc puts it back';
     if (this.active) return 'Click to lay track · keep clicking to go on · Esc or right-click stops · right-drag pans';

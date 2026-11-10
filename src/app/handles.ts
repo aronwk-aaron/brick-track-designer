@@ -58,8 +58,15 @@ export function visibleHandles(hs: Handle[], scale: number, minPx = 10): Handle[
 
 export interface DragOpts { shift?: boolean; insetStuds?: number }
 
-/** The value a handle takes with the pointer at w: a curve's angle (signed), its radius, a straight's length. Snapped; within the limits. */
-export function dragValue(r: DRoute, h: { seg: number; kind: HandleKind }, w: [number, number], o: DragOpts = {}): number | undefined {
+/** What a dragged handle takes: the value, and when the pointer is past a limit (so the value stopped there), the reason, worded for the hint line. */
+export interface DragResult { value: number; why?: string }
+
+/**
+ * The value a handle takes with the pointer at w: a curve's angle (signed: pulled past 0 it turns the curve the other
+ * way), its radius, a straight's length. Snapped; within the limits (the card's: limits.ts), and the reason when it
+ * stopped at one.
+ */
+export function dragResult(r: DRoute, h: { seg: number; kind: HandleKind }, w: [number, number], o: DragOpts = {}): DragResult | undefined {
   const sg = r.segs[h.seg];
   if (!sg) return undefined;
   const p = poseBefore(r, h.seg), last = h.seg === r.segs.length - 1, inset = last ? o.insetStuds ?? 0 : 0;
@@ -67,8 +74,8 @@ export function dragValue(r: DRoute, h: { seg: number; kind: HandleKind }, w: [n
     if (h.kind !== 'length') return undefined;
     const d = [-Math.sin(rad(p.heading)), Math.cos(rad(p.heading))];
     const raw = (w[0] - p.x) * d[0] + (w[1] - p.y) * d[1] + inset * (last && sg.studs / 2 < sg.studs - inset ? 1 : 0);
-    const step = o.shift ? 0.2 : 1;
-    return round(clamp(Math.max(step, Math.round(raw / step) * step), LIMITS.straight));
+    const step = o.shift ? 0.2 : 1, v = Math.round(raw / step) * step, [lo, hi] = LIMITS.straight;
+    return { value: round(clamp(v, LIMITS.straight)), why: v < lo ? `shortest straight is ${lo} studs` : v > hi ? `longest straight is ${hi} studs` : undefined };
   }
   const sn = sg.angle >= 0 ? 1 : -1;
   if (h.kind === 'angle') {
@@ -78,19 +85,24 @@ export function dragValue(r: DRoute, h: { seg: number; kind: HandleKind }, w: [n
     const cur = Math.abs(sg.angle);
     let raw = Math.abs(turn - cur) <= Math.abs(turn + 360 - cur) ? turn : turn + 360;
     if (last) raw += Math.min(30, deg(inset / sg.radius));
-    const step = o.shift ? ANGLE_FREE : ANGLE_STEP;
-    const a = clamp(Math.max(step, Math.round(raw / step) * step), [0, 360, 0]);
-    return round(sn * a);
+    const step = o.shift ? ANGLE_FREE : ANGLE_STEP, hi = LIMITS.angle[1];
+    // (past the start's line the pointer is on the other side: the curve flips to the other hand, from then on measured that way)
+    const flip = raw < 0 ? -1 : 1, mag = Math.round(Math.abs(raw) / step) * step;
+    const a = Math.min(hi, Math.max(step, mag));
+    return { value: round(sn * flip * a), why: mag < step ? `a curve turns at least ${+step.toFixed(3)}°` : mag > hi ? `a curve turns ${hi}° at most: add another curve to go on` : undefined };
   }
   if (h.kind === 'radius') {
     // (the arc's middle moves along a line from the curve's start, in proportion to the radius)
     const m = follow(p, [{ ...sg, angle: sg.angle / 2 }]), vx = (m.x - p.x) / sg.radius, vy = (m.y - p.y) / sg.radius;
     const raw = ((w[0] - p.x) * vx + (w[1] - p.y) * vy) / (vx * vx + vy * vy);
-    const v = o.shift ? Math.round(raw) : 24 + Math.round((raw - 24) / 8) * 8;
-    return clamp(Math.max(1, v), LIMITS.radius);
+    const v = o.shift ? Math.round(raw) : 24 + Math.round((raw - 24) / 8) * 8, [lo, hi] = LIMITS.radius;
+    return { value: clamp(Math.max(1, v), LIMITS.radius), why: v < lo ? `smallest radius is ${lo} studs` : v > hi ? `biggest radius is ${hi} studs` : undefined };
   }
   return undefined;
 }
+
+/** Just the value of dragResult. */
+export const dragValue = (r: DRoute, h: { seg: number; kind: HandleKind }, w: [number, number], o: DragOpts = {}): number | undefined => dragResult(r, h, w, o)?.value;
 
 /** The segment with a handle's value put in it (a copy). */
 export function withValue(sg: DSeg, kind: HandleKind, v: number): DSeg {

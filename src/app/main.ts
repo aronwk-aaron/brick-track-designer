@@ -124,7 +124,11 @@ function segRow(r: DRoute, k: number): HTMLElement {
   if (sg.kind === 'straight') row.append(field('Straight, studs', num(sg.studs, (n) => { sg.studs = n; soon(render); }, 1, 'Length in studs.', LIMITS.straight)));
   else row.append(field('Curve: radius, studs', num(sg.radius, (n) => { (sg as Extract<DSeg, { kind: 'curve' }>).radius = n; soon(render); }, 8, 'Radius in studs (the usual curves run 24 + 8k).', LIMITS.radius)),
     field('angle ° (+ left)', num(sg.angle, (n) => { (sg as Extract<DSeg, { kind: 'curve' }>).angle = n; soon(render); }, 0.5, 'How far it turns, degrees: + left, - right. A whole turn at most: add another curve to go on.', LIMITS.angle)));
-  row.append(btn('✕', () => { r.segs.splice(k, 1); }, 'Remove this segment'));
+  // (a curve's Flip beside its ✕, one cell of the card's grid)
+  const acts = document.createElement('div'); acts.style.cssText = 'display:flex;gap:4px';
+  if (sg.kind === 'curve') acts.append(btn('Flip', () => { sg.angle = -sg.angle; }, 'Turn this curve the other way (left becomes right); the track after it follows'));
+  acts.append(btn('✕', () => { r.segs.splice(k, 1); }, 'Remove this segment'));
+  row.append(acts);
   row.append(...bankFields(sg, isMono(r)));
   return row;
 }

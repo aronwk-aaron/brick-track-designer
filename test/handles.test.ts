@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { DRoute } from '../src/app/design';
-import { dragValue, handleLabel, poseBefore, segmentHandles, visibleHandles, withValue } from '../src/app/handles';
+import { dragResult, dragValue, handleLabel, poseBefore, segmentHandles, visibleHandles, withValue } from '../src/app/handles';
+import { LIMITS } from '../src/app/limits';
 import { follow } from '../src/app/planner';
 
 const route = (segs: DRoute['segs'], more: Partial<DRoute> = {}): DRoute => ({ name: 'A', x: 0, y: 0, heading: 0, segs, ...more });
@@ -32,7 +33,7 @@ describe('handles', () => {
     const r = route([{ kind: 'straight', studs: 16 }, { kind: 'curve', radius: 40, angle: 22.5 }]);
     expect(dragValue(r, { seg: 0, kind: 'length' }, [3, 20.4])).toBe(20);
     expect(dragValue(r, { seg: 0, kind: 'length' }, [3, 20.37], { shift: true })).toBe(20.4);
-    expect(dragValue(r, { seg: 0, kind: 'length' }, [0, -5])).toBe(1);
+    expect(dragValue(r, { seg: 0, kind: 'length' }, [0, -5])).toBe(LIMITS.straight[0]);   // (the card's least)
     expect(dragValue(r, { seg: 0, kind: 'length' }, [0, 99999])).toBe(2000);
   });
   it('gives a curve a new angle from the pointer round its centre, in 5.625 degree steps (Shift: 0.5)', () => {
@@ -51,8 +52,7 @@ describe('handles', () => {
     let r = route([{ kind: 'curve', radius: 40, angle: 170 }]);
     const at = (t: number): [number, number] => [-40 + 40 * Math.cos((t * Math.PI) / 180), 40 * Math.sin((t * Math.PI) / 180)];
     expect(dragValue(r, { seg: 0, kind: 'angle' }, at(190))).toBe(191.25);       // (nearest step to 190 above 180)
-    expect(dragValue(route([{ kind: 'curve', radius: 40, angle: 22.5 }]), { seg: 0, kind: 'angle' }, at(-20))).toBe(5.625); // (back past the start: the least)
-    r = route([{ kind: 'curve', radius: 40, angle: 350 }]);
+        r = route([{ kind: 'curve', radius: 40, angle: 350 }]);
     expect(dragValue(r, { seg: 0, kind: 'angle' }, at(358))).toBe(360);
   });
   it('gives a curve a new radius, to the usual radii (Shift: whole studs), the angle unchanged', () => {
@@ -76,5 +76,49 @@ describe('handles', () => {
     expect(handleLabel({ kind: 'curve', radius: 40, angle: 40 })).toBe('R40 · 40° · 9 make a circle');
     expect(handleLabel({ kind: 'curve', radius: 40, angle: 50 })).toBe('R40 · 50°');
     expect(handleLabel({ kind: 'straight', studs: 16 })).toBe('16 studs');
+  });
+});
+
+describe('handles at their limits', () => {
+  const curve = (angle: number) => route([{ kind: 'curve', radius: 40, angle }]);
+  const at = (t: number): [number, number] => [-40 + 40 * Math.cos((t * Math.PI) / 180), 40 * Math.sin((t * Math.PI) / 180)];
+  it('an angle pulled back past 0 turns the curve the other way, and on from there', () => {
+    expect(dragValue(curve(22.5), { seg: 0, kind: 'angle' }, at(-20))).toBe(-22.5);
+    expect(dragValue(curve(22.5), { seg: 0, kind: 'angle' }, at(-45))).toBe(-45);
+    // (a right curve: its centre is on the right; the pointer pulled to the left of the start line makes it a left one)
+    const atR = (t: number): [number, number] => [40 - 40 * Math.cos((t * Math.PI) / 180), 40 * Math.sin((t * Math.PI) / 180)];
+    expect(dragValue(curve(-22.5), { seg: 0, kind: 'angle' }, atR(45))).toBe(-45);
+    expect(dragValue(curve(-22.5), { seg: 0, kind: 'angle' }, atR(-45))).toBe(45);
+  });
+  it('is smooth through 0: the value is never 0, and the pointer a little either side gives the least step either way', () => {
+    expect(dragValue(curve(22.5), { seg: 0, kind: 'angle' }, at(1))).toBe(5.625);
+    expect(dragValue(curve(22.5), { seg: 0, kind: 'angle' }, at(-1))).toBe(-5.625);
+    expect(dragResult(curve(22.5), { seg: 0, kind: 'angle' }, at(1))?.why).toMatch(/at least 5\.625/);
+  });
+  it('flipping and then dragging on follows the pointer: each step is measured in the curve\'s new hand', () => {
+    let r = curve(22.5);
+    r = curve(dragValue(r, { seg: 0, kind: 'angle' }, at(-30))!);          // (flipped to a right curve of 33.75)
+    expect((r.segs[0] as { angle: number }).angle).toBeLessThan(0);
+    const atR = (t: number): [number, number] => [40 - 40 * Math.cos((t * Math.PI) / 180), 40 * Math.sin((t * Math.PI) / 180)];
+    expect(dragValue(r, { seg: 0, kind: 'angle' }, atR(60))).toBe(-61.875);   // (on round the right: the right curve grows)
+    expect(dragValue(r, { seg: 0, kind: 'angle' }, atR(-20))).toBe(22.5);      // (and back across: left again)
+  });
+  it('a radius dragged below the least says so, with the limit from limits.ts', () => {
+    const r = curve(90), m = follow({ x: 0, y: 0, heading: 0 }, [{ kind: 'curve', radius: 8, angle: 45 }]);
+    const res = dragResult(r, { seg: 0, kind: 'radius' }, [m.x, m.y])!;
+    expect(res.value).toBe(LIMITS.radius[0]);
+    expect(res.why).toBe(`smallest radius is ${LIMITS.radius[0]} studs`);
+    const ok = follow({ x: 0, y: 0, heading: 0 }, [{ kind: 'curve', radius: 56, angle: 45 }]);
+    expect(dragResult(r, { seg: 0, kind: 'radius' }, [ok.x, ok.y])?.why).toBeUndefined();
+    expect(dragResult(r, { seg: 0, kind: 'radius' }, [-9999, 9999])?.why).toBe(`biggest radius is ${LIMITS.radius[1]} studs`);
+  });
+  it('a straight dragged to its least or its most says so, and the least is the card\'s', () => {
+    const r = route([{ kind: 'straight', studs: 16 }]);
+    expect(dragResult(r, { seg: 0, kind: 'length' }, [0, -5])).toEqual({ value: LIMITS.straight[0], why: `shortest straight is ${LIMITS.straight[0]} studs` });
+    expect(dragResult(r, { seg: 0, kind: 'length' }, [0, 99999])?.why).toBe(`longest straight is ${LIMITS.straight[1]} studs`);
+    expect(dragResult(r, { seg: 0, kind: 'length' }, [0, 5])?.why).toBeUndefined();
+  });
+  it('a curve past a whole turn says so', () => {
+    expect(dragResult(curve(350), { seg: 0, kind: 'angle' }, at(358 + 10))?.value).toBe(360);
   });
 });
