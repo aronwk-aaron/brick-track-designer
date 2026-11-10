@@ -1,10 +1,11 @@
 // A full circle in one step: one closed route of equal curves, one for each piece it is made of, and what a piece
-// means for printing (its size and whether it fits the bed). Pure: the Full circle panel in main.ts shows it.
+// means for printing (its size and whether it fits the bed, turned any way). Pure: the Full circle panel in main.ts shows it.
 import { type Design, type DRoute, OPTION_DEFAULTS, STUD } from './design';
 import { clamp, LIMITS } from './limits';
 import { routesBox } from '../route/route';
 import { STD_CURVES } from './build';
 import { toRoutes } from './design';
+import { bedFit, END_REACH, tightBox, trackOutline } from '../geom/bedfit';
 
 export const PIECES = [4, 128, 16] as const;
 /** The usual pieces round a circle: R40 and smaller 16 of 22.5°, R56 to R120 32 of 11.25°, larger 64 of 5.625°. */
@@ -51,9 +52,9 @@ export function addCircle(d: Design, name: string, radius: number, pieces: numbe
 
 // ---------- what a piece means for the print bed ----------
 export interface PieceFit {
-  /** the piece's length (along its outer chord, with the end connectors) and width, mm */
+  /** the piece's length and width, mm: its tightest box, end connectors and all */
   length: number; width: number;
-  /** straight on the bed, or either way round; only diagonally; no way */
+  /** along the bed, either way round; only corner to corner (the build turns its file so); no way */
   fit: 'fits' | 'diagonal' | 'no';
   text: string;
 }
@@ -62,47 +63,23 @@ export const bandHalf = (gaugeStuds: number, ballast: 'none' | 'ballast' | 'budd
   const sleeper = (gaugeStuds + 1) * STUD + 24;
   return (ballast === 'buddy' ? sleeper + 32 : ballast === 'ballast' ? sleeper + 16 : sleeper) / 2;
 };
-const END_CONNECTORS = 9;
 
-/** Does a length × width rectangle go on a bed x × y turned by some angle between 0 and 90 degrees? (a degree at a time) */
-function fitsTurned(l: number, w: number, bx: number, by: number) {
-  for (let deg = 1; deg < 90; deg++) { const t = (deg * Math.PI) / 180, c = Math.cos(t), s = Math.sin(t); if (l * c + w * s <= bx + 1e-9 && l * s + w * c <= by + 1e-9) return true; }
-  return false;
-}
-/** Room kept on the bed all round, mm: the build cuts a part that has less (its joints stick out a little past the track). */
-export const BED_MARGIN = 8;
+/** One piece's outline in plan, mm: its base (the sleepers, or the ballast's widest layer) round its arc, and its track's ends with their connectors. */
+export const pieceOutline = (radius: number, pieces: number, gaugeStuds: number, ballast: 'none' | 'ballast' | 'buddy') =>
+  trackOutline(radius * STUD, (2 * Math.PI * radius * STUD) / pieces, bandHalf(gaugeStuds, ballast), bandHalf(gaugeStuds, 'none'), END_REACH);
 /**
- * The largest box, in the plan's directions, that any of a circle's pieces fills (the build fits parts on the bed as they lie
- * on the plan, turned a quarter at most): the outer and inner arcs, and a connector's length past each end.
+ * One piece of a circle: its size in mm (its tightest box) and whether it fits the bed, judged as the build judges every
+ * part (geom/bedfit.ts): turned any way, corner to corner too.
  */
-function worstBox(R: number, bh: number, pieces: number): [number, number] {
-  const a = (2 * Math.PI) / pieces, ext = END_CONNECTORS / 2 / R;
-  let wx = 0, wy = 0, worst = 0;
-  const steps = 24;
-  for (let k = 0; k < pieces; k++) {
-    let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity;
-    for (let i = 0; i <= steps; i++) {
-      const t = k * a - ext + ((a + 2 * ext) * i) / steps;
-      for (const r of [R - bh, R + bh]) { x0 = Math.min(x0, r * Math.cos(t)); x1 = Math.max(x1, r * Math.cos(t)); y0 = Math.min(y0, r * Math.sin(t)); y1 = Math.max(y1, r * Math.sin(t)); }
-    }
-    const w = x1 - x0, h = y1 - y0, m = Math.max(w, h);
-    if (m > worst) { worst = m; wx = Math.max(w, h); wy = Math.min(w, h); }
-  }
-  return [wx, wy];
-}
-/** One piece of a circle: its size in mm and whether it fits the bed. */
 export function pieceFit(radius: number, pieces: number, o: { gaugeStuds?: number; ballast?: 'none' | 'ballast' | 'buddy'; printBedX?: number; printBedY?: number }): PieceFit {
-  const a = ((360 / pieces) * Math.PI) / 180, bh = bandHalf(o.gaugeStuds ?? 4, o.ballast ?? OPTION_DEFAULTS.ballast);
-  const R = radius * STUD, ro = R + bh, ri = R - bh;
-  const length = 2 * ro * Math.sin(a / 2) + END_CONNECTORS, width = ro - ri * Math.cos(a / 2);
+  const pts = pieceOutline(radius, pieces, o.gaugeStuds ?? 4, o.ballast ?? OPTION_DEFAULTS.ballast);
+  const [length, width] = tightBox(pts).size;
   const bx = o.printBedX ?? OPTION_DEFAULTS.printBedX, by = o.printBedY ?? OPTION_DEFAULTS.printBedY;
-  // (every piece, as it lies on the plan, in the bed with the margin, either way round: the build leaves it whole)
-  const [wx, wy] = worstBox(R, bh, pieces), lo = Math.min(bx, by) - BED_MARGIN, hi = Math.max(bx, by) - BED_MARGIN;
-  const straight = wx <= hi && wy <= lo;
-  const fit = straight ? 'fits' : fitsTurned(length, width, hi, lo) ? 'diagonal' : 'no';
+  // (straight: its tightest box lies along the bed; diagonal: only corner to corner)
+  const fit = (length <= bx && width <= by) || (length <= by && width <= bx) ? 'fits' : bedFit(pts, bx, by).fits ? 'diagonal' : 'no';
   const size = `${length.toFixed(1)} × ${width.toFixed(1)} mm`;
   const text = fit === 'fits' ? `Each piece is about ${size}: fits the ${bx} × ${by} mm bed.`
-    : fit === 'diagonal' ? `Each piece is about ${size}: fits only turned diagonally. That isn't done automatically: the build cuts the pieces that don't fit.`
-    : `Each piece is about ${size}: doesn't fit the ${bx} × ${by} mm bed. Use more pieces.`;
+    : fit === 'diagonal' ? `Each piece is about ${size}: fits the ${bx} × ${by} mm bed turned diagonally. Its file comes turned that way already.`
+    : `Each piece is about ${size}: doesn't fit the ${bx} × ${by} mm bed, however it's turned. Use more pieces.`;
   return { length, width, fit, text };
 }

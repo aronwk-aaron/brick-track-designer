@@ -7,6 +7,7 @@ import { arena, type Wasm } from '../geom/kernel';
 import { R, Scad, T, type Man } from '../geom/scad';
 import { sweepRoute } from '../geom/sweep';
 import { stlBytes } from '../geom/stl';
+import { bedFit } from '../geom/bedfit';
 import { MONO, MONO_DEFAULTS, Mono, type MonoOptions, rackGaps, type RackGap, SUPPORT_DEFAULTS, type SupportOptions, placeAt, subOf, supportHeight, supportPart, underLabel } from '../geom/monorail';
 import { monoSwitch, type SwitchPlan, planSwitch } from '../geom/monoswitch';
 import { poseToWorld, routeLat, routeLength, routePose, routeSOf, segLength, segStarts, type Pose, type Route } from '../route/route';
@@ -126,6 +127,8 @@ export function fitAngle(pts: [number, number][], X: number, Y: number): number 
     const w = x1 - x0, h = y1 - y0;
     if (((w <= X && h <= Y) || (w <= Y && h <= X)) && w * h < bestA - 1e-6) { bestA = w * h; best = w <= X && h <= Y ? a : a + 90; }
   }
+  // (none at a whole degree: the fit every part's judged by (geom/bedfit.ts), which looks closer; it turns the other way)
+  if (best === undefined) { const f = bedFit(pts, X, Y); if (f.fits) best = (180 - f.angle) % 180; }
   return best;
 }
 /** A stretch of beam's outline in plan (a little past its sides, its tabs past its ends). */
@@ -212,7 +215,7 @@ function bake(m: Man, turn = 0, dz = 0): Baked {
  * its ends lies level (the least height off the bed), on thin breakaway ribs
  * under the rest of its curve, 0.25 mm below it.
  */
-function bakeRamp(scad: Scad, flat: Man, sub: Route, z: (s: number) => number, turn: number): Baked {
+function bakeRamp(scad: Scad, flat: Man, sub: Route, z: (s: number) => number, turn0: number, X: number, Y: number): Baked {
   const L = routeLength(sub);
   const world = flat.refineToLength(2).warp((v) => { v[2] += z(Math.min(L, Math.max(0, routeSOf(sub, [v[0], v[1]])))); });
   // (the print: the ends' line level; the bed under the lowest of the curve below that line)
@@ -238,6 +241,9 @@ function bakeRamp(scad: Scad, flat: Man, sub: Route, z: (s: number) => number, t
     const a3 = a2 * c - zz * sn, z3 = a2 * sn + zz * c;
     v[0] += (a3 - a2) * dir[0]; v[1] += (a3 - a2) * dir[1]; v[2] = z3 + zA;
   });
+  // (turned to fit the bed as it prints: tilted, it's longer in plan than its stretch of track (a 32-stud ramp 266 mm,
+  // its file lay along a 256 mm bed and over it))
+  const turn = fitAngle(outline(print), X, Y) ?? turn0;
   const local = turn ? print.rotate([0, 0, -turn]) : print;
   return { positions: meshPositions(world.getMesh(), 0), stl: stlBytes(local.getMesh(), true), volume: world.volume(), box: world.boundingBox() };
 }
@@ -454,10 +460,10 @@ export function buildMonorail(w: Wasm, routes: Route[], o: Partial<PieceOptions>
     const zs = ramp ? Array.from({ length: 33 }, (_, k) => zAt(p.c, p.a + ((p.b - p.a) * k) / 32)) : [];
     const key = JSON.stringify({ seg: sub.segments, start: sub.start, gaps, sock, lines, mo, elev, zs });
     const turn = fitAngle(footprint(c.route, p.a, p.b), X, Y);
-    const b = cached(`mp:${key}:${turn}`, () => arena(w, () => {
+    const b = cached(`mp:${key}:${turn}${ramp ? `:${X}x${Y}` : ''}`, () => arena(w, () => {
       const label = underLabel(scad, lines, p.b - p.a - 20), flat = mono.piece(sub, 0, p.b - p.a, gaps, [true, true], sock, label);
       if (!ramp) return bake(flat, turn ?? 0, elev);
-      return bakeRamp(scad, flat, sub, (sl) => zAt(p.c, p.a + sl), turn ?? 0);
+      return bakeRamp(scad, flat, sub, (sl) => zAt(p.c, p.a + sl), turn ?? 0, X, Y);
     }, () => []));
     res.pieces.push({ name, color: 0x9aa3ad, positions: b.positions.slice(), stl: b.stl.slice() });
     res.volume += b.volume;

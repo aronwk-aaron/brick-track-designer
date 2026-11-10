@@ -6,7 +6,10 @@ import { type LegoPart, legoParts } from './build';
 /** A file to download. */
 export interface Download { name: string; type: string; data: Uint8Array }
 /** A piece, as much as the downloads need. */
-type Part = { name: string; stl: Uint8Array; lego?: LegoPart[]; kit?: string; supports?: unknown };
+type Part = { name: string; stl: Uint8Array; lego?: LegoPart[]; kit?: string; supports?: unknown; bedTurn?: number };
+
+/** What the status line says of the printed parts that fit the bed only corner to corner (n of them, of `of` printed): their files are turned to lie so. */
+export const turnedText = (n: number, of: number) => (!n ? '' : ` (${n === of && n > 1 ? 'all' : n} fit${n === 1 ? 's' : ''} the bed only turned diagonally: ${n === 1 ? 'its file is' : 'their files are'} turned already)`);
 /** A test-print kit's coupon, as much as the README says of it (design.ts KitPart). */
 type Coupon = { name: string; note?: string };
 
@@ -40,7 +43,7 @@ export function stlReadme(pieces: Part[], base: string, kit?: Coupon[]): string 
     out.push('');
   }
   out.push('FILES (print one of each)');
-  for (const p of printed) out.push(`  ${base}-${p.name}.stl: ${plainKind(kindOf(p))}${nth(p)}${p.supports ? ' [has break-out supports]' : ''}`);
+  for (const p of printed) out.push(`  ${base}-${p.name}.stl: ${plainKind(kindOf(p))}${nth(p)}${p.supports ? ' [has break-out supports]' : ''}${p.bedTurn ? ' [turned to fit the bed: it goes on corner to corner]' : ''}`);
   const bought = legoParts(pieces);
   if (bought.length) out.push('', 'BOUGHT, NOT PRINTED (the Parts list button downloads this as a list, with a BrickLink wanted list)', ...bought.map((p) => `  ${p.qty} x ${p.name} (${p.part})`));
   out.push('', 'PRINTING',

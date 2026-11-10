@@ -13,7 +13,7 @@ import { layoutParts } from './layoutparts';
 import { freeStart, type LaidFrom, PALETTE, placePart } from './palette';
 import { BuildRunner, type WorkerPort } from './buildrun';
 import { History } from './history';
-import { fileBase as fileBaseOf, partsDownload, plainKind, printedKinds, stlDownload } from './exports';
+import { fileBase as fileBaseOf, partsDownload, plainKind, printedKinds, stlDownload, turnedText } from './exports';
 import { clamp, LIMITS, type Range, rangeText } from './limits';
 import { mirrorRoute } from './routeedits';
 import { TabStore, unsaved } from './session';
@@ -721,7 +721,7 @@ function onBuilt(d: any) {
   const trackwork = [i.switches && plural(i.switches, 'switch', 'switches'), i.crossings && plural(i.crossings, 'rail crossing'), i.checkRails && plural(i.checkRails, 'check rail')].filter(Boolean).join(', ');
   // (what's bought: the track pieces; the bricks a raised track stands on are in the parts list, not counted here)
   const nLego = pieces.filter((p) => p.lego && p.name !== 'risers-bought').length, nPrint = pieces.filter((p) => !p.lego).length;
-  setStatus(`${trackwork ? `${trackwork} · ` : ''}${plural(nPrint, 'part')} to print${nLego ? ` · ${plural(nLego, 'bought track piece')}` : ''} · ${i.size.map((v: number) => v.toFixed(0)).join(' × ')} mm · ${(i.volume / 1000).toFixed(1)} cm³ · built in ${(i.ms / 1000).toFixed(1)} s`,
+  setStatus(`${trackwork ? `${trackwork} · ` : ''}${plural(nPrint, 'part')} to print${turnedText(i.turned ?? 0, nPrint)}${nLego ? ` · ${plural(nLego, 'bought track piece')}` : ''} · ${i.size.map((v: number) => v.toFixed(0)).join(' × ')} mm · ${(i.volume / 1000).toFixed(1)} cm³ · built in ${(i.ms / 1000).toFixed(1)} s`,
     (i.warnings as string[]).join('; '), false, true);
   // (the view a report was opened with, once its parts are there; and this design kept among the ones built lately)
   if (pendingView) { const v = pendingView; pendingView = undefined; applyView(v); }

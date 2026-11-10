@@ -30,9 +30,11 @@ export type RoutePiece = [number, number, number];
  * may be shorter than minPart (a BrickTracks 1/10 straight, 1.6 studs). With std, plain track is cut where its pieces
  * join even beside other track (where its base meets another's: built with it, but still those pieces), clear of the
  * points and where tracks cross. lead: the short straight on a BrickTracks R104B curve (mm): one piece with the curve
- * beside it, not cut from it.
+ * beside it, not cut from it. fit: the longest piece of a segment (mm along it; half: its base's reach each side) that
+ * goes on the print bed, turned any way (geom/bedfit.ts): with std, a printed segment whose pieces would be longer is
+ * cut into shorter ones.
  */
-export function planSections(routes: Route[], splits: Split[], half: number, room: number, minPart = 40, exact = 0, plates?: { size: number; x: number; y: number }, std?: Map<number, number>, stdStraights: number[] = [], lead = 0, seamOf?: (q: [number, number]) => number, gauge0?: number) {
+export function planSections(routes: Route[], splits: Split[], half: number, room: number, minPart = 40, exact = 0, plates?: { size: number; x: number; y: number }, std?: Map<number, number>, stdStraights: number[] = [], lead = 0, seamOf?: (q: [number, number]) => number, gauge0?: number, fit?: (sg: Route['segments'][number], half: number) => number) {
   // (mixed gauges: a route with a gauge of its own reaches that much less, or more, each side than the design's (half, at gauge0))
   const halves = routes.map((rt) => (rt.gauge !== undefined && gauge0 !== undefined ? half + (rt.gauge - gauge0) / 2 : half));
   /** where a table seam crosses the track: cut there ('cut'), or not, through points or a crossing ('blocked'); 'split': cut, but between its pieces' joints (a bought piece printed in two) */
@@ -63,6 +65,13 @@ export function planSections(routes: Route[], splits: Split[], half: number, roo
     }
     return false;
   };
+  // (a printed segment's pieces: exact long, or shorter where that's too long for the bed however it's turned (fit):
+  // a straight in whole studs, a curve in equal pieces, so its joints are ordinary track ends, not cuts made after)
+  const eachOf = (sg: Route['segments'][number], len: number, hw: number) => {
+    const cap = fit ? fit(sg, hw) : Infinity, piece = Math.min(len, exact);
+    if (!(cap > 0) || piece <= cap) return exact;
+    return sg.kind === 'straight' ? Math.max(minPart, Math.floor(cap / 8) * 8) : piece / Math.ceil(piece / cap);
+  };
   const pieces: RoutePiece[] = [];
   routes.forEach((rt, i) => {
     const L = routeLength(rt), step = 8, cuts: number[] = [];
@@ -76,7 +85,7 @@ export function planSections(routes: Route[], splits: Split[], half: number, roo
       rt.segments.forEach((sg, k) => {
         const len = sg.kind === 'straight' ? sg.length : (Math.abs(sg.angle) * Math.PI * sg.radius) / 180;
         const r = sg.kind === 'arc' ? [...std.keys()].find((k2) => Math.abs(k2 - sg.radius) < 0.01) : undefined;
-        const each = r !== undefined ? (std.get(r)! * Math.PI * r) / 180 : exact;
+        const each = r !== undefined ? (std.get(r)! * Math.PI * r) / 180 : eachOf(sg, len, halves[i]);
         // (an R104B: its short straight and the curve beside it one piece)
         const joined = (isLead(k) && isR104(k - 1)) || (isR104(k) && isLead(k - 1));
         for (let c2 = s0; c2 < s0 + len - 1e-6; c2 += each) if (c2 > 1e-6 && !(c2 === s0 && joined)) nat.add(c2);
@@ -121,7 +130,7 @@ export function planSections(routes: Route[], splits: Split[], half: number, roo
           for (const sg of rt.segments) {
             const len = sg.kind === 'straight' ? sg.length : (Math.abs(sg.angle) * Math.PI * sg.radius) / 180;
             const r = sg.kind === 'arc' ? [...std.keys()].find((k2) => Math.abs(k2 - sg.radius) < 0.01) : undefined;
-            const each = r !== undefined ? (std.get(r)! * Math.PI * r) / 180 : exact;
+            const each = r !== undefined ? (std.get(r)! * Math.PI * r) / 180 : eachOf(sg, len, halves[i]);
             at.push(s0);
             for (let c2 = s0 + each; c2 < s0 + len - 1e-6; c2 += each) at.push(c2);
             s0 += len;

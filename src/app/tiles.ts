@@ -8,6 +8,7 @@ import type { Route } from '../route/route';
 import { railOffsetOf, routeLength, routePose, routesBox } from '../route/route';
 import { subRoute } from '../switch/pieces';
 import type { Keep } from '../geom/pathsplit';
+import { boxAt, longestFit, tightBox } from '../geom/bedfit';
 
 export type Rect = [number, number, number, number]; // x0, y0, x1, y1
 
@@ -138,6 +139,21 @@ export function planCuts(b: Rect, bedX: number, bedY: number, bp: number, ox: nu
       }
       return out;
     };
+    // (a strip of track, a long curve lying at an angle, say: its parts go on the bed turned (geom/bedfit.ts), each as
+    // long as fits beside the strip's width, corner to corner if that's longer. Where that takes fewer parts than
+    // cells the bed's size would, it's cut across its length only, into that many)
+    // (only plain track: where something stands out past its base (a lever), the bed's cells as before)
+    if (samples.length) {
+      const pts = samples.flatMap((p): [number, number][] => { const c = Math.cos((p[2] * Math.PI) / 180), s = Math.sin((p[2] * Math.PI) / 180); return [[p[0] - half * c, p[1] - half * s], [p[0] + half * c, p[1] + half * s]]; });
+      const [sw, sh] = boxAt(pts, 0), plain = W - sw <= 20 && H - sh <= 20;
+      const [tl, tw] = tightBox(pts).size, cap = longestFit(tw + joints, bedX, bedY) - joints, nT = cap >= MIN_PART ? Math.max(1, Math.ceil((tl + joints) / cap)) : Infinity;
+      if (plain && nT > 1 && nT < nx * ny) {
+        // (as long as the cells' where that makes as many: the cuts where they were)
+        const axis: 0 | 1 = W >= H ? 0 : 1, lo = b[axis], hi = b[axis + 2], len = nT === (axis === 0 ? nx : ny) ? room : (hi - lo) / nT + 4;
+        (axis === 0 ? xs : ys).push(...(evenCuts(lo, hi, len, axis) ?? greedy(lo, hi, len, axis, nT)));
+        return { xs: spaced(xs, b[0], b[2]), ys: spaced(ys, b[1], b[3]), why: 'bed', combs };
+      }
+    }
     xs.push(...(evenCuts(b[0], b[2], H > W ? small : room, 0) ?? greedy(b[0], b[2], H > W ? small : room, 0, nx)));
     ys.push(...(evenCuts(b[1], b[3], H > W ? room : small, 1) ?? greedy(b[1], b[3], H > W ? room : small, 1, ny)));
     return { xs: spaced(xs, b[0], b[2]), ys: spaced(ys, b[1], b[3]), why: 'bed', combs };

@@ -10,6 +10,7 @@ import { trackSeat } from '../geom/extras';
 import { DUAL_CROSS, dualBuilt, markClear } from '../geom/extrarails';
 import { arena, flat, kernelBroke, made, type Wasm } from '../geom/kernel';
 import { stlBytes } from '../geom/stl';
+import { bedFit, type BedFit, END_REACH, longestFit, longestTrack, tightBox } from '../geom/bedfit';
 import { splitSelfCrossing } from '../route/selfcross';
 import { FORCE_ANGLE, FORCE_LAT, solve, type SplitEdits } from '../route/solver';
 import { GRADE_APART, hasRoll, heightAt, poseToWorld, railOffsetOf, railPoint, routeLat, routeLength, routePose, routeRoll, routeSOf, sleeperLenOf, type Pose, worldToPose } from '../route/route';
@@ -63,6 +64,8 @@ export interface Piece {
   lego?: LegoPart[];
   /** (track on a grade) how it's lifted in the view: by h at its middle c, rising slope along dir (mm, a unit vector) */
   lift?: Lift;
+  /** how far its file's turned from how it lies in the design (degrees, anticlockwise seen from above): a part that fits the print bed only on the slant, its file lying as it prints */
+  bedTurn?: number;
   /** (a test-print kit's part) its coupon's name, which its own name starts with (buildKit) */
   kit?: string;
   /** (a bought track piece, track only) where a 2 x 2 of studs goes up into it from below: its sleepers' middles and its two ends (half of it in the next piece's end), each square to the track there */
@@ -214,7 +217,7 @@ function cachedData<T>(key: string, f: () => T): T {
   putData(key, v);
   return v;
 }
-const stlOf = new WeakMap<Man, Uint8Array>();
+const stlOf = new WeakMap<Man, { stl: Uint8Array; turn: number }>();
 /** A mesh's triangles as a flat list of their corners' positions (for the view). */
 function meshPositions(wm: { triVerts: Uint32Array; vertProperties: Float32Array; numProp: number }) {
   const tv = wm.triVerts, vp = wm.vertProperties, np = wm.numProp, out = new Float32Array(tv.length * 3);
@@ -477,7 +480,7 @@ function buildKit(w: Wasm, design: Design, report: (what: string, frac: number) 
   const mn = [Infinity, Infinity, Infinity], mx = [-Infinity, -Infinity, -Infinity];
   for (const p of pieces) for (let i = 0; i < p.positions.length; i += 3) for (let k = 0; k < 3; k++) { mn[k] = Math.min(mn[k], p.positions[i + k]); mx[k] = Math.max(mx[k], p.positions[i + k]); }
   return { overlay: merged() as unknown as Overlay, pieces, info: { ms: performance.now() - t0, volume: sum((r) => r.info.volume), size: [0, 1, 2].map((k) => mx[k] - mn[k]),
-    crossings: sum((r) => r.info.crossings), checkRails: sum((r) => r.info.checkRails), splits: sum((r) => r.info.splits), switches: sum((r) => r.info.switches), pieces: pieces.length, warnings: built.flatMap((r) => r.info.warnings) } };
+    crossings: sum((r) => r.info.crossings), checkRails: sum((r) => r.info.checkRails), splits: sum((r) => r.info.splits), switches: sum((r) => r.info.switches), pieces: pieces.length, turned: sum((r) => r.info.turned ?? 0), warnings: built.flatMap((r) => r.info.warnings) } };
 }
 function buildAll(w: Wasm, design: Design, report: (what: string, frac: number) => void, early: ((overlay: unknown) => void) | undefined, opts: BuildOpts) {
   design = upgradeDesign(design);
@@ -515,7 +518,7 @@ function buildAll(w: Wasm, design: Design, report: (what: string, frac: number) 
   const info = {
     ms: performance.now() - t0, volume: (ti?.volume ?? 0) + mr.volume, size: [0, 1, 2].map((k) => mx[k] - mn[k]),
     crossings: ti?.crossings ?? 0, checkRails: ti?.checkRails ?? 0, splits: (ti?.splits ?? 0) + mr.splits.length,
-    switches: (ti?.switches ?? 0) + mr.splits.length, pieces: pieces.length, warnings: [...(ti?.warnings ?? []), ...mr.warnings],
+    switches: (ti?.switches ?? 0) + mr.splits.length, pieces: pieces.length, turned: ti?.turned ?? 0, warnings: [...(ti?.warnings ?? []), ...mr.warnings],
   };
   return { overlay, pieces, info };
 }
@@ -1034,10 +1037,24 @@ function tracksOverEachOther(routes: Route[], sol: { splits: Split[]; dropped?: 
 
 /** The cut context for a build: its points kept clear, its joints, and the cutters (fitter, bedCut, whole). fdbPoints: the plate-style blades. */
 function cutContext(w: Wasm, scad: Scad, o: PieceOptions, track: Track, routes: Route[], splits: Split[], crossings: [number, number][], fdbPoints: boolean) {
-  const fitsBed = (m: Man) => {
-    const b = m.boundingBox(), w = b.max[0] - b.min[0], h = b.max[1] - b.min[1];
-    return (w <= o.printBedX && h <= o.printBedY) || (w <= o.printBedY && h <= o.printBedX);
+  // (a part fits the bed if it does turned any way, corner to corner too (geom/bedfit.ts): its file is its own, and
+  // it's laid on the bed however it goes. Its box as it lies in the design first: most parts fit so, and need no more)
+  const fits = new WeakMap<Man, BedFit>();
+  const fitOf = (m: Man): BedFit => {
+    let f = fits.get(m);
+    if (f) return f;
+    const b = m.boundingBox(), bw = b.max[0] - b.min[0], bh = b.max[1] - b.min[1];
+    if (bw <= o.printBedX && bh <= o.printBedY) f = { fits: true, angle: 0, square: true, size: [bw, bh], over: Math.max(bw / o.printBedX, bh / o.printBedY) };
+    else if (bw <= o.printBedY && bh <= o.printBedX) f = { fits: true, angle: 90, square: true, size: [bh, bw], over: Math.max(bh / o.printBedX, bw / o.printBedY) };
+    else { const mesh = m.getMesh(); f = bedFit(mesh.vertProperties, o.printBedX, o.printBedY, mesh.numProp); }
+    fits.set(m, f);
+    return f;
   };
+  const fitsBed = (m: Man) => fitOf(m).fits;
+  /** How far a part's file is turned to lie within the bed (degrees): 0 for one that fits as it is or a quarter turn round, or not at all. */
+  const turnOf = (m: Man) => { const f = fitOf(m); return f.fits && !f.square ? f.angle : 0; };
+  /** A part's tightest box, turned any way (mm, the longer side first): what's said of one too big. */
+  const tightOf = (m: Man) => { const mesh = m.getMesh(); return tightBox(mesh.vertProperties, mesh.numProp).size; };
   const bp = (o.baseplate ?? 0) * 8;
   // (how far each side of a centre line the track's base reaches: its sleepers, or its widest ballast layer)
   // (the widest track's, mixed gauges)
@@ -1113,8 +1130,9 @@ function cutContext(w: Wasm, scad: Scad, o: PieceOptions, track: Track, routes: 
       // room left for the joints; at a neighbour's cut if one's near)
       const ext = axis === 0 ? w2 : h2, lo = axis === 0 ? bb.min[0] : bb.min[1];
       const room = ((axis === 0 ? h2 : w2) <= Math.min(o.printBedX, o.printBedY) ? big : Math.min(o.printBedX, o.printBedY)) - 4;
-      const n = Math.max(2, Math.ceil(ext / room));
-      const win: [number, number] = [Math.max(lo + 48, lo + ext - (n - 1) * room), Math.min(lo + room, lo + ext - 48)];
+      // (or fewer, where its parts go on the bed turned: by its tightest box, each part as long as fits beside its width)
+      const nSq = Math.max(2, Math.ceil(ext / room)), [tl, tw] = tightOf(m), n = Math.min(nSq, Math.max(2, Math.ceil(tl / Math.max(48, longestFit(tw, o.printBedX, o.printBedY) - 4))));
+      const win: [number, number] = n < nSq ? [lo + 48, lo + ext - 48] : [Math.max(lo + 48, lo + ext - (n - 1) * room), Math.min(lo + room, lo + ext - 48)];
       let at = lo + ext / n;
       const near = cutAt[axis].filter((v) => v >= win[0] && v <= win[1] && Math.abs(v - at) <= 16).sort((p2, q) => Math.abs(p2 - at) - Math.abs(q - at))[0];
       if (near !== undefined) at = near;
@@ -1156,13 +1174,14 @@ function cutContext(w: Wasm, scad: Scad, o: PieceOptions, track: Track, routes: 
     return cells.filter((c2) => c2.numTri() > 0).flatMap((c2) => fit(c2));
   };
   // (pointsAvoid: the plate-style levers' keep-outs are added as each is placed (leverItem); crossings: the overlay's, no straight cut through them)
-  return { fitsBed, pointsAvoid, zones, noTongue, join, jointRoom, bandHalf, bandHalf0, bp, crossings, fitter, bedCut, whole, bodies };
+  return { fitsBed, turnOf, tightOf, pointsAvoid, zones, noTongue, join, jointRoom, bandHalf, bandHalf0, bp, crossings, fitter, bedCut, whole, bodies };
 }
 /** How cutting a part to fit goes: the bed, where no cut goes, how cuts join, and the cutters. */
 type CutContext = ReturnType<typeof cutContext>;
 
 /** A part as plain data (baked): its mesh for the view, its STL, its volume, whether it fits the bed. */
-type Baked = { positions: Float32Array; supports?: Float32Array; stl: Uint8Array; volume: number; fits: boolean; box: { min: number[]; max: number[] } };
+/** turn: how far its file's turned to fit the bed (degrees; cutContext turnOf); tight: one too big, its tightest box */
+type Baked = { positions: Float32Array; supports?: Float32Array; stl: Uint8Array; volume: number; fits: boolean; box: { min: number[]; max: number[] }; turn?: number; tight?: number[] };
 
 /**
  * One build's pieces as they're made: what makes, cuts, labels and caches
@@ -1205,9 +1224,10 @@ interface PieceBuild {
 }
 
 /** A part too big for the bed: ringed where it is. */
-function bedIssue(b: PieceBuild, bb: { min: number[]; max: number[] }) {
+/** tight: its tightest box, turned any way (the longer side first): its size as said. */
+function bedIssue(b: PieceBuild, bb: { min: number[]; max: number[] }, tight: number[] = [bb.max[0] - bb.min[0], bb.max[1] - bb.min[1]]) {
   b.overlay.issues.push({ at: [(bb.min[0] + bb.max[0]) / 2, (bb.min[1] + bb.max[1]) / 2],
-    r: Math.hypot(bb.max[0] - bb.min[0], bb.max[1] - bb.min[1]) / 2, text: `A part ${(bb.max[0] - bb.min[0]).toFixed(0)} x ${(bb.max[1] - bb.min[1]).toFixed(0)} mm: too big for the ${b.o.printBedX} x ${b.o.printBedY} print bed`, area: true });
+    r: Math.hypot(bb.max[0] - bb.min[0], bb.max[1] - bb.min[1]) / 2, text: `A part ${tight[0].toFixed(0)} x ${tight[1].toFixed(0)} mm: too big for the ${b.o.printBedX} x ${b.o.printBedY} print bed, however it's turned`, area: true });
 }
 
 /** A part for the view: its triangles, and its breakaway supports' apart (loose bits, small beside it), to show or hide. */
@@ -1228,7 +1248,8 @@ function bake(b: PieceBuild, m: Man): Baked {
   // (the copies it's told apart on let go at once: a part's worth each, and a build has hundreds)
   return arena(b.w, () => {
     const { positions, supports, clean } = viewOf(b.w, m);
-    return { positions, supports, stl: stlBytes(clean.getMesh(), true), volume: m.volume(), fits: b.cut.fitsBed(m), box: m.boundingBox() };
+    const fits = b.cut.fitsBed(m), turn = b.cut.turnOf(m);
+    return { positions, supports, stl: stlBytes(clean.getMesh(), true, turn), volume: m.volume(), fits, box: m.boundingBox(), ...(turn && { turn }), ...(!fits && { tight: b.cut.tightOf(m) }) };
   }, () => []);
 }
 
@@ -1248,10 +1269,12 @@ function add(b: PieceBuild, name: string, color: number, local: Man, world: Man,
   // (the copies it's told apart on let go at once, as bake's)
   arena(b.w, () => {
     const { positions, supports, clean } = viewOf(b.w, world);
-    let stl = stlOf.get(local);
+    // (its file turned to lie within the bed, a part that fits it only on the slant)
+    const bedTurn = b.cut.turnOf(local);
+    let f = stlOf.get(local);
     // (each file lying on the bed: a part modelled where it sits in the track (the blades on the bed's top, say) came in floating)
-    if (!stl) { stl = stlBytes((local === world ? clean : local).getMesh(), true); stlOf.set(local, stl); }
-    b.pieces.push({ name, color, positions, stl: stl.slice(), ...(supports && { supports }), ...(turn && { turn }), ...move });
+    if (!f || f.turn !== bedTurn) { f = { stl: stlBytes((local === world ? clean : local).getMesh(), true, bedTurn), turn: bedTurn }; stlOf.set(local, f); }
+    b.pieces.push({ name, color, positions, stl: f.stl.slice(), ...(supports && { supports }), ...(turn && { turn }), ...move, ...(bedTurn && { bedTurn }) });
     b.volume += local.volume();
   }, () => []);
 }
@@ -1297,7 +1320,7 @@ function addTrack(b: PieceBuild, name: string, world0: Man, pieceRoutes: Route[]
   });
   all.forEach((m, k) => arena(w, () => { const lm = labelled(b, m, pieceRoutes, all.length > 1 ? undefined : size, all.length > 1 ? `${k + 1}` : undefined); add(b, all.length > 1 ? `${name}${plan.why === 'baseplate' ? '-plate' : ''}${k + 1}` : name, TRACK_COLOR, lm, lm); }, () => []));
   if (all.some((m) => !cx.fitsBed(m))) b.bedWarnings.add(`some parts don't fit the ${o.printBedX} x ${o.printBedY} print bed: there's nowhere left to cut them`);
-  for (const m of all) if (!cx.fitsBed(m)) bedIssue(b, m.boundingBox());
+  for (const m of all) if (!cx.fitsBed(m)) bedIssue(b, m.boundingBox(), cx.tightOf(m));
 }
 
 const place = (m: Man, P: Pose) => T(R(m, [0, 0, P[2]]), [P[0], P[1], 0]);
@@ -1367,7 +1390,8 @@ const BLOCK = 450; // (built together: about as much as builds quickly)
 // standard end connectors.
 function sectioned(b: PieceBuild, name: string, all: Route[], checks: CheckRail[], splits: SplitParts[], solSplits: Split[], copt: typeof CROSSING_DEFAULTS, key: string) {
   const { w, scad, o, track, cut: cx } = b, { bp, bandHalf, join, fitsBed, noTongue } = cx;
-  const room = Math.max(o.printBedX, o.printBedY) - 4, exact = Math.max(0, Math.round(o.pieceLengthStuds ?? 16)) * 8;
+  // (the longest plain piece: as long as goes on the bed beside the track's width, corner to corner if that's longer)
+  const room = longestFit(2 * bandHalf, o.printBedX, o.printBedY) - 4, exact = Math.max(0, Math.round(o.pieceLengthStuds ?? 16)) * 8;
   // (pieces of the length set, if they fit the bed; else as long as fits)
   const ex = exact > 0 && exact <= room ? exact : 0;
   const plates = bp ? { size: bp, x: (o.baseplateX ?? 0) * 8, y: (o.baseplateY ?? 0) * 8 } : undefined;
@@ -1380,7 +1404,14 @@ function sectioned(b: PieceBuild, name: string, all: Route[], checks: CheckRail[
   const std = bought ? (legoOnly ? new Map([[40 * 8, STD_CURVES.get(40 * 8)!]]) : STD_CURVES) : undefined;
   const stdStraights = bought && !legoOnly ? BT_STRAIGHTS.map(([l]) => l) : [], lead = bought && !legoOnly ? BT_LEAD : 0;
   const tables = b.tables, seamOf = tables.length ? (q: [number, number]) => tableAt(tables, q) : undefined;
-  const plan = cached(`secplan:${key}:${room}:${bandHalf}:${ex}:${JSON.stringify(plates)}:${JSON.stringify(std && [...std])}:${stdStraights}:${lead}:${JSON.stringify(tables)}`, () => planSections(all, solSplits, cx.bandHalf0, room, 40, ex, plates, std, stdStraights, lead, seamOf, track.c.trackGauge));
+  // (the longest piece of a segment that goes on the bed, turned any way, a millimetre to spare: by its radius and its base's reach)
+  const fitLens = new Map<string, number>();
+  const pieceFit = (sg: Route['segments'][number], half: number) => {
+    const r = sg.kind === 'arc' ? sg.radius : 0, k = `${r}:${half}`;
+    if (!fitLens.has(k)) fitLens.set(k, longestTrack(r, half, Math.min(half, track.c.sleeperLen / 2), END_REACH + 0.5, o.printBedX, o.printBedY) - 1);
+    return fitLens.get(k)!;
+  };
+  const plan = cached(`secplan:${key}:${room}:${o.printBedX}x${o.printBedY}:${bandHalf}:${ex}:${JSON.stringify(plates)}:${JSON.stringify(std && [...std])}:${stdStraights}:${lead}:${JSON.stringify(tables)}`, () => planSections(all, solSplits, cx.bandHalf0, room, 40, ex, plates, std, stdStraights, lead, seamOf, track.c.trackGauge, pieceFit));
   const st = (q: [number, number]) => `${(q[0] / 8).toFixed(0)}, ${(q[1] / 8).toFixed(0)}`;
   for (const sm of plan.seams) b.bedWarnings.add(sm.kind === 'blocked' ? `a table's seam crosses points or a crossing at ${st(sm.at)} (studs): the track isn't cut there (move the table's edge)`
     : `a table's seam at ${st(sm.at)} (studs) isn't where two track pieces join: the piece there is printed in two (move the table's edge to a joint to buy it)`);
@@ -1597,7 +1628,7 @@ function sectioned(b: PieceBuild, name: string, all: Route[], checks: CheckRail[
       // (bought pieces' ballast: printed, named for the track it's under)
       const lego = apart ? b2.lego : whole;
       const lift = liftOf(rts, b2.positions);
-      b.pieces.push({ name: lego ? `track-bought-${lego[0].part.replace(/\s+/g, '')}-${++b.num.part}` : seated ? `${name}${b2.id ?? ++b.num.part}-ballast` : b2.id ? `${name}${b2.id}` : `${name}${++b.num.part}`, color: lego ? boughtColor(lego) : TRACK_COLOR, positions: b2.positions.slice(), stl: b2.stl.slice(), ...(b2.supports && !lego && { supports: b2.supports.slice() }), ...(lego && { lego }), ...(lift && { lift }), ...(apart && b2.seats && { seats: b2.seats }) });
+      b.pieces.push({ name: lego ? `track-bought-${lego[0].part.replace(/\s+/g, '')}-${++b.num.part}` : seated ? `${name}${b2.id ?? ++b.num.part}-ballast` : b2.id ? `${name}${b2.id}` : `${name}${++b.num.part}`, color: lego ? boughtColor(lego) : TRACK_COLOR, positions: b2.positions.slice(), stl: b2.stl.slice(), ...(b2.supports && !lego && { supports: b2.supports.slice() }), ...(lego && { lego }), ...(lift && { lift }), ...(apart && b2.seats && { seats: b2.seats }), ...(b2.turn && !lego && { bedTurn: b2.turn }) });
       const bought = !!lego;
       if (!bought) b.volume += b2.volume;
       if (!b2.fits) b.bedWarnings.add(`some sections don't fit the ${o.printBedX} x ${o.printBedY} print bed: there's nowhere left to cut them`);
@@ -1685,8 +1716,8 @@ function tiled(b: PieceBuild, name: string, all: Route[], checks: CheckRail[], s
     b.overlay.grips.push(...part.grips);
     out.push(...part.ms);
   });
-  for (const b2 of out) { b.pieces.push({ name: b2.id && (out.length > 1 || base > 0) ? `${name}${b2.id}` : out.length > 1 || b.num.part > 0 ? `${name}${++b.num.part}` : name, color: TRACK_COLOR, positions: b2.positions.slice(), stl: b2.stl.slice(), ...(b2.supports && { supports: b2.supports.slice() }) }); b.volume += b2.volume; }
-  for (const b2 of out) if (!b2.fits) bedIssue(b, b2.box);
+  for (const b2 of out) { b.pieces.push({ name: b2.id && (out.length > 1 || base > 0) ? `${name}${b2.id}` : out.length > 1 || b.num.part > 0 ? `${name}${++b.num.part}` : name, color: TRACK_COLOR, positions: b2.positions.slice(), stl: b2.stl.slice(), ...(b2.supports && { supports: b2.supports.slice() }), ...(b2.turn && { bedTurn: b2.turn }) }); b.volume += b2.volume; }
+  for (const b2 of out) if (!b2.fits) bedIssue(b, b2.box, b2.tight);
   if (out.some((b2) => !b2.fits)) b.bedWarnings.add(plan.why === 'bed'
     ? `some parts don't fit the ${o.printBedX} x ${o.printBedY} print bed without cutting along the track (it isn't)`
     : `a baseplate's worth of track doesn't fit the ${o.printBedX} x ${o.printBedY} print bed without cutting along the track (it isn't)`);
@@ -1926,7 +1957,7 @@ function boughtSwitches(b: PieceBuild, bought: BoughtSwitch[], copt: typeof CROS
     const tag = bought.length > 1 ? `switch${n + 1}` : 'switch';
     b.pieces.push({ name: `switch-bought-${bs.part.part.replace(/\s+/g, '')}-${n + 1}`, color: boughtColor([bs.part]), positions: got.view.positions.slice(), stl: got.view.stl.slice(), lego: [{ ...bs.part }] });
     got.bal.forEach((p, k) => {
-      b.pieces.push({ name: `${tag}-ballast${got.bal.length > 1 ? k + 1 : ''}`, color: TRACK_COLOR, positions: p.positions.slice(), stl: p.stl.slice() });
+      b.pieces.push({ name: `${tag}-ballast${got.bal.length > 1 ? k + 1 : ''}`, color: TRACK_COLOR, positions: p.positions.slice(), stl: p.stl.slice(), ...(p.turn && { bedTurn: p.turn }) });
       b.volume += p.volume;
       if (!p.fits) b.bedWarnings.add(`a bought switch's ballast doesn't fit the ${o.printBedX} x ${o.printBedY} print bed, even in two`);
     });
@@ -2185,10 +2216,9 @@ function buildOne(w: Wasm, design: Design, report: (what: string, frac: number) 
         // the track every count up to 20 was built in turn, 209 pieces for the 20 kept: a 64-stud straight on a 40 x 40
         // bed took 21 s)
         const over = (sub: Route) => {
-          const Ls = routeLength(sub), hw = sleeperLenOf(sub, track.c.sleeperLen) / 2 - 0.5, lo = [Infinity, Infinity], hi = [-Infinity, -Infinity];
-          for (let k = 0, m = Math.max(1, Math.ceil(Ls / 4)); k <= m; k++) for (const off of [-hw, hw]) { const q = railPoint(sub, (Ls * k) / m, off); for (const j of [0, 1]) { lo[j] = Math.min(lo[j], q[j]); hi[j] = Math.max(hi[j], q[j]); } }
-          const wd = hi[0] - lo[0], ht = hi[1] - lo[1];
-          return !((wd <= o.printBedX && ht <= o.printBedY) || (wd <= o.printBedY && ht <= o.printBedX));
+          const Ls = routeLength(sub), hw = sleeperLenOf(sub, track.c.sleeperLen) / 2 - 0.5, pts: [number, number][] = [];
+          for (let k = 0, m = Math.max(1, Math.ceil(Ls / 4)); k <= m; k++) for (const off of [-hw, hw]) pts.push(railPoint(sub, (Ls * k) / m, off));
+          return !bedFit(pts, o.printBedX, o.printBedY).fits;
         };
         if (n < 20 && subs.some(over)) continue;
         const bits = subs.map((sub) => cached(`cx1:${JSON.stringify({ sub, copt, gridPose })}`, () => crossingPiece(scad, [sub], copt, undefined, undefined, { gridPose }), true));
@@ -2218,7 +2248,9 @@ function buildOne(w: Wasm, design: Design, report: (what: string, frac: number) 
     size: [0, 1, 2].map((k) => mx[k] - mn[k]),
     crossings: sol.crossings.length, checkRails: sol.checkRails.length, splits: sol.splits.length,
     // (points sets, as the parts are: a three-way's one set is one switch, however many pairs of its routes part there)
-    switches: network ? (net ? new Set(net.splits.map((sp) => sp.src)).size : sol.splits.length) : pc.switches.length, pieces: pieces.length, warnings: [...forceWarnings, ...bankWarnings, ...pc.warnings, ...bedWarnings],
+    switches: network ? (net ? new Set(net.splits.map((sp) => sp.src)).size : sol.splits.length) : pc.switches.length, pieces: pieces.length,
+    // (the printed parts that fit the bed only on the slant: their files are turned to lie so)
+    turned: pieces.filter((p) => p.bedTurn && !p.lego).length, warnings: [...forceWarnings, ...bankWarnings, ...pc.warnings, ...bedWarnings],
   };
   return { overlay, pieces, info };
 }

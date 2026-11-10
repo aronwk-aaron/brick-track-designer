@@ -11,6 +11,7 @@ import type { Pose, Pt, Route } from '../route/route';
 import { poseToWorld, railOffsetOf, railPoint, routeLat, routeLength, routePose, routeSOf, segStarts, worldToPose } from '../route/route';
 import { M, R, T, type CS, type Man, type Scad, type Vec2, type Vec3 } from '../geom/scad';
 import { sweepRoute } from '../geom/sweep';
+import { rectFits } from '../geom/bedfit';
 import { ANTISTUD_FIT, connectorUnderside, hollowGrid, type Spot, studSpots, TUBE_OD } from '../geom/underside';
 import { DEFAULTS as TRACK_DEFAULTS, getSocketShape, scadParity, PLATE_H, RAIL_PROFILE, STUD, tongueLeans, Track } from '../geom/track';
 import { couplerSupports, trackSeat } from '../geom/extras';
@@ -744,7 +745,8 @@ export function switchPlan(routes: Route[], specs: SetSpec[], p: BaseParams = BA
   const baseY1 = Math.max(...routes.flatMap((rt) => [-baseHw, baseHw].map((o) => railPoint(rt, routeLength(rt), o)[1]))) + 8;
   const fits = (y0: number, y1: number) => {
     const xr = baseXRange(y0, y1), w = xr[1] - xr[0], h = y1 - y0;
-    return (w <= p.printBedX && h <= p.printBedY) || (w <= p.printBedY && h <= p.printBedX);
+    // (turned on the bed any way, as every part's fit is judged: geom/bedfit.ts)
+    return rectFits(w, h, p.printBedX, p.printBedY);
   };
   const cutTies = () => tieYs().filter((t) => Math.min(...frogs.map((f) => Math.abs(t - f.pt[1]))) > p.checkRailLen / 2 + 12 && t < baseY1 - 48);
   const cutsFor = (n: number) => {

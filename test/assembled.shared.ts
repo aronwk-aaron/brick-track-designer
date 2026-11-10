@@ -11,6 +11,7 @@
 // them). (An over-centre spring going on over its pins and bending as the slider moves: nail-switch.test.ts.)
 import { expect, it } from 'vitest';
 import { arena, kernel } from '../src/geom/kernel';
+import { bedFit, tightBox } from '../src/geom/bedfit';
 import { buildDesign, clearBuildCache, type Piece } from '../src/app/build';
 import { type Design, OPTION_DEFAULTS, type PieceOptions, TEMPLATE_GROUPS, TEMPLATES } from '../src/app/design';
 import { putTogether, sharedEdges, stlPositions } from './assembly.shared';
@@ -209,14 +210,11 @@ export function prints(w: Wasm, p: Piece, bedX: number, bedY: number) {
   if (!P.length) return [`${p.name} has no file to print`];
   for (let i = 0; i < P.length; i += 3) for (let k = 0; k < 3; k++) { lo[k] = Math.min(lo[k], P[i + k]); hi[k] = Math.max(hi[k], P[i + k]); }
   if (Math.abs(lo[2]) > 1e-3) out.push(`${p.name}'s file is ${lo[2].toFixed(3)} off the bed`);
-  // (turned on the bed however it fits best: a long thin part lies along the bed's diagonal)
-  const fits = (deg: number) => {
-    const c = Math.cos((deg * Math.PI) / 180), sn = Math.sin((deg * Math.PI) / 180);
-    let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity;
-    for (let i = 0; i < P.length; i += 3) { const x = P[i] * c - P[i + 1] * sn, y = P[i] * sn + P[i + 1] * c; x0 = Math.min(x0, x); x1 = Math.max(x1, x); y0 = Math.min(y0, y); y1 = Math.max(y1, y); }
-    return x1 - x0 <= bedX + 1e-3 && y1 - y0 <= bedY + 1e-3;
-  };
-  if (![0, 90, ...Array.from({ length: 35 }, (_, k) => 5 * (k + 1))].some(fits)) out.push(`${p.name} is ${(hi[0] - lo[0]).toFixed(0)} x ${(hi[1] - lo[1]).toFixed(0)}: over the ${bedX} x ${bedY} print bed, however it's turned`);
+  // (turned on the bed however it fits best, as the build judges it (geom/bedfit.ts): a long thin part lies along the bed's diagonal)
+  const fit = bedFit(P, bedX + 1e-3, bedY + 1e-3, 3);
+  if (!fit.fits) out.push(`${p.name} is ${tightBox(P, 3).size.map((v) => v.toFixed(0)).join(' x ')} at its tightest: over the ${bedX} x ${bedY} print bed, however it's turned`);
+  // (and its file lies as it prints: one that fits only on the slant is turned already)
+  else if (!(hi[0] - lo[0] <= bedX + 1e-3 && hi[1] - lo[1] <= bedY + 1e-3) && !(hi[0] - lo[0] <= bedY + 1e-3 && hi[1] - lo[1] <= bedX + 1e-3)) out.push(`${p.name}'s file is ${(hi[0] - lo[0]).toFixed(0)} x ${(hi[1] - lo[1]).toFixed(0)} as it lies: it fits the ${bedX} x ${bedY} print bed only turned ${fit.angle.toFixed(1)} degrees, and isn't`);
   // (one solid: the piece without its supports; and its file's a closed solid too, the supports in it)
   const m = solid(w, p.positions), f = solid(w, P);
   if (!m) out.push(`${p.name} isn't a closed solid`);

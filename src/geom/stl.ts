@@ -5,8 +5,18 @@ interface MeshLike {
   triVerts: Uint32Array;
 }
 
-/** onBed: moved to lie on the bed (its lowest point at z 0), centred over the origin, as a part's file to print. */
-export function stlBytes(mesh: MeshLike, onBed = false): Uint8Array {
+/**
+ * onBed: moved to lie on the bed (its lowest point at z 0), centred over the origin, as a part's file to print.
+ * turn: turned that many degrees first (anticlockwise seen from above), a part that fits the bed only on the slant
+ * (geom/bedfit.ts): its file lies as it prints.
+ */
+export function stlBytes(mesh0: MeshLike, onBed = false, turn = 0): Uint8Array {
+  let mesh = mesh0;
+  if (turn) {
+    const v0 = mesh0.vertProperties, np0 = mesh0.numProp, v = new Float32Array(v0), c = Math.cos((turn * Math.PI) / 180), s = Math.sin((turn * Math.PI) / 180);
+    for (let i = 0; i < v.length; i += np0) { v[i] = v0[i] * c - v0[i + 1] * s; v[i + 1] = v0[i] * s + v0[i + 1] * c; }
+    mesh = { numProp: np0, vertProperties: v, triVerts: mesh0.triVerts };
+  }
   const n = mesh.triVerts.length / 3, vp = mesh.vertProperties, np = mesh.numProp, off = [0, 0, 0];
   if (onBed && vp.length) {
     const mn = [Infinity, Infinity, Infinity], mx = [-Infinity, -Infinity, -Infinity];
