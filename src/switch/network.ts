@@ -460,7 +460,7 @@ export function networkSplits(s: Scad, routes: Route[], sol: Solution, p: BasePa
       return [0, 1, 2].every((k) => p.min[k] <= q.max[k] && q.min[k] <= p.max[k]) && s.w.Manifold.intersection(x.world, y.world).volume() > 0.5;
     };
     if (A.some((x) => B.some((y) => meet(x, y))))
-      warnings.push(`the points at ${studsAt(preps[a].gr.main)} and ${studsAt(preps[b].gr.main)} are too close for their springs: one's spring or slider is in the other's parts, and they can't be put together as built`);
+      warnings.push(`the points at ${studsAt(preps[a].gr.main)} and ${studsAt(preps[b].gr.main)} are too close for their springs: one's spring or slider is in the other's parts, and they can't be put together as built; set Throw to a lever`);
   }
   return { splits: built, levers, warnings };
 }

@@ -22,7 +22,6 @@ const BUDGET: Record<string, number> = {
   // (the heavy layouts, a file of their own)
   'Yard (R56)': 150, 'Double-track return loop (turning right)': 350, 'Double-track return loop (turning left)': 350, 'X yard (6 tracks, single slips)': 500,
   // (the double slip with its levers outside, and the reference trackwork's bigger ones)
-  'Double slip (22.5°, throws outside)': 60,
   'Double slip R40 45°': 40, 'Single slip R40 45°': 30, 'Double crossover R40': 40, 'Narrow-gauge double crossover R36': 40, 'T-junction core R56': 40, 'Star crossing 22.5°': 20,
   'Crossover, 4-stud gap, left': 20, 'Crossover, 4-stud gap, right': 20, 'Three-way, no gap': 20, 'Three-way, 2-stud gap': 20,
   'Curved switch R104 90° left': 20, 'Curved switch R104 90° right': 20,
@@ -48,7 +47,7 @@ export function templatesBuild(groups: string[], only?: string[]) {
       expect(ms2, `${name}: built again unchanged in ${(ms2 / 1000).toFixed(2)} s`).toBeLessThan(Math.max(1500, ms / 10));
       expect(again.pieces.length).toBe(b.pieces.length);
       expect(b.pieces.length).toBeGreaterThan(0);
-      const extra = b.info.warnings.filter((w) => !/experimental/.test(w) && !/at an angle to the baseplate grid/.test(w) && !(/Double slip/.test(name) && /blades are rigid/.test(w)) && !(name === 'Double slip (22.5°)' && /are too close for their springs/.test(w)) && !(/Helix/.test(name) && /stands over other track/.test(w)) && !(/X yard/.test(name) && /lever of the points at 67, 209|sprung blade's front has no lip|blades are rigid/.test(w)));
+      const extra = b.info.warnings.filter((w) => !/experimental/.test(w) && !/at an angle to the baseplate grid/.test(w) && !(/Double slip/.test(name) && /blades are rigid/.test(w)) && !(/Helix/.test(name) && /stands over other track/.test(w)) && !(/X yard/.test(name) && /lever of the points at 67, 209|sprung blade's front has no lip|blades are rigid/.test(w)));
       // (said in full when it fails)
       expect(extra.join(' | ')).toBe('');
     } finally { Object.assign(OPTION_DEFAULTS, saved); clearBuildCache(); }

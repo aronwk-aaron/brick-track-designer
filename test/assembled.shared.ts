@@ -286,10 +286,6 @@ export interface Known { problems: RegExp[]; warning?: RegExp; why: string }
  * design limit the build says itself has a warning: nail-switch.test.ts has one, a double slip's middle points as nail switches.)
  */
 export const KNOWN: Record<string, Known> = {
-  'Double slip (22.5°)': { problems: [/^points\d(-spring|-throw)? /], warning: /are too close for their springs/,
-    why: 'its middle points, one blade each and side by side, as nail switches: each set\'s spring lies where the next set\'s blade plate is, and their sliders run into each other (80 mm3); so neither moves clear, nor goes in; and a blade swung over is 9.4 mm3 in the track' },
-  'Double slip R40 45°': { problems: [/^track1 and points3-throw overlap: 0\.7\d mm3/, /^points3-throw slid [\d.]+ mm: 0\.7\d mm3 in track1/, /^points3-throw can't slide in along its tunnel/],
-    why: 'one slider\'s bar is 0.5 into the floor of its groove over 12 mm, all along its travel' },
   ...Object.fromEntries(['Double-track return loop (turning right)', 'Double-track return loop (turning left)'].map((name): [string, Known] => [name, {
     problems: [/^track-bought-BrickTracksS0\d-\d+ and switch\d-ballast2 overlap: (10|21)\.\d+ mm3/, /^track74-ballast and track75-ballast can't be brought together: .* 6\.\d mm3/],
     why: 'the bought switch\'s printed ballast is in the bought straights at its ends (0.8 to 3 mm, 4.8 x 1.8 mm each: 11 and 22 mm3); two of the curve\'s ballast parts hook into each other (6 mm3 in the way whichever way they\'re drawn apart)' }])),

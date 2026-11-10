@@ -482,7 +482,7 @@ function bricktracksLoop(turn: number): Design {
 /** Starting points for a design. */
 /** The Templates list's groups (in order), each its templates by name. */
 export const TEMPLATE_GROUPS: [string, string[]][] = [
-  ['Crossings', ['90° crossing', '22.5° crossing', 'Double slip (22.5°)', 'Double slip (22.5°, throws outside)', 'Double slip (45°, R40)', 'Crossing on a curve']],
+  ['Crossings', ['90° crossing', '22.5° crossing', 'Double slip (22.5°)', 'Double slip (45°, R40)', 'Crossing on a curve']],
   ['Switches', ['Left switch (LEGO)', 'Right switch (LEGO)', 'Left switch (BrickTracks R104)', 'Right switch (BrickTracks R104)', 'Wye switch', 'Three-way switch (one throw)', 'Three-way switch (tandem, two throws)']],
   ['Layouts', ['Oval (LEGO R40)', 'Crossover (R40)', 'Double crossover (R56)', 'Yard ladder (R40)', 'Yard (R56)', 'X yard (6 tracks, single slips)', 'Wye with a crossover', 'Double-track return loop (turning right)', 'Double-track return loop (turning left)']],
   ['Features', ['Grade up at 2.5%', 'Helix (R104, two turns)', 'Siding ending in a buffer stop', 'Bridge with guard rails', 'Dual gauge track', 'Dual gauge crossing 90°', 'Dual gauge crossing 45°', 'Banked curve', 'Crossing on sleepers']],
@@ -502,17 +502,11 @@ export const TEMPLATES: Record<string, Design> = {
   // leaving one track 7.96 studs before the crossing and joining the other 7.96 studs after it; the points are
   // in the middle, their blades side by side. One blade a set (single point): blades on top fit between its rails;
   // with two, they're built on tines under the bed)
-  // (its points thrown by hand, nail switches, as the reference double slips' inner points: no room for a lever's throw there)
-  'Double slip (22.5°)': { version: 1, gaugeStuds: 4, options: { pointBlades: 1, throwStyle: 'nail' }, routes: [
-    { name: 'A', x: 0, y: -20, heading: 0, segs: [{ kind: 'straight', studs: 40 }] },
-    { name: 'B', x: 20 * tan(22.5), y: -20, heading: 22.5, segs: [{ kind: 'straight', studs: 40 / cos(22.5) }] },
-    { name: 'A to B', x: 0, y: -SLIP_LEAD, heading: 0, segs: [{ kind: 'curve', radius: 40, angle: 22.5 }] },
-    { name: 'B to A', x: SLIP_LEAD * sin(22.5), y: -SLIP_LEAD * cos(22.5), heading: 22.5, segs: [{ kind: 'curve', radius: 40, angle: -22.5 }] },
-  ] },
-  // (the same, with the reference's levers: each set's outside, beside its points on the side away from the other track
-  // (two each side), so its slider runs out from its own points, not under the crossing to the other side. A pair's
-  // sliders, both near the crossing's end, are staggered, one nearer its toes (network.ts); real levers, no nail switches)
-  'Double slip (22.5°, throws outside)': { version: 1, gaugeStuds: 4, options: { pointBlades: 1 },
+  // (its levers as the reference's: each set's outside, beside its points on the side away from the other track (two
+  // each side), so its slider runs out from its own points, not under the crossing to the other side. A pair's sliders,
+  // both near the crossing's end, are staggered, one nearer its toes (network.ts). Not nail switches, as it was: the
+  // middle points are too close for their springs, each set's lying where the next set's blade plate is)
+  'Double slip (22.5°)': { version: 1, gaugeStuds: 4, options: { pointBlades: 1 },
     trackwork: { throw: leversAt([[0, -SLIP_LEAD, 'left'], [SLIP_LEAD * sin(22.5), -SLIP_LEAD * cos(22.5), 'right'], [0, SLIP_LEAD, 'left'], [-SLIP_LEAD * sin(22.5), SLIP_LEAD * cos(22.5), 'right']]) }, routes: [
       { name: 'A', x: 0, y: -20, heading: 0, segs: [{ kind: 'straight', studs: 40 }] },
       { name: 'B', x: 20 * tan(22.5), y: -20, heading: 22.5, segs: [{ kind: 'straight', studs: 40 / cos(22.5) }] },

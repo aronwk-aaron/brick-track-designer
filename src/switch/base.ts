@@ -1790,7 +1790,11 @@ export function switchGeometry(s: Scad, plan: SwitchPlan, extraCuts: Man[] = [])
     // (and a floor under the whole groove and the lever's opening, between the rests: the channel closed underneath
     // wherever a baseplate's stud isn't (the studs either side of the groove, 0.1 clear, as the tubes are))
     const ch = throwChannel(v), foot = ch.slice(fdbFloor() + 0.05).add(pointsPockets(v).slice(fdbFloor() + 0.05)).intersect(sq([bb.max[0] - bb.min[0], 40], [bb.min[0], v.throwY - 20]));
-    const studR = TRACK_DEFAULTS.studD / 2 + 0.1, studs: CS[] = [];
+    // (0.15 clear, a hair more than the tubes' 0.1: the groove is as wide as the room between two stud rows less 0.1 a
+    // side, so at 0.1 each stud's circle only touched the groove's side, along a line from its floor up, the floor's
+    // two sides of it meeting there edge to edge. A part's mesh read back in (kernel.ts flat, a slicer) can join such
+    // an edge wrongly: 0.7 mm3 of floor in the groove, in the slider, on the 45-degree double slip)
+    const studR = TRACK_DEFAULTS.studD / 2 + 0.15, studs: CS[] = [];
     // (the underside grid's studs about it)
     const box = [[bb.min[0] - 8, v.throwY - 16], [bb.max[0] + 8, v.throwY - 16], [bb.min[0] - 8, v.throwY + 16], [bb.max[0] + 8, v.throwY + 16]].map((q) => worldToPose(GR, q as Pt));
     for (let i = Math.floor(Math.min(...box.map((q) => q[0])) / 8) - 1; i <= Math.ceil(Math.max(...box.map((q) => q[0])) / 8); i++)
@@ -1887,8 +1891,8 @@ export function switchGeometry(s: Scad, plan: SwitchPlan, extraCuts: Man[] = [])
   /** The post's hole in the middle ring: round its teardrop, which turns a little in it. */
   const ocHoleR = FDB.postD / 2 * Math.SQRT2 + c;
   /** One half of the spring in plan, from its middle ring's centre (origin) along +u to its pin's ring at u = len: its meander and the pin's ring. */
-  const ocHalf2d = (len: number) => {
-    const rP = ocHoleR + OC.ringW, rA = OC.pinD / 2 + c + OC.ringW, a = OC.amp;
+  const ocHalf2d = (len: number, a: number) => {
+    const rP = ocHoleR + OC.ringW, rA = OC.pinD / 2 + c + OC.ringW;
     const u0 = rP + 0.5 + OC.t / 2, u1 = len - rA - 0.5 - OC.t / 2, n = OC.legs;
     const us = Array.from({ length: n }, (_, k) => u0 + ((u1 - u0) * k) / (n - 1));
     const path: Pt[] = [[rP - 0.3, 0], [us[0], 0]];
@@ -1899,19 +1903,39 @@ export function switchGeometry(s: Scad, plan: SwitchPlan, extraCuts: Man[] = [])
   };
   /** The middle ring. */
   const ocRing2d = () => circle(ocHoleR + OC.ringW, 40).subtract(circle(ocHoleR, 32));
-  /** The spring in plan with its middle ring at P, each half reaching to its pin. */
-  const ocSpring2d = (P: Pt, A: Pt[]) => W.CrossSection.union([ocRing2d().translate(P as Vec2),
-    ...A.map((q) => { const d = sub(q, P); return ocHalf2d(norm(d)).rotate((Math.atan2(d[1], d[0]) * 180) / Math.PI).translate(P as Vec2); })]);
+  /** The spring in plan with its middle ring at P, each half reaching to its pin; a: its meander's reach each side. */
+  const ocSpring2d = (P: Pt, A: Pt[], a: number) => W.CrossSection.union([ocRing2d().translate(P as Vec2),
+    ...A.map((q) => { const d = sub(q, P); return ocHalf2d(norm(d), a).rotate((Math.atan2(d[1], d[0]) * 180) / Math.PI).translate(P as Vec2); })]);
+  /**
+   * How far the meander reaches each side (OC.amp, or less): as far as leaves it clear of the blades' plates wherever
+   * the slider is, each blade turned as far as the slider's gone. (Sprung blades' plates reach nearer the middle of the
+   * track than rigid ones': a left switch's were 0.3 into the spring at its travel's end, 0.6 mm3.)
+   */
+  const ocAmps = new Map<SetV, number>();
+  const ocAmp = (v: SetV) => {
+    const had = ocAmps.get(v);
+    if (had !== undefined) return had;
+    const o = ocGeo(v), n = 6, slab = cube([2000, 2000, OC.h + 2 * c], [-1000, -1000, ocZ0() - c]);
+    const bl = blades(v).filter((b) => b !== v.fixed).map((b) => { const f = fdbBlades(v)[b]; return { cs: s.intersection(fdbBladePart(v, b), slab).project(), at: f.pivot, swing: b === 0 ? f.ang : -f.open }; });
+    const clear = (a: number) => Array.from({ length: n + 1 }, (_, k) => k / n).every((at) => {
+      const sp = ocSpring2d([o.P[0] + at * o.T, o.P[1]], o.A, a).offset(c, 'Round', 2, 8);
+      return bl.every((q) => sp.intersect(q.cs.translate([-q.at[0], -q.at[1]]).rotate(q.swing * at).translate(q.at as Vec2)).area() < 0.01);
+    });
+    const amp = [OC.amp, 2.7, 2.4, 2.1, 1.8, 1.5].find(clear) ?? 1.5;
+    ocAmps.set(v, amp);
+    return amp;
+  };
   const ocZ0 = () => g.layerTop + c;
   /** The spring as assembled (at rest: squeezed to its pins, the post at the right-hand route's end). */
-  const ocPart = (v: SetV) => { const o = ocGeo(v); return T(s.extrude(ocSpring2d(o.P, o.A), OC.h), [0, 0, ocZ0()]); };
+  // (at: how far along its travel the slider is, 0 to 1: the middle ring with its post, each half squeezed to its pin from there)
+  const ocPart = (v: SetV, at = 0) => { const o = ocGeo(v); return T(s.extrude(ocSpring2d([o.P[0] + at * o.T, o.P[1]], o.A, ocAmp(v)), OC.h), [0, 0, ocZ0()]); };
   /** The spring as printed: free, straight, lying flat. */
-  const ocPrint = (v: SetV) => { const o = ocGeo(v); return s.extrude(ocSpring2d([0, 0], [[0, o.free], [0, -o.free]]), OC.h); };
+  const ocPrint = (v: SetV) => { const o = ocGeo(v); return s.extrude(ocSpring2d([0, 0], [[0, o.free], [0, -o.free]], ocAmp(v)), OC.h); };
   /** Its pocket in the bed: wherever it is as the post goes from one end to the other, and round. */
   const ocPocket = (v: SetV) => {
     const o = ocGeo(v), Q: Pt = [o.P[0] + o.T, o.P[1]];
     const sweep2d = W.CrossSection.union([W.CrossSection.hull([ocRing2d().translate(o.P as Vec2), ocRing2d().translate(Q as Vec2)]),
-      ...o.A.map((a) => W.CrossSection.hull([ocSpring2d(o.P, [a]), ocSpring2d(Q, [a])]))]).offset(c + 0.2, 'Round', 2, 16);
+      ...o.A.map((a) => W.CrossSection.hull([ocSpring2d(o.P, [a], ocAmp(v)), ocSpring2d(Q, [a], ocAmp(v))]))]).offset(c + 0.2, 'Round', 2, 16);
     // (not where its pins stand: on a network's piece the pockets are cut after the pins go on)
     // (up past the spring's top: with the shallow slider it stands higher over the bed than the bed's top and 2)
     return s.difference(T(s.extrude(sweep2d, Math.max(bedTop + 2, ocZ0() + OC.h + c) - (ocZ0() - c)), [0, 0, ocZ0() - c]), ocPins(v));
@@ -1925,13 +1949,16 @@ export function switchGeometry(s: Scad, plan: SwitchPlan, extraCuts: Man[] = [])
    * with one moving blade (a double slip's), its plate reaches over where they stand. */
   const ocClear = (v: SetV, b: number, m: Man) => {
     if (!ocOn(v) || b === v.fixed) return m;
-    const fb = fdbBlades(v)[b], sw = swingsOf(v) * fb.ang * bSide(b), n = 6, r = OC.pinD / 2 + c + 0.2, z0 = bedTop - 1, h = c + plateT + 2;
+    // (clear of the spring's end ring on each pin, not of the pin alone: a wye's sprung blade's plate was 0.4 into a ring, 1.3 mm3)
+    const fb = fdbBlades(v)[b], sw = swingsOf(v) * fb.ang * bSide(b), n = 6, r = OC.pinD / 2 + c + OC.ringW + c, z0 = bedTop - 1, h = c + plateT + 2;
     const holes = ocGeo(v).A.map((q) => W.Manifold.hull(Array.from({ length: n + 1 }, (_, k) => T(s.cylinder(h, r, r, 24), [...rotAbout(q, fb.pivot, (-sw * k) / n), z0] as Vec3))));
     const cut = s.union(holes);
     return cut.boundingBox().max[0] < m.boundingBox().min[0] || cut.boundingBox().min[0] > m.boundingBox().max[0] ? m : s.difference(m, [cut]);
   };
   /** The post on the slider for the spring's middle ring (its teardrop as the blades' posts), up to theirs. */
-  const ocPost = (v: SetV) => T(s.extrude(fdbPost2d(ocGeo(v).P, 0), postTop - g.layerTop + 0.01), [0, 0, g.layerTop - 0.01]);
+  // (no wider than the bar, as the blades' posts: the slider prints on its side, and a teardrop's tip past a narrow
+  // bar's side (the sprung blades' on track alone) hung over the bed: 45 mm2 of a nail switch's slider)
+  const ocPost = (v: SetV) => T(s.extrude(fdbPost2d(ocGeo(v).P, 0).intersect(sq([1000, rodW], [-500, v.throwY - rodW / 2])), postTop - g.layerTop + 0.01), [0, 0, g.layerTop - 0.01]);
 
   // ---------- the snap clamp (throwAction 'snap': switch/snap.ts, where its sizes and its spring are worked out) ----------
   const snapOn = (v: SetV) => fdb && !!v.snap && !v.three && !v.stand;
@@ -2326,7 +2353,9 @@ export function switchGeometry(s: Scad, plan: SwitchPlan, extraCuts: Man[] = [])
       // (each set's bed less every set's pockets: on a three-way the sets can
       // overlap, and switch.scad cuts each bed by its own pockets only)
       pointsBeds: s.union([s.difference(s.union(sets.map(pointsBed)), sets.map(pointsPockets)), ...(fdb ? sets.map(fdbPins) : [])]),
-      turnoutTies: turnoutTies(), routeTies: routeTies(), leadTies: leadTies(), connectors: connectors(),
+      // (an over-centre spring's pocket through the start's connector too, where the spring reaches it (prototype
+      // blades', whose posts are by their toes): one of the connector's posts stood in the spring's end ring, 0.2 mm3)
+      turnoutTies: turnoutTies(), routeTies: routeTies(), leadTies: leadTies(), connectors: fdb && sets.some(ocOn) ? s.difference(connectors(), sets.filter(ocOn).map(ocPocket)) : connectors(),
   };
   if (parts) Object.assign(parts, named, { throwArms: s.union(sets.map(throwArm)), throwChannels: s.union(sets.map(throwChannel)) });
   if (g.ballast) {
@@ -2480,7 +2509,7 @@ export function switchGeometry(s: Scad, plan: SwitchPlan, extraCuts: Man[] = [])
     /** (the over-centre spring) its pins on the bed, in the set's frame, and how high they reach (none without it) */
     ocPinsAt: (k = 0): { at: Pt[]; r: number; top: number } => (ocOn(sets[k]) ? { at: ocGeo(sets[k]).A, r: OC.pinD / 2 + c + 0.1, top: ocZ0() + OC.h + 0.7 } : { at: [], r: 0, top: 0 }),
     /** (the snap clamp: with the slider at along its travel, 0 as modelled to 1) */
-    springPart: (k = 0, at = 0) => (ocOn(sets[k]) ? ocPart(sets[k]) : snapOn(sets[k]) ? snapPart(sets[k], at) : undefined),
+    springPart: (k = 0, at = 0) => (ocOn(sets[k]) ? ocPart(sets[k], at) : snapOn(sets[k]) ? snapPart(sets[k], at) : undefined),
     springPrint: (k = 0) => (ocOn(sets[k]) ? ocPrint(sets[k]) : snapOn(sets[k]) ? snapPrint(sets[k]) : undefined),
     /**
      * Each points part's pin (where it turns), how far to turn it from as assembled to open it (blade 0 is closed as assembled), and to its

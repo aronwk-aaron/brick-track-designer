@@ -12,6 +12,8 @@ import { buildDesign } from '../src/app/build';
 import { TEMPLATES } from '../src/app/design';
 
 type Built = ReturnType<typeof buildDesign>;
+/** The template's tracks without its levers set by hand: each lever put where the build finds room. */
+const PLAIN = { ...TEMPLATES['Double slip (22.5°)'], trackwork: undefined };
 /** Blade against blade, between sets: each pair, each closed and open (each set thrown on its own), the most they overlap (mm3). */
 function bladesMeet(w: Awaited<ReturnType<typeof kernel>>, b: Built) {
   const man = (P: Float32Array) => { const mesh = new w.Mesh({ numProp: 3, vertProperties: new Float32Array(P), triVerts: new Uint32Array(P.length / 3).map((_, i) => i) }); mesh.merge(); return new w.Manifold(mesh); };
@@ -31,7 +33,7 @@ describe('double slip', () => {
     it(`${name}: four sets of points, nothing in the track`, async () => {
       // (each lever where it's clear of trains: outside, each pair's sliders staggered so they don't run into each other (no nail
       // switches needed); on tines, levers too)
-      const w = await kernel(), b = buildDesign(w, { ...TEMPLATES['Double slip (22.5°)'], options: { printBedX: 2000, printBedY: 2000, boxedThrow: 'nail', ...more } });
+      const w = await kernel(), b = buildDesign(w, { ...PLAIN, options: { printBedX: 2000, printBedY: 2000, boxedThrow: 'nail', ...more } });
       expect(b.overlay.issues).toEqual([]);
       expect(b.info.warnings.some((x) => /built on tines under the bed, the blades notched/.test(x))).toBe(note);
       if ('bladeStyle' in more) expect(b.info.warnings.some((x) => /blades are rigid.*next points' blades/.test(x))).toBe(true);
@@ -47,8 +49,8 @@ describe('double slip', () => {
 
   // (as the reference's: each set's lever outside, on the side of its own track away from the other one; real levers, the
   // sliders staggered so none runs into another's)
-  it('throws outside: four levers, each on the side away from the other track; no throw in another; nothing in the track', async () => {
-    const w = await kernel(), d = TEMPLATES['Double slip (22.5°, throws outside)'];
+  it('the template, its throws outside: four levers, each on the side away from the other track; no throw in another; nothing in the track', async () => {
+    const w = await kernel(), d = TEMPLATES['Double slip (22.5°)'];
     const b = buildDesign(w, { ...d, options: { ...d.options, printBedX: 2000, printBedY: 2000 } });
     expect(b.overlay.issues).toEqual([]);
     expect(b.info.warnings.filter((x) => !/blades are rigid/.test(x))).toEqual([]);
@@ -75,7 +77,7 @@ describe('double slip', () => {
   }, 300000);
 
   it('sprung blades on track alone: rigid in the slip, each set\'s plate clear of the next set\'s closed and open; nothing in the track', async () => {
-    const w = await kernel(), b = buildDesign(w, { ...TEMPLATES['Double slip (22.5°)'], options: { printBedX: 2000, printBedY: 2000, pointBlades: 1, bladeStyle: 'sprung' } });
+    const w = await kernel(), b = buildDesign(w, { ...PLAIN, options: { printBedX: 2000, printBedY: 2000, pointBlades: 1, bladeStyle: 'sprung' } });
     expect(b.info.warnings.some((x) => /blades are rigid.*next points' blades/.test(x))).toBe(true);
     const mt = bladesMeet(w, b);
     expect(mt.n).toBe(4);
