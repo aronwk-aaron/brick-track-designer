@@ -209,6 +209,9 @@
     #coords { right: 10px; bottom: 10px; color: var(--muted); font-variant-numeric: tabular-nums; pointer-events: none; }
     #selbar { left: 10px; top: 10px; display: flex; gap: 4px; align-items: center; padding: 4px 6px; z-index: 1; flex-wrap: wrap; max-width: calc(100% - 280px); } /* (clear of the legend, which is about 250px wide open) */
     #selbar[hidden] { display: none; }
+    #selform { left: 10px; top: 50px; display: flex; gap: 8px; align-items: center; padding: 4px 8px; z-index: 2; flex-wrap: wrap; max-width: calc(100% - 280px); }
+    #selform[hidden] { display: none; }
+    #selform button { padding: 2px 7px; font-size: 12px; }
     #selbar button { padding: 2px 7px; font-size: 12px; }
     #sel-count { color: var(--muted); margin: 0 4px; font-size: 12px; }
     #legend { right: 10px; top: 10px; color: var(--muted); display: flex; flex-direction: column; gap: 2px; }
@@ -583,6 +586,7 @@
         <ul>
           <li><kbd>D</kbd> or ✎ Draw, then click a grid point or a track's end to start; move to see the track; click to lay it and carry on.</li>
           <li>Split and merge: with one track selected, <kbd>S</kbd> with the pointer on it (or the Split button, then a click on it) cuts it in two at the nearest whole stud, at least a stud in from either end; the two halves keep everything that was on that part (guard rails, third rail, ends, hand edits, heights). Select two tracks that meet end to end and press Merge to make them one.</li>
+          <li>Parallel…: with one track selected, a new track beside it, 6 to 200 studs over (default 16; 8 and 16 are the usual), to its left or right: straights as long, curves with the radius concentric with the original. It says why not where a curve would go under R24.</li>
           <li>Guides: drawing, or dragging a track's end, the point snaps to the line straight on from another track's end, to 8 and 16 studs beside a straight, to a whole number of studs straight on, and (Curves: free) to the usual radii. A dashed line and a small label give the value (studs, degrees, radius). Hold <kbd>Alt</kbd> for no snapping (the stud grid stays); it also stops the snap onto other tracks' ends.</li>
           <li><kbd>Esc</kbd> or a right-click stops drawing; <kbd>Esc</kbd> again goes back to Select.</li>
           <li>Start on the middle of a track to branch off it: a switch.</li>
@@ -658,7 +662,15 @@
       
       <div id="selbar" class="chip" hidden>
         <span id="sel-count"></span>
-        <button id="sel-copy" type="button" title="Copy (Ctrl+C)">Copy</button><button id="sel-cut" type="button" title="Cut (Ctrl+X)">Cut</button><button id="sel-paste" type="button" title="Paste at the mouse (Ctrl+V)">Paste</button><button id="sel-dup" type="button" title="Duplicate (Ctrl+D)">Duplicate</button><button id="sel-mirror" type="button" title="Mirror left to right (M)">Mirror</button><button id="sel-rotl" type="button" title="Turn 90° left (Shift+R)">⟲ 90°</button><button id="sel-rotr" type="button" title="Turn 90° right (R)">⟳ 90°</button><button id="sel-split" type="button" title="Cut the selected route in two where you click on it (S)">Split</button><button id="sel-merge" type="button" title="Make two selected routes that meet one">Merge</button><button id="sel-del" type="button" class="danger" title="Delete (Del)">Delete</button>
+        <button id="sel-copy" type="button" title="Copy (Ctrl+C)">Copy</button><button id="sel-cut" type="button" title="Cut (Ctrl+X)">Cut</button><button id="sel-paste" type="button" title="Paste at the mouse (Ctrl+V)">Paste</button><button id="sel-dup" type="button" title="Duplicate (Ctrl+D)">Duplicate</button><button id="sel-mirror" type="button" title="Mirror left to right (M)">Mirror</button><button id="sel-rotl" type="button" title="Turn 90° left (Shift+R)">⟲ 90°</button><button id="sel-rotr" type="button" title="Turn 90° right (R)">⟳ 90°</button><button id="sel-split" type="button" title="Cut the selected route in two where you click on it (S)">Split</button><button id="sel-parallel" type="button" title="A new track beside the selected one">Parallel…</button><button id="sel-merge" type="button" title="Make two selected routes that meet one">Merge</button><button id="sel-del" type="button" class="danger" title="Delete (Del)">Delete</button>
+      </div>
+      <div id="selform" class="chip" hidden>
+        <strong>Parallel track</strong>
+        <label>Side <select id="par-side"><option value="left">Left</option><option value="right">Right</option></select></label>
+        <label>Spacing, studs <input id="par-spacing" type="number" step="0.5" style="width:5em"></label>
+        <span id="par-range" class="chipn"></span>
+        <button id="par-make" type="button">Make track</button><button id="par-cancel" type="button">Cancel</button>
+        <span id="par-why" role="status" style="color:#b25c00"></span>
       </div>
       <div id="othertab" class="chip" role="alert" hidden>
         <span>This design was changed in another tab or window. Changes here aren't kept in the browser until you choose.</span>

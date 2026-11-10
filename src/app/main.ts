@@ -21,6 +21,7 @@ import { addCircle, cleanPieces, cleanRadius, defaultPieces, pieceFit, piecesTex
 import { APP_VERSION, type BuiltEntry, pngBytes, pushBuilt, readBuilt, readReportZip, type Report, reportName, type ReportInput, reportZip } from './report';
 import { isZip } from '../geom/unzip';
 import { COMMON_RADII } from './guides';
+import { parallelRoute } from './parallelroute';
 import { mergeProblem, mergeRoutes, splitRoute } from './splitmerge';
 import { initTemplateBrowser } from './templatebrowser';
 import { type CopiedEdit, copyEdits, followTrackwork, isEdit, leftOver, mirrorAnchors, pasteEdits, reconcileTrackwork, renameAnchors } from './twfollow';
@@ -1531,6 +1532,24 @@ function splitRouteAt(i: number, s: number): string | undefined {
   canvas.say(`Split into ${res.first} and ${res.second}`);
   return undefined;
 }
+/** Parallel…: a form on the plan for the side and spacing; Make track adds the route. */
+const parForm = $('selform'), parSide = $<HTMLSelectElement>('par-side'), parSpacing = $<HTMLInputElement>('par-spacing'), parWhy = $('par-why');
+parSpacing.value = String(LIMITS.spacing[2]); parSpacing.min = String(LIMITS.spacing[0]); parSpacing.max = String(LIMITS.spacing[1]);
+$('par-range').textContent = `${rangeText(LIMITS.spacing)} 8 and 16 are the usual.`;
+const closeParallel = () => { parForm.hidden = true; parWhy.textContent = ''; };
+function makeParallel() {
+  const sel = selected();
+  if (sel.length !== 1) { parWhy.textContent = 'Select one route first.'; return; }
+  const res = parallelRoute(design, design.routes[sel[0]], parSide.value === 'right' ? 'right' : 'left', Number(parSpacing.value));
+  if ('problem' in res) { parWhy.textContent = `Can't: ${res.problem}.`; return; }
+  design.routes.push(res.route);
+  canvas.setSelection([design.routes.length - 1]); openCards.clear(); closeParallel(); changed(true);
+  canvas.say(`${res.route.name} made, ${parSpacing.value} studs to the ${parSide.value} of ${design.routes[sel[0]].name || sel[0]}`);
+}
+$('sel-parallel').addEventListener('click', () => { parForm.hidden = !parForm.hidden; parWhy.textContent = ''; if (!parForm.hidden) parSpacing.focus(); });
+$('par-make').addEventListener('click', makeParallel);
+$('par-cancel').addEventListener('click', closeParallel);
+parSpacing.addEventListener('keydown', (e) => { if (e.key === 'Enter') makeParallel(); else if (e.key === 'Escape') closeParallel(); });
 /** Two selected routes that meet made one (Merge). */
 function mergeSel() {
   const [i, j] = selected();
@@ -1546,6 +1565,7 @@ function updateSelbar() {
   ($('sel-paste') as HTMLButtonElement).disabled = !clipboard.length && !clipTables.length;
   const sel = selected(), one = sel.length === 1 && !selectedTables().length, two = sel.length === 2 && !selectedTables().length;
   const split = $('sel-split') as HTMLButtonElement, merge = $('sel-merge') as HTMLButtonElement, mp = two ? mergeProblem(design, sel[0], sel[1]) : undefined;
+  ($('sel-parallel') as HTMLButtonElement).disabled = !one; if (!one) closeParallel();
   split.disabled = !one; merge.disabled = !two || !!mp;
   split.title = one ? 'Cut the selected route in two where you click on it, a whole stud along (S with the pointer on it)' : 'Split: select one route first';
   merge.title = two ? (mp ? `Merge: can't, ${mp}` : 'Make these two routes one track') : 'Merge: select two routes that meet end to end';

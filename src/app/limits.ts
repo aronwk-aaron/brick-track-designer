@@ -21,6 +21,8 @@ export const LIMITS = {
   plates: [0, 250, 0],
   /** a route's own gauge, studs between its rails (as the design's: Settings › Track › Gauge) */
   gauge: [2, 10, 4],
+  /** a parallel track's distance from its route, studs centre to centre (8 and 16 are the usual) */
+  spacing: [6, 200, 16],
   /** a table's place and corners, studs */
   tablePlace: [-10000, 10000, 0],
   tableSize: [1, 2000, 32],

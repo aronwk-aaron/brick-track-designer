@@ -320,6 +320,20 @@ try {
     await page.click('#undo'); await page.waitForTimeout(150);
     check(await routes() === 1, 'and one more the split'); }
 
+  // parallel track: refuses a curve going under R24 with the reason, then makes one 16 studs over in one undo step
+  at = 'parallel';
+  await page.evaluate(() => localStorage.setItem('btd-design', JSON.stringify({ version: 1, gaugeStuds: 4, routes: [{ name: 'A', x: 0, y: 0, heading: 0, segs: [{ kind: 'straight', studs: 20 }, { kind: 'curve', radius: 32, angle: 90 }] }] })));
+  await page.reload(); await page.waitForSelector('#track'); await page.click('#mode-select'); await page.click('#fit'); await page.waitForTimeout(300);
+  { const [px, py] = await scr(0, 10); await page.mouse.click(px, py); await page.click('#sel-parallel');
+    check(/Range 6 to 200, default 16/.test(await page.locator('#par-range').innerText()), 'Parallel shows the spacing range and default');
+    await page.selectOption('#par-side', 'left'); await page.fill('#par-spacing', '16'); await page.click('#par-make');
+    check(/R24/.test(await page.locator('#par-why').innerText()) && await routes() === 1, `a curve that would go under the least radius is refused, with the reason (${await page.locator('#par-why').innerText()})`);
+    await page.selectOption('#par-side', 'right'); await page.click('#par-make'); await page.waitForTimeout(300);
+    const pr = await page.evaluate(() => JSON.parse(localStorage.getItem('btd-design')!).routes as { x: number; segs: { radius?: number }[] }[]);
+    check(pr.length === 2 && pr[1].x === 16 && pr[1].segs[1].radius === 48, `Parallel makes the track 16 studs to the right with R48 (${JSON.stringify(pr[1])})`);
+    await page.click('#undo'); await page.waitForTimeout(150);
+    check(await routes() === 1, 'one Undo takes it back'); }
+
   check(errors.length === 0, `no errors on the page${errors.length ? `: ${errors.join(' | ').slice(0, 600)}` : ''}`);
 } catch (err) {
   fails.push(`${at}: ${err instanceof Error ? err.message : err}`);
