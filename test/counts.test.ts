@@ -7,14 +7,15 @@ import { buildDesign, clearBuildCache } from '../src/app/build';
 import { bufferEnds, type Design, setSystem, TEMPLATES } from '../src/app/design';
 
 describe('switches counted', { timeout: 300000 }, () => {
-  for (const [name, n] of [['Three-way R40', 1], ['Three-way R104', 1], ['Three-way switch (one throw)', 1], ['Three-way, no gap', 1], ['Three-way, 2-stud gap', 1], ['Three-way, 4-stud gap', 1],
-    ['Switch R40 left', 1], ['Double slip R40 45°', 4], ['Crossover, 4-stud gap, left', 2]] as const)
+  // (throws: its sliders; the reference three-ways have a lever to each blade (threeWayLevers 2), one switch all the same)
+  for (const [name, n, throws] of [['Three-way R40', 1, 2], ['Three-way R104', 1, 2], ['Three-way switch (one throw)', 1, 1], ['Three-way, no gap', 1, 2], ['Three-way, 2-stud gap', 1, 2], ['Three-way, 4-stud gap', 1, 2],
+    ['Switch R40 left', 1, 1], ['Double slip R40 45°', 4, 4], ['Crossover, 4-stud gap, left', 2, 2]] as const)
     it(`${name}: ${n}`, async () => {
       const w = await kernel();
       clearBuildCache();
       const b = buildDesign(w, structuredClone(TEMPLATES[name]));
       expect(b.info.switches).toBe(n);
-      expect(b.pieces.filter((p) => /-throw\d*$/.test(p.name))).toHaveLength(n);
+      expect(b.pieces.filter((p) => /-throw\d*$/.test(p.name))).toHaveLength(throws);
       clearBuildCache();
     });
 });

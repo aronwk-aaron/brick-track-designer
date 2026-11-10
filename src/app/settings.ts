@@ -133,6 +133,12 @@ export function optionForm(d: () => Design): { form: OptSection[]; noMono: (c?: 
           no: (c) => (c.fdb ? undefined : 'only with Mechanism: Blades on top, on pins') },
         { v: 'nail', t: 'Nail switch (by hand, no lever)', tip: 'As on the reference double slips\' inner points: no lever, no arm. The slider stays under the points, held at either end by an over-centre spring; push the blade over with a fingernail in the notch on its plate. Trains can trail through.',
           con: 'Nothing to work it from beside the track, nor to motorise.', no: (c) => (c.fdb ? undefined : 'only with Mechanism: Blades on top, on pins') }] },
+      { key: 'threeWayLevers', label: 'Three-way switches worked by', numeric: true, get: () => d().options?.threeWayLevers ?? 1, set: (v) => { d().options = { ...d().options, threeWayLevers: Number(v) === 2 ? 2 : 1 }; }, def: 1,
+        help: 'For three-way switches (two branches leaving one track at the same place, one each side). Other switches have one lever.', choices: [
+        { v: '1', t: 'One lever, three positions', tip: 'One slider under both blades. The lever clicks at left, straight and right.' },
+        { v: '2', t: 'Two levers, one each side', tip: 'Each blade has its own slider and lever, with two positions, as the reference triple switches. Both blades closed: straight. One open: the branch on its side.',
+          con: 'Both levers thrown at once set no route: a train derails there. It takes a lever\'s room on both sides (Lever side doesn\'t apply). The levers click; no over-centre spring or snap clamp.',
+          no: (c) => (c.fdb ? undefined : 'only with Mechanism: Blades on top, on pins') }] },
       { key: 'boxedThrow', label: 'Points with no room for a throw', get: () => d().options?.boxedThrow ?? 'slider', set: (v) => { d().options = { ...d().options, boxedThrow: v as 'nail' | 'slider' }; }, def: 'slider',
         off: (c) => (c.fdb ? undefined : 'only with Mechanism: Blades on top, on pins'), help: 'Points whose throw would cross other track in the same part (its lever on that track, or its arm across it), or run into another points\' throw (a double slip\'s, whose sliders cross under its crossing).', choices: [
         { v: 'nail', t: 'Nail switches', tip: 'Those points thrown by hand (Throw: Nail switch); the rest as set.' },

@@ -99,6 +99,8 @@ export function sharedLead(a: Route, b: Route): number {
   while (t < L && same(t + 0.5)) t += 0.5;
   return t;
 }
+/** A three-way's blades each on a slider and lever of its own (threeWayLevers 2): with blades on top only. */
+export const twoLevers = (p: { threeWayLevers?: number; mechStyle?: string }) => p.threeWayLevers === 2 && p.mechStyle === 'plates';
 /** toeShift: how far (mm) to move the points from where the branch leaves, by that point in the design (hand edits). */
 export function planPieces(routes: Route[], splits: Split[], p: BaseParams = BASE_DEFAULTS, toeShift: (at: [number, number]) => number = () => 0,
   throwEdit: (at: [number, number]) => ThrowEdit | undefined = () => undefined, gridLevers = false): Pieces {
@@ -154,7 +156,9 @@ export function planPieces(routes: Route[], splits: Split[], p: BaseParams = BAS
       const atOf = (sa: number): [number, number] => { const q = routePose(routes[parent], sa); return [q[0], q[1]]; };
       const shift = (sa: number) => toeShift(atOf(sa));
       const setAts: [number, number][] = [];
-      if (together) { sets.push([0, 2, kids[0].lead + 12 + shift(kids[0].sa), undefined, 1]); setAts.push(atOf(kids[0].sa)); }
+      // (a lever to each blade (threeWayLevers 2, blades on top): two sets at the one toe, each one blade's, the left then the right)
+      const own3 = together && twoLevers(pg.p);
+      if (together) for (const b of own3 ? [0, 1] as const : [undefined]) { sets.push([0, 2, kids[0].lead + 12 + shift(kids[0].sa), undefined, 1, undefined, b]); setAts.push(atOf(kids[0].sa)); }
       else kids.forEach((kd, n) => {
         const ci = pos(n + 1), mi = pos(0);
         if (Math.abs(ci - mi) !== 1) { ok = false; return; }
@@ -170,7 +174,7 @@ export function planPieces(routes: Route[], splits: Split[], p: BaseParams = BAS
         const ed = throwEdit(setAts[n]);
         const own = ed?.side ?? routes[kids[Math.min(n, kids.length - 1)].child].throwSide;
         const side = own && own !== 'auto' ? own : p.throwSide;
-        if (side === 'left' || side === 'right') st[3] = side === 'right' ? 1 : -1;
+        if ((side === 'left' || side === 'right') && st[6] === undefined) st[3] = side === 'right' ? 1 : -1;
         if (ed && (ed.leverOffset !== undefined || ed.springLength !== undefined)) st[5] = { ...(ed.leverOffset !== undefined && { leverOffset: ed.leverOffset }), ...(ed.springLength !== undefined && { springLength: ed.springLength }) };
       });
       const sorted = order.map((k) => frameRoutes[k]);

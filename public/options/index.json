@@ -103,6 +103,10 @@
   "stand",
   "nail"
  ],
+ "threeWayLevers": [
+  "1",
+  "2"
+ ],
  "boxedThrow": [
   "nail",
   "slider"

@@ -64,6 +64,8 @@ export function leverSide(d: Design, lever: OverlayItem, items: OverlayItem[]): 
   // (a setting that would put it the other side isn't the one that did: a three-way takes its first branch's)
   const own = branches.find((id) => routeOf(id)?.throwSide === side);
   const branch = own ?? branches[0], opt = d.options?.throwSide ?? 'auto';
+  // (a three-way with a lever to each blade: one each side, whatever's set)
+  if (branches.length > 1 && d.options?.threeWayLevers === 2 && d.options?.mechStyle !== 'tines') return { side, by: 'auto', main, branch, why: 'a three-way with two levers has one each side (Three-way switches worked by, in the Settings)' };
   if (d.trackwork?.throw?.[lever.key]?.side) return { side, by: 'hand', main, branch, why: 'dragged there on the plan' };
   if (own) return { side, by: 'route', main, branch, why: `${own}'s own Lever side (on its card)` };
   if (opt === side) return { side, by: 'options', main, branch, why: 'Lever side in the Settings' };

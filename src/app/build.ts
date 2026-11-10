@@ -1842,7 +1842,7 @@ function buildOne(w: Wasm, design: Design, report: (what: string, frac: number) 
     size: [0, 1, 2].map((k) => mx[k] - mn[k]),
     crossings: sol.crossings.length, checkRails: sol.checkRails.length, splits: sol.splits.length,
     // (points sets, as the parts are: a three-way's one set is one switch, however many pairs of its routes part there)
-    switches: network ? (net?.splits.length ?? sol.splits.length) : pc.switches.length, pieces: pieces.length, warnings: [...forceWarnings, ...bankWarnings, ...pc.warnings, ...bedWarnings],
+    switches: network ? (net ? new Set(net.splits.map((sp) => sp.src)).size : sol.splits.length) : pc.switches.length, pieces: pieces.length, warnings: [...forceWarnings, ...bankWarnings, ...pc.warnings, ...bedWarnings],
   };
   return { overlay, pieces, info };
 }

@@ -122,3 +122,23 @@ and heel (points in another switch's frog; a tandem whose first branch
 crosses the second branch at the second heel, as the R56 tandem-net and
 tandem-opposite fixtures do), or where no place for the pin and post keeps
 both rims.
+
+## A lever to each blade (2026-11-10)
+
+The reference's triple switches have two levers at the same place, one each
+side, each working one blade. That is now a choice (Settings, Switches:
+throw, "Three-way switches worked by": One lever, three positions, the
+default; or Two levers, one each side). With two:
+
+- The three-way is planned as two points sets at the one toe
+  (src/switch/base.ts, SetSpec's last element: the blade the set works).
+  Each set has the one blade, a slider of its own from that blade's post out
+  to its own side, and a lever there with two positions (two dimples).
+  The left blade's lever is on the left, the right one's on the right.
+- Both blades closed is straight. The left blade open is the left branch,
+  the right one open the right branch. Both open sets no route.
+- Each blade swings once the throw (on one slider the open one goes twice
+  as far, as the other's post goes on); the slider's travel is a two-way's.
+- Only with blades on top. The levers click (no over-centre spring or snap
+  clamp); a switch stand works, and locks both ends.
+- The reference three-way templates use it.

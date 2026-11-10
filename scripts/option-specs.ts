@@ -98,6 +98,7 @@ export const SPECS: OptionSpec[] = [
   // Switches: throw
   { key: 'throwStyle', values: ['built-in', 'bracket', 'stand', 'nail'], base: D(sw), cam: throwCam },
   // (each lever set by hand how far along it is: its slider not moved along to clear the next set's, so each pair's meet)
+  { key: 'threeWayLevers', values: ['1', '2'], base: D(TEMPLATES['Three-way switch (one throw)'].routes), cam: { dir: '0.25,-0.9,1.1', r: 210, at: () => [0, 40, 6] } },
   { key: 'boxedThrow', values: ['nail', 'slider'], base: D(TEMPLATES['Double slip (22.5°)'].routes, { pointBlades: 1 }, { trackwork: { throw: Object.fromEntries(Object.keys(TEMPLATES['Double slip (22.5°, throws outside)'].trackwork!.throw!).map((k) => [k, { springLength: 40 }])) } }), cam: { dir: '0.15,-0.3,1', dist: 1.3 } },
   // (the snap clamp on the lever's arm, with the default sprung blades; from above the points, the lever beside them)
   { key: 'throwAction', values: ['detent', 'overcentre', 'snap'], base: D(sw), cam: { dir: '0.45,-0.75,1', r: 125, at: () => [16, 26, 6] } },

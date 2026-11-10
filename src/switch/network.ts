@@ -14,7 +14,7 @@ import { poseToWorld, railPoint, routeLat, routeLength, routePose, routeSOf, wor
 import type { Solution } from '../route/solver';
 import { reversedRoute } from './reverse';
 import { type BaseParams, fdbFootprint, type SetOver, type SetSpec, switchGeometry, switchPlan, type SwitchPlan } from './base';
-import { gridLever, sharedLead, subRoute, type ThrowEdit, toFrame } from './pieces';
+import { gridLever, sharedLead, subRoute, type ThrowEdit, toFrame, twoLevers } from './pieces';
 import { gridIn, sprungOnGrid } from './context';
 
 export interface NetworkPart { name: string; color: number; local: Man; world: Man; turn?: { at: [number, number]; by: number; swing?: number; tilt?: [[number, number], [number, number]] };
@@ -161,7 +161,9 @@ export function networkSplits(s: Scad, routes: Route[], sol: Solution, p: BasePa
   }
   // (each points set planned first; then the levers placed, the most hemmed in first, so one with few clear spots isn't
   // left with none by its neighbours; then built in the design's order)
-  const preps = groups.map((gr) => {
+  // (a three-way with a lever to each blade (threeWayLevers 2): planned and built as two sets at the one toe, each one
+  // blade's with its own slider and lever on its own side; blade: which, else undefined)
+  const prepOf = (gr: (typeof groups)[number], blade: 0 | 1 | undefined) => {
     const sp = sol.splits[gr.main];
     const [i, j] = sp.routes, j2 = gr.kids.length ? sol.splits[gr.kids[0]].routes[1] : -1;
     // the points' frame: at the split, looking the way the routes part
@@ -180,17 +182,19 @@ export function networkSplits(s: Scad, routes: Route[], sol: Solution, p: BasePa
     // right to left; a three-way only with the main route between its branches
     const local = [...all].sort((a, b) => xAt(b) - xAt(a));
     const three = !!C && local[1] === A;
-    if (C && !three) warnings.push('two branches leave one side of a route at the same point: not built as a three-way');
+    if (C && !three && blade === undefined) warnings.push('two branches leave one side of a route at the same point: not built as a three-way');
     const bRight = xAt(B) > xAt(A);
     const pair = bRight ? [B, A] : [A, B];
     const rts = three ? local : pair;
     // (the lever: as moved by hand, else the branch's own setting, else the options', else the main route's side)
     const ed = throwEdit([P[0], P[1]]);
     const ownR = ed?.side ?? routes[j].throwSide;
-    const own = ownR && ownR !== 'auto' ? ownR : p.throwSide;
+    const own0 = ownR && ownR !== 'auto' ? ownR : p.throwSide;
+    if (blade !== undefined && !three) return undefined;
+    const own = blade === undefined ? own0 : blade === 0 ? 'left' : 'right';
     const tside = own === 'left' ? -1 : own === 'right' ? 1 : three ? 1 : bRight ? -1 : 1;
     const over: SetOver = { ...(ed?.leverOffset !== undefined && { leverOffset: ed.leverOffset }), ...(ed?.springLength !== undefined && { springLength: ed.springLength }) };
-    const specOf = (o: SetOver, ts: number): SetSpec => (three ? [0, 2, 2 + toeShift([P[0], P[1]]), ts, 1, o] : [0, 1, 2 + lead + toeShift([P[0], P[1]]), ts, undefined, o]);
+    const specOf = (o: SetOver, ts: number): SetSpec => (three ? [0, 2, 2 + toeShift([P[0], P[1]]), ts, 1, o, blade] : [0, 1, 2 + lead + toeShift([P[0], P[1]]), ts, undefined, o]);
     const spec = (o: SetOver) => specOf(o, tside);
     // (the other track near the points, in their frame; with two branches one side not built as a three-way, the other branch too)
     const foreign = [...nearby(gr), ...(C && !three ? [j2] : [])].map((r) => ({ ...routes[r], start: toFrame(P, routes[r].start) }));
@@ -218,7 +222,11 @@ export function networkSplits(s: Scad, routes: Route[], sol: Solution, p: BasePa
       return { pp, plan, how };
     };
     const c0 = choose([]);
-    return { gr, sp, i, j, j2, P, A, B, rts, three, own, ed, foreign, blockedOf, specOf, choose, keep: [] as Pt[][], how: c0.how, gm: undefined as { plan: SwitchPlan; gm: ReturnType<typeof switchGeometry> } | undefined, alone: !blockedOf(c0.plan), st: { tside, over, used, plan: c0.plan, pp: c0.pp } };
+    return { gr, blade, sp, i, j, j2, P, A, B, rts, three, own, ed, foreign, blockedOf, specOf, choose, keep: [] as Pt[][], how: c0.how, gm: undefined as { plan: SwitchPlan; gm: ReturnType<typeof switchGeometry> } | undefined, alone: !blockedOf(c0.plan), st: { tside, over, used, plan: c0.plan, pp: c0.pp } };
+  };
+  const preps = groups.flatMap((gr) => {
+    const halves = twoLevers(p) && gr.kids.length ? [prepOf(gr, 0), prepOf(gr, 1)] : [];
+    return halves[0] && halves[1] ? [halves[0], halves[1]] : [prepOf(gr, undefined)!];
   });
   // (blades on plates: neighbouring points' plates (a slip's, the next set's) clear of each other wherever each is between
   // closed and open, with their lips on the bed. Each set's plates as first planned, turned over their swing (fdbFootprint):
@@ -242,7 +250,8 @@ export function networkSplits(s: Scad, routes: Route[], sol: Solution, p: BasePa
     const keeps = preps.map(() => [] as ReturnType<typeof W.CrossSection.union>[]);
     for (let a = 0; a < preps.length; a++) for (let b = a + 1; b < preps.length; b++) {
       const fa = foot[a], fb = foot[b];
-      if (!fa || !fb) continue;
+      // (a three-way's two blades, a lever each: one set's plates, laid out together)
+      if (!fa || !fb || preps[a].gr === preps[b].gr) continue;
       const x = fa.area.offset(c + 0.2, 'Round', 2, 24).intersect(fb.area.offset(c + 0.2, 'Round', 2, 24));
       if (x.area() < 1e-3) continue;
       // (nearer a's rails than b's: grown together, a step at a time)
@@ -298,7 +307,9 @@ export function networkSplits(s: Scad, routes: Route[], sol: Solution, p: BasePa
         if (!blockedOf(pl) && !inWay(pl, foreign, P)) { st.tside = sd; st.over = o2; st.used = specOf(o2, sd); st.plan = pl; found = true; }
       }
       if (!found) {
-        warnings.push(why0 === 'train' ? `the lever of the points at ${studsAt(gr.main)} is in the way of a train on another track: set its side on the route card, or move the points`
+        // (a three-way's two levers, one each side: its side isn't a choice)
+        if (q.blade !== undefined) warnings.push(`the ${q.blade === 0 ? 'left' : 'right'} lever of the three-way at ${studsAt(gr.main)} is in the way of ${why0 === 'train' ? 'a train on another track' : 'another points\' lever'}: move the points, or set Three-way switches worked by to One lever`);
+        else warnings.push(why0 === 'train' ? `the lever of the points at ${studsAt(gr.main)} is in the way of a train on another track: set its side on the route card, or move the points`
           : `the lever of the points at ${studsAt(gr.main)} is on another points' lever: set its side on the route card, or move the points`);
       }
     }
@@ -368,8 +379,8 @@ export function networkSplits(s: Scad, routes: Route[], sol: Solution, p: BasePa
   // (planOnly: just the levers and what's said, for the plan; none of the parts built)
   if (planOnly) {
     for (const q of preps) {
-      throughWarnings(q.gr, q.blockedOf(q.st.plan));
-      warnings.push(...q.st.plan.warnings.filter((w) => !/print bed/.test(w)), ...q.st.plan.notes.filter((w) => !warnings.includes(w)));
+      if (q.blade !== 1) throughWarnings(q.gr, q.blockedOf(q.st.plan));
+      warnings.push(...q.st.plan.warnings.filter((w) => !/print bed/.test(w) && !(q.blade === 1 && warnings.includes(w))), ...q.st.plan.notes.filter((w) => !warnings.includes(w)));
       levers.push({ toe: [q.P[0], q.P[1]], frame: q.P, set: q.st.plan.sets[0] });
     }
     return { splits: built, levers, warnings };
@@ -394,13 +405,13 @@ export function networkSplits(s: Scad, routes: Route[], sol: Solution, p: BasePa
   };
   for (const [n, q] of preps.entries()) {
     const { gr, sp, i, j, j2, P, A, B, rts, blockedOf } = q, { used, plan, pp } = q.st;
-    throughWarnings(gr, blockedOf(plan));
-    warnings.push(...plan.warnings.filter((w) => !/print bed/.test(w)), ...plan.notes.filter((w) => !warnings.includes(w)));
+    if (q.blade !== 1) throughWarnings(gr, blockedOf(plan));
+    warnings.push(...plan.warnings.filter((w) => !/print bed/.test(w) && !(q.blade === 1 && warnings.includes(w))), ...plan.notes.filter((w) => !warnings.includes(w)));
     const gm = gms[n], mech = gm.mech(0);
     // which design route (and which way round) each frame route is
     const worldOf = (rt: Route) => (rt === A ? i : rt === B ? j : j2);
     const moving: NetworkPart[] = [];
-    const tag = `points${groups.length > 1 ? n + 1 : ''}`;
+    const tag = `points${preps.length > 1 ? n + 1 : ''}`;
     const turns = gm.pointsTurns(0);
     const pts = gm.pointsParts(0).map((m, k) => clearOfPins(n, m, turns?.[k]));
     pts.forEach((m, k) => moving.push({ name: `${tag}${pts.length > 1 ? (k === 0 ? '-a' : '-b') : ''}`, color: 0x4682b4, local: m, world: place(m, P),
