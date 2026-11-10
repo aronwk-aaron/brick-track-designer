@@ -3,7 +3,7 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { BANK_MAX, type BankRamps, type Design, type DRoute, type DSeg, OPTION_DEFAULTS, type PieceOptions, RAIL_DEFAULTS, TEMPLATE_GROUPS, TEMPLATES, type Trackwork, endOf, freeName, isMono, readDesign } from './design';
-import { TrackCanvas, type OverlayItem, leverSide, leverSlides, typingIn } from './canvas';
+import { TrackCanvas, type OverlayItem, dialogOpen, leverSide, leverSlides, typingIn } from './canvas';
 import { describe } from './planner';
 import { BRICKTRACKS_COLOR, gradeOf, LEGO_COLOR, type LegoPart, legoParts, type Piece } from './build';
 import { TABLE_COLORS, type Table, tableAt } from './tables';
@@ -980,7 +980,10 @@ function updateHistoryButtons() {
 $('undo').addEventListener('click', undo);
 $('redo').addEventListener('click', redo);
 addEventListener('keydown', (e) => {
-  if (typingIn(e)) return;
+  // (a dialog open over the page: Esc closes Help (? too), and no other key is a shortcut: nothing's changed behind it)
+  const dialog = dialogOpen(), helpOpen = helpEl.classList.contains('open');
+  if (e.key === 'Escape' || (e.key === '?' && helpOpen && !typingIn(e))) { helpEl.classList.remove('open'); if (helpOpen) return; }
+  if (typingIn(e) || dialog) return;
   if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') { e.preventDefault(); (e.shiftKey ? redo : undo)(); }
   if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'y') { e.preventDefault(); redo(); }
   // (the design's file, not the browser's Save page and Open file)
@@ -991,9 +994,8 @@ addEventListener('keydown', (e) => {
   if (e.key === 's' || e.key === 'S') setMode('select');
   if (e.key === 'p' || e.key === 'P') toggle3d();
   if ((e.key === 'f' || e.key === 'F') && !e.ctrlKey && !e.metaKey) canvas.fit();
-  if (e.key === '?') helpEl.classList.toggle('open');
+  if (e.key === '?') helpEl.classList.add('open');
   if (e.key === ',') openSettings(settingsEl.hidden);
-  if (e.key === 'Escape') helpEl.classList.remove('open');
 });
 
 // Settings: a panel down the right (as the routes' down the left), shown or hidden from the toolbar (or ","), remembered.
@@ -1133,7 +1135,7 @@ $('sel-rotl').addEventListener('click', () => turnSel(90));
 $('sel-rotr').addEventListener('click', () => turnSel(-90));
 $('sel-del').addEventListener('click', () => { deleteSel(); updateSelbar(); });
 addEventListener('keydown', (e) => {
-  if (typingIn(e)) return;
+  if (typingIn(e) || dialogOpen()) return;
   const k = e.key.toLowerCase(), mod = e.ctrlKey || e.metaKey;
   if (mod && k === 'c') { e.preventDefault(); copySel(); }
   else if (mod && k === 'x') { e.preventDefault(); copySel(); deleteSel(); }

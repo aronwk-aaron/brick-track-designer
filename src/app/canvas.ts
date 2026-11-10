@@ -74,6 +74,8 @@ export function typingIn(e: KeyboardEvent) {
   const t = e.target as HTMLElement | null;
   return !!t && (t.tagName === 'INPUT' || t.tagName === 'SELECT' || t.tagName === 'TEXTAREA' || t.isContentEditable);
 }
+/** A dialog open over the page (the parts list, Help, a setting's pictures): a key pressed then isn't one of the plan's shortcuts. */
+export const dialogOpen = () => !!document.querySelector('dialog[open], #help.open, #choices.open');
 const norm180 = (a: number) => ((((a + 180) % 360) + 360) % 360) - 180;
 
 export class TrackCanvas {
@@ -242,6 +244,8 @@ export class TrackCanvas {
     this.touch();
     addEventListener('keydown', (e) => this.key(e, true));
     addEventListener('keyup', (e) => this.key(e, false));
+    // (Space let go of in another window: not held still when this one's come back to)
+    addEventListener('blur', () => { this.space = false; });
     this.resize();
   }
 
@@ -739,7 +743,7 @@ export class TrackCanvas {
   }
   private key(e: KeyboardEvent, down: boolean) {
     if (e.code === 'Space' && !down) this.space = false;
-    if (typingIn(e) || !down) return;
+    if (typingIn(e) || !down || dialogOpen()) return;
     // (Space held pans; not when a button has the focus: Space presses it)
     if (e.code === 'Space' && (e.target as HTMLElement)?.tagName !== 'BUTTON') { this.space = true; e.preventDefault(); }
     if (e.key === 'Escape' && this.drag) {
