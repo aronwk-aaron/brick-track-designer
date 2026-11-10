@@ -2,7 +2,7 @@
 // worker replaced, and a worker whose kernel broke replaced with the build tried once more, then given up on with a
 // plain message: never tried over and over (a build that looked endless).
 import { describe, expect, it } from 'vitest';
-import { type BuildMessage, BuildRunner, FATAL_TEXT, type WorkerPort } from '../src/app/buildrun';
+import { type BuildMessage, BuildRunner, dropsBuild, FATAL_TEXT, planOnlyFor, type WorkerPort } from '../src/app/buildrun';
 
 /** A runner on pretend workers and a pretend clock: the workers made, what each was sent, and the messages passed on. */
 function rig() {
@@ -139,5 +139,32 @@ describe('the build runner', () => {
     r.tick();
     expect(r.got).toHaveLength(0);
     expect(r.workers).toHaveLength(1);
+  });
+});
+
+describe('when the parts are built', () => {
+  it('only with Auto on and the 3D view showing, or when Build is pressed', () => {
+    expect(planOnlyFor(true, true)).toBe(false);
+    expect(planOnlyFor(false, true)).toBe(true);     // (Auto off: never by itself)
+    expect(planOnlyFor(true, false)).toBe(true);     // (the 3D view hidden)
+    expect(planOnlyFor(false, false)).toBe(true);
+    expect(planOnlyFor(false, true, true)).toBe(false);   // (Build pressed)
+  });
+  it('a build going when Auto goes off or the view is hidden is dropped, one that is wanted is not', () => {
+    expect(dropsBuild(true, false, true)).toBe(true);
+    expect(dropsBuild(true, true, false)).toBe(true);
+    expect(dropsBuild(true, true, true)).toBe(false);
+    expect(dropsBuild(false, false, false)).toBe(false);
+  });
+  it('the plan alone asked for in its place: the parts build\'s messages are dropped and it goes to the worker as plan only', () => {
+    const r = rig();
+    const full = r.runner.request({ n: 1 }, planOnlyFor(true, true));
+    r.say(0, { id: full, progress: 'Track', frac: 0.3 });
+    const plan = r.runner.request({ n: 1 }, planOnlyFor(true, false));
+    expect(r.workers[0].sent.at(-1)).toEqual({ id: plan, design: { n: 1 }, planOnly: true });
+    r.say(0, { id: full, pieces: [] });                       // (the old build finishing: not passed on)
+    r.say(0, { id: plan, planDone: true });
+    expect(r.got.map((d) => d.id)).toEqual([full, plan]);       // (the first's progress, before the swap; then the plan's)
+    expect(r.got.some((d) => d.pieces)).toBe(false);
   });
 });

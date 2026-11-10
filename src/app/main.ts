@@ -11,7 +11,7 @@ import { mirroredTable, movedTable, TABLE_COLORS, type Table, tableAt, tableMidd
 import { zip } from '../geom/zip';
 import { layoutParts } from './layoutparts';
 import { freeStart, type LaidFrom, PALETTE, placePart } from './palette';
-import { BuildRunner, type WorkerPort } from './buildrun';
+import { BuildRunner, dropsBuild, planOnlyFor, type WorkerPort } from './buildrun';
 import { History, loadHistory, saveHistory } from './history';
 import { fileBase as fileBaseOf, partsDownload, plainKind, printedKinds, stlDownload, turnedText } from './exports';
 import { clamp, LIMITS, type Range, rangeText } from './limits';
@@ -619,10 +619,12 @@ const hasTrack = () => design.routes.some((r) => r.segs.length > 0);
 let autoBuild = true, show3d = true;
 try { autoBuild = localStorage.getItem('btd-auto') !== '0'; show3d = localStorage.getItem('btd-3d') !== '0'; } catch { /* fine */ }
 const want3d = () => autoBuild && show3d;
+/** Auto turned off or the 3D view hidden while the parts are building: that build is dropped for the plan alone (the 3D view out of date till it's wanted again). */
+function dropBuild() { if (dropsBuild(building, autoBuild, show3d)) { stale = true; requestBuild(); } }
 /** force: the 3D view too, whatever Auto says (Build pressed, the view shown again). */
 function requestBuild(force = false) {
   clearTimeout(timer);
-  const planOnly = !force && !want3d();
+  const planOnly = planOnlyFor(autoBuild, show3d, force);
   // (nothing to build: no need to ask the worker, which would only say so)
   if (!hasTrack()) {
     runner.skip();
@@ -752,7 +754,8 @@ $('rebuild').addEventListener('click', () => { stale = false; setStatus(''); req
   b.addEventListener('click', () => {
     autoBuild = !autoBuild; show();
     try { localStorage.setItem('btd-auto', autoBuild ? '1' : '0'); } catch { /* fine */ }
-    if (autoBuild && stale) { stale = false; requestBuild(true); }
+    if (!autoBuild) dropBuild();
+    else if (stale && show3d) { stale = false; requestBuild(true); }
   });
 }
 
@@ -1195,6 +1198,7 @@ const set3d = (on: boolean) => {
 set3d(show3d);
 const toggle3d = () => {
   show3d = !show3d; set3d(show3d);
+  dropBuild();
   // (shown again, out of date: built now, if Auto's on; else it says to press Build)
   if (show3d && stale) { if (autoBuild) { stale = false; requestBuild(true); } else { $('rebuild').textContent = 'Build'; setStatus('The 3D view is built when you press Build (Auto is off).', '', true); } }
 };

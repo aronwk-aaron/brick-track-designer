@@ -93,3 +93,11 @@ export class BuildRunner {
     this.o.message(d);
   }
 }
+
+/**
+ * What a request for a build builds: just the plan's trackwork (planOnly) unless the 3D view is wanted: Auto on and the
+ * 3D view showing, or force (Build pressed). Auto off, or the view hidden, never builds the parts by itself.
+ */
+export const planOnlyFor = (auto: boolean, show3d: boolean, force = false): boolean => !force && !(auto && show3d);
+/** A parts build going when the 3D view is no longer wanted (Auto turned off, the view hidden): it's replaced by the plan alone. */
+export const dropsBuild = (building: boolean, auto: boolean, show3d: boolean): boolean => building && !(auto && show3d);

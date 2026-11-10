@@ -149,6 +149,13 @@ try {
   check(await angleIn.inputValue() === String(-Number(was0)), `Flip turns the curve the other way (${was0} then ${await angleIn.inputValue()})`);
   await page.keyboard.press('Control+z'); await page.waitForTimeout(300);
   check(await angleIn.inputValue() === was0, `and one undo puts it back (${await angleIn.inputValue()})`);
+  // with the 3D view hidden an edit builds no parts (no Building chip): only the plan's trackwork
+  await page.click('#toggle-3d');
+  await page.keyboard.press('Control+Shift+z');   // (redo: the flip again)
+  await page.waitForTimeout(700);
+  check(await page.locator('#buildstatus').isHidden(), 'an edit with the 3D view hidden starts no parts build');
+  await page.keyboard.press('Control+z'); await page.click('#toggle-3d');
+  await says(/parts? to print.*built in/);
   // a radius handle pulled in past the least says why it stopped
   const hs2 = await handles(), rad = hs2.find((h) => h.seg === 0 && h.kind === 'radius');
   if (rad) {
