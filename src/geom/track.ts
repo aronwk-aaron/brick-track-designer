@@ -202,7 +202,9 @@ export class Track {
       T(this.railEndpointLeft(), [-(g + 4), -8, 0]),
       T(s.cube([1, 4, 3.6]), [-(g + 3.8), -4, 0]),
       T(this.railEndpointRight(), [g - 4, -8, 0]),
-      ...xfs.map((xf) => T(xf < 0 ? this.railEndpointLeft() : this.railEndpointRight(), [xf - 4, -8, 0])),
+      // (each run on TONGUE_ROOT into its own rail, as a cut's tongue is: the rail stops flush with it (extrarails.ts),
+      // and on a curve the two only nearly met, the rail a loose body)
+      ...xfs.map((xf) => { const e = T(xf < 0 ? this.railEndpointLeft() : this.railEndpointRight(), [xf - 4, -8, 0]); return scadParity() ? e : s.union([e, T(e, [0, TONGUE_ROOT, 0])]); }),
       this.endpointBase(pegAndClip, studRecesses, xfs, guardX),
     ]);
   }

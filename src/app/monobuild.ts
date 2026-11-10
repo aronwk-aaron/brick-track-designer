@@ -472,13 +472,16 @@ export function buildMonorail(w: Wasm, routes: Route[], o: Partial<PieceOptions>
     const tag = switches.length > 1 ? `monorail-points${k + 1}` : 'monorail-points';
     const pts = cached(`ms:${sw.key}`, () => arena(w, () => {
       const g = monoSwitch(mono, sw.plan, fit);
-      const base = placeAt(g.base, sw.P), frame = placeAt(g.frame, sw.P);
-      const tb = fitAngle(outline(base), X, Y);
-      return { base: bake(base, tb ?? 0, sw.elev), frame: bake(frame, fitAngle(outline(frame), X, Y) ?? 0, sw.elev), fits: tb !== undefined };
+      const base = placeAt(g.base, sw.P), frame = placeAt(g.frame, sw.P), sup = placeAt(g.supports, sw.P), lever = placeAt(g.lever, sw.P);
+      const tb = fitAngle(outline(base), X, Y), tf = fitAngle(outline(frame), X, Y) ?? 0;
+      // (the frame's file with its breakaway supports; as assembled without them, the view's to show or hide)
+      return { base: bake(base, tb ?? 0, sw.elev), frame: { ...bake(frame, 0, sw.elev), stl: bake(scad.union([frame, sup]), tf).stl, supports: meshPositions(sup.getMesh(), sw.elev) },
+        lever: bake(lever, fitAngle(outline(lever), X, Y) ?? 0, sw.elev), fits: tb !== undefined };
     }, () => []));
     res.pieces.push({ name: `${tag}-base`, color: 0x9aa3ad, positions: pts.base.positions.slice(), stl: pts.base.stl.slice() });
-    res.pieces.push({ name: `${tag}-frame`, color: 0x4682b4, positions: pts.frame.positions.slice(), stl: pts.frame.stl.slice() });
-    res.volume += pts.base.volume + pts.frame.volume;
+    res.pieces.push({ name: `${tag}-frame`, color: 0x4682b4, positions: pts.frame.positions.slice(), stl: pts.frame.stl.slice(), supports: pts.frame.supports.slice() });
+    res.pieces.push({ name: `${tag}-lever`, color: 0xd4af37, positions: pts.lever.positions.slice(), stl: pts.lever.stl.slice() });
+    res.volume += pts.base.volume + pts.frame.volume + pts.lever.volume;
     if (!pts.fits) {
       const bb = pts.base.box;
       issue([(bb.min[0] + bb.max[0]) / 2, (bb.min[1] + bb.max[1]) / 2], Math.hypot(bb.max[0] - bb.min[0], bb.max[1] - bb.min[1]) / 2, `Monorail points too big for the ${X} x ${Y} print bed`);
@@ -507,29 +510,34 @@ export function buildMonorail(w: Wasm, routes: Route[], o: Partial<PieceOptions>
   // ---- supports: one part each, standing under the beam ----
   const sups = supportsAt.filter((q) => Number.isFinite(q.s));
   // (and under each switch's ends)
-  const slopeAt = (ci: number, sv: number) => (zAt(ci, sv + 1) - zAt(ci, sv - 1)) / 2;
-  const supPoses: { P: Pose; h: number; slope?: number }[] = sups.map((q) => ({ P: routePose(chains[q.c].route, q.s), h: zAt(q.c, q.s), slope: slopeAt(q.c, q.s) }));
+  // (how much higher the beam is y along it from where a support stands, at each of SUP_YS: a ramp's slope changes all
+  // the way, so its underside over a support's top isn't a plane)
+  const SUP_YS = Array.from({ length: 9 }, (_, k) => -10 + 2.5 * k);
+  const riseAt = (ci: number, sv: number) => SUP_YS.map((y) => zAt(ci, sv + y) - zAt(ci, sv));
+  const supPoses: { P: Pose; h: number; rise?: number[] }[] = sups.map((q) => ({ P: routePose(chains[q.c].route, q.s), h: zAt(q.c, q.s), rise: riseAt(q.c, q.s) }));
   if (every) for (const sw of switches) for (const e of sw.plan.ends) {
     supPoses.push({ P: [...poseToWorld(sw.P, [e[0], e[1]]), sw.P[2] + e[2]], h: sw.elev });
   }
   const seen: Pose[] = [];
   if (supPoses.length) {
     // (each as tall as its beam: whole bricks and plates)
-    // (under a ramp: exactly as tall as the beam where it stands, its top tilted to the beam's slope, the studs into its
-    // anti-studs (which lean with the beam, as they're lifted with it))
-    const supFor = (h: number, slope = 0) => {
-      const flat = Math.abs(slope) < 1e-3, bricks = Math.floor((h + 0.01) / 9.6);
+    // (under a ramp: exactly as tall as the beam where it stands, its top lifted as the beam is along it there, the
+    // studs into its anti-studs (which lean with the beam, as they're lifted with it). Tilted flat to the slope where it
+    // stands, its top was in the beam where the ramp curves back to level: 0.05 at its edges, 1 mm3 in each track end)
+    const supFor = (h: number, rise: number[] = []) => {
+      const flat = rise.every((r, k) => Math.abs(r) < 1e-3 * Math.max(1, Math.abs(SUP_YS[k]))), bricks = Math.floor((h + 0.01) / 9.6);
       const so2 = { ...so, bricks, plates: flat ? Math.max(0, Math.round((h - bricks * 9.6) / 3.2)) : (h - bricks * 9.6) / 3.2 };
-      return cached(`sup:${JSON.stringify(so2)}:${slope.toFixed(4)}`, () => arena(w, () => {
+      const riseOf = (y: number) => { const t = Math.min(SUP_YS.length - 1 - 1e-9, Math.max(0, (y - SUP_YS[0]) / 2.5)), k = Math.floor(t); return rise[k] + (rise[k + 1] - rise[k]) * (t - k); };
+      return cached(`sup:${JSON.stringify(so2)}:${flat ? '' : rise.map((r) => r.toFixed(4)).join()}`, () => arena(w, () => {
         let m = supportPart(scad, so2);
-        if (!flat) { const H = supportHeight(so2); m = m.refineToLength(2).warp((v) => { const k = Math.min(1, Math.max(0, (v[2] - (H - 8)) / 8)); v[2] += k * v[1] * slope; }); }
+        if (!flat) { const H = supportHeight(so2); m = m.refineToLength(2).warp((v) => { const k = Math.min(1, Math.max(0, (v[2] - (H - 8)) / 8)); v[2] += k * riseOf(v[1]); }); }
         return { stl: stlBytes(m.getMesh(), true), volume: m.volume(), mesh: m.getMesh() };
       }, () => []));
     };
     let n = 0;
-    for (const { P, h, slope } of supPoses) {
+    for (const { P, h, rise } of supPoses) {
       if (h < 3.2) continue; // (a beam on the baseplate: nothing to hold up)
-      const sp = supFor(h, slope ?? 0);
+      const sp = supFor(h, rise);
       if (seen.some((q) => near(q, P, 1))) continue;
       seen.push(P);
       const pos = meshPositions(sp.mesh), c = Math.cos((P[2] * Math.PI) / 180), s = Math.sin((P[2] * Math.PI) / 180);

@@ -17,7 +17,7 @@ import { poseToWorld, railPoint, routeLat, routeLength, routePose, routeSOf, rou
 import { R, T, type Man, type Scad, type Vec2 } from './scad';
 import { segDist } from './pathsplit';
 import { bankAlong, sweepRoute, trackBank } from './sweep';
-import { PLATE_H, RAIL_PROFILE, STUD, type Track } from './track';
+import { PLATE_H, RAIL_PROFILE, scadParity, STUD, type Track } from './track';
 
 const V_IN = 10;          // guard_v_in: a point this far in from its end
 const GUARD_HW = 3.0;     // guard_hw: the guard rail's half width above the bed, for keeping studs clear
@@ -25,7 +25,9 @@ const DUAL_END_IN = 2.3;  // dual_end_in: a third rail stops this far short of a
 const TAPER_N = 16;       // guard_taper_n: segments along each pointed end
 /** A third rail runs on through other track that crosses its route at this angle or more (degrees); shallower, or alongside (a switch's branch), it stops. */
 export const DUAL_CROSS = 20;
-const RAIL_IN = 3.9;      // rails with rail ends stop here, just into them (curves.scad's 3.9)
+// rails with rail ends stop here: at them, as the running rails do (crossing.ts END). (curves.scad's 3.9, just into
+// them, when matching the OpenSCAD output: that 0.1 of rail lay in the next piece's rail end, 1 mm3 at each extra rail's end)
+const railIn = () => (scadParity() ? 3.9 : 4);
 
 export const endsHas = (e: RouteEnds, atEnd: boolean) => e === 'both' || e === (atEnd ? 'end' : 'start');
 
@@ -221,7 +223,7 @@ export function extraRails(s: Scad, t: Track, routes: Route[], i: number, inStar
 
   const p0 = routePose(rt, 0), p1 = routePose(rt, L), w = c.sleeperLen + 2 * STUD;
   const atPose = (m: Man, p: [number, number, number]) => T(R(m, [0, 0, p[2]]), [p[0], p[1], 0]);
-  const cut0 = atPose(T(s.cube([w, RAIL_IN + 1, 30]), [-w / 2, -1, -5]), p0), cut1 = atPose(T(s.cube([w, RAIL_IN + 1, 30]), [-w / 2, -RAIL_IN, -5]), p1);
+  const RAIL_IN = railIn(), cut0 = atPose(T(s.cube([w, RAIL_IN + 1, 30]), [-w / 2, -1, -5]), p0), cut1 = atPose(T(s.cube([w, RAIL_IN + 1, 30]), [-w / 2, -RAIL_IN, -5]), p1);
   const parts = pieces.map(({ m, c0, c1 }) => s.difference(m, [c0 && cut0, c1 && cut1]));
   // (a point's bend past where this route's stretch ends: cut off there)
   const out0 = lo > 1e-6 || hi < x.len - 1e-6 ? [atPose(T(s.cube([w, 400, 40]), [-w / 2, -400, -5]), p0), atPose(T(s.cube([w, 400, 40]), [-w / 2, 0, -5]), p1)] : [];

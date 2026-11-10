@@ -5,13 +5,14 @@
 // 3. each moving part can be put in, the way it's built to go (assembly.shared.ts putTogether);
 // 4. joints mate: any two track parts that touch can be drawn apart some straight way, and so brought together (mates);
 // 5. every printed part prints: its file fits the print bed, lies on it (z 0) and is one solid (but for its break-out supports) (prints).
+// 6. every part's name is its own (its file's name in the zip).
 // (Rebuilt from a piece's triangles a solid can have slivers the kernel's own didn't: hence a small volume, not none.)
-// What isn't checked: an over-centre spring going on over its pins (its rings snap over their lips) and bending as the
-// slider moves; track parts going down onto a baseplate's studs; axle joints' holes lining up (no template has them).
+// What isn't checked: track parts going down onto a baseplate's studs; axle joints' holes lining up (no template has
+// them). (An over-centre spring going on over its pins and bending as the slider moves: nail-switch.test.ts.)
 import { expect, it } from 'vitest';
 import { arena, kernel } from '../src/geom/kernel';
 import { buildDesign, clearBuildCache, type Piece } from '../src/app/build';
-import { OPTION_DEFAULTS, type PieceOptions, TEMPLATE_GROUPS, TEMPLATES } from '../src/app/design';
+import { type Design, OPTION_DEFAULTS, type PieceOptions, TEMPLATE_GROUPS, TEMPLATES } from '../src/app/design';
 import { putTogether, stlPositions } from './assembly.shared';
 
 type Wasm = Awaited<ReturnType<typeof kernel>>;
@@ -117,7 +118,7 @@ const STEPS = [0.25, 0.5, 0.75, 1];
  *   slider's travel), clear of that too, its tip free in the fork; left behind, it's in the fork's side: it drives it;
  * - a blade follows the slider: at each step there's an angle of its swing where it shares no more with the slider than at
  *   rest (the preload, sprung; nothing, rigid), and left where it was as the slider goes to its other end, its post runs into it.
- * (The over-centre spring bends as the slider moves: its shape between isn't modelled, so it's checked as assembled only.)
+ * (The over-centre spring bends as the slider moves: checked here as assembled only; along its travel in nail-switch.test.ts.)
  */
 export function moves(w: Wasm, ps: Part[], o: PieceOptions, seen?: Seen) {
   const out: string[] = [];
@@ -235,6 +236,8 @@ const ROUND = 150;
 /** Everything wrong with a build's pieces. */
 export function assembledProblems(w: Wasm, pieces: Piece[], o: PieceOptions, log?: (s: string) => void): string[] {
   const out = new Set<string>(), tris = pieces.reduce((t, p) => t + p.positions.length / 9, 0);
+  // (6. every part's name is its own: it's its file's name in the zip)
+  for (const n of new Set(pieces.map((p) => p.name).filter((n2, k, all) => all.indexOf(n2) !== k))) out.add(`${pieces.filter((p) => p.name === n).length} parts are named ${n}`);
   // (a big layout: in strips across its longer side, each with what's within ROUND of it; what's found twice, where
   // strips overlap, said once. A part at a strip's edge may lack a neighbour there: found in the strip it's well inside)
   const box = (p: Piece) => { const b = [Infinity, Infinity, -Infinity, -Infinity]; for (let k = 0; k < p.positions.length; k += 3) { b[0] = Math.min(b[0], p.positions[k]); b[1] = Math.min(b[1], p.positions[k + 1]); b[2] = Math.max(b[2], p.positions[k]); b[3] = Math.max(b[3], p.positions[k + 1]); } return b; };
@@ -269,7 +272,7 @@ function problemsOf(w: Wasm, pieces: Piece[], ps: Part[], unsolid: string[], o: 
   // (3. each moving part can be put in, the way it's built to go: assembly.shared.ts putTogether, with the app's defaults'
   // plate-style points: the slider down through the lever's opening and along its tunnel, the blades on from above (or
   // tilted in under their lip, or on open), the lever between its ears, a lid last)
-  // (not the monorail's points, nor an over-centre spring, whose rings snap over its pins' lips: not modelled going on)
+  // (not the monorail's points, nor an over-centre spring, whose rings snap over its pins' lips: nail-switch.test.ts)
   if (ps.some((q) => isMoving(q.p.name))) out.push(...arena(w, () => putTogether(w, ps.map((q) => q.p).filter((p) => !/^monorail|-spring$/.test(p.name)), { fromTop: o.pointsModule === 'layers', bladesTop: o.mechStyle !== 'tines' }, new Map(ps.map((q) => [q.p.positions, q.m])), seen && ((p) => seen.own(p))), () => []));
   out.push(...mates(w, ps, o, log, seen));
   return out;
@@ -279,48 +282,45 @@ function problemsOf(w: Wasm, pieces: Piece[], ps: Part[], unsolid: string[], o: 
 export interface Known { problems: RegExp[]; warning?: RegExp; why: string }
 
 /**
- * What doesn't go together yet. Each is a fault found by these checks and not yet put right (why: what it is), but the
- * first, which the build says itself.
+ * What doesn't go together yet. Each is a fault found by these checks and not yet put right (why: what it is). (A
+ * design limit the build says itself has a warning: nail-switch.test.ts has one, a double slip's middle points as nail switches.)
  */
 export const KNOWN: Record<string, Known> = {
   'Double slip (22.5°)': { problems: [/^points\d(-spring|-throw)? /], warning: /are too close for their springs/,
     why: 'its middle points, one blade each and side by side, as nail switches: each set\'s spring lies where the next set\'s blade plate is, and their sliders run into each other (80 mm3); so neither moves clear, nor goes in; and a blade swung over is 9.4 mm3 in the track' },
-  'Bridge with guard rails': { problems: [/^track\d and track\d overlap: 3\.69 mm3/],
-    why: 'at each cut the guard rails\' ends reach across it into the next part\'s (1.1 mm3 each) and its end posts (0.9, 0.8 mm3)' },
-  'Dual gauge track': { problems: [/^track\d and track\d overlap: (7\d|1[12]\d)\.\d+ mm3/],
-    why: 'each part\'s end supports (footing and walls, under its third rail\'s end) are joined to the part, not loose, and reach 7 mm under the next part' },
   'Double slip R40 45°': { problems: [/^track1 and points3-throw overlap: 0\.7\d mm3/, /^points3-throw slid [\d.]+ mm: 0\.7\d mm3 in track1/, /^points3-throw can't slide in along its tunnel/],
     why: 'one slider\'s bar is 0.5 into the floor of its groove over 12 mm, all along its travel' },
   ...Object.fromEntries(['Double-track return loop (turning right)', 'Double-track return loop (turning left)'].map((name): [string, Known] => [name, {
     problems: [/^track-bought-BrickTracksS0\d-\d+ and switch\d-ballast2 overlap: (10|21)\.\d+ mm3/, /^track74-ballast and track75-ballast can't be brought together: .* 6\.\d mm3/],
     why: 'the bought switch\'s printed ballast is in the bought straights at its ends (0.8 to 3 mm, 4.8 x 1.8 mm each: 11 and 22 mm3); two of the curve\'s ballast parts hook into each other (6 mm3 in the way whichever way they\'re drawn apart)' }])),
-  'X yard (6 tracks, single slips)': { problems: [/^track\d+ and switch-bought-BrickTracksR104switch(left|right)-\d overlap/, /^track\d+ and switch\d-ballast2 overlap: 52\d\.\d+ mm3/, /^track1 and track7 overlap: 3\.7\d mm3/],
+  'X yard (6 tracks, single slips)': { problems: [/^track\d+ and switch-bought-BrickTracksR104switch(left|right)-\d overlap/, /^track\d+ and switch\d-ballast2 overlap: 52\d\.\d+ mm3/, /^track3 and track9 overlap: 3\.7\d mm3/],
     why: 'each bought switch\'s printed ballast is in the printed track part beside it (20.6 x 15.3 mm, 525 mm3, four places), and the switch as shown (a slab of its footprint) in the printed track at its ends; two parts share 3.8 mm3 at one joint' },
-  'Monorail ramp (as LEGO\'s)': { problems: [/^monorail-Low\+Ramp\+High-[23] and monorail-support2 overlap: 1\.0\d mm3/], why: 'the support\'s top is 1.5 into the two track ends over it (15.8 x 7.8 mm)' },
-  'Monorail switch (experimental)': { problems: [/^monorail-points-base and monorail-points-frame overlap: 47\d\d\.\d+ mm3/, /^monorail-points-frame is in 11 pieces/, /^monorail-points-base and monorail-points-frame can't be brought together/],
-    why: 'the moving frame as shown is 11 loose bodies and lies in its base (its side walls, 2.2 x 48 mm each)' },
 };
+
+/** A design built as the app builds it (its defaults) and checked: nothing wrong but what's known (k), which must still be found. */
+export async function goesTogether(name: string, design: Design, k?: Known) {
+  const saved = { ...OPTION_DEFAULTS };
+  Object.assign(OPTION_DEFAULTS, APP);
+  try {
+    const w = await kernel();
+    // (each design's own build: one kernel holding them all runs out of memory)
+    clearBuildCache();
+    const d = structuredClone(design), b = buildDesign(w, d);
+    // (its pieces are plain data: the build's own solids let go before the checks make theirs)
+    clearBuildCache();
+    const problems = assembledProblems(w, b.pieces, { ...APP, ...d.options });
+    const allowed = k?.problems ?? [];
+    expect(problems.filter((q) => !allowed.some((re) => re.test(q))).join('; ')).toBe('');
+    // (what's allowed is still there (else it comes off the list), and said by the build where it's a limit)
+    for (const re of allowed) expect(problems.some((q) => re.test(q)), `${name}: ${re} is no longer found: take it off the list`).toBe(true);
+    if (k?.warning) expect(b.info.warnings.some((q) => k.warning!.test(q)), `${name}: the build doesn't say ${k.warning}`).toBe(true);
+  } finally { Object.assign(OPTION_DEFAULTS, saved); clearBuildCache(); }
+}
 
 /** The templates of these groups (only: just these of them), each built as the app builds it and checked. */
 export function assembledSuite(groups: string[], only?: string[], known: Record<string, Known> = KNOWN) {
-  for (const [g, names] of TEMPLATE_GROUPS) if (groups.includes(g)) for (const name of names) if (!only || only.includes(name)) it(`${g}: ${name} goes together`, async () => {
-    const saved = { ...OPTION_DEFAULTS };
-    Object.assign(OPTION_DEFAULTS, APP);
-    try {
-      const w = await kernel();
-      // (each design's own build: one kernel holding them all runs out of memory)
-      clearBuildCache();
-      const d = structuredClone(TEMPLATES[name]), b = buildDesign(w, d);
-      // (its pieces are plain data: the build's own solids let go before the checks make theirs)
-      clearBuildCache();
-      const problems = assembledProblems(w, b.pieces, { ...APP, ...d.options });
-      const k = known[name], allowed = k?.problems ?? [];
-      expect(problems.filter((q) => !allowed.some((re) => re.test(q))).join('; ')).toBe('');
-      // (what's allowed is still there (else it comes off the list), and said by the build where it's a limit)
-      for (const re of allowed) expect(problems.some((q) => re.test(q)), `${name}: ${re} is no longer found: take it off the list`).toBe(true);
-      if (k?.warning) expect(b.info.warnings.some((q) => k.warning!.test(q)), `${name}: the build doesn't say ${k.warning}`).toBe(true);
-    } finally { Object.assign(OPTION_DEFAULTS, saved); clearBuildCache(); }
-  });
+  for (const [g, names] of TEMPLATE_GROUPS) if (groups.includes(g)) for (const name of names) if (!only || only.includes(name))
+    it(`${g}: ${name} goes together`, () => goesTogether(name, TEMPLATES[name], known[name]));
 }
 
 /** The reference trackwork's templates from one to another (by their place in the list): a file's worth. */

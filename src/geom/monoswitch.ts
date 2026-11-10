@@ -108,8 +108,15 @@ export function planSwitch(mainRt: Route, mainGaps: RackGap[], branchRt: Route, 
     mainLen, branchLen, ends: [[0, 0, 0], endOf(lT), endOf(rT)] };
 }
 
-/** The switch piece and its sliding frame (as assembled, set for the branch), in the switch's frame. */
-export function monoSwitch(mono: Mono, p: SwitchPlan, fit: number): { base: Man; frame: Man } {
+/**
+ * The switch piece, its sliding frame and the frame's hand lever (as assembled, set for the branch), in the switch's
+ * frame. supports: the frame's breakaway print supports, loose from it, printed with it.
+ * (The frame and its lever were one part, which couldn't be put in: its bars slide into their slots from the side,
+ * but its lever's arm lies in a channel under the deck, walled in all round. So the lever's a part of its own: the
+ * frame slides in from either side, then the lever goes up into its channel from below, its peg into the frame's
+ * last bar; on a baseplate it can't drop out.)
+ */
+export function monoSwitch(mono: Mono, p: SwitchPlan, fit: number): { base: Man; frame: Man; supports: Man; lever: Man } {
   const s = mono.s, w = s.w, { l, r, knobDir, travel, z0, z1, barYs } = p;
   const bt = MONO.beamTop, rhw = MONO.ridgeHw, hw = MONO.beamHw;
   const gaps = (rt: Route) => (rt === l ? p.gl : p.gr);
@@ -153,8 +160,12 @@ export function monoSwitch(mono: Mono, p: SwitchPlan, fit: number): { base: Man;
   ]));
   add.push(leverSweep(fit + leverWall).extrude(bt));
   // fixed ridges: the main's before the zone, each route's after it
-  add.push(ridgeSeg(main, 0, z0));
-  for (const rt of [l, r]) add.push(ridgeSeg(rt, at(rt, z1), routeLength(rt)));
+  // (each cut off along the zone's edge, the way the frame slides, and the frame's racks likewise: cut square to its
+  // own route, the branch's rack's slanted end ran into the fixed ridge's as the frame slid across, 5 mm3 of it)
+  const yBand = (y0: number, y1: number) => T(s.cube([4000, y1 - y0, 100]), [-2000, y0, -50]);
+  const over = 3;
+  add.push(s.intersection(ridgeSeg(main, 0, at(main, z0) + over), yBand(-100, z0)));
+  for (const rt of [l, r]) add.push(s.intersection(ridgeSeg(rt, at(rt, z1) - over, routeLength(rt)), yBand(z1, 1e4)));
   const ends: Pose[] = p.ends;
   for (const P of ends) add.push(placeAt(mono.endAdds(), P));
   const cut: Man[] = [];
@@ -171,35 +182,38 @@ export function monoSwitch(mono: Mono, p: SwitchPlan, fit: number): { base: Man;
 
   // ---- the sliding frame ----
   const off = knobDir * travel, fr: Man[] = [];
-  fr.push(ridgeSeg(sel, at(sel, z0) + c, at(sel, z1) - c, 0, 0));
-  fr.push(ridgeSeg(other, at(other, z0) + c, at(other, z1) - c, off, 0));
+  const racks = [ridgeSeg(sel, at(sel, z0) - over, at(sel, z1) + over, 0, 0), ridgeSeg(other, at(other, z0) - over, at(other, z1) + over, off, 0)].map((m) => s.intersection(m, yBand(z0 + c, z1 - c)))
+    // (a scrap of a tooth the cut leaves loose past the rack's last gap, 0.2 mm3: left out)
+    .map((m) => s.union(m.decompose().filter((q) => q.volume() > 5)));
+  fr.push(...racks);
   for (const y of barYs) {
     const [xa, xb] = frameBarXs(y);
     fr.push(T(s.cube([xb - xa, barW, barH + 0.02]), [xa, y - barW / 2, bt - barH - 0.01]));
     fr.push(T(s.cube([xb - xa, barW + 2 * barFlange, barFlange]), [xa, y - barW / 2 - barFlange, bt - barH - barFlange]));
   }
   fr.push(T(w.Manifold.sphere(0.7, 12), [knobBarX, barYs[1], bt - barH - barFlange - 0.4]));
-  fr.push(T(leverPlan().extrude(armZ[1] - armZ[0] + 0.01), [0, 0, armZ[0]]));
-  fr.push(T(s.cube([leverW, leverL, bt - armZ[0]]), [armC[0] - leverW / 2, armC[1] - leverL / 2, armZ[0]]));
-  for (const dy of [-MONO.stud / 2, MONO.stud / 2]) fr.push(T(s.cylinder(1.7, 2.4, 2.4, 32), [armC[0], armC[1] + dy, bt - 0.01]));
+  // the lever: its arm under the deck, its slide with two studs, and a peg up into the frame's last bar's end
+  const pegR = 1.2, pegH = 2.4, lv: Man[] = [];
+  lv.push(T(leverPlan().extrude(armZ[1] - armZ[0]), [0, 0, armZ[0]]));
+  lv.push(T(s.cube([leverW, leverL, bt - armZ[0]]), [armC[0] - leverW / 2, armC[1] - leverL / 2, armZ[0]]));
+  for (const dy of [-MONO.stud / 2, MONO.stud / 2]) lv.push(T(s.cylinder(1.7, 2.4, 2.4, 32), [armC[0], armC[1] + dy, bt - 0.01]));
+  lv.push(T(s.cylinder(pegH + 0.01, pegR, pegR, 24), [armA[0], armA[1], armZ[1] - 0.01]));
+  const frame = s.difference(s.union(fr), [T(s.cylinder(pegH + 0.2 + 0.01, pegR + 0.1, pegR + 0.1, 24), [armA[0], armA[1], armZ[1] - 0.01])]);
   // breakaway print supports (thin walls, 0.25 below what they hold, loose from it): as built the frame stands on its
-  // lever arm, its bars and racks above the bed; walls under each bar's flange and under each rack between the bars
+  // detent's bump, its bars and racks above the bed; walls under each bar's flange and under each rack between the bars
   // hold them up while it prints, and snap off after (monorail_switch.scad's frame needed the slicer's supports)
-  const zMin = armZ[0], gap = 0.25, rect = (wx: number, wy: number, x: number, y: number) => w.CrossSection.square([wx, wy]).translate([x, y]);
-  const keepOut = w.CrossSection.union([
-    ...barYs.map((y) => { const [xa, xb] = frameBarXs(y); return rect(xb - xa, barW + 2 * barFlange, xa, y - barW / 2 - barFlange); }),
-    leverPlan(), rect(leverW, leverL, armC[0] - leverW / 2, armC[1] - leverL / 2),
-  ]).offset(0.4, 'Miter', 1000);
+  const zMin = bt - barH - barFlange - 0.4 - 0.7, gap = 0.25, rect = (wx: number, wy: number, x: number, y: number) => w.CrossSection.square([wx, wy]).translate([x, y]);
+  const keepOut = w.CrossSection.union(barYs.map((y) => { const [xa, xb] = frameBarXs(y); return rect(xb - xa, barW + 2 * barFlange, xa, y - barW / 2 - barFlange); })).offset(0.4, 'Miter', 1000);
   const sup: Man[] = [];
   for (const y of barYs) {
     const [xa, xb] = frameBarXs(y), h = bt - barH - barFlange - gap - zMin;
     for (const yy of [y - barW / 2 - barFlange + 0.2, y + barW / 2 + barFlange - 0.8])
-      sup.push(T(s.extrude(rect(xb - xa - 2, 0.6, xa + 1, yy).subtract(leverPlan().offset(0.4, 'Miter', 1000)), h), [0, 0, zMin]));
+      sup.push(T(s.extrude(rect(xb - xa - 2, 0.6, xa + 1, yy), h), [0, 0, zMin]));
   }
-  for (const rs of [ridgeSeg(sel, at(sel, z0) + c, at(sel, z1) - c, 0, 0), ridgeSeg(other, at(other, z0) + c, at(other, z1) - c, off, 0)]) {
+  for (const rs of racks) {
     // (a strip under the rack's middle: the footprint with its teeth's gaps closed, shrunk)
     const fp = rs.slice(bt + 0.5).offset(1, 'Round').offset(-1, 'Round'), ring = fp.offset(-(MONO.ridgeHw - 1.2), 'Round').subtract(keepOut);
     if (ring.area() > 1) sup.push(T(s.extrude(ring, bt - gap - zMin), [0, 0, zMin]));
   }
-  return { base, frame: s.union([...fr, ...sup]) };
+  return { base, frame, supports: s.union(sup), lever: s.union(lv) };
 }

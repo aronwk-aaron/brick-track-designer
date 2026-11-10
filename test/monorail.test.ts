@@ -177,7 +177,7 @@ describe('monorail', { timeout: 120000 }, () => {
     expect(up.info.warnings.filter((t) => /runs into train track/.test(t))).toEqual([]);
     expect(up.pieces.filter((p) => /support/.test(p.name)).length).toBeGreaterThanOrEqual(2);
   });
-  it('monorail points where a branch leaves the main route: the switch and its sliding frame, the rest plain beam', async () => {
+  it('monorail points where a branch leaves the main route: the switch, its sliding frame and the frame\'s lever, the rest plain beam', async () => {
     const d: Design = { version: 1, gaugeStuds: 4, options: { monoLabels: 'none' }, routes: [
       mono({ name: 'Main', x: 0, y: -4, heading: 0, segs: [{ kind: 'straight', studs: 44 }] }),
       mono({ name: 'Branch', x: 0, y: 0, heading: 0, segs: [{ kind: 'curve', radius: 28, angle: 45 }, { kind: 'straight', studs: 8 }] }),
@@ -188,7 +188,43 @@ describe('monorail', { timeout: 120000 }, () => {
     const names = b.pieces.map((p) => p.name);
     expect(names).toContain('monorail-points-base');
     expect(names).toContain('monorail-points-frame');
+    expect(names).toContain('monorail-points-lever');
     expect(b.info.switches).toBe(1);
     expect(MONO.rackPitch).toBe(1.6);
   });
+  // (the frame's bars slide into their slots across the deck from the side away from the lever; the lever, a part of its
+  // own, goes up into its channel from below, its peg into the frame's last bar. One part, the lever's arm was walled in.)
+  for (const [name, branch] of [['a branch to the right', 45], ['a branch to the left', -45]] as const)
+    it(`monorail points, ${name}: the frame slides in and across its travel clear of the switch, its lever goes in from below and moves with it`, async () => {
+      const d: Design = { version: 1, gaugeStuds: 4, options: { monoLabels: 'none' }, routes: [
+        mono({ name: 'Main', x: 0, y: -4, heading: 0, segs: [{ kind: 'straight', studs: 44 }] }),
+        mono({ name: 'Branch', x: 0, y: 0, heading: 0, segs: [{ kind: 'curve', radius: 28, angle: branch }, { kind: 'straight', studs: 8 }] }),
+      ] };
+      const w = await kernel(), b = buildDesign(w, d), travel = 27;
+      const man = (n: string, P = b.pieces.find((q) => q.name === n)!.positions) => { const mesh = new w.Mesh({ numProp: 3, vertProperties: new Float32Array(P), triVerts: new Uint32Array(P.length / 3).map((_, i) => i) }); mesh.merge(); return new w.Manifold(mesh); };
+      const base = man('monorail-points-base'), frame = man('monorail-points-frame'), lever = man('monorail-points-lever');
+      // (each one solid; the frame's breakaway supports are in its file only)
+      for (const m of [base, frame, lever]) expect(m.decompose().filter((q) => q.volume() > 0.01).length).toBe(1);
+      const fp = b.pieces.find((q) => q.name === 'monorail-points-frame')!;
+      expect(fp.supports!.length).toBeGreaterThan(0);
+      expect(fp.stl.length).toBeGreaterThan(84 + (fp.positions.length / 9) * 50);
+      expect(frame.intersect(base).volume()).toBeLessThan(0.01);
+      expect(lever.intersect(base).volume()).toBeLessThan(0.01);
+      expect(lever.intersect(frame).volume()).toBeLessThan(0.01);
+      // (which way it slides: toward the side its lever isn't on; set for the branch as assembled, for the main at its travel's end)
+      const lb = lever.boundingBox(), fb = frame.boundingBox(), dir = (lb.min[0] + lb.max[0]) / 2 > (fb.min[0] + fb.max[0]) / 2 ? -1 : 1;
+      // (across its travel, the lever with it: in the switch only by its detent's bump (0.75 mm3 between its two holes))
+      for (let k = 0; k <= 27; k++) {
+        const dx = (dir * travel * k) / 27;
+        expect(frame.translate([dx, 0, 0]).intersect(base).volume(), `the frame ${dx} along`).toBeLessThan(1);
+        expect(lever.translate([dx, 0, 0]).intersect(base).volume(), `the lever ${dx} along`).toBeLessThan(0.01);
+      }
+      expect(frame.translate([dir * travel, 0, 0]).intersect(base).volume()).toBeLessThan(0.01);
+      // (and stopped at each end: the lever a little further is in its housing's wall)
+      for (const dx of [-dir * 1.5, dir * (travel + 1.5)]) expect(lever.translate([dx, 0, 0]).intersect(base).volume()).toBeGreaterThan(1);
+      // (going in: the frame from the far side, all the way; then the lever from below, clear of both, and held by its peg)
+      for (const dx of [40, 60, 90, 130, 200]) expect(frame.translate([dir * dx, 0, 0]).intersect(base).volume(), `the frame ${dx} out`).toBeLessThan(1);
+      for (const dz of [0.5, 1, 2, 4, 8, 14]) expect(lever.translate([0, 0, -dz]).intersect(w.Manifold.union([base, frame])).volume(), `the lever ${dz} down`).toBeLessThan(0.01);
+      for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) expect(lever.translate([dx, dy, 0]).intersect(frame).volume()).toBeGreaterThan(0.05);
+    });
 });
