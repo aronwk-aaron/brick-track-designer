@@ -391,6 +391,7 @@ export class TrackCanvas {
     el.addEventListener('touchcancel', end, { passive: false });
   }
   private down(e: MouseEvent) {
+    this.syncActive();
     // (the right button pans, drawing or not: a right click without a drag stops the track being drawn)
     if (e.button === 1 || e.button === 2 || this.space) {
       this.panning = { x: e.clientX, y: e.clientY, ox: this.ox, oy: this.oy, right: e.button === 2 };
@@ -766,6 +767,13 @@ export class TrackCanvas {
     }
   }
   stopDrawing() { this.active = undefined; this.draw(); }
+  /** The track being drawn carries on from where its route ends now (the route changed on its card, turned or mirrored since the last click); a route that's gone: nothing being drawn. */
+  private syncActive() {
+    const a = this.active;
+    if (!a || a.route === undefined) return;
+    const r = this.host.design().routes[a.route];
+    if (!r) this.active = undefined; else a.end = follow(r, r.segs);
+  }
 
   /** Heading for a new track from an empty grid point: the 22.5-degree direction nearest the mouse. */
   private freeHeading(st: Pose, w: [number, number]) {
@@ -836,6 +844,7 @@ export class TrackCanvas {
   }
 
   draw() {
+    this.syncActive();
     this.host.status?.(this.hint(), this.mouse ? this.snap(this.mouse) : undefined);
     const c = this.ctx, dpr = devicePixelRatio, W = this.el.width / dpr, H = this.el.height / dpr;
     c.setTransform(dpr, 0, 0, dpr, 0, 0);

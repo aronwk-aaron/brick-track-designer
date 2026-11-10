@@ -164,8 +164,9 @@ function bankFields(sg: DSeg, mono: boolean): HTMLElement[] {
   ];
 }
 
-// Which route cards are open (by index); the selected one always is.
-const openCards = new Set<number>();
+// Which route cards are open (by the route's name, as the trackwork knows it: its place in the list changes as others are deleted or joined); the selected one always is.
+const openCards = new Set<string>();
+const cardId = (r: DRoute, i: number) => r.name || String(i);
 
 /** The route cards' sections open (by title), the same for every card, remembered in this browser. */
 const openParts: Set<string> = (() => { try { const v = JSON.parse(localStorage.getItem('btd-card-parts') ?? 'null'); if (Array.isArray(v)) return new Set<string>(v); } catch { /* (none kept) */ } return new Set(['Shape']); })();
@@ -288,15 +289,15 @@ function render() {
     const box = document.createElement('details'); box.className = 'route';
     const sel = i === canvas?.selected;
     if (sel) box.classList.add('selected');
-    box.open = sel || openCards.has(i);
+    box.open = sel || openCards.has(cardId(r, i));
     const sum = document.createElement('summary');
     const title = document.createElement('b'); title.textContent = r.name || `Route ${i + 1}`;
     const what = document.createElement('span'); what.textContent = r.segs.length ? describe(r.segs) : 'empty';
     sum.append(title, what);
     sum.addEventListener('click', (e) => {
       e.preventDefault();
-      if (sel) { openCards.delete(i); canvas.selected = undefined; }
-      else { openCards.add(i); canvas.selected = i; }
+      if (sel) { openCards.delete(cardId(r, i)); canvas.selected = undefined; }
+      else { openCards.add(cardId(r, i)); canvas.selected = i; }
       render(); canvas.draw();
     });
     const body = document.createElement('div'); body.className = 'body';
@@ -317,6 +318,7 @@ function render() {
       if (!v || design.routes.some((q, j) => j !== i && q.name === v)) { name.value = r.name; setStatus(infoEl.textContent ?? '', v ? `There's already a route called ${v}: names must differ` : 'A route needs a name', false, true); return; }
       // (just a name: the trackwork's references to it renamed too, no rebuild)
       const was = r.name;
+      if (openCards.delete(cardId(r, i))) openCards.add(v);
       r.name = v;
       for (const e of Object.values(design.trackwork?.points ?? {})) if (e.drop) e.drop = e.drop.map((id) => (id === was ? v : id));
       changed(true, true, false);
@@ -406,7 +408,12 @@ function render() {
     const more = document.createElement('div'); more.className = 'row';
     more.append(
       btn('New route from its end', () => { const e = endOf(design, i); design.routes.push({ name: freeName(design, 'R'), ...e, segs: [{ kind: 'straight', studs: 16 }], ...(isMono(r) && { system: 'monorail' as const }) }); }),
-      btn('Delete', () => { design.routes.splice(i, 1); if (canvas.selected === i) canvas.selected = undefined; openCards.clear(); }),
+      btn('Delete', () => {
+        // (the routes after it move up one: the selection stays on the routes it was on)
+        const keep = canvas.selection().filter((j) => j !== i).map((j) => (j > i ? j - 1 : j));
+        design.routes.splice(i, 1); openCards.clear(); canvas.stopDrawing();
+        canvas.selected = keep[0]; canvas.extra = new Set(keep.slice(1)); updateSelbar();
+      }),
     );
     more.lastElementChild!.className = 'danger';
     shape.append(add); body.append(more);
@@ -799,7 +806,7 @@ function updateLegend() {
 }
 /** A different design (a template, a file, undo or redo): the toolbar and the forms show it, nothing selected. */
 function replaced() {
-  canvas.setSelection([]); openCards.clear(); twSig = ''; renderOptions();
+  canvas.stopDrawing(); canvas.setSelection([]); openCards.clear(); twSig = ''; renderOptions();
 }
 
 const download = (blob: Blob, name: string) => {
@@ -1098,7 +1105,7 @@ function copySel() {
 }
 function deleteSel() {
   for (const i of selected().sort((a, b) => b - a)) design.routes.splice(i, 1);
-  canvas.setSelection([]); openCards.clear(); changed(true);
+  canvas.stopDrawing(); canvas.setSelection([]); openCards.clear(); changed(true);
 }
 function pasteClip() {
   if (!clipboard.length) return;
