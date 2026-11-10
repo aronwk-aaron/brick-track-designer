@@ -334,6 +334,9 @@ function drawForms() {
       else { openCards.add(cardId(r, i)); canvas.selected = i; }
       render(); canvas.draw();
     });
+    // (a folded card is its heading only: its form is made when it's opened, which draws the cards again. A big layout's
+    // hundreds of folded cards, each with its whole form, made every click on the plan slow)
+    if (!box.open) { box.append(sum); routesEl.append(box); return; }
     const body = document.createElement('div'); body.className = 'body';
     // (the card in folding sections, each remembered open or shut for every card: only the shape open to start with)
     const part = (title: string, note = '') => {
