@@ -10,7 +10,7 @@ import { BRICKTRACKS_COLOR, gradeOf, LEGO_COLOR, type LegoPart, legoParts, type 
 import { movedTable, TABLE_COLORS, type Table, tableAt, tableOutline } from './tables';
 import { zip } from '../geom/zip';
 import { layoutParts } from './layoutparts';
-import { freeStart, PALETTE, placePart } from './palette';
+import { freeStart, type LaidFrom, PALETTE, placePart } from './palette';
 import { BuildRunner, type WorkerPort } from './buildrun';
 import { History } from './history';
 import { fileBase as fileBaseOf, partsDownload, plainKind, printedKinds, stlDownload } from './exports';
@@ -331,11 +331,19 @@ function renderPalette() {
   body.replaceChildren();
   const sel = canvas.selection().filter((i) => i < design.routes.length), at = sel.length === 1 ? sel[0] : undefined;
   const lay = (id: string, turn = 1) => {
-    const { next } = placePart(design, id, at, turn);
+    const { next } = placePart(design, id, at, turn, paletteFrom);
     canvas.setSelection([next]);
   };
   const note = (t: string, warn = false) => { const p = document.createElement('div'); p.className = 'tnote'; if (warn) p.style.color = 'var(--warn, #c0392b)'; p.textContent = t; body.append(p); };
   note(at !== undefined ? `Laid on the end of ${design.routes[at].name || `route ${at + 1}`}.` : sel.length > 1 ? 'Several routes selected: each part starts a new route. Select one to lay parts on its end.' : 'Nothing selected: the first part starts a new route; the next go on its end.');
+  if (at !== undefined) {
+    const f = document.createElement('label'); f.className = 'pfrom'; f.title = 'Switches: which end of the switch goes on the end of the selected route. The route goes on through the switch to its toe; the other way out of the toe is a new route.';
+    const sp = document.createElement('span'); sp.textContent = 'Switch laid from its';
+    const sel = document.createElement('select');
+    sel.append(new Option('toe (blades)', 'toe'), new Option('straight end', 'straight'), new Option('branch end', 'branch'));
+    sel.value = paletteFrom; sel.addEventListener('change', () => { paletteFrom = sel.value as LaidFrom; });
+    f.append(sp, sel); body.append(f);
+  }
   for (const maker of ['LEGO', 'BrickTracks'] as const) {
     const g = document.createElement('div'); g.className = 'pgroup';
     const h = document.createElement('b'), sw = document.createElement('i');
@@ -357,6 +365,8 @@ function renderPalette() {
 }
 
 // ---------- a full circle ----------
+/** Switches: which end sits on the selected route's end (the toe, the end of the straight, or of the branch). */
+let paletteFrom: LaidFrom = 'toe';
 let circleR = 40, circleN = 16, circleNEdited = false;
 /** Full circle: a radius and a number of pieces; says what a piece is (its size, and whether it fits the bed) before it's added. */
 function renderCircle() {

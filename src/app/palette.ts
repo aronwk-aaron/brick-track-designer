@@ -1,6 +1,7 @@
 // The parts palette: bought track pieces (LEGO's and BrickTracks') to lay one at a time, each at the selected route's
 // end (or as a new route), so a design comes out as those pieces exactly: the build finds them and lists them to buy.
 import { type Design, type DSeg, endOf, freeName } from './design';
+import { follow } from './planner';
 
 const sin = (d: number) => Math.sin((d * Math.PI) / 180), cos = (d: number) => Math.cos((d * Math.PI) / 180);
 /** The short straight on BrickTracks' R104 switch's branch and their R104B curve, studs (boughtswitch.ts BT_LEAD). */
@@ -47,9 +48,10 @@ export function freeStart(d: Design): { x: number; y: number; heading: number } 
  * no route, as a new route (at the origin, or below the routes there are). Changes the design; returns the route to
  * lay the next part on (the one it continues), and the new routes' indices.
  */
-export function placePart(d: Design, id: string, at: number | undefined, turn = 1): { next: number; added: number[] } {
+export function placePart(d: Design, id: string, at: number | undefined, turn = 1, from: LaidFrom = 'toe'): { next: number; added: number[] } {
   const p = PALETTE.find((q) => q.id === id);
   if (!p) throw new Error(`no part ${id}`);
+  if (from !== 'toe' && p.branch && at !== undefined && d.routes[at]) return placeFromFar(d, p, at, turn, from);
   const segs = p.segs(turn), added: number[] = [];
   let start: { x: number; y: number; heading: number };
   if (at !== undefined && d.routes[at]) {
@@ -68,4 +70,31 @@ export function placePart(d: Design, id: string, at: number | undefined, turn = 
     added.push(d.routes.length - 1);
   }
   return { next: at, added };
+}
+
+/** Which end of a switch sits on the selected route's end: its toe (where the blades are), the end of its straight, or the end of its branch. */
+export type LaidFrom = 'toe' | 'straight' | 'branch';
+
+/** A route's segments walked the other way: last first, the curves turned the other way round. */
+const reverseSegs = (segs: DSeg[]): DSeg[] => [...segs].reverse().map((s) => (s.kind === 'curve' ? { ...s, angle: -s.angle } : { ...s }));
+
+/**
+ * A switch laid from one of its far ends: that end on the selected route's end, the switch facing back along it (the
+ * same piece laid from its toe, turned half round). The selected route goes on through the switch, along the straight
+ * or the branch, to the toe; the other way out of the toe is a new route, with the switch's own segments from there.
+ * The three ends come out where the switch laid from its toe has them.
+ */
+function placeFromFar(d: Design, p: PalettePart, at: number, turn: number, from: 'straight' | 'branch'): { next: number; added: number[] } {
+  const own = p.segs(turn), branch = p.branch!;
+  const through = from === 'straight' ? own : branch, other = from === 'straight' ? branch : own;
+  const rad = (v: number) => (v * Math.PI) / 180;
+  // (the end it's laid by, in the switch's own frame: toe at the origin, heading 0)
+  const e = follow({ x: 0, y: 0, heading: 0 }, through), q = endOf(d, at);
+  const th = q.heading + 180 - e.heading;
+  const toe = { x: q.x - (e.x * Math.cos(rad(th)) - e.y * Math.sin(rad(th))), y: q.y - (e.x * Math.sin(rad(th)) + e.y * Math.cos(rad(th))), heading: th };
+  d.routes[at].segs.push(...structuredClone(reverseSegs(through)));
+  delete d.routes[at].endEnd;
+  const r = (v: number, k = 1e5) => Math.round(v * k) / k;
+  d.routes.push({ name: freeName(d, 'R'), x: r(toe.x), y: r(toe.y), heading: r(toe.heading, 1e6), segs: structuredClone(other) });
+  return { next: at, added: [d.routes.length - 1] };
 }
