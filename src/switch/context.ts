@@ -42,8 +42,10 @@ export interface SwitchParams {
    * 'overcentre' (Peco's V spring between the bed and the slider: the points
    * snap to either side, a train trailing through pushes them over and they
    * stay). (the sprung blades spring back on their own, their springs in them.)
+   * 'snap': the snap clamp (switch/snap.ts), a toggle on knife edges between the blades, where there's room for it
+   * (rigid blades: PointsSetValues' snap, switch/base.ts snapPlace).
    */
-  throwAction?: 'detent' | 'overcentre';
+  throwAction?: 'detent' | 'overcentre' | 'snap';
   /** (the plate-style points) The throw as a switch stand (a ground throw, Caboose Industries' way): a handle swung over on an eccentric in the slider's yoke, locked past dead centre at each end. */
   throwStand?: boolean;
   /** (the plate-style points) The blades: 'simple' (as before), 'prototype' (planed to a point and laid tight under the stock rail's undercut head, the tie bar at the points) or 'sprung' (leaf springs under the plate, a stud for its pivot). */
@@ -244,7 +246,8 @@ export function pointsSet(routes: Route[], ps: PointsSet, p: SwitchParams, defau
   const fdbY0 = (p.bladeStyle === 'prototype' || p.bladeStyle === 'sprung') && p.mechStyle === 'plates'
     // (and with Peco's spring, room for its pin on the toe's side, past the plates' start)
     ? Math.min(low ? Math.max(toeY + 8, Math.min(fdbPivotY - 8, Math.round((fdbPivotY - 0.6 * (fdbPivotY - toeY) - gl) / 8) * 8 + gl)) : fdbYSimple,
-      Math.ceil((Math.max(toeY + 8, 8 + g.armW / 2, p.throwAction === 'overcentre' ? 8 + 12 + 4 : 0) - half - gl) / 8 - 1e-6) * 8 + half + gl) : fdbYSimple;
+      // (the snap clamp, with prototype blades: room for its half toward the toe, on the points' bed (switch/snap.ts: 14 and its pocket))
+      Math.ceil((Math.max(toeY + 8, 8 + g.armW / 2, p.throwAction === 'overcentre' ? 8 + 12 + 4 : p.throwAction === 'snap' && p.bladeStyle === 'prototype' ? 8 + 15 : 0) - half - gl) / 8 - 1e-6) * 8 + half + gl) : fdbYSimple;
   // (moved along whole studs to keep its lever out of the way (throwShift): still on the stud grid as it was)
   const fdbY = (p.throwShift ?? 0) === 0 ? fdbY0 : Math.max(toeY + 8, Math.min(fdbPivotY - 8, fdbY0 + 8 * p.throwShift!));
   const fdbTravel = p.pointThrow * (fdbPivotY - fdbY) / Math.max(1, fdbPivotY - toeY) + p.springPreload;
@@ -303,6 +306,8 @@ export function pointsSet(routes: Route[], ps: PointsSet, p: SwitchParams, defau
     under: false, underOk: false,
     /** no room for a throw (it would run under other track) and p.boxedThrow 'nail': a nail switch (no lever; switch/base.ts) */
     nail: false,
+    /** (throwAction 'snap') the snap clamp, where there's room for it between the blades: where the slider's post for it is, as modelled (along the slider): filled in by switchPlan */
+    snap: undefined as { kx: number } | undefined,
   };
 }
 export type PointsSetValues = ReturnType<typeof pointsSet>;
