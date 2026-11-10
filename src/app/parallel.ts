@@ -5,7 +5,7 @@
 // done. The same code builds each job wherever it's built, so the pieces come
 // out as a build in one worker makes them.
 import type { Wasm } from '../geom/kernel';
-import { type BuildJob, buildDesign, buildJobs, holdJobs, jobDone } from './build';
+import { type BuildJob, buildDesign, buildJobs, holdJobs, jobDone, mayHaveJobs } from './build';
 import type { Design } from './design';
 
 /** To a helper: the design (it works out its jobs, then says it's ready), a job to build (by its key), or stop. */
@@ -32,49 +32,69 @@ export const CANCELLED = { cancelled: true };
 export async function buildShared(w: Wasm, design: Design, spawn: () => HelperPort, helpers: number,
   report: (what: string, frac: number) => void = () => {}, early?: (overlay: unknown) => void, cancelled: () => boolean = () => false) {
   let sentEarly = false;
-  const jobs = helpers > 0 ? buildJobs(w, design, early && ((ov) => { sentEarly = true; early(ov); })) : [];
-  if (jobs.length < 2) return buildDesign(w, design, report, sentEarly ? undefined : early);
+  // (the helpers started before the plan's worked out here: each works out its own copy meanwhile, as long as this
+  // one takes (a yard's: tens of seconds), not after it)
+  const crew = helpers > 0 && mayHaveJobs(design) ? startHelpers(design, spawn, helpers) : undefined;
+  let jobs: BuildJob[];
+  try { jobs = crew ? buildJobs(w, design, early && ((ov) => { sentEarly = true; early(ov); })) : []; } catch (err) { crew?.close(); throw err; }
+  if (!crew || jobs.length < 2) { crew?.close(); return buildDesign(w, design, report, sentEarly ? undefined : early); }
   holdJobs(true);
   try {
-    await runJobs(jobs, design, spawn, Math.min(helpers, jobs.length), report, cancelled);
+    await crew.run(jobs, report, cancelled);
     // (then the build, the jobs found done: the last tenth of the bar)
     return buildDesign(w, design, (what, frac) => report(what, 0.9 + 0.1 * frac), sentEarly ? undefined : early);
   } finally { holdJobs(false); }
 }
 
-/** Build the jobs in n helpers, the longest first, each helper given the next as it finishes one; each kept for the build (jobDone). */
-function runJobs(jobs: BuildJob[], design: Design, spawn: () => HelperPort, n: number, report: (what: string, frac: number) => void, cancelled: () => boolean) {
-  const queue = [...jobs].sort((a, b) => b.cost - a.cost), total = jobs.reduce((t, j) => t + j.cost, 0) || 1;
-  const cost = new Map(jobs.map((j) => [j.key, j.cost]));
-  let done = 0, doneCost = 0, live = 0;
-  const ports: HelperPort[] = [];
-  return new Promise<void>((resolve, reject) => {
-    let over = false;
-    const finish = (err?: unknown) => {
-      if (over) return;
-      over = true; clearInterval(watch);
-      for (const p of ports) p.close();
-      if (err) reject(err); else resolve();
-    };
-    // (a newer build wanted: stop)
-    const watch = setInterval(() => { if (cancelled()) finish(CANCELLED); }, 50);
-    const next = (p: HelperPort) => {
-      const j = queue.shift();
-      if (j) { p.post({ run: j.key }); return; }
-      p.close(); live--;
-      if (live === 0) finish();
-    };
-    report(`Building ${jobs.length} parts in ${n} workers`, 0.05);
-    for (let k = 0; k < n; k++) {
-      const p = spawn();
-      ports.push(p); live++;
-      let gone = false;
-      p.listen((m) => {
-        if (over || gone) return;
+/**
+ * n helpers started on the design (each works out its jobs, then says it's ready). run: build the jobs in them, the
+ * longest first, each helper given the next as it finishes one, each result kept for the build (jobDone); no more
+ * helpers kept than there are jobs. close: stop them all.
+ */
+function startHelpers(design: Design, spawn: () => HelperPort, n: number) {
+  const ports: HelperPort[] = [], ready: HelperPort[] = [], gone = new Set<HelperPort>();
+  let onMessage: ((p: HelperPort, m: FromHelper) => void) | undefined;
+  for (let k = 0; k < n; k++) {
+    const p = spawn();
+    ports.push(p);
+    p.listen((m) => {
+      if (onMessage) { onMessage(p, m); return; }
+      // (before the jobs are known: ready ones wait; one that's gone is left out)
+      if ('ready' in m) ready.push(p); else if ('gone' in m || ('fatal' in m && m.fatal)) gone.add(p);
+    });
+    p.post({ design });
+  }
+  const close = () => { for (const p of ports) p.close(); };
+  const run = (jobs: BuildJob[], report: (what: string, frac: number) => void, cancelled: () => boolean) => {
+    const queue = [...jobs].sort((a, b) => b.cost - a.cost), total = jobs.reduce((t, j) => t + j.cost, 0) || 1;
+    const cost = new Map(jobs.map((j) => [j.key, j.cost]));
+    // (no more helpers than jobs: the rest stopped)
+    const crew = ports.filter((p) => !gone.has(p)).slice(0, jobs.length);
+    for (const p of ports) if (!crew.includes(p)) p.close();
+    let done = 0, doneCost = 0, live = crew.length;
+    return new Promise<void>((resolve, reject) => {
+      let over = false;
+      const finish = (err?: unknown) => {
+        if (over) return;
+        over = true; clearInterval(watch);
+        close();
+        if (err) reject(err); else resolve();
+      };
+      // (a newer build wanted: stop)
+      const watch = setInterval(() => { if (cancelled()) finish(CANCELLED); }, 50);
+      const next = (p: HelperPort) => {
+        const j = queue.shift();
+        if (j) { p.post({ run: j.key }); return; }
+        p.close(); live--;
+        if (live === 0) finish();
+      };
+      report(`Building ${jobs.length} parts in ${crew.length} workers`, 0.05);
+      onMessage = (p, m) => {
+        if (over || gone.has(p) || !crew.includes(p)) return;
         if ('ready' in m) { next(p); return; }
         if ('gone' in m || ('fatal' in m && m.fatal)) {
           // (its kernel broke, or it crashed: what it was building is left to the build itself, which says what went wrong)
-          gone = true; p.close(); live--;
+          gone.add(p); p.close(); live--;
           if (live === 0) finish();
           return;
         }
@@ -83,10 +103,13 @@ function runJobs(jobs: BuildJob[], design: Design, spawn: () => HelperPort, n: n
         done++; doneCost += cost.get(m.key) ?? 0;
         report(`Building the track: ${done} of ${jobs.length} parts done`, 0.05 + 0.85 * (doneCost / total));
         next(p);
-      });
-      p.post({ design });
-    }
-  });
+      };
+      if (live === 0) { finish(); return; }
+      // (the ones ready already: to work)
+      for (const p of ready.splice(0)) if (crew.includes(p)) next(p);
+    });
+  };
+  return { run, close };
 }
 
 /**

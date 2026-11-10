@@ -234,10 +234,21 @@ const TILE_OVER = 8000; // mm of track: more, and a piece that needs cutting is 
  */
 /** Thrown from early by a build that only wanted the plan's trackwork (the 3D view hidden, or Auto off): the build stops there. */
 export const PLAN_ONLY = { planOnly: true };
+/**
+ * Whether a build of the design may have jobs worth sharing out: one built in tiles (8 m of track or more), or in
+ * sections (long track cut into track pieces, the setting or its default) with 2 m or more. Known at once, before
+ * anything's worked out, so the helpers can be started while the plan is. (It went by the design's own setting only: a
+ * design left at the default, track pieces, was never shared out under 8 m.)
+ */
+const SECTIONS_OVER = 2000;
+export function mayHaveJobs(design: Design): boolean {
+  const d = upgradeDesign(design), len = toRoutes(d).reduce((t, rt) => t + routeLength(rt), 0);
+  return len >= TILE_OVER || ({ ...OPTION_DEFAULTS, ...d.options }.splitTrack === 'lengths' && len >= SECTIONS_OVER);
+}
 export function buildJobs(w: Wasm, design: Design, early?: (overlay: unknown) => void): BuildJob[] {
   const jobs: BuildJob[] = [];
   // (only a design built in tiles or in sections has any)
-  if (upgradeDesign(design).options?.splitTrack !== 'lengths' && toRoutes(design).reduce((t, rt) => t + routeLength(rt), 0) < TILE_OVER) return jobs;
+  if (!mayHaveJobs(design)) return jobs;
   try { buildDesign(w, design, undefined, early, { plan: jobs }); } catch (e) { if (e === PLAN_ONLY) throw e; if (e !== PLANNED) return []; }
   return jobs;
 }
