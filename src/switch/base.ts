@@ -907,7 +907,7 @@ export function switchPlan(routes: Route[], specs: SetSpec[], p: BaseParams = BA
   const clampAsked = p.mechStyle === 'plates' && p.throwAction === 'snap';
   if (clampAsked) for (const v of sets as SetLike[]) if (!v.three) v.snap = snapPlace(v, p);
   for (const v of sets as SetLike[]) {
-    if (p.throwNail && p.mechStyle === 'plates' && !v.three) { v.nail = true; v.stand = false; continue; }
+    if (p.throwNail && p.mechStyle === 'plates' && (!v.three || v.three.own)) { v.nail = true; v.stand = false; continue; }
     const xIn = v.throwStockX + v.throwDir * 2 * 3.9, xOut = v.leverX + v.throwDir * 10;
     v.under = fRails.length > 0 && railIn(fRails, Math.min(xIn, xOut), Math.max(xIn, xOut), v.throwY - 3, v.throwY + 3);
     // (blades on top, no room for a throw: its arm under other track, or its lever on other track's sleepers, where that

@@ -83,7 +83,12 @@ export function gridLever(P: Pose, v: { leverX: number; throwY: number; throwEdg
 }
 
 /** A points set's lever, as moved by hand: which side, how far out, and (by its tines' length) how far along. */
-export interface ThrowEdit { side?: 'left' | 'right'; leverOffset?: number; springLength?: number }
+export interface ThrowEdit { side?: 'left' | 'right'; leverOffset?: number; springLength?: number; each?: { left?: { leverOffset?: number }; right?: { leverOffset?: number } } }
+/** A lever's hand edit: the points' own; for one of a three-way's two levers (blade 0 the left one's, 1 the right's) with its own over it (each). */
+export const bladeEdit = (ed: ThrowEdit | undefined, blade: number | undefined): ThrowEdit | undefined => {
+  const own = blade === undefined ? undefined : ed?.each?.[blade === 0 ? 'left' : 'right'];
+  return own ? { ...ed, ...own } : ed;
+};
 export interface Pieces { switches: SwitchPiece[]; rest: Route[]; warnings: string[] }
 
 /** Work out the switch pieces of a design and what's left over. */
@@ -99,8 +104,9 @@ export function sharedLead(a: Route, b: Route): number {
   while (t < L && same(t + 0.5)) t += 0.5;
   return t;
 }
-/** A three-way's blades each on a slider and lever of its own (threeWayLevers 2): with blades on top only. */
-export const twoLevers = (p: { threeWayLevers?: number; mechStyle?: string }) => p.threeWayLevers === 2 && p.mechStyle === 'plates';
+/** A three-way's blades each on a slider and lever of its own (threeWayLevers 2): with blades on top only. As nail switches too (throwNail):
+ * one slider has three positions and nothing to hold it at them without its lever, so each blade is on its own, pushed over by hand. */
+export const twoLevers = (p: { threeWayLevers?: number; mechStyle?: string; throwNail?: boolean }) => (p.threeWayLevers === 2 || !!p.throwNail) && p.mechStyle === 'plates';
 /** toeShift: how far (mm) to move the points from where the branch leaves, by that point in the design (hand edits). */
 export function planPieces(routes: Route[], splits: Split[], p: BaseParams = BASE_DEFAULTS, toeShift: (at: [number, number]) => number = () => 0,
   throwEdit: (at: [number, number]) => ThrowEdit | undefined = () => undefined, gridLevers = false): Pieces {
@@ -171,7 +177,7 @@ export function planPieces(routes: Route[], splits: Split[], p: BaseParams = BAS
       if (!ok) { warnings.push('two branches on the same side of one switch: not built as a switch'); continue; }
       // (the lever: as moved by hand, else the branch's own side, else the options')
       sets.forEach((st, n) => {
-        const ed = throwEdit(setAts[n]);
+        const ed = bladeEdit(throwEdit(setAts[n]), st[6]);
         const own = ed?.side ?? routes[kids[Math.min(n, kids.length - 1)].child].throwSide;
         const side = own && own !== 'auto' ? own : p.throwSide;
         if ((side === 'left' || side === 'right') && st[6] === undefined) st[3] = side === 'right' ? 1 : -1;
@@ -203,7 +209,7 @@ export function planPieces(routes: Route[], splits: Split[], p: BaseParams = BAS
       if (gridLevers) {
         let moved = false;
         sets.forEach((st, n) => {
-          const ed = throwEdit(setAts[n]) ?? {};
+          const ed = bladeEdit(throwEdit(setAts[n]), st[6]) ?? {};
           if (ed.leverOffset !== undefined && ed.springLength !== undefined) return;
           const g2 = gridLever(P, built!.plan.sets[n], ed);
           if (g2.leverOffset !== undefined) { st[5] = g2; moved = true; }

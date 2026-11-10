@@ -7,7 +7,7 @@
 // Drag with the right or middle button (or Space + drag) to pan; the wheel
 // zooms.
 import { movedTable, type Table, TABLE_COLORS, tableMiddle, tableOutline } from './tables';
-import { type Design, type DRoute, type DSeg, freeName, isMono, toRoutes } from './design';
+import { type Design, type DRoute, type DSeg, freeName, isMono, toRoutes, type Trackwork } from './design';
 import { sleeperSpots } from '../geom/crossing';
 import { poseToWorld, routeLength, routePose, worldToPose } from '../route/route';
 import { reversedRoute } from './routeedits';
@@ -31,7 +31,7 @@ export interface Overlay { grooves: [number, number][][]; checkRails: [number, n
 export interface OverlayItem { kind: string; key: string; at: [number, number]; pts: [number, number][]; dir?: [number, number];
   /** points: taken out (off), made by hand (forced), or a near miss where they could be forced (cand) */
   off?: boolean; forced?: boolean; cand?: { ok: boolean; why: string }; routes?: string[];
-  lever?: { frame: [number, number, number]; side: number; stockX: number; edge: number; minD: number; pivotY: number; maxTine: number; leverOffset: number; springLength: number } }
+  lever?: { frame: [number, number, number]; side: number; stockX: number; edge: number; minD: number; pivotY: number; maxTine: number; leverOffset: number; springLength: number; blade?: 'left' | 'right' } }
 
 export interface CanvasHost {
   design(): Design;
@@ -53,6 +53,17 @@ const MONO_HW = 15.9, MONO_RIDGE_HW = 3.2; // the monorail beam's and its ridge'
 
 /** Can a lever be moved along the points (its spring tines longer or shorter)? Only on tines: the plate-style lever is level with the slider bar. */
 export const leverSlides = (d: Design) => d.options?.mechStyle === 'tines';
+
+/**
+ * A three-way's two levers (threeWayLevers 2) share their points' edit (one toe): one of them moved out or in (undefined: back to where
+ * it's worked out) is kept as its own (each), the other left where it was (an edit from before each had its own moved both: kept for it).
+ */
+export function eachLever(e: NonNullable<Trackwork['throw']>[string] | undefined, blade: 'left' | 'right', leverOffset: number | undefined): NonNullable<Trackwork['throw']>[string] {
+  const { leverOffset: both, each, side: _side, ...rest } = e ?? {}, other = blade === 'left' ? 'right' : 'left';
+  const o = each?.[other] ?? (both !== undefined ? { leverOffset: both } : undefined);
+  const mine = leverOffset !== undefined ? { [blade]: { leverOffset } } : {};
+  return { ...rest, ...((o || leverOffset !== undefined) && { each: { ...mine, ...(o && { [other]: o }) } }) };
+}
 
 /** Which way round a lever is, and what set it: dragged across by hand, the branch route's own setting, the Settings' Lever side, or auto (away from the branch). */
 export interface LeverSide { side: 'left' | 'right'; by: 'hand' | 'route' | 'options' | 'auto'; main?: string; branch?: string; why: string }
@@ -208,7 +219,9 @@ export class TrackCanvas {
       return worldToPose(lv.frame, [Math.round((q[0] - 4) / MM) * MM + 4, Math.round((q[1] - 4) / MM) * MM + 4]);
     };
     let [lx, ly] = snapL([w[0] * MM, w[1] * MM]);
-    const side = lx >= 0 ? 1 : -1;
+    // (one of a three-way's two levers stays on its own side: out and in only)
+    const side = lv.blade ? (lv.blade === 'right' ? 1 : -1) : lx >= 0 ? 1 : -1;
+    if (lv.blade && Math.sign(lx) !== side) lx = side * Math.max(lv.edge, lv.minD);
     // (no nearer the track than the lever can go: out a stud at a time till it's clear)
     for (let k = 0; k < 12 && Math.abs(lx) < Math.max(lv.edge, lv.minD) - 0.01; k++) {
       [lx, ly] = snapL(poseToWorld(lv.frame, [lx + side * MM, ly]));
@@ -221,7 +234,8 @@ export class TrackCanvas {
     if (!leverSlides(d)) {
       // (the plate-style points: the slider bar meets the blades where it must, so the lever stays level with it: across and out only)
       y = worldToPose(lv.frame, ld.it.at)[1];
-      group[ld.it.key] = { side: side > 0 ? 'right' : 'left', leverOffset };
+      if (lv.blade) group[ld.it.key] = eachLever(group[ld.it.key], lv.blade, leverOffset);
+      else group[ld.it.key] = { side: side > 0 ? 'right' : 'left', leverOffset };
     } else {
       // (along: a stud at a time back into the tines' reach)
       for (let k = 0; k < 12 && lv.pivotY - 2 - ly > lv.maxTine + 0.01; k++) ly += MM;

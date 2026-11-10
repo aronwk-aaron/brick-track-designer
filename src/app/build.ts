@@ -39,7 +39,9 @@ export interface TrackworkItem {
   /** points: the two routes (their ids) whose points they are; made by hand (forced); a near miss where points could be forced (cand: whether they can, and how far off it is) */
   routes?: string[]; forced?: boolean; cand?: { ok: boolean; why: string };
   /** a lever ('throw'): its points' frame (mm, degrees), side (+1 right), the track's edge beside it and the pivot's y (in the frame), the longest tines, and its settings now */
-  lever?: { frame: Pose; side: number; stockX: number; edge: number; minD: number; pivotY: number; maxTine: number; leverOffset: number; springLength: number; edited: boolean };
+  lever?: { frame: Pose; side: number; stockX: number; edge: number; minD: number; pivotY: number; maxTine: number; leverOffset: number; springLength: number; edited: boolean;
+    /** one of a three-way's two levers (threeWayLevers 2): which, its hand edits its own (Trackwork.throw's each) */
+    blade?: 'left' | 'right' };
 }
 
 /** A built piece: its mesh in the design (for the view) and its STL (in its own frame, to print). */
@@ -890,13 +892,15 @@ function editChecks(items: TrackworkItem[], tw: Trackwork, rs: Route[], checks: 
 /** A points set's lever, as planned (switch/base.ts): what its item and keep-outs are made from. */
 interface LeverPlan {
   throwDir: number; leverX: number; throwY: number; throwStockX: number; throwEdgeX: number; leverMinD: number; tineLen: number; pivotPt: [number, number];
-  ra: Route; rb: Route; sHeel: number; leverTravel: number; fixed?: number; three?: { S: Route }; fdb?: { pivot: [number, number]; post: [number, number] }[];
+  ra: Route; rb: Route; sHeel: number; leverTravel: number; fixed?: number; three?: { S: Route; own?: boolean }; fdb?: { pivot: [number, number]; post: [number, number] }[];
 }
 /** A points set's lever on the plan (it can be dragged there). avoid: (the plate-style) where no cut goes, its parts' keep-outs added; G: the rails' offset. */
 function leverItem(items: TrackworkItem[], tw: Trackwork, avoid: Keep[] | undefined, G: number, key: string, P: Pose, v: LeverPlan) {
   if ((v as { nail?: boolean }).nail) return; // (a nail switch: no lever to place)
   const wd = (x: number, y: number) => poseToWorld(P, [x, y]);
-  const ed = tw.throw?.[key];
+  // (one of a three-way's two levers: the left blade's is on the left, the right one's on the right)
+  const blade = v.three?.own ? (v.throwDir < 0 ? 'left' as const : 'right' as const) : undefined;
+  const ed = blade ? tw.throw?.[key]?.each?.[blade] ?? (tw.throw?.[key]?.leverOffset !== undefined ? tw.throw[key] : undefined) : tw.throw?.[key];
   // (pts: the arm's outline, as built: from the stock rail out to the stud line past the lever, 3 studs wide)
   const xOut = v.throwDir * Math.ceil((v.throwDir * (v.leverX + v.throwDir * 10)) / 8 - 1e-6) * 8, hw = 12;
   // (the plate-style: no cut through the slider's tunnel, from past the far blade to the stock rail (the rod and
@@ -915,7 +919,7 @@ function leverItem(items: TrackworkItem[], tw: Trackwork, avoid: Keep[] | undefi
   }
   items.push({ kind: 'throw', key, at: wd(v.leverX, v.throwY), pts: [wd(v.throwStockX, v.throwY - hw), wd(xOut, v.throwY - hw), wd(xOut, v.throwY + hw), wd(v.throwStockX, v.throwY + hw)],
     lever: { frame: P, side: v.throwDir, stockX: Math.abs(v.throwStockX), edge: Math.abs(v.throwEdgeX), minD: Math.abs(v.leverMinD), pivotY: v.pivotPt[1], maxTine: v.pivotPt[1] - 12.5,
-      leverOffset: Math.round((Math.abs(v.leverX) - Math.abs(v.throwEdgeX)) * 100) / 100, springLength: Math.round(v.tineLen * 100) / 100, edited: !!ed } });
+      leverOffset: Math.round((Math.abs(v.leverX) - Math.abs(v.throwEdgeX)) * 100) / 100, springLength: Math.round(v.tineLen * 100) / 100, edited: !!ed, ...(blade && { blade }) } });
 }
 
 /** The switches' parameters (switch/base.ts BaseParams) from the piece options. alone: the ballast printed apart, alone. */

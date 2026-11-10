@@ -14,7 +14,7 @@ import { poseToWorld, railPoint, routeLat, routeLength, routePose, routeSOf, wor
 import type { Solution } from '../route/solver';
 import { reversedRoute } from './reverse';
 import { type BaseParams, fdbFootprint, type SetOver, type SetSpec, switchGeometry, switchPlan, type SwitchPlan } from './base';
-import { gridLever, sharedLead, subRoute, type ThrowEdit, toFrame, twoLevers } from './pieces';
+import { bladeEdit, gridLever, sharedLead, subRoute, type ThrowEdit, toFrame, twoLevers } from './pieces';
 import { gridIn, sprungOnGrid } from './context';
 
 export interface NetworkPart { name: string; color: number; local: Man; world: Man; turn?: { at: [number, number]; by: number; swing?: number; tilt?: [[number, number], [number, number]] };
@@ -187,7 +187,7 @@ export function networkSplits(s: Scad, routes: Route[], sol: Solution, p: BasePa
     const pair = bRight ? [B, A] : [A, B];
     const rts = three ? local : pair;
     // (the lever: as moved by hand, else the branch's own setting, else the options', else the main route's side)
-    const ed = throwEdit([P[0], P[1]]);
+    const ed = bladeEdit(throwEdit([P[0], P[1]]), blade);
     const ownR = ed?.side ?? routes[j].throwSide;
     const own0 = ownR && ownR !== 'auto' ? ownR : p.throwSide;
     if (blade !== undefined && !three) return undefined;
@@ -346,7 +346,7 @@ export function networkSplits(s: Scad, routes: Route[], sol: Solution, p: BasePa
     for (let a = 0; a < preps.length; a++) for (let b = a + 1; b < preps.length; b++) {
       if (!meets(a, b)) continue;
       const tryMove = (k: number) => {
-        const q = preps[k], ed = throwEdit([q.P[0], q.P[1]]);
+        const q = preps[k], ed = q.ed;
         if (ed?.springLength !== undefined) return false;
         const cur = (q.st.used[5] ?? {}) as SetOver, others = preps.flatMap((o, m) => (m === k ? [] : [armOf(o.st.plan, o.P)]));
         for (const sh of [1, -1, 2, -2, 3, -3, 4, -4, 5, -5]) {

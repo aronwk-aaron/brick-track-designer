@@ -74,8 +74,9 @@ export interface Trackwork {
   /** each points set (by its toe): moved along (mm); taken out (off: no points, both routes' rails run through as fixed track); routes
    * taken out of it (drop, by id: a three-way's branch, leaving a two-way); or forced where a route meets another a hair off (force) */
   points?: Record<string, { toe?: number; off?: boolean; drop?: string[]; force?: boolean; on?: TwAnchor }>;
-  /** each points set's lever, moved on the plan: its side, how far out (lever offset, mm), and how far along (its tines' length, mm) */
-  throw?: Record<string, { side?: 'left' | 'right'; leverOffset?: number; springLength?: number; on?: TwAnchor }>;
+  /** each points set's lever, moved on the plan: its side, how far out (lever offset, mm), and how far along (its tines' length, mm);
+   * each: a three-way's two levers (threeWayLevers 2), the left one's and the right one's own, where they differ (each is on its own side) */
+  throw?: Record<string, { side?: 'left' | 'right'; leverOffset?: number; springLength?: number; each?: { left?: { leverOffset?: number }; right?: { leverOffset?: number } }; on?: TwAnchor }>;
 }
 /** Where on the track a hand edit is, so it follows its track when that's moved (twfollow.ts): the route by name, from its start or end, mm along, mm to the right of its centre line. The build goes by the edit's key alone. */
 export type TwAnchor = [route: string, from: 's' | 'e', along: number, right: number];

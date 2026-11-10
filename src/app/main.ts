@@ -4,7 +4,7 @@ import * as THREE from 'three';
 import wasmUrl from 'manifold-3d/manifold.wasm?url';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { BANK_MAX, type BankRamps, type Design, type DRoute, type DSeg, OPTION_DEFAULTS, type PieceOptions, RAIL_DEFAULTS, TEMPLATE_GROUPS, TEMPLATES, type Trackwork, endOf, freeName, isMono, readDesign, setSystem } from './design';
-import { TrackCanvas, type OverlayItem, dialogOpen, leverSide, leverSlides, typingIn } from './canvas';
+import { TrackCanvas, type OverlayItem, dialogOpen, eachLever, leverSide, leverSlides, typingIn } from './canvas';
 import { describe } from './planner';
 import { BRICKTRACKS_COLOR, gradeOf, LEGO_COLOR, type LegoPart, legoParts, type Piece } from './build';
 import { TABLE_COLORS, type Table, tableAt } from './tables';
@@ -1463,7 +1463,7 @@ renderOptions();
 
 
 // ---------- trackwork: hand edits to the check rails, flangeway cuts and points ----------
-type TwItem = { kind: 'check' | 'groove' | 'points' | 'throw'; key: string; at: [number, number]; off?: boolean; len?: number; toe?: number; routes?: string[]; forced?: boolean; cand?: { ok: boolean; why: string }; lever?: { side: number; leverOffset: number; springLength: number; maxTine: number; edited: boolean } };
+type TwItem = { kind: 'check' | 'groove' | 'points' | 'throw'; key: string; at: [number, number]; off?: boolean; len?: number; toe?: number; routes?: string[]; forced?: boolean; cand?: { ok: boolean; why: string }; lever?: { side: number; leverOffset: number; springLength: number; maxTine: number; edited: boolean; blade?: 'left' | 'right' } };
 let twSig = '';
 /** The monorail points' toes, as last built (mm). */
 const monoToes = (): [number, number][] => (canvas?.overlay as { monoPoints?: [number, number][] } | undefined)?.monoPoints ?? [];
@@ -1536,8 +1536,9 @@ function drawTrackwork(list: TwItem[]) {
     g.append(sm); body.append(g); return g;
   };
   // an item: its line (name, what it is now, Edited), and its settings under it when open
-  const item = (g: HTMLElement, key: string, title: string, sub: string, edited: boolean, kind?: keyof Trackwork) => {
-    const d = document.createElement('details'); d.className = 'tw' + (edited ? ' edited' : ''); d.open = twOpen.has(`i:${key}`);
+  // (own: one of two items with the one key (a three-way's two levers): what it's kept open by, and what Reset this does)
+  const item = (g: HTMLElement, key: string, title: string, sub: string, edited: boolean, kind?: keyof Trackwork, own?: { id: string; reset: () => void }) => {
+    const d = document.createElement('details'); d.className = 'tw' + (edited ? ' edited' : ''); d.open = twOpen.has(`i:${own?.id ?? key}`);
     const sm = document.createElement('summary');
     const t = document.createElement('b'); t.textContent = title;
     const st = document.createElement('span'); st.className = 'sub'; st.textContent = sub;
@@ -1545,10 +1546,10 @@ function drawTrackwork(list: TwItem[]) {
     if (edited) { const e = document.createElement('em'); e.className = 'edtag'; e.textContent = 'Edited'; e.title = 'Changed by hand from what the app works out'; sm.append(e); }
     sm.addEventListener('mouseenter', () => { canvas.highlight = key; canvas.draw(); });
     sm.addEventListener('mouseleave', () => { canvas.highlight = undefined; canvas.draw(); });
-    d.addEventListener('toggle', () => { if (d.open) twOpen.add(`i:${key}`); else twOpen.delete(`i:${key}`); keepTw(); });
+    d.addEventListener('toggle', () => { if (d.open) twOpen.add(`i:${own?.id ?? key}`); else twOpen.delete(`i:${own?.id ?? key}`); keepTw(); });
     const b2 = document.createElement('div'); b2.className = 'twb';
     d.append(sm, b2); g.append(d);
-    if (edited && kind) { const r = btn('Reset this', () => resetOne(kind, key), 'Back to what the app works out'); r.classList.add('reset1'); queueMicrotask(() => b2.append(r)); }
+    if (edited && kind) { const r = btn('Reset this', own?.reset ?? (() => resetOne(kind, key)), 'Back to what the app works out'); r.classList.add('reset1'); queueMicrotask(() => b2.append(r)); }
     return b2;
   };
   const check = (row: HTMLElement, label: string, on: boolean, change: (v: boolean) => void, tip?: string) => {
@@ -1591,14 +1592,19 @@ function drawTrackwork(list: TwItem[]) {
   for (const kind of ['throw', 'check', 'groove'] as const) {
     const its = list.filter((it) => it.kind === kind);
     if (!its.length) continue;
-    const g = group(kind, names[kind][0], its.length, its.filter((it) => editedOf(kind, it.key)).length);
+    // (one of a three-way's two levers: edited where it has an edit of its own)
+    const edOf = (it: (typeof its)[number]) => (it.lever?.blade ? it.lever.edited : editedOf(kind, it.key));
+    const g = group(kind, names[kind][0], its.length, its.filter(edOf).length);
     its.forEach((it, n) => {
-      const cur = ((design.trackwork?.[kind] ?? {}) as Record<string, Record<string, number | boolean | string>>)[it.key] ?? {}, ed = editedOf(kind, it.key);
+      const cur = ((design.trackwork?.[kind] ?? {}) as Record<string, Record<string, number | boolean | string>>)[it.key] ?? {}, ed = edOf(it);
       if (!show(ed)) return;
       let sub: string;
       if (kind === 'throw' && it.lever) { const ls = leverSide(design, it as unknown as OverlayItem, (canvas.overlay?.items ?? [])); sub = `${ls.side} · ${(it.lever.leverOffset / 8).toFixed(2).replace(/\.?0+$/, '')} studs out`; }
       else sub = [it.len ? `${studsOf(it.len)} studs` : '', it.off ? 'taken out' : '', cur.d0 ? `start ${Number(cur.d0) > 0 ? '+' : ''}${studsOf(Number(cur.d0))}` : '', cur.d1 ? `end ${Number(cur.d1) > 0 ? '+' : ''}${studsOf(Number(cur.d1))}` : '', cur.shift ? `moved in ${cur.shift} mm` : ''].filter(Boolean).join(' · ');
-      const row = item(g, it.key, `${names[kind][1]} ${n + 1}`, sub, ed, kind);
+      // (a three-way's two levers: each its own, by its side; set back, the other's stays)
+      const blade = it.lever?.blade;
+      const setEach = (v: number | undefined) => { const gg = ((design.trackwork ??= {}).throw ??= {}), e = eachLever(gg[it.key], blade!, v); if (Object.keys(e).length) gg[it.key] = e; else delete gg[it.key]; twSig = ''; changed(true); };
+      const row = item(g, it.key, `${names[kind][1]} ${n + 1}`, sub, ed, kind, blade && { id: `${it.key}:${blade}`, reset: () => setEach(undefined) });
       // (studs: the value kept in mm, shown and set in studs)
       const numField = (label: string, prop: string, step: number, range: Range, studs = false) => {
         const k = studs ? 8 : 1;
@@ -1617,6 +1623,8 @@ function drawTrackwork(list: TwItem[]) {
         for (const [v, l] of [['auto', auto], ['left', 'Left'], ['right', 'Right']]) side.append(new Option(l, v));
         side.value = ls.by === 'hand' ? ls.side : 'auto';
         side.title = 'Left or right as you face along the points from their toe';
+        // (one of a three-way's two levers: its side isn't a choice)
+        if (blade) { side.disabled = true; side.title = `Not a choice here: ${ls.why}`; }
         side.addEventListener('change', () => {
           const t2 = (design.trackwork ??= {}), gg = (t2.throw ??= {}), e = { ...gg[it.key] };
           if (side.value === 'auto') delete e.side; else e.side = side.value as 'left' | 'right';
@@ -1624,7 +1632,7 @@ function drawTrackwork(list: TwItem[]) {
           changed(true);
         });
         const sf = field('Side', side); sf.classList.add('stack'); row.append(sf);
-        const out = num(lv.leverOffset / 8, (v) => edit('throw', it.key, { leverOffset: v * 8 }), 0.125, 'How far out past the track the lever is, studs.', LIMITS.twLeverOut);
+        const out = num(lv.leverOffset / 8, (v) => (blade ? setEach(v * 8) : edit('throw', it.key, { leverOffset: v * 8 })), 0.125, 'How far out past the track the lever is, studs.', LIMITS.twLeverOut);
         row.append(field('Out past the track, studs', out));
         if (leverSlides(design)) {
           const tine = num(lv.springLength / 8, (v) => edit('throw', it.key, { springLength: Math.min(lv.maxTine, Math.max(16, v * 8)) }), 0.125); tine.min = '2'; tine.max = String(Math.floor(lv.maxTine / 8 * 8) / 8);
