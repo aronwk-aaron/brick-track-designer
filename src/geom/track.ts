@@ -219,11 +219,20 @@ export class Track {
     ]), [90, 0, 0]);
   }
 
+  /**
+   * Is a running rail's end over the C-clip (a 2-stud gauge: the rail 12 from the middle, the clip at 8)? No support
+   * under it then: the clip holds it up, and its support reached in under the clip and printed as one with the part,
+   * footing and all (not broken away, and in the next piece's end: 101 mm3). As an extra rail's end there (crossing.ts).
+   */
+  railOverClip(): boolean {
+    return this.c.hasCoupler && Math.abs(this.c.railOffset - this.c.couplerX) < 6.8 && !scadParity();
+  }
+
   /** start_rail_supports(z0): xfs, the extra rails' ends (extra_rails(false)), the same way by their kind. */
   startRailSupports(z0: number, xfs: number[] = []): Man {
     const g = this.c.railOffset;
     return this.s.union([
-      T(this.railSupport(4, 2.08 - z0), [g - 2.2, -3, z0]),
+      !this.railOverClip() && T(this.railSupport(4, 2.08 - z0), [g - 2.2, -3, z0]),
       T(this.railSupport(3, 3.23 - z0), [-g - 3.3, -3, z0]),
       ...xfs.map((xf) => (xf < 0 ? T(this.railSupport(3, 3.23 - z0), [xf - 3.3, -3, z0]) : T(this.railSupport(4, 2.08 - z0), [xf - 2.2, -3, z0]))),
     ]);
@@ -234,7 +243,7 @@ export class Track {
     const g = this.c.railOffset;
     return this.s.union([
       T(this.railSupport(3, 3.23 - z0, false), [g + 0.2, 3, z0]),
-      T(this.railSupport(4, 2.08 - z0, false), [-g - 1.8, 3, z0]),
+      !this.railOverClip() && T(this.railSupport(4, 2.08 - z0, false), [-g - 1.8, 3, z0]),
       ...xfs.map((xf) => (xf < 0 ? T(this.railSupport(3, 3.23 - z0, false), [-xf + 0.2, 3, z0]) : T(this.railSupport(4, 2.08 - z0, false), [-xf - 1.8, 3, z0]))),
     ]);
   }

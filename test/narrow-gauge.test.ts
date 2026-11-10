@@ -94,3 +94,22 @@ describe('narrow gauge crossings', { timeout: 300000 }, () => {
     clearBuildCache();
   });
 });
+
+// A 2-stud gauge's rails are 12 mm from the middle, the end connector's C-clip at 8: the support under the rail end over
+// the clip reached in under it and printed as one with the part, footing and all (no break-out supports at all, and the
+// footing in the next piece's end). None there now: the clip holds that rail end up (track.ts railOverClip).
+describe('narrow gauge track ends', { timeout: 300000 }, () => {
+  for (const ballast of ['none', 'buddy'] as const)
+    it(`2-stud gauge track in two lengths${ballast === 'none' ? '' : ', on ballast'}: each end's supports break away, and the lengths go together`, async () => {
+      const { goesTogether } = await import('./assembled.shared');
+      const d: Design = { version: 1, gaugeStuds: 2, options: { legoTrack: 'print', ballast, splitTrack: 'lengths', pieceLengthStuds: 16 }, routes: [{ name: 'A', x: 0, y: 0, heading: 0, segs: [{ kind: 'straight', studs: 32 }] }] };
+      const w = await kernel();
+      clearBuildCache();
+      const b = buildDesign(w, structuredClone(d));
+      expect(b.pieces.length).toBe(2);
+      // (its supports apart from it: loose, to break away)
+      for (const p of b.pieces) expect(p.supports?.length ?? 0, `${p.name}'s break-out supports`).toBeGreaterThan(0);
+      clearBuildCache();
+      await goesTogether('2-stud gauge track in two lengths', d);
+    });
+});
