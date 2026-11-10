@@ -76,7 +76,7 @@ export function templatesBuild(groups: string[], only?: string[]) {
       let [again, ms2] = warm();
       if (ms2 >= limit) { const [r, t] = warm(); if (t < ms2) [again, ms2] = [r, t]; }
       // (one line for each template, in a fixed format, so the times can be tracked from CI's logs: grep TEMPLATE-TIME)
-      console.log(`TEMPLATE-TIME\t${name}\tcold_ms=${Math.round(ms)}\twarm_ms=${Math.round(ms2)}\tbudget_s=${BUDGET[name] ?? BUDGET_SMALL}`);
+      process.stdout.write(`TEMPLATE-TIME\t${name}\tcold_ms=${Math.round(ms)}\twarm_ms=${Math.round(ms2)}\tbudget_s=${BUDGET[name] ?? BUDGET_SMALL}\n`);
       expect(ms2, `${name}: built again unchanged in ${(ms2 / 1000).toFixed(2)} s`).toBeLessThan(limit);
       expect(again.pieces.length).toBe(b.pieces.length);
       expect(b.pieces.length).toBeGreaterThan(0);
