@@ -7,7 +7,7 @@ import { BANK_MAX, type BankRamps, type Design, type DRoute, type DSeg, OPTION_D
 import { ISSUE_R, TrackCanvas, type OverlayItem, dialogOpen, eachLever, leverSide, leverSlides, typingIn } from './canvas';
 import { describe } from './planner';
 import { BRICKTRACKS_COLOR, gradeOf, LEGO_COLOR, type LegoPart, legoParts, type Piece } from './build';
-import { movedTable, TABLE_COLORS, type Table, tableAt, tableOutline } from './tables';
+import { mirroredTable, movedTable, TABLE_COLORS, type Table, tableAt, tableMiddle, tableOutline, turnedTable } from './tables';
 import { zip } from '../geom/zip';
 import { layoutParts } from './layoutparts';
 import { freeStart, type LaidFrom, PALETTE, placePart } from './palette';
@@ -298,7 +298,7 @@ function renderTables() {
     name.addEventListener('change', () => { t.name = name.value; changed(); });
     const col = document.createElement('input'); col.type = 'color'; col.value = t.color ?? TABLE_COLORS[k % TABLE_COLORS.length]; col.title = 'Its colour on the plan';
     col.addEventListener('input', () => { t.color = col.value; changed(false, true, false); });
-    head.append(col, name, btn('✕', () => { design.tables = ts.filter((x) => x !== t); if (!design.tables.length) delete design.tables; }, 'Remove this table'));
+    head.append(col, name, btn('✕', () => { design.tables = ts.filter((x) => x !== t); if (!design.tables.length) delete design.tables; canvas.setSelection(canvas.selection()); }, 'Remove this table'));
     const f = document.createElement('div'); f.className = 'tfields';
     // (drawn again once it's taken: the number shown is the one kept, a width under 1 as 1)
     const n = (label: string, v: number, set: (x: number) => void, range: Range, step = 1) => f.append(field(label, num(v, (x) => { set(x); soon(render); }, step, '', range)));
@@ -1412,71 +1412,82 @@ $('othertab-keep').addEventListener('click', () => { tabs.choose('mine'); $('oth
 
 // ---------- selection: copy, cut, paste, duplicate, mirror, turn ----------
 let clipboard: DRoute[] = [];
+/** (the tables copied with them) */
+let clipTables: Table[] = [];
 // (and the trackwork's hand edits between them, by the names the routes had: they go with the copies)
 let clipEdits: CopiedEdit[] = [], clipNames: string[] = [];
 const selected = () => canvas.selection().filter((i) => i < design.routes.length);
+const selectedTables = () => canvas.tableSelection();
 const nextName = () => freeName(design, 'R');
 const r3 = (v: number) => Math.round(v * 1000) / 1000;
-/** Add routes (copies), moved by (dx, dy) studs, and select them. */
-function addRoutes(list: DRoute[], dx: number, dy: number) {
+/** Where a set of copies is held by (moved to the mouse): its first route's start, or with no route its first table's middle. */
+const clipAnchor = (): [number, number] => clipboard.length ? [clipboard[0].x, clipboard[0].y] : clipTables.length ? (([x, y]) => [Math.round(x), Math.round(y)] as [number, number])(tableMiddle(clipTables[0])) : [0, 0];
+/** Add routes and tables (copies), moved by (dx, dy) studs, and select them. */
+function addRoutes(list: DRoute[], dx: number, dy: number, tables: Table[] = []) {
   const first = design.routes.length, names = new Map<string, string>();
   list.forEach((r, k) => { const name = nextName(); if (list === clipboard && clipNames[k] !== undefined) names.set(clipNames[k], name); design.routes.push({ ...structuredClone(r), name, x: r3(r.x + dx), y: r3(r.y + dy) }); });
   if (list === clipboard) pasteEdits(design, clipEdits, names, dx * 8, dy * 8);
-  canvas.setSelection(list.map((_, k) => first + k));
+  const t0 = design.tables?.length ?? 0;
+  if (tables.length) design.tables = [...(design.tables ?? []), ...tables.map((t) => movedTable(structuredClone(t), dx, dy))];
+  canvas.setSelection(list.map((_, k) => first + k), tables.map((_, k) => t0 + k));
   changed(true);
 }
 function copySel(cut = false, toBrowser = true) {
   // (nothing selected: what was copied stays copied)
-  if (!selected().length) return false;
+  if (!selected().length && !selectedTables().length) return false;
   clipboard = selected().map((i) => structuredClone(design.routes[i]));
+  clipTables = selectedTables().map((k) => structuredClone(design.tables![k]));
   clipNames = selected().map((i) => design.routes[i].name || String(i));
   // (cut: the edits go with the routes, not left behind with nothing to be on)
   clipEdits = copyEdits(design, clipNames, cut);
-  // (the browser may refuse to write to its own clipboard: not a problem, the copy is kept here)
-  if (toBrowser) try { void navigator.clipboard?.writeText(JSON.stringify({ btdRoutes: clipboard })).catch(() => { /* fine */ }); } catch { /* fine */ }
+  // (the browser may refuse to write to its own clipboard: not a problem, the copy is kept here; routes as before, the tables beside them)
+  if (toBrowser) try { void navigator.clipboard?.writeText(JSON.stringify({ btdRoutes: clipboard, btdTables: clipTables })).catch(() => { /* fine */ }); } catch { /* fine */ }
   return true;
 }
 /** A copy of the selection beside it, the clipboard left as it was. */
 function duplicateSel() {
-  const keep = [clipboard, clipNames, clipEdits] as const;
+  const keep = [clipboard, clipTables, clipNames, clipEdits] as const;
   if (!copySel(false, false)) return;
-  addRoutes(clipboard, 8, 0);
-  [clipboard, clipNames, clipEdits] = keep as [DRoute[], string[], CopiedEdit[]];
+  addRoutes(clipboard, 8, 0, clipTables);
+  [clipboard, clipTables, clipNames, clipEdits] = keep as [DRoute[], Table[], string[], CopiedEdit[]];
 }
 function deleteSel() {
   for (const i of selected().sort((a, b) => b - a)) design.routes.splice(i, 1);
+  const gone = new Set(selectedTables());
+  if (gone.size && design.tables) { design.tables = design.tables.filter((_, k) => !gone.has(k)); if (!design.tables.length) delete design.tables; }
   canvas.stopDrawing(); canvas.setSelection([]); openCards.clear(); changed(true);
 }
 /** The last paste: of which clipboard, where the mouse was, and how many have gone there (pasted again to the same spot, each a step over, not on top). */
 let lastPaste: { clip: DRoute[]; x: number; y: number; n: number } | undefined;
 function pasteClip() {
-  if (!clipboard.length) return;
-  const m = canvas.mouseStuds(), p0 = clipboard[0];
+  if (!clipboard.length && !clipTables.length) return;
+  const m = canvas.mouseStuds(), p0 = clipAnchor();
   // at the mouse (the first route's start there), or a little over
-  const x = m ? m[0] : p0.x + 8, y = m ? m[1] : p0.y + 8;
+  const x = m ? m[0] : p0[0] + 8, y = m ? m[1] : p0[1] + 8;
   const n = lastPaste?.clip === clipboard && lastPaste.x === x && lastPaste.y === y ? lastPaste.n + 1 : 0;
   lastPaste = { clip: clipboard, x, y, n };
-  addRoutes(clipboard, x + 8 * n - p0.x, y + 8 * n - p0.y);
+  addRoutes(clipboard, x + 8 * n - p0[0], y + 8 * n - p0[1], clipTables);
 }
-/** Transform the selection about its first route's start. */
-function transformSel(f: (r: DRoute, px: number, py: number) => void) {
-  const sel = selected(); if (!sel.length) return;
-  const { x: px, y: py } = design.routes[sel[0]];
+/** Transform the selection (its tables too) about its first route's start (or, with no route, its first table's middle). */
+function transformSel(f: (r: DRoute, px: number, py: number) => void, g: (t: Table, px: number, py: number) => Table) {
+  const sel = selected(), tk = selectedTables(); if (!sel.length && !tk.length) return;
+  const [px, py] = sel.length ? [design.routes[sel[0]].x, design.routes[sel[0]].y] : (([x, y]) => [Math.round(x), Math.round(y)])(tableMiddle(design.tables![tk[0]]));
   for (const i of sel) f(design.routes[i], px, py);
+  for (const k of tk) design.tables![k] = g(design.tables![k], px, py);
   changed(true);
 }
-const mirrorSel = () => { mirrorAnchors(design, selected().map((i) => design.routes[i].name || String(i))); transformSel((r, px) => mirrorRoute(r, px)); };
+const mirrorSel = () => { mirrorAnchors(design, selected().map((i) => design.routes[i].name || String(i))); transformSel((r, px) => mirrorRoute(r, px), (t, px) => mirroredTable(t, px)); };
 const turnSel = (a: number) => transformSel((r, px, py) => {
   const c = Math.cos((a * Math.PI) / 180), sn = Math.sin((a * Math.PI) / 180), dx = r.x - px, dy = r.y - py;
   r.x = r3(px + dx * c - dy * sn); r.y = r3(py + dx * sn + dy * c);
   r.heading = r3((((r.heading + a + 180) % 360) + 360) % 360 - 180);
-});
+}, (t, px, py) => turnedTable(t, px, py, a));
 function updateSelbar() {
-  const n = selected().length, bar = $('selbar');
-  bar.hidden = n === 0 && clipboard.length === 0;
+  const n = selected().length + selectedTables().length, bar = $('selbar');
+  bar.hidden = n === 0 && !clipboard.length && !clipTables.length;
   $('sel-count').textContent = n ? `${n} selected` : 'clipboard:';
   for (const id of ['sel-copy', 'sel-cut', 'sel-dup', 'sel-mirror', 'sel-rotl', 'sel-rotr', 'sel-del']) ($(id) as HTMLButtonElement).disabled = n === 0;
-  ($('sel-paste') as HTMLButtonElement).disabled = clipboard.length === 0;
+  ($('sel-paste') as HTMLButtonElement).disabled = !clipboard.length && !clipTables.length;
 }
 $('sel-copy').addEventListener('click', () => { copySel(); updateSelbar(); });
 $('sel-cut').addEventListener('click', () => { if (copySel(true)) deleteSel(); updateSelbar(); });
@@ -1493,7 +1504,7 @@ addEventListener('keydown', (e) => {
   else if (mod && k === 'x') { e.preventDefault(); if (copySel(true)) deleteSel(); }
   else if (mod && k === 'v') { e.preventDefault(); pasteClip(); }
   else if (mod && k === 'd') { e.preventDefault(); duplicateSel(); }
-  else if (mod && k === 'a') { e.preventDefault(); canvas.setSelection(design.routes.map((_, i) => i)); }
+  else if (mod && k === 'a') { e.preventDefault(); canvas.setSelection(design.routes.map((_, i) => i), (design.tables ?? []).map((_, k) => k)); }
   else if (!mod && k === 'm') mirrorSel();
   else if (!mod && k === 'r') turnSel(e.shiftKey ? 90 : -90);
   else return;

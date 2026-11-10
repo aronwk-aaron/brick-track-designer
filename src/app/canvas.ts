@@ -6,7 +6,7 @@
 // branches off it (a switch). Select mode picks a track to edit or delete.
 // Drag with the right or middle button (or Space + drag) to pan; the wheel
 // zooms.
-import { movedTable, type Table, TABLE_COLORS, tableMiddle, tableOutline } from './tables';
+import { movedTable, type Table, TABLE_COLORS, tableInBox, tableMiddle, tableOutline } from './tables';
 import { type Design, type DRoute, type DSeg, dualRailOffsets, freeName, isMono, routeGaugeStuds, toRoutes, type Trackwork } from './design';
 import { sleeperSpots } from '../geom/crossing';
 import { poseToWorld, routeLength, routePose, worldToPose } from '../route/route';
@@ -129,7 +129,7 @@ export class TrackCanvas {
   private space = false;
   mode: 'draw' | 'select' = 'select';
   /** Moving the selected tracks: where the press was (studs) and where they started. */
-  private moving: { x: number; y: number; orig: { i: number; x: number; y: number }[]; moved: boolean } | undefined;
+  private moving: { x: number; y: number; orig: { i: number; x: number; y: number }[]; tables?: { k: number; orig: Table }[]; moved: boolean } | undefined;
   /** a table being dragged by its handle (its name, in its middle): which, where from, as it was */
   private tableDrag: { k: number; x: number; y: number; orig: Table; moved: boolean } | undefined;
   /** the table whose handle (its name, in its middle) is within reach of a point (studs), if any */
@@ -158,8 +158,11 @@ export class TrackCanvas {
   selection(): number[] {
     return this.selected === undefined ? [...this.extra] : [this.selected, ...[...this.extra].filter((i) => i !== this.selected)];
   }
-  setSelection(list: number[]) {
-    this.selected = list[0]; this.extra = new Set(list.slice(1)); this.host.select(this.selected); this.draw();
+  /** The selected tables (by their place in the design's list): select all, a box round them, or a click on one's name. */
+  private selTables = new Set<number>();
+  tableSelection(): number[] { const n = this.host.design().tables?.length ?? 0; return [...this.selTables].filter((k) => k < n).sort((a, b) => a - b); }
+  setSelection(list: number[], tables: number[] = []) {
+    this.selected = list[0]; this.extra = new Set(list.slice(1)); this.selTables = new Set(tables); this.host.select(this.selected); this.draw();
   }
   /** The plan's zoom and offset (a report keeps them, to show the same view again). */
   view() { return { scale: this.scale, ox: this.ox, oy: this.oy }; }
@@ -519,14 +522,25 @@ export class TrackCanvas {
         work.segs.forEach((sg, k) => { if (sg.kind === 'curve') c = k; });
         const anchor = c < 0 ? Math.max(0, work.segs.length - 1) : c > 0 && work.segs[c - 1].kind === 'straight' ? c - 1 : c;
         this.drag = { route: hit.route, end: hit.end, sx: e.clientX, sy: e.clientY, moved: false, orig: structuredClone(r), anchor, lastGood: structuredClone(r) };
-        this.extra.clear(); this.selected = hit.route; this.host.select(this.selected);
+        this.extra.clear(); this.selTables.clear(); this.selected = hit.route; this.host.select(this.selected);
         return;
       }
     }
     if (this.mode === 'select') {
       // (a table's handle: drag the table about)
       const tk = this.hidden.has('tables') ? undefined : this.tableHandle(w);
-      if (tk !== undefined) { this.tableDrag = { k: tk, x: w[0], y: w[1], orig: structuredClone(this.host.design().tables![tk]), moved: false }; return; }
+      if (tk !== undefined) {
+        // (a click on a table's name selects it, with Shift adds it; a selected table dragged takes the whole selection with it)
+        const addTo = e.shiftKey || e.ctrlKey || e.metaKey;
+        if (addTo) { if (!this.selTables.delete(tk)) this.selTables.add(tk); this.draw(); return; }
+        const d = this.host.design();
+        if (!this.selTables.has(tk)) this.setSelection([], [tk]);
+        if (this.selection().length || this.selTables.size > 1) {
+          this.moving = { x: w[0], y: w[1], moved: false, orig: this.selection().map((i) => ({ i, x: d.routes[i].x, y: d.routes[i].y })), tables: this.tableSelection().map((k) => ({ k, orig: structuredClone(d.tables![k]) })) };
+          return;
+        }
+        this.tableDrag = { k: tk, x: w[0], y: w[1], orig: structuredClone(d.tables![tk]), moved: false }; return;
+      }
       const hit = this.nearTrack(w, this.reach(18)) ?? this.onBand(w);
       // pressing on a selected track: drag the selection about
       const add = e.shiftKey || e.ctrlKey || e.metaKey;
@@ -534,12 +548,12 @@ export class TrackCanvas {
       if (!hit) { this.box = { x0: w[0], y0: w[1], x1: w[0], y1: w[1], add }; return; }
       if (hit && !add && (hit.route === this.selected || this.extra.has(hit.route))) {
         const d = this.host.design();
-        this.moving = { x: w[0], y: w[1], moved: false, orig: this.selection().map((i) => ({ i, x: d.routes[i].x, y: d.routes[i].y })) };
+        this.moving = { x: w[0], y: w[1], moved: false, orig: this.selection().map((i) => ({ i, x: d.routes[i].x, y: d.routes[i].y })), tables: this.tableSelection().map((k) => ({ k, orig: structuredClone(d.tables![k]) })) };
         return;
       }
       if (add && hit) this.toggleSelected(hit.route);
       else {
-        this.selected = hit?.route; this.extra.clear();
+        this.selected = hit?.route; this.extra.clear(); this.selTables.clear();
         // (and it can be dragged straight away)
         if (hit) { const d = this.host.design(); this.moving = { x: w[0], y: w[1], moved: false, orig: [{ i: hit.route, x: d.routes[hit.route].x, y: d.routes[hit.route].y }] }; }
       }
@@ -583,11 +597,11 @@ export class TrackCanvas {
     }
     // laid onto another track's end: join them into one track, and stop
     if (snapTo && this.active.route !== undefined) {
-      this.extra.clear(); this.selected = this.join(this.active.route, snapTo.route, snapTo.end);
+      this.extra.clear(); this.selTables.clear(); this.selected = this.join(this.active.route, snapTo.route, snapTo.end);
       this.active = undefined;
       this.host.select(this.selected); this.host.changed(true); return this.draw();
     }
-    this.extra.clear(); this.selected = this.active.route;
+    this.extra.clear(); this.selTables.clear(); this.selected = this.active.route;
     this.host.select(this.selected);
     this.host.changed(true);
     this.draw();
@@ -643,6 +657,7 @@ export class TrackCanvas {
       if (dx || dy || m.moved) {
         m.moved = true;
         for (const o of m.orig) { d.routes[o.i].x = Math.round((o.x + dx) * 1e4) / 1e4; d.routes[o.i].y = Math.round((o.y + dy) * 1e4) / 1e4; }
+        for (const o of m.tables ?? []) if (d.tables?.[o.k]) d.tables[o.k] = movedTable(o.orig, dx, dy);
         this.host.changed(false);
       }
       this.mouse = p;
@@ -711,8 +726,10 @@ export class TrackCanvas {
       const x0 = Math.min(b.x0, b.x1), x1 = Math.max(b.x0, b.x1), y0 = Math.min(b.y0, b.y1), y1 = Math.max(b.y0, b.y1);
       const tiny = x1 - x0 < 0.2 && y1 - y0 < 0.2;
       const inBox = tiny ? [] : this.host.design().routes.map((r, i) => (trace(r, r.segs, 0.5).some((q) => q[0] >= x0 && q[0] <= x1 && q[1] >= y0 && q[1] <= y1) ? i : -1)).filter((i) => i >= 0);
-      const keep = b.add ? this.selection() : [];
-      this.setSelection([...keep, ...inBox.filter((i) => !keep.includes(i))]);
+      const keep = b.add ? this.selection() : [], keepT = b.add ? this.tableSelection() : [];
+      // (a table only when the whole of it is inside the box)
+      const tIn = tiny ? [] : (this.hidden.has('tables') ? [] : (this.host.design().tables ?? []).map((t, k) => (tableInBox(t, x0, y0, x1, y1) ? k : -1)).filter((k) => k >= 0));
+      this.setSelection([...keep, ...inBox.filter((i) => !keep.includes(i))], [...keepT, ...tIn.filter((k) => !keepT.includes(k))]);
       return;
     }
     const dr = this.drag;
@@ -724,7 +741,7 @@ export class TrackCanvas {
         // joined: make the two one track (the dragged end meeting the other's end)
         const routes = this.host.design().routes;
         if (dr.end === 'start') { routes[dr.route] = reversedRoute(routes[dr.route]); reverseAnchors(this.host.design(), routes[dr.route].name || String(dr.route)); }
-        this.extra.clear(); this.selected = this.join(dr.route, this.dragSnap.route, this.dragSnap.end);
+        this.extra.clear(); this.selTables.clear(); this.selected = this.join(dr.route, this.dragSnap.route, this.dragSnap.end);
         this.host.select(this.selected);
       }
       this.dragBad = false; this.dragSnap = undefined;
@@ -888,12 +905,13 @@ export class TrackCanvas {
     // Esc mid-drag of the routes, a table, a lever, a check rail's end or a selection box: put back as it was (not a step), the selection kept
     if (e.key === 'Escape' && (this.moving || this.tableDrag || this.itemDrag || this.leverDrag || this.box)) {
       const m = this.moving, t = this.tableDrag, d = this.host.design();
-      const sel = this.selection(), changedAlready = !!(m?.moved || t?.moved || this.itemDrag?.moved || this.leverDrag?.moved);
+      const sel = this.selection(), selT = this.tableSelection(), changedAlready = !!(m?.moved || t?.moved || this.itemDrag?.moved || this.leverDrag?.moved);
       if (m) for (const o of m.orig) if (d.routes[o.i]) { d.routes[o.i].x = o.x; d.routes[o.i].y = o.y; }
+      if (m?.tables) for (const o of m.tables) if (d.tables?.[o.k]) d.tables[o.k] = o.orig;
       if (t && d.tables?.[t.k]) d.tables[t.k] = t.orig;
       const lever = !!(this.itemDrag?.moved || this.leverDrag?.moved);
       this.moving = undefined; this.tableDrag = undefined; this.itemDrag = undefined; this.leverDrag = undefined; this.leverPending = undefined; this.box = undefined;
-      if (lever && this.host.revert) { this.host.revert(); this.setSelection(sel.filter((i) => i < this.host.design().routes.length)); }
+      if (lever && this.host.revert) { this.host.revert(); this.setSelection(sel.filter((i) => i < this.host.design().routes.length), selT); }
       else if (changedAlready) this.host.changed(false);
       return this.draw();
     }
@@ -904,22 +922,25 @@ export class TrackCanvas {
     if (e.key === 'Escape') {
       if (this.active) this.stopDrawing();
       else if (this.mode === 'draw') this.host.leaveDraw?.();
-      else if (this.selection().length) this.setSelection([]);
+      else if (this.selection().length || this.tableSelection().length) this.setSelection([]);
     }
     // Arrow keys in Select: the selected routes a stud over (Shift: eight, a LEGO plate's width), one step each; not while a button, a slider or a list has the focus (they use the arrows)
-    if (e.key.startsWith('Arrow') && this.mode === 'select' && this.selection().length && !e.ctrlKey && !e.metaKey && !e.altKey && (e.target === document.body || e.target === this.el)) {
+    if (e.key.startsWith('Arrow') && this.mode === 'select' && (this.selection().length || this.tableSelection().length) && !e.ctrlKey && !e.metaKey && !e.altKey && (e.target === document.body || e.target === this.el)) {
       const n = e.shiftKey ? 8 : 1, dx = e.key === 'ArrowLeft' ? -n : e.key === 'ArrowRight' ? n : 0, dy = e.key === 'ArrowDown' ? -n : e.key === 'ArrowUp' ? n : 0;
       e.preventDefault();
       if (this.moving || this.drag || this.handleDrag || this.tableDrag || this.itemDrag || this.leverDrag || this.box || this.active || (!dx && !dy)) return;
       const routes = this.host.design().routes;
       for (const i of this.selection()) if (routes[i]) { routes[i].x = Math.round((routes[i].x + dx) * 1e4) / 1e4; routes[i].y = Math.round((routes[i].y + dy) * 1e4) / 1e4; }
+      const ts = this.host.design().tables;
+      for (const k of this.tableSelection()) if (ts?.[k]) ts[k] = movedTable(ts[k], dx, dy);
       this.host.changed(true); this.draw();
       return;
     }
-    if ((e.key === 'Delete' || e.key === 'Backspace') && this.selected !== undefined && !this.active) {
-      const routes = this.host.design().routes;
+    if ((e.key === 'Delete' || e.key === 'Backspace') && (this.selected !== undefined || this.tableSelection().length) && !this.active) {
+      const d = this.host.design(), routes = d.routes, gone = new Set(this.tableSelection());
       for (const i of this.selection().sort((a, b) => b - a)) routes.splice(i, 1);
-      this.selected = undefined; this.extra.clear(); this.host.select(undefined); this.host.changed(true); this.draw();
+      if (gone.size && d.tables) { d.tables = d.tables.filter((_, k) => !gone.has(k)); if (!d.tables.length) delete d.tables; }
+      this.setSelection([]); this.host.changed(true);
     }
   }
   stopDrawing() { this.active = undefined; this.draw(); }
@@ -996,6 +1017,7 @@ export class TrackCanvas {
     }
     if (this.mode === 'select') {
       if (this.tableDrag?.moved) return 'Moving the table: let go to put it down';
+      if (this.tableSelection().length && this.selected === undefined) return `${this.tableSelection().length} table${this.tableSelection().length > 1 ? 's' : ''} selected · drag by the name to move · Shift+click adds more · Delete removes`;
       if (this.mouse && !this.hidden.has('tables') && this.tableHandle(this.mouse) !== undefined) return 'Drag this table by its name to move it (its size and shape: the Tables panel)';
       if (hit?.end) return 'Drag this end to reshape the track';
       if (this.moving?.moved) return 'Moving: let go to put it down';
@@ -1037,10 +1059,11 @@ export class TrackCanvas {
       if (pts.length < 3) return;
       c.beginPath(); pts.forEach(([x, y], i) => { const [sx, sy] = this.toScreen(x, y); if (i) c.lineTo(sx, sy); else c.moveTo(sx, sy); }); c.closePath();
       c.globalAlpha = 0.4; c.fillStyle = t.color ?? TABLE_COLORS[k % TABLE_COLORS.length]; c.fill(); c.globalAlpha = 1;
-      c.strokeStyle = ink.rail; c.lineWidth = 1.5; c.stroke();
+      const picked = this.selTables.has(k);
+      c.strokeStyle = picked ? ink.sel : ink.rail; c.lineWidth = picked ? 3 : 1.5; c.stroke();
       // (its handle: its name in its middle, to drag it by)
       const m = tableMiddle(t), [sx, sy] = this.toScreen(m[0], m[1]);
-      c.fillStyle = ink.label; c.font = '12px system-ui, sans-serif'; c.textAlign = 'center'; c.fillText(`✥ ${t.name || `Table ${k + 1}`}`, sx, sy + 4); c.textAlign = 'start';
+      c.fillStyle = picked ? ink.selInk : ink.label; c.font = '12px system-ui, sans-serif'; c.textAlign = 'center'; c.fillText(`✥ ${t.name || `Table ${k + 1}`}`, sx, sy + 4); c.textAlign = 'start';
     });
     // baseplate edges, where the track is cut (Piece options)
     const bpS = d.options?.baseplate ?? 0;

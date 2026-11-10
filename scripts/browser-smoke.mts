@@ -185,6 +185,26 @@ try {
   await page.mouse.move(...(await scr(0, -30))); await page.keyboard.press('Control+v'); await page.keyboard.press('Control+v');
   const pasted = await page.evaluate(() => (JSON.parse(localStorage.getItem('btd-design') ?? '{}').routes as { x: number; y: number }[]).slice(3).map((q) => `${q.x},${q.y}`));
   check(pasted.length === 2 && pasted[0] !== pasted[1], `pasting twice at one spot doesn't stack the routes (${pasted.join(' ')})`);
+  // select all takes the tables too: mirror, nudge, copy and paste carry them with the route
+  at = 'tables with the selection';
+  await page.evaluate(() => localStorage.setItem('btd-design', JSON.stringify({ version: 1, gaugeStuds: 4, routes: [
+    { name: 'A', x: 0, y: 0, heading: 0, segs: [{ kind: 'straight', studs: 16 }] },
+  ], tables: [{ name: 'T', shape: 'rect', x: 10, y: 0, w: 20, h: 16 }] })));
+  await page.reload(); await page.waitForSelector('#track'); await page.click('#mode-select'); await page.click('#fit'); await page.waitForTimeout(300);
+  const tab = () => page.evaluate(() => (JSON.parse(localStorage.getItem('btd-design') ?? '{}').tables ?? []) as { x: number; y: number }[]);
+  await page.keyboard.press('Control+a');
+  check(await page.locator('#sel-count').innerText() === '2 selected', `select all counts the table (${await page.locator('#sel-count').innerText()})`);
+  await page.keyboard.press('m');
+  check((await tab())[0]?.x === -30, `mirror takes the table across with the route (${JSON.stringify(await tab())})`);
+  await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());   // (the Fit button had the focus: arrows would press nothing)
+  await page.keyboard.press('ArrowRight');
+  check((await tab())[0]?.x === -29, 'the arrow keys nudge the table with the route');
+  await page.keyboard.press('Control+d');
+  check((await tab()).length === 2 && await routes() === 2, 'duplicate copies the table with the route');
+  await page.keyboard.press('Delete');
+  check((await tab()).length === 1 && await routes() === 1, 'Delete takes out the selected copy and its table, not the first');
+  await page.keyboard.press('Control+a'); await page.keyboard.press('Delete');
+  check((await tab()).length === 0 && await routes() === 0, 'Delete takes the selected tables out with the routes');
   // an end dragged onto one that has other guard rails doesn't join (and says why)
   await page.evaluate(() => localStorage.setItem('btd-design', JSON.stringify({ version: 1, gaugeStuds: 4, routes: [
     { name: 'A', x: -20, y: 0, heading: -90, segs: [{ kind: 'straight', studs: 16 }], guardRails: true },

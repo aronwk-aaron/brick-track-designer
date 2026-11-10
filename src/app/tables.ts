@@ -73,3 +73,32 @@ export function movedTable(t: Table, dx: number, dy: number): Table {
   if (t.shape === 'arc') return { ...t, cx: t.cx + dx, cy: t.cy + dy };
   return { ...t, pts: t.pts.map(([x, y]) => [x + dx, y + dy] as [number, number]) };
 }
+
+const r3 = (v: number) => Math.round(v * 1000) / 1000;
+
+/** A table mirrored left to right about the line x = px (studs). */
+export function mirroredTable(t: Table, px: number): Table {
+  if (t.shape === 'rect') return { ...t, x: r3(2 * px - t.x - t.w) };
+  // (an arc's angles run counterclockwise from +x: a mirrored one is 180 - a, so its ends swap)
+  if (t.shape === 'arc') return { ...t, cx: r3(2 * px - t.cx), a0: r3(180 - Math.max(t.a0, t.a1)), a1: r3(180 - Math.min(t.a0, t.a1)) };
+  // (the corners in the other order, so the outline still runs counterclockwise)
+  return { ...t, pts: t.pts.map(([x, y]) => [r3(2 * px - x), y] as [number, number]).reverse() };
+}
+
+/** A table turned by a degrees (counterclockwise) about (px, py), studs. A rectangle stays one at a quarter turn, else it becomes an outline. */
+export function turnedTable(t: Table, px: number, py: number, a: number): Table {
+  const c = Math.cos((a * Math.PI) / 180), s = Math.sin((a * Math.PI) / 180);
+  const at = (x: number, y: number): [number, number] => [r3(px + (x - px) * c - (y - py) * s), r3(py + (x - px) * s + (y - py) * c)];
+  if (t.shape === 'arc') { const [cx, cy] = at(t.cx, t.cy); return { ...t, cx, cy, a0: r3(t.a0 + a), a1: r3(t.a1 + a) }; }
+  if (t.shape === 'rect' && Math.abs(a / 90 - Math.round(a / 90)) < 1e-9) {
+    const p = at(t.x, t.y), q = at(t.x + t.w, t.y + t.h);
+    const x = Math.min(p[0], q[0]), y = Math.min(p[1], q[1]);
+    return { ...t, x, y, w: r3(Math.abs(q[0] - p[0])), h: r3(Math.abs(q[1] - p[1])) };
+  }
+  return { name: t.name, color: t.color, shape: 'poly', pts: tableOutline(t).map(([x, y]) => at(x, y)) };
+}
+
+/** Is the whole table inside the box (studs)? */
+export function tableInBox(t: Table, x0: number, y0: number, x1: number, y1: number): boolean {
+  return tableOutline(t).every(([x, y]) => x >= x0 && x <= x1 && y >= y0 && y <= y1);
+}
