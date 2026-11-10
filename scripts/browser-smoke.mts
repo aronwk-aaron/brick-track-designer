@@ -1,6 +1,6 @@
 // The app in a real browser, quickly (CI's smoke job; the tests have no page): the built site served by vite preview,
 // then a template loaded and built, a route drawn and undone, Delete pressed behind an open dialog, a file that isn't
-// a design opened, and an edit with Auto off. Any error on the page fails it. A few minutes at most: each wait has
+// a design opened, an edit with Auto off, and a template over a changed design. Any error on the page fails it. A few minutes at most: each wait has
 // its own limit, and the whole run one (SMOKE_MINUTES, default 6).
 //   pnpm build && npx tsx scripts/browser-smoke.mts      (CHROME: the browser to use; PORT: preview's)
 import { spawn } from 'node:child_process';
@@ -72,6 +72,13 @@ try {
   await page.click('#rebuild');
   check(await says(/1 switch.*built in/), 'Build builds it');
   check(!(await page.isDisabled('#export-stl')), 'and the STL download is there again');
+
+  at = 'replacing a changed design';
+  await page.selectOption('#template', 'Oval (LEGO R40)');
+  await page.waitForSelector('#ask-dlg[open]', { timeout: 10_000 }).catch(() => undefined);
+  check(await page.locator('#ask-dlg').evaluate((d: HTMLDialogElement) => d.open), 'a template over a changed design asks first');
+  await page.click('#ask-no');
+  check(await routes() === 2, 'Keep it keeps it');
 
   check(errors.length === 0, `no errors on the page${errors.length ? `: ${errors.join(' | ').slice(0, 600)}` : ''}`);
 } catch (err) {
