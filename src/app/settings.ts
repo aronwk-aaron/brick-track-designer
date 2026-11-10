@@ -102,6 +102,9 @@ export function optionForm(d: () => Design): { form: OptSection[]; noMono: (c?: 
         { v: 'simple', t: 'Rigid', tip: 'Each blade on a thin plate, the slider\'s post in a plain hole: no spring.', con: 'A train trailing through the wrong way can\'t push the blades over: set the points first.' },
         { v: 'prototype', t: 'Rigid, realistic (planed, tucked under the rail)', tip: 'Rigid blades planed to a point and tucked under the stock rail head, so flanges can\'t catch them.',
           con: 'No spring, as Rigid. Fit the blades swung open, then close them. The stock rail head is thinner along the points.' }] },
+      { key: 'bladeRelief', label: 'Flange relief in sprung blades', check: true, def: false, get: () => d().options?.bladeRelief ?? false, set: (v) => { d().options = { ...d().options, bladeRelief: v === true }; },
+        off: (c) => onlyPlates(c) ?? (c.o.bladeStyle !== 'sprung' ? 'only with Blade shape: Sprung (rigid blades\' plates are lower already)' : undefined),
+        help: 'A groove 0.4 mm deep and 2.4 mm wide in each blade\'s plate beside its rail, where the wheels\' flanges run. LEGO flanges hang 3.2 to 3.45 mm below the rail top and the plate\'s top is 3.1 mm below it, so without the groove a flange can rub the plate by up to 0.35 mm. Drawback: the top is no longer flat, as the reference blade\'s is. On points at an angle to the baseplate grid (thinner plates) the groove stops over the spring.' },
       { key: 'bladeLip', label: 'Blades held down by', off: (c) => onlyPlates(c) ?? (c.o.bladeStyle === 'sprung' ? 'Blade shape is Sprung: it always has the front lip' : undefined), choices: [
         { v: 'pin', t: 'Snap lip on the pin', tip: 'A small lip on top of each blade\'s pin. The blade\'s hole snaps down over it.',
           con: 'Only the heel is held. The point can lift a little, where a flange can catch it.' },

@@ -61,6 +61,10 @@
   "prototype",
   "sprung"
  ],
+ "bladeRelief": [
+  "false",
+  "true"
+ ],
  "bladeLip": [
   "pin",
   "front"

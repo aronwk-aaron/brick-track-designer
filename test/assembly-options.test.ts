@@ -16,6 +16,8 @@ const cases: [string, Design][] = [
   // (sprung blades: a lip over each plate's front; each blade goes in tilted, its front under the lip)
   ['left switch, sprung blades', { ...TEMPLATES['Left switch (LEGO)'], options: { bladeStyle: 'sprung' } }],
   ['wye on ballast, sprung blades', { ...TEMPLATES['Wye switch'], options: { ballast: 'buddy', bladeStyle: 'sprung' } }],
+  // (Flange relief in sprung blades: a groove in each plate's top beside its rail)
+  ['left switch, sprung blades with the flange relief', { ...TEMPLATES['Left switch (LEGO)'], options: { bladeStyle: 'sprung', bladeRelief: true } }],
   ['left switch, one sprung blade', { ...TEMPLATES['Left switch (LEGO)'], options: { bladeStyle: 'sprung', pointBlades: 1 } }],
   // (rigid blades held down by a lip over the front, as the sprung: each goes in tilted under it, the pin plain; prototype
   // ones open, then swung shut. Not rigid ones on ballast: their plates are a sliver at the front, and keep the pin's snap lip)

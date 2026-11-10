@@ -51,6 +51,8 @@ export interface SwitchParams {
   throwStand?: boolean;
   /** (the plate-style points) The blades: 'simple' (as before), 'prototype' (planed to a point and laid tight under the stock rail's undercut head, the tie bar at the points) or 'sprung' (leaf springs under the plate, a stud for its pivot). */
   bladeStyle?: 'simple' | 'prototype' | 'sprung';
+  /** (sprung blades) A shallow groove in each plate's top where the wheels' flanges run (switch/base.ts RELIEF): the reference's top is flat, 3.1 under the rail's top, and LEGO's deepest flanges hang 3.45. */
+  bladeRelief?: boolean;
   /** (sprung blades on track alone, at an angle to the stud grid: sprungOnGrid) thinner plates on the shallow slider over the studs (switch/base.ts SPRUNG_THIN) */
   sprungThin?: boolean;
   /** (the plate-style points, rigid blades) What holds each blade down: 'pin' (a snap lip on its pin, as before) or 'front' (a lip on the bed over its plate's front, as the sprung blades', and a plain pin). The sprung blades always have the lip. */

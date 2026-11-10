@@ -108,6 +108,8 @@ export interface PieceOptions {
   pointsPieces?: 1 | 2;
   /** Moving blades per set: 2, or 1 (a single-point switch: the other side's rail fixed; the plate-style points, not a three-way). */
   pointBlades?: 1 | 2;
+  /** (sprung blades) A groove 0.4 deep in each blade's plate where the wheels' flanges run (off: the flat top, as the reference's). */
+  bladeRelief?: boolean;
   /** A three-way's levers: 1 (one, three positions), or 2 (one to each blade, one each side, two positions each: blades on top). */
   threeWayLevers?: 1 | 2;
   /** (prototype) The points: built into the one piece, their pockets through to the bottom (switch.scad's); on a solid floor, the pockets stopping on it ('floor'); or the piece in layers stacked from the top (the lower layer with the moving parts' pockets, the deck with the bed and rails over it, held by studs; needs ballast). */

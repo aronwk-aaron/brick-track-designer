@@ -129,6 +129,17 @@ const LIP = { run: 2.4, end: 0.6, thick: 2.0, below: 0.2 };
  * stud's hole 1.5 deep on a stud 1.2 tall. Its front's bevel and lip to suit.
  */
 const SPRUNG_THIN = { plateT: 2.3, holeDepth: 1.5, pocketH: 1.3, beamH: 1.0, studH: 1.2 }, LIP_THIN = { run: 1.7, end: 0.6, thick: 2.0, below: 0.2 };
+/**
+ * (sprung blades, bladeRelief) A relief for the wheels' flanges in the plate's top: LEGO's flanges hang 3.2 to 3.45 under
+ * the rail's top (context.ts SHALLOW_SLIDER), and the plate's flat top is 3.1 under it, so a flange can rub it by up to
+ * 0.35. A groove depth deep along where a flange runs over the plate with the blade closed (just inside the blade's own
+ * rail; on a three-way the far branch's too, which crosses the plate), w wide from the rail's face (a flange's 1.5 and the
+ * wheels' play), its floor 3.5 under the rail's top. Not where it would leave less than roof of plate over the spring's
+ * pocket (the thinner plates' pocket: there the plate's top stays; the full plate's roof is 1.2, 0.8 left), or less than
+ * cap over the stud's hole (a three-way's far branch's flange passes over it: 0.8 there, 0.4 left, two layers bridging
+ * the hole's 4.85, with nothing on it: the plate lies on the bed round the stud).
+ */
+const RELIEF = { depth: 0.4, w: 2.4, roof: 0.8, cap: 0.4 };
 type Sprungish = { bladeStyle?: string; generateBallast?: boolean; mechStyle?: string; sprungThin?: boolean };
 /** The sprung blades' sizes: the reference's, or the thinner plate's. */
 const sprungOf = (p: Sprungish) => (p.sprungThin ? { ...SPRUNG, ...SPRUNG_THIN } : { ...SPRUNG, studH: undefined as number | undefined });
@@ -1561,6 +1572,20 @@ export function switchGeometry(s: Scad, plan: SwitchPlan, extraCuts: Man[] = [])
     return rot3(s.union([plate, s.intersection(bar, cube([400, 400, 50], [-200, bev ? yF + LP.run : y0, z0 - 10]))]), fb.pivot, fb.open);
   };
   /**
+   * (bladeRelief) Where a wheel's flange runs over blade b's plate with the blade closed, in plan (RELIEF): inside the
+   * blade's own rail, and on a three-way inside the far branch's rail on that side, which parts from the blade's across
+   * its plate (the near branch's is the stock rail: its flange runs behind the open blade, off the plate).
+   */
+  // (all: every route of the set's, the stock rail's too: for the lip on the bed, which lies under each of them)
+  const relief2d = (v: SetV, b: number, all = false): CS => {
+    const o = bO(b), side = bSide(b), n = 32, s0 = Math.max(0, v.sToe - 4), s1 = v.sHeel + 2;
+    const paths = all ? (v.three ? [v.three.S, v.three.L, v.three.R] : [v.ra, v.rb]) : v.three ? [v.three.S, b === 0 ? v.three.R : v.three.L] : [bRt(v, b)];
+    return W.CrossSection.union(paths.map((rt) => {
+      const edge = (off: number) => Array.from({ length: n + 1 }, (_, k) => railPoint(rt, s0 + ((s1 - s0) * k) / n, o + side * off) as P2);
+      return poly([...edge(HEAD_HW), ...edge(HEAD_HW + RELIEF.w).reverse()]);
+    }));
+  };
+  /**
    * (sprung blades) Under the plate: the stud's blind hole at the pin, and the
    * spring's pocket round the post with its two beams (rooted at the pocket's
    * heel end, free just past the post, the post between them) and the
@@ -1579,8 +1604,12 @@ export function switchGeometry(s: Scad, plan: SwitchPlan, extraCuts: Man[] = [])
     const beams = W.CrossSection.union([box(-SPRUNG.past + 1, root + 0.8, g2, g2 + SPRUNG.beamW), box(-SPRUNG.past + 1, root + 0.8, -g2 - SPRUNG.beamW, -g2)]).intersect(plate2d.offset(-SPRUNG.wall, 'Miter', 1000));
     const supports = pocket.offset(-0.9, 'Miter', 1000).subtract(W.CrossSection.union([beams, box(-SPRUNG.past, root, -g2, g2)]).offset(SPRUNG.slit, 'Miter', 1000));
     const hole = T(s.cylinder(SP.holeDepth + 1, SPRUNG.holeD / 2, SPRUNG.holeD / 2, 40), [fb.pivot[0], fb.pivot[1], z0 - 1]);
+    // (bladeRelief: the flanges' groove in the top, but where too little plate would be left over the pocket or the stud's hole)
+    const thin = [...(plateT - SP.pocketH - RELIEF.depth < RELIEF.roof - 1e-9 ? [pocket.offset(0.4, 'Round', 2, 16)] : []),
+      ...(plateT - SP.holeDepth - RELIEF.depth < RELIEF.cap - 1e-9 ? [circle(SPRUNG.holeD / 2 + 0.4, 40, fb.pivot)] : [])];
+    const relief = p.bladeRelief ? relief2d(v, b).subtract(W.CrossSection.union(thin)) : undefined;
     return s.union([
-      s.difference(plate, [T(s.extrude(pocket, SP.pocketH + 1), [0, 0, z0 - 1]), hole]),
+      s.difference(plate, [T(s.extrude(pocket, SP.pocketH + 1), [0, 0, z0 - 1]), hole, ...(relief && relief.area() > 0.01 ? [T(s.extrude(relief, RELIEF.depth + 1), [0, 0, z0 + plateT - RELIEF.depth])] : [])]),
       clip(T(s.extrude(beams, SP.beamH), [0, 0, z0])),
       ...(supports.area() > 1 ? [clip(T(s.extrude(supports, SP.pocketH - SPRUNG.supportGap), [0, 0, z0]))] : []),
     ]);
@@ -1795,7 +1824,9 @@ export function switchGeometry(s: Scad, plan: SwitchPlan, extraCuts: Man[] = [])
     return s.intersection(turns.map((a) => rot3(lip0, fb.pivot, a)).reduce((m, q) => m.intersect(q)), cube([x1 - x0, 400, 50], [x0, -200, bedTop - 1]));
   };
   /** (sprung blades, or rigid ones with bladeLip 'front') The lips over the moving blades' fronts (where other track leaves room: the plan's lip, switchPlan). */
-  const fdbLips = (v: SetV): Man[] => (lipOn ? blades(v).filter((b) => fdbBlades(v)[b].lip).map((b) => s.difference(sprungLip(v, b), [fdbPockets(v, false)])) : []);
+  // (bladeRelief: the flanges' groove on through the lip's top, as deep under the rail's top as the plate's)
+  const fdbLips = (v: SetV): Man[] => (lipOn ? blades(v).filter((b) => fdbBlades(v)[b].lip).map((b) => s.difference(sprungLip(v, b), [fdbPockets(v, false),
+    ...(sprung && p.bladeRelief ? [T(s.extrude(relief2d(v, b, true), 10), [0, 0, bedTop + c + plateT - RELIEF.depth])] : [])])) : []);
   /** The pins the blades turn on, standing on the bed. */
   // (each with a little snap lip over the plate, so the blade stays on: the plate's hole squeezes past it)
   const fdbPins = (v: SetV) => s.union([...fdbBlades(v).filter((_, b) => b !== v.fixed).flatMap((f) => sprung

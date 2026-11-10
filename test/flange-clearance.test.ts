@@ -54,6 +54,29 @@ describe('wheels\' flanges through the points', { timeout: 300000 }, () => {
     // (the plates' tops well under the flange: 3.8 under the rail's top on track alone)
     expect(RAIL_TOP - r.plateTop).toBeGreaterThan(FLANGE.depth + 0.3);
   });
+  // (Flange relief in sprung blades, bladeRelief: a groove 0.4 deep in the plate's top, and through the lip's, where the flange runs)
+  it('sprung blades with the flange relief: the deepest flange (3.45) clears them, either way set; the plate still 0.8 thick under the groove', async () => {
+    for (const o of [{ bladeStyle: 'sprung' as const, bladeRelief: true }, { bladeStyle: 'sprung' as const, bladeRelief: true, generateBallast: true }, { bladeStyle: 'sprung' as const, bladeRelief: true, pointBlades: 1 as const }]) {
+      const r = await inTheWay([A, B], [0, 1, 12], o);
+      for (const [what, vol] of r.out) expect(vol, what).toBeLessThan(0.02);
+      // (and without it the same flange rubs: the relief is what clears it)
+      const flat = await inTheWay([A, B], [0, 1, 12], { ...o, bladeRelief: false });
+      expect(Math.max(...flat.out.map(([, vol]) => vol))).toBeGreaterThan(1);
+      // (under the groove's floor, 0.8 of plate everywhere: a slab that thick just under it is solid plate)
+      const w = await kernel(), s = new Scad(w), gm = switchGeometry(s, r.plan), gf = switchGeometry(s, flat.plan);
+      gm.pointsParts(0).forEach((m, k) => {
+        // (the groove in plan: where the flat plate has top the relieved one hasn't, half way down the groove)
+        // (behind the plate's front, which is bevelled back 2.4 under its lip: a wedge there with or without the groove)
+        const zt = r.plateTop, all = gf.pointsParts(0)[k].slice(zt - 0.2).subtract(m.slice(zt - 0.2)), front = all.bounds().min[1] + 3;
+        const groove = all.intersect(s.square([400, 400]).translate([-200, front]));
+        expect(groove.area()).toBeGreaterThan(40);
+        // (its floor 0.4 down, 3.5 under the rail's top; and plate under all of it from there to 0.8 further down)
+        expect(RAIL_TOP - (zt - 0.4)).toBeCloseTo(3.5, 6);
+        expect(groove.intersect(m.slice(zt - 0.39)).area()).toBeLessThan(groove.area() * 0.02);
+        for (const z of [zt - 0.41, zt - 0.8, zt - 1.19]) expect(groove.intersect(m.slice(z)).area(), `plate under the groove at ${(zt - z).toFixed(2)} down`).toBeGreaterThan(groove.area() * 0.97); // (all but its edge by the toe, where the plate tapers)
+      });
+    }
+  });
   it('sprung blades (the reference\'s 3 mm plate): their tops 3.1 under the rail\'s top, clear of a flange 3.1 deep; a deeper one rubs along them', async () => {
     for (const o of [{ bladeStyle: 'sprung' as const }, { bladeStyle: 'sprung' as const, generateBallast: true }]) {
       const r = await inTheWay([A, B], [0, 1, 12], o, 3.09);

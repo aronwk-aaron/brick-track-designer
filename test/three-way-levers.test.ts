@@ -27,7 +27,9 @@ const SPECS: SetSpec[] = [[0, 2, 12, undefined, 1, undefined, 0], [0, 2, 12, und
 const SET: [string, number, [number, number]][] = [['right', 0, [0, 0]], ['straight', 1, [0, 1]], ['left', 2, [1, 1]]];
 
 describe('a three-way with a lever to each blade', { timeout: 600000 }, () => {
-  for (const [name, radius, o, depth] of [['R40, sprung blades', 320, {}, 3.09], ['R104, sprung blades', 832, {}, 3.09], ['R40, rigid blades', 320, { bladeStyle: 'simple' }, 3.45], ['R40, sprung blades on ballast', 320, { generateBallast: true }, 3.09]] as [string, number, Partial<BaseParams>, number][])
+  for (const [name, radius, o, depth] of [['R40, sprung blades', 320, {}, 3.09], ['R104, sprung blades', 832, {}, 3.09], ['R40, rigid blades', 320, { bladeStyle: 'simple' }, 3.45], ['R40, sprung blades on ballast', 320, { generateBallast: true }, 3.09],
+    // (Flange relief in sprung blades: the deepest flange, 3.45, over the plates each branch's wheels cross)
+    ['R40, sprung blades with the flange relief', 320, { bladeRelief: true }, 3.45]] as [string, number, Partial<BaseParams>, number][])
     it(`${name}: each of the three routes set, nothing in a flange's way; the blades clear of each other wherever they are`, async () => {
       const w = await kernel(), s = new Scad(w), routes = [arc('R', radius, -22.5, 80), S, arc('L', radius, 22.5, 80)];
       const plan = switchPlan(routes, SPECS, { ...p, ...o }, 1), gm = switchGeometry(s, plan), G = plan.G, v = plan.sets[0];
