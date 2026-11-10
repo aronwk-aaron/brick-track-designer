@@ -7,6 +7,7 @@ import { Scad, T } from '../src/geom/scad';
 import { CROSSING_DEFAULTS, crossingPiece } from '../src/geom/crossing';
 import { TEMPLATE_GROUPS, TEMPLATES, toRoutes } from '../src/app/design';
 import { routePose } from '../src/route/route';
+import { buildScope } from '../src/app/solidcache';
 
 export function sitsOnStuds(groups: string[]) {
   // (not track up off the baseplate (a grade, a helix): it stands on supports, and a helix's route over itself, swept as
@@ -17,15 +18,20 @@ export function sitsOnStuds(groups: string[]) {
     for (const grip of ['edges', 'all'] as const)
       it(`${name}, grip ${grip}: sits on a baseplate's studs`, { timeout: 60000 }, async () => {
         const w = await kernel(), s = new Scad(w), routes = toRoutes(TEMPLATES[name]);
-        const m = crossingPiece(s, routes, { ...CROSSING_DEFAULTS, grip });
-        const b = m.boundingBox(), p0 = routePose(routes[0], 0), h = (p0[2] * Math.PI) / 180;
-        const studs = [];
-        for (let i = -80; i <= 80; i++) for (let j = -80; j <= 80; j++) {
-          const lx = 4 + 8 * i, ly = 4 + 8 * j;
-          const x = p0[0] + lx * Math.cos(h) - ly * Math.sin(h), y = p0[1] + lx * Math.sin(h) + ly * Math.cos(h);
-          if (x < b.min[0] - 4 || x > b.max[0] + 4 || y < b.min[1] - 4 || y > b.max[1] + 4) continue;
-          studs.push(T(s.cylinder(1.8, 2.4, 2.4, 32), [x, y, 0]));
-        }
-        expect(m.intersect(w.Manifold.union(studs)).volume()).toBeLessThan(1e-3);
+        // (its solids let go when it's done (solidcache.ts buildScope): left in the kernel, a file's worth of pieces
+        // filled it, and the twentieth build never ended)
+        const inStuds = buildScope(() => {
+          const m = crossingPiece(s, routes, { ...CROSSING_DEFAULTS, grip });
+          const b = m.boundingBox(), p0 = routePose(routes[0], 0), h = (p0[2] * Math.PI) / 180;
+          const studs = [];
+          for (let i = -80; i <= 80; i++) for (let j = -80; j <= 80; j++) {
+            const lx = 4 + 8 * i, ly = 4 + 8 * j;
+            const x = p0[0] + lx * Math.cos(h) - ly * Math.sin(h), y = p0[1] + lx * Math.sin(h) + ly * Math.cos(h);
+            if (x < b.min[0] - 4 || x > b.max[0] + 4 || y < b.min[1] - 4 || y > b.max[1] + 4) continue;
+            studs.push(T(s.cylinder(1.8, 2.4, 2.4, 32), [x, y, 0]));
+          }
+          return m.intersect(w.Manifold.union(studs)).volume();
+        });
+        expect(inStuds).toBeLessThan(1e-3);
       });
 }
