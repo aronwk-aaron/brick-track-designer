@@ -1049,7 +1049,8 @@ function cutContext(w: Wasm, scad: Scad, o: PieceOptions, track: Track, routes: 
   };
   /** Fits a part to the bed: its pieces that don't touch apart, and one too big split along stepped paths (pathsplit.ts), as often as it takes. */
   /** holes: the axle holes the cuts so far put in (cutter.ts), kept clear of: more are added as it goes. */
-  const fitter = (pieceRoutes: Route[], holes: Keep[] = []) => {
+  /** taken: the rail-end tongue joints the cuts so far made (cutter.ts jointsNear): none put near one; each split's are added. */
+  const fitter = (pieceRoutes: Route[], holes: Keep[] = [], taken: [number, number][] = []) => {
     // a part still too big: split along a stepped path on the stud grid that
     // goes only where a cut can be made (pathsplit.ts), as often as it takes
     // (pieces of track that don't touch are parts of their own; the small bits, the breakaway supports, stay with the biggest)
@@ -1087,15 +1088,15 @@ function cutContext(w: Wasm, scad: Scad, o: PieceOptions, track: Track, routes: 
         const g2 = f();
         return g2 && good(g2.parts) ? { ...g2, parts: g2.parts.map((p2) => { const c = flat(w, p2); if (one.has(p2)) one.add(c); return c; }) } : undefined;
       }, (g2) => g2?.parts ?? []);
-      let got = win[0] <= win[1] ? attempt(() => pathSplit(scad, m, pieceRoutes, track.c.railOffset, [...pointsAvoid, ...holes], axis, at, { join, window: win })) : undefined;
+      let got = win[0] <= win[1] ? attempt(() => pathSplit(scad, m, pieceRoutes, track.c.railOffset, [...pointsAvoid, ...holes], axis, at, { join, window: win, taken })) : undefined;
       // (no way within it: anywhere near the middle, as before)
-      if (!got) got = attempt(() => pathSplit(scad, m, pieceRoutes, track.c.railOffset, [...pointsAvoid, ...holes], axis, lo + ext / 2, { join }));
+      if (!got) got = attempt(() => pathSplit(scad, m, pieceRoutes, track.c.railOffset, [...pointsAvoid, ...holes], axis, lo + ext / 2, { join, taken }));
       // (nor at all that way: split the other way first, across its middle, and each half again (a crowded middle, its
       // levers side by side, cut into four))
-      if (!got) { const ax2 = (1 - axis) as 0 | 1, lo2 = bb.min[ax2], ext2 = bb.max[ax2] - lo2; got = attempt(() => pathSplit(scad, m, pieceRoutes, track.c.railOffset, [...pointsAvoid, ...holes], ax2, lo2 + ext2 / 2, { join })); }
+      if (!got) { const ax2 = (1 - axis) as 0 | 1, lo2 = bb.min[ax2], ext2 = bb.max[ax2] - lo2; got = attempt(() => pathSplit(scad, m, pieceRoutes, track.c.railOffset, [...pointsAvoid, ...holes], ax2, lo2 + ext2 / 2, { join, taken })); }
       if (!got) return [m];
       for (const r of got.runs) for (const ax of [0, 1] as const) if (r.d[ax] === 0) cutAt[ax].push(r.p[ax]);
-      holes.push(...got.holes);
+      holes.push(...got.holes); taken.push(...got.tongueAt);
       return got.parts.flatMap((p) => arena(w, () => fitAll(p, depth + 1), (r) => r));
     };
     return fitAll;
@@ -1104,12 +1105,13 @@ function cutContext(w: Wasm, scad: Scad, o: PieceOptions, track: Track, routes: 
   const whole = (body: Man, parts: Man[]) => ((o.studsAtCuts ?? 'off') === 'split' ? parts
     : wholeStuds(scad, findStuds(scad, body, track.c.postD / 2, track.o.studH, PLATE_H, PLATE_H), parts, track.c.postD / 2, track.o.studH, o.studsAtCuts === 'whole', fitsBed));
   /** A part too big for the bed cut as the parts filling it are: straight across where it can (tiles.ts planCuts), then along stepped paths (fitter). */
-  const bedCut = (m: Man, pieceRoutes: Route[]): Man[] => {
+  /** taken: the rail-end tongue joints earlier cuts of the piece m is a part of made (cutter.ts jointsNear). */
+  const bedCut = (m: Man, pieceRoutes: Route[], taken: [number, number][] = []): Man[] => {
     if (fitsBed(m)) return [m];
     const bb = m.boundingBox(), plan = planCuts([bb.min[0], bb.min[1], bb.max[0], bb.max[1]], o.printBedX, o.printBedY, 0, 0, 0, pointsAvoid, pieceRoutes, bandHalf, jointRoom, track.c.railOffset, crossings);
     const lines: CutLine[] = [...plan.xs.map((x): CutLine => ({ p: [x, 0], d: [0, 1] })), ...plan.ys.map((y): CutLine => ({ p: [0, y], d: [1, 0] }))];
-    const holes: Keep[] = [], cells = lines.length ? cutPiece(scad, track, m, pieceRoutes, lines, join.joint, join.flatRails, noTongue, holes as [number, number, number][], fitsBed) : [m];
-    const fit = fitter(pieceRoutes, holes);
+    const holes: Keep[] = [], cells = lines.length ? cutPiece(scad, track, m, pieceRoutes, lines, join.joint, join.flatRails, noTongue, holes as [number, number, number][], fitsBed, taken) : [m];
+    const fit = fitter(pieceRoutes, holes, taken);
     return cells.filter((c2) => c2.numTri() > 0).flatMap((c2) => fit(c2));
   };
   // (pointsAvoid: the plate-style levers' keep-outs are added as each is placed (leverItem); crossings: the overlay's, no straight cut through them)
@@ -1228,9 +1230,9 @@ function addTrack(b: PieceBuild, name: string, world0: Man, pieceRoutes: Route[]
   const lines: CutLine[] = [...plan.xs.map((x): CutLine => ({ p: [x, 0], d: [0, 1], ...lj(x) })), ...plan.ys.map((y): CutLine => ({ p: [0, y], d: [1, 0], ...lj(y) }))];
   b.prog.steps++; b.prog.step(plan.why === 'bed' ? `Cutting ${name} to fit the print bed` : `Cutting ${name} at the baseplate edges`);
   if (rebuild && lines.length) world = rebuild(lines);
-  const cut = cached(`cut:${bp}:${o.joint}:${o.tongueRails ?? 'all'}:${JSON.stringify(lines)}:${JSON.stringify(pieceRoutes)}:${world.volume().toFixed(3)}`, () => arena(w, () => { const holes: Keep[] = []; return { cells: cutPiece(scad, track, world, pieceRoutes, lines, cx.join.joint, cx.join.flatRails, cx.noTongue, holes as [number, number, number][], cx.fitsBed), holes }; }, (r2) => r2.cells), true);
+  const cut = cached(`cut:${bp}:${o.joint}:${o.tongueRails ?? 'all'}:${JSON.stringify(lines)}:${JSON.stringify(pieceRoutes)}:${world.volume().toFixed(3)}`, () => arena(w, () => { const holes: Keep[] = [], taken: [number, number][] = []; return { cells: cutPiece(scad, track, world, pieceRoutes, lines, cx.join.joint, cx.join.flatRails, cx.noTongue, holes as [number, number, number][], cx.fitsBed, taken), holes, taken }; }, (r2) => r2.cells), true);
   const cells = cut.cells;
-  const fitAll = cx.fitter(pieceRoutes, [...cut.holes]);
+  const fitAll = cx.fitter(pieceRoutes, [...cut.holes], [...cut.taken]);
   const all = cached(`fit:${o.printBedX}x${o.printBedY}:${bp}:${o.joint}:${o.tongueRails ?? 'all'}:${JSON.stringify(lines)}:${JSON.stringify(pieceRoutes)}:${world.volume().toFixed(3)}`, () => {
     // (and each part gripping along its cut edges too)
     const parts0 = cells.flatMap((m) => arena(w, () => fitAll(m), (r2) => r2)); // (each cell's leftovers freed as it goes)
@@ -1499,13 +1501,15 @@ function sectioned(b: PieceBuild, name: string, all: Route[], checks: CheckRail[
       // (and where it crosses a baseplate edge, cut there with peg and clip: a plain piece of one track already ends at
       // the edges it crosses, planSections)
       let parts2 = [body];
+      // (where this section's cuts so far put rail-end tongue joints: no later cut puts one near (cutter.ts jointsNear))
+      const taken: [number, number][] = [];
       if (bp && (mine.length || rts.length > 1)) {
         const bb = body.boundingBox(), ox = (o.baseplateX ?? 0) * 8, oy = (o.baseplateY ?? 0) * 8, lines: CutLine[] = [];
         // (not within two studs of its edge: an edge on a baseplate's cut off the track ends' tongues as parts of their own)
         // (joined as Parts join with says)
         for (let x = ox + Math.ceil((bb.min[0] + 16 - ox) / bp) * bp; x < bb.max[0] - 16; x += bp) lines.push({ p: [x, 0], d: [0, 1], joint: join.joint });
         for (let y = oy + Math.ceil((bb.min[1] + 16 - oy) / bp) * bp; y < bb.max[1] - 16; y += bp) lines.push({ p: [0, y], d: [1, 0], joint: join.joint });
-        if (lines.length) { const bottom = body.boundingBox().min[2] + 0.02; parts2 = step(() => cx.whole(body, step(() => cutPiece(scad, track, body, rts, lines, join.joint, join.flatRails, noTongue, undefined, fitsBed))).map((m) => (b.alongTrack ? m : edgeGrip(scad, track, m, gridPose, bottom)))); }
+        if (lines.length) { const bottom = body.boundingBox().min[2] + 0.02; parts2 = step(() => cx.whole(body, step(() => cutPiece(scad, track, body, rts, lines, join.joint, join.flatRails, noTongue, undefined, fitsBed, taken))).map((m) => (b.alongTrack ? m : edgeGrip(scad, track, m, gridPose, bottom)))); }
       }
       // (a section still too big for the bed: points, frogs and crossings stay whole, so there was no ordinary track end
       // to cut at. A crossover is cut across its middle first, each side its own switch (middleCut); then any part
@@ -1517,13 +1521,13 @@ function sectioned(b: PieceBuild, name: string, all: Route[], checks: CheckRail[
         if (mc && b.sleepered) body = step(() => buildBody(mc.bedAt));
         // (each half a solid of its own (kernel.ts flat): cut again with its record of what it was cut from, a half of a
         // big piece took many minutes)
-        const whole1 = body, halves = mc ? step(() => splitOnPath(scad, whole1, rts, mc.path, mc.axis, join).parts.map((h) => flat(w, h))) : [body];
+        const whole1 = body, halves = mc ? step(() => { const sp = splitOnPath(scad, whole1, rts, mc.path, mc.axis, join); taken.push(...sp.tongueAt); return sp.parts.map((h) => flat(w, h)); }) : [body];
         const bottom = body.boundingBox().min[2] + 0.02;
-        parts2 = step(() => cx.whole(whole1, halves.flatMap((m) => step(() => cx.bedCut(m, rts)))).map((m) => (b.alongTrack ? m : edgeGrip(scad, track, m, gridPose, bottom))));
+        parts2 = step(() => cx.whole(whole1, halves.flatMap((m) => step(() => cx.bedCut(m, rts, taken)))).map((m) => (b.alongTrack ? m : edgeGrip(scad, track, m, gridPose, bottom))));
       } else if (parts2.some((m) => !fitsBed(m))) {
         // (cut at the baseplate edges, and a part still too big for the bed: cut as the parts filling the bed are)
         const bottom = body.boundingBox().min[2] + 0.02;
-        parts2 = parts2.flatMap((m) => (fitsBed(m) ? [m] : step(() => cx.whole(m, step(() => cx.bedCut(flat(w, m), rts))).map((m2) => (b.alongTrack ? m2 : edgeGrip(scad, track, m2, gridPose, bottom))))));
+        parts2 = parts2.flatMap((m) => (fitsBed(m) ? [m] : step(() => cx.whole(m, step(() => cx.bedCut(flat(w, m), rts, taken))).map((m2) => (b.alongTrack ? m2 : edgeGrip(scad, track, m2, gridPose, bottom))))));
       }
       // (pieces of it that don't touch, each a part of its own: a file held two or three loose ones (past a three-way's frogs, the middle track and each branch's end))
       const kept = parts2.filter((m) => m.numTri() > 0).flatMap((m) => cx.bodies(m, 600)), id = (k: number) => (kept.length > 1 ? `${base + si + 1}-${k + 1}` : `${base + si + 1}`);
@@ -1605,8 +1609,8 @@ function tiled(b: PieceBuild, name: string, all: Route[], checks: CheckRail[], s
       const step = <T extends Man | Man[]>(f: () => T): T => arena(w, f, (r) => (Array.isArray(r) ? r : [r]));
       const body0 = step(() => networkBody(scad, cr.routes, { crossings: [], grooves: [], splits: [], checkRails: cr.checks }, copt, tileSplits, grips, { cuts: tileCuts, innerEnds: tileInner, gridPose, ...(b.sleepered && { bedAt: lines }) }));
       const body = nearSw ? step(() => yielded(b, body0, switchKeepOut(b, kbox), PLATE_H + 0.01)) : body0;
-      const holes: [number, number, number][] = [];
-      const got = step(() => cutPiece(scad, track, body, cr.routes, lines, join.joint, join.flatRails, cx.noTongue, holes, cx.fitsBed).filter((m) => {
+      const holes: [number, number, number][] = [], taken: [number, number][] = [];
+      const got = step(() => cutPiece(scad, track, body, cr.routes, lines, join.joint, join.flatRails, cx.noTongue, holes, cx.fitsBed, taken).filter((m) => {
         const bb = m.boundingBox(), cx2 = (bb.min[0] + bb.max[0]) / 2, cy = (bb.min[1] + bb.max[1]) / 2;
         return cx2 > R[0] && cx2 < R[2] && cy > R[1] && cy < R[3];
       }));
@@ -1614,7 +1618,7 @@ function tiled(b: PieceBuild, name: string, all: Route[], checks: CheckRail[], s
       const bottom = body.boundingBox().min[2] + 0.02;
       // (and a part still too big, or in pieces that don't touch, fitted as addTrack's are: the straight cuts can't
       // always get round a curvy track without running along it)
-      const fit = cx.fitter(cr.routes, holes), parts = step(() => cx.whole(body, got.filter((m) => m.numTri() > 0).flatMap((m) => step(() => fit(m)))));
+      const fit = cx.fitter(cr.routes, holes, taken), parts = step(() => cx.whole(body, got.filter((m) => m.numTri() > 0).flatMap((m) => step(() => fit(m)))));
       return { ms: parts.map((m, k) => arena(w, () => ({ ...bake(b, labelled(b, b.alongTrack ? m : edgeGrip(scad, track, m, gridPose, bottom), cr.routes, undefined, `${base + ci + 1}-${k + 1}`)), ...(b.labelOn && { id: `${base + ci + 1}-${k + 1}` }) }), () => [])),
         grips: grips.filter((q) => q[0] > R[0] && q[0] <= R[2] && q[1] > R[1] && q[1] <= R[3]) };
     }, () => []), { ms: [], grips: [] }); } catch (err) {

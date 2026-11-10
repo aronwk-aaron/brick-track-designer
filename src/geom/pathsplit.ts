@@ -49,6 +49,7 @@ function insideOf(polys: [number, number][][], y0: number, y1: number) {
 
 /** How to join the parts (cutter.ts's joints): none given, they just butt together. */
 export interface PathJoin { t: Track; joint: Joint; flatRails: boolean; /** where no rail-end tongue may go (cutter.ts cutPiece) */ noTongue?: (q: [number, number]) => boolean }
+/** (taken: where the cuts of this piece so far put rail-end tongue joints, cutter.ts jointsNear; a split's own come back as tongueAt, for whoever keeps its parts to add) */
 
 /**
  * Split m in two along a stud-grid path running in y (axis 0: the parts left
@@ -59,7 +60,7 @@ export interface PathJoin { t: Track; joint: Joint; flatRails: boolean; /** wher
  * the path, and how many couplers and rail-end tongues join them), or
  * undefined when there's no path.
  */
-export function pathSplit(s: Scad, m: Man, routes: Route[], railG: number, avoid: Keep[], axis: 0 | 1, at: number, o: { join?: PathJoin; window?: [number, number] } = {}) {
+export function pathSplit(s: Scad, m: Man, routes: Route[], railG: number, avoid: Keep[], axis: 0 | 1, at: number, o: { join?: PathJoin; window?: [number, number]; taken?: [number, number][] } = {}) {
   const join = o.join;
   const bb = m.boundingBox();
   // rails as sampled points with their direction
@@ -203,7 +204,7 @@ export function pathSplit(s: Scad, m: Man, routes: Route[], railG: number, avoid
   const path: [number, number][] = [];
   for (let sk = goal; sk >= 0; sk = prev[sk]) { const k = Math.floor(sk / NS); path.push(pos(k % nx, Math.floor(k / nx))); }
   path.reverse();
-  return splitOnPath(s, m, routes, path, axis, join);
+  return splitOnPath(s, m, routes, path, axis, join, o.taken);
 }
 
 /**
@@ -211,7 +212,7 @@ export function pathSplit(s: Scad, m: Man, routes: Route[], railG: number, avoid
  * it to beyond the other: running in y for axis 0, in x for axis 1), joined
  * along its straight runs as pathSplit's are.
  */
-export function splitOnPath(s: Scad, m: Man, routes: Route[], path: [number, number][], axis: 0 | 1, join?: PathJoin) {
+export function splitOnPath(s: Scad, m: Man, routes: Route[], path: [number, number][], axis: 0 | 1, join?: PathJoin, taken?: [number, number][]) {
   const bb = m.boundingBox();
   const x0 = Math.floor(bb.min[0] / STEP) * STEP - STEP, x1 = Math.ceil(bb.max[0] / STEP) * STEP + STEP;
   const y0 = Math.floor(bb.min[1] / STEP) * STEP - STEP, y1 = Math.ceil(bb.max[1] / STEP) * STEP + STEP;
@@ -227,10 +228,10 @@ export function splitOnPath(s: Scad, m: Man, routes: Route[], path: [number, num
     const d: [number, number] = [Math.sign(path[k][0] - path[k - 1][0]), Math.sign(path[k][1] - path[k - 1][1])], last = runs[runs.length - 1];
     if (last && last.d[0] === d[0] && last.d[1] === d[1]) last.len += STEP; else runs.push({ p: path[k - 1], d, len: STEP });
   }
-  const j = join ? pathJoints(s, join.t, m, routes, runs, join.joint, join.flatRails, join.noTongue) : undefined;
+  const j = join ? pathJoints(s, join.t, m, routes, runs, join.joint, join.flatRails, join.noTongue, taken) : undefined;
   const body = j?.cut ? s.difference(m, [j.cut]) : m;
   let a = s.intersection(body, region(0)), b = s.difference(body, [region(0.1)]);
   if (j?.add[0].length) a = tidy(s, s.union([a, ...j.add[0]]));
   if (j?.add[1].length) b = tidy(s, s.union([b, ...j.add[1]]));
-  return { parts: [a, b].filter((p) => p.volume() > 300), path, runs, couplers: j?.couplers ?? 0, tongues: j?.tongues ?? 0, holes: j?.holes ?? [] };
+  return { parts: [a, b].filter((p) => p.volume() > 300), path, runs, couplers: j?.couplers ?? 0, tongues: j?.tongues ?? 0, holes: j?.holes ?? [], tongueAt: j?.tongueAt ?? [] };
 }
