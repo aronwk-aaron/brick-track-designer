@@ -307,12 +307,36 @@ export function networkSplits(s: Scad, routes: Route[], sol: Solution, p: BasePa
       return place(q.gm.gm.throwPart(0), q.P);
     };
     const ths = preps.map(throwOf), bbs = ths.map((m) => m?.boundingBox());
-    const clash = new Set<number>(), pairs: [number, number][] = [];
-    for (let a = 0; a < preps.length; a++) for (let b = a + 1; b < preps.length; b++) {
+    const meets = (a: number, b: number) => {
       const A = bbs[a], B = bbs[b];
-      if (!A || !B || A.max[0] < B.min[0] || B.max[0] < A.min[0] || A.max[1] < B.min[1] || B.max[1] < A.min[1] || A.max[2] < B.min[2] || B.max[2] < A.min[2]) continue;
-      if (s.w.Manifold.intersection(ths[a]!, ths[b]!).volume() > 1) { clash.add(a); clash.add(b); pairs.push([a, b]); }
+      if (!A || !B || A.max[0] < B.min[0] || B.max[0] < A.min[0] || A.max[1] < B.min[1] || B.max[1] < A.min[1] || A.max[2] < B.min[2] || B.max[2] < A.min[2]) return false;
+      return s.w.Manifold.intersection(ths[a]!, ths[b]!).volume() > 1;
+    };
+    // (two that run into each other: one of them moved along its points a stud or a few, where that clears them and
+    // its lever stays clear of trains and the other levers (a double slip's with its levers outside: its sliders
+    // staggered, each pair's one nearer its toes than the other's); not where the lever was moved by hand)
+    for (let a = 0; a < preps.length; a++) for (let b = a + 1; b < preps.length; b++) {
+      if (!meets(a, b)) continue;
+      const tryMove = (k: number) => {
+        const q = preps[k], ed = throwEdit([q.P[0], q.P[1]]);
+        if (ed?.springLength !== undefined) return false;
+        const cur = (q.st.used[5] ?? {}) as SetOver, others = preps.flatMap((o, m) => (m === k ? [] : [armOf(o.st.plan, o.P)]));
+        for (const sh of [1, -1, 2, -2, 3, -3, 4, -4, 5, -5]) {
+          const o2: SetOver = { ...cur, throwShift: (cur.throwShift ?? 0) + sh }, used = q.specOf(o2, q.st.tside), pl = switchPlan(q.rts, [used], q.st.pp, 1, q.foreign, q.keep);
+          if (q.blockedOf(pl) || pl.setData[0].throwY === q.st.plan.setData[0].throwY) continue;
+          const arm = armOf(pl, q.P);
+          if (inWay(pl, q.foreign, q.P) === 'train' || others.some((o) => segGap(o, arm) < ARM_GAP)) continue;
+          const gm = switchGeometry(s, pl), th = place(gm.throwPart(0), q.P), was = [ths[k], bbs[k]] as const;
+          ths[k] = th; bbs[k] = th.boundingBox();
+          if (preps.every((_, m) => m === k || !meets(k, m))) { q.st.over = o2; q.st.used = used; q.st.plan = pl; q.gm = { plan: pl, gm }; return true; }
+          [ths[k], bbs[k]] = was;
+        }
+        return false;
+      };
+      if (!tryMove(b)) tryMove(a);
     }
+    const clash = new Set<number>(), pairs: [number, number][] = [];
+    for (let a = 0; a < preps.length; a++) for (let b = a + 1; b < preps.length; b++) if (meets(a, b)) { clash.add(a); clash.add(b); pairs.push([a, b]); }
     if ((p.boxedThrow ?? 'slider') === 'nail') for (const k of clash) {
       const q = preps[k];
       q.st.pp = { ...q.st.pp, throwNail: true };

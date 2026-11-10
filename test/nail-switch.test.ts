@@ -17,8 +17,12 @@ describe('nail switches (Throw: Nail switch), as the reference double slips\' in
       expect(Math.hypot(x1 - x0, y1 - y0)).toBeLessThan(45);
     }
   });
-  // (Points with no room for a throw: the 22.5° double slip with levers asked for, as a design would have it)
-  const slip = (boxedThrow: 'nail' | 'slider') => ({ ...TEMPLATES['Double slip (22.5°)'], options: { ...TEMPLATES['Double slip (22.5°)'].options, throwStyle: 'built-in' as const, boxedThrow } });
+  // (Points with no room for a throw: the 22.5° double slip with levers asked for, each set's lever placed by hand how far
+  // along it is (its tines' length): its slider not moved along to clear the next set's (network.ts), so each pair's run
+  // into each other under the crossing)
+  const lead = 40 * Math.sin(Math.PI / 8) - (40 * (1 - Math.cos(Math.PI / 8))) / Math.tan(Math.PI / 8), [sn, cs] = [Math.sin(Math.PI / 8), Math.cos(Math.PI / 8)];
+  const pinned = Object.fromEntries([[0, -lead], [lead * sn, -lead * cs], [0, lead], [-lead * sn, lead * cs]].map(([x, y]) => [`${Math.round(x * 8)},${Math.round(y * 8)}`, { springLength: 40 }]));
+  const slip = (boxedThrow: 'nail' | 'slider') => ({ ...TEMPLATES['Double slip (22.5°)'], options: { ...TEMPLATES['Double slip (22.5°)'].options, throwStyle: 'built-in' as const, boxedThrow }, trackwork: { throw: pinned } });
   const crossWarn = /throws of the points at .* run into each other/;
   it('points whose sliders cross (the 22.5° double slip\'s): found, and made nail switches with Points with no room for a throw: Nail switches', async () => {
     const w = await kernel(), b = buildDesign(w, slip('nail'));

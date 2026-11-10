@@ -19,6 +19,8 @@ const BUDGET: Record<string, number> = {
   'Banked curve': 25, 'Helix (R104, two turns)': 130, 'Siding ending in a buffer stop': 55, 'Grade up at 2.5%': 15,
   // (the heavy layouts, a file of their own)
   'Yard (R56)': 150, 'Double-track return loop (turning right)': 350, 'Double-track return loop (turning left)': 350,
+  // (the double slip with its levers outside)
+  'Double slip (22.5°, throws outside)': 60,
 };
 const BUDGET_SMALL = 10;
 /** only: just these templates of the groups */

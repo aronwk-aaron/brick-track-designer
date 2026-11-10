@@ -29,7 +29,8 @@ describe('double slip', () => {
   for (const [name, more, note] of [['two blades a set: on tines', {}, true], ['one blade a set (single point): on top', { pointBlades: 1 as const }, false],
     ['sprung blades on ballast: rigid in the slip (no room for the sprung plates beside the next set\'s)', { pointBlades: 1 as const, bladeStyle: 'sprung' as const, ballast: 'ballast' as const }, false]] as const)
     it(`${name}: four sets of points, nothing in the track`, async () => {
-      // (its points' sliders cross under the crossing: nail switches, as there's no room for a lever's throw; on tines, levers)
+      // (each lever where it's clear of trains: outside, each pair's sliders staggered so they don't run into each other (no nail
+      // switches needed); on tines, levers too)
       const w = await kernel(), b = buildDesign(w, { ...TEMPLATES['Double slip (22.5°)'], options: { printBedX: 2000, printBedY: 2000, boxedThrow: 'nail', ...more } });
       expect(b.overlay.issues).toEqual([]);
       expect(b.info.warnings.some((x) => /built on tines under the bed, the blades notched/.test(x))).toBe(note);
@@ -40,9 +41,38 @@ describe('double slip', () => {
       const track = w.Manifold.union(b.pieces.filter((p) => !/points|throw|lever/.test(p.name)).map((p) => man(p.positions)));
       const moving = b.pieces.filter((p) => /points/.test(p.name));
       expect(moving.filter((p) => /-throw$/.test(p.name)).length).toBe(4);
-      expect(moving.filter((p) => /lever/.test(p.name)).length).toBe(note ? 4 : 0);
+      expect(moving.filter((p) => /lever/.test(p.name)).length).toBe(4);
       for (const p of moving) expect(man(p.positions).intersect(track).volume(), p.name).toBeLessThan(0.5);
     }, 300000);
+
+  // (as the reference's: each set's lever outside, on the side of its own track away from the other one; real levers, the
+  // sliders staggered so none runs into another's)
+  it('throws outside: four levers, each on the side away from the other track; no throw in another; nothing in the track', async () => {
+    const w = await kernel(), d = TEMPLATES['Double slip (22.5°, throws outside)'];
+    const b = buildDesign(w, { ...d, options: { ...d.options, printBedX: 2000, printBedY: 2000 } });
+    expect(b.overlay.issues).toEqual([]);
+    expect(b.info.warnings.filter((x) => !/blades are rigid/.test(x))).toEqual([]);
+    const man = (P: Float32Array) => { const mesh = new w.Mesh({ numProp: 3, vertProperties: new Float32Array(P), triVerts: new Uint32Array(P.length / 3).map((_, i) => i) }); mesh.merge(); return new w.Manifold(mesh); };
+    const levers = b.pieces.filter((p) => /-lever$/.test(p.name));
+    expect(levers).toHaveLength(4);
+    // (each lever's middle: beside its own track (the nearer), on the side away from the other: for A (along y) x and y the
+    // same sign; for B (at 22.5 degrees) the other way round, in its own terms)
+    const [c, s] = [Math.cos((22.5 * Math.PI) / 180), Math.sin((22.5 * Math.PI) / 180)];
+    for (const p of levers) {
+      let x = 0, y = 0;
+      for (let i = 0; i < p.positions.length; i += 3) { x += p.positions[i]; y += p.positions[i + 1]; }
+      x /= p.positions.length / 3; y /= p.positions.length / 3;
+      const latB = c * x + s * y, alongB = -s * x + c * y;
+      if (Math.abs(x) < Math.abs(latB)) expect(x * y, p.name).toBeGreaterThan(0);
+      else expect(latB * alongB, p.name).toBeLessThan(0);
+    }
+    // (the sliders clear of each other, and every moving part clear of the track)
+    const throws = b.pieces.filter((p) => /-throw$/.test(p.name)).map((p) => man(p.positions));
+    expect(throws).toHaveLength(4);
+    for (let i = 0; i < 4; i++) for (let j = i + 1; j < 4; j++) expect(throws[i].intersect(throws[j]).volume()).toBeLessThan(0.5);
+    const track = w.Manifold.union(b.pieces.filter((p) => !/points|throw|lever/.test(p.name)).map((p) => man(p.positions)));
+    for (const p of b.pieces.filter((q) => /points/.test(q.name))) expect(man(p.positions).intersect(track).volume(), p.name).toBeLessThan(0.5);
+  }, 300000);
 
   it('sprung blades on track alone: rigid in the slip, each set\'s plate clear of the next set\'s closed and open; nothing in the track', async () => {
     const w = await kernel(), b = buildDesign(w, { ...TEMPLATES['Double slip (22.5°)'], options: { printBedX: 2000, printBedY: 2000, pointBlades: 1, bladeStyle: 'sprung' } });
