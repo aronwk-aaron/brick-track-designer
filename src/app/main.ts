@@ -7,10 +7,10 @@ import { BANK_MAX, type BankRamps, type Design, type DRoute, type DSeg, OPTION_D
 import { ISSUE_R, TrackCanvas, type OverlayItem, dialogOpen, eachLever, leverSide, leverSlides, typingIn } from './canvas';
 import { describe } from './planner';
 import { BRICKTRACKS_COLOR, gradeOf, LEGO_COLOR, type LegoPart, legoParts, type Piece } from './build';
-import { TABLE_COLORS, type Table, tableAt } from './tables';
+import { movedTable, TABLE_COLORS, type Table, tableAt, tableOutline } from './tables';
 import { zip } from '../geom/zip';
 import { layoutParts } from './layoutparts';
-import { freeStart, PALETTE, placePart } from './palette';
+import { freeStart, type LaidFrom, PALETTE, placePart } from './palette';
 import { BuildRunner, type WorkerPort } from './buildrun';
 import { History } from './history';
 import { fileBase as fileBaseOf, partsDownload, plainKind, printedKinds, stlDownload } from './exports';
@@ -241,6 +241,8 @@ function bankFields(sg: DSeg, mono: boolean): HTMLElement[] {
 
 // Which route cards are open (by the route's name, as the trackwork knows it: its place in the list changes as others are deleted or joined); the selected one always is.
 const openCards = new Set<string>();
+/** Selected cards folded by a click on their heading: folded, still selected (so the palette still lays on the route). A new selection opens its card again. */
+const foldedCards = new Set<string>();
 const cardId = (r: DRoute, i: number) => r.name || String(i);
 
 /** The route cards' sections open (by title), the same for every card, remembered in this browser. */
@@ -260,7 +262,15 @@ function renderTables() {
     const xs = rs.map((r) => r.x), ys = rs.map((r) => r.y);
     return [Math.round((Math.min(...xs) + Math.max(...xs)) / 16) * 8, Math.round((Math.min(...ys) + Math.max(...ys)) / 16) * 8];
   };
-  const add = (t: Table) => { design.tables = [...ts, { name: `Table ${ts.length + 1}`, color: TABLE_COLORS[ts.length % TABLE_COLORS.length], ...t }]; };
+  // (a new table lands beside the ones there are, not on them: shifted right till it's clear, its edge on theirs)
+  const clear = (t: Table): Table => {
+    const box = (q: Table) => { const o = tableOutline(q); return [Math.min(...o.map((p) => p[0])), Math.min(...o.map((p) => p[1])), Math.max(...o.map((p) => p[0])), Math.max(...o.map((p) => p[1]))]; };
+    const b = box(t);
+    let dx = 0;
+    for (let pass = 0; pass <= ts.length; pass++) for (const o of ts) { const c = box(o); if (b[0] + dx < c[2] - 1e-6 && b[2] + dx > c[0] + 1e-6 && b[1] < c[3] - 1e-6 && b[3] > c[1] + 1e-6) dx = Math.max(dx, c[2] - b[0]); }
+    return dx ? movedTable(t, Math.round(dx), 0) : t;
+  };
+  const add = (t0: Table) => { const t = clear(t0); design.tables = [...ts, { name: `Table ${ts.length + 1}`, color: TABLE_COLORS[ts.length % TABLE_COLORS.length], ...t }]; };
   bar.append(
     btn('+ Rectangle', () => { const [x, y] = at(); add({ shape: 'rect', x: x - 16, y: y - 32, w: 32, h: 64 }); }, 'Add a rectangular table, 32 x 64 studs'),
     btn('+ Curved', () => { const [x, y] = at(); add({ shape: 'arc', cx: x, cy: y, r0: 32, r1: 64, a0: 0, a1: 90 }); }, 'Add a curved table: a quarter ring, radius 32 to 64 studs round a centre'),
@@ -324,11 +334,19 @@ function renderPalette() {
   body.replaceChildren();
   const sel = canvas.selection().filter((i) => i < design.routes.length), at = sel.length === 1 ? sel[0] : undefined;
   const lay = (id: string, turn = 1) => {
-    const { next } = placePart(design, id, at, turn);
+    const { next } = placePart(design, id, at, turn, paletteFrom);
     canvas.setSelection([next]);
   };
   const note = (t: string, warn = false) => { const p = document.createElement('div'); p.className = 'tnote'; if (warn) p.style.color = 'var(--warn, #c0392b)'; p.textContent = t; body.append(p); };
   note(at !== undefined ? `Laid on the end of ${design.routes[at].name || `route ${at + 1}`}.` : sel.length > 1 ? 'Several routes selected: each part starts a new route. Select one to lay parts on its end.' : 'Nothing selected: the first part starts a new route; the next go on its end.');
+  if (at !== undefined) {
+    const f = document.createElement('label'); f.className = 'pfrom'; f.title = 'Switches: which end of the switch goes on the end of the selected route. The route goes on through the switch to its toe; the other way out of the toe is a new route.';
+    const sp = document.createElement('span'); sp.textContent = 'Switch laid from its';
+    const sel = document.createElement('select');
+    sel.append(new Option('toe (blades)', 'toe'), new Option('straight end', 'straight'), new Option('branch end', 'branch'));
+    sel.value = paletteFrom; sel.addEventListener('change', () => { paletteFrom = sel.value as LaidFrom; });
+    f.append(sp, sel); body.append(f);
+  }
   for (const maker of ['LEGO', 'BrickTracks'] as const) {
     const g = document.createElement('div'); g.className = 'pgroup';
     const h = document.createElement('b'), sw = document.createElement('i');
@@ -350,6 +368,8 @@ function renderPalette() {
 }
 
 // ---------- a full circle ----------
+/** Switches: which end sits on the selected route's end (the toe, the end of the straight, or of the branch). */
+let paletteFrom: LaidFrom = 'toe';
 let circleR = 40, circleN = 16, circleNEdited = false;
 /** Full circle: a radius and a number of pieces; says what a piece is (its size, and whether it fits the bed) before it's added. */
 function renderCircle() {
@@ -407,15 +427,16 @@ function drawForms() {
     const box = document.createElement('details'); box.className = 'route';
     const sel = i === canvas?.selected;
     if (sel) box.classList.add('selected');
-    box.open = sel || openCards.has(cardId(r, i));
+    box.open = (sel && !foldedCards.has(cardId(r, i))) || openCards.has(cardId(r, i));
     const sum = document.createElement('summary');
     const title = document.createElement('b'); title.textContent = r.name || `Route ${i + 1}`;
     const what = document.createElement('span'); what.textContent = r.segs.length ? describe(r.segs) : 'empty';
     sum.append(title, what);
     sum.addEventListener('click', (e) => {
       e.preventDefault();
-      if (sel) { openCards.delete(cardId(r, i)); canvas.selected = undefined; }
-      else { openCards.add(cardId(r, i)); canvas.selected = i; }
+      // (a click on the selected route's heading folds or opens its card and keeps it selected: dropping the selection sent the next palette click to a stray new route)
+      if (sel) { if (box.open) { foldedCards.add(cardId(r, i)); openCards.delete(cardId(r, i)); } else foldedCards.delete(cardId(r, i)); }
+      else { foldedCards.delete(cardId(r, i)); openCards.add(cardId(r, i)); canvas.selected = i; }
       render(); canvas.draw();
     });
     // (a folded card is its heading only: its form is made when it's opened, which draws the cards again. A big layout's
@@ -809,7 +830,7 @@ function applyExplode() {
 explodeEl.addEventListener('input', applyExplode);
 // The 3D view's colours: what each colour of the parts shown is (only those there are).
 const COLOURS: [number, string][] = [
-  [0x6f7780, 'printed track'], [0x9aa3ad, 'printed monorail track'], [0x5a6470, 'pillars and supports under raised track'], [0x4682b4, 'points (blades), monorail frame'],
+  [0x6f7780, 'printed track and ballast'], [0x9aa3ad, 'printed monorail track'], [0x5a6470, 'pillars and supports under raised track'], [0x4682b4, 'points (blades), monorail frame'],
   [0xc0392b, 'points spring'], [0xe8892b, 'throw'], [0xd4af37, 'lever'], [0x8a8f99, 'throw bracket'],
   [LEGO_COLOR, 'LEGO\'s (bought, not printed)'], [BRICKTRACKS_COLOR, 'BrickTracks\' (bought, not printed)'],
 ];
@@ -921,7 +942,13 @@ const look = (under: boolean) => {
   if (!meshes.length) return; const bs = sphereOf();
   const d = camera.position.clone().sub(controls.target);
   d.z = Math.abs(d.z) * (under ? -1 : 1);
-  if (Math.hypot(d.x, d.y) < 1e-6) d.y = -1;
+  // (a layout longer than it's wide is turned so its long side runs across the view, not up it)
+  const box = new THREE.Box3();
+  for (const m of meshes) box.expandByObject(m);
+  const sx = box.max.x - box.min.x, sy = box.max.y - box.min.y, h = Math.max(Math.hypot(d.x, d.y), 1e-3 * d.length());
+  if (sy > sx * 1.15) { d.x = under ? h : -h; d.y = 0; }
+  else if (sx > sy * 1.15) { d.x = 0; d.y = -h; }
+  else if (Math.hypot(d.x, d.y) < 1e-6) d.y = -1;
   camera.position.copy(controls.target).add(d);
   frame(bs, true);
 };
@@ -973,6 +1000,7 @@ const download = (blob: Blob, name: string) => {
 // One piece: its STL; several (a switch and its moving parts): a zip of them. (Not the pieces that are LEGO's own: the LEGO parts list has those.)
 $('export-stl').addEventListener('click', () => {
   if (!pieces.length || building || stale) return;
+  if (!design.name && !askName()) return;
   const d = stlDownload(pieces, fileBase(), design.kit);
   if (d) download(new Blob([d.data as BlobPart], { type: d.type }), d.name);
 });
@@ -980,6 +1008,7 @@ $('export-stl').addEventListener('click', () => {
 // and a BrickLink wanted list to upload, in a zip.
 $('export-lego').addEventListener('click', () => {
   if (!pieces.length || building || stale) return;
+  if (!design.name && !askName()) return;
   const d = partsDownload(pieces, fileBase());
   if (d) download(new Blob([d.data as BlobPart], { type: d.type }), d.name);
 });
@@ -1027,6 +1056,7 @@ partsDlg.addEventListener('click', (e) => { if (e.target === partsDlg) partsDlg.
 // The parts as a parts library for the layout designer (layoutparts.ts): a zip of the library's folder and a README.
 $('export-layout').addEventListener('click', () => {
   if (!pieces.length || building || stale) return;
+  if (!design.name && !askName()) return;
   try {
     const x = layoutParts(design, pieces.filter((p) => p.positions.length), fileBase());
     download(new Blob([zip(x.files) as BlobPart], { type: 'application/zip' }), `${fileBase()}-layout-parts.zip`);
@@ -1035,13 +1065,16 @@ $('export-layout').addEventListener('click', () => {
 // The design's name (asked on Save): what it saves and downloads under.
 const fileBase = () => fileBaseOf(design.name);
 /** Save the design as a file. Its name is asked for the first time, and kept: after that it saves under it at once (as: asked again, to save under another). */
+/** Ask the design's name (the Save flow's): kept, so no download asks again. False if it was turned down. */
+function askName(): boolean {
+  const name = prompt('Name the design (its files are named after it):', design.name || 'track-piece');
+  if (name === null) return false;
+  // (the name isn't the track: kept, without a rebuild or an undo step)
+  design.name = name.trim() || undefined; history.amend(JSON.stringify(design)); save(); showSaveName();
+  return true;
+}
 function saveFile(as = false) {
-  if (as || !design.name) {
-    const name = prompt('Save the design as:', design.name || 'track-piece');
-    if (name === null) return;
-    // (the name isn't the track: kept, without a rebuild or an undo step)
-    design.name = name.trim() || undefined; history.amend(JSON.stringify(design)); save();
-  }
+  if ((as || !design.name) && !askName()) return;
   download(new Blob([JSON.stringify(design, null, 2)], { type: 'application/json' }), `${fileBase()}.btd.json`);
   markClean(); showSaveName();
 }
@@ -1093,7 +1126,7 @@ const canvas = new TrackCanvas($<HTMLCanvasElement>('track'), {
   design: () => design,
   changed: (commit) => changed(commit, commit), // (one undo step per finished action, none for each mouse move)
   live: () => render(), // (a handle being dragged: the route's card shows its numbers as they change)
-  select: () => { render(); updateSelbar(); },
+  select: () => { foldedCards.clear(); render(); updateSelbar(); },
   radius: () => Number(radiusSel.value),
   system: () => (systemSel.value === 'monorail' ? 'monorail' : 'train'),
   leaveDraw: () => setMode('select'),
@@ -1822,4 +1855,18 @@ function drawTrackwork(list: TwItem[]) {
   }
   $('trackwork').scrollTop = scroll;
   $('trackwork-count').textContent = list.length || monoToes().length ? ` (${edits ? `${edits} edited` : 'none edited'}${left.length ? `, ${left.length} left over` : ''})` : '';
+}
+
+// (a phone's toolbar scrolls sideways: arrows show at an edge with more behind it)
+{
+  const bar = document.querySelector('header')!;
+  // (by where the first and last buttons are, not by the scroll width: the arrows themselves take room)
+  const sync = () => {
+    const r = bar.getBoundingClientRect(), shownKids = [...bar.children].filter((c) => (c as HTMLElement).offsetWidth > 0), first = shownKids[0]?.getBoundingClientRect(), last = shownKids.at(-1)?.getBoundingClientRect();
+    bar.classList.toggle('more-right', !!last && last.right > r.right + 2 && bar.scrollWidth > bar.clientWidth);
+    bar.classList.toggle('more-left', !!first && first.left < r.left - 2);
+  };
+  bar.addEventListener('scroll', sync, { passive: true });
+  addEventListener('resize', sync);
+  sync();
 }

@@ -94,6 +94,7 @@
     #circle { border-top: 1px solid var(--line); padding: 6px 10px 10px; flex: 0 0 auto; } #circle > summary { cursor: pointer; font-weight: 600; padding: 4px 0; }
     #circle .field { grid-template-columns: 1fr 84px; } #circle .cnote { color: var(--muted); font-size: 12px; margin: 4px 0; line-height: 1.35; } #circle .cnote.warn { color: var(--warn); } #circle button.add { margin-top: 6px; }
     #palette { border-top: 1px solid var(--line); padding: 6px 10px 10px; max-height: 45%; overflow: auto; flex: 0 1 auto; }
+    #palette .pfrom { display: flex; align-items: center; gap: 6px; margin: 4px 0 6px; font-size: 12px; } #palette .pfrom select { flex: 1; min-width: 0; }
     #palette > summary { cursor: pointer; font-weight: 600; padding: 4px 0; }
     #palette .pgroup { display: flex; flex-wrap: wrap; gap: 4px; margin: 2px 0 6px; align-items: center; } #palette .pgroup b { width: 100%; font-size: 12px; display: flex; align-items: center; gap: 6px; }
     #palette .pgroup b i { width: 10px; height: 10px; border-radius: 2px; display: inline-block; }
@@ -324,13 +325,21 @@
     #empty div { border-radius: 12px; padding: 18px 22px; }
     @media (max-width: 1560px) { header h1 { display: none; } }
     @media (max-width: 1240px) { body { grid-template-columns: 260px minmax(0, 1fr); } body.settings { grid-template-columns: 260px minmax(0, 1fr) 300px; } body.settings.nopanel { grid-template-columns: 0 minmax(0, 1fr) 300px; } }
-    @media (max-width: 1640px) { #toggle-3d .lbl, #settings-open .lbl, #load .lbl, #save .lbl, #export-layout .lbl, #parts-open .lbl { display: none; } }
-    @media (max-width: 1280px) { header .lbl { display: none; } }
+    /* (labels beside the toolbar's icons where the bar still fits on one row: all, then the main buttons', then Templates' only
+       with the title, source link and spacing given up, then none) */
+    @media (max-width: 1959px) { header .lbl { display: none; } #templates-open .lbl, #load .lbl, #save .lbl { display: inline; } }
+    @media (max-width: 1399px) { #load .lbl, #save .lbl { display: none; } header h1, #source-link { display: none; } header { gap: 4px; } header .sep { margin: 0 1px; } #radius { width: 108px; } #system { width: 100px; } }
+    @media (max-width: 1239px) { #templates-open .lbl { display: none; } }
+    @media (max-width: 1119px) { #about-open { display: none; } }
     /* ---- phones and small tablets: the plan and 3D view fill the screen; the routes and settings panels slide over them ---- */
     @media (max-width: 760px) {
       body, body.nopanel, body.settings, body.settings.nopanel { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr); }
       header { grid-column: 1; flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; gap: 4px; padding: 6px 8px; min-height: 52px; }
       header::-webkit-scrollbar { display: none; }
+      /* (the toolbar scrolls sideways: a fade and an arrow at the edge that has more behind it) */
+      header { position: relative; }
+      header.more-right::after { content: '›'; position: sticky; right: -8px; flex: none; align-self: stretch; display: flex; align-items: center; padding: 0 8px 0 18px; margin-left: -4px; font-size: 22px; font-weight: 700; color: var(--accent); background: linear-gradient(90deg, transparent, var(--panel) 55%); pointer-events: none; }
+      header.more-left::before { content: '‹'; position: sticky; left: -8px; flex: none; align-self: stretch; display: flex; align-items: center; padding: 0 18px 0 8px; margin-right: -4px; font-size: 22px; font-weight: 700; color: var(--accent); background: linear-gradient(270deg, transparent, var(--panel) 55%); pointer-events: none; z-index: 1; }
       header h1, header .spacer { display: none; } header .sep { flex: none; }
       header > * { flex: none; }
       body > main { grid-column: 1; grid-row: 2; }
@@ -448,9 +457,9 @@
     </span>
     <span class="sep"></span>
     <button id="templates-open" type="button" title="Templates: starting points with pictures. Search them, filter them, star the ones you use"><svg><use href="#i-layout"/></svg><span class="lbl">Templates</span></button>
-    <button id="clear" type="button" class="icon danger" title="Remove all the track (Undo brings it back)"><svg><use href="#i-trash"/></svg></button>
+    <button id="clear" type="button" class="danger" title="Remove all the track (Undo brings it back)"><svg><use href="#i-trash"/></svg><span class="lbl">Clear</span></button>
     <span class="spacer"></span>
-    <button id="fit" class="icon" type="button" title="Fit the track in view (F)"><svg><use href="#i-fit"/></svg></button>
+    <button id="fit" type="button" title="Fit the track in view (F)"><svg><use href="#i-fit"/></svg><span class="lbl">Fit</span></button>
     <button id="toggle-3d" class="on" type="button" title="Show or hide the 3D preview (P)"><svg><use href="#i-cube"/></svg><span class="lbl">3D</span></button>
     <button id="settings-open" type="button" title="Settings for the pieces: track, ballast, switches, joints, fit (,)"><svg><use href="#i-sliders"/></svg><span class="lbl">Settings</span></button>
     <span class="sep"></span>
@@ -507,7 +516,7 @@
   <main>
     <div id="plan">
       <canvas id="track"></canvas>
-      <div id="empty" hidden><div><b>Lay some track</b>In Draw mode (<kbd>D</kbd>), click a grid point to start, then click where the track should go.<br>Or pick one of the Templates.</div></div>
+      <div id="empty" hidden><div><b>Lay some track</b>In Draw mode (<kbd>D</kbd>), click a grid point to start, then click where the track should go.<br>Templates: ready-made switches, crossings and yards, with pictures.<br>Parts palette (left): LEGO and BrickTracks track pieces, laid one after another.<br>Full circle (left): a ring of equal curves in one step.</div></div>
       <div id="legend" class="chip">
         <div class="lhead"><b>Legend</b><button id="legend-fold" type="button" title="Fold the legend away (or open it)">–</button></div>
         <div id="legend-rows">
@@ -582,6 +591,7 @@
         <h3>Bought track: the parts palette</h3>
         <ul>
           <li>The Parts palette (under the routes) lays LEGO's and BrickTracks' track pieces one at a time: on the end of the selected route, or as a new route with nothing selected. ↶ and ↷ lay a curve to the left or the right. A switch's branch is a route of its own.</li>
+          <li>With a route selected, "Switch laid from its" picks which end of a switch goes on the route's end: the toe (the blades), the end of the straight or the end of the branch. The route then goes on through the switch to its toe, and the other way out of the toe is a new route. That is how the far switch of a passing loop is laid.</li>
           <li>Track that's exactly one of those pieces is bought, not printed (green and purple in the 3D view), as Settings › Bought track says; on ballast, the ballast under it is printed.</li>
         </ul>
         <h3>Tables</h3>

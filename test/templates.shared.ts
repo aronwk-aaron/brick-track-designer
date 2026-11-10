@@ -12,21 +12,50 @@ import { OPTION_DEFAULTS, type PieceOptions, TEMPLATE_GROUPS, TEMPLATES } from '
 const APP = (globalThis as { APP_DEFAULTS?: PieceOptions }).APP_DEFAULTS!;
 
 /**
- * Each template's time to build, from nothing (s): a few times what it takes on CI's runner (its shard's log has each
- * test's time), so a build 10 times slower fails, and a busy runner doesn't. The rest: BUDGET_SMALL.
+ * Each template's time to build from nothing (s): 2.5 times the slowest of what the template's test took on CI's runner in
+ * the last three green runs (the whole test: that build and the rebuild, so a little over the build itself), never under
+ * 3 s. Read from the runs' logs (`gh run view <id> --log`, each test's ms), never from a laptop. A build that gets
+ * three times slower fails; a busy runner mostly doesn't. Tighten them again when CI's times drop, loosen one only with
+ * the log that shows why. A template not here: BUDGET_SMALL.
  */
 const BUDGET: Record<string, number> = {
-  'Double slip (22.5°)': 90, 'Double slip (45°, R40)': 40, '22.5° crossing': 18, 'Three-way switch (tandem, two throws)': 20,
-  'Oval (LEGO R40)': 25, 'Crossover (R40)': 40, 'Double crossover (R56)': 90, 'Yard ladder (R40)': 100, 'Wye with a crossover': 55,
-  'Banked curve': 25, 'Helix (R104, two turns)': 130, 'Siding ending in a buffer stop': 55, 'Grade up at 2.5%': 15,
-  // (the heavy layouts, a file of their own)
-  'Yard (R56)': 150, 'Double-track return loop (turning right)': 350, 'Double-track return loop (turning left)': 350, 'X yard (6 tracks, single slips)': 500,
-  // (the double slip with its levers outside, and the reference trackwork's bigger ones)
-  'Double slip R40 45°': 40, 'Single slip R40 45°': 30, 'Double crossover R40': 40, 'Narrow-gauge double crossover R36': 40, 'T-junction core R56': 40, 'Star crossing 22.5°': 20,
-  'Crossover, 4-stud gap, left': 20, 'Crossover, 4-stud gap, right': 20, 'Three-way, no gap': 20, 'Three-way, 2-stud gap': 20,
-  'Curved switch R104 90° left': 20, 'Curved switch R104 90° right': 20,
+  'Crossing 90°, 8 studs': 3, 'Crossing 45° left': 4, 'Crossing 45° right': 4, 'Crossing 45°, 27 studs': 5, 'Double slip R40 45°': 26,
+  'Crossing 22.5° left': 11, 'Crossing 22.5° right': 11, 'Single slip R40 45°': 20, 'Star crossing 22.5°': 22, 'Curved crossing R24': 3,
+  'Curved crossing R40': 3, 'Curved crossing R56': 3, 'Curved crossing R72': 3, 'Curved crossing R88': 3, 'Curved crossing R104': 3,
+  'Crossing of two R120 curves': 4, 'Pass-through crossing R56 left': 4, 'Pass-through crossing R72 (A) left': 4,
+  'Pass-through crossing R72 (B) left': 3, 'Double crossover R40': 36, 'Pass-through crossing R120 left': 13, 'Pass-through crossing R56 right': 4,
+  'Pass-through crossing R72 (A) right': 4, 'Crossover, 4-stud gap, left': 15, 'Pass-through crossing R72 (B) right': 3,
+  'Pass-through crossing R120 right': 13, 'Crossover, 4-stud gap, right': 13, 'Buffer stop': 3, 'T-junction core R56': 30,
+  'Narrow-gauge crossing 90°': 3, 'Narrow-gauge crossing of standard track 90°': 3, 'Narrow-gauge buffer stop': 3,
+  'Narrow-gauge double crossover R36': 22, 'Narrow-gauge crossing of standard track 45° left': 3,
+  'Narrow-gauge crossing of standard track 45° right': 3, 'Narrow-gauge crossing 22.5° left': 3, 'Narrow-gauge crossing 22.5° right': 3,
+  'Narrow-gauge crossing 33.75° left': 3, 'Narrow-gauge crossing 33.75° right': 3, 'Grade up at 2.5%': 8, 'Helix (R104, two turns)': 71,
+  'Siding ending in a buffer stop': 30, 'Bridge with guard rails': 4, 'Dual gauge track': 5, 'Dual gauge crossing 90°': 3,
+  'Dual gauge crossing 45°': 12, 'Narrow gauge beside and across standard track': 22, 'Banked curve': 15, 'Crossing on sleepers': 5,
+  'Monorail oval on supports': 7, 'Monorail ramp (as LEGO\'s)': 6, 'Monorail switch (experimental)': 3, 'Monorail level crossing (experimental)': 3,
+  'Yard (R56)': 139, 'Double-track return loop (turning right)': 390, 'Double-track return loop (turning left)': 283, 'Yard ladder (R40)': 71,
+  'Wye with a crossover': 58, '90° crossing': 3, '22.5° crossing': 14, 'Double slip (22.5°)': 16, 'Double slip (45°, R40)': 23,
+  'Crossing on a curve': 3, 'Left switch (LEGO)': 7, 'Right switch (LEGO)': 7, 'Left switch (BrickTracks R104)': 7,
+  'Right switch (BrickTracks R104)': 8, 'Wye switch': 8, 'Three-way switch (one throw)': 8, 'Three-way switch (tandem, two throws)': 23,
+  'Test print 1: stud and anti-stud fits': 3, 'Test print 2: track joints': 3, 'Test print 3: switch as built': 8,
+  'Test print 4: points three ways': 8, 'Test print 5: seat for a LEGO curve': 3, 'Curved switch R40 45° left': 8, 'Curved switch R40 45° right': 7,
+  'Curved switch R40 90° left': 7, 'Curved switch R40 90° right': 7, 'Curved switch R56 90° left': 9, 'Curved switch R56 90° right': 8,
+  'Curved switch R104 90° left': 12, 'Curved switch R104 90° right': 10, 'Wye R40': 4, 'Wye R40, 8-stud spacing': 4, 'Wye R104': 3,
+  'Wye R40 left, R56 right': 4, 'Wye R56 left, R40 right': 4, 'Wye R104 left, R120 right': 10, 'Wye R120 left, R104 right': 8, 'Three-way R40': 10,
+  'Three-way R104': 11, 'Switch to the next track, no gap, left': 5, 'Switch to the next track, no gap, right': 6, 'Switch, 2-stud gap, left': 8,
+  'Switch, 2-stud gap, right': 8, 'Switch, 4-stud gap, left': 3, 'Switch, 4-stud gap, right': 3, 'Three-way, no gap': 11,
+  'Three-way, 2-stud gap': 11, 'Three-way, 4-stud gap': 4, 'Narrow-gauge switch R36 left': 3, 'Narrow-gauge switch R36 right': 3,
+  'Narrow-gauge switch R48 left': 5, 'Narrow-gauge switch R48 right': 6, 'Narrow-gauge switch R84 left': 6, 'Narrow-gauge switch R84 right': 5,
+  'Narrow-gauge wye R36': 3, 'Narrow-gauge switch R36 left, lever on the branch side': 3,
+  'Narrow-gauge switch R36 right, lever on the branch side': 3, 'Wye R104, 8-stud gap': 9, 'Dual gauge switch R40 left': 4,
+  'Dual gauge switch R40 right': 4, 'X yard (6 tracks, single slips)': 415, 'Oval (LEGO R40)': 20, 'Crossover (R40)': 33,
+  'Double crossover (R56)': 55, 'Switch R40 left': 9, 'Switch R40 right': 7, 'Switch R40 left, 28-stud straight': 4,
+  'Switch R40 right, 28-stud straight': 3, 'Yard switch R40 left': 3, 'Yard switch R40 right': 3, 'Switch R56 left': 10, 'Switch R56 right': 8,
+  'Switch R72 left': 10, 'Switch R72 right': 9, 'Switch R104 left': 10, 'Switch R104 right': 9, 'Switch R104 left, lever on the straight side': 9,
+  'Switch R104 right, lever on the straight side': 9, 'Switch R120 left': 7, 'Switch R120 right': 7, 'Switch R148 left': 11, 'Switch R148 right': 12,
+  'Switch R148 left, lever on the straight side': 11, 'Switch R148 right, lever on the straight side': 12,
 };
-const BUDGET_SMALL = 10;
+const BUDGET_SMALL = 10; // (a template with no time of its own yet)
 /** only: just these templates of the groups */
 export function templatesBuild(groups: string[], only?: string[]) {
   for (const [g, names] of TEMPLATE_GROUPS) if (groups.includes(g)) for (const name of names) if (!only || only.includes(name)) it(`${g}: ${name} builds`, async () => {
@@ -46,6 +75,8 @@ export function templatesBuild(groups: string[], only?: string[]) {
       const limit = Math.max(1500, ms / 10), warm = () => { const t1 = performance.now(), r = buildDesign(w, structuredClone(TEMPLATES[name])); return [r, performance.now() - t1] as const; };
       let [again, ms2] = warm();
       if (ms2 >= limit) { const [r, t] = warm(); if (t < ms2) [again, ms2] = [r, t]; }
+      // (one line for each template, in a fixed format, so the times can be tracked from CI's logs: grep TEMPLATE-TIME)
+      process.stdout.write(`TEMPLATE-TIME\t${name}\tcold_ms=${Math.round(ms)}\twarm_ms=${Math.round(ms2)}\tbudget_s=${BUDGET[name] ?? BUDGET_SMALL}\n`);
       expect(ms2, `${name}: built again unchanged in ${(ms2 / 1000).toFixed(2)} s`).toBeLessThan(limit);
       expect(again.pieces.length).toBe(b.pieces.length);
       expect(b.pieces.length).toBeGreaterThan(0);
