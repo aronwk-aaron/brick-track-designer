@@ -960,7 +960,7 @@ const download = (blob: Blob, name: string) => {
 // One piece: its STL; several (a switch and its moving parts): a zip of them. (Not the pieces that are LEGO's own: the LEGO parts list has those.)
 $('export-stl').addEventListener('click', () => {
   if (!pieces.length || building || stale) return;
-  const d = stlDownload(pieces, fileBase());
+  const d = stlDownload(pieces, fileBase(), design.kit);
   if (d) download(new Blob([d.data as BlobPart], { type: d.type }), d.name);
 });
 // The LEGO parts the design uses instead of printing (plain straights as LEGO track, their ballast as plates): a list,
@@ -1075,7 +1075,6 @@ radiusSel.after(systemSel);
 const canvas = new TrackCanvas($<HTMLCanvasElement>('track'), {
   design: () => design,
   changed: (commit) => changed(commit, commit), // (one undo step per finished action, none for each mouse move)
-  live: () => render(), // (a handle being dragged: the route's card shows its numbers as they change)
   select: () => { render(); updateSelbar(); },
   radius: () => Number(radiusSel.value),
   system: () => (systemSel.value === 'monorail' ? 'monorail' : 'train'),

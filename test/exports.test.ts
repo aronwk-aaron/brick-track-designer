@@ -3,7 +3,7 @@
 import { describe, expect, it } from 'vitest';
 import { kernel } from '../src/geom/kernel';
 import { buildDesign, clearBuildCache, legoParts, type LegoPart } from '../src/app/build';
-import { type Design, OPTION_DEFAULTS, type PieceOptions, TEMPLATES, upgradeDesign } from '../src/app/design';
+import { type Design, FIT_LADDER, OPTION_DEFAULTS, type PieceOptions, TEMPLATES, upgradeDesign } from '../src/app/design';
 import { fileBase, partsCsv, partsDownload, plainKind, printedKinds, stlDownload, TRACK_PARTS, wantedListXml } from '../src/app/exports';
 import { zip } from '../src/geom/zip';
 
@@ -60,8 +60,13 @@ describe('the downloads', { timeout: 300000 }, () => {
     const b = buildDesign(w, structuredClone(TEMPLATES['Left switch (LEGO)']));
     const d = stlDownload(b.pieces, 'my-switch')!;
     expect([d.name, d.type]).toEqual(['my-switch.zip', 'application/zip']);
-    const files = unzip(d.data);
+    const all = unzip(d.data), files = all.filter((f) => /\.stl$/.test(f.name));
     expect(files.map((f) => f.name)).toEqual(b.pieces.map((p) => `my-switch-${p.name}.stl`));
+    // (and a README: every file said, what to break off, how the points go together)
+    expect(all.map((f) => f.name).filter((n) => !/\.stl$/.test(n))).toEqual(['README.txt']);
+    const readme = new TextDecoder().decode(all.find((f) => f.name === 'README.txt')!.data);
+    for (const f of files) expect(readme).toContain(f.name);
+    for (const re of [/No slicer supports/, /break-out supports/, /PUTTING THE POINTS TOGETHER/, /The lever/]) expect(readme).toMatch(re);
     expect(files.length).toBeGreaterThan(3);
     for (const [k, f] of files.entries()) { expect(stlTris(f.data)).toBeGreaterThan(10); expect(f.data).toEqual(b.pieces[k].stl); }
     // (each lying on the bed: nothing below z 0, something at it)
@@ -113,7 +118,7 @@ describe('the downloads', { timeout: 300000 }, () => {
       // (and nothing bought is in the files to print)
       const stl = stlDownload(b.pieces, 'oval');
       const printed = b.pieces.filter((p) => !p.lego);
-      if (printed.length > 1) expect(unzip(stl!.data).map((f) => f.name)).toEqual(printed.map((p) => `oval-${p.name}.stl`));
+      if (printed.length > 1) expect(unzip(stl!.data).map((f) => f.name).filter((n) => /\.stl$/.test(n))).toEqual(printed.map((p) => `oval-${p.name}.stl`));
       else if (!printed.length) expect(stl).toBeUndefined();
       clearBuildCache();
     } finally { Object.assign(OPTION_DEFAULTS, saved); }
@@ -130,6 +135,34 @@ describe('the downloads', { timeout: 300000 }, () => {
     // (a zip's files are dated when they're made, not 1980)
     const z = zip([{ name: 'a.txt', data: new Uint8Array(3) }], new Date(2026, 10, 9, 14, 30, 8)), dv = new DataView(z.buffer);
     expect([dv.getUint16(10, true), dv.getUint16(12, true)]).toEqual([(14 << 11) | (30 << 5) | 4, ((2026 - 1980) << 9) | (11 << 5) | 9]);
+  });
+  it('a test-print kit: each coupon built with its own fits, its files named after it, numbered by ribs, and said in the README', async () => {
+    const saved = { ...OPTION_DEFAULTS };
+    Object.assign(OPTION_DEFAULTS, APP);
+    try {
+      const w = await kernel();
+      clearBuildCache();
+      const d = structuredClone(TEMPLATES['Test print 1: stud and anti-stud fits']), b = buildDesign(w, d);
+      expect(b.pieces.map((p) => p.name)).toEqual(FIT_LADDER.map(([s, a], k) => `fit${k + 1}-stud${s}-tube${a}-track1`));
+      expect(b.info.warnings).toEqual([]);
+      // (a coupon's ribs: 0.55 proud of its sleepers' ends on its +x side; the same straight on its own has none)
+      const maxX = (P: Float32Array) => { let m = -Infinity; for (let i = 0; i < P.length; i += 3) m = Math.max(m, P[i]); return m; };
+      b.pieces.forEach((p, k) => expect(maxX(p.positions) - 80 * k).toBeCloseTo(32.55, 2));
+      const { kit: _k, ...plain } = d, one = buildDesign(w, { ...plain, routes: [d.routes[0]] });
+      expect(maxX(one.pieces[0].positions)).toBeCloseTo(32, 2);
+      for (const p of b.pieces) expect(stlTris(p.stl)).toBeGreaterThan(100);
+      expect(printedKinds(b.pieces)).toEqual([['track', 5]]);
+      const z = stlDownload(b.pieces, 'test-1-fits', d.kit)!, files = unzip(z.data);
+      expect(files.map((f) => f.name)).toEqual([...b.pieces.map((p) => `test-1-fits-${p.name}.stl`), 'README.txt']);
+      const readme = new TextDecoder().decode(files.at(-1)!.data);
+      for (const k of d.kit!) expect(readme).toContain(`${k.name}: ${k.note}`);
+      expect(readme).toMatch(/3 ribs: stud fit 0\.18 mm, anti-stud fit 0\.06 mm \(today's settings\)/);
+      // (a plan-only build of a kit: every coupon's trackwork sent, nothing built)
+      let early: { items?: unknown[] } | undefined;
+      expect(() => buildDesign(w, structuredClone(TEMPLATES['Test print 4: points three ways']), undefined, (ov) => { early = ov as typeof early; }, { planOnly: true })).toThrow();
+      expect((early!.items as { kind: string }[]).filter((it) => it.kind === 'throw')).toHaveLength(3);
+      clearBuildCache();
+    } finally { Object.assign(OPTION_DEFAULTS, saved); }
   });
   it('printed parts by kind: their names without the numbers, the most first', () => {
     const p = (name: string, lego = false) => ({ name, stl: new Uint8Array(0), ...(lego && { lego: [{ part: '53401', name: 'x', qty: 1 }] }) });

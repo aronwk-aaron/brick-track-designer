@@ -67,7 +67,15 @@ export interface Design {
   trackwork?: Trackwork;
   /** The tables (modules) the layout is laid across, studs: the track's cut where they meet (tables.ts). */
   tables?: Table[];
+  /** A test-print kit: coupons built side by side, each with settings of its own (build.ts buildKit). */
+  kit?: KitPart[];
 }
+/**
+ * A test-print kit's coupon: the routes it's made of (by name; a route renamed is no longer its), the settings it's
+ * built with over the design's (a fit, a blade shape), the number marked on its track parts (ribs on a short
+ * straight's side, 1 to 5), and what it is, for the README in the STL zip. Its parts' names start with its name.
+ */
+export interface KitPart { name: string; routes: string[]; options?: Partial<PieceOptions>; mark?: number; note?: string }
 
 /** Hand edits (each also says where on its route it is, on: twfollow.ts): check rails lengthened (+) or shortened (-) at each end, moved, or taken out; flangeway cuts lengthened; points moved along, taken out or forced; levers moved. */
 export interface Trackwork {
@@ -242,8 +250,13 @@ export function readDesign(v: unknown): Design {
   const d = { ...v, version: 1, gaugeStuds: fin(v.gaugeStuds) ? v.gaugeStuds : 4, routes } as Record<string, unknown>;
   if (typeof d.name !== 'string') delete d.name;
   // (a setting that's not the kind of thing it should be, a number where a choice goes: left out, so its default)
-  if (obj(d.options)) d.options = Object.fromEntries(Object.entries(d.options).filter(([k, x]) => (k in OPTION_DEFAULTS ? typeof x === typeof (OPTION_DEFAULTS as unknown as Record<string, unknown>)[k] : ['string', 'number', 'boolean'].includes(typeof x)) && (typeof x !== 'number' || fin(x))));
+  const opts = (os: Record<string, unknown>) => Object.fromEntries(Object.entries(os).filter(([k, x]) => (k in OPTION_DEFAULTS ? typeof x === typeof (OPTION_DEFAULTS as unknown as Record<string, unknown>)[k] : ['string', 'number', 'boolean'].includes(typeof x)) && (typeof x !== 'number' || fin(x))));
+  if (obj(d.options)) d.options = opts(d.options);
   else delete d.options;
+  // (a kit's coupons: the ones with a name and their routes' names; their settings as the design's)
+  const kit = (Array.isArray(d.kit) ? d.kit : []).filter((k: unknown): k is Record<string, unknown> => obj(k) && typeof k.name === 'string' && !!k.name && Array.isArray(k.routes) && k.routes.every((n) => typeof n === 'string'))
+    .map((k): KitPart => ({ name: k.name as string, routes: k.routes as string[], ...(obj(k.options) && { options: opts(k.options) }), ...(fin(k.mark) && { mark: Math.min(5, Math.max(0, Math.round(k.mark))) }), ...(typeof k.note === 'string' && { note: k.note }) }));
+  if (kit.length) d.kit = kit; else delete d.kit;
   // (each edit's place on its route, where it isn't one, left out: it's worked out again from where the edit is)
   const anchor = (a: unknown) => Array.isArray(a) && a.length === 4 && typeof a[0] === 'string' && (a[1] === 's' || a[1] === 'e') && fin(a[2]) && fin(a[3]);
   // (and what its item is: noted again from the build's)
@@ -502,9 +515,53 @@ export const TEMPLATE_GROUPS: [string, string[]][] = [
   ['Layouts', ['Oval (LEGO R40)', 'Crossover (R40)', 'Double crossover (R56)', 'Yard ladder (R40)', 'Yard (R56)', 'X yard (6 tracks, single slips)', 'Wye with a crossover', 'Double-track return loop (turning right)', 'Double-track return loop (turning left)']],
   ['Features', ['Grade up at 2.5%', 'Helix (R104, two turns)', 'Siding ending in a buffer stop', 'Bridge with guard rails', 'Dual gauge track', 'Dual gauge crossing 90°', 'Dual gauge crossing 45°', 'Narrow gauge beside and across standard track', 'Banked curve', 'Crossing on sleepers']],
   ['Monorail', ['Monorail oval on supports', 'Monorail ramp (as LEGO\'s)', 'Monorail switch (experimental)', 'Monorail level crossing (experimental)']],
+  ['Test prints', ['Test print 1: stud and anti-stud fits', 'Test print 2: track joints', 'Test print 3: switch as built', 'Test print 4: points three ways', 'Test print 5: seat for a LEGO curve']],
   ['Reference trackwork', ['Switch R40 left', 'Switch R40 right', 'Switch R40 left, 28-stud straight', 'Switch R40 right, 28-stud straight', 'Yard switch R40 left', 'Yard switch R40 right', 'Switch R56 left', 'Switch R56 right', 'Switch R72 left', 'Switch R72 right', 'Switch R104 left', 'Switch R104 right', 'Switch R104 left, lever on the straight side', 'Switch R104 right, lever on the straight side', 'Switch R120 left', 'Switch R120 right', 'Switch R148 left', 'Switch R148 right', 'Switch R148 left, lever on the straight side', 'Switch R148 right, lever on the straight side', 'Curved switch R40 45° left', 'Curved switch R40 45° right', 'Curved switch R40 90° left', 'Curved switch R40 90° right', 'Curved switch R56 90° left', 'Curved switch R56 90° right', 'Curved switch R104 90° left', 'Curved switch R104 90° right', 'Wye R40', 'Wye R40, 8-stud spacing', 'Wye R104', 'Wye R40 left, R56 right', 'Wye R56 left, R40 right', 'Wye R104 left, R120 right', 'Wye R120 left, R104 right', 'Three-way R40', 'Three-way R104', 'Switch to the next track, no gap, left', 'Switch to the next track, no gap, right', 'Switch, 2-stud gap, left', 'Switch, 2-stud gap, right', 'Switch, 4-stud gap, left', 'Switch, 4-stud gap, right', 'Three-way, no gap', 'Three-way, 2-stud gap', 'Three-way, 4-stud gap', 'Crossing 90°, 8 studs', 'Crossing 45° left', 'Crossing 45° right', 'Crossing 45°, 27 studs', 'Crossing 22.5° left', 'Crossing 22.5° right', 'Star crossing 22.5°', 'Curved crossing R24', 'Curved crossing R40', 'Curved crossing R56', 'Curved crossing R72', 'Curved crossing R88', 'Curved crossing R104', 'Crossing of two R120 curves', 'Pass-through crossing R56 left', 'Pass-through crossing R72 (A) left', 'Pass-through crossing R72 (B) left', 'Pass-through crossing R120 left', 'Pass-through crossing R56 right', 'Pass-through crossing R72 (A) right', 'Pass-through crossing R72 (B) right', 'Pass-through crossing R120 right', 'T-junction core R56', 'Double slip R40 45°', 'Single slip R40 45°', 'Double crossover R40', 'Crossover, 4-stud gap, left', 'Crossover, 4-stud gap, right', 'Buffer stop', 'Narrow-gauge crossing 90°', 'Narrow-gauge crossing of standard track 90°', 'Narrow-gauge crossing of standard track 45° left', 'Narrow-gauge crossing of standard track 45° right', 'Narrow-gauge buffer stop', 'Narrow-gauge switch R36 left', 'Narrow-gauge switch R36 right', 'Narrow-gauge switch R48 left', 'Narrow-gauge switch R48 right', 'Narrow-gauge switch R84 left', 'Narrow-gauge switch R84 right', 'Narrow-gauge wye R36', 'Narrow-gauge switch R36 left, lever on the branch side', 'Narrow-gauge switch R36 right, lever on the branch side', 'Narrow-gauge double crossover R36', 'Narrow-gauge crossing 22.5° left', 'Narrow-gauge crossing 22.5° right', 'Narrow-gauge crossing 33.75° left', 'Narrow-gauge crossing 33.75° right', 'Wye R104, 8-stud gap', 'Dual gauge switch R40 left', 'Dual gauge switch R40 right']],
 ];
+/** A points coupon (Test print 4): LEGO's switch from its toe to 12 studs on, just past the blades' heels (no frog), at x studs. */
+const pointsCoupon = (id: string, x: number): Design['routes'] => [
+  { name: `${id} straight`, x, y: 0, heading: 0, segs: [{ kind: 'straight', studs: 12 }] },
+  { name: `${id} branch`, x, y: 0, heading: 0, segs: [{ kind: 'curve', radius: 40, angle: 17.4576 }] },
+];
+/** The fit ladder (Test print 1): stud fit and anti-stud fit, loosest to tightest, the default in the middle. */
+export const FIT_LADDER: [stud: number, antistud: number][] = [[0.08, 0.16], [0.13, 0.11], [0.18, 0.06], [0.23, 0.01], [0.28, -0.04]];
 export const TEMPLATES: Record<string, Design> = {
+  // ---- Test prints (docs/test-prints.md): small coupons and one switch, to print, try and report on, so the
+  // defaults are set from prints. Each is what the app builds with the settings said: nothing made specially but the
+  // ribs that number the fit coupons ----
+  // (five 2-stud straights, each its own stud fit and anti-stud fit, numbered by ribs on a sleeper's end)
+  'Test print 1: stud and anti-stud fits': { version: 1, gaugeStuds: 4, name: 'test-1-fits', options: { legoTrack: 'print' },
+    routes: FIT_LADDER.map((_, k) => ({ name: `Fit ${k + 1}`, x: 10 * k, y: 0, heading: 0, segs: [{ kind: 'straight' as const, studs: 2 }] })),
+    kit: FIT_LADDER.map(([studFit, antistudFit], k) => ({ name: `fit${k + 1}-stud${studFit}-tube${antistudFit}`, routes: [`Fit ${k + 1}`], options: { studFit, antistudFit }, mark: k + 1,
+      note: `${k + 1} rib${k ? 's' : ''}: stud fit ${studFit} mm, anti-stud fit ${antistudFit} mm${k === 2 ? " (today's settings)" : k === 0 ? ' (loosest)' : k === 4 ? ' (tightest)' : ''}` })) },
+  // (two 4-stud straights end to end, peg and clip as LEGO's (a bought straight goes on either too); a 6-stud straight
+  // cut in two with dovetails (a small bed, to make the app cut it; on a solid bed, as the switches cut this way have:
+  // on sleepers this cut falls between two of them, and each half came out in two bodies))
+  'Test print 2: track joints': { version: 1, gaugeStuds: 4, name: 'test-2-joints', options: { legoTrack: 'print' }, routes: [
+    { name: 'Clip 1', x: 0, y: 0, heading: 0, segs: [{ kind: 'straight', studs: 4 }] },
+    { name: 'Clip 2', x: 0, y: 4, heading: 0, segs: [{ kind: 'straight', studs: 4 }] },
+    { name: 'Dovetail', x: 10, y: 0, heading: 0, segs: [{ kind: 'straight', studs: 6 }] },
+  ], kit: [
+    { name: 'clip1', routes: ['Clip 1'], note: 'peg and clip, as LEGO track: joins clip2, and any bought track' },
+    { name: 'clip2', routes: ['Clip 2'], note: 'peg and clip, as LEGO track: joins clip1, and any bought track' },
+    { name: 'dovetail', routes: ['Dovetail'], options: { splitTrack: 'bed', joint: 'dovetail', printBedX: 70, printBedY: 40, sleepers: 'bed' }, note: 'one straight cut in two, joined with dovetails: press one down into the other' },
+  ] },
+  // (LEGO's left switch with nothing changed: sprung blades, lever click, 3 mm throw)
+  'Test print 3: switch as built': { version: 1, gaugeStuds: 4, name: 'test-3-switch', options: { legoTrack: 'print' }, routes: [
+    { name: 'Straight', x: 0, y: 0, heading: 0, segs: [{ kind: 'straight', studs: 32 }] },
+    { name: 'Branch', x: 0, y: 0, heading: 0, segs: [{ kind: 'curve', radius: 40, angle: 36.8699 }, { kind: 'curve', radius: 40, angle: -14.3699 }] },
+  ] },
+  // (the same points, cut short, three ways: what the switch as built doesn't try)
+  'Test print 4: points three ways': { version: 1, gaugeStuds: 4, name: 'test-4-points', options: { legoTrack: 'print' },
+    routes: [...pointsCoupon('A', 0), ...pointsCoupon('B', 16), ...pointsCoupon('C', 32)], kit: [
+      { name: 'A-relief-clamp', routes: ['A straight', 'A branch'], options: { bladeRelief: true, throwAction: 'snap' }, note: 'sprung blades with flange relief; kept set by the snap clamp (on the arm)' },
+      { name: 'B-rigid-clamp', routes: ['B straight', 'B branch'], options: { bladeStyle: 'simple', throwAction: 'snap' }, note: 'rigid blades (shallow slider); kept set by the snap clamp (between the blades)' },
+      { name: 'C-wide', routes: ['C straight', 'C branch'], options: { pointThrow: 4 }, note: 'as the switch as built, but the blades move 4 mm, not 3' },
+    ] },
+  // (printed ballast with the seat a bought LEGO R40 curve drops into)
+  'Test print 5: seat for a LEGO curve': { version: 1, gaugeStuds: 4, name: 'test-5-seat', options: { ballast: 'ballast', legoTrack: 'lego' }, routes: [
+    { name: 'Curve', x: 0, y: 0, heading: 0, segs: [{ kind: 'curve', radius: 40, angle: 22.5 }] },
+  ] },
   '90° crossing': { version: 1, gaugeStuds: 4, routes: [
     { name: 'A', x: 0, y: -8, heading: 0, segs: [{ kind: 'straight', studs: 16 }] },
     { name: 'B', x: 8, y: 0, heading: 90, segs: [{ kind: 'straight', studs: 16 }] },

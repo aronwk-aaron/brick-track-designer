@@ -220,7 +220,8 @@ export function prints(w: Wasm, p: Piece, bedX: number, bedY: number) {
   // (one solid: the piece without its supports; and its file's a closed solid too, the supports in it)
   const m = solid(w, p.positions), f = solid(w, P);
   if (!m) out.push(`${p.name} isn't a closed solid`);
-  else { const n = m.decompose().filter((q) => q.volume() > SLIVER).length; if (n !== 1) out.push(`${p.name} is in ${n} pieces`); }
+  // (a snap clamp is three on purpose: the spring and its two links, loose in it, printed in place: switch/snap.ts)
+  else { const n = m.decompose().filter((q) => q.volume() > SLIVER).length; if (n !== 1 && !(n === 3 && /-spring$/.test(p.name))) out.push(`${p.name} is in ${n} pieces`); }
   if (!f) out.push(`${p.name}'s file isn't a closed solid`);
   for (const x of [m, f]) if (x) drop(x);
   return out;

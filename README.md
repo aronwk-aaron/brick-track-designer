@@ -46,6 +46,11 @@ right hands on one card, and starred and recent ones kept on top.
 Designs save and open as JSON, and the last one is kept in the browser. The
 page can be installed and works offline once opened.
 
+Before printing a layout, print the test pieces (Templates › Test prints) to
+check the fits and the points on your printer: [docs/test-prints.md](docs/test-prints.md)
+says what to print, how to put it together and what to report. Every STL zip
+has a README.txt: what each file is, how to print it, how the points go together.
+
 ## Contributing
 
 Pull requests run CI (`.github/workflows/ci.yml`): Conventional Commits
