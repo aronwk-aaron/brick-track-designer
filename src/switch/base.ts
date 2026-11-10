@@ -245,14 +245,16 @@ function fdbLayout(v: SetLike, p: BaseParams, rails: [Route, number, number][], 
   const pts = [...keep.flat(), ...pp], n3 = v.three ? 2 : 1, plateW = fdbPlateW(p), postIn0 = plateW / 2 + HEAD_HW;
   // (the points by where they are, in squares CELL across: what's near a place looked for only in the squares round it.
   // A double slip's search for a place for each pin and post asks a hundred thousand times, of over a thousand points)
-  const CELL = 16, grid = new Map<number, Pt[]>(), cellOf = (x: number, y: number) => Math.floor(x / CELL) * 65536 + Math.floor(y / CELL);
+  const CELL = 4, grid = new Map<number, Pt[]>(), cellOf = (x: number, y: number) => Math.floor(x / CELL) * 65536 + Math.floor(y / CELL);
   for (const q of pts) { const k = cellOf(q[0], q[1]), at = grid.get(k); if (at) at.push(q); else grid.set(k, [q]); }
-  const near = (q0: Pt, r: number) => {
-    const out: Pt[] = [];
+  /** Whether ok holds for every point within r of q0. */
+  const nearEvery = (q0: Pt, r: number, ok: (q: Pt) => boolean) => {
     for (let i = Math.floor((q0[0] - r) / CELL); i <= Math.floor((q0[0] + r) / CELL); i++)
-      for (let j = Math.floor((q0[1] - r) / CELL); j <= Math.floor((q0[1] + r) / CELL); j++)
-        for (const q of grid.get(i * 65536 + j) ?? []) if (norm(sub(q, q0)) < r) out.push(q);
-    return out;
+      for (let j = Math.floor((q0[1] - r) / CELL); j <= Math.floor((q0[1] + r) / CELL); j++) {
+        const at = grid.get(i * 65536 + j);
+        if (at) for (const q of at) if (norm(sub(q, q0)) < r && !ok(q)) return false;
+      }
+    return true;
   };
   return [0, 1].map((b) => blade(b));
   function blade(b: number): FdbBladeLayout {
@@ -261,8 +263,12 @@ function fdbLayout(v: SetLike, p: BaseParams, rails: [Route, number, number][], 
     // (turning + opens blade 0 (its toe moves in, to +x), - blade 1; it goes from closed (0) to open (n3 * ang))
     const dir = b === 0 ? 1 : -1;
     const tip = railPoint(rt, v.sToe, o), sPost = sOf(rt, [0, v.throwY]);
+    // (each pin's place and each post's worked out once: the search below asks for the same ones over and over)
+    const pivots = new Map<number, Pt>(), postsAt = new Map<number, Pt>();
+    const pivotOf = (shift: number, pin: number) => { const k = shift * 4096 + Math.round(pin * 64); let q = pivots.get(k); if (!q) { q = railPoint(rt, v.sHeel - 4 - shift, o + side * pin); pivots.set(k, q); } return q; };
+    const postOf = (postIn: number) => { const k = Math.round(postIn * 4096); let q = postsAt.get(k); if (!q) { q = railPoint(rt, sPost, o + side * postIn); postsAt.set(k, q); } return q; };
     const make = (shift: number, pin: number, postIn: number) => {
-      const pivot = railPoint(rt, v.sHeel - 4 - shift, o + side * pin), post = railPoint(rt, sPost, o + side * postIn);
+      const pivot = pivotOf(shift, pin), post = postOf(postIn);
       // (as it was; moved, the slider's travel (less the preload) at the post sets how far it swings)
       const ang = shift === 0 && pin === FDB.pivotIn ? (p.pointThrow / norm(sub(tip, pivot))) * (180 / Math.PI)
         : ((v.fdbTravel - pre) / Math.max(1, Math.abs(pivot[1] - post[1]))) * (180 / Math.PI);
@@ -305,7 +311,8 @@ function fdbLayout(v: SetLike, p: BaseParams, rails: [Route, number, number][], 
       return Math.hypot(Math.max(bx[0] - a, 0, a - bx[1]), Math.max(bx[2] - cc, 0, cc - bx[3]));
     };
     const pinR = (sprung ? SPRUNG.holeD : FDB.pinD) / 2 + c;
-    const pinOk = (f: ReturnType<typeof make>) => !inPlates(f.pivot) && near(f.pivot, 30).every((q) => norm(sub(q, f.pivot)) >= pinR + FDB_RIM + hwOf(q));
+    // (only the points nearer than the most room any needs can be too near)
+    const pinOk = (f: ReturnType<typeof make>) => !inPlates(f.pivot) && nearEvery(f.pivot, Math.min(30, pinR + FDB_RIM + Math.max(hw, c) + 1e-6), (q) => norm(sub(q, f.pivot)) >= pinR + FDB_RIM + hwOf(q));
     // (other track's rails: the plate's cut clear of each by hw (fdbKeep2d). Rigid blades' hole goes through the plate:
     // FDB_RIM of plate round it. Sprung blades' pocket is under the plate's closed top, the rail beside the plate, not
     // over it: only its wall to the cut edge (and a little for the swing's and the rail's steps))
@@ -319,20 +326,43 @@ function fdbLayout(v: SetLike, p: BaseParams, rails: [Route, number, number][], 
       const reach = Math.hypot(Math.max(Math.abs(bx[0]), Math.abs(bx[1])), Math.max(Math.abs(bx[2]), Math.abs(bx[3]))) + rim + Math.max(hw, c) + 1e-6;
       return angles(f).every((a) => {
         const P = rotAbout(f.post, f.pivot, a), U = unit(sub(f.pivot, P));
-        return !inPlates(P) && near(P, reach).every((q) => norm(sub(q, f.post)) >= 45 || boxDist(q, P, U, bx) >= rim + hwOf(q));
+        return !inPlates(P) && nearEvery(P, reach, (q) => norm(sub(q, f.post)) >= 45 || boxDist(q, P, U, bx) >= rim + hwOf(q));
       });
     };
     // (the pin's snap lip clear of the blade's rail on the plate)
     const minPin = HEAD_HW + (sprung ? SPRUNG.holeD : FDB.pinD) / 2 + 2 * c + 0.15 + 0.2;
     // (the spring 34.5 long, as the reference's; where other track running past leaves no room for it, shorter (stiffer))
-    for (const root of sprung ? [SPRUNG.root, 28, 22] : [0]) {
+    // (a blade with no room at all tries every place, for each length of spring: thousands, and an X yard's levers ask
+    // it of hundreds of layouts, most of the time its plan took. So each answer that doesn't depend on the spring's
+    // length is worked out once (the pin's place, the blade's swing, the place itself), and the post's is asked first
+    // with the shortest spring: a longer one's pocket is the same but longer, so where the shortest has no room none has)
+    const ROOTS = sprung ? [SPRUNG.root, 28, 22] : [0], least = ROOTS[ROOTS.length - 1];
+    const made = new Map<number, ReturnType<typeof make>>(), pinMemo = new Map<number, boolean>(), barMemo = new Map<number, boolean>(), postLeast = new Map<number, boolean>();
+    const idOf = (shift: number, pin: number, pi: number) => (shift * 4096 + Math.round(pin * 4)) * 4096 + Math.round(pi * 4);
+    const makeOnce = (shift: number, pin: number, pi: number) => { const k = idOf(shift, pin, pi); let f = made.get(k); if (!f) { f = make(shift, pin, pi); made.set(k, f); } return f; };
+    const once = (memo: Map<number, boolean>, k: number, ask: () => boolean) => { let r = memo.get(k); if (r === undefined) { r = ask(); memo.set(k, r); } return r; };
+    // (and a post with something too near it as the blade lies closed has no room wherever the pin is: its hole (or its
+    // spring's pocket) has a circle of rIn round the post in it however it's turned, and what's too near that is too near
+    // it. Asked once for each place across the plate, not for every place of the pin along and across with it)
+    const need = sprung ? sprungNeed(pre) : undefined, rIn = need ? Math.min(SPRUNG.past, need.out, need.in) : rigidHole(c);
+    const crowded = new Map<number, boolean>();
+    const postCrowded = (pi: number) => once(crowded, Math.round(pi * 4), () => {
+      const post = postOf(pi);
+      return !nearEvery(post, rIn + rim + Math.max(hw, c), (q) => norm(sub(q, post)) - rIn >= rim + hwOf(q) + 1e-9);
+    });
+    for (const root of ROOTS) {
       rootNow = root;
       for (let shift = 0; shift <= 40; shift += 1) {
         for (let pin = FDB.pivotIn; pin >= minPin - 1e-9; pin -= 0.25) {
-          if (!pinOk(make(shift, pin, postIn0))) continue;
+          if (!once(pinMemo, idOf(shift, pin, 0), () => pinOk(makeOnce(shift, pin, postIn0)))) continue;
           for (let pi = postIn0; pi >= HEAD_HW + 0.5 - 1e-9; pi -= 0.25) {
-            const f = { ...make(shift, pin, pi), ...(sprung && root !== SPRUNG.root && { root }) };
-            if (!postOk(f) || ((shift || pin !== FDB.pivotIn || pi !== postIn0) && !barOk(f))) continue;
+            // (the circle's in the pocket only if the pocket reaches that far toward the pin: a pin right by the post is asked in full)
+            if (postCrowded(pi) && (!sprung || sprungRoot(least, { pivot: pivotOf(shift, pin), post: postOf(pi) }) >= rIn)) continue;
+            const k = idOf(shift, pin, pi), f0b = makeOnce(shift, pin, pi);
+            // (with the shortest spring first)
+            if (sprung) { rootNow = least; const okLeast = once(postLeast, k, () => postOk(f0b)); rootNow = root; if (!okLeast) continue; }
+            const f = { ...f0b, ...(sprung && root !== SPRUNG.root && { root }) };
+            if ((sprung && root === least ? false : !postOk(f)) || ((shift || pin !== FDB.pivotIn || pi !== postIn0) && !once(barMemo, k, () => barOk(f)))) continue;
             return shift ? { ...f, stockKeep: stockBehind(f), stockHw: hw } : f;
           }
         }
@@ -522,6 +552,7 @@ function singlePoint(v: PointsSetValues, G: number, flangeway: number) {
  * flanges, as a frog); anywhere else, shallower (a notch that long would cut
  * the blade through), or running past closer than it swings, it's blocked.
  */
+const crossMemo = new WeakMap<object, Map<string, ReturnType<typeof bladeCrossings>>>();
 function bladeCrossings(rt: Route, o: number, sToe: number, sHeel: number, rails: [Route, number, number][], throwMm: number) {
   const zone = sHeel - 0.25 * (sHeel - sToe), notches: Notch[] = [];
   let blocked = false;
@@ -762,7 +793,20 @@ export function switchPlan(routes: Route[], specs: SetSpec[], p: BaseParams = BA
   };
   // (other track across the blades: notched near the heels, as a double slip's; else blocked)
   for (const v of sets as SetLike[]) if (!v.three) {
-    const cr = [[v.ra, -G], [v.rb, +G]].map(([rt, o]) => bladeCrossings(rt as Route, o as number, v.sToe, v.sHeel, railsNear(v), p.pointThrow));
+    // (beside other track, the same blades against the same rails asked again for each place a lever's tried in
+    // (network.ts), every half mm along every rail of track that runs the length of a yard: worked out once, by the
+    // other track near the points (the same list each try), as the plates' layout below is)
+    const rails = railsNear(v), memo = foreign.length ? crossMemo.get(foreign) ?? new Map<string, ReturnType<typeof bladeCrossings>>() : undefined;
+    if (memo) crossMemo.set(foreign, memo);
+    const cr = [[v.ra, -G], [v.rb, +G]].map(([rt, o]) => {
+      const ask = () => bladeCrossings(rt as Route, o as number, v.sToe, v.sHeel, rails, p.pointThrow);
+      if (!memo) return ask();
+      const key = JSON.stringify([o, v.sToe, v.sHeel, p.pointThrow, (rt as Route).start, (rt as Route).segments, rails.map(([r, ro, s0]) => [foreign.indexOf(r) >= 0 ? foreign.indexOf(r) : [r.start, r.segments], ro, s0])]);
+      let got = memo.get(key);
+      if (!got) { got = ask(); memo.set(key, got); }
+      // (its notches a list of this plan's own)
+      return { blocked: got.blocked, notches: got.notches.map((n) => ({ ...n })) };
+    });
     v.notches = cr.map((x) => x.notches); v.crossBlocked = cr.some((x) => x.blocked);
   }
   if (p.mechStyle === 'plates') {
