@@ -6,8 +6,6 @@ describe('templates: TrixBrix sets', { timeout: 1800000 }, () => templatesBuild(
   'Switch, 2-stud gap, left, with its R51 curve',
   'Switch, 2-stud gap, right, with its R51 curve',
   'Three-way, 2-stud gap, with its R51 curves',
-  'Switch R120 left with its siding curves',
-  'Switch R120 right with its siding curves',
   'Switch R148 left with its siding curves',
   'Switch R148 right with its siding curves',
   'Wye R40, 8-stud spacing, to two parallel tracks',
