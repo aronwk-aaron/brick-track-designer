@@ -1678,7 +1678,10 @@ export function switchGeometry(s: Scad, plan: SwitchPlan, extraCuts: Man[] = [])
       return s.union([cube([Math.max(...xn) - Math.min(...xn) + 6, rodW, z1 - z0], [Math.min(...xn) - 3, v.throwY - rodW / 2, z0]), ...posts, ...fdbSliderExtra(v)]);
     }
     // (the bar as far as the over-centre spring's post, or the snap clamp's: with one moving blade it's past that blade's)
-    const xs = [...fdbPostAt(v).map((q) => q[0]), ...snapXs(v), ...(ocOn(v) ? [ocGeo(v).P[0]] : []), v.forkX], x0 = Math.min(...xs) - 3, x1 = Math.max(...xs) + forkHw;
+    const xs = [...fdbPostAt(v).map((q) => q[0]), ...snapXs(v), ...(ocOn(v) ? [ocGeo(v).P[0]] : []), v.forkX], x0 = Math.min(...xs) - 3;
+    // (a switch stand's lever on the left: the bar's far end is past the far post, not the yoke: 3 past it as its other
+    // end is, not the yoke's half-width (5), which ran 1 mm into the tunnel's end at the travel's end)
+    const x1 = Math.max(...xs) + (p.throwStand && v.throwDir < 0 ? 3 : forkHw);
     const slotW = g.leverTipD + 2 * c, m = v.forkMouthHw;
     // (the posts up into the blades, to just under the plates' tops; no wider than the bar, which prints on its side:
     // a teardrop's tip past a narrow bar's side (the sprung blades' on track alone) would leave the bar hanging over the bed)
