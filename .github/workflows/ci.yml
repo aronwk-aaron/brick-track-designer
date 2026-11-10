@@ -80,6 +80,26 @@ jobs:
         env:
           TEST_MINUTES: 25
 
+  smoke:
+    # (the app in a real browser, which the tests don't have: a template built, a route drawn and undone, a dialog,
+    # a bad file, Auto off; under a minute, stopped at 6 by the script itself)
+    name: Browser smoke test
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm build
+      # (the runner's own Chrome: nothing to download)
+      - run: npx tsx scripts/browser-smoke.mts
+        env:
+          SMOKE_MINUTES: 6
+
   osv-scan:
     name: OSV-Scanner (deps + actions)
     runs-on: ubuntu-latest
