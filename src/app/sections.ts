@@ -155,8 +155,10 @@ export function planSections(routes: Route[], splits: Split[], half: number, roo
         const q = routePose(rt, hi), pt: [number, number] = [q[0], q[1]];
         if (hi < 1 || hi > L - 1) continue;
         if (busy[i].some(([a, b]) => hi >= a && hi <= b) || nearCross(i, hi)) { seams.push({ at: pt, kind: 'blocked' }); continue; }
-        const j = [...nat].find((c2) => Math.abs(c2 - hi) < 3);
-        if (j !== undefined) { cuts.push(j); seamAt.add(j); continue; }
+        // (or on a cut it has already, a printed piece's end: a seam found a hair past one (256.000000002 for 256) made a
+        // piece of no length there, and its build never ended)
+        const j = [...nat, ...cuts].find((c2) => Math.abs(c2 - hi) < 3);
+        if (j !== undefined) { nat.add(j); cuts.push(j); seamAt.add(j); continue; }
         nat.add(hi); cuts.push(hi); seamAt.add(hi);
         if (std && exact > 0) seams.push({ at: pt, kind: 'split' });
       }
@@ -164,7 +166,8 @@ export function planSections(routes: Route[], splits: Split[], half: number, roo
     const cs = [...new Set(cuts)].filter((c) => (c >= minPart && c <= L - minPart) || (nat.has(c) && c > 1 && c < L - 1)).sort((p, q) => p - q);
     let s0 = 0;
     const mine0 = pieces.length;
-    for (const c of cs) { if (c - s0 >= minPart || (nat.has(c) && (stdPiece(s0, c) || seamAt.has(c) || seamAt.has(s0)))) { pieces.push([i, s0, c]); s0 = c; } }
+    // (never a piece of next to no length, whatever asks for a cut there)
+    for (const c of cs) { if (c - s0 >= minPart || (c - s0 > 0.5 && nat.has(c) && (stdPiece(s0, c) || seamAt.has(c) || seamAt.has(s0)))) { pieces.push([i, s0, c]); s0 = c; } }
     // (a last stretch too short to be a piece, and not one of its own: on the one before)
     if (L - s0 < minPart && !stdPiece(s0, L) && !seamAt.has(s0) && pieces.length > mine0) s0 = pieces.pop()![1];
     pieces.push([i, s0, L]);

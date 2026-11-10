@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { buildDesign, legoParts } from '../src/app/build';
-import { type Design, OPTION_DEFAULTS, type PieceOptions, TEMPLATES } from '../src/app/design';
+import { type Design, OPTION_DEFAULTS, type PieceOptions, TEMPLATES, toRoutes } from '../src/app/design';
+import { planSections } from '../src/app/sections';
 import { onTable, type Table, tableAt } from '../src/app/tables';
 import { kernel } from '../src/geom/kernel';
 
@@ -23,6 +24,13 @@ describe('tables: the track cut where they meet', { timeout: 900000 }, () => {
     expect(b.info.warnings).toEqual([]);
     // (pieces of 16 from the start, and one more joint at 20: 16, 4, 12, 16, 16)
     expect(b.pieces.filter((p) => /^track/.test(p.name))).toHaveLength(5);
+  }));
+  it('printed track: a seam on a joint adds no piece (a piece of no length there once, whose build never ended)', async () => withApp(async () => {
+    const w = await kernel(), d = line(two(32), { legoTrack: 'print' });
+    expect(planSections(toRoutes(d), [], 20, 252, 40, 128, undefined, undefined, [], 0, (q) => tableAt(d.tables!, q)).pieces).toEqual([[0, 0, 128], [0, 128, 256], [0, 256, 384], [0, 384, 512]]);
+    const b = buildDesign(w, d);
+    expect(b.info.warnings).toEqual([]);
+    expect(b.pieces.filter((p) => /^track/.test(p.name))).toHaveLength(4);
   }));
   it('bought track: a seam at a joint, all bought; between joints, a warning and that piece printed', async () => withApp(async () => {
     const w = await kernel();
