@@ -2,10 +2,11 @@
 // Round the helix the upper turn's beam is on the lower turn's pillars, carried on up: every place held up, and
 // nothing in the lower track's trains' way (6 studs wide, as tall as a LEGO train and some).
 import { describe, expect, it } from 'vitest';
-import { buildDesign, clearBuildCache, gradeAt } from '../src/app/build';
+import { buildDesign, clearBuildCache, gradeAt, trainPillars } from '../src/app/build';
 import { OPTION_DEFAULTS, type PieceOptions, TEMPLATES, toRoutes } from '../src/app/design';
 import { kernel } from '../src/geom/kernel';
 import { routeLength, routePose } from '../src/route/route';
+import { Scad } from '../src/geom/scad';
 
 const APP = (globalThis as { APP_DEFAULTS?: PieceOptions }).APP_DEFAULTS!;
 /** Half a LEGO train's width and a little, and how tall it is over its track's bottom (mm). */
@@ -69,4 +70,33 @@ describe('raised train track on pillars', { timeout: 600000 }, () => {
           }
         } finally { Object.assign(OPTION_DEFAULTS, saved); clearBuildCache(); }
       });
+  it('a beam\'s top is tilted to its track\'s grade (its underside level), so the track sits flat on it; level track\'s as it was', async () => {
+    const s = new Scad(await kernel());
+    const X = 44, SIDE = 15.8, BEAM = 6.4, H = 32, K = 0.025;
+    /** the beam's top at (0, y): the highest point there under the studs' tops (between the studs, at x 0) */
+    const topAt = (m: ReturnType<typeof trainPillars>, y: number) => {
+      const col = s.intersection(m, s.cube([0.2, 0.2, 200], true).translate([0, y, 0]));
+      return col.boundingBox().max[2];
+    };
+    const level = trainPillars(s, [H], X, SIDE, BEAM), tilted = trainPillars(s, [H], X, SIDE, BEAM, [K]);
+    expect(Array.from(trainPillars(s, [H], X, SIDE, BEAM, [0]).getMesh().vertProperties)).toEqual(Array.from(level.getMesh().vertProperties));
+    for (const y of [-7.5, 0, 7.5]) {
+      expect(topAt(level, y)).toBeCloseTo(H, 3);
+      // (the track's bottom there: H at the middle, climbing K a mm)
+      expect(topAt(tilted, y)).toBeCloseTo(H + K * y, 2);
+    }
+    // (0.4 mm from edge to edge on a 2.5% grade, as the track over it)
+    expect(topAt(tilted, 7.8) - topAt(tilted, -7.8)).toBeCloseTo(K * 15.6, 2);
+    // (its underside level, on the pillars: the beam's lowest point between them where it was)
+    const under = (m: ReturnType<typeof trainPillars>) => s.intersection(m, s.cube([40, 40, 12], true).translate([0, 0, H - 3])).boundingBox().min[2];
+    expect(under(tilted)).toBeCloseTo(under(level), 6);
+    expect(under(level)).toBeCloseTo(H - BEAM, 6);
+    // (one solid, studs and all, and a little more or less of it than level: the same on average)
+    expect(tilted.decompose()).toHaveLength(1);
+    expect(Math.abs(tilted.volume() - level.volume())).toBeLessThan(5);
+    // (two levels: each to its own track's climb, the upper one running back the other way)
+    const two = trainPillars(s, [H, H + 60], X, SIDE, BEAM, [K, -K]);
+    expect(topAt(s.intersection(two, s.cube([200, 200, H + 10]).translate([-100, -100, 0])), 7.5)).toBeCloseTo(H + K * 7.5, 2);
+    expect(topAt(two, 7.5)).toBeCloseTo(H + 60 - K * 7.5, 2);
+  });
 });

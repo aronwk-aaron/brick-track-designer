@@ -470,12 +470,14 @@ function graded(w: Wasm, design: Design, res: ReturnType<typeof buildLevel>): Re
   const risers: LegoPart[] = []; const stacks: number[] = [];
   const addPart = (part: string, name: string, qty: number) => { if (qty <= 0) return; const e = risers.find((x) => x.part === part); if (e) e.qty += qty; else risers.push({ part, name, qty }); };
   // (the places, the lowest first: each one over another's, near enough along the same way, put on its pillars)
-  type Spot = { q: Pose; h: number; at: (d: number) => Spot };
-  const towers: { q: Pose; levels: number[] }[] = [];
+  // (slope: the track's climb there, mm a mm the way it runs: its beam's top is tilted to it)
+  type Spot = { q: Pose; h: number; slope: number; at: (d: number) => Spot };
+  const towers: { q: Pose; levels: number[]; slopes: number[] }[] = [];
   const spots: Spot[] = [];
   for (const { r, rt } of rts) {
     const L = routeLength(rt);
-    const spotAt = (sv: number): Spot => ({ q: routePose(rt, sv), h: gradeAt(r, L, sv) - ballastH, at: (d) => spotAt(Math.min(L, Math.max(0, sv + d))) });
+    const slopeAt = (sv: number) => { const a = Math.max(0, sv - 8), b = Math.min(L, sv + 8); return b > a ? (gradeAt(r, L, b) - gradeAt(r, L, a)) / (b - a) : 0; };
+    const spotAt = (sv: number): Spot => ({ q: routePose(rt, sv), h: gradeAt(r, L, sv) - ballastH, slope: slopeAt(sv), at: (d) => spotAt(Math.min(L, Math.max(0, sv + d))) });
     for (let sv = 0; sv <= L + 1e-6; sv += 128) { const sp = spotAt(sv); if (sp.h >= 3.2 - 1e-6) spots.push(sp); }
   }
   spots.sort((a, b) => a.h - b.h);
@@ -498,7 +500,8 @@ function graded(w: Wasm, design: Design, res: ReturnType<typeof buildLevel>): Re
   let skipped = 0;
   for (const sp of spots) {
     const t = towers.find((tw) => Math.hypot(tw.q[0] - sp.q[0], tw.q[1] - sp.q[1]) < SNAP && (turnDiff(tw.q[2], sp.q[2]) < 10 || turnDiff(tw.q[2], sp.q[2]) > 170));
-    if (t && sp.h - t.levels[t.levels.length - 1] >= GRADE_APART) { t.levels.push(sp.h); continue; }
+    // (its climb along the pillars' own heading: a track running back the other way over them climbs the other way)
+    if (t && sp.h - t.levels[t.levels.length - 1] >= GRADE_APART) { t.levels.push(sp.h); t.slopes.push(turnDiff(t.q[2], sp.q[2]) > 90 ? -sp.slope : sp.slope); continue; }
     if (t) continue; // (as good as the same place, the same height: one beam holds it)
     // (a place over other track not on pillars of its own: its pillars beside it clear of that track's trains; else a
     // little along, up to half the way to the next place)
@@ -508,12 +511,12 @@ function graded(w: Wasm, design: Design, res: ReturnType<typeof buildLevel>): Re
       && [-1, 1].every((e) => !lowerNear(poseToWorld(c.q, [sd * (PILLAR_X - PILLAR / 2), e * 16]) as [number, number], c.h + ballastH, 33).some((l) => l.h < 12)));
     const at = [0, 16, -16, 32, -32, 48, -48, 64, -64].map((d) => sp.at(d)).find(clear);
     if (!at) { skipped++; continue; }
-    towers.push({ q: at.q, levels: [at.h] });
+    towers.push({ q: at.q, levels: [at.h], slopes: [at.slope] });
   }
   const scad = new Scad(w);
   let n = 0;
   for (const tw of towers) {
-    const { q, levels } = tw, top = levels[levels.length - 1];
+    const { q, levels, slopes } = tw, top = levels[levels.length - 1];
     // (one level, lower than a brick and a beam: LEGO plates under the track's middle, printed or not)
     if (levels.length === 1 && (o.raisedOn === 'lego' ? !lowerNear([q[0], q[1]], top + ballastH, 40).length : top < 9.6 - 1e-6)) {
       const pl = Math.round(top / 3.2); addPart('3007', 'Brick 2 x 8', Math.floor(pl / 3)); addPart('3034', 'Plate 2 x 8', pl % 3);
@@ -530,8 +533,8 @@ function graded(w: Wasm, design: Design, res: ReturnType<typeof buildLevel>): Re
       for (const h of levels) { addPart('91988', 'Plate 2 x 14', 2); const b = boxTris(q, 112, 16, 6.4); for (let i = 2; i < b.length; i += 3) b[i] += Math.round(h / 3.2) * 3.2 - 6.4; stacks.push(...b); }
       continue;
     }
-    const sp = cachedData(`tpillar:${JSON.stringify(levels.map((h) => +h.toFixed(2)))}`, () => arena(w, () => {
-      const m = trainPillars(scad, levels, PILLAR_X, PILLAR, BEAM_T);
+    const sp = cachedData(`tpillar:${JSON.stringify([levels.map((h) => +h.toFixed(2)), slopes.map((k) => +k.toFixed(5))])}`, () => arena(w, () => {
+      const m = trainPillars(scad, levels, PILLAR_X, PILLAR, BEAM_T, slopes);
       return { stl: stlBytes(m.getMesh(), true), positions: meshPositions(m.getMesh()) };
     }, () => []));
     const pos = sp.positions.slice(), a = (q[2] * Math.PI) / 180, c = Math.cos(a), sn = Math.sin(a);
@@ -559,9 +562,11 @@ function graded(w: Wasm, design: Design, res: ReturnType<typeof buildLevel>): Re
  * two square pillars x either side of the track's centre line, each on a flared foot hollow underneath (it sits over
  * the baseplate's studs), and at each level (the track's bottom there, the lowest first) a beam across between them,
  * a 2 x 2 of studs on top under the track's middle. The pillars go up to the top beam, past the lower ones. Printed
- * as it stands: the beams bridge from pillar to pillar, the feet slope at 45 degrees.
+ * as it stands: the beams bridge from pillar to pillar, the feet slope at 45 degrees. slopes: each level's track's
+ * climb along y (mm a mm): its beam's top and studs tilted to it, so the track sits flat on the beam (level, a beam
+ * 2 studs wide was 0.4 mm off the track's underside at one edge on a 2.5% grade); the beam's underside stays level.
  */
-function trainPillars(s: Scad, levels: number[], x: number, side: number, beamT: number): Man {
+export function trainPillars(s: Scad, levels: number[], x: number, side: number, beamT: number, slopes: number[] = []): Man {
   // (the flare less on a low one, the foot's slope kept under the beam)
   const top = levels[levels.length - 1], foot = 32 - 0.2, footT = 3.2, flare = Math.max(0.01, Math.min((foot - side) / 2, levels[0] - beamT - footT));
   const parts: Man[] = [];
@@ -572,11 +577,21 @@ function trainPillars(s: Scad, levels: number[], x: number, side: number, beamT:
     const slope = s.w.Manifold.hull([T(s.cube([fw, foot, footT]), [Math.min(inner, outer), -foot / 2, 0]), T(s.cube([side, side, 0.01]), [cx - side / 2, -side / 2, footT + flare])]);
     parts.push(slope, T(s.cube([side, side, top - beamT - footT + 0.01]), [cx - side / 2, -side / 2, footT]));
   }
-  for (const h of levels) {
-    const hw = x + side / 2;
-    parts.push(T(s.cube([2 * hw, side, beamT]), [-hw, -side / 2, h - beamT]));
-    for (const [sx, sy] of [[-4, -4], [4, -4], [-4, 4], [4, 4]]) parts.push(T(s.cylinder(1.8, 4.8 / 2, 4.8 / 2, 24), [sx, sy, h - 0.01]));
-  }
+  levels.forEach((h, n) => {
+    const hw = x + side / 2, k = slopes[n] ?? 0;
+    if (Math.abs(k) < 1e-6) {
+      parts.push(T(s.cube([2 * hw, side, beamT]), [-hw, -side / 2, h - beamT]));
+      for (const [sx, sy] of [[-4, -4], [4, -4], [-4, 4], [4, 4]]) parts.push(T(s.cylinder(1.8, 4.8 / 2, 4.8 / 2, 24), [sx, sy, h - 0.01]));
+      return;
+    }
+    // (the top tilted about the beam's middle, where the track's height is h: a wedge on a level underside; the studs
+    // upright, each standing from the tilted top where it is)
+    const dz = (k * side) / 2, y0 = -side / 2, y1 = side / 2;
+    const wedge = s.extrude(s.polygon([[y0, h - beamT], [y1, h - beamT], [y1, h + dz], [y0, h - dz]]), 2 * hw);
+    // (drawn in (y, z), pushed out along x: turned to stand across the track)
+    parts.push(T(R(R(wedge, [90, 0, 0]), [0, 0, 90]), [-hw, 0, 0]));
+    for (const [sx, sy] of [[-4, -4], [4, -4], [-4, 4], [4, 4]]) parts.push(T(s.cylinder(1.8 + 0.2, 4.8 / 2, 4.8 / 2, 24), [sx, sy, h + k * sy - 0.2]));
+  });
   // (each foot hollow underneath, a rim round it)
   const holes = [-1, 1].map((sd) => { const inner = sd * x - (sd * side) / 2, w0 = foot / 2 + side / 2 - 2.4; return T(s.cube([w0, foot - 2.4, 1.8]), [sd > 0 ? inner + 1.2 : inner - 1.2 - w0, -(foot - 2.4) / 2, -0.01]); });
   return s.difference(s.union(parts), holes);
