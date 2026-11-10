@@ -360,6 +360,15 @@
       select { font-size: 16px; }
       #views button, #selbar button { height: 34px; }
     }
+    /* phones: the toolbar's lists show their whole text (the bar scrolls sideways), and the selection bar is one slim row that scrolls
+       sideways too, clear of the legend's Help button, instead of wrapping over a fifth of the plan */
+    @media (max-width: 760px) {
+      #radius, #system { width: auto; max-width: none; }
+      #selbar { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; max-width: calc(100% - 100px); padding-right: 22px; -webkit-mask-image: linear-gradient(90deg, #000 calc(100% - 22px), transparent); mask-image: linear-gradient(90deg, #000 calc(100% - 22px), transparent); }
+      #selbar::-webkit-scrollbar { display: none; }
+      #selbar > * { flex: none; white-space: nowrap; }
+      #selbar button { height: 30px; padding: 0 8px; }
+    }
     /* the notch and the home bar (installed to the home screen) */
     header { padding-top: max(7px, env(safe-area-inset-top)); padding-left: max(12px, env(safe-area-inset-left)); padding-right: max(12px, env(safe-area-inset-right)); }
     #status, #hint { margin-bottom: env(safe-area-inset-bottom); }
