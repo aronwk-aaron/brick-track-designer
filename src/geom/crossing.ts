@@ -159,7 +159,10 @@ export function joinedEnds(routes: Route[]): Set<string> {
 export function sleeperSpots(L: number, in0: boolean, in1: boolean, gapStuds: number, wStuds: number, curved = false): number[] {
   const sp = gapStuds + wStuds, ja = in0 ? sp / 2 : 1 + gapStuds + wStuds / 2, jb = in1 ? sp / 2 : 1 + gapStuds + wStuds / 2;
   const jMax = L / STUD - jb;
-  if (jMax < ja - 1e-9) return [];
+  // (a piece too short for a sleeper that far from both connectors, but with room for one between them (each a stud
+  // deep): one in its middle, on a whole stud. Without it nothing joined its rails: each stood on one connector's half
+  // only, and the piece came as two loose halves)
+  if (jMax < ja - 1e-9) return !in0 && !in1 && L / STUD >= 2 + wStuds - 1e-9 ? [Math.floor(L / STUD / 2 + 1e-9) * STUD] : [];
   // (a curve with connectors both ends: off the stud grid anyway, so the arc split evenly from end to end, as many
   // gaps as come nearest the gap set (curves.scad's sleeper_angles, as LEGO's R40 and BrickTracks' curves: a
   // BrickTracks R120 piece, 23.6 studs, 6 gaps of 3.9, not 4 at 4 and the 3.6 left over at one end))

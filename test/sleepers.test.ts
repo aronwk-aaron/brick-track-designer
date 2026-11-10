@@ -19,6 +19,14 @@ describe('sleepers', { timeout: 120000 }, () => {
     // (1-stud ties, 1 stud apart; and half a gap from an end that runs on into another route)
     expect(sleeperSpots(128, false, false, 1, 1)).toEqual([2.5, 4.5, 6.5, 8.5, 10.5, 12.5].map((j) => j * 8));
     expect(sleeperSpots(128, true, true, 2, 2)[0]).toBe(16);
+    // (too short for one that far from both connectors: one in the middle, on a whole stud, where there's room between them)
+    expect([32, 40, 48, 56].map((L) => sleeperSpots(L, false, false, 2, 2))).toEqual([[16], [16], [24], [24]]);
+    expect([sleeperSpots(24, false, false, 2, 2), sleeperSpots(32, true, false, 2, 2)]).toEqual([[], []]);
+  });
+  it('a piece too short for LEGO\'s sleepers is still one solid (its rails stood on one connector\'s half each: two loose halves)', async () => {
+    const w = await kernel(), s = new Scad(w), [rt] = toRoutes(straight(4));
+    const m = crossingPiece(s, [rt], { ...SLEEPERS, supports: false });
+    expect(m.decompose().filter((b) => b.volume() > 1)).toHaveLength(1);
   });
   it('a stretch of a route, or the route turned round, keeps the whole route\'s sleepers', () => {
     const [rt] = toRoutes(straight(32)), full = { ...rt, sleeperFrame: { s0: 0, L: 256, in0: false, in1: true } };

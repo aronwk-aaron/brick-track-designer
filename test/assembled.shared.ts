@@ -278,11 +278,8 @@ export const KNOWN: Record<string, Known> = {
   'T-junction core R56': { problems: [/^track1 and track3 overlap: 33\.\d+ mm3/], why: 'where two routes\' rails run together at the join of two sections, each section has both (3.0 x 6.6 mm of rail, twice)' },
   'Double slip R40 45°': { problems: [/^track1 and track2 overlap: 5\.\d+ mm3/, /^track1 and points3-throw overlap: 0\.7\d mm3/, /^points3-throw slid [\d.]+ mm: 0\.7\d mm3 in track1/, /^points3-throw can't slide in along its tunnel/],
     why: 'a rail end at the cut between its two parts is in both (5.7 x 6.8 mm); one slider\'s bar is 0.5 into the floor of its groove over 12 mm, all along its travel' },
-  'Three-way R40': { problems: [/^track1 is in 3 pieces/], why: 'the part past the frogs is three loose pieces in one file: the middle track and each branch\'s end, nothing joining them' },
   'Wye with a crossover': { problems: [/^track-bought-53401-1 and track2 overlap: 7\d\.\d+ mm3/, /^track19 and track-bought-53401-22 overlap: 6\d\.\d+ mm3/],
     why: 'at each end, where the printed wye meets a bought straight, one of its rails ends whole, not in a rail-end tongue: it\'s in the straight\'s (3.0 x 8.0 mm of rail)' },
-  'Yard ladder (R40)': { problems: [/^track13 is in 2 pieces/], why: 'one part is two loose pieces in one file (3384 and 884 mm3), nothing joining them' },
-  'Yard (R56)': { problems: [/^track\d+ is in 2 pieces/], why: 'three parts are each two loose pieces in one file (two track ends side by side, 2536 mm3 each)' },
   ...Object.fromEntries(['Double-track return loop (turning right)', 'Double-track return loop (turning left)'].map((name): [string, Known] => [name, {
     problems: [/^track-bought-BrickTracksS0\d-\d+ and switch\d-ballast2 overlap: (10|21)\.\d+ mm3/, /^track74-ballast and track75-ballast can't be brought together: .* 6\.\d mm3/],
     why: 'the bought switch\'s printed ballast is in the bought straights at its ends (0.8 to 3 mm, 4.8 x 1.8 mm each: 11 and 22 mm3); two of the curve\'s ballast parts hook into each other (6 mm3 in the way whichever way they\'re drawn apart)' }])),
