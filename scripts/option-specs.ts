@@ -34,6 +34,13 @@ export interface OptionSpec {
 
 const st = (studs: number, more = {}) => ({ name: 'A', x: 0, y: 0, heading: 0, segs: [{ kind: 'straight' as const, studs }], ...more });
 const curve = [{ name: 'C', x: 0, y: 0, heading: 0, segs: [{ kind: 'curve' as const, radius: 40, angle: 45 }] }];
+/** Points with no room for a throw: three tracks 9 studs apart, a crossover (R40) from the middle one to the left one. */
+const BOXED_TURN = (Math.acos(1 - 9 / 80) * 180) / Math.PI;
+export const BOXED_IN = [
+  { name: 'Left', x: -9, y: 0, heading: 0, segs: [{ kind: 'straight', studs: 64 }] },
+  { name: 'Middle', x: 0, y: 0, heading: 0, segs: [{ kind: 'straight', studs: 64 }] },
+  { name: 'Right', x: 9, y: 0, heading: 0, segs: [{ kind: 'straight', studs: 64 }] },
+  { name: 'Crossover', x: 0, y: 8, heading: 0, segs: [{ kind: 'curve', radius: 40, angle: BOXED_TURN }, { kind: 'curve', radius: 40, angle: -BOXED_TURN }] }];
 const D = (routes: unknown[], options: Record<string, unknown> = {}, more: Record<string, unknown> = {}): Design => ({ version: 1, gaugeStuds: 4, routes, options: { printBedX: 500, printBedY: 500, legoTrack: 'print', ...options }, ...more } as Design);
 const box = (ps: P[]) => { const b = [1e9, 1e9, 1e9, -1e9, -1e9, -1e9]; for (const p of ps) for (let i = 0; i < p.positions.length; i += 3) for (let k = 0; k < 3; k++) { b[k] = Math.min(b[k], p.positions[i + k]); b[k + 3] = Math.max(b[k + 3], p.positions[i + k]); } return b; };
 const mid = (ps: P[]): [number, number, number] => { const b = box(ps); return [(b[0] + b[3]) / 2, (b[1] + b[4]) / 2, (b[2] + b[5]) / 2]; };
@@ -100,7 +107,10 @@ export const SPECS: OptionSpec[] = [
   { key: 'throwStyle', values: ['built-in', 'bracket', 'stand', 'nail'], base: D(sw), cam: throwCam },
   // (each lever set by hand how far along it is: its slider not moved along to clear the next set's, so each pair's meet)
   { key: 'threeWayLevers', values: ['1', '2'], base: D(TEMPLATES['Three-way switch (one throw)'].routes), cam: { dir: '0.25,-0.9,1.1', r: 210, at: () => [0, 40, 6] } },
-  { key: 'boxedThrow', values: ['nail', 'slider'], base: D(TEMPLATES['Double slip (22.5°)'].routes, { pointBlades: 1 }, { trackwork: { throw: Object.fromEntries(Object.keys(TEMPLATES['Double slip (22.5°)'].trackwork!.throw!).map((k) => [k, { springLength: 40 }])) } }), cam: { dir: '0.15,-0.3,1', dist: 1.3 } },
+  // (three tracks 9 studs apart, a crossover from the middle one to the left one: the middle track's points have a track
+  // a stud off on each side, their lever on one or the other whichever side it's on. As a nail switch it goes together
+  // (nail-switch.test.ts); with a slider, the lever's in the way of trains, and the build says so)
+  { key: 'boxedThrow', values: ['nail', 'slider'], base: D(BOXED_IN), cam: { dir: '0.2,-0.8,1.1', r: 300, at: () => [0, 120, 6] } },
   // (the snap clamp on the lever's arm, with the default sprung blades; from above the points, the lever beside them)
   { key: 'throwAction', values: ['detent', 'overcentre', 'snap'], base: D(sw), cam: { dir: '0.45,-0.75,1', r: 125, at: () => [16, 26, 6] } },
   { key: 'throwSide', values: ['auto', 'left', 'right'], base: D(sw), alike: ['auto', 'right'], cam: { dir: '0.2,-0.5,1', dist: 1.25 } },

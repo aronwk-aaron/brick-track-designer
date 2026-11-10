@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { buildDesign } from '../src/app/build';
-import { type Design, TEMPLATES } from '../src/app/design';
+import { buildDesign, clearBuildCache } from '../src/app/build';
+import { type Design, OPTION_DEFAULTS, type PieceOptions, TEMPLATES } from '../src/app/design';
+import { BOXED_IN } from '../scripts/option-specs';
 import { kernel } from '../src/geom/kernel';
 import { Scad } from '../src/geom/scad';
 import type { Route } from '../src/route/route';
@@ -126,6 +127,26 @@ describe('points with no room for a throw', { timeout: 600000 }, () => {
     const said = b.info.warnings.filter((w) => crossWarn.test(w));
     expect(said).toHaveLength(2);
     for (const w of said) expect(w.match(/\(studs\)/g)).toHaveLength(2);
+  });
+  // (the settings' example (option-specs.ts): the middle one of three tracks 9 studs apart, a track a stud off each side of
+  // its points: no side for a lever. A nail switch there goes together, everything the templates are checked for; with
+  // a slider the lever's kept, in the way of trains, and said)
+  it('points boxed in between two tracks: a nail switch that goes together; with A slider under the track, the lever kept and said', async () => {
+    const boxed = (boxedThrow: 'nail' | 'slider'): Design => ({ version: 1, gaugeStuds: 4, routes: structuredClone(BOXED_IN) as Design['routes'], options: { legoTrack: 'print', boxedThrow } });
+    const saved = { ...OPTION_DEFAULTS };
+    Object.assign(OPTION_DEFAULTS, (globalThis as { APP_DEFAULTS?: PieceOptions }).APP_DEFAULTS!);
+    try {
+      clearBuildCache();
+      const b = buildDesign(await kernel(), boxed('nail')), names = b.pieces.map((p) => p.name);
+      // (the middle track's points a nail switch, the left track's with their lever (its other side's free); nothing said)
+      expect([names.filter((n) => /-spring$/.test(n)).length, names.filter((n) => /-lever$/.test(n)).length]).toEqual([1, 1]);
+      expect(b.info.warnings.filter((x) => /lever|throw|spring/.test(x))).toEqual([]);
+      clearBuildCache();
+      const c = buildDesign(await kernel(), boxed('slider'));
+      expect(c.pieces.filter((p) => /-lever$/.test(p.name))).toHaveLength(2);
+      expect(c.info.warnings.filter((x) => /the lever of the points at 0, 8 \(studs\) is in the way of a train on another track/.test(x))).toHaveLength(1);
+    } finally { Object.assign(OPTION_DEFAULTS, saved); clearBuildCache(); }
+    await goesTogether('points boxed in, as a nail switch', boxed('nail'));
   });
   it('the 45° double slip\'s throws clear of each other: levers as asked, nothing said', async () => {
     const d = TEMPLATES['Double slip (45°, R40)'];
