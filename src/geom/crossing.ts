@@ -473,11 +473,17 @@ export function crossingPiece(s: Scad, routes: Route[], o: CrossingOptions = CRO
     return lx >= r[0] + m && lx <= r[1] - m && ly >= r[2] + m && ly <= r[3] - m;
   });
   for (const { P, r } of extra) beds.push(s.w.CrossSection.square([r[1] - r[0], r[3] - r[2]]).translate([r[0], r[2]]).rotate(P[2]).translate([P[0], P[1]]));
+  // (what the piece's own cuts take out down in the hollow (the slider's groove and the lever's opening, the points'
+  // pockets): a tube or post there would be cut part way, a broken ring that grips nothing, so it's left out: whole
+  // tubes only)
+  const lowCut = x.cuts?.length ? s.w.CrossSection.union(x.cuts.map((m) => m.slice(cavH - 0.06))) : undefined;
+  const whole = (cs: CS) => !lowCut || cs.intersect(lowCut).area() < 0.01;
   // (lined up with the track: hollow as LEGO track's underside, with anti-stud tubes in rows along each track a stud
   // apart, turned with it, between its rows of studs; none in the end connectors (they have their own), none two at a
   // place where tracks meet)
   if (o.undersideGrid === 'track') {
-    const at: Vec2[] = [], tubesT: CS[] = [];
+    const at: Vec2[] = [], tubesT: { c: Vec2; cs: CS }[] = [];
+    const tubeAt = (q: Vec2) => tubesT.push({ c: q, cs: s.w.CrossSection.circle(TUBE_OD / 2, 24).subtract(s.w.CrossSection.circle(TUBE_ID / 2, 24)).translate(q) });
     for (const [ri, rt] of routes.entries()) {
       const L = routeLength(rt), m = TUBE_OD / 2 + 0.2;
       const lo = (bufEnd(ri, 'start') ? WALL : BED_END + WALL) + m, hi = L - (bufEnd(ri, 'end') ? WALL : BED_END + WALL) - m;
@@ -488,9 +494,21 @@ export function crossingPiece(s: Scad, routes: Route[], o: CrossingOptions = CRO
           const q = railPoint(rt, sAt, sd * lt) as Vec2;
           if (at.some((p) => Math.hypot(p[0] - q[0], p[1] - q[1]) < TUBE_OD + 0.5)) continue;
           at.push(q);
-          tubesT.push(s.w.CrossSection.circle(TUBE_OD / 2, 24).subtract(s.w.CrossSection.circle(TUBE_ID / 2, 24)).translate(q));
+          tubeAt(q);
         }
       }
+    }
+    // (and the throw arms' floor (the extra rectangles): tubes on the stud corners of the arm's own frame, the points'
+    // (on the track's rows there), as on the bed; the arm hollow without them gripped nothing)
+    for (const { P, r } of extra) {
+      const m = TUBE_OD / 2 + 0.2;
+      for (let lx = Math.ceil((r[0] + m) / STUD) * STUD; lx <= r[1] - m + 1e-9; lx += STUD)
+        for (let ly = Math.ceil((r[2] + m) / STUD) * STUD; ly <= r[3] - m + 1e-9; ly += STUD) {
+          const q = poseToWorld(P, [lx, ly]) as Vec2;
+          if (at.some((p) => Math.hypot(p[0] - q[0], p[1] - q[1]) < TUBE_OD + 0.5)) continue;
+          at.push(q);
+          tubeAt(q);
+        }
     }
     // (and each sleeper hollow under it too, as LEGO's: two studs wide, a row of tubes down its middle; one stud wide,
     // a socket at each stud)
@@ -501,7 +519,7 @@ export function crossingPiece(s: Scad, routes: Route[], o: CrossingOptions = CRO
         const ha = (nW * STUD) / 2 - WALL;
         beds.push(s.w.CrossSection.square([hi - lo - 2 * WALL, 2 * ha]).translate([lo + WALL, -ha]).rotate(P[2]).translate([P[0], P[1]]));
         for (let k = 0; k <= nW - 2; k++) for (let lt = lo + STUD; lt <= hi - STUD + 1e-9; lt += STUD)
-          tubesT.push(s.w.CrossSection.circle(TUBE_OD / 2, 24).subtract(s.w.CrossSection.circle(TUBE_ID / 2, 24)).translate(toW(lt, (k - (nW - 2) / 2) * STUD)));
+          tubeAt(toW(lt, (k - (nW - 2) / 2) * STUD) as Vec2);
       } else for (let lt = lo + STUD / 2; lt <= hi - STUD / 2 + 1e-9; lt += STUD) {
         const q = toW(lt, 0); socksT.push(T(R(t.studSocket(cavH), [0, 0, P[2]]), [q[0], q[1], -0.01]));
       }
@@ -521,7 +539,9 @@ export function crossingPiece(s: Scad, routes: Route[], o: CrossingOptions = CRO
     const cutsT: Man[] = [...socksT];
     if (beds.length) {
       let hollow = s.w.CrossSection.union(beds);
-      if (tubesT.length) hollow = hollow.subtract(s.w.CrossSection.union(tubesT));
+      const kept = tubesT.filter((q) => whole(q.cs));
+      grips?.push(...kept.map((q) => q.c as [number, number]));
+      if (kept.length) hollow = hollow.subtract(s.w.CrossSection.union(kept.map((q) => q.cs)));
       cutsT.push(T(s.extrude(hollow, cavH), [0, 0, -0.01]));
     }
     return s.difference(body, [...roofed(cutsT), ...(x.cuts ?? [])]);
@@ -557,9 +577,9 @@ export function crossingPiece(s: Scad, routes: Route[], o: CrossingOptions = CRO
     const lattice = ((i % 4) + 4) % 4 === 0 && ((j % 4) + 4) % 4 === 0;
     const [x, y] = world(8 + i * STUD, 8 + j * STUD);
     if (edge || lattice) {
-      tubes.push(s.w.CrossSection.circle(TUBE_OD / 2, 24).subtract(s.w.CrossSection.circle(TUBE_ID / 2, 24)).translate([x, y]));
-      grips?.push([x, y]);
-    } else posts.push(s.w.CrossSection.circle(POST_D / 2, 24).translate([x, y]));
+      const ring = s.w.CrossSection.circle(TUBE_OD / 2, 24).subtract(s.w.CrossSection.circle(TUBE_ID / 2, 24)).translate([x, y]);
+      if (whole(ring)) { tubes.push(ring); grips?.push([x, y]); }
+    } else { const post = s.w.CrossSection.circle(POST_D / 2, 24).translate([x, y]); if (whole(post)) posts.push(post); }
   }
   const cuts: Man[] = [];
   if (beds.length) {

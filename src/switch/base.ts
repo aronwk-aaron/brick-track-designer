@@ -1573,7 +1573,13 @@ export function switchGeometry(s: Scad, plan: SwitchPlan, extraCuts: Man[] = [])
     if (!sprungLow(p)) return undefined;
     const bb = fdbSlot2d(v, 0).bounds(), out: CS[] = [];
     for (let x = Math.ceil((bb.min[0] + 2) / STUD) * STUD; x <= bb.max[0] - 2 + 1e-9; x += STUD) out.push(circle((TUBE_OD - (p.antistudFit ?? ANTISTUD_FIT)) / 2, 24, [x, v.throwY]));
-    return out.length ? s.difference(s.extrude(W.CrossSection.union(out), bedTop), [pointsPockets(v), throwChannel(v)]) : undefined;
+    // (and a floor under the whole groove and the lever's opening, between the rests: the channel closed underneath
+    // wherever a baseplate's stud isn't (the studs either side of the groove, 0.1 clear, as the tubes are))
+    const ch = throwChannel(v), foot = ch.slice(fdbFloor() + 0.05).add(pointsPockets(v).slice(fdbFloor() + 0.05)).intersect(sq([bb.max[0] - bb.min[0], 40], [bb.min[0], v.throwY - 20]));
+    const studR = TRACK_DEFAULTS.studD / 2 + 0.1, studs: CS[] = [];
+    for (let x = Math.floor(bb.min[0] / STUD) * STUD - 4; x <= bb.max[0] + 4 + 1e-9; x += STUD) for (const dy of [-12, -4, 4, 12]) studs.push(circle(studR, 24, [x, v.throwY + dy]));
+    out.push(foot.offset(1, 'Round', 2, 24).subtract(W.CrossSection.union(studs)));
+    return s.difference(s.extrude(W.CrossSection.union(out), bedTop), [pointsPockets(v), ch]);
   };
   /** (blades with a lip over the front) A blade's plate front, closed: where it is (y) and its two ends (x), from the plate's outline. */
   const lipFront = (v: SetV, b: number, plate2d = fdbPlate2d(v, b)) => {
@@ -2044,7 +2050,10 @@ export function switchGeometry(s: Scad, plan: SwitchPlan, extraCuts: Man[] = [])
     // stays only where it meets some of it
     const floor = s.union([named.turnoutTies, named.routeTies, named.leadTies, named.pointsBeds, named.connectors, ...(scadParity() ? [] : sets.map(throwArm))]).project()
       .subtract(W.CrossSection.union([...sets.flatMap((v) => [pointsSweep2d(v, c), bladeSlots2d(v, c)]), ...sets.map((v) => throwChannel(v).project())]));
-    const keep = us.shapes.filter((q) => q.cs.intersect(floor).area() > 1);
+    // (and none the pockets or the channel would cut into in the hollow, where they go down into it (the slider's
+    // groove, the lever's opening): a tube cut part way shows as a broken ring, and grips nothing; whole tubes only)
+    const low = W.CrossSection.union(sets.flatMap((v) => [pointsPockets(v), throwChannel(v)].map((m) => m.slice(p.studH + 0.15))));
+    const keep = us.shapes.filter((q) => q.cs.intersect(floor).area() > 1 && (scadParity() || q.cs.intersect(low).area() < 0.01));
     grips.length = 0; grips.push(...keep.filter((q) => q.tube).map((q) => q.c));
     tubes = keep.length ? s.difference(s.extrude(W.CrossSection.union(keep.map((q) => q.cs)), PLATE_H), [...sets.map(pointsPockets), ...sets.map(throwChannel)]) : undefined;
   }
