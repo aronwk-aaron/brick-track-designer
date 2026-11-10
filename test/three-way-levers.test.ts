@@ -47,10 +47,17 @@ describe('a three-way with a lever to each blade', { timeout: 600000 }, () => {
         // (blade 0, the left one, is open with its slider at 1; blade 1 with its slider at 0: an open blade's back lets a flange's tip by behind its stock rail)
         [0, 1].forEach((k) => { const open = k === 0 ? pos[0] === 1 : pos[1] === 0; expect((open ? bandOf(k === 0 ? -G : G, FLANGE.open) : band).intersect(at(k, pos[k])).volume(), `${open ? 'the open' : 'the closed'} ${k === 0 ? 'left' : 'right'} blade, set ${what}`).toBeLessThan(0.02); });
         [0, 1].forEach((k) => expect(band.intersect(thr[k].translate([plan.sets[k].leverTravel * pos[k], 0, 0])).volume(), `slider ${k}, set ${what}`).toBeLessThan(0.02));
-        // (rigid blades' pins have a snap lip on top, 0.45 up into the deepest flange's way where a branch's wheel passes over
-        // the other blade's pin, by the heel: 2.7 mm3, with one lever as with two: a fault of rigid blades on any three-way,
-        // not of the levers; sprung blades turn on a stud under their plates, nothing above them)
-        expect(band.intersect(base).volume(), `the bed, set ${what}`).toBeLessThan(o.bladeStyle === 'simple' && what !== 'straight' ? 2.8 : 0.02);
+        // (rigid blades' pins: a branch's flange passes over the other blade's pin by the heel, through a groove in its snap lip's top)
+        expect(band.intersect(base).volume(), `the bed, set ${what}`).toBeLessThan(0.02);
+      }
+      // (rigid blades: each pin's snap lip still holds its blade: its overhang past the plate's hole (2 + the clearance) is there
+      // all round under the flanges' groove, 0.2 thick: 0.2 mm3 and more of the 0.27 an uncut lip has)
+      if (o.bladeStyle === 'simple') for (const k of [0, 1]) {
+        const [cx, cy] = turns[k][0].at, c = plan.p.pointClearance, zt = plan.g.bedTop + c + 1.6;
+        const over = base.intersect(s.cylinder(1, 3, 3, 48).subtract(s.cylinder(1, 2 + c, 2 + c, 48)).translate([cx, cy, zt]));
+        expect(over.volume(), `pin ${k}'s lip`).toBeGreaterThan(0.2);
+        // (and the groove's floor 3.5 under the rail's top, where the far branch's flange runs across the pin)
+        expect(base.intersect(s.cylinder(2, 2.4, 2.4, 48).translate([cx, cy, RAIL_TOP - 3.5 + 0.01])).volume(), `pin ${k}'s top`).toBeLessThan(s.cylinder(0.49, 2, 2, 48).volume() * 0.75);
       }
       // (the blades wherever they are, both open too, clear of each other and of the other's slider)
       for (const f0 of [0, 0.5, 1]) for (const f1 of [0, 0.5, 1]) {

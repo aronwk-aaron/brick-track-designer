@@ -1827,6 +1827,25 @@ export function switchGeometry(s: Scad, plan: SwitchPlan, extraCuts: Man[] = [])
   // (bladeRelief: the flanges' groove on through the lip's top, as deep under the rail's top as the plate's)
   const fdbLips = (v: SetV): Man[] => (lipOn ? blades(v).filter((b) => fdbBlades(v)[b].lip).map((b) => s.difference(sprungLip(v, b), [fdbPockets(v, false),
     ...(sprung && p.bladeRelief ? [T(s.extrude(relief2d(v, b, true), 10), [0, 0, bedTop + c + plateT - RELIEF.depth])] : [])])) : []);
+  /**
+   * A rigid blade's pin and its snap lip, cut for the flanges that run over it: on track alone the lip's top is 3.0
+   * under the rail's top, and where a rail passes close by the pin (a three-way's far branch crosses the other blade's
+   * pin by the heel; a pin moved in beside its own rail) the deepest flange, 3.45, met it. A groove through its top
+   * there, as the sprung plates' (RELIEF: as wide, its floor 3.5 under the rail's top); the lip is whole either side
+   * of it and still 0.2 thick in it, so the blade stays on. A pin no flange passes over is as it was.
+   */
+  const pinRelieved = (v: SetV, at: Pt, pin: Man): Man => {
+    const floor = PLATE_H + 6.4 - RELIEF.depth - 3.1, R = FDB.pinD / 2 + c + 0.15;
+    if (bedTop + c + FDB.plateT + 0.8 <= floor + 1e-9) return pin;
+    const s0 = Math.max(0, v.sToe - 4), s1 = v.sHeel + 8, n = 48;
+    const bands = (v.three ? [v.three.S, v.three.L, v.three.R] : [v.ra, v.rb]).flatMap((rt) => [-G, G].map((o) => {
+      const edge = (off: number) => Array.from({ length: n + 1 }, (_, k) => railPoint(rt, s0 + ((s1 - s0) * k) / n, o - Math.sign(o) * off) as P2);
+      return [edge(HEAD_HW), edge(HEAD_HW + RELIEF.w)];
+    })).filter(([a, b]) => [...a, ...b].some((q) => Math.hypot(q[0] - at[0], q[1] - at[1]) < R + RELIEF.w + (s1 - s0) / n));
+    if (!bands.length) return pin;
+    const cut = W.CrossSection.union(bands.map(([a, b]) => poly([...a, ...b.reverse()]))).intersect(circle(R + 0.5, 24, at));
+    return cut.area() < 1e-6 ? pin : s.difference(pin, [T(s.extrude(cut, 2), [0, 0, floor])]);
+  };
   /** The pins the blades turn on, standing on the bed. */
   // (each with a little snap lip over the plate, so the blade stays on: the plate's hole squeezes past it)
   const fdbPins = (v: SetV) => s.union([...fdbBlades(v).filter((_, b) => b !== v.fixed).flatMap((f) => sprung
@@ -1834,8 +1853,8 @@ export function switchGeometry(s: Scad, plan: SwitchPlan, extraCuts: Man[] = [])
     ? [T(s.cylinder((SP.studH ?? p.studH) + 0.01, t.o.studD / 2, t.o.studD / 2, 40), [f.pivot[0], f.pivot[1], bedTop - 0.01])]
     // (rigid blades with the lip over the front (LIP_RIGID): a plain pin, 0.4 over the plate; it goes in tilted, under the lip)
     : f.lip ? [T(s.cylinder(c + FDB.plateT + 0.4, FDB.pinD / 2, FDB.pinD / 2, 24), [f.pivot[0], f.pivot[1], bedTop - 0.01])]
-    : [T(s.cylinder(c + FDB.plateT + 0.8, FDB.pinD / 2, FDB.pinD / 2, 24), [f.pivot[0], f.pivot[1], bedTop - 0.01]),
-      T(s.cylinder(0.7, FDB.pinD / 2 + c + 0.15, FDB.pinD / 2, 24), [f.pivot[0], f.pivot[1], bedTop + c + FDB.plateT + 0.1])]), ...(ocOn(v) ? ocPins(v) : []), ...(snapOn(v) ? snapBosses(v) : []), ...fdbLips(v)]);
+    : [pinRelieved(v, f.pivot, s.union([T(s.cylinder(c + FDB.plateT + 0.8, FDB.pinD / 2, FDB.pinD / 2, 24), [f.pivot[0], f.pivot[1], bedTop - 0.01]),
+      T(s.cylinder(0.7, FDB.pinD / 2 + c + 0.15, FDB.pinD / 2, 24), [f.pivot[0], f.pivot[1], bedTop + c + FDB.plateT + 0.1])]))]), ...(ocOn(v) ? ocPins(v) : []), ...(snapOn(v) ? snapBosses(v) : []), ...fdbLips(v)]);
 
   // ---------- Peco's over-centre spring (throwAction 'overcentre') ----------
   // Peco's turnouts hold their blades with a V spring between the base and
