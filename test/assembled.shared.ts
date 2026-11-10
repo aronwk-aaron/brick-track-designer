@@ -283,9 +283,9 @@ export interface Known { problems: RegExp[]; warning?: RegExp; why: string }
  * design limit the build says itself has a warning: nail-switch.test.ts has one, a double slip's middle points as nail switches.)
  */
 export const KNOWN: Record<string, Known> = {
-  'X yard (6 tracks, single slips)': { problems: [/^track\d+ and switch-bought-BrickTracksR104switchleft-[23] can't be brought together: .* 22\.\d mm3 .* 3 pegs/, /^track3 and track9 overlap: 3\.7\d mm3/],
+  'X yard (6 tracks, single slips)': { problems: [/^track\d+ and switch-bought-BrickTracksR104switchleft-[23] can't be brought together: .* 22\.\d mm3 .* 3 pegs/],
     warning: /the printed track on from both ends of the bought switch at \d+, \d+ \(studs\) is one part: it won't slide onto a left-hand switch's two ends/,
-    why: 'the printed part on from both far ends of each left-hand bought switch won\'t slide onto its two ends at once (the build says so: a design limit); and one part\'s corner (1.4 x 1.6 mm, a plate thick: 3.8 mm3) is in the next part\'s end at a block joint beside the first switch\'s ends (at 7, 633 mm)' },
+    why: 'the printed part on from both far ends of each left-hand bought switch won\'t slide onto its two ends at once (the build says so: a design limit)' },
 };
 
 /**

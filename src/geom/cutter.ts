@@ -131,6 +131,8 @@ export function railCrossings(s: Scad, routes: Route[], G: number, f: CutFrame, 
 }
 
 /** Is there floor (cross-section fl) all over the square of half-side r round q? */
+/** (mm) How far a comb cut's fingers reach either side of its line. */
+const COMB_REACH = 8;
 export const floorAt = (s: Scad, fl: CS, q: [number, number], r: number) => s.w.CrossSection.square([2 * r, 2 * r], true).translate(q).intersect(fl).area() > 4 * r * r * 0.95;
 
 /**
@@ -238,11 +240,16 @@ export function cutPiece(s: Scad, t: Track, body: Man, routes: Route[], lines: C
     // (where the other cuts cross this one: its stretches between them join different parts; an axle kept its
     // length and a bit clear of them, or it'd run into the axles across the other cut (and out of its face))
     const breaks = lines.flatMap((L2) => { const cr = L.d[0] * L2.d[1] - L.d[1] * L2.d[0]; return L2 === L || Math.abs(cr) < 1e-9 ? [] : [((L2.p[0] - L.p[0]) * L2.d[1] - (L2.p[1] - L.p[1]) * L2.d[0]) / cr]; });
+    // (and where a comb cut crosses this one, its fingers reach 8 mm along this cut each way, part of the cell across the
+    // comb: a coupler there would be half in a finger. In a big layout built in blocks the finger is the next block's,
+    // which knows only its own stretch of this cut's couplers: it had no peg there, and the clip's jaw stood in it)
+    const combs = lines.flatMap((L2) => { const cr = L.d[0] * L2.d[1] - L.d[1] * L2.d[0]; return L2 === L || !L2.comb || Math.abs(cr) < 1e-9 ? [] : [((L2.p[0] - L.p[0]) * L2.d[1] - (L2.p[1] - L.p[1]) * L2.d[0]) / cr]; });
+    const offCombs = (u: number) => combs.every((c) => Math.abs(u - c) >= COMB_REACH + kit.couplerReach(kind)[0] + 0.5);
     const couplers = L.comb || kind === 'butt' ? [] : kind === 'axle'
       // (an axle anywhere there's solid all along it: in the ballast between tracks too, not only by a track)
       // (and 9 mm clear of the rails crossing the cut: their tongue joints' columns go down through the bed there)
-      ? spreadSpots(lo, hi, (u) => us.every((r) => Math.abs(u - r) >= RAIL_CLEAR) && floorAt(s, strip, f.at(u, 2.5), 2.5) && floorAt(s, strip, f.at(u, -2.5), 2.5) && axleOk(u), breaks, kit.couplerReach('axle')[0] + kit.couplerReach('axle')[1] + 2)
-      : pickSpots(lo, hi, (u) => onBed(u) && us.every((r) => Math.abs(u - r) >= RAIL_CLEAR));
+      ? spreadSpots(lo, hi, (u) => us.every((r) => Math.abs(u - r) >= RAIL_CLEAR) && floorAt(s, strip, f.at(u, 2.5), 2.5) && floorAt(s, strip, f.at(u, -2.5), 2.5) && axleOk(u) && offCombs(u), breaks, kit.couplerReach('axle')[0] + kit.couplerReach('axle')[1] + 2)
+      : pickSpots(lo, hi, (u) => onBed(u) && offCombs(u) && us.every((r) => Math.abs(u - r) >= RAIL_CLEAR));
     if (holes && kind === 'axle') for (const u of couplers) for (let o = -kit.axleHalf; o <= kit.axleHalf + 1e-9; o += 4) holes.push([...f.at(u, o), 4]);
     return { L, ...f, rails, couplers, kind, tongues: kit.tongues(L.joint ?? joint, flatRails) };
   });
