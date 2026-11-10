@@ -38,7 +38,7 @@ describe('track-only switch base matches switch.scad', { timeout: 60000 }, () =>
       // (the tube underside of a wye differs by 0.1%: OpenSCAD cuts the
       // frog's rails a little more there. On a three-way the first set's
       // rails are cut clear of the second set's heel bar and tines, which
-      // switch.scad leaves in the way: up to 0.45% less. See PHASE3.md.)
+      // switch.scad leaves in the way: up to 0.45% less. See docs/history/PHASE3.md.)
       // (and the tube underside drops the tubes switch.scad leaves loose,
       // under gaps between ties or pockets: up to 2.5% less)
       if (name.startsWith('threeway') || tubes) {

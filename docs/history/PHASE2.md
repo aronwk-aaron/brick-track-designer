@@ -1,3 +1,5 @@
+> **Historical.** Written before the app was built, and not kept up to date: it plans a React app that exports 3MF; the app is plain TypeScript and three.js and exports STL. See the [README](../../README.md) for what it is now.
+
 # Phase 2 plan: track-only geometry, route solver, crossings
 
 Aaron's goal: design any kind of rail intersection. So Phase 2 changes the

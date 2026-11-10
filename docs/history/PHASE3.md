@@ -1,3 +1,5 @@
+> **Historical.** Written before the app was built, and not kept up to date: it plans a React app that exports 3MF; the app is plain TypeScript and three.js and exports STL. See the [README](../../README.md) for what it is now.
+
 # Phase 3 plan: switches with moving points
 
 Goal: the editor builds switches as well as fixed crossings. Wherever two

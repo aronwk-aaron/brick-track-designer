@@ -6,6 +6,10 @@ import { describe, expect, it } from 'vitest';
 import { kernel } from '../src/geom/kernel';
 import { buildDesign, clearBuildCache, type Piece } from '../src/app/build';
 import type { Design } from '../src/app/design';
+import { hanging, stlPositions } from '../scripts/printability';
+
+// (what a slicer trips over, and a file's triangles: scripts/printability.ts, which the scripts and the printability tests use too)
+export { hanging, stlPositions };
 
 export const crossover: Design = { version: 1, gaugeStuds: 4, routes: [
   { name: 'A', x: 0, y: 0, heading: 0, segs: [{ kind: 'straight', studs: 64 }] },
@@ -22,13 +26,6 @@ export const threeWay: Design = { version: 1, gaugeStuds: 4, routes: [
 ] };
 
 
-/** An STL's triangles' corners, as a mesh's positions. */
-export function stlPositions(stl: Uint8Array) {
-  const dv = new DataView(stl.buffer, stl.byteOffset), n = dv.getUint32(80, true), P = new Float32Array(n * 9);
-  for (let i = 0; i < n; i++) for (let k = 0; k < 3; k++) for (let j = 0; j < 3; j++) P[i * 9 + k * 3 + j] = dv.getFloat32(84 + i * 50 + 12 + k * 12 + j * 4, true);
-  return P;
-}
-
 /**
  * The edges of a file's mesh shared by more than two triangles (corners the same where exactly the same, as a slicer
  * reads them), each by its two ends: where two walls only touch, along a line. The file's still closed, and a slicer
@@ -43,37 +40,6 @@ export function sharedEdges(P: ArrayLike<number>): [number[], number[]][] {
   return [...n].filter(([, c]) => c > 2).map(([k]) => [xs[Math.floor(k / N)], xs[k % N]]);
 }
 
-/**
- * How much of a solid, as printed (upright), hangs with nothing under it (mm2): faces facing down, steeper
- * than 45 degrees, above its bottom. Held: something within 0.45 below (break-out supports), a slope of 45
- * degrees or less, a bridge (held both sides, 10 or less across). Sampled over each face, not just its middle.
- */
-export function hanging(w: Awaited<ReturnType<typeof kernel>>, solid: InstanceType<Awaited<ReturnType<typeof kernel>>['Manifold']>) {
-  const mesh = solid.getMesh(), np = mesh.numProp, tv = mesh.triVerts, vp = mesh.vertProperties, n = tv.length / 3;
-  const at = (i: number, k: number, j: number) => vp[tv[i * 3 + k] * np + j];
-  let zmin = Infinity, area = 0;
-  for (let i = 0; i < n; i++) for (let k = 0; k < 3; k++) zmin = Math.min(zmin, at(i, k, 2));
-  const below = new Map<number, ReturnType<typeof solid.slice>>();
-  const has = (x: number, y: number, z: number) => {
-    const key = Math.round(z * 20); if (!below.has(key)) below.set(key, solid.slice(key / 20));
-    return below.get(key)!.intersect(w.CrossSection.square([0.2, 0.2], true).translate([x, y])).area() > 0.001;
-  };
-  const D = [[1, 0], [0, 1], [0.7, 0.7], [0.7, -0.7]] as const, span = Array.from({ length: 10 }, (_, k) => 0.5 * (k + 1));
-  const held = (x: number, y: number, z: number) => has(x, y, z - 0.45)
-    || D.some(([dx, dy]) => [1, -1].some((sg) => [0.3, 0.5].some((d) => has(x + sg * dx * d, y + sg * dy * d, z - 0.3))))
-    || D.some(([dx, dy]) => [1, -1].every((sg) => span.some((d) => has(x + sg * dx * d, y + sg * dy * d, z - 0.3))));
-  const WT = [[1 / 3, 1 / 3, 1 / 3], [0.7, 0.15, 0.15], [0.15, 0.7, 0.15], [0.15, 0.15, 0.7], [0.45, 0.45, 0.1], [0.1, 0.45, 0.45], [0.45, 0.1, 0.45]];
-  for (let i = 0; i < n; i++) {
-    const u = [0, 1, 2].map((j) => at(i, 1, j) - at(i, 0, j)), v = [0, 1, 2].map((j) => at(i, 2, j) - at(i, 0, j));
-    const nz = u[0] * v[1] - u[1] * v[0], L = Math.hypot(u[1] * v[2] - u[2] * v[1], u[2] * v[0] - u[0] * v[2], nz);
-    if (!(L > 1e-9 && nz / L < -0.75)) continue;
-    for (const wt of WT) {
-      const c = [0, 1, 2].map((j) => wt[0] * at(i, 0, j) + wt[1] * at(i, 1, j) + wt[2] * at(i, 2, j));
-      if (c[2] > zmin + 0.05 && !held(c[0], c[1], c[2])) area += L / 2 / WT.length;
-    }
-  }
-  return area;
-}
 
 /**
  * Each moving part goes in the way it's meant to, and prints without supports: what's wrong, said (none: it all goes together).

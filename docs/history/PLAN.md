@@ -1,3 +1,5 @@
+> **Historical.** Written before the app was built, and not kept up to date: it plans a React app that exports 3MF; the app is plain TypeScript and three.js and exports STL. See the [README](../../README.md) for what it is now.
+
 # Brick Track Designer: plan
 
 A web app for designing LEGO-compatible train track pieces that are hard to

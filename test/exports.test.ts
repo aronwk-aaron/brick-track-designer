@@ -66,7 +66,7 @@ describe('the downloads', { timeout: 300000 }, () => {
     expect(all.map((f) => f.name).filter((n) => !/\.stl$/.test(n))).toEqual(['README.txt']);
     const readme = new TextDecoder().decode(all.find((f) => f.name === 'README.txt')!.data);
     for (const f of files) expect(readme).toContain(f.name);
-    for (const re of [/No slicer supports/, /break-out supports/, /PUTTING THE POINTS TOGETHER/, /The lever/]) expect(readme).toMatch(re);
+    for (const re of [/No slicer supports/, /break-out supports/, /PUTTING THE POINTS TOGETHER/, /The lever/, /docs\/printing-and-assembly\.md/]) expect(readme).toMatch(re);
     expect(files.length).toBeGreaterThan(3);
     for (const [k, f] of files.entries()) { expect(stlTris(f.data)).toBeGreaterThan(10); expect(f.data).toEqual(b.pieces[k].stl); }
     // (each lying on the bed: nothing below z 0, something at it)

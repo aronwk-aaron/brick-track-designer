@@ -4,8 +4,8 @@ A web app for designing LEGO-compatible train track pieces with complex
 trackwork (switches, crossings, double slips, switch fields), previewing them
 in 3D and exporting STL for printing.
 
-How it was planned, as written at the time (not kept up to date with the app): [PLAN.md](PLAN.md),
-[PHASE2.md](PHASE2.md), [PHASE3.md](PHASE3.md) and [THREEWAY.md](THREEWAY.md).
+How it was planned, as written at the time (not kept up to date with the app): [docs/history/PLAN.md](docs/history/PLAN.md),
+[PHASE2.md](docs/history/PHASE2.md), [PHASE3.md](docs/history/PHASE3.md) and [THREEWAY.md](THREEWAY.md).
 
 Live at **https://aronwk-aaron.github.io/brick-track-designer/** (GitHub Pages: `.github/workflows/pages.yml`
 publishes the newest commit on `main` that CI has passed, never one that failed). It runs entirely in the browser:
@@ -50,6 +50,9 @@ Before printing a layout, print the test pieces (Templates › Test prints) to
 check the fits and the points on your printer: [docs/test-prints.md](docs/test-prints.md)
 says what to print, how to put it together and what to report. Every STL zip
 has a README.txt: what each file is, how to print it, how the points go together.
+
+How to print the parts and put them together (a switch step by step, joints, bought track in ballast, raised track,
+monorail, what to change when a fit is wrong): [docs/printing-and-assembly.md](docs/printing-and-assembly.md).
 
 ## Reporting a problem, and reproducing one
 

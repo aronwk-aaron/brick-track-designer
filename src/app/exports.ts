@@ -48,7 +48,8 @@ export function stlReadme(pieces: Part[], base: string, kit?: Coupon[]): string 
   if (bought.length) out.push('', 'BOUGHT, NOT PRINTED (the Parts list button downloads this as a list, with a BrickLink wanted list)', ...bought.map((p) => `  ${p.qty} x ${p.name} (${p.part})`));
   out.push('', 'PRINTING',
     '  Each file lies on the bed the way it prints: leave it as it is. No slicer supports, no brim.',
-    '  0.4 mm nozzle, 0.2 mm layers, PLA or PETG.');
+    '  0.4 mm nozzle, 0.2 mm layers, PLA or PETG.',
+    '  More: docs/printing-and-assembly.md in the app\'s repository (Help has the link): how to print and put the parts together, step by step.');
   if (printed.some((p) => p.supports)) out.push('  The parts marked above are printed with small loose supports of their own (under rail ends, in sprung blades): snap them out with a small screwdriver, and check that nothing is left in the slots.');
   if (has(/throw|points|lever|spring/)) {
     out.push('', 'PUTTING THE POINTS TOGETHER (in this order)');
