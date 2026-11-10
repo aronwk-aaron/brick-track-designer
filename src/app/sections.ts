@@ -192,6 +192,16 @@ export function planSections(routes: Route[], splits: Split[], half: number, roo
     const hit = samples[p].some((q) => inBox(ir, q) && Math.abs(routeLat(routes[ir], q)) < half && (() => { const s = sAt(ir, q); return s >= ar - 1 && s <= br + 1; })() && !over(ir, sAt(ir, q), ip, q));
     if (hit) parent[find(p)] = find(r);
   }
+  // (and two tracks' pieces that meet end to end where one's points begin (within a connector's length of the joint: a
+  // straight running on into a wye's toe): built together, the track one through there. Apart, the points' end had no
+  // room for its connector: their stock rails and bed ran through it, into the next piece)
+  const ends = pieces.flatMap(([i, a, b], k) => { const L = routeLength(routes[i]); return [...(a < 1e-6 ? [{ k, i, s: 0 }] : []), ...(b > L - 1e-6 ? [{ k, i, s: L }] : [])]; });
+  const atPoints = (e: { i: number; s: number }) => busy[e.i].some(([a, b]) => e.s >= a && e.s <= b);
+  for (const e of ends) for (const f of ends) {
+    if (e.i >= f.i || find(e.k) === find(f.k) || !(atPoints(e) || atPoints(f))) continue;
+    const p = routePose(routes[e.i], e.s), q = routePose(routes[f.i], f.s);
+    if (Math.hypot(p[0] - q[0], p[1] - q[1]) < 1 && Math.abs(Math.sin(((p[2] - q[2]) * Math.PI) / 180)) < 0.02 && !over(e.i, e.s, f.i, [q[0], q[1]])) parent[find(e.k)] = find(f.k);
+  }
   const groups = new Map<number, number[]>();
   pieces.forEach((_, k) => { const g = find(k); if (!groups.has(g)) groups.set(g, []); groups.get(g)!.push(k); });
   return { pieces, sections: [...groups.values()], seams };

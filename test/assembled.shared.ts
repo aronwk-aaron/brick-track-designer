@@ -274,8 +274,6 @@ export const KNOWN: Record<string, Known> = {
     why: 'each part\'s end supports (footing and walls, under its third rail\'s end) are joined to the part, not loose, and reach 7 mm under the next part' },
   'Double slip R40 45°': { problems: [/^track1 and points3-throw overlap: 0\.7\d mm3/, /^points3-throw slid [\d.]+ mm: 0\.7\d mm3 in track1/, /^points3-throw can't slide in along its tunnel/],
     why: 'one slider\'s bar is 0.5 into the floor of its groove over 12 mm, all along its travel' },
-  'Wye with a crossover': { problems: [/^track-bought-53401-1 and track2 overlap: 7\d\.\d+ mm3/, /^track19 and track-bought-53401-22 overlap: 6\d\.\d+ mm3/],
-    why: 'at each end, where the printed wye meets a bought straight, one of its rails ends whole, not in a rail-end tongue: it\'s in the straight\'s (3.0 x 8.0 mm of rail)' },
   ...Object.fromEntries(['Double-track return loop (turning right)', 'Double-track return loop (turning left)'].map((name): [string, Known] => [name, {
     problems: [/^track-bought-BrickTracksS0\d-\d+ and switch\d-ballast2 overlap: (10|21)\.\d+ mm3/, /^track74-ballast and track75-ballast can't be brought together: .* 6\.\d mm3/],
     why: 'the bought switch\'s printed ballast is in the bought straights at its ends (0.8 to 3 mm, 4.8 x 1.8 mm each: 11 and 22 mm3); two of the curve\'s ballast parts hook into each other (6 mm3 in the way whichever way they\'re drawn apart)' }])),
