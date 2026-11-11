@@ -399,16 +399,23 @@
     #tpl-body h3 .n { font-weight: 400; margin-left: 6px; text-transform: none; letter-spacing: 0; }
     #tpl-body h2 { font-size: 15px; margin: 22px 0 0; padding-top: 10px; border-top: 2px solid var(--line); }
     #tpl-body .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(168px, 1fr)); gap: 10px; }
-    #tpl-body .tcard { position: relative; display: flex; flex-direction: column; gap: 3px; border: 1px solid var(--line); border-radius: 10px; background: var(--raise); padding: 8px; min-width: 0; }
+    #tpl-hint { font-size: 12px; color: var(--muted); padding: 2px 2px 0; }
+    #tpl-body .tcard { position: relative; display: flex; flex-direction: column; gap: 3px; border: 1px solid var(--line); border-radius: 10px; background: var(--raise); padding: 8px 8px 4px; min-width: 0; cursor: pointer; }
     #tpl-body .tcard:hover { border-color: var(--accent); } #tpl-body .tcard:focus-within { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
-    #tpl-body .tcard.single { cursor: pointer; }
+    #tpl-body .ttop { position: relative; }
+    #tpl-body .tseg { position: absolute; left: 4px; top: 4px; display: flex; border: 1px solid var(--line); border-radius: 12px; overflow: hidden; background: var(--panel); }
+    #tpl-body .tseg button { border: none; background: none; font-size: 11px; line-height: 1; padding: 4px 7px; height: auto; color: var(--muted); }
+    #tpl-body .tseg button[aria-pressed="true"] { background: var(--accent); color: var(--accent-ink); }
     #tpl-body .tpic { height: 92px; border-radius: 6px; background: var(--view-bg); display: flex; align-items: center; justify-content: center; overflow: hidden; }
     #tpl-body .tpic svg { width: 100%; height: 100%; display: block; }
     #tpl-body .tpic .bed { stroke: var(--line); fill: none; stroke-linecap: butt; stroke-linejoin: round; } #tpl-body .tpic .rail { stroke: var(--ink); fill: none; stroke-linejoin: round; opacity: 0.85; }
     #tpl-body .tpic .beam { stroke: var(--accent); fill: none; stroke-linejoin: round; }
-    #tpl-body .tname { font-weight: 600; font-size: 13px; line-height: 1.25; padding-right: 22px; overflow-wrap: anywhere; }
+    #tpl-body .tname { font-weight: 600; font-size: 13px; line-height: 1.25; padding-right: 22px; overflow-wrap: anywhere; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; min-height: 2.5em; }
     #tpl-body .tsub { color: var(--muted); font-size: 12px; line-height: 1.3; }
-    #tpl-body .tact { display: flex; flex-direction: column; gap: 4px; margin-top: auto; padding-top: 4px; } #tpl-body .tact button { flex: 1; height: 26px; padding: 0 6px; }
+    #tpl-body .tact { position: relative; display: flex; gap: 4px; align-items: center; margin-top: auto; height: 22px; opacity: 0; } #tpl-body .tcard:hover .tact, #tpl-body .tcard:focus-within .tact { opacity: 1; }
+    #tpl-body .tact button { border: none; background: none; height: 20px; padding: 0 6px; font-size: 12px; color: var(--accent); text-decoration: underline; text-underline-offset: 2px; flex: none; }
+    #tpl-body .tact .tmore { margin-left: auto; text-decoration: none; font-size: 15px; }
+    #tpl-body .tmenu { position: absolute; right: 0; bottom: 22px; background: var(--panel); border: 1px solid var(--line); border-radius: 6px; box-shadow: var(--shadow); display: flex; flex-direction: column; z-index: 3; padding: 2px; } #tpl-body .tmenu[hidden] { display: none; } #tpl-body .tmenu button { text-align: left; text-decoration: none; height: 24px; color: var(--ink); } #tpl-body .tmenu .tdelete { color: #c0392b; }
     #tpl-body .mine-bar { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin: 2px 0 8px; font-size: 12px; } #tpl-body .mine-note { color: var(--muted); } #tpl-body .mine-note.warn { color: #b25c00; } #tpl-body .mine-empty { color: var(--muted); font-size: 12px; margin-bottom: 8px; }
     #tpl-body .trow { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; } #tpl-body .thand { font-size: 11px; color: var(--muted); min-width: 2.6em; }
     #tpl-body .tstar { position: absolute; right: 4px; top: 4px; width: 26px; height: 26px; padding: 0; border: none; background: var(--panel); border-radius: 50%; font-size: 15px; line-height: 1; color: var(--muted); opacity: 0.9; }
@@ -510,6 +517,7 @@
     <div class="head"><h2 id="tpl-title">Templates</h2><span id="tpl-count" class="count" aria-live="polite"></span><button id="tpl-save" type="button" title="Keep the whole design here, under a name, to open or add to a design later">Save as template…</button><button id="tpl-close" type="button" title="Close (Esc)">✕</button></div>
     <div id="tpl-tools">
       <div class="trow"><input id="tpl-search" type="search" placeholder="Search templates: switch R104, wye, narrow…" aria-label="Search templates" autocomplete="off"><button id="tpl-filters" type="button" aria-expanded="false" aria-controls="tpl-chips">Filters</button><button id="tpl-clear" type="button" title="Clear the search and the filters">Clear</button></div>
+      <div id="tpl-hint" aria-live="polite"></div>
       <div id="tpl-chips"></div>
     </div>
     <div id="tpl-body"></div>
@@ -593,7 +601,7 @@
           <li>Split and merge: with one track selected, <kbd>S</kbd> with the pointer on it (or the Split button, then a click on it) cuts it in two at the nearest whole stud, at least a stud in from either end; the two halves keep everything that was on that part (guard rails, third rail, ends, hand edits, heights). Select two tracks that meet end to end and press Merge to make them one.</li>
           <li>Parallel…: with one track selected, a new track beside it, 6 to 200 studs over (default 16; 8 and 16 are the usual), to its left or right: straights as long, curves with the radius concentric with the original. It says why not where a curve would go under R24.</li>
           <li>Lock: tick Locked on a route's card (or a table's) and it can still be selected and copied, but not dragged, nudged, reshaped by its handles or ends, mirrored, turned, split, merged or deleted; the plan shows a small padlock on it, and the hint line says "R3 is locked" when you try. A copy isn't locked.</li>
-          <li>Templates: every card has Open (replaces the design) and Add to design (keeps it): the template follows the pointer, its open ends snap onto the design's open ends (hold <kbd>Alt</kbd> for no snapping), <kbd>R</kbd> / <kbd>Shift</kbd>+<kbd>R</kbd> turn it by 22.5°, <kbd>M</kbd> mirrors it, a click puts it down, <kbd>Esc</kbd> cancels. With one route selected it starts on that route's open end. <kbd>Enter</kbd> on a card opens it, <kbd>Shift</kbd>+<kbd>Enter</kbd> adds it. It's added with this design's settings; a template whose settings differ says so.</li>
+          <li>Templates: click a card to add it to your design (or, with an empty design, to open it); Shift+click does the other; the small Add and Open under a card say the same. A card with a left and a right hand has a Left | Right switch. Adding: the template follows the pointer, its open ends snap onto the design's open ends (hold <kbd>Alt</kbd> for no snapping), <kbd>R</kbd> / <kbd>Shift</kbd>+<kbd>R</kbd> turn it by 22.5°, <kbd>M</kbd> mirrors it, a click puts it down, <kbd>Esc</kbd> cancels. With one route selected it starts on that route's open end. <kbd>Enter</kbd> on a card does its click, <kbd>Shift</kbd>+<kbd>Enter</kbd> the other. It's added with this design's settings; a template whose settings differ says so.</li>
           <li>My templates: Save as template… (in the template browser, or on the selection bar to keep just the selected tracks and tables) keeps a design in this browser under a name; it's listed first in Templates, with Open, Add to design, Rename, Export (a .btd.json file), Delete and Import… (reads .btd.json files). The saved settings come with it. If the browser won't keep anything the group says so; there's room for 60 templates or about 1 MB.</li>
           <li>Measure: <kbd>T</kbd> or the Measure button, then click two points (they snap to track ends and centre lines): the distance in studs and mm, and the angle between the tracks there. <kbd>Esc</kbd> clears. Not saved. (<kbd>M</kbd> is Mirror.)</li>
           <li>The plan by keyboard: <kbd>Tab</kbd> to the plan (it shows a focus ring). <kbd>[</kbd> and <kbd>]</kbd> pick the previous or next route. With a route selected, <kbd>Tab</kbd> moves between its handles and the arrow keys change the one you're on (<kbd>↑</kbd>/<kbd>→</kbd> more, <kbd>↓</kbd>/<kbd>←</kbd> less: a stud, or a degree for an angle; <kbd>Shift</kbd>: 8 studs, or 11.25°). <kbd>Enter</kbd> lays track on from its end (<kbd>Shift</kbd>+<kbd>Enter</kbd>: from its start): the arrow keys move a crosshair a stud (<kbd>Shift</kbd>: eight), <kbd>Enter</kbd> lays track there, <kbd>Esc</kbd> stops.</li>

@@ -1046,7 +1046,7 @@ initTemplateBrowser(async (name) => {
   saveWhole: () => saveAsTemplate(design, design.name || design.routes[0]?.name || 'My design'),
   ask: (text, yes, no) => ask(text, yes, no),
   askName: (label, def) => prompt(label, def),
-});
+}, () => design.routes.length > 0);
 $('add-route').addEventListener('click', () => {
   design.routes.push({ name: nextName(), ...freeStart(design), segs: [{ kind: 'straight', studs: 16 }] });
   canvas.setSelection([design.routes.length - 1]); // (its card open, to type its numbers)

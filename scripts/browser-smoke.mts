@@ -43,7 +43,7 @@ try {
   check((await page.locator('#tpl-body .tcard').count()) > 50, 'it lists the templates');
   await page.fill('#tpl-search', 'switch lego');
   check((await page.locator('#tpl-body .tcard').count()) === 1, 'a search narrows them to the card');
-  await page.click('#tpl-body .tpick[data-template="Left switch (LEGO)"]');
+  await page.click('#tpl-body .tcard[data-template="Left switch (LEGO)"] .tpick');
   check(!(await page.locator('#tpl-dlg').evaluate((d: HTMLDialogElement) => d.open)), 'pressing the card closes the browser');
   check(await says(/1 switch.*parts? to print.*built in/), `a template loads and builds (${await status()})`);
   check(await routes() === 2, 'the template has its two routes');
@@ -100,7 +100,7 @@ try {
   at = 'replacing a changed design';
   await page.click('#templates-open');
   await page.fill('#tpl-search', 'oval');
-  await page.click('#tpl-body button[data-template="Oval (LEGO R40)"]');
+  await page.click('#tpl-body .tcard[data-template="Oval (LEGO R40)"] .tpick');
   await page.waitForSelector('#ask-dlg[open]', { timeout: 10_000 }).catch(() => undefined);
   check(await page.locator('#ask-dlg').evaluate((d: HTMLDialogElement) => d.open), 'a template over a changed design asks first');
   await page.click('#ask-no');
@@ -373,7 +373,7 @@ try {
   await page.reload(); await page.waitForSelector('#track'); await page.click('#mode-select'); await page.click('#fit'); await page.waitForTimeout(300);
   { const placing = () => page.locator('#track').evaluate((e) => (e as HTMLElement).dataset.placing ?? 'none');
     await page.click('#templates-open'); await page.fill('#tpl-search', 'switch lego');
-    await page.click('#tpl-body .tadd[data-template="Left switch (LEGO)"]'); await page.waitForTimeout(250);
+    await page.click('#tpl-body .tcard[data-template="Left switch (LEGO)"]'); await page.waitForTimeout(250);
     const [px, py] = await scr(0.3, 16.4); await page.mouse.move(px, py); await page.waitForTimeout(250);
     check(await placing() === 'snapped R1', `Add to design: the switch's toe snaps onto the straight's end (${await placing()})`);
     await page.mouse.click(px, py); await page.waitForTimeout(300);
@@ -381,7 +381,7 @@ try {
     check(added.length === 3 && added[1].x === 0 && added[1].y === 16, `it's put down with its toe on the end (${JSON.stringify(added.map((r) => [r.x, r.y]))})`);
     await page.click('#undo'); await page.waitForTimeout(150);
     check(await routes() === 1, 'one Undo takes it back');
-    await page.click('#templates-open'); await page.fill('#tpl-search', 'switch lego'); await page.click('#tpl-body .tadd[data-template="Left switch (LEGO)"]'); await page.waitForTimeout(150);
+    await page.click('#templates-open'); await page.fill('#tpl-search', 'switch lego'); await page.click('#tpl-body .tcard[data-template="Left switch (LEGO)"] .tadd'); await page.waitForTimeout(150);
     await page.keyboard.press('Escape'); await page.waitForTimeout(100);
     check(await placing() === 'none' && await routes() === 1, 'Esc cancels placing'); }
 
@@ -393,11 +393,11 @@ try {
     check(await page.locator('.tcard.mine').count() === 1, 'Save as template… puts the design in My templates');
     await page.reload(); await page.waitForSelector('#track'); await page.click('#templates-open'); await page.waitForTimeout(250);
     check(await page.locator('.tcard.mine').count() === 1, 'it is still listed after a reload');
-    await page.locator('.tcard.mine .tadd').click(); await page.waitForTimeout(200); await page.click('#fit'); await page.waitForTimeout(300);
+    await page.locator('.tcard.mine').click(); await page.waitForTimeout(200); await page.click('#fit'); await page.waitForTimeout(300);
     const [px, py] = await scr(20, 8); await page.mouse.move(px, py); await page.waitForTimeout(150); await page.mouse.click(px, py); await page.waitForTimeout(300);
     check(await routes() === 2, 'Add to design puts it on the plan beside the design');
     await page.click('#templates-open'); await page.waitForTimeout(200);
-    await page.locator('.tcard.mine .tdelete').click(); await page.waitForTimeout(150); await page.click('#ask-yes'); await page.waitForTimeout(250);
+    await page.locator('.tcard.mine .tmore').click({ force: true }); await page.locator('.tcard.mine .tdelete').click(); await page.waitForTimeout(150); await page.click('#ask-yes'); await page.waitForTimeout(250);
     check(await page.locator('.tcard.mine').count() === 0, 'Delete asks, then takes it out of the list'); await page.keyboard.press('Escape'); }
 
   // the plan by keyboard: [ and ] cycle the selected route, Tab moves to a handle and an arrow key changes it, Enter lays track on from the end

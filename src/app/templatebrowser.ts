@@ -43,7 +43,7 @@ export interface MineHooks {
   ask(text: string, yes: string, no: string): Promise<boolean>;
   askName(label: string, def: string): string | null;
 }
-export function initTemplateBrowser(pick: (name: string) => Promise<boolean>, add: (name: string) => boolean, mineHooks?: MineHooks) {
+export function initTemplateBrowser(pick: (name: string) => Promise<boolean>, add: (name: string) => boolean, mineHooks?: MineHooks, hasRoutes: () => boolean = () => true) {
   const dlg = $<HTMLDialogElement>('tpl-dlg'), body = $('tpl-body'), search = $<HTMLInputElement>('tpl-search');
   const chipsEl = $('tpl-chips'), countEl = $('tpl-count'), clearBtn = $<HTMLButtonElement>('tpl-clear');
   const filtersBtn = $<HTMLButtonElement>('tpl-filters');
@@ -117,8 +117,21 @@ export function initTemplateBrowser(pick: (name: string) => Promise<boolean>, ad
     if (c) { recent = [c.name, ...recent.filter((n) => n !== c.name)].slice(0, RECENT_MAX); writeList(RECENT, recent); }
     dlg.close();
   };
+  /** What a click does: add to the design when it has routes, else open (Shift+click: the other). Said once at the top of the browser. */
+  let addsFirst = true;
+  const hintText = () => (addsFirst ? 'Click adds to your design · Shift+click opens it alone' : 'Click opens it · Shift+click adds it to a design');
+  /** The hand last chosen on each card this session (by the card's name). */
+  const hands = new Map<string, 'left' | 'right'>();
+  const act = (tpl: string, what: 'add' | 'open') => (what === 'add' ? addChoose(tpl) : void choose(tpl));
+  const primaryOf = (): 'add' | 'open' => (addsFirst ? 'add' : 'open');
+  /** A small text button at a card's bottom edge. */
+  const mini = (label: string, cls: string, title: string, f: (e: MouseEvent) => void) => {
+    const b = document.createElement('button'); b.type = 'button'; b.className = cls; b.textContent = label; b.title = title; b.setAttribute('aria-label', title);
+    b.addEventListener('click', (e) => { e.stopPropagation(); f(e); });
+    return b;
+  };
   function cardEl(c: Card): HTMLElement {
-    const el = document.createElement('div'); el.className = `tcard${c.twin ? '' : ' single'}`; el.dataset.card = c.name;
+    const el = document.createElement('div'); el.className = 'tcard'; el.dataset.card = c.name; el.tabIndex = 0; el.setAttribute('role', 'button');
     const star = document.createElement('button'); star.type = 'button'; star.className = 'tstar'; star.textContent = '★';
     const starred = stars.includes(c.name);
     star.setAttribute('aria-pressed', String(starred)); star.title = starred ? 'Starred: press to take the star off' : 'Star it: it goes in the Starred section at the top';
@@ -133,24 +146,41 @@ export function initTemplateBrowser(pick: (name: string) => Promise<boolean>, ad
       const again = body.querySelector<HTMLElement>(`.tcard[data-card="${CSS.escape(key)}"] .tstar`) ?? body.querySelectorAll<HTMLElement>('.tstar')[at];
       again?.focus({ preventScroll: true });
     });
-    const pic = document.createElement('div'); pic.className = 'tpic'; pic.dataset.name = c.name;
+    const pic = document.createElement('div'); pic.className = 'tpic';
     const name = document.createElement('div'); name.className = 'tname'; name.textContent = c.title;
-    const sub = document.createElement('div'); sub.className = 'tsub'; sub.textContent = describe(c);
-    const act = document.createElement('div'); act.className = 'tact';
-    // (every template: Open replaces the design, Add to design keeps it and brings the template in; a pair of hands has a row each)
-    const row = (hand: string | undefined, tpl: string, what: string) => {
-      const r = document.createElement('div'); r.className = 'trow';
-      if (hand) { const h = document.createElement('span'); h.className = 'thand'; h.textContent = hand; r.append(h); }
-      const open = document.createElement('button'); open.type = 'button'; open.className = 'tpick'; open.textContent = 'Open'; open.dataset.template = tpl; open.setAttribute('aria-label', `Open ${what}`); open.title = `Open ${what}: it replaces the design on the plan`;
-      open.addEventListener('click', (e) => { e.stopPropagation(); void choose(tpl); });
-      const addb = document.createElement('button'); addb.type = 'button'; addb.className = 'tadd'; addb.textContent = 'Add to design'; addb.dataset.template = tpl; addb.setAttribute('aria-label', `Add ${what} to the design`); addb.title = `Add ${what} to the design: it follows the pointer, a click puts it down`;
-      addb.addEventListener('click', (e) => { e.stopPropagation(); addChoose(tpl); });
-      r.append(open, addb); act.append(r);
+    const sub = document.createElement('div'); sub.className = 'tsub';
+    const bar = document.createElement('div'); bar.className = 'tact';
+    const addB = mini('Add', 'tadd', '', () => act(cur, 'add')), openB = mini('Open', 'tpick', '', () => act(cur, 'open'));
+    bar.append(addB, openB);
+    // (a pair of hands: one at a time, a small switch over the picture; the picture, size and buttons follow the one chosen)
+    const left = c.twin ? (c.hand === 'left' ? c.name : c.twin) : c.name, right = c.twin ? (c.hand === 'left' ? c.twin : c.name) : c.name;
+    let cur = c.twin && hands.get(c.name) === 'right' ? right : left;
+    const seg = c.twin ? document.createElement('div') : undefined;
+    const update = () => {
+      const info = infos.find((i) => i.name === cur) ?? c;
+      pic.dataset.name = cur; pic.replaceChildren(); drawPicture(pic);
+      sub.textContent = describe(info);
+      const p = primaryOf(), what = (a: 'add' | 'open') => (a === 'add' ? `Add ${cur} to the design: it follows the pointer, a click puts it down` : `Open ${cur}: it replaces the design on the plan`);
+      el.title = `${p === 'add' ? 'Click: add' : 'Click: open'} ${cur}${addsFirst ? ' to your design' : ''} · Shift+click: ${p === 'add' ? 'open it alone' : 'add it to a design'}`;
+      el.setAttribute('aria-label', `${c.twin ? `${c.title}, ${cur === left ? 'left' : 'right'} hand` : cur}: ${p === 'add' ? 'add to your design (Shift+Enter opens it alone)' : 'open (Shift+Enter adds it to a design)'}`);
+      addB.title = what('add'); addB.setAttribute('aria-label', what('add')); openB.title = what('open'); openB.setAttribute('aria-label', what('open'));
+      addB.dataset.template = cur; openB.dataset.template = cur; el.dataset.template = cur;
+      seg?.querySelectorAll('button').forEach((b) => b.setAttribute('aria-pressed', String((b.dataset.hand === 'left') === (cur === left))));
     };
-    if (c.twin) { row('Left', c.hand === 'left' ? c.name : c.twin, `${c.title}, left hand`); row('Right', c.hand === 'left' ? c.twin : c.name, `${c.title}, right hand`); }
-    else { row(undefined, c.name, c.name); el.addEventListener('click', () => void choose(c.name)); }
-    el.append(star, pic, name, sub, act);
-    if (observer) observer.observe(pic); else drawPicture(pic);
+    if (seg) {
+      seg.className = 'tseg'; seg.setAttribute('role', 'group'); seg.setAttribute('aria-label', 'Hand');
+      for (const [h, t] of [['left', left], ['right', right]] as const) {
+        const b = document.createElement('button'); b.type = 'button'; b.textContent = h === 'left' ? 'Left' : 'Right'; b.dataset.hand = h; b.title = `Show the ${h}-hand one`;
+        b.addEventListener('click', (e) => { e.stopPropagation(); cur = t; hands.set(c.name, h); update(); });
+        seg.append(b);
+      }
+    }
+    // (the whole card is the primary action)
+    el.addEventListener('click', (e) => act(cur, (primaryOf() === 'add') !== e.shiftKey ? 'add' : 'open'));
+    const top = document.createElement('div'); top.className = 'ttop'; top.append(pic, ...(seg ? [seg] : []));
+    el.append(star, top, name, sub, bar);
+    update();
+    if (observer) observer.observe(pic);
     return el;
   }
 
@@ -164,27 +194,36 @@ export function initTemplateBrowser(pick: (name: string) => Promise<boolean>, ad
     return { ...(base ?? { group: 'My templates', kind: 'feature' as Kind, gauge: 'none' as Gauge, system: 'train' as System, length: 0, width: 0, routes: 0, section: 'My templates' }), name: `mine:${m.id}`, title: m.name, hand: 'none', twin: undefined, range: 'Mine', mine: true, ...(m.damaged && { damaged: m.damaged }) };
   };
   function mineCardEl(c: Card): HTMLElement {
-    const el = document.createElement('div'); el.className = 'tcard single mine'; el.dataset.card = c.name;
+    const el = document.createElement('div'); el.className = 'tcard mine'; el.dataset.card = c.name; el.tabIndex = 0; el.setAttribute('role', 'button');
     const pic = document.createElement('div'); pic.className = 'tpic'; pic.dataset.name = c.name;
     const name = document.createElement('div'); name.className = 'tname'; name.textContent = c.title;
     const sub = document.createElement('div'); sub.className = 'tsub'; sub.textContent = c.damaged ? `Damaged: ${c.damaged}` : describe(c);
-    const act = document.createElement('div'); act.className = 'tact';
+    const bar = document.createElement('div'); bar.className = 'tact';
     const id = c.name.slice(5), hooks = mineHooks!;
-    const btn = (label: string, cls: string, title: string, f: () => void) => { const b = document.createElement('button'); b.type = 'button'; b.className = cls; b.textContent = label; b.title = title; b.addEventListener('click', (e) => { e.stopPropagation(); f(); }); return b; };
-    const r1 = document.createElement('div'), r2 = document.createElement('div');
-    r1.className = 'trow'; r2.className = 'trow';
     if (!c.damaged) {
-      const open = btn('Open', 'tpick', `Open ${c.title}: it replaces the design on the plan`, () => void choose(c.name)); open.dataset.template = c.name;
-      const addb = btn('Add to design', 'tadd', `Add ${c.title} to the design: it follows the pointer, a click puts it down`, () => addChoose(c.name)); addb.dataset.template = c.name;
-      r1.append(open, addb); act.append(r1);
-      r2.append(
-        btn('Rename', 'trename', 'Give it another name', () => { const v = hooks.askName('Name the template:', c.title); if (v !== null && v.trim()) { const r = renameMine(hooks.storage(), id, v); mineNote = r.ok ? '' : `Not renamed: ${r.why}`; render(); } }),
-        btn('Export', 'texport', 'Download it as a .btd.json file', () => { const d = mineDesigns.get(c.name); if (d) download(c.title, d); }),
+      const addB = mini('Add', 'tadd', `Add ${c.title} to the design: it follows the pointer, a click puts it down`, () => act(c.name, 'add')), openB = mini('Open', 'tpick', `Open ${c.title}: it replaces the design on the plan`, () => act(c.name, 'open'));
+      addB.dataset.template = c.name; openB.dataset.template = c.name; el.dataset.template = c.name;
+      bar.append(addB, openB);
+      const p = primaryOf();
+      el.title = `${p === 'add' ? 'Click: add' : 'Click: open'} ${c.title}${addsFirst ? ' to your design' : ''} · Shift+click: ${p === 'add' ? 'open it alone' : 'add it to a design'}`;
+      el.setAttribute('aria-label', `${c.title}: ${p === 'add' ? 'add to your design (Shift+Enter opens it alone)' : 'open (Shift+Enter adds it to a design)'}`);
+      el.addEventListener('click', (e) => act(c.name, (p === 'add') !== e.shiftKey ? 'add' : 'open'));
+    } else el.setAttribute('aria-label', `${c.title}: damaged`);
+    // (Rename, Export and Delete behind a ⋯)
+    const more = mini('⋯', 'tmore', 'More: rename, export, delete', () => { menu.hidden = !menu.hidden; });
+    more.setAttribute('aria-haspopup', 'menu');
+    const menu = document.createElement('div'); menu.className = 'tmenu'; menu.hidden = true; menu.setAttribute('role', 'menu');
+    const item = (label: string, cls: string, f: () => void) => { const b = mini(label, `tmi ${cls}`, label, () => { menu.hidden = true; f(); }); b.setAttribute('role', 'menuitem'); return b; };
+    if (!c.damaged) {
+      menu.append(
+        item('Rename', 'trename', () => { const v = hooks.askName('Name the template:', c.title); if (v !== null && v.trim()) { const r = renameMine(hooks.storage(), id, v); mineNote = r.ok ? '' : `Not renamed: ${r.why}`; render(); } }),
+        item('Export', 'texport', () => { const d = mineDesigns.get(c.name); if (d) download(c.title, d); }),
       );
     }
-    r2.append(btn('Delete', 'tdelete danger', 'Delete this template from this browser', () => void hooks.ask(`Delete the template "${c.title}"? It can't be undone.`, 'Delete it', 'Keep it').then((yes) => { if (!yes) return; const r = deleteMine(hooks.storage(), id); mineNote = r.ok ? '' : `Not deleted: ${r.why}`; render(); })));
-    act.append(r2);
-    el.append(pic, name, sub, act);
+    menu.append(item('Delete', 'tdelete', () => void hooks.ask(`Delete the template "${c.title}"? It can't be undone.`, 'Delete it', 'Keep it').then((yes) => { if (!yes) return; const r = deleteMine(hooks.storage(), id); mineNote = r.ok ? '' : `Not deleted: ${r.why}`; render(); })));
+    bar.append(more); bar.append(menu);
+    const top = document.createElement('div'); top.className = 'ttop'; top.append(pic);
+    el.append(top, name, sub, bar);
     if (!c.damaged) { if (observer) observer.observe(pic); else drawPicture(pic); }
     return el;
   }
@@ -257,13 +296,11 @@ export function initTemplateBrowser(pick: (name: string) => Promise<boolean>, ad
   }
 
   // ---- the keys: arrows move between cards (Tab goes through every button)
-  function firstOf(card: Element) { return card.querySelector<HTMLElement>('.tpick'); }
+  function firstOf(card: Element) { return card as HTMLElement; }
   body.addEventListener('keydown', (e) => {
-    // (Enter on a card's button does what it says; Shift+Enter anywhere on a card adds it)
-    if (e.key === 'Enter' && e.shiftKey) {
-      const card = (e.target as HTMLElement).closest('.tcard'), tgt = e.target as HTMLElement;
-      const addBtn = tgt.closest('.trow')?.querySelector<HTMLElement>('.tadd') ?? card?.querySelector<HTMLElement>('.tadd');
-      if (addBtn) { e.preventDefault(); addBtn.click(); return; }
+    // (Enter on a card does its main action, Shift+Enter the other; on a button, what the button says)
+    if (e.key === 'Enter' && (e.target as HTMLElement).classList.contains('tcard')) {
+      e.preventDefault(); (e.target as HTMLElement).dispatchEvent(new MouseEvent('click', { bubbles: true, shiftKey: e.shiftKey })); return;
     }
     const dir = ({ ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] } as Record<string, [number, number]>)[e.key];
     const cur = (e.target as HTMLElement).closest('.tcard');
@@ -285,11 +322,14 @@ export function initTemplateBrowser(pick: (name: string) => Promise<boolean>, ad
     if (best) { const t = firstOf(best); t?.focus(); t?.scrollIntoView({ block: 'nearest' }); }
   });
   search.addEventListener('keydown', (e) => {
-    if (e.key === 'ArrowDown') { const t = body.querySelector<HTMLElement>('.tpick'); if (t) { e.preventDefault(); t.focus(); } }
+    if (e.key === 'ArrowDown') { const t = body.querySelector<HTMLElement>('.tcard'); if (t) { e.preventDefault(); t.focus(); } }
     else if (e.key === 'Escape' && search.value) { e.stopPropagation(); e.preventDefault(); search.value = ''; filters = { ...filters, query: '' }; render(); }
   });
   search.addEventListener('input', () => { filters = { ...filters, query: search.value }; syncChips(); render(); });
   clearBtn.addEventListener('click', () => { filters = noFilters(); search.value = ''; syncChips(); render(); search.focus(); });
+
+  // (a ⋯ menu closes on a click anywhere else)
+  body.addEventListener('click', (e) => body.querySelectorAll<HTMLElement>('.tmenu').forEach((m) => { if (!m.parentElement?.contains(e.target as Node)) m.hidden = true; }));
 
   // ---- Save as template… in the header: the whole design
   const saveBtn = document.getElementById('tpl-save') as HTMLButtonElement | null;
@@ -304,6 +344,7 @@ export function initTemplateBrowser(pick: (name: string) => Promise<boolean>, ad
       built = true; infos = catalog(); cards = cardsOf(infos); buildChips();
       if (typeof IntersectionObserver !== 'undefined') observer = new IntersectionObserver((es) => { for (const en of es) if (en.isIntersecting) { drawPicture(en.target as HTMLElement); observer!.unobserve(en.target); } }, { root: body, rootMargin: '200px' });
     }
+    addsFirst = hasRoutes(); $('tpl-hint').textContent = hintText();
     load(); syncChips(); render();
     dlg.showModal();
     body.scrollTop = 0;
