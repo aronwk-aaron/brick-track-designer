@@ -342,10 +342,20 @@
     @media (max-width: 1240px) { body { grid-template-columns: 260px minmax(0, 1fr); } body.settings { grid-template-columns: 260px minmax(0, 1fr) 300px; } body.settings.nopanel { grid-template-columns: 0 minmax(0, 1fr) 300px; } }
     /* (labels beside the toolbar's icons where the bar still fits on one row: all, then the main buttons', then Templates' only
        with the title, source link and spacing given up, then none) */
-    @media (max-width: 1959px) { header .lbl { display: none; } #templates-open .lbl, #load .lbl, #save .lbl { display: inline; } }
-    @media (max-width: 1399px) { #load .lbl, #save .lbl { display: none; } header h1, #source-link { display: none; } header { gap: 4px; } header .sep { margin: 0 1px; } #radius { width: 108px; } #system { width: 100px; } }
-    @media (max-width: 1239px) { #templates-open .lbl { display: none; } }
-    @media (max-width: 1119px) { #about-open { display: none; } }
+    /* (every toolbar button has its name; the file, parts and help buttons open menus so the names fit. Only on a narrow
+       window do the buttons whose icons are plain (undo, redo, fit) give up their names, and their tips say them) */
+    @media (max-width: 1799px) { header h1 { display: none; } }
+    @media (max-width: 1599px) { header { gap: 4px; } header .sep { margin: 0 1px; } #undo .lbl, #redo .lbl, #fit .lbl { display: none; } #undo, #redo, #fit { width: 30px; padding: 0; } }
+    header .caret { font-size: 10px; opacity: 0.7; margin-left: -2px; }
+    .menu { margin: 0; inset: auto; position: fixed; padding: 4px; min-width: 220px; background: var(--panel); color: var(--ink); border: 1px solid var(--line); border-radius: 8px; box-shadow: 0 6px 24px rgba(0, 0, 0, 0.25); }
+    .menu:popover-open { display: flex; flex-direction: column; gap: 2px; }
+    .menu > button, .menu > a { justify-content: flex-start; width: 100%; height: 32px; padding: 0 10px; border-color: transparent; background: transparent; color: var(--ink); text-decoration: none; display: inline-flex; align-items: center; gap: 8px; border-radius: 6px; font: inherit; }
+    .menu > button:hover:not(:disabled), .menu > a:hover, .menu > button:focus-visible, .menu > a:focus-visible { background: var(--line); }
+    .menu > button:disabled { opacity: 0.5; }
+    .menu hr { border: 0; border-top: 1px solid var(--line); margin: 3px 4px; }
+    .menu kbd { margin-left: auto; padding-left: 16px; font: 11px/1 inherit; color: var(--muted); }
+    .menu svg { width: 16px; height: 16px; flex: none; }
+    .menu a svg { fill: none; stroke: currentColor; stroke-width: 1.8; } .menu svg.solid { fill: currentColor; stroke: none; }
     /* ---- phones and small tablets: the plan and 3D view fill the screen; the routes and settings panels slide over them ---- */
     @media (max-width: 760px) {
       body, body.nopanel, body.settings, body.settings.nopanel { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr); }
@@ -479,7 +489,7 @@
       <svg class="logo" viewBox="0 0 24 24" aria-hidden="true"><rect x="2" y="2" width="20" height="20" rx="5" fill="var(--brand)"/><path d="M8 5v14M16 5v14" stroke="#fff" stroke-width="2"/><path d="M6 8.5h12M6 12h12M6 15.5h12" stroke="#fff" stroke-width="1.4" opacity="0.8"/></svg>
       <h1>Brick Track Designer</h1>
     </div>
-    <button id="toggle-panel" class="icon" type="button" title="Show or hide the routes panel"><svg><use href="#i-panel"/></svg></button>
+    <button id="toggle-panel" type="button" title="Show or hide the routes panel"><svg><use href="#i-panel"/></svg><span class="lbl">Routes</span></button>
     <span class="sep"></span>
     <span class="group" role="group" aria-label="Tool">
       <button id="mode-select" class="on" type="button" title="Select tracks (S): click, Shift+click for more; drag to move them; Delete removes them"><svg><use href="#i-select"/></svg><span class="lbl">Select</span></button><button id="mode-draw" type="button" title="Lay track (D)"><svg><use href="#i-draw"/></svg><span class="lbl">Draw</span></button><button id="mode-measure" type="button" title="Measure (T): click two points for the distance in studs and mm and the angle between the tracks; Esc clears"><svg><use href="#i-measure"/></svg><span class="lbl">Measure</span></button>
@@ -487,27 +497,38 @@
     <select id="radius" title="The curves Draw lays: Free bends to fit (R24 to R1000, any angle); LEGO radii with 22.5° ends; or one radius"></select>
     <span class="sep"></span>
     <span class="group" role="group" aria-label="History">
-      <button id="undo" class="icon" type="button" title="Undo (Ctrl+Z)"><svg><use href="#i-undo"/></svg></button><button id="redo" class="icon" type="button" title="Redo (Ctrl+Shift+Z)"><svg><use href="#i-redo"/></svg></button>
+      <button id="undo" type="button" title="Undo (Ctrl+Z)"><svg><use href="#i-undo"/></svg><span class="lbl">Undo</span></button><button id="redo" type="button" title="Redo (Ctrl+Shift+Z)"><svg><use href="#i-redo"/></svg><span class="lbl">Redo</span></button>
     </span>
     <span class="sep"></span>
     <button id="templates-open" type="button" title="Templates: starting points with pictures. Search them, filter them, star the ones you use"><svg><use href="#i-layout"/></svg><span class="lbl">Templates</span></button>
-    <button id="clear" type="button" class="danger" title="Remove all the track (Undo brings it back)"><svg><use href="#i-trash"/></svg><span class="lbl">Clear</span></button>
     <span class="spacer"></span>
     <button id="fit" type="button" title="Fit the track in view (F; with tracks selected, F fits just those)"><svg><use href="#i-fit"/></svg><span class="lbl">Fit</span></button>
     <button id="toggle-3d" class="on" type="button" title="Show or hide the 3D preview (P)"><svg><use href="#i-cube"/></svg><span class="lbl">3D</span></button>
     <button id="settings-open" type="button" title="Settings for the pieces: track, ballast, switches, joints, fit (,)"><svg><use href="#i-sliders"/></svg><span class="lbl">Settings</span></button>
     <span class="sep"></span>
-    <button id="load" type="button" title="Open a saved design (.btd.json) or a problem report (.zip) (Ctrl+O)"><svg><use href="#i-open"/></svg><span class="lbl">Open</span></button>
-    <button id="recent-open" type="button" title="The last 20 designs that were built in this browser: get one back, or download it"><svg><use href="#i-list"/></svg><span class="lbl">Recent</span></button>
-    <button id="save" type="button" title="Save the design as a file (Ctrl+S); it's also kept in this browser as you work"><svg><use href="#i-save"/></svg><span class="lbl">Save</span></button>
-    <button id="export-stl" type="button" class="primary" title="Download the parts to print (STL files)"><svg><use href="#i-download"/></svg>STL</button>
-    <button id="parts-open" type="button" title="The parts list: what to buy and what to print"><svg><use href="#i-list"/></svg><span class="lbl">Parts list</span></button>
-    <button id="export-layout" type="button" title="Download the parts as a parts library for the layout designer"><svg><use href="#i-layout"/></svg><span class="lbl">Layout parts</span></button>
+    <button id="file-menu-btn" class="menubtn" type="button" popovertarget="file-menu" aria-haspopup="menu" title="Open, save and recent designs"><svg><use href="#i-open"/></svg><span class="mlbl">File</span><span class="caret" aria-hidden="true">▾</span></button>
+    <div id="file-menu" class="menu" popover role="menu" aria-label="File">
+      <button id="load" type="button" role="menuitem" title="Open a saved design (.btd.json) or a problem report (.zip)"><svg><use href="#i-open"/></svg><span>Open…</span><kbd>Ctrl+O</kbd></button>
+      <button id="recent-open" type="button" role="menuitem" title="The last 20 designs that were built in this browser: get one back, or download it"><svg><use href="#i-list"/></svg><span>Recent designs…</span></button>
+      <button id="save" type="button" role="menuitem" title="Save the design as a file; it's also kept in this browser as you work"><svg><use href="#i-save"/></svg><span>Save</span><kbd>Ctrl+S</kbd></button>
+      <button id="save-as" type="button" role="menuitem" title="Save the design as a file under a new name"><svg><use href="#i-save"/></svg><span>Save as…</span><kbd>Shift+Ctrl+S</kbd></button>
+      <hr>
+      <button id="clear" type="button" role="menuitem" class="danger" title="Remove all the track (Undo brings it back)"><svg><use href="#i-trash"/></svg><span>Clear all track</span></button>
+    </div>
+    <button id="export-stl" type="button" class="primary" title="Download the parts to print (STL files)"><svg><use href="#i-download"/></svg><span class="mlbl">STL</span></button>
+    <button id="parts-menu-btn" class="menubtn" type="button" popovertarget="parts-menu" aria-haspopup="menu" title="The parts list, and the parts as a library for the layout designer"><svg><use href="#i-list"/></svg><span class="mlbl">Parts</span><span class="caret" aria-hidden="true">▾</span></button>
+    <div id="parts-menu" class="menu" popover role="menu" aria-label="Parts">
+      <button id="parts-open" type="button" role="menuitem" title="The parts list: what to buy and what to print"><svg><use href="#i-list"/></svg><span>Parts list…</span></button>
+      <button id="export-layout" type="button" role="menuitem" title="Download the parts as a parts library for the layout designer"><svg><use href="#i-layout"/></svg><span>Parts library for the layout designer</span></button>
+    </div>
     <input id="load-file" type="file" accept=".json,application/json,.zip,application/zip" hidden>
     <span class="sep"></span>
-    <button id="theme" class="icon" type="button" title="Light or dark: follows the system (click for light, then dark)"><svg><use href="#i-theme"/></svg></button>
-    <button id="about-open" class="icon" type="button" title="About Brick Track Designer, and its source code"><svg><use href="#i-info"/></svg></button>
-    <a id="source-link" class="icon" href="https://github.com/aronwk-aaron/brick-track-designer" target="_blank" rel="noopener" title="Source code on GitHub"><svg class="solid"><use href="#i-github"/></svg></a>
+    <button id="help-menu-btn" class="menubtn" type="button" popovertarget="help-menu" aria-haspopup="menu" title="Help, about, light or dark"><svg><use href="#i-info"/></svg><span class="mlbl">Help</span><span class="caret" aria-hidden="true">▾</span></button>
+    <div id="help-menu" class="menu" popover role="menu" aria-label="Help">
+      <button id="about-open" type="button" role="menuitem" title="How to use it, the keys, and about Brick Track Designer"><svg><use href="#i-info"/></svg><span>Help and about…</span></button>
+      <button id="theme" type="button" role="menuitem" title="Light or dark: follows the system (click for light, then dark)"><svg><use href="#i-theme"/></svg><span class="theme-lbl">Look: as the system</span></button>
+      <a id="source-link" role="menuitem" href="https://github.com/aronwk-aaron/brick-track-designer" target="_blank" rel="noopener" title="Source code on GitHub"><svg class="solid"><use href="#i-github"/></svg><span>Source code</span></a>
+    </div>
   </header>
   <aside>
     <div class="head"><h2 id="routes-title">Routes</h2><button id="add-route" type="button" title="Add a route by numbers">+ Route</button></div>

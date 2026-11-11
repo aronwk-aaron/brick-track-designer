@@ -120,7 +120,10 @@ try {
 
   at = 'a dialog';
   await page.keyboard.press('Control+a');
+  await page.click('#parts-menu-btn');
+  check(await page.locator('#parts-menu').evaluate((m) => m.matches(':popover-open')), 'the Parts menu opens');
   await page.click('#parts-open');
+  check(!(await page.locator('#parts-menu').evaluate((m) => m.matches(':popover-open'))), 'and shuts when an item is chosen');
   check(await page.locator('#parts-dlg').evaluate((d: HTMLDialogElement) => d.open), 'the parts list opens');
   await page.keyboard.press('Delete');
   check(await routes() === 2, 'Delete behind the open parts list removes nothing');

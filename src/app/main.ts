@@ -1014,6 +1014,7 @@ matchMedia('(prefers-color-scheme: dark)').addEventListener('change', themeChang
   const apply = (m: typeof modes[number]) => {
     if (m === 'system') delete document.documentElement.dataset.theme; else document.documentElement.dataset.theme = m;
     btnT.querySelector('use')!.setAttribute('href', `#${icon[m]}`); btnT.title = tip[m];
+    btnT.querySelector('.theme-lbl')!.textContent = { system: 'Look: as the system', light: 'Look: light', dark: 'Look: dark' }[m];
     try { localStorage.setItem('btd-theme', m); } catch { /* fine */ }
     themeChanged();
   };
@@ -1358,6 +1359,7 @@ function saveFile(as = false) {
 }
 const showSaveName = () => { $('save').title = `${design.name ? `Save the design as ${fileBase()}.btd.json (Ctrl+S). Shift+click, or Ctrl+Shift+S: under another name` : 'Save the design as a file (Ctrl+S): asks its name the first time'}; it's also kept in this browser as you work`; };
 $('save').addEventListener('click', (e) => saveFile(e.shiftKey));
+$('save-as').addEventListener('click', () => saveFile(true));
 const loadInput = $<HTMLInputElement>('load-file');
 $('load').addEventListener('click', () => loadInput.click());
 loadInput.addEventListener('change', async () => {
@@ -2257,4 +2259,26 @@ function drawTrackwork(list: TwItem[]) {
   bar.addEventListener('scroll', sync, { passive: true });
   addEventListener('resize', sync);
   sync();
+}
+
+// The toolbar's menus (File, Parts, Help): each opens under its button, and shuts once one of its items is chosen
+for (const menu of document.querySelectorAll<HTMLElement>('header .menu')) {
+  const btn = document.querySelector<HTMLElement>(`[popovertarget="${menu.id}"]`)!;
+  menu.addEventListener('toggle', (e) => {
+    const open = (e as ToggleEvent).newState === 'open';
+    btn.setAttribute('aria-expanded', String(open));
+    if (!open) return;
+    const r = btn.getBoundingClientRect(), w = menu.offsetWidth;
+    menu.style.top = `${Math.round(r.bottom + 4)}px`;
+    menu.style.left = `${Math.round(Math.max(8, Math.min(r.left, innerWidth - w - 8)))}px`;
+    (menu.querySelector<HTMLElement>('button:not(:disabled), a'))?.focus();
+  });
+  menu.addEventListener('click', (e) => { if ((e.target as Element).closest('button, a')) menu.hidePopover(); });
+  // (up and down move between the items)
+  menu.addEventListener('keydown', (e) => {
+    if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return;
+    const items = [...menu.querySelectorAll<HTMLElement>('button:not(:disabled), a')], i = items.indexOf(document.activeElement as HTMLElement);
+    items[(i + (e.key === 'ArrowDown' ? 1 : items.length - 1)) % items.length]?.focus();
+    e.preventDefault();
+  });
 }
