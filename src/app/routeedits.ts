@@ -4,6 +4,7 @@ import type { RouteEnds } from '../route/route';
 import { type BankRamps, type Design, type DRoute, dualRailOffsets, isMono, RAIL_DEFAULTS, routeGaugeStuds } from './design';
 import { follow, reversed } from './planner';
 import { cutLength, reverseCuts } from './routecuts';
+import { reverseStretches } from './stretches';
 
 const otherEnd = <T extends string | undefined>(e: T): T => (e === 'start' ? 'end' : e === 'end' ? 'start' : e) as T;
 const otherSide = <T extends string | undefined>(s: T): T => (s === 'left' ? 'right' : s === 'right' ? 'left' : s) as T;
@@ -27,6 +28,7 @@ export function reversedRoute(r: DRoute): DRoute {
   if (r.monoHeight !== undefined && r.monoHeightEnd !== undefined) { out.monoHeight = r.monoHeightEnd; out.monoHeightEnd = r.monoHeight; }
   // (its hand cuts: each as far from the new start as it was from the old end)
   if (r.cuts) { const cuts = reverseCuts(r.cuts, cutLength(r)); if (cuts) out.cuts = cuts; else delete out.cuts; }
+  if (r.stretches) { const st = reverseStretches(r.stretches, cutLength(r)); if (st) out.stretches = st; else delete out.stretches; }
   return out;
 }
 

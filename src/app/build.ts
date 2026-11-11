@@ -27,6 +27,7 @@ import { cutPiece, type CutLine } from '../geom/cutter';
 import { type DesignCuts, designCuts, designPaths, handCutsFor } from './handcuts';
 import { type NoCut, pathTracks } from './cutpaths';
 import { hasPartOwn, partGroups, withoutPartOwn } from './overrides';
+import { expandStretches } from './stretches';
 import { edgeGrip } from '../geom/underside';
 import { cutOnPaths, type HandPath, type HandPathDone, pathSplit, splitOnPath, type Keep } from '../geom/pathsplit';
 import { findStuds, wholeStuds } from '../geom/studs';
@@ -263,7 +264,7 @@ const SECTIONS_OVER = 2000;
 export function mayHaveJobs(design: Design): boolean {
   // (a test-print kit: small coupons, each its own build, nothing to share out)
   if (design.kit?.length) return false;
-  const d = upgradeDesign(design);
+  const d = expandStretches(upgradeDesign(design)).design;
   // (tracks with settings of their own: built in groups, one after another (buildGroups), not shared out)
   if (hasPartOwn(d)) return false;
   const len = toRoutes(d).reduce((t, rt) => t + routeLength(rt), 0);
@@ -495,8 +496,17 @@ function buildKit(w: Wasm, design: Design, report: (what: string, frac: number) 
   return { overlay: merged() as unknown as Overlay, pieces, info: { ms: performance.now() - t0, volume: sum((r) => r.info.volume), size: [0, 1, 2].map((k) => mx[k] - mn[k]),
     crossings: sum((r) => r.info.crossings), checkRails: sum((r) => r.info.checkRails), splits: sum((r) => r.info.splits), switches: sum((r) => r.info.switches), pieces: pieces.length, turned: sum((r) => r.info.turned ?? 0), warnings: built.flatMap((r) => r.info.warnings) } };
 }
-function buildAll(w: Wasm, design: Design, report: (what: string, frac: number) => void, early: ((overlay: unknown) => void) | undefined, opts: BuildOpts) {
+function buildAll(w: Wasm, design: Design, report: (what: string, frac: number) => void, early: ((overlay: unknown) => void) | undefined, opts: BuildOpts): ReturnType<typeof buildWhole> {
   design = upgradeDesign(design);
+  // (expert: a stretch of a track with settings of its own is a track of its own for the build (stretches.ts); what the
+  // build says by track, the plan's trackwork, said of the design's own tracks again)
+  const st = expandStretches(design);
+  if (st.design === design) return buildWhole(w, design, report, early, opts);
+  const back = <T,>(ov: T): T => { const v = ov as unknown as Overlay; return (v?.items ? { ...v, items: v.items.map((it) => (it.routes?.some((id) => st.names.has(id)) ? { ...it, routes: it.routes.map((id) => st.names.get(id) ?? id) } : it)) } : v) as unknown as T; };
+  const r = buildWhole(w, st.design, report, early && ((ov) => early(back(ov))), opts);
+  return { ...r, overlay: back(r.overlay) };
+}
+function buildWhole(w: Wasm, design: Design, report: (what: string, frac: number) => void, early: ((overlay: unknown) => void) | undefined, opts: BuildOpts) {
   { const why = unbuildable(design); if (why) throw new Error(why); }
   if (design.kit?.length) return buildKit(w, design, report, early, opts);
   // (a kit coupon's number is on its parts: kept apart from the same parts without it)

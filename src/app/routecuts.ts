@@ -85,16 +85,23 @@ export function joinCuts(a: number[] | undefined, b: number[] | undefined, lenA:
  * or leaves each as far from the start as it was. Returns the cuts to keep (the same list when nothing moved).
  */
 export function followCuts(before: Pick<DRoute, 'segs'>, after: Pick<DRoute, 'segs' | 'cuts'>): number[] | undefined {
-  const cuts = after.cuts;
-  if (!cuts?.length || before.segs.length !== after.segs.length) return cuts;
+  const cuts = after.cuts, at = cuts?.length ? alongAfter(before, after) : undefined;
+  return at ? cleanCuts(cuts!.map(at)) : cuts;
+}
+/**
+ * Where a place on a route (studs from its start) goes when one of its pieces is reshaped, as followCuts says; undefined:
+ * nothing to follow (the shapes are the same, or differ in more than one piece of the same kind).
+ */
+export function alongAfter(before: Pick<DRoute, 'segs'>, after: Pick<DRoute, 'segs'>): ((c: number) => number) | undefined {
+  if (before.segs.length !== after.segs.length) return undefined;
   const diff = before.segs.map((sg, k) => JSON.stringify(sg) !== JSON.stringify(after.segs[k]));
   const k = diff.indexOf(true);
-  if (k < 0 || diff.indexOf(true, k + 1) >= 0 || before.segs[k].kind !== after.segs[k].kind) return cuts;
+  if (k < 0 || diff.indexOf(true, k + 1) >= 0 || before.segs[k].kind !== after.segs[k].kind) return undefined;
   let s0 = 0;
   for (let n = 0; n < k; n++) s0 += segLen(before.segs[n]);
   const was = segLen(before.segs[k]), now = segLen(after.segs[k]);
-  // (a cut on the joint between two pieces is the earlier piece's: it stays at that piece's end)
-  return cleanCuts(cuts.map((c) => (c <= s0 + 1e-6 ? c : c <= s0 + was + 1e-6 ? s0 + Math.min(c - s0, now) : c + now - was)));
+  // (a place on the joint between two pieces is the earlier piece's: it stays at that piece's end)
+  return (c) => (c <= s0 + 1e-6 ? c : c <= s0 + was + 1e-6 ? s0 + Math.min(c - s0, now) : c + now - was);
 }
 
 /** "2 cuts by hand, only these" and so on: what the card's Cuts section says when shut. */

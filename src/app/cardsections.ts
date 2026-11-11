@@ -42,7 +42,8 @@ export function bedSummary(d: Design, r: DRoute): string {
   const i = d.routes.indexOf(r), o = i >= 0 ? inForce(d, i) : resolveOptions(d, r);
   const bed = o.ballast === 'buddy' ? 'ballast + buddy layer' : o.ballast === 'ballast' ? 'ballast' : o.sleepers === 'sleepers' ? 'sleepers' : 'solid bed';
   const from = i >= 0 && hasPartOwn(d) ? partGroups(d).takes[i] : undefined;
-  return `${bed} · ${from !== undefined ? `as ${d.routes[from].name || `route ${from + 1}`} (one part)` : Object.keys(liveOwn(d, r, PART_KEYS)).length ? 'its own' : 'design default'}`;
+  const st = r.stretches?.length ? ` · ${r.stretches.length} ${r.stretches.length === 1 ? 'stretch' : 'stretches'} with ${r.stretches.length === 1 ? 'its' : 'their'} own` : '';
+  return `${bed} · ${from !== undefined ? `as ${d.routes[from].name || `route ${from + 1}`} (one part)` : Object.keys(liveOwn(d, r, PART_KEYS)).length ? 'its own' : 'design default'}${st}`;
 }
 /** The sections of a route's card, in their fixed order. */
 export function cardSections(d: Design, r: DRoute, ctx: CardContext): CardSection[] {

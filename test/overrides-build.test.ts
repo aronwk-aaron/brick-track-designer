@@ -6,6 +6,7 @@ import { describe, expect, it } from 'vitest';
 import { kernel } from '../src/geom/kernel';
 import { buildDesign, clearBuildCache } from '../src/app/build';
 import { type Design, TEMPLATES } from '../src/app/design';
+import { expandStretches } from '../src/app/stretches';
 
 const hashes = (b: ReturnType<typeof buildDesign>) => b.pieces.map((p) => createHash('sha1').update(p.stl ?? new Uint8Array()).update(p.lego ? JSON.stringify(p.lego) : '').digest('hex')).sort();
 const noOwn = (d: Design): Design => ({ ...d, routes: d.routes.map(({ own: _o, ...r }) => r) });
@@ -46,5 +47,29 @@ describe('tracks with settings of their own, built', { timeout: 600000 }, () => 
     expect(b.pieces.filter((p) => !p.lego).length).toBeGreaterThan(0);
     const printed = buildDesign(w, { ...noOwn(d), routes: [noOwn(d).routes[1]], options: { ...d.options, legoTrack: 'print' } });
     expect(hashes({ ...b, pieces: b.pieces.filter((p) => !p.lego) })).toEqual(hashes(printed));
+  });
+  it('a stretch with its own settings is built as a track of its own; taken off again, byte-identical', async () => {
+    const w = await kernel(), t = structuredClone(TEMPLATES['Track on sleepers, a stretch of it on a solid bed']);
+    const noSt = (d: Design): Design => ({ ...d, routes: d.routes.map(({ stretches: _s, ...r }) => r) });
+    clearBuildCache();
+    const plain = buildDesign(w, noSt(t));
+    const b = buildDesign(w, structuredClone(t));
+    // (the three pieces as tracks drawn one after another, the middle one with the stretch's settings as its own)
+    const x = expandStretches(t).design;
+    expect(x.routes.map((r) => [r.name, r.own])).toEqual([['Track', undefined], ['Track (8 to 24)', { sleepers: 'bed' }], ['Track (24 to 55.4)', undefined]]);
+    const each = x.routes.map((r) => buildDesign(w, { ...noOwn(x), routes: [noOwn({ ...x, routes: [r] }).routes[0]], options: { ...t.options, ...r.own } }));
+    expect(hashes(b)).toEqual(each.flatMap(hashes).sort());
+    expect(b.info.warnings).toEqual([]);
+    expect(new Set(b.pieces.map((p) => p.name)).size).toBe(b.pieces.length);
+    expect(hashes(b)).not.toEqual(hashes(plain));
+    expect(hashes(buildDesign(w, noSt(t)))).toEqual(hashes(plain));
+    // (a stretch with nothing of its own yet: the track cut there, no more)
+    const bare = structuredClone(t); bare.routes[0].stretches![0].own = {};
+    expect(hashes(buildDesign(w, bare))).toEqual(hashes(buildDesign(w, noOwn(x))));
+    // (points on a stretch's track: the plan's trackwork is said of the design's own tracks)
+    const sw = structuredClone(TEMPLATES['Left switch (LEGO)']);
+    sw.routes[0].stretches = [{ from: 24, to: 32, own: { sleepers: 'bed' } }];
+    const ids = new Set(sw.routes.map((r) => r.name));
+    for (const it of buildDesign(w, sw).overlay.items) for (const id of it.routes ?? []) expect(ids.has(id), id).toBe(true);
   });
 });

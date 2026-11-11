@@ -5,6 +5,7 @@ import { follow, type Pose } from './planner';
 import { joinedEnds, joinProblem, reversedRoute } from './routeedits';
 import { joinAnchors, reverseAnchors, splitAnchors } from './twfollow';
 import { cutLength, joinCuts, reverseCuts, splitCuts } from './routecuts';
+import { joinStretches, reverseStretches, splitStretches } from './stretches';
 import { routeLength } from '../route/route';
 import type { RouteEnds } from '../route/route';
 
@@ -71,15 +72,15 @@ const endsFrom = (start: boolean, end: boolean): RouteEnds => (start && end ? 'b
  * after it, starting where the first ends. What's on the track goes with it: the guard rails' and third rail's settings on both (their
  * pointed ends the cut routes' far ends only), buffer stops and the second end on the half that has that end, the lever's side with the
  * first (the route's start), a monorail's or a grade's height at the cut on both sides, hand edits by where they are (splitAnchors),
- * hand cuts each on its own half (splitCuts).
- * Returns the two names, or why not.
+ * hand cuts each on its own half (splitCuts), stretches with their own settings too (one over the cut on both).
+ * nameB: the second half's name (else the next free one). Returns the two names, or why not.
  */
-export function splitRoute(d: Design, i: number, at: number): { first: string; second: string } | { problem: string } {
+export function splitRoute(d: Design, i: number, at: number, nameB?: string): { first: string; second: string } | { problem: string } {
   const r = d.routes[i];
   if (!r) return { problem: 'no such route' };
   const s = Math.round(at), problem = splitProblem(r, s);
   if (problem) return { problem };
-  const L = routeStuds(r), rts = toRoutes(d), rt = rts[i], name = r.name || String(i), nb = freeName(d, 'T');
+  const L = routeStuds(r), rts = toRoutes(d), rt = rts[i], name = r.name || String(i), nb = nameB ?? freeName(d, 'T');
   const [sa, sb] = cutSegs(r.segs, s), cut = follow(r, sa);
   splitAnchors(d, name, nb, s * 8, routeLength(rt), rt);
   const b: DRoute = { ...structuredClone(r), name: nb, x: r6(cut.x), y: r6(cut.y), heading: r6(norm180(cut.heading)), segs: sb };
@@ -87,6 +88,7 @@ export function splitRoute(d: Design, i: number, at: number): { first: string; s
   const a = r;
   // (its hand cuts: each half its own, the second's from its own start)
   if (r.cuts) { const [ca, cb] = splitCuts(r.cuts, s); if (ca) a.cuts = ca; else delete a.cuts; if (cb) b.cuts = cb; else delete b.cuts; }
+  if (r.stretches) { const [ta, tb] = splitStretches(r.stretches, s); if (ta) a.stretches = ta; else delete a.stretches; if (tb) b.stretches = tb; else delete b.stretches; }
   a.segs = sa; delete a.endEnd;
   if (r.endEnd) b.endEnd = r.endEnd;
   for (const k of ['guardRailEnds', 'dualPlainEnds'] as const) {
@@ -152,6 +154,11 @@ function joinWith(d: Design, a: number, b: number, bEnd: 'start' | 'end'): numbe
     const cuts = joinCuts(routes[a].cuts, bEnd === 'start' ? rb.cuts : reverseCuts(rb.cuts, lenB), cutLength(routes[a]), both);
     if (cuts) routes[a].cuts = cuts; else delete routes[a].cuts;
     if (both) routes[a].cutsLocked = true; else delete routes[a].cutsLocked;
+  }
+  // (their stretches with their own settings: b's on from a's end)
+  if (routes[a].stretches || rb.stretches) {
+    const st = joinStretches(routes[a].stretches, bEnd === 'start' ? rb.stretches : reverseStretches(rb.stretches, cutLength(rb)), cutLength(routes[a]));
+    if (st) routes[a].stretches = st; else delete routes[a].stretches;
   }
   const segs = routes[a].segs;
   for (const sg of more) {

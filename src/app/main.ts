@@ -26,12 +26,13 @@ import { addTemplate, openEnds } from './addtemplate';
 import { cardSections, type SectionId } from './cardsections';
 import { designOptions, hasPartOwn, ignoredOwn, inForce, liveOwn, partGroups } from './overrides';
 import { isRouteKey, OWN_RANGES, PART_KEYS, type RouteKey } from './routeown';
+import { followStretches, liveStretches, lostStretches, type Stretch, STRETCH_KEYS, STRETCH_MIN, stretchProblem } from './stretches';
 import { designOfSelection, listMine, saveMine, type StorageLike } from './mytemplates';
 import { parallelRoute } from './parallelroute';
 import { mergeProblem, mergeRoutes, splitRoute } from './splitmerge';
 import { jointsOn } from './handcuts';
 import { type CutPath, movedPath, PATH_JOINTS, type PathJoint, pathTracks, type PlacedRoute, sharedMove } from './cutpaths';
-import { addCut, cleanCuts, clearCuts, CUT_MIN, cutLength, cutProblem, followCuts, lostCuts, setCut } from './routecuts';
+import { addCut, alongAfter, cleanCuts, clearCuts, CUT_MIN, cutLength, cutProblem, followCuts, lostCuts, setCut } from './routecuts';
 import { initTemplateBrowser } from './templatebrowser';
 import { type CopiedEdit, copyEdits, followTrackwork, isEdit, leftOver, mirrorAnchors, pasteEdits, reconcileTrackwork, renameAnchors } from './twfollow';
 import { type OptChoice, optionForm, type OptCtx, type OptField } from './settings';
@@ -612,6 +613,90 @@ function bedSection(box: HTMLElement, r: DRoute, i: number) {
   if (mine.length) small(`${mine.join(', ')} ${mine.length > 1 ? 'are' : 'is'} one part with this track and take${mine.length > 1 ? '' : 's'} its settings here.`);
   for (const q of ignoredOwn(r)) small(`Its own ${q.key} isn't used: ${q.why}.`, true);
   for (const key of ['ballast', 'sleepers', 'sleeperWidthStuds', 'sleeperGapStuds', 'curveStuds', 'bottomStyle', 'undersideGrid', 'grip'] as const) box.append(ownRow(r, i, key));
+  stretchList(box, r, i);
+}
+/**
+ * (expert) One setting of a stretch (DRoute.stretches): a choice whose first entry is the track's ("As the track: Sleepers"),
+ * or a number field (empty: the track's). Greyed, with why, where it can't apply (as in Settings).
+ */
+function stretchRow(r: DRoute, i: number, st: Stretch, k: number, key: RouteKey): HTMLElement {
+  const f = OPTION_FORM.flatMap((sec) => sec.fields).find((x) => x.key === key)!;
+  const tr = inForce(design, i), o = { ...tr, ...st.own }, cur = st.own[key];
+  const c: OptCtx = { o, ballast: o.ballast !== 'none', fdb: o.mechStyle !== 'tines', switches: switchesNow() };
+  const locked = f.off?.(c);
+  const set = (v: string | number | undefined) => {
+    // (the track's value is no setting of the stretch's own: left out)
+    if (v === undefined || v === tr[key]) delete st.own[key]; else (st.own as Record<string, unknown>)[key] = v;
+    coalesceNext = `stretch:${i}:${k}:${key}`; changed(true); render();
+  };
+  const show = (v: unknown) => f.choices?.find((ch) => ch.v === String(v))?.t ?? String(v);
+  const wrap = document.createElement('div'), range = OWN_RANGES[key];
+  let ctl: HTMLInputElement | HTMLSelectElement;
+  if (range) {
+    const inp = document.createElement('input'); inp.type = 'number'; inp.step = String(range.step); inp.min = String(range.min); inp.max = String(range.max);
+    inp.value = cur === undefined ? '' : String(cur); inp.placeholder = String(tr[key]);
+    inp.title = `${f.help ?? f.label} Range ${range.min} to ${range.max}. Empty: as the track, ${tr[key]}.`;
+    inp.addEventListener('change', () => { const n = Number(inp.value); set(inp.value.trim() === '' || !Number.isFinite(n) ? undefined : clamp(range.step >= 1 ? Math.round(n) : n, [range.min, range.max, 0])); });
+    ctl = inp;
+  } else {
+    const sel = document.createElement('select');
+    sel.append(new Option(`As the track: ${show(tr[key])}`, ''));
+    for (const ch of f.choices ?? []) {
+      const op = new Option(ch.t, ch.v), no = ch.no?.(c);
+      op.title = [ch.tip, ch.con && `Drawback: ${ch.con}`, no && `Not here: ${no}.`].filter(Boolean).join(' ');
+      if (no && String(cur) !== ch.v) op.disabled = true;
+      sel.append(op);
+    }
+    sel.value = cur === undefined ? '' : String(cur);
+    sel.title = `${f.help ?? f.label} A choice here is this stretch's own, over the track's.`;
+    sel.addEventListener('change', () => set(sel.value === '' ? undefined : f.numeric ? Number(sel.value) : sel.value));
+    ctl = sel;
+  }
+  ctl.disabled = !!locked;
+  const fl = field(f.label, ctl); fl.classList.add('stack'); wrap.append(fl);
+  if (locked) { const n = document.createElement('small'); n.className = 'desc'; n.style.color = 'var(--warn)'; n.textContent = `Locked: ${locked}.`; wrap.append(n); }
+  return wrap;
+}
+/**
+ * (expert) A route card's stretches with settings of their own: each from and to (whole studs from the track's
+ * start) and its settings over the track's; the ones no longer on the track said so; Add a stretch.
+ */
+function stretchList(box: HTMLElement, r: DRoute, i: number) {
+  const L = cutLength(r), small = (text: string, warn = false) => { const n = document.createElement('small'); n.className = 'desc'; n.style.color = warn ? 'var(--warn)' : 'var(--muted)'; n.textContent = text; box.append(n); };
+  const head = document.createElement('div'); head.className = 'rsub'; head.textContent = 'Stretches with their own'; head.style.cssText = 'font-weight:600;margin-top:8px'; box.append(head);
+  small(`A stretch of this track, from and to in whole studs from its start (0 to ${+L.toFixed(1)}), at least ${STRETCH_MIN} long, with its own settings over the track's. The track is cut at a stretch's ends: an ordinary track end each side. Ballast lifts the track a plate (3.2 mm), with its buddy layer two: put plates under the track beside it.`);
+  const lost = new Set(lostStretches(r).map((s) => s.from)), live = liveStretches(r);
+  (r.stretches ?? []).forEach((st, k) => {
+    const num = (which: 'from' | 'to') => {
+      const inp = document.createElement('input'); inp.type = 'number'; inp.step = '1'; inp.min = '0'; inp.max = String(Math.ceil(L)); inp.value = String(st[which]); inp.style.cssText = 'flex:1 1 0;min-width:0';
+      inp.title = `Where stretch ${k + 1} ${which === 'from' ? 'starts' : 'ends'}, studs from the track's start. Range 0 to ${Math.ceil(L)}.`;
+      inp.setAttribute('aria-label', `Stretch ${k + 1} ${which}`);
+      inp.addEventListener('change', () => {
+        const n = Math.round(Number(inp.value)), from = which === 'from' ? n : st.from, to = which === 'to' ? n : st.to;
+        const why = inp.value.trim() === '' || !Number.isFinite(n) ? 'Type how far along, studs' : stretchProblem(r, from, to, k);
+        if (why) { canvas.say(why); inp.value = String(st[which]); return; }
+        st.from = from; st.to = to; r.stretches!.sort((a, b) => a.from - b.from);
+        coalesceNext = `stretch:${i}:${k}:${which}`; changed(); soon(render);
+      });
+      return inp;
+    };
+    const pair = document.createElement('span'); pair.style.cssText = 'display:flex;gap:4px;align-items:center';
+    const out = btn('✕', () => { r.stretches!.splice(k, 1); if (!r.stretches!.length) delete r.stretches; }, 'Take this stretch out: the track\'s settings there again'); out.style.cssText = 'flex:none;width:auto;padding:2px 8px'; out.setAttribute('aria-label', `Take stretch ${k + 1} out`);
+    pair.append(num('from'), ' to ', num('to'), out);
+    // (the two fields and the ✕ on a line of their own, under the name: room for three figures each)
+    { const fl = field(`Stretch ${k + 1}, studs from the start`, pair); fl.classList.add('stack'); box.append(fl); }
+    const as = live.find((s) => s.from < st.to && s.to > st.from);
+    if (lost.has(st.from) || !as) small(`Stretch ${k + 1} is past the end of the track (${+L.toFixed(1)} studs long): it isn't built.`, true);
+    else if (as.from !== st.from || as.to !== st.to) small(`Built from ${as.from} to ${+as.to.toFixed(1)}: no piece under ${STRETCH_MIN} studs is left beside it.`);
+    for (const key of STRETCH_KEYS) box.append(stretchRow(r, i, st, k, key));
+  });
+  const add = btn('Add a stretch', () => {
+    // (after the last one, 8 studs or what's left of the track)
+    const from = Math.max(0, ...(r.stretches ?? []).map((s) => s.to)), to = Math.min(from + 8, Math.floor(L)), why = stretchProblem(r, from, to);
+    if (why) { canvas.say(from > 0 ? 'No room after the last stretch: shorten one first' : why); return; }
+    r.stretches = [...(r.stretches ?? []), { from, to, own: {} }];
+  }, 'A stretch of this track with settings of its own, after the last one: then set where it starts and ends, and what it has');
+  add.className = 'rreset'; box.append(add);
 }
 /**
  * A route card's Cuts into parts (expert): where its track is cut into parts by hand, a field each (studs from its
@@ -962,12 +1047,30 @@ function followHandCuts(record: boolean) {
   }
   if (record) noteHandCuts();
 }
+/** Each route with stretches as it was at the last finished action, and its stretches as last moved to follow a reshape since. */
+let stretchesWere = new Map<DRoute, { segs: string; st: string; moved?: string }>();
+/** A route's stretches with their own settings go with its track when one of its pieces is reshaped, as its hand cuts do (followHandCuts). */
+function followOwnStretches(record: boolean) {
+  for (const r of design.routes) {
+    const was = stretchesWere.get(r), now = JSON.stringify(r.stretches ?? []);
+    if (!was || !r.stretches?.length || (now !== was.st && now !== was.moved)) continue;
+    const segs = JSON.stringify(r.segs);
+    if (segs === was.segs) { if (now !== was.st) r.stretches = JSON.parse(was.st); continue; }
+    const at = alongAfter({ segs: JSON.parse(was.segs) }, r), st = at ? followStretches(JSON.parse(was.st), at) : JSON.parse(was.st) as Stretch[];
+    if (st) r.stretches = st; else delete r.stretches;
+    was.moved = JSON.stringify(r.stretches ?? []);
+  }
+  if (record) noteStretches();
+}
+/** The routes with stretches noted as they are now (an action finished, or another design opened). */
+function noteStretches() { stretchesWere = new Map(design.routes.filter((r) => r.stretches?.length).map((r) => [r, { segs: JSON.stringify(r.segs), st: JSON.stringify(r.stretches) }])); }
 /** The routes with hand cuts noted as they are now (an action finished, or another design opened). */
 function noteHandCuts() { cutsWere = new Map(design.routes.filter((r) => r.cuts?.length).map((r) => [r, { segs: JSON.stringify(r.segs), cuts: JSON.stringify(r.cuts) }])); }
 function changed(rerender = false, record = true, build = true) {
   // (the trackwork's hand edits go with their track: each one's place worked out again from the route it's on)
   followTrackwork(design, canvas?.overlay?.items ?? []);
   followHandCuts(record);
+  followOwnStretches(record);
   followCutPaths(record);
   if (record) {
     history.record(JSON.stringify(design), coalesceNext);
@@ -1339,7 +1442,7 @@ function updateLegend() {
 }
 /** A different design (a template, a file, undo or redo): the toolbar and the forms show it, nothing selected. */
 function replaced() {
-  canvas.letGo(); canvas.setSelection([]); openCards.clear(); twSig = ''; renderOptions(); noteHandCuts(); noteCutPaths();
+  canvas.letGo(); canvas.setSelection([]); openCards.clear(); twSig = ''; renderOptions(); noteHandCuts(); noteStretches(); noteCutPaths();
 }
 
 const download = (blob: Blob, name: string) => {

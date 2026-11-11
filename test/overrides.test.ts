@@ -7,6 +7,10 @@ import { clampDesign } from '../src/app/limits';
 import { hasPartOwn, ignoredOwn, inForce, inForceAll, liveOwn, partGroups, partsOf, resolveOptions, sourceOf, withoutPartOwn } from '../src/app/overrides';
 import { BANK_KEYS, cleanOwn, OWN_CHOICES, OWN_LABELS, OWN_RANGES, PART_KEYS, ROUTE_KEYS } from '../src/app/routeown';
 import { optionForm } from '../src/app/settings';
+import { cleanStretches, expandStretches, followStretches, joinStretches, liveStretches, lostStretches, reverseStretches, splitStretches, stretchProblem } from '../src/app/stretches';
+import { alongAfter } from '../src/app/routecuts';
+import { splitRoute } from '../src/app/splitmerge';
+import { reversedRoute } from '../src/app/routeedits';
 
 const straight = (name: string, x: number, y = 0, extra: Partial<DRoute> = {}): DRoute => ({ name, x, y, heading: 0, segs: [{ kind: 'straight', studs: 32 }], ...extra });
 const design = (routes: DRoute[], options: Design['options'] = {}): Design => ({ version: 1, gaugeStuds: 4, options, routes });
@@ -152,5 +156,65 @@ describe('a track\'s own settings are the Settings panel\'s', () => {
       if (f.choices) expect([...(OWN_CHOICES[k] ?? [])].map(String).sort(), k).toEqual(f.choices.map((c) => c.v).sort());
       else expect([OWN_RANGES[k]?.min, OWN_RANGES[k]?.max, OWN_RANGES[k]?.step], k).toEqual([f.min, f.max, f.step]);
     }
+  });
+});
+
+describe('stretches of a track with settings of their own', () => {
+  const own = { ballast: 'ballast' } as const;
+  it('a file\'s: whole studs, in order, none over another, only the settings a stretch may have', () => {
+    expect(cleanStretches([{ from: 20.4, to: 30, own: { ballast: 'buddy', legoTrack: 'lego', bankClimb: 50, joint: 'butt' } }, { from: 4, to: 22, own }, { from: 5, to: 6, own }, 'x', { from: 'a', to: 3 }, { from: 40, to: 9000, own: 3 }]))
+      .toEqual([{ from: 4, to: 22, own }, { from: 22, to: 30, own: { ballast: 'buddy' } }, { from: 40, to: 2000, own: {} }]);
+    for (const v of [undefined, 5, [], [{ from: 3, to: 4, own }]]) expect(cleanStretches(v)).toBeUndefined();
+    const d = readDesign({ version: 1, gaugeStuds: 4, routes: [straight('A', 0, 0, { stretches: [{ from: 8, to: 16, own: { ballast: 'buddy', printBedX: 9 } as never }] }), straight('B', 24, 0, { stretches: 'all' as never })] });
+    expect(d.routes[0].stretches).toEqual([{ from: 8, to: 16, own: { ballast: 'buddy' } }]);
+    expect('stretches' in d.routes[1]).toBe(false);
+  });
+  it('as built: on the track, an end under 2 studs from the track\'s end or the stretch before taken there', () => {
+    const r = straight('A', 0, 0, { stretches: [{ from: 1, to: 10, own }, { from: 11, to: 20, own: {} }, { from: 24, to: 31, own }, { from: 40, to: 50, own }] });
+    expect(liveStretches(r)).toEqual([{ from: 0, to: 10, own }, { from: 10, to: 20, own: {} }, { from: 24, to: 32, own }]);
+    expect(lostStretches(r)).toEqual([{ from: 40, to: 50, own }]);
+    expect(stretchProblem(r, 20, 21)).toBe('A stretch is at least 2 studs long');
+    expect(stretchProblem(r, 31, 40)).toBe('The track is 32 studs long: a stretch starts at 0 to 30');
+    expect(stretchProblem(r, 8, 12)).toBe('Stretches can\'t run over each other');
+    expect(stretchProblem(r, 8, 11, 0)).toBeUndefined();
+    expect(stretchProblem(r, 20, 24)).toBeUndefined();
+  });
+  it('go with the track: turned end for end, split, joined, a piece reshaped', () => {
+    const st = [{ from: 4, to: 12, own }, { from: 20, to: 32, own: { sleepers: 'bed' as const } }];
+    expect(reverseStretches(st, 32)).toEqual([{ from: 0, to: 12, own: { sleepers: 'bed' } }, { from: 20, to: 28, own }]);
+    expect(reverseStretches(reverseStretches(st, 32), 32)).toEqual(st);
+    const [a, b] = splitStretches(st, 24);
+    expect(a).toEqual([{ from: 4, to: 12, own }, { from: 20, to: 24, own: { sleepers: 'bed' } }]);
+    expect(b).toEqual([{ from: 0, to: 8, own: { sleepers: 'bed' } }]);
+    expect(joinStretches(a, b, 24)).toEqual([{ from: 4, to: 12, own }, { from: 20, to: 24, own: { sleepers: 'bed' } }, { from: 24, to: 32, own: { sleepers: 'bed' } }]);
+    // (the editor's own: Split and Merge, and turned end for end)
+    const d = design([straight('A', 0, 0, { stretches: st })]);
+    expect(splitRoute(d, 0, 24)).toEqual({ first: 'A', second: 'T2' });
+    expect([d.routes[0].stretches, d.routes[1].stretches]).toEqual([a, b]);
+    expect(reversedRoute(straight('A', 0, 0, { stretches: st })).stretches).toEqual(reverseStretches(st, 32));
+    // (the first piece made 8 studs longer: a stretch in it stays, one past it moves on)
+    const before = { segs: [{ kind: 'straight' as const, studs: 16 }, { kind: 'curve' as const, radius: 40, angle: 45 }] }, after = { segs: [{ kind: 'straight' as const, studs: 24 }, before.segs[1]] };
+    expect(followStretches(st, alongAfter(before, after)!)).toEqual([{ from: 4, to: 12, own }, { from: 28, to: 40, own: { sleepers: 'bed' } }]);
+    expect(alongAfter(before, before)).toBeUndefined();
+  });
+  it('for the build each stretch is a track of its own, with the settings in force on it as its own', () => {
+    const plain = design([straight('A', 0), straight('B', 24)]);
+    expect(expandStretches(plain).design).toBe(plain);
+    const d = design([straight('A', 0, 0, { own: { grip: 'all' }, endEnd: 'buffer', cuts: [4, 20], stretches: [{ from: 8, to: 16, own }, { from: 16, to: 31, own: { ballast: 'none', sleepers: 'sleepers' } }] }), straight('', 24), straight('A (8 to 16)', 48)], { sleepers: 'sleepers', ballast: 'none' });
+    const x = expandStretches(d);
+    expect(x.design.routes.map((r) => [r.name, r.y, r.segs, r.own, r.cuts, r.endEnd, r.stretches])).toEqual([
+      ['A', 0, [{ kind: 'straight', studs: 8 }], { grip: 'all' }, [4], undefined, undefined],
+      ['A (8 to 16)\'', 8, [{ kind: 'straight', studs: 8 }], { grip: 'all', ballast: 'ballast' }, undefined, undefined, undefined],
+      ['A (16 to 32)', 16, [{ kind: 'straight', studs: 16 }], { grip: 'all', ballast: 'none', sleepers: 'sleepers' }, [4], 'buffer', undefined],
+      ['1', 0, [{ kind: 'straight', studs: 32 }], undefined, undefined, undefined, undefined],
+      ['A (8 to 16)', 0, [{ kind: 'straight', studs: 32 }], undefined, undefined, undefined, undefined]]);
+    expect(x.of).toEqual([0, 0, 0, 1, 2]);
+    expect([...x.names]).toEqual([['A (16 to 32)', 'A'], ['A (8 to 16)\'', 'A']]);
+    // (the design itself is left as it was; a stretch over the whole track: no cut, its settings the track's)
+    expect(d.routes[0].stretches).toHaveLength(2);
+    const whole = expandStretches(design([straight('A', 0, 0, { stretches: [{ from: 0, to: 40, own }] })]));
+    expect(whole.design.routes).toEqual([straight('A', 0, 0, { own })]);
+    // (the part rule goes by the pieces: a stretch joined on in line is a part of its own; pieces that come out the same are built together)
+    expect(partGroups(x.design).groups.map((g) => g.routes)).toEqual([[0, 2], [1], [3, 4]]);
   });
 });

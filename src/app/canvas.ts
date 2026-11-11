@@ -9,6 +9,7 @@
 import { movedTable, type Table, TABLE_COLORS, tableInBox, tableMiddle, tableOutline } from './tables';
 import { type Design, type DRoute, type DSeg, dualRailOffsets, freeName, isMono, routeGaugeStuds, toRoutes, type Trackwork } from './design';
 import { inForceAll } from './overrides';
+import { expandStretches } from './stretches';
 import { sleeperSpots } from '../geom/crossing';
 import { poseToWorld, routeLength, routePose, worldToPose } from '../route/route';
 import { forFingers } from './hints';
@@ -1539,14 +1540,16 @@ export class TrackCanvas {
     // ballast (Piece options), under all the track: the layer a stud wider
     // each side than the sleepers, and with the bottom ("buddy") layer
     // another stud wider each side
-    // (each track's own, expert: the design's unless it has its own)
-    const all = inForceAll(d), balOf = d.routes.map((r, i) => (isMono(r) ? 'none' : all[i].ballast));
+    // (each track's own, expert: the design's unless it has its own; a stretch with its own drawn as the track of
+    // its own the build makes of it: sx, its pieces)
+    const sx = expandStretches(d), dx = sx.design;
+    const all = inForceAll(dx), balOf = dx.routes.map((r, i) => (isMono(r) ? 'none' : all[i].ballast));
     if (balOf.some((b) => b !== 'none') && !this.hidden.has('ballast')) {
       const wide = (r: DRoute, i: number) => (2 * gOf(r) + 3 + (balOf[i] === 'buddy' ? 4 : 2)) * this.scale;
-      layer(ink.ballastLow, (draw) => d.routes.forEach((r, i) => { if (balOf[i] !== 'none') draw(trace(r, r.segs, 0.5), wide(r, i)); }));
-      layer(ink.ballast, (draw) => d.routes.forEach((r, i) => { if (balOf[i] === 'buddy') draw(trace(r, r.segs, 0.5), (2 * gOf(r) + 5) * this.scale); }));
+      layer(ink.ballastLow, (draw) => dx.routes.forEach((r, i) => { if (balOf[i] !== 'none') draw(trace(r, r.segs, 0.5), wide(r, i)); }));
+      layer(ink.ballast, (draw) => dx.routes.forEach((r, i) => { if (balOf[i] === 'buddy') draw(trace(r, r.segs, 0.5), (2 * gOf(r) + 5) * this.scale); }));
       // (the selected tracks' ballast picked out with them, as their band)
-      layer('rgba(43,111,224,0.16)', (draw) => d.routes.forEach((r, i) => { if (balOf[i] !== 'none' && (i === this.selected || this.extra.has(i))) draw(trace(r, r.segs, 0.5), wide(r, i)); }));
+      layer('rgba(43,111,224,0.16)', (draw) => dx.routes.forEach((r, i) => { if (balOf[i] !== 'none' && (sx.of[i] === this.selected || this.extra.has(sx.of[i]))) draw(trace(r, r.segs, 0.5), wide(r, i)); }));
     }
     // the sleeper bands, each colour as one layer (red where a drag can't bend the track)
     {
@@ -1569,13 +1572,13 @@ export class TrackCanvas {
     // (track only with sleepers: each sleeper across the band, where the build lays them (crossing.ts sleeperSpots;
     // where tracks meet the build keeps the bed, drawn as the band))
     {
-      // (each track's own, expert: the design's unless it has its own)
-      const ops = inForceAll(d);
+      // (each track's own, expert: the design's unless it has its own; a stretch's, on its piece)
+      const ops = all;
       if (ops.some((op) => op.sleepers === 'sleepers' && op.ballast === 'none')) {
-        toRoutes(d).forEach((rt, i) => {
+        toRoutes(dx).forEach((rt, i) => {
           const op = ops[i], gapS = op.sleeperGapStuds ?? 2, sw = op.sleeperWidthStuds ?? 2;
-          if (isMono(d.routes[i]) || !rt.segments.length || op.sleepers !== 'sleepers' || op.ballast !== 'none') return;
-          const half = gOf(d.routes[i]) + 1.5;
+          if (isMono(dx.routes[i]) || !rt.segments.length || op.sleepers !== 'sleepers' || op.ballast !== 'none') return;
+          const half = gOf(dx.routes[i]) + 1.5;
           for (const sAt of sleeperSpots(routeLength(rt), false, false, gapS, sw, rt.segments.every((sg) => sg.kind === 'arc'))) {
             const p = routePose(rt, sAt), h = (p[2] * Math.PI) / 180, rx = Math.cos(h), ry = Math.sin(h), x = p[0] / MM, y = p[1] / MM;
             line([[x - rx * half, y - ry * half], [x + rx * half, y + ry * half]], 'rgba(140,128,110,0.42)', sw * this.scale);
@@ -1583,6 +1586,12 @@ export class TrackCanvas {
         });
       }
     }
+    // (a selected track's stretches with their own: an orange line down each)
+    dx.routes.forEach((r, i) => {
+      if (!sx.stretch[i] || !(sx.of[i] === this.selected || this.extra.has(sx.of[i]))) return;
+      const pts = trace(r, r.segs, 0.5);
+      if (pts.length > 1) line(pts, 'rgba(232,137,43,0.85)', 2);
+    });
     // monorail: the 4-stud beam (its narrower ends where pieces join aren't shown) with the rack's ridge down its middle
     const monoHw = MONO_HW / MM, ridgeHw = MONO_RIDGE_HW / MM;
     const drawMono = (p: Pose, segs: DSeg[], sel: boolean, bad = false) => {

@@ -460,8 +460,9 @@ route-owned storage, the follow rules and the card section they bring are the pa
   beside none is a step of a plate in the rails (3.2 mm, 6.4 with the buddy layer): said in the card and the help,
   not warned by the build.
 - **S1 and S1b as landed (2026-11-11).** Checked: tsc and eslint clean; the identical-output baseline over the 303
-  templates and 3 saved designs that have none of this (the four heaviest left out) against d3edd5d: 306 the same (names, triangles, volumes, vertex hashes, warnings), 0 different, 1471 pieces, cold 874.4 s before and
-  699.6 s after (a shared machine: noise);
+  templates and 3 saved designs that have none of this (the four heaviest left out) against main: 306 the same (names, triangles, volumes, vertex hashes, warnings: 304 as at
+  d3edd5d, and the two dual-gauge R36 branch switches that 1beba2c changed as at 1beba2c), 0 different, cold 872.3 s
+  before and 674.6 s after (a shared machine: noise);
   test/overrides.test.ts and test/overrides-build.test.ts (each group is the design's build with its settings, byte
   for byte; a track's own or a stretch taken off again is byte-identical; the part rule; bought per track), shards,
   coverage, templates-features and assembled-features with the three new templates, the browser smoke test. Found

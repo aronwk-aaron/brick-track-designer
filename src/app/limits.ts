@@ -54,6 +54,7 @@ export function clampDesign(d: Design): Design {
     if (typeof r.monoHeightEnd === 'number') r.monoHeightEnd = clamp(r.monoHeightEnd, LIMITS.plates);
     // (its own settings' numbers, as the Settings panel holds the design's: routeown.ts)
     if (r.own) clampOwn(r.own);
+    for (const st of r.stretches ?? []) clampOwn(st.own);
     for (const sg of r.segs) {
       if (sg.kind === 'straight') sg.studs = clamp(sg.studs, LIMITS.straight);
       else { sg.radius = clamp(sg.radius, radiusRange(r)); sg.angle = clamp(sg.angle, LIMITS.angle); }
