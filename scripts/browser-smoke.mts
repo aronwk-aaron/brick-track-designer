@@ -628,6 +628,31 @@ try {
     await page.keyboard.press('Escape'); await page.keyboard.press('Control+z'); await page.waitForTimeout(250);
     check(await sts() === '[[25,37]]', 'one undo takes the new stretch away'); await page.keyboard.press('Escape'); await page.keyboard.press('Escape'); }
 
+  // a joint's own row in the Trackwork panel: the two tracks and where; a click selects the joint on the plan; Take apart and Join from the row
+  at = 'joints in the Trackwork panel';
+  await page.evaluate(() => localStorage.setItem('btd-design', JSON.stringify({ version: 1, gaugeStuds: 4, routes: [
+    { name: 'A', x: 0, y: 0, heading: 0, segs: [{ kind: 'straight', studs: 32 }] }, { name: 'B', x: 0, y: 32, heading: 0, segs: [{ kind: 'straight', studs: 16 }] },
+    { name: 'S', x: 0, y: 8, heading: 0, segs: [{ kind: 'curve', radius: 40, angle: -22.5 }] }] })));
+  await page.reload(); await page.waitForSelector('#track'); await page.click('#mode-select'); await page.click('#fit'); await page.waitForTimeout(400);
+  { const apart = () => page.evaluate(() => JSON.stringify(JSON.parse(localStorage.getItem('btd-design')!).expert?.apart ?? null));
+    await page.locator('#trackwork').evaluate((d: HTMLDetailsElement) => { d.open = true; });
+    const grp = page.locator('#trackwork details.twg', { hasText: 'Joints between tracks' });
+    await grp.waitFor({ timeout: 20_000 }).catch(() => undefined);
+    await grp.evaluate((d: HTMLDetailsElement) => { d.open = true; }).catch(() => undefined);
+    const rows = (await grp.locator('details.tw > summary').allInnerTexts()).map((t) => t.replace(/\s+/g, ' ').trim());
+    check(rows.length === 2 && rows.some((t) => /^(A and B|B and A) end to end · joined$/.test(t)) && rows.some((t) => /^S and A S off A's side · joined$/.test(t)), `the Trackwork panel lists each joint with its two tracks and where it is (${rows.join(' | ')})`);
+    const row = grp.locator('details.tw', { hasText: 'S and A' });
+    await row.locator('summary').click(); await page.waitForTimeout(300);
+    check(await page.locator('#sel-count').innerText() === 'Joint between S and A' && await row.evaluate((d: HTMLDetailsElement) => d.open), `a click on a joint's row selects the joint on the plan and opens the row (${await page.locator('#sel-count').innerText()})`);
+    check(/S's start on A's side, 8 studs along, at 0, 8/.test(await row.innerText()), 'the row says where the joint is');
+    await row.getByRole('button', { name: 'Take apart' }).click(); await page.waitForTimeout(300);
+    check(await apart() === '[["S","A"]]' && /taken apart/.test(await row.locator('summary').innerText()) && await page.locator('#sel-join').isVisible(), `Take apart in the row takes the two apart (${await apart()})`);
+    await row.getByRole('button', { name: 'Join' }).click(); await page.waitForTimeout(300);
+    check(await apart() === 'null' && /joined/.test(await row.locator('summary').innerText()), 'Join in the row joins them again');
+    await page.keyboard.press('Control+z'); await page.waitForTimeout(300);
+    check(await apart() === '[["S","A"]]', 'each is one undo step');
+    await page.keyboard.press('Control+z'); await page.waitForTimeout(300); }
+
   check(errors.length === 0, `no errors on the page${errors.length ? `: ${errors.join(' | ').slice(0, 600)}` : ''}`);
 } catch (err) {
   fails.push(`${at}: ${err instanceof Error ? err.message : err}`);

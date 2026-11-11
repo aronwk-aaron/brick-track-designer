@@ -35,7 +35,7 @@ import { jointsOn } from './handcuts';
 import { type CutPath, movedPath, PATH_JOINTS, type PathJoint, pathTracks, type PlacedRoute, sharedMove } from './cutpaths';
 import { addCut, alongAfter, cleanCuts, clearCuts, CUT_MIN, cutLength, cutProblem, followCuts, lostCuts, setCut } from './routecuts';
 import { initTemplateBrowser } from './templatebrowser';
-import { carryChange, jointNames, pruneApart, renameApart, tidyExpert } from './connections';
+import { carryChange, type Joint, jointNames, pruneApart, renameApart, setApart, tidyExpert } from './connections';
 import { type CopiedEdit, copyEdits, followTrackwork, isEdit, leftOver, mirrorAnchors, pasteEdits, reconcileTrackwork, renameAnchors } from './twfollow';
 import { type OptChoice, optionForm, type OptCtx, type OptField } from './settings';
 import { designFacts, GROUPS, groupFields, groupView, resetFields } from './settingsgroups';
@@ -1117,6 +1117,10 @@ function updateExports() {
  * draws itself): the design is saved once on release, so a reload mid-drag brings back the last released design.
  * build: false for what doesn't change the parts (a route's name).
  */
+/** (the Trackwork panel is set up further down: its joints' rows are drawn again after a change only once it is) */
+let twReady = false;
+/** (whether the panel's rows were last drawn with a joint picked out: drawn again when a joint is selected or let go of) */
+let twJointShown = false;
 /** The setting being changed (set just before `changed`): changes to it within a second are one undo step. */
 let coalesceNext: string | undefined;
 /** Each route with hand cuts as it was at the last finished action (its pieces, its cuts), and its cuts as last moved to follow a reshape since. */
@@ -1172,6 +1176,8 @@ function changed(rerender = false, record = true, build = true) {
     save();
     updateLegend();
     if (rerender) render();
+    // (the Trackwork panel's joints are the design's as it is now: listed again where they've changed)
+    if (twReady) renderTrackwork(twList);
     canvas?.draw();
     updateHistoryButtons();
   } else {
@@ -1672,7 +1678,7 @@ const canvas = new TrackCanvas($<HTMLCanvasElement>('track'), {
   design: () => design,
   changed: (commit) => changed(commit, commit), // (one undo step per finished action, none for each mouse move)
   revert: () => restore(history.current), // (Esc mid-drag: back to the last finished action)
-  item: () => { const si = canvas.selItem; if (si?.kind === 'stretch' && !openParts.has('Bed and underside')) { openParts.add('Bed and underside'); keepParts(); render(); } updateSelbar(); drawItemCard(); },
+  item: () => { const si = canvas.selItem; if (si?.kind === 'stretch' && !openParts.has('Bed and underside')) { openParts.add('Bed and underside'); keepParts(); render(); } updateSelbar(); drawItemCard(); if (twReady && (si?.kind === 'joint' || twJointShown)) renderTrackwork(twList); },
   live: (route) => (route === undefined ? render() : renderCard(route)), // (a handle being dragged: the route's card shows its numbers as they change)
   select: () => { foldedCards.clear(); render(); updateSelbar(); },
   radius: () => Number(radiusSel.value),
@@ -2348,13 +2354,22 @@ type TwItem = { kind: 'check' | 'groove' | 'points' | 'throw'; key: string; at: 
 let twSig = '';
 /** The monorail points' toes, as last built (mm). */
 const monoToes = (): [number, number][] => (canvas?.overlay as { monoPoints?: [number, number][] } | undefined)?.monoPoints ?? [];
+/** A joint taken apart, or joined again, from its row in the Trackwork panel: by its two tracks, as on the plan. One undo step. */
+function takeJointApart(j: Joint, on: boolean) {
+  const id = (i: number) => design.routes[i].name || String(i);
+  setApart(design, id(j.a), id(j.b), on); twSig = '';
+  changed(true); updateSelbar();
+  canvas.say(on ? `Took ${jointNames(design, [j])} apart: each moves on its own now · Join puts them back together` : `Joined ${jointNames(design, [j])}: they move together again`);
+}
 /** Trackwork: the groups and items open (remembered), and whether only the hand-edited ones show. */
 const twOpen: Set<string> = (() => { try { const v = JSON.parse(localStorage.getItem('btd-tw-open') ?? 'null'); if (Array.isArray(v)) return new Set<string>(v); } catch { /* (none kept) */ } return new Set(['g:points']); })();
 const keepTw = () => { try { localStorage.setItem('btd-tw-open', JSON.stringify([...twOpen])); } catch { /* (not kept) */ } };
 let twOnlyEdited = false;
 function renderTrackwork(list: TwItem[]) {
   const sig = JSON.stringify([list.map((it) => [it.kind, it.key, it.off, Math.round((it.len ?? 0) * 10), it.toe, it.routes, it.forced, it.cand, it.lever && [it.lever.side, it.lever.leverOffset, it.lever.springLength]]),
-    design.trackwork, design.options?.throwSide, design.options?.mechStyle, design.routes.map((r) => [r.name, r.throwSide]), monoToes(), twOnlyEdited]);
+    design.trackwork, design.options?.throwSide, design.options?.mechStyle, design.routes.map((r) => [r.name, r.throwSide]), monoToes(), twOnlyEdited,
+    // (the joints between tracks: worked out from the design as it is now, not from the build)
+    canvas.jointList().map((j) => [j.a, j.aEnd, j.b, j.bEnd, Math.round(j.s * 10), j.at, j.apart]), canvas.selItem?.kind === 'joint' && canvas.selItem]);
   if (sig === twSig) return; // (don't rebuild the form under the user's fingers)
   twList = list;
   if (midEdit($('trackwork'))) { drawWhenTyped.add(twLater); return; }
@@ -2364,6 +2379,7 @@ function renderTrackwork(list: TwItem[]) {
 /** (the trackwork as last worked out, to draw once a number being typed there is taken) */
 let twList: TwItem[] = [];
 const twLater = () => renderTrackwork(twList);
+twReady = true;
 function drawTrackwork(list: TwItem[]) {
   const body = $('trackwork-body'), scroll = $('trackwork').scrollTop; body.replaceChildren();
   const tw = design.trackwork ?? {};
@@ -2379,6 +2395,8 @@ function drawTrackwork(list: TwItem[]) {
   };
   const resetOne = (kind: keyof Trackwork, key: string) => { const g = (design.trackwork?.[kind] ?? {}) as Record<string, unknown>; delete g[key]; twSig = ''; changed(true); };
   // the bar on top: how many are edited, only those, reset them all
+  const js = canvas.jointList();
+  twJointShown = canvas.selItem?.kind === 'joint';
   if (list.length || monoToes().length || left.length) {
     const bar = document.createElement('div'); bar.className = 'twbar';
     const cnt = document.createElement('span'); cnt.className = edits ? 'chipn on' : 'chipn'; cnt.textContent = (edits ? `${edits} edited by hand` : 'Nothing edited: all as worked out') + (left.length ? ` · ${left.length} left over` : '');
@@ -2407,7 +2425,7 @@ function drawTrackwork(list: TwItem[]) {
     }
     body.append(g);
   }
-  if (!list.length && !monoToes().length) { const n = document.createElement('div'); n.className = 'none'; n.textContent = 'No check rails, flangeway cuts or points in this design.'; body.append(n); $('trackwork-count').textContent = left.length ? ` (${left.length} left over)` : ''; return; }
+  if (!list.length && !monoToes().length) { const n = document.createElement('div'); n.className = 'none'; n.textContent = 'No check rails, flangeway cuts or points in this design.'; body.append(n); $('trackwork-count').textContent = left.length ? ` (${left.length} left over)` : ''; }
   // a group of items, folding (its header stays in view)
   const group = (id: string, title: string, n: number, nEdited: number) => {
     const g = document.createElement('details'); g.className = 'twg'; g.open = twOpen.has(`g:${id}`) || (twOnlyEdited && nEdited > 0);
@@ -2440,6 +2458,33 @@ function drawTrackwork(list: TwItem[]) {
   const show = (edited: boolean) => !twOnlyEdited || edited;
   // (lengths said in studs, as they're set: kept in mm)
   const studsOf = (mm: number) => String(Math.round((mm / 8) * 100) / 100);
+  // Joints: each place two tracks are joined (worked out from the tracks: connections.ts), or touch but were taken apart
+  {
+    const apart = js.filter((j) => j.apart).length, mine = twOnlyEdited ? js.filter((j) => j.apart) : js;
+    if (js.length && (!twOnlyEdited || apart)) {
+      const g = group('joints', 'Joints between tracks', js.length, 0), name = (i: number) => design.routes[i]?.name || `Route ${i + 1}`;
+      if (apart) { const c = g.querySelector('summary .n')!; c.textContent = `${js.length} · ${apart} taken apart`; c.classList.add('ed'); }
+      const picked = canvas.selItem?.kind === 'joint' ? jointsOf(canvas.selItem, js) : [];
+      for (const j of mine) {
+        const key = `joint:${name(j.a)}:${j.aEnd}:${name(j.b)}`, twice = js.filter((q) => (q.a === j.a && q.b === j.b) || (q.a === j.b && q.b === j.a)).length > 1;
+        const row = item(g, key, `${name(j.a)} and ${name(j.b)}`, `${j.bEnd ? 'end to end' : `${name(j.a)} off ${name(j.b)}'s side`} · ${j.apart ? 'taken apart' : 'joined'}`, false);
+        const d2 = row.parentElement as HTMLDetailsElement, sm = d2.querySelector('summary')!;
+        if (picked.includes(j)) d2.style.boxShadow = 'inset 3px 0 0 var(--accent)';
+        // (hovered: ringed on the plan; clicked: selected there, as a click on the joint itself selects it. The row's
+        // open or shut is noted here first: selecting draws the panel again, before the click has opened the row)
+        sm.addEventListener('mouseenter', () => { canvas.highlightAt = j.at; canvas.draw(); });
+        sm.addEventListener('mouseleave', () => { canvas.highlightAt = undefined; canvas.draw(); });
+        sm.addEventListener('click', () => { if (d2.open) twOpen.delete(`i:${key}`); else twOpen.add(`i:${key}`); keepTw(); canvas.highlightAt = undefined; canvas.selectItem({ kind: 'joint', route: j.a, other: j.b }); });
+        const n = document.createElement('div'); n.className = 'none'; n.style.marginBottom = '6px';
+        n.textContent = `${jointWhere(design, j)}, at ${+j.at[0].toFixed(1)}, ${+j.at[1].toFixed(1)} (studs). ${j.apart ? 'Taken apart: they touch, but each moves and is reshaped on its own.' : 'Joined: they move together, and one reshaped takes the other along.'}${twice ? ` ${name(j.a)} and ${name(j.b)} meet twice: both joints are taken apart or joined together.` : ''}`;
+        const bar = document.createElement('div'); bar.className = 'row';
+        const flip = document.createElement('button'); flip.type = 'button'; flip.textContent = j.apart ? 'Join' : 'Take apart';
+        flip.title = j.apart ? `Join ${name(j.a)} and ${name(j.b)} again: they move together` : `Take ${name(j.a)} and ${name(j.b)} apart here: they still touch, but each moves and is reshaped on its own`;
+        flip.addEventListener('click', () => { takeJointApart(j, !j.apart); });
+        bar.append(flip); row.append(n, bar);
+      }
+    }
+  }
   // Points: one per toe (a three-way's splits share one), built or taken out; and the near misses, to force points there
   {
     const keys = [...new Set(list.filter((it) => it.kind === 'points').map((it) => it.key))];
@@ -2549,7 +2594,7 @@ function drawTrackwork(list: TwItem[]) {
     });
   }
   $('trackwork').scrollTop = scroll;
-  $('trackwork-count').textContent = list.length || monoToes().length ? ` (${edits ? `${edits} edited` : 'none edited'}${left.length ? `, ${left.length} left over` : ''})` : '';
+  $('trackwork-count').textContent = list.length || monoToes().length ? ` (${edits ? `${edits} edited` : 'none edited'}${left.length ? `, ${left.length} left over` : ''})` : left.length ? ` (${left.length} left over)` : '';
 }
 
 // (a phone's toolbar scrolls sideways: arrows show at an edge with more behind it)

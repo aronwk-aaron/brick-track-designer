@@ -306,6 +306,8 @@ export class TrackCanvas {
   settled() { this.leverPending = undefined; }
   /** A trackwork item to pick out (hovered in the Trackwork panel). */
   highlight: string | undefined;
+  /** A place to pick out (studs): a joint hovered in the Trackwork panel. */
+  highlightAt: [number, number] | undefined;
   /** A route's straight or curve to pick out (hovered in its card's Shape): [route, piece]. */
   highlightSeg: [number, number] | undefined;
   /** Plan layers turned off from the legend: grooves, checks, crossings, ballast, baseplate, points, levers, grips. */
@@ -2135,6 +2137,7 @@ export class TrackCanvas {
           c.beginPath(); c.arc(x, y, 5.5, 0, 2 * Math.PI); c.fillStyle = '#fff'; c.fill(); c.strokeStyle = '#e8892b'; c.lineWidth = 2; c.moveTo(x - 4, y + 4); c.lineTo(x + 4, y - 4); c.stroke();
         }
       }
+      if (this.highlightAt) { const [x, y] = this.toScreen(this.highlightAt[0], this.highlightAt[1]); c.strokeStyle = '#f0b400'; c.lineWidth = 2.5; c.beginPath(); c.arc(x, y, 12, 0, 2 * Math.PI); c.stroke(); }
       const sj = this.jointSelected();
       for (const j of sj?.joints ?? []) { const [x, y] = this.toScreen(j.at[0], j.at[1]); c.beginPath(); c.arc(x, y, 10, 0, 2 * Math.PI); c.strokeStyle = ink.sel; c.lineWidth = 2.5; c.stroke(); }
       // (opened by the drag going on: where the end is now, and where on the other track it was)
