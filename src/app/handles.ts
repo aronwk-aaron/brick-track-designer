@@ -4,6 +4,7 @@
 // them and forwards the pointer.
 import type { DRoute, DSeg } from './design';
 import { clamp, LIMITS } from './limits';
+import { type Guide, type GuideEnd, type GuideStraight, SPACINGS } from './guides';
 import { follow, type Pose } from './planner';
 
 export type HandleKind = 'angle' | 'radius' | 'length';
@@ -116,4 +117,59 @@ export function handleLabel(sg: DSeg): string {
   const a = Math.abs(sg.angle), n = a > 0 ? 360 / a : 0;
   const circle = a > 0 && a < 360 && Math.abs(n - Math.round(n)) < 1e-6 ? ` · ${Math.round(n)} make a circle` : a === 360 ? ' · a full circle' : '';
   return `R${+sg.radius.toFixed(2)} · ${+a.toFixed(3)}°${circle}`;
+}
+
+/** What a dragged handle can snap to: the other routes' ends and straights (as guides.ts takes them), and the pixel scale and reach. */
+export interface HandleGuides { ends: GuideEnd[]; straights: GuideStraight[]; scale: number; snapPx: number; spacings?: readonly number[] }
+
+/** How near (studs) the route's end must be to a guide's line to count as on it. */
+const ON_LINE = 0.02;
+const dirOf = (h: number): [number, number] => [-Math.sin(rad(h)), Math.cos(rad(h))];
+
+/**
+ * The same guides as drawing and dragging an end (guides.ts), for a dragged handle: of the values the handle can take
+ * (whole studs, the usual angle steps, the usual radii), the one that puts the route's end exactly on another end's
+ * straight-on line, or beside another straight at 8 or 16 studs, when its handle is within reach of the pointer. Else
+ * the value as dragResult gave it. Not with Shift (the fine steps) or Alt (off).
+ */
+export function guidedHandle(r: DRoute, h: { seg: number; kind: HandleKind }, w: [number, number], res: DragResult, g: HandleGuides, o: DragOpts & { off?: boolean } = {}): { value: number; guide?: Guide; end?: [number, number] } {
+  const sg = r.segs[h.seg];
+  if (!sg || o.off || o.shift || (!g.ends.length && !g.straights.length)) return { value: res.value };
+  const start: Pose = { x: r.x, y: r.y, heading: r.heading }, reach = g.snapPx / g.scale;
+  const values: number[] = [];
+  if (sg.kind === 'straight') { const lo = Math.max(LIMITS.straight[0], Math.floor(res.value - reach - 1)), hi = Math.min(LIMITS.straight[1], Math.ceil(res.value + reach + 1)); for (let v = lo; v <= hi; v++) values.push(v); }
+  else if (h.kind === 'angle') { const sn = res.value < 0 ? -1 : 1; for (let k = 1; k * ANGLE_STEP <= LIMITS.angle[1]; k++) values.push(round(sn * k * ANGLE_STEP)); }
+  else { for (let v = 24; v <= LIMITS.radius[1]; v += 8) values.push(v); }
+  let best: { value: number; d: number; guide: Guide; end: [number, number] } | undefined;
+  for (const v of values) {
+    const segs = r.segs.map((x, k) => (k === h.seg ? withValue(x, h.kind, v) : x));
+    const e = follow(start, segs);
+    const hp = segmentHandles({ ...r, segs }, o.insetStuds).find((q) => q.seg === h.seg && q.kind === h.kind);
+    if (!hp) continue;
+    const d = Math.hypot(hp.at[0] - w[0], hp.at[1] - w[1]) * g.scale;
+    if (d > g.snapPx || (best && d >= best.d)) continue;
+    const found = lineAt(e, g);
+    if (found) best = { value: v, d, guide: found, end: [e.x, e.y] };
+  }
+  return best ? { value: best.value, guide: best.guide, end: best.end } : { value: res.value };
+}
+
+/** The guide whose line the pose's point is exactly on (tangent first), if any. */
+function lineAt(e: Pose, g: HandleGuides): Guide | undefined {
+  for (const en of g.ends) {
+    const u = dirOf(en.pose.heading), rx = e.x - en.pose.x, ry = e.y - en.pose.y;
+    const t = rx * u[0] + ry * u[1], s = -rx * u[1] + ry * u[0];
+    if (t >= 1 && Math.abs(s) <= ON_LINE) return { kind: 'tangent', line: [[en.pose.x, en.pose.y], [round(e.x), round(e.y)]], label: `in line with ${en.name} · ${+t.toFixed(1)} stud${Math.abs(t - 1) < 1e-6 ? '' : 's'} on`, value: t };
+  }
+  for (const st of g.straights) {
+    const u = dirOf(st.heading), rx = e.x - st.x, ry = e.y - st.y;
+    const t = rx * u[0] + ry * u[1], s = -rx * u[1] + ry * u[0];
+    if (t < -8 || t > st.studs + 8) continue;
+    for (const k of g.spacings ?? SPACINGS) for (const sg of [-1, 1]) {
+      if (Math.abs(s - sg * k) > ON_LINE) continue;
+      const a: [number, number] = [round(st.x - u[1] * sg * k + u[0] * Math.min(0, t)), round(st.y + u[0] * sg * k + u[1] * Math.min(0, t))];
+      return { kind: 'parallel', line: [a, [round(e.x), round(e.y)]], label: `${k} studs from ${st.name}`, value: k };
+    }
+  }
+  return undefined;
 }

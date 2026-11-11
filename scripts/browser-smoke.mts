@@ -344,6 +344,24 @@ try {
     const rt = await page.evaluate(() => JSON.parse(localStorage.getItem('btd-design')!).routes[1]);
     check(rt.x === 8 && rt.segs[0].studs === 17, `the track laid is exactly 8 studs from A, 17 long (${JSON.stringify(rt)})`); }
 
+  // a straight's length handle drags with the same guides: its end 8 studs beside another straight says so, and Alt turns it off
+  at = 'guides on handles';
+  await page.evaluate(() => localStorage.setItem('btd-design', JSON.stringify({ version: 1, gaugeStuds: 4, routes: [{ name: 'A', x: 0, y: 0, heading: 0, segs: [{ kind: 'straight', studs: 30 }] }, { name: 'B', x: 8, y: 0, heading: 0, segs: [{ kind: 'straight', studs: 10 }] }] })));
+  await page.reload(); await page.waitForSelector('#track'); await page.click('#mode-select'); await page.click('#fit'); await page.waitForTimeout(300);
+  { const [px, py] = await scr(8, 4); await page.mouse.click(px, py); await page.waitForTimeout(200);
+    const lh = (await handles()).find((h) => h.kind === 'length');
+    check(!!lh, 'a selected straight has its length handle');
+    if (lh) {
+      const tb = (await page.locator('#track').boundingBox())!, [tx, ty] = await scr(8, 18.3);
+      await page.mouse.move(tb.x + lh.x, tb.y + lh.y); await page.mouse.down(); await page.mouse.move(tx, ty, { steps: 6 }); await page.waitForTimeout(250);
+      check(/8 studs from A/.test(await guide()), `dragging a straight's length handle shows the guide (${await guide()})`);
+      await page.keyboard.down('Alt'); await page.mouse.move(tx, ty + 1); await page.waitForTimeout(250);
+      check(await guide() === '', 'Alt turns it off'); await page.keyboard.up('Alt');
+      await page.mouse.up(); await page.waitForTimeout(200);
+      const len = await page.evaluate(() => JSON.parse(localStorage.getItem('btd-design')!).routes[1].segs[0].studs);
+      check(Number.isInteger(len) && len > 14, `and the straight ends up a whole number of studs, dragged longer (${len})`);
+    } }
+
   // split and merge: Split then a click on the route cuts it at a whole stud, Merge puts it back, each one undo step
   at = 'split and merge';
   await page.evaluate(() => localStorage.setItem('btd-design', JSON.stringify({ version: 1, gaugeStuds: 4, routes: [{ name: 'A', x: 0, y: 0, heading: 0, segs: [{ kind: 'straight', studs: 24 }, { kind: 'curve', radius: 24, angle: 90 }] }] })));

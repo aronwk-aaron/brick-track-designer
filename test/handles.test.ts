@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { DRoute } from '../src/app/design';
-import { dragResult, dragValue, handleLabel, poseBefore, segmentHandles, visibleHandles, withValue } from '../src/app/handles';
+import { dragResult, dragValue, guidedHandle, handleLabel, poseBefore, segmentHandles, visibleHandles, withValue } from '../src/app/handles';
 import { LIMITS } from '../src/app/limits';
 import { follow } from '../src/app/planner';
 
@@ -120,5 +120,54 @@ describe('handles at their limits', () => {
   });
   it('a curve past a whole turn says so', () => {
     expect(dragResult(curve(350), { seg: 0, kind: 'angle' }, at(358 + 10))?.value).toBe(360);
+  });
+});
+
+describe('handles snap to the drawing guides', () => {
+  const G = { scale: 8, snapPx: 10 };
+  const straight = (studs: number): DRoute => ({ name: 'A', x: 0, y: 0, heading: 0, segs: [{ kind: 'straight', studs }] });
+  const plain = (r: DRoute, h: { seg: number; kind: 'length' | 'angle' | 'radius' }, w: [number, number], o = {}) => dragResult(r, h, w, o)!;
+  it('a straight\'s end goes onto another end\'s straight-on line', () => {
+    const r = straight(20), h = { seg: 0, kind: 'length' as const };
+    // (another track's end at (-10, 24) facing +x: its line runs through (0, 24))
+    const ends = [{ pose: { x: -10, y: 24, heading: -90 }, name: 'B' }];
+    const w: [number, number] = [0, 23.4];
+    expect(plain(r, h, w).value).toBe(23);
+    const g = guidedHandle(r, h, w, plain(r, h, w), { ...G, ends, straights: [] });
+    expect(g.value).toBe(24);
+    expect(g.guide?.kind).toBe('tangent'); expect(g.guide?.label).toMatch(/in line with B/);
+    // (too far from it in pixels: as dragged)
+    expect(guidedHandle(r, h, [0, 22.2], plain(r, h, [0, 22.2]), { ...G, ends, straights: [] }).guide).toBeUndefined();
+  });
+  it('a straight\'s end lands beside another straight at 8 studs', () => {
+    const r = straight(10), h = { seg: 0, kind: 'length' as const };
+    // (a straight at x = -8 from y = 0 to 30: the end at y = 12 is 8 studs beside it, as is any other, so the nearest whole stud to the pointer wins)
+    const g = guidedHandle(r, h, [0, 12.4], plain(r, h, [0, 12.4]), { ...G, ends: [], straights: [{ x: 8, y: 0, heading: 0, studs: 30, name: 'B' }] });
+    expect(g.guide?.kind).toBe('parallel'); expect(g.guide?.label).toBe('8 studs from B'); expect(g.value).toBe(12);
+  });
+  it('a curve\'s angle goes to the step that puts its end on the line, and Shift or Alt leave it', () => {
+    const r: DRoute = { name: 'A', x: 0, y: 0, heading: 0, segs: [{ kind: 'curve', radius: 40, angle: 45 }] }, h = { seg: 0, kind: 'angle' as const };
+    const e = follow({ x: 0, y: 0, heading: 0 }, [{ kind: 'curve', radius: 40, angle: 11.25 }]);
+    const ends = [{ pose: { x: e.x + 5, y: e.y - 5, heading: 45 }, name: 'B' }];
+    const aim = (a: number): [number, number] => { const q = follow({ x: 0, y: 0, heading: 0 }, [{ kind: 'curve', radius: 40, angle: a }]); return [q.x, q.y]; };
+    const w = aim(8), res = plain(r, h, w);
+    expect(res.value).toBe(5.625);
+    const g = guidedHandle(r, h, w, res, { scale: 3, snapPx: 10, ends, straights: [] });
+    expect(g.value).toBe(11.25); expect(g.guide?.kind).toBe('tangent');
+    expect(guidedHandle(r, h, w, res, { scale: 3, snapPx: 10, ends, straights: [] }, { shift: true }).guide).toBeUndefined();
+    expect(guidedHandle(r, h, w, res, { scale: 3, snapPx: 10, ends, straights: [] }, { off: true }).value).toBe(5.625);
+  });
+  it('a curve\'s radius goes to the whole radius that puts its end on the line', () => {
+    const r: DRoute = { name: 'A', x: 0, y: 0, heading: 0, segs: [{ kind: 'curve', radius: 40, angle: 45 }] }, h = { seg: 0, kind: 'radius' as const };
+    const e = follow({ x: 0, y: 0, heading: 0 }, [{ kind: 'curve', radius: 56, angle: 45 }]);
+    const ends = [{ pose: { x: e.x + 3, y: e.y, heading: 90 }, name: 'B' }]; // (the line through e, going -x... facing -y? any line through e: the end's own heading 90 is +(-1, 0))
+    const m = (R: number): [number, number] => { const q = follow({ x: 0, y: 0, heading: 0 }, [{ kind: 'curve', radius: R, angle: 22.5 }]); return [q.x, q.y]; };
+    const w = m(50), res = plain(r, h, w);
+    const g = guidedHandle(r, h, w, res, { scale: 2, snapPx: 14, ends, straights: [] });
+    expect(g.guide?.kind).toBe('tangent'); expect(g.value).toBe(56);
+  });
+  it('nothing near: the value as dragged', () => {
+    const r = straight(20), h = { seg: 0, kind: 'length' as const };
+    expect(guidedHandle(r, h, [0, 23.4], plain(r, h, [0, 23.4]), { ...G, ends: [], straights: [] })).toEqual({ value: 23 });
   });
 });

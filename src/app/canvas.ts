@@ -14,7 +14,7 @@ import { forFingers } from './hints';
 import { joinProblem, reversedRoute } from './routeedits';
 import { LIMITS } from './limits';
 import { cutSegs, joinInto, nearestAlong, routeStuds, splitProblem } from './splitmerge';
-import { dragResult, END_INSET_PX, type Handle, type HandleKind, handleLabel, segmentHandles, visibleHandles, withValue } from './handles';
+import { dragResult, END_INSET_PX, guidedHandle, type Handle, type HandleKind, handleLabel, segmentHandles, visibleHandles, withValue } from './handles';
 import { isEdit, reverseAnchors } from './twfollow';
 import { type End, openEnds, type Placed, type Placement, placeTemplate, transformed } from './addtemplate';
 import { lockedWhy } from './lock';
@@ -801,9 +801,14 @@ export class TrackCanvas {
       this.mouse = this.evWorld(e);
       if (!hd.moved && Math.hypot(e.clientX - hd.sx, e.clientY - hd.sy) < 4) return;
       hd.moved = true;
-      const res = r && dragResult(r, hd, this.mouse, { shift: e.shiftKey, insetStuds: END_INSET_PX / this.scale });
+      const opts = { shift: e.shiftKey, insetStuds: END_INSET_PX / this.scale };
+      let res = r && dragResult(r, hd, this.mouse, opts);
       hd.why = res?.why;
+      this.guideNow = undefined; this.guideKey = '';
       if (r && res) {
+        // (the same guides as drawing an end: the route's end on another end's straight-on line, or 8 or 16 studs beside a straight; Alt: off)
+        const gd = guidedHandle(r, hd, this.mouse, res, { ...this.guideCands(this.mouse, hd.route), scale: this.scale, snapPx: this.touching ? 22 : 10 }, { ...opts, off: this.alt });
+        if (gd.guide && gd.end) { res = { value: gd.value }; this.guideNow = { point: gd.end, guides: [gd.guide] }; }
         const next = withValue(r.segs[hd.seg], hd.kind, res.value);
         if (JSON.stringify(next) !== JSON.stringify(r.segs[hd.seg])) { r.segs[hd.seg] = next; this.host.changed(false); this.host.live?.(hd.route); }
       }
@@ -1366,7 +1371,7 @@ export class TrackCanvas {
       c.fillStyle = '#d9480f'; c.fillRect(px - 3, py - 3, 6, 6);
       tag(px, py + 40, g.guides.map((x) => x.label).join(' · '), '#b23c0a');
     };
-    if (!(this.drag?.moved) && !(this.mode !== 'select' && this.mouse)) { this.guideNow = undefined; this.guideKey = ''; }
+    if (!(this.drag?.moved) && !this.handleDrag?.moved && !(this.mode !== 'select' && this.mouse)) { this.guideNow = undefined; this.guideKey = ''; }
     /** Draw segments from pose p, each in its colour: bad ones red. */
     const drawSegs = (p: Pose, segs: DSeg[], isBad: (k: number) => boolean, band: string, rail: string, g = (d.gaugeStuds + 1) / 2) => {
       let q = p;
@@ -1608,6 +1613,7 @@ export class TrackCanvas {
         c.fillStyle = on ? '#e8892b' : '#fff'; c.fill(); c.strokeStyle = '#e8892b'; c.lineWidth = 2; c.stroke();
         if (on && rt?.segs[h.seg]) tag(hx + 12, hy - 12, handleLabel(rt.segs[h.seg]), '#b25c00');
       }
+      if (this.handleDrag?.moved) showGuides(); // (dragged: the guide its end is on, if any)
     }
     // a template being placed: the group where it would go, its joined end marked
     if (this.placing) {
