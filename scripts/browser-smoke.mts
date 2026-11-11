@@ -22,7 +22,7 @@ const url = `http://localhost:${port}/`;
 for (let k = 0; ; k++) { try { if ((await fetch(url)).ok) break; } catch { /* (not up yet) */ } if (k > 100) throw new Error('vite preview did not start'); await new Promise((r) => setTimeout(r, 200)); }
 const browser = await chromium.launch({ executablePath: chrome, args: ['--use-angle=swiftshader', '--enable-unsafe-swiftshader'] });
 try {
-  const page: Page = await browser.newPage({ viewport: { width: 1400, height: 900 } });
+  const page: Page = await (await browser.newContext({ viewport: { width: 1400, height: 900 } })).newPage();
   const errors: string[] = [];
   page.on('pageerror', (e) => errors.push(e.message));
   page.on('console', (m) => { if (m.type() === 'error' && !/GPU|WebGL|swiftshader/i.test(m.text())) errors.push(m.text()); });
@@ -41,6 +41,24 @@ try {
   await page.click('#templates-open');
   check(await page.locator('#tpl-dlg').evaluate((d: HTMLDialogElement) => d.open), 'the template browser opens');
   check((await page.locator('#tpl-body .tcard').count()) > 50, 'it lists the templates');
+  // (My templates kept by an older version in localStorage move into IndexedDB on the next open, and are listed)
+  await page.evaluate(() => localStorage.setItem('btd-my-templates', JSON.stringify([{ v: 1, id: 'old1', name: 'Kept before', at: 1, design: { version: 1, gaugeStuds: 4, routes: [{ name: 'A', x: 0, y: 0, heading: 0, segs: [{ kind: 'straight', studs: 8 }] }] } }])));
+  await page.click('#tpl-close'); await page.reload(); await page.waitForTimeout(500); await page.click('#templates-open');
+  check((await page.locator('#tpl-body .tcard[data-template="mine:old1"]').count()) === 1, 'a template kept in localStorage by an older version is listed after moving to IndexedDB');
+  check((await page.evaluate(() => localStorage.getItem('btd-my-templates'))) === null, 'and it has left localStorage');
+  await page.click('#tpl-close'); await page.reload(); await page.waitForTimeout(500); await page.click('#templates-open');
+  check((await page.locator('#tpl-body .tcard[data-template="mine:old1"]').count()) === 1, 'it is still there after another reload (kept in IndexedDB)');
+  // (a second tab sees a change the first makes, without a reload: renamed in tab 2, listed so in tab 1)
+  {
+    const p2 = await page.context().newPage(); await p2.goto(url); await p2.waitForSelector('#track'); await p2.waitForTimeout(500);
+    await p2.evaluate(() => { const ch = new BroadcastChannel('btd-my-templates'); ch.postMessage({ k: 'btd-my-templates', v: JSON.stringify([{ v: 1, id: 'old1', name: 'Renamed in tab 2', at: 1, design: { version: 1, gaugeStuds: 4, routes: [{ name: 'A', x: 0, y: 0, heading: 0, segs: [{ kind: 'straight', studs: 8 }] }] } }]) }); ch.close(); });
+    await page.click('#tpl-close'); await page.click('#templates-open');
+    check((await page.locator('#tpl-body .tcard[data-template="mine:old1"]').innerText()).includes('Renamed in tab 2'), 'a change in another tab is seen here without a reload');
+    await p2.close();
+  }
+  // (and gone again, for the checks of My templates further on)
+  await page.evaluate(() => new Promise<void>((ok) => { const r = indexedDB.open('btd'); r.onsuccess = () => { const t = r.result.transaction('kv', 'readwrite'); t.objectStore('kv').delete('btd-my-templates'); t.oncomplete = () => { r.result.close(); ok(); }; }; }));
+  await page.click('#tpl-close'); await page.reload(); await page.waitForTimeout(500); await page.click('#templates-open');
   // (Clear recent under the Recent cards: empties that section)
   await page.evaluate(() => localStorage.setItem('btd-template-recent', JSON.stringify(['Left switch (LEGO)'])));
   await page.click('#tpl-close'); await page.click('#templates-open');

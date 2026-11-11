@@ -1,15 +1,12 @@
-// "My templates": designs (or a selection of one) kept in this browser (localStorage, one key) to open or add to a design later.
+// "My templates": designs (or a selection of one) kept in this browser (one key, in IndexedDB through minestore.ts) to open or add to a design later.
 // Each entry is versioned and read back through readDesign, so an old one keeps opening and a damaged one is listed as damaged
 // (and can be deleted) rather than breaking the list. Every access is guarded: with no storage the browser works without it.
 import { type Design, type DRoute, readDesign } from './design';
 import type { Table } from './tables';
 import { copyEdits, pasteEdits } from './twfollow';
 
-export interface StorageLike { getItem(k: string): string | null; setItem(k: string, v: string): void }
+export interface StorageLike { getItem(k: string): string | null; setItem(k: string, v: string): void; removeItem?(k: string): void }
 export const MINE_KEY = 'btd-my-templates';
-/** How much text the saved templates may take together: the browser keeps about 5 MB for the whole app (the design, its undo
- * history, the settings), so they get a fifth of it. No cap on how many: a template is a few KB. */
-export const MINE_MAX_CHARS = 1_000_000;
 /** Where they're kept, and what that means, said beside the list and on saving. */
 export const KEPT_NOTE = "Kept in this browser only: clearing the browser's data for this site deletes them, and they don't move to another browser or computer. Export one to keep it as a file.";
 export const UNAVAILABLE = "Saving templates isn't available in this browser window";
@@ -50,13 +47,12 @@ export function uniqueName(names: readonly string[], want: string): string {
   for (let k = 2; ; k++) if (!taken.has(`${base} ${k}`.toLowerCase())) return `${base} ${k}`;
 }
 
-/** How much is used, in words: "3 templates, 120 KB of the 976 KB this browser keeps for them". */
-export const usedText = (l: MineList) => `${l.entries.length} template${l.entries.length === 1 ? '' : 's'}, ${Math.ceil(l.chars / 1024)} KB of the ${Math.floor(MINE_MAX_CHARS / 1024)} KB this browser keeps for them`;
+/** How much is kept, in words: "3 templates, 120 KB". (No cap: they're in IndexedDB, as much as the disk allows.) */
+export const usedText = (l: MineList) => `${l.entries.length} template${l.entries.length === 1 ? '' : 's'}, ${Math.ceil(l.chars / 1024)} KB`;
 
 function write(st: StorageLike | undefined, list: Stored[]): string | undefined {
   if (!st) return UNAVAILABLE;
   const text = JSON.stringify(list);
-  if (text.length > MINE_MAX_CHARS) return `that would take the saved templates to ${Math.ceil(text.length / 1024)} KB, over the ${Math.floor(MINE_MAX_CHARS / 1024)} KB it keeps: delete some first`;
   try { st.setItem(MINE_KEY, text); } catch { return "the browser has no room left to keep it (or won't let this page keep anything): delete a template, or free some space"; }
   return undefined;
 }

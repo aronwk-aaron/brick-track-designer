@@ -42,6 +42,8 @@ export interface MineHooks {
   saveWhole(): string | undefined;
   ask(text: string, yes: string, no: string): Promise<boolean>;
   askName(label: string, def: string): string | null;
+  /** Settled once the store has been read (IndexedDB opens after the page): the list is drawn again then */
+  ready?: Promise<unknown>;
 }
 export function initTemplateBrowser(pick: (name: string) => Promise<boolean>, add: (name: string) => boolean, mineHooks?: MineHooks, hasRoutes: () => boolean = () => true) {
   const dlg = $<HTMLDialogElement>('tpl-dlg'), body = $('tpl-body'), search = $<HTMLInputElement>('tpl-search');
@@ -344,6 +346,7 @@ export function initTemplateBrowser(pick: (name: string) => Promise<boolean>, ad
   const saveBtn = document.getElementById('tpl-save') as HTMLButtonElement | null;
   saveBtn?.addEventListener('click', () => { const why = mineHooks?.saveWhole(); mineNote = why ? `Not saved: ${why}` : ''; render(); });
 
+  void mineHooks?.ready?.then(() => { if (dlg.open) render(); });
   // ---- open and close
   $('tpl-close').addEventListener('click', () => dlg.close());
   dlg.addEventListener('click', (e) => { const r = dlg.getBoundingClientRect(); if (e.target === dlg && (e.clientX < r.left || e.clientX > r.right || e.clientY < r.top || e.clientY > r.bottom)) dlg.close(); });

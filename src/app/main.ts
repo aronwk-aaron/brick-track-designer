@@ -29,6 +29,7 @@ import { isRouteKey, OWN_LABELS, OWN_RANGES, PART_KEYS, type RouteKey } from './
 import { byHandNote, designByHandNote, EXPERT_SECTIONS, isPick, itemLabel, jointsOf, jointWhere, PICKS } from './items';
 import { followStretches, liveStretches, lostStretches, type Stretch, STRETCH_KEYS, STRETCH_MIN, stretchProblem } from './stretches';
 import { designOfSelection, listMine, saveMine, type StorageLike } from './mytemplates';
+import { openMineStore } from './minestore';
 import { parallelRoute } from './parallelroute';
 import { mergeProblem, mergeRoutes, splitRoute } from './splitmerge';
 import { jointsOn } from './handcuts';
@@ -1521,8 +1522,10 @@ renderer.setAnimationLoop(() => { if (!dirty3d) return; dirty3d = false; rendere
 
 // ---------- toolbar ----------
 // The template browser (a dialog: templatebrowser.ts) picks one; it replaces the design, after asking if the design has changes in no file.
-/** Where My templates are kept: this browser's storage, or none where the browser won't give it. */
-const mineStore = (): StorageLike | undefined => { try { return localStorage; } catch { return undefined; } };
+/** Where My templates are kept: IndexedDB with a copy in memory (minestore.ts), localStorage without it, or none where the browser won't give either. */
+let mineKept: StorageLike | undefined;
+const mineReady = openMineStore((why) => canvas.say(`A template change wasn't kept: ${why}`)).then((st) => { mineKept = st; }, () => { mineKept = undefined; });
+const mineStore = (): StorageLike | undefined => mineKept;
 const templateByName = (name: string): Design | undefined => (name.startsWith('mine:') ? listMine(mineStore()).entries.find((m) => `mine:${m.id}` === name)?.design : TEMPLATES[name]);
 /** A design (or part of one) kept as a template under a name asked for: undefined when saved, else why not. */
 function saveAsTemplate(d: Design, def: string): string | undefined {
@@ -1548,7 +1551,7 @@ initTemplateBrowser(async (name) => {
   setMode('select'); canvas.startPlacing(structuredClone(t), mine);
   return true;
 }, {
-  storage: mineStore,
+  storage: mineStore, ready: mineReady,
   saveWhole: () => saveAsTemplate(design, design.name || design.routes[0]?.name || 'My design'),
   ask: (text, yes, no) => ask(text, yes, no),
   askName: (label, def) => prompt(label, def),

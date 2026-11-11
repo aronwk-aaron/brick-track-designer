@@ -13,7 +13,7 @@ describe('saving templates', () => {
     expect(l.entries.length).toBe(1);
     expect(l.entries[0]).toMatchObject({ name: 'My yard', at: 1000 });
     expect(l.entries[0].design?.options).toEqual({ ballast: 'ballast' });
-    expect(usedText(l)).toMatch(/^1 template, \d+ KB of the \d+ KB this browser keeps for them$/);
+    expect(usedText(l)).toMatch(/^1 template, \d+ KB$/);
   });
   it('makes names unique: "name 2"', () => {
     const st = fake();
@@ -70,12 +70,11 @@ describe('when storage fails or is full', () => {
     expect(!r.ok && r.why).toMatch(/no room/);
     expect(listMine(st).entries.map((e) => e.name)).toEqual(['kept']);
   });
-  it('keeps any number, stops only at the size cap, saying how much it keeps', () => {
+  it('keeps any number and any size (the store says when it has no room)', () => {
     const st = fake();
     for (let k = 0; k < 120; k++) expect(saveMine(st, `t${k}`, d(), k).ok).toBe(true);
     const big = d('big', { routes: Array.from({ length: 1 }, () => ({ name: 'R', x: 0, y: 0, heading: 0, segs: [{ kind: 'straight' as const, studs: 1 }], pad: 'x'.repeat(1_100_000) })) as never });
-    const r2 = saveMine(fake(), 'big', big);
-    expect(!r2.ok && r2.why).toMatch(/KB it keeps/);
+    expect(saveMine(fake(), 'big', big).ok).toBe(true);
   });
 });
 
