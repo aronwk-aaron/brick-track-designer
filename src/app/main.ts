@@ -1214,6 +1214,7 @@ const canvas = new TrackCanvas($<HTMLCanvasElement>('track'), {
   system: () => (systemSel.value === 'monorail' ? 'monorail' : 'train'),
   leaveDraw: () => setMode('select'),
   split: (i, s) => splitRouteAt(i, s),
+  enterDraw: () => setMode('draw'),
   place: (tpl, pl) => {
     const res = addTemplate(design, tpl, pl);
     canvas.setSelection(res.routes, res.tables); openCards.clear(); changed(true);

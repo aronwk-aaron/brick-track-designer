@@ -12,6 +12,7 @@ import { sleeperSpots } from '../geom/crossing';
 import { poseToWorld, routeLength, routePose, worldToPose } from '../route/route';
 import { forFingers } from './hints';
 import { joinProblem, reversedRoute } from './routeedits';
+import { LIMITS } from './limits';
 import { cutSegs, joinInto, nearestAlong, routeStuds, splitProblem } from './splitmerge';
 import { dragResult, END_INSET_PX, type Handle, type HandleKind, handleLabel, segmentHandles, visibleHandles, withValue } from './handles';
 import { isEdit, reverseAnchors } from './twfollow';
@@ -66,6 +67,8 @@ export interface CanvasHost {
   radius(): number;
   /** What a click or drag would do now, and where the mouse is (studs), for the status line. */
   status?(hint: string, at: [number, number] | undefined): void;
+  /** Draw mode wanted (Enter on a route's end). */
+  enterDraw?(): void;
   /** Put a template being placed (Add to design) on the design as placed: undefined to cancel it. */
   place?(tpl: Design, placement: Placement): void;
   /** Split the route at studs along it (whole studs): undefined when done, else why not. */
@@ -202,6 +205,50 @@ export class TrackCanvas {
   private noteText: string | undefined;
   private noteTimer = 0;
   say(text: string, ms = 3500) { this.noteText = text; clearTimeout(this.noteTimer); this.noteTimer = window.setTimeout(() => { this.noteText = undefined; this.draw(); }, ms); this.draw(); }
+  /** The handle the keyboard is on (Tab moves it, arrows change it), of the selected route. */
+  private kbHandle: { seg: number; kind: HandleKind } | undefined;
+  /** Drawing by keyboard: arrow keys move the crosshair (the pointer's place) a stud, Enter lays track. */
+  private kbDraw = false;
+  private kbHandleNow(): Handle | undefined { const k = this.kbHandle; return k ? this.handles().find((h) => h.seg === k.seg && h.kind === k.kind) : undefined; }
+  /** A route picked by [ and ] (next: 1, previous: -1): the one after the selected, round the list, brought into view. */
+  private cycle(dir: 1 | -1) {
+    const n = this.host.design().routes.length;
+    if (!n) return;
+    const cur = this.selection().length === 1 ? this.selection()[0] : this.selected ?? (dir > 0 ? -1 : 0);
+    const next = (((cur + dir) % n) + n) % n;
+    this.kbHandle = undefined;
+    this.setSelection([next]);
+    const r = this.host.design().routes[next], b = routeBox(r), [cx, cy] = this.toScreen((b[0] + b[2]) / 2, (b[1] + b[3]) / 2), W = this.el.clientWidth, H = this.el.clientHeight;
+    if (cx < 20 || cy < 60 || cx > W - 20 || cy > H - 20) { this.ox += W / 2 - cx; this.oy += H / 2 - cy; this.draw(); }
+    this.say(`${r.name || `Route ${next + 1}`} selected (${next + 1} of ${n})`, 2000);
+  }
+  /** The keyboard's handle changed by dir (+1 or -1) of its natural step: a stud, a degree (Shift: 8 studs, 11.25°). */
+  private nudgeHandle(dir: 1 | -1, big: boolean) {
+    const h = this.kbHandleNow(), ri = this.selection()[0], r = this.host.design().routes[ri];
+    if (!h || !r) return;
+    const sg = r.segs[h.seg], step = h.kind === 'angle' ? (big ? 11.25 : 1) : big ? 8 : 1;
+    const cur = sg.kind === 'straight' ? sg.studs : h.kind === 'angle' ? Math.abs((sg as Extract<DSeg, { kind: 'curve' }>).angle) : (sg as Extract<DSeg, { kind: 'curve' }>).radius;
+    const [lo, hi] = h.kind === 'angle' ? [1, LIMITS.angle[1]] : h.kind === 'radius' ? [LIMITS.radius[0], LIMITS.radius[1]] : [1, LIMITS.straight[1]];
+    const v = Math.round((cur + dir * step) * 1e6) / 1e6;
+    if (v < lo || v > hi) { this.say(`${h.kind === 'angle' ? 'A curve turns' : h.kind === 'radius' ? 'A radius is' : 'A straight is'} ${v < lo ? `at least ${lo}${h.kind === 'angle' ? '°' : ' studs'}` : `at most ${hi}${h.kind === 'angle' ? '°' : ' studs'}`}`, 2500); return; }
+    r.segs[h.seg] = withValue(sg, h.kind, h.kind === 'angle' ? Math.sign((sg as Extract<DSeg, { kind: 'curve' }>).angle) * v : v);
+    this.host.changed(true); this.host.live?.(ri);
+    this.say(handleLabel(r.segs[h.seg]), 2000);
+  }
+  /** Enter on a selected route: lay track on from its end (Shift: from its start), by keyboard. */
+  private startKeyboardDraw(which: 'start' | 'end') {
+    const ri = this.selection()[0], r = this.host.design().routes[ri];
+    if (!r) return;
+    const lock = lockedWhy(this.host.design(), [ri]);
+    if (which === 'end' && lock) { this.say(lock); return; }
+    this.host.enterDraw?.();
+    const e = follow(r, r.segs), pose: Pose = which === 'end' ? e : { x: r.x, y: r.y, heading: r.heading };
+    if (which === 'end') this.active = { route: ri, end: pose };
+    else { const p = { x: r.x, y: r.y, heading: r.heading }; this.active = { route: undefined, start: p, end: p, either: r.heading, from: ri }; }
+    const u: [number, number] = which === 'end' ? [-Math.sin((pose.heading * Math.PI) / 180), Math.cos((pose.heading * Math.PI) / 180)] : [Math.sin((pose.heading * Math.PI) / 180), -Math.cos((pose.heading * Math.PI) / 180)];
+    this.mouse = [Math.round(pose.x + u[0] * 4), Math.round(pose.y + u[1] * 4)];
+    this.kbDraw = true; this.aimEither(); this.draw();
+  }
   /** A template being placed on the design (Add to design): the group follows the pointer, a click puts it down. */
   private placing: { tpl: Design; turn: number; mirror: boolean; onto?: End; theirs: End[]; moved: boolean } | undefined;
   get isPlacing() { return !!this.placing; }
@@ -355,6 +402,9 @@ export class TrackCanvas {
   constructor(private el: HTMLCanvasElement, private host: CanvasHost) {
     this.ctx = el.getContext('2d')!;
     new ResizeObserver(() => this.resize()).observe(el.parentElement!);
+    // (the plan takes the keyboard: Tab to it, [ and ] pick a route, Tab again moves between its handles, arrows move one, Enter draws on)
+    el.tabIndex = 0; el.setAttribute('role', 'application');
+    el.addEventListener('blur', () => { this.kbHandle = undefined; this.drawSoon(); });
     el.addEventListener('contextmenu', (e) => e.preventDefault());
     el.addEventListener('mouseleave', () => { if (this.hoverRoute !== undefined) { this.hoverRoute = undefined; this.drawSoon(); } });
     el.addEventListener('mousedown', (e) => { this.touching = false; this.down(e); });
@@ -806,6 +856,7 @@ export class TrackCanvas {
     this.alt = e.altKey;
     this.mouse = this.evWorld(e);
     if (this.placing) this.placing.moved = true;
+    this.kbDraw = false;
     this.aimEither();
     this.cursor();
     this.drawSoon();
@@ -1002,6 +1053,41 @@ export class TrackCanvas {
     if (typingIn(e) || !down || dialogOpen()) return;
     // (Space held pans; not when a button, a tick box or a section's heading has the focus: Space presses it)
     if (e.code === 'Space' && !['BUTTON', 'INPUT', 'SUMMARY', 'A'].includes((e.target as HTMLElement)?.tagName)) { this.space = true; e.preventDefault(); }
+    // the keyboard on the plan (the plan or the page itself has the focus, not a field or button)
+    const onPlan = e.target === document.body || e.target === this.el, plain = !e.ctrlKey && !e.metaKey && !e.altKey;
+    if (onPlan && plain && this.mode === 'select' && !this.active && !this.placing && !this.handleDrag && !this.drag && !this.moving) {
+      if (e.key === '[' || e.key === ']') { e.preventDefault(); this.cycle(e.key === ']' ? 1 : -1); return; }
+      // Tab on the plan: through the selected route's handles, then on out of it
+      if (e.key === 'Tab' && e.target === this.el) {
+        const hs = this.handles();
+        if (hs.length) {
+          const at = this.kbHandle ? hs.findIndex((h) => h.seg === this.kbHandle!.seg && h.kind === this.kbHandle!.kind) : -1, to = at + (e.shiftKey ? -1 : 1);
+          if (to >= 0 && to < hs.length) { e.preventDefault(); this.kbHandle = { seg: hs[to].seg, kind: hs[to].kind }; this.say(`${handleLabel(this.host.design().routes[this.selection()[0]].segs[hs[to].seg])} · arrow keys change it (Shift: bigger steps)`, 4000); return; }
+          this.kbHandle = undefined; this.drawSoon();
+        }
+      }
+      if (e.key.startsWith('Arrow') && this.kbHandleNow()) {
+        e.preventDefault();
+        this.nudgeHandle(e.key === 'ArrowUp' || e.key === 'ArrowRight' ? 1 : -1, e.shiftKey);
+        return;
+      }
+      if (e.key === 'Enter' && this.selection().length === 1 && !this.tableSelection().length && !this.kbHandleNow()) { e.preventDefault(); this.startKeyboardDraw(e.shiftKey ? 'start' : 'end'); return; }
+    }
+    // drawing by keyboard
+    if (this.kbDraw && this.active && onPlan && plain) {
+      if (e.key.startsWith('Arrow') && this.mouse) {
+        e.preventDefault();
+        const n = e.shiftKey ? 8 : 1, m = this.snap(this.mouse);
+        this.mouse = [m[0] + (e.key === 'ArrowLeft' ? -n : e.key === 'ArrowRight' ? n : 0), m[1] + (e.key === 'ArrowUp' ? n : e.key === 'ArrowDown' ? -n : 0)];
+        this.aimEither(); this.draw(); return;
+      }
+      if (e.key === 'Enter' && this.mouse) {
+        e.preventDefault();
+        const r = this.el.getBoundingClientRect(), [sx, sy] = this.toScreen(this.mouse[0], this.mouse[1]);
+        this.down({ clientX: r.left + sx, clientY: r.top + sy, button: 0, buttons: 1, shiftKey: false, ctrlKey: false, metaKey: false, altKey: false, target: this.el, preventDefault() {}, stopPropagation() {} } as unknown as MouseEvent);
+        return;
+      }
+    }
     if (this.placing) {
       const k = e.key.toLowerCase(), p = this.placing;
       if (e.key === 'Escape') { this.placing = undefined; this.draw(); return; }
@@ -1067,7 +1153,7 @@ export class TrackCanvas {
       this.setSelection([]); this.host.changed(true);
     }
   }
-  stopDrawing() { this.active = undefined; this.meas = {}; this.placing = undefined; this.draw(); }
+  stopDrawing() { this.active = undefined; this.kbDraw = false; this.meas = {}; this.placing = undefined; this.draw(); }
   /** Whatever's being drawn or dragged, let go of where it is (the design under it replaced: undone, a template, a file). */
   letGo() {
     this.guideNow = undefined; this.guideKey = '';
@@ -1126,6 +1212,7 @@ export class TrackCanvas {
     if (this.handleDrag?.moved && this.handleDrag.why) return this.handleDrag.why;
     if (this.drag?.moved) return this.dragBad ? "Can't bend the track this way: release to keep the last good shape, Esc puts it back"
       : this.dragSnap ? 'Release to join the two ends' : this.joinBlocked ? `Release to reshape (${this.joinBlocked}) · Esc puts it back` : 'Release to reshape · drop on another end to join · hold Alt for no snapping · Esc puts it back';
+    if (this.active && this.kbDraw) return 'Arrow keys move the crosshair a stud (Shift: eight) · Enter lays track · Esc stops';
     if (this.active) return 'Click to lay track · keep clicking to go on · hold Alt for no snapping · Esc or right-click stops · right-drag pans';
     // (over a lever: which side it's on and what put it there)
     const lv = this.leverDrag?.it ?? (this.mouse && !this.itemDrag ? this.leverAt(this.mouse) : undefined);
@@ -1152,7 +1239,7 @@ export class TrackCanvas {
       if (hit?.end) return 'Drag this end to reshape the track';
       if (this.moving?.moved) return 'Moving: let go to put it down';
       if (this.selected !== undefined && this.selection().length === 1 && this.host.design().routes[this.selected]?.locked) return `${this.host.design().routes[this.selected].name || 'The route'} is locked · unlock it on its card to move or change it · copy still works`;
-      if (this.selected !== undefined) return `${this.selection().length > 1 ? `${this.selection().length} tracks` : this.host.design().routes[this.selected]?.name ?? ''} selected · drag to move · ${matchMedia('(pointer: coarse)').matches ? 'hold a finger on a track to add it or take it out' : 'Shift+click adds more · Delete removes'}`;
+      if (this.selected !== undefined) return `${this.selection().length > 1 ? `${this.selection().length} tracks` : this.host.design().routes[this.selected]?.name ?? ''} selected · drag to move · ${matchMedia('(pointer: coarse)').matches ? 'hold a finger on a track to add it or take it out' : 'Shift+click adds more · Delete removes · [ ] pick another · Tab its handles · Enter lays track on'}`;
       if (!this.host.design().routes.length) return 'No track yet: press D (or ✎ Draw) to lay some';
       return 'Click a track to select it, drag it to move it · drag an end to reshape it · D to draw';
     }
@@ -1183,7 +1270,14 @@ export class TrackCanvas {
       c.stroke();
     }
     // (g: half the design's gauge, rail to rail, studs; gOf: a route's, its own gauge's where it has one)
-    const d = this.host.design(), g = (d.gaugeStuds + 1) / 2, gOf = (r: DRoute) => (routeGaugeStuds(d, r) + 1) / 2;
+    const d = this.host.design();
+    {
+      // (what a screen reader says for the plan: how many routes, and which is selected and what it is)
+      const sel = this.selection().filter((i) => d.routes[i]);
+      const label = `Track plan, ${d.routes.length} route${d.routes.length === 1 ? '' : 's'}. ${sel.length === 1 ? `${d.routes[sel[0]].name || `Route ${sel[0] + 1}`} selected: ${describe(d.routes[sel[0]].segs) || 'empty'}${d.routes[sel[0]].locked ? ', locked' : ''}.` : sel.length ? `${sel.length} routes selected.` : 'Nothing selected.'} Keys: [ and ] pick a route, Tab moves between its handles, arrow keys change one, Enter lays track on from its end.`;
+      if (this.el.getAttribute('aria-label') !== label) this.el.setAttribute('aria-label', label);
+    }
+    const g = (d.gaugeStuds + 1) / 2, gOf = (r: DRoute) => (routeGaugeStuds(d, r) + 1) / 2;
     // the tables, under everything: each filled in its colour, outlined, named
     if (d.tables?.length && !this.hidden.has('tables')) d.tables.forEach((t, k) => {
       const pts = tableOutline(t);
@@ -1504,7 +1598,8 @@ export class TrackCanvas {
       const shown = this.handles();
       this.el.dataset.handles = JSON.stringify(shown.map((h) => { const [x, y] = this.toScreen(h.at[0], h.at[1]); return { seg: h.seg, kind: h.kind, x: Math.round(x), y: Math.round(y) }; }));
       for (const h of shown) {
-        const [hx, hy] = this.toScreen(h.at[0], h.at[1]), on = this.handleDrag ? this.handleDrag.seg === h.seg && this.handleDrag.kind === h.kind : hovered === h;
+        const [hx, hy] = this.toScreen(h.at[0], h.at[1]), kb = this.kbHandle?.seg === h.seg && this.kbHandle.kind === h.kind, on = this.handleDrag ? this.handleDrag.seg === h.seg && this.handleDrag.kind === h.kind : hovered === h || kb;
+        if (kb) { c.save(); c.strokeStyle = '#1d4fae'; c.lineWidth = 2; c.setLineDash([3, 3]); c.beginPath(); c.arc(hx, hy, 13 * (this.touching ? 1.6 : 1), 0, 2 * Math.PI); c.stroke(); c.restore(); }
         const z = this.touching ? 1.6 : 1;
         c.beginPath();
         if (h.kind === 'angle') c.arc(hx, hy, (on ? 7 : 5.5) * z, 0, 2 * Math.PI);

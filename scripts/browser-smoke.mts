@@ -400,6 +400,26 @@ try {
     await page.locator('.tcard.mine .tdelete').click(); await page.waitForTimeout(150); await page.click('#ask-yes'); await page.waitForTimeout(250);
     check(await page.locator('.tcard.mine').count() === 0, 'Delete asks, then takes it out of the list'); await page.keyboard.press('Escape'); }
 
+  // the plan by keyboard: [ and ] cycle the selected route, Tab moves to a handle and an arrow key changes it, Enter lays track on from the end
+  at = 'plan by keyboard';
+  await page.evaluate(() => localStorage.setItem('btd-design', JSON.stringify({ version: 1, gaugeStuds: 4, routes: [
+    { name: 'A', x: 0, y: 0, heading: 0, segs: [{ kind: 'straight', studs: 16 }] }, { name: 'B', x: 40, y: 0, heading: 0, segs: [{ kind: 'straight', studs: 10 }] }] })));
+  await page.reload(); await page.waitForSelector('#track'); await page.click('#mode-select'); await page.click('#fit'); await page.waitForTimeout(300);
+  { const sel = () => page.evaluate(() => (window as unknown as { btdCanvas: { selection(): number[] } }).btdCanvas.selection().join());
+    await page.focus('#track');
+    check(/Track plan, 2 routes/.test(await page.locator('#track').getAttribute('aria-label') ?? ''), 'the plan has a label that says what is on it');
+    await page.keyboard.press(']'); check(await sel() === '0', '] selects the first route');
+    await page.keyboard.press(']'); check(await sel() === '1', '] again the next');
+    await page.keyboard.press(']'); check(await sel() === '0', 'and round to the first');
+    await page.keyboard.press('['); check(await sel() === '1', '[ goes back');
+    await page.keyboard.press('['); await page.keyboard.press('Tab'); await page.keyboard.press('ArrowUp'); await page.keyboard.press('Shift+ArrowUp'); await page.waitForTimeout(200);
+    const len = await page.evaluate(() => JSON.parse(localStorage.getItem('btd-design')!).routes[0].segs[0].studs);
+    check(len === 25, `Tab to the length handle, Up then Shift+Up makes the straight 16 + 1 + 8 = 25 (${len})`);
+    await page.evaluate(() => (document.activeElement as HTMLElement).blur()); await page.focus('#track'); await page.keyboard.press('Enter'); await page.keyboard.press('ArrowUp'); await page.keyboard.press('Enter'); await page.waitForTimeout(250);
+    const more = await page.evaluate(() => JSON.parse(localStorage.getItem('btd-design')!).routes[0].segs[0].studs);
+    check(more === 30, `Enter lays track on from the end, the arrow key moving the crosshair a stud, Enter laying it (${more} studs)`);
+    await page.keyboard.press('Escape'); }
+
   check(errors.length === 0, `no errors on the page${errors.length ? `: ${errors.join(' | ').slice(0, 600)}` : ''}`);
 } catch (err) {
   fails.push(`${at}: ${err instanceof Error ? err.message : err}`);

@@ -2,6 +2,7 @@
 // tap, not click, and leaves out the keys (there's no Esc, right button or D on a phone).
 export function forFingers(hint: string): string {
   return hint
+    .replace(' · [ ] pick another · Tab its handles · Enter lays track on', '')
     .replace(' · hold Alt for no snapping', '')
     .replace(' · Esc cancels', '')
     .replace(' · Esc or right-click stops · right-drag pans', ' · tap Select to stop · two fingers pan and zoom')
