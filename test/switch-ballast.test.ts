@@ -5,7 +5,7 @@
 import { setScadParity } from '../src/geom/track';
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import { kernel } from '../src/geom/kernel';
+import { kernel, supportsOf } from '../src/geom/kernel';
 import { Scad } from '../src/geom/scad';
 import { setArcMode } from '../src/geom/sweep';
 import type { Route, Segment } from '../src/route/route';
@@ -31,7 +31,8 @@ describe('switch on ballast matches switch.scad', { timeout: 120000 }, () => {
       // (without the buddy the ballast's narrower and switch.scad's routes shorter: its own, where it has them)
       const { routes, sets } = float && lines.some((l) => l.startsWith(`CFG float-nobuddy-${name} `)) ? cfg(`float-nobuddy-${name}`) : cfg(name);
       const p = { ...BASE_DEFAULTS, generateBallast: true, ...(float ? { bottomStyle: 'float' as const, ballastBuddy: false } : {}) };
-      const v = switchBase(new Scad(await kernel()), switchPlan(routes, sets, p, name.startsWith('right') ? -1 : 1)).volume();
+      // (with its breakaway supports unioned in, as switch.scad's: here they're carried with the base, not part of its solid)
+      const base = switchBase(new Scad(await kernel()), switchPlan(routes, sets, p, name.startsWith('right') ? -1 : 1)), sp = supportsOf(base), v = (sp ? base.add(sp) : base).volume();
       // (the wye with the buddy differs by 0.04% where its two routes' buddies meet; the right switch and the
       // three-way on a float bottom by 0.006% and 0.011%, 14 and 41 mm3)
       const tol = name.startsWith('wye') && !float ? 6e-4 : float && /^(right|threeway)/.test(name) ? 2e-4 : 5e-5;

@@ -12,7 +12,7 @@
 import { describe, expect, it } from 'vitest';
 import type { Route } from '../src/route/route';
 import { BASE_DEFAULTS, sprungLipFits, switchGeometry, switchPlan } from '../src/switch/base';
-import { kernel } from '../src/geom/kernel';
+import { kernel, supportsOf } from '../src/geom/kernel';
 import { type Man, R, Scad, T } from '../src/geom/scad';
 import { HEAD_HW, PLATE_H } from '../src/switch/context';
 import { hanging } from './assembly.shared';
@@ -29,7 +29,8 @@ describe("the sprung blades", () => {
     for (const [k, m] of parts.entries()) {
       const bb = m.boundingBox();
       expect(bb.max[2] - bb.min[2]).toBeGreaterThan(6);         // plate 3 + rail 3.1
-      expect(m.decompose().length).toBe(3);                      // the blade, and the two supports in its pocket
+      expect(m.decompose().length).toBe(1);                      // the blade alone,
+      expect(supportsOf(m)!.decompose().length).toBe(2);         // and the two supports in its pocket, carried with it
       for (const a of [0, turns[k].swing]) {
         const at = T(R(T(m, [-turns[k].at[0], -turns[k].at[1], 0]), [0, 0, a]), [turns[k].at[0], turns[k].at[1], 0]);
         expect(s.intersection(at, base).volume()).toBeLessThan(1e-3);
@@ -41,10 +42,12 @@ describe("the sprung blades", () => {
     const B40: Route = { id: 'B', start: [0, 0, 0], segments: [{ kind: 'arc', radius: 320, angle: 22.5 }, { kind: 'straight', length: 150 }] };
     const plan = switchPlan([{ ...A, segments: [{ kind: 'straight', length: 300 }] }, B40], [[0, 1, 12]], { ...p, generateBallast: false }, 1), s = new Scad(await kernel()), gm = switchGeometry(s, plan);
     for (const m of gm.pointsParts(0)) {
-      expect(m.decompose().length).toBe(3);                      // the blade with its beams, and the two supports
+      expect(m.decompose().length).toBe(1);                      // the blade with its beams,
+      expect(supportsOf(m)!.decompose().length).toBe(2);         // and the two supports
       const bb = m.boundingBox(), cut = m.slice(bb.min[2] + 0.5).toPolygons() as number[][][];
       // (no hole round the stud's that runs into the pocket: the stud's hole is a closed circle on its own)
-      expect(cut.length).toBeGreaterThan(3);
+      // (the slice is the blade's alone: without the two supports' outlines, which it once had in it)
+      expect(cut.length).toBeGreaterThan(1);
     }
   }, 120000);
 
@@ -60,7 +63,8 @@ describe("the sprung blades", () => {
       const bb = m.boundingBox();
       expect(bb.min[2]).toBeCloseTo(PLATE_H + p.pointClearance, 3);
       expect(bb.max[2] - bb.min[2]).toBeCloseTo(3 + 3.1, 1);   // plate 3 + rail 3.1, up to the rail top
-      expect(m.decompose().length).toBe(3);
+      expect(m.decompose().length).toBe(1);
+      expect(supportsOf(m)!.decompose().length).toBe(2);
       for (const a of [0, turns[k].swing]) {
         const at = T(R(T(m, [-turns[k].at[0], -turns[k].at[1], 0]), [0, 0, a]), [turns[k].at[0], turns[k].at[1], 0]);
         expect(s.intersection(at, base).volume()).toBeLessThan(1e-3);
@@ -137,7 +141,8 @@ describe("the sprung blades", () => {
       expect(s.intersection(at, base).volume()).toBeLessThan(1e-3);
       if (k === 0) expect(s.intersection(at, rail).volume()).toBeLessThan(1e-3);
     }
-    expect(m.decompose().length).toBeGreaterThanOrEqual(2);    // (the blade, and the supports in its pocket)
+    expect(m.decompose().length).toBe(1);                      // (the blade,
+    expect(supportsOf(m)!.decompose().length).toBeGreaterThanOrEqual(1); // and the supports in its pocket)
     // (the pocket, at its middle's height: what's open there under the plate's top; on the other rail's side of the post,
     // at least the wall in from the plate's cut edge. Toward its own rail the pocket opens, as always, onto the cut round
     // the stock rail's foot)

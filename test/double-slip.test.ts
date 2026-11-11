@@ -40,7 +40,13 @@ describe('double slip', () => {
       // (one blade a set: each set's plate clear of the next set's, closed and open)
       if ('pointBlades' in more) { const mt = bladesMeet(w, b); expect(mt.n).toBe(4); expect(mt.most).toBeLessThan(0.01); }
       const man = (P: Float32Array) => { const mesh = new w.Mesh({ numProp: 3, vertProperties: new Float32Array(P), triVerts: new Uint32Array(P.length / 3).map((_, i) => i) }); mesh.merge(); return new w.Manifold(mesh); };
-      const track = w.Manifold.union(b.pieces.filter((p) => !/points|throw|lever/.test(p.name)).map((p) => man(p.positions)));
+      // (the track less its loose nubs of rail head, a fault known of the slips (assembled.shared.ts RAIL_KNOWN, nub): two
+      // blades a set, four of 3.8 mm3 each stand loose at z 7.7 to 9.6 by the blades' heels, inside the blades (3.7 mm3
+      // of each). Till supports were carried with their parts they were taken for supports, and not looked at here. Not
+      // counted: flat shells of no volume the mesh read back has, one blade a set, where faces met at rail height)
+      const bodies = b.pieces.filter((p) => !/points|throw|lever/.test(p.name)).flatMap((p) => man(p.positions).decompose()), nubs = bodies.filter((m) => m.volume() > 0.5 && m.volume() < 5);
+      expect(nubs.length).toBe('pointBlades' in more ? 0 : 4);
+      const track = w.Manifold.union(bodies.filter((m) => m.volume() >= 5));
       const moving = b.pieces.filter((p) => /points/.test(p.name));
       expect(moving.filter((p) => /-throw$/.test(p.name)).length).toBe(4);
       expect(moving.filter((p) => /lever/.test(p.name)).length).toBe(4);
