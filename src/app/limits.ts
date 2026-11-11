@@ -38,6 +38,8 @@ export const LIMITS = {
   twLeverOut: [0, 10, 1],
 } as const satisfies Record<string, Range>;
 
+/** A route's curve radius range, studs: a monorail beam's curves go down to R4, a train's to R24. */
+export const radiusRange = (r: { system?: 'train' | 'monorail' }): Range => (r.system === 'monorail' ? LIMITS.monoRadius : LIMITS.radius);
 export const clamp = (v: number, r: Range) => Math.min(r[1], Math.max(r[0], v));
 /** A range as a field says it: "Range 0 to 2000, default 16." */
 export const rangeText = (r: Range) => `Range ${r[0]} to ${r[1]}, default ${r[2]}.`;
@@ -51,7 +53,7 @@ export function clampDesign(d: Design): Design {
     if (typeof r.monoHeightEnd === 'number') r.monoHeightEnd = clamp(r.monoHeightEnd, LIMITS.plates);
     for (const sg of r.segs) {
       if (sg.kind === 'straight') sg.studs = clamp(sg.studs, LIMITS.straight);
-      else { sg.radius = clamp(sg.radius, r.system === 'monorail' ? LIMITS.monoRadius : LIMITS.radius); sg.angle = clamp(sg.angle, LIMITS.angle); }
+      else { sg.radius = clamp(sg.radius, radiusRange(r)); sg.angle = clamp(sg.angle, LIMITS.angle); }
     }
   }
   for (const t of d.tables ?? []) {

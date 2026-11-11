@@ -12,7 +12,7 @@ import { sleeperSpots } from '../geom/crossing';
 import { poseToWorld, routeLength, routePose, worldToPose } from '../route/route';
 import { forFingers } from './hints';
 import { joinProblem, reversedRoute } from './routeedits';
-import { LIMITS } from './limits';
+import { LIMITS, radiusRange } from './limits';
 import { cutSegs, joinInto, nearestAlong, routeStuds, splitProblem } from './splitmerge';
 import { dragResult, END_INSET_PX, guidedHandle, type Handle, type HandleKind, handleLabel, segmentHandles, visibleHandles, withValue } from './handles';
 import { isEdit, reverseAnchors } from './twfollow';
@@ -228,7 +228,7 @@ export class TrackCanvas {
     if (!h || !r) return;
     const sg = r.segs[h.seg], step = h.kind === 'angle' ? (big ? 11.25 : 1) : big ? 8 : 1;
     const cur = sg.kind === 'straight' ? sg.studs : h.kind === 'angle' ? Math.abs((sg as Extract<DSeg, { kind: 'curve' }>).angle) : (sg as Extract<DSeg, { kind: 'curve' }>).radius;
-    const [lo, hi] = h.kind === 'angle' ? [1, LIMITS.angle[1]] : h.kind === 'radius' ? [LIMITS.radius[0], LIMITS.radius[1]] : [1, LIMITS.straight[1]];
+    const [lo, hi] = h.kind === 'angle' ? [1, LIMITS.angle[1]] : h.kind === 'radius' ? [radiusRange(r)[0], radiusRange(r)[1]] : [1, LIMITS.straight[1]];
     const v = Math.round((cur + dir * step) * 1e6) / 1e6;
     if (v < lo || v > hi) { this.say(`${h.kind === 'angle' ? 'A curve turns' : h.kind === 'radius' ? 'A radius is' : 'A straight is'} ${v < lo ? `at least ${lo}${h.kind === 'angle' ? '°' : ' studs'}` : `at most ${hi}${h.kind === 'angle' ? '°' : ' studs'}`}`, 2500); return; }
     r.segs[h.seg] = withValue(sg, h.kind, h.kind === 'angle' ? Math.sign((sg as Extract<DSeg, { kind: 'curve' }>).angle) * v : v);

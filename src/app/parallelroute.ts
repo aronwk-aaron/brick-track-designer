@@ -2,7 +2,7 @@
 // Straights stay as long, curves keep their angle and have the radius that's concentric with the original (the inside one
 // smaller by the spacing, the outside one larger), so its ends are exactly the spacing away, square to the original's.
 import { type Design, type DRoute, freeName } from './design';
-import { LIMITS, rangeText } from './limits';
+import { LIMITS, radiusRange, rangeText } from './limits';
 
 const r6 = (v: number) => Math.round(v * 1e6) / 1e6;
 
@@ -22,8 +22,8 @@ export function parallelRoute(d: Design, r: DRoute, side: 'left' | 'right', spac
     if (sg.kind !== 'curve') continue;
     // (a left turn has its centre on the left: a track to the left is on the inside)
     const radius = r6(sg.radius - Math.sign(sg.angle) * s * spacing);
-    if (radius < LIMITS.radius[0]) return { problem: `its R${+sg.radius.toFixed(2)} curve would become R${+radius.toFixed(2)} on the inside, under the least, R${LIMITS.radius[0]}: try the other side, or a smaller spacing` };
-    if (radius > LIMITS.radius[1]) return { problem: `its R${+sg.radius.toFixed(2)} curve would become R${+radius.toFixed(2)} on the outside, over the most, R${LIMITS.radius[1]}: try the other side, or a smaller spacing` };
+    if (radius < radiusRange(r)[0]) return { problem: `its R${+sg.radius.toFixed(2)} curve would become R${+radius.toFixed(2)} on the inside, under the least, R${radiusRange(r)[0]}: try the other side, or a smaller spacing` };
+    if (radius > radiusRange(r)[1]) return { problem: `its R${+sg.radius.toFixed(2)} curve would become R${+radius.toFixed(2)} on the outside, over the most, R${radiusRange(r)[1]}: try the other side, or a smaller spacing` };
     out.segs[k] = { ...sg, radius };
   }
   out.name = freeName(d, 'T');

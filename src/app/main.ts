@@ -14,7 +14,7 @@ import { freeStart, type LaidFrom, PALETTE, placePart } from './palette';
 import { BuildRunner, dropsBuild, planOnlyFor, type WorkerPort } from './buildrun';
 import { History, loadHistory, saveHistory } from './history';
 import { fileBase as fileBaseOf, partsDownload, plainKind, printedKinds, stlDownload, turnedText } from './exports';
-import { clamp, LIMITS, type Range, rangeText } from './limits';
+import { clamp, LIMITS, radiusRange, type Range, rangeText } from './limits';
 import { mirrorRoute } from './routeedits';
 import { TabStore, unsaved } from './session';
 import { addCircle, cleanPieces, cleanRadius, defaultPieces, pieceFit, piecesText, PIECES } from './circle';
@@ -153,7 +153,7 @@ function segRow(r: DRoute, k: number, i: number): HTMLElement {
   rm.disabled = !!why;
   acts.append(rm); head.append(lab, acts); row.append(head);
   if (sg.kind === 'straight') row.append(field('Straight, studs', num(sg.studs, (n) => { sg.studs = n; soon(render); }, 1, 'Length in studs.', LIMITS.straight)));
-  else row.append(field('Curve: radius, studs', num(sg.radius, (n) => { (sg as Extract<DSeg, { kind: 'curve' }>).radius = n; soon(render); }, 8, 'Radius in studs (the usual curves run 24 + 8k).', LIMITS.radius)),
+  else row.append(field('Curve: radius, studs', num(sg.radius, (n) => { (sg as Extract<DSeg, { kind: 'curve' }>).radius = n; soon(render); }, 8, isMono(r) ? 'Radius in studs (LEGO\'s monorail curves are R22).' : 'Radius in studs (the usual curves run 24 + 8k).', radiusRange(r))),
     field('angle ° (+ left)', num(sg.angle, (n) => { (sg as Extract<DSeg, { kind: 'curve' }>).angle = n; soon(render); }, 0.5, 'How far it turns, degrees: + left, - right. A whole turn at most: add another curve to go on.', LIMITS.angle)));
   row.append(...bankFields(sg, isMono(r)));
   return row;
@@ -646,7 +646,7 @@ function makeCard(r: DRoute, i: number): HTMLElement {
       }),
     );
     more.lastElementChild!.className = 'danger';
-    shape.append(add, rangeNote('A straight: 0 to 2000 studs. A curve: radius 24 to 1000 studs, up to 360° either way (add another to go on round).')); body.append(more);
+    shape.append(add, rangeNote(`A straight: 0 to 2000 studs. A curve: radius ${radiusRange(r)[0]} to ${radiusRange(r)[1]} studs, up to 360° either way (add another to go on round).`)); body.append(more);
     box.append(sum, body);
     return box;
   }

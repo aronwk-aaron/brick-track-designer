@@ -3,7 +3,7 @@
 // degrees. The geometry is here (where each handle is; the new value from a dragged point, snapped); the canvas draws
 // them and forwards the pointer.
 import type { DRoute, DSeg } from './design';
-import { clamp, LIMITS } from './limits';
+import { clamp, LIMITS, radiusRange } from './limits';
 import { type Guide, type GuideEnd, type GuideStraight, SPACINGS } from './guides';
 import { follow, type Pose } from './planner';
 
@@ -96,8 +96,9 @@ export function dragResult(r: DRoute, h: { seg: number; kind: HandleKind }, w: [
     // (the arc's middle moves along a line from the curve's start, in proportion to the radius)
     const m = follow(p, [{ ...sg, angle: sg.angle / 2 }]), vx = (m.x - p.x) / sg.radius, vy = (m.y - p.y) / sg.radius;
     const raw = ((w[0] - p.x) * vx + (w[1] - p.y) * vy) / (vx * vx + vy * vy);
-    const v = o.shift ? Math.round(raw) : 24 + Math.round((raw - 24) / 8) * 8, [lo, hi] = LIMITS.radius;
-    return { value: clamp(Math.max(1, v), LIMITS.radius), why: v < lo ? `smallest radius is ${lo} studs` : v > hi ? `biggest radius is ${hi} studs` : undefined };
+    // (a train curve: the usual radii, 24 + 8k; a monorail beam's: whole studs, from R4)
+    const rr = radiusRange(r), v = o.shift || r.system === 'monorail' ? Math.round(raw) : 24 + Math.round((raw - 24) / 8) * 8, [lo, hi] = rr;
+    return { value: clamp(Math.max(1, v), rr), why: v < lo ? `smallest radius is ${lo} studs` : v > hi ? `biggest radius is ${hi} studs` : undefined };
   }
   return undefined;
 }
@@ -139,6 +140,7 @@ export function guidedHandle(r: DRoute, h: { seg: number; kind: HandleKind }, w:
   const values: number[] = [];
   if (sg.kind === 'straight') { const lo = Math.max(LIMITS.straight[0], Math.floor(res.value - reach - 1)), hi = Math.min(LIMITS.straight[1], Math.ceil(res.value + reach + 1)); for (let v = lo; v <= hi; v++) values.push(v); }
   else if (h.kind === 'angle') { const sn = res.value < 0 ? -1 : 1; for (let k = 1; k * ANGLE_STEP <= LIMITS.angle[1]; k++) values.push(round(sn * k * ANGLE_STEP)); }
+  else if (r.system === 'monorail') { for (let v = Math.max(radiusRange(r)[0], Math.round(res.value - 40)); v <= Math.min(radiusRange(r)[1], Math.round(res.value + 40)); v++) values.push(v); }
   else { for (let v = 24; v <= LIMITS.radius[1]; v += 8) values.push(v); }
   let best: { value: number; d: number; guide: Guide; end: [number, number] } | undefined;
   for (const v of values) {

@@ -171,3 +171,23 @@ describe('handles snap to the drawing guides', () => {
     expect(guidedHandle(r, h, [0, 23.4], plain(r, h, [0, 23.4]), { ...G, ends: [], straights: [] })).toEqual({ value: 23 });
   });
 });
+
+describe('a monorail curve\'s radius handle', () => {
+  const mk = (system?: 'monorail'): DRoute => ({ name: 'M', x: 0, y: 0, heading: 0, ...(system && { system }), segs: [{ kind: 'curve', radius: 28, angle: 90 }] });
+  const mid = (R: number): [number, number] => { const q = follow({ x: 0, y: 0, heading: 0 }, [{ kind: 'curve', radius: R, angle: 45 }]); return [q.x, q.y]; };
+  const h = { seg: 0, kind: 'radius' as const };
+  it('goes down to R4 in whole studs; a train curve stops at 24 in steps of 8', () => {
+    expect(dragResult(mk('monorail'), h, mid(10))?.value).toBe(10);
+    expect(dragResult(mk('monorail'), h, mid(10))?.why).toBeUndefined();
+    expect(dragResult(mk('monorail'), h, mid(1))).toEqual({ value: 4, why: 'smallest radius is 4 studs' });
+    expect(dragResult(mk(), h, mid(10))).toEqual({ value: 24, why: 'smallest radius is 24 studs' });
+    expect(dragResult(mk(), h, mid(45))?.value).toBe(48);
+  });
+  it('the guided radius of a monorail curve is a whole stud too', () => {
+    const e = follow({ x: 0, y: 0, heading: 0 }, [{ kind: 'curve', radius: 13, angle: 90 }]);
+    const ends = [{ pose: { x: e.x + 2, y: e.y, heading: 90 }, name: 'B' }];
+    const r = mk('monorail'), w = mid(11), res = dragResult(r, h, w)!;
+    const g = guidedHandle(r, h, w, res, { scale: 6, snapPx: 14, ends, straights: [] });
+    expect(g.value).toBe(13);
+  });
+});
