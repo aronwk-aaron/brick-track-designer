@@ -736,11 +736,14 @@ function updateExports() {
  * draws itself): the design is saved once on release, so a reload mid-drag brings back the last released design.
  * build: false for what doesn't change the parts (a route's name).
  */
+/** The setting being changed (set just before `changed`): changes to it within a second are one undo step. */
+let coalesceNext: string | undefined;
 function changed(rerender = false, record = true, build = true) {
   // (the trackwork's hand edits go with their track: each one's place worked out again from the route it's on)
   followTrackwork(design, canvas?.overlay?.items ?? []);
   if (record) {
-    history.record(JSON.stringify(design));
+    history.record(JSON.stringify(design), coalesceNext);
+    coalesceNext = undefined;
     settleFrom = runner.id + 1; // (the next build is of the design as let go of)
     save();
     updateLegend();
@@ -1329,6 +1332,9 @@ addEventListener('keydown', (e) => {
   // (the design's file, not the browser's Save page and Open file; while typing in a field too: what's typed is taken first)
   if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's' && !dialog) { e.preventDefault(); if (typingIn(e)) (e.target as HTMLElement).blur(); saveFile(e.shiftKey); return; }
   if ((e.ctrlKey || e.metaKey) && !e.shiftKey && e.key.toLowerCase() === 'o' && !dialog) { e.preventDefault(); $('load').click(); return; }
+  // (undo and redo work from a drop-down or a number whose change is taken: only a number or text mid-typing keeps its own undo)
+  const tgt = e.target as HTMLElement | null, undoKey = (e.ctrlKey || e.metaKey) && ['z', 'y'].includes(e.key.toLowerCase()) && !dialog;
+  if (undoKey && typingIn(e) && (tgt?.tagName === 'SELECT' || (tgt instanceof HTMLInputElement && tgt !== typing))) { e.preventDefault(); tgt.blur(); (e.key.toLowerCase() === 'y' || e.shiftKey ? redo : undo)(); return; }
   if (typingIn(e) || dialog) return;
   if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') { e.preventDefault(); (e.shiftKey ? redo : undo)(); }
   if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'y') { e.preventDefault(); redo(); }
@@ -1843,20 +1849,20 @@ function drawOptions() {
         if (chosen?.tip) note(chosen.tip);
         if (chosen?.con) note(`Drawback: ${chosen.con}`, 'desc con');
         if (f.help) note(f.help);
-        sel.addEventListener('change', () => { setOpt(f, f.numeric ? Number(sel.value) : sel.value); changed(true); renderOptions(); });
+        sel.addEventListener('change', () => { setOpt(f, f.numeric ? Number(sel.value) : sel.value); coalesceNext = f.key; changed(true); renderOptions(); });
       } else if (f.text) {
         const ti = document.createElement('input'); ti.type = 'text'; ti.value = String(cur ?? ''); ti.disabled = !!off; ti.maxLength = 24;
-        ti.addEventListener('change', () => { setOpt(f, ti.value.trim().toUpperCase()); changed(); soon(() => { render(); renderOptions(); }); });
+        ti.addEventListener('change', () => { setOpt(f, ti.value.trim().toUpperCase()); coalesceNext = f.key; changed(); soon(() => { render(); renderOptions(); }); });
         const lab = field(f.label, ti); lab.classList.add('stack'); wrap.append(lab); pics(lab);
         if (f.help) note(f.help);
       } else if (f.check) {
         const cb = document.createElement('input'); cb.type = 'checkbox'; cb.checked = cur !== false; cb.disabled = !!off;
-        cb.addEventListener('change', () => { setOpt(f, cb.checked); changed(true); renderOptions(); });
+        cb.addEventListener('change', () => { setOpt(f, cb.checked); coalesceNext = f.key; changed(true); renderOptions(); });
         const lab = field(f.label, cb); wrap.append(lab); pics(lab);
         note([f.help, `Default: ${def === false ? 'off' : 'on'}.`].filter(Boolean).join(' '));
       } else {
         const lim = (v: number) => Math.min(f.max ?? Infinity, Math.max(f.min ?? -Infinity, v));
-        const i = num(Number(cur), (v) => { const x = lim(v); setOpt(f, x); i.value = String(x); if (f.rerender) soon(renderOptions); }, f.step ?? 1, f.help ?? '');
+        const i = num(Number(cur), (v) => { const x = lim(v); setOpt(f, x); coalesceNext = f.key; i.value = String(x); if (f.rerender) soon(renderOptions); }, f.step ?? 1, f.help ?? '');
         i.disabled = !!off;
         if (f.min !== undefined) i.min = String(f.min);
         if (f.max !== undefined) i.max = String(f.max);

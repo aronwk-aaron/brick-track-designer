@@ -75,6 +75,38 @@ try {
   check(await routes() === 2, 'Undo takes it away again');
   check(await says(/1 switch.*built in/), 'and the design builds again');
 
+  // settings are undo steps too, in order with the track edits: change a setting, draw a straight, Ctrl+Z twice, Ctrl+Shift+Z twice
+  at = 'undoing settings';
+  const ballast = () => page.evaluate(() => (JSON.parse(localStorage.getItem('btd-design')!).options?.ballast ?? 'none') as string);
+  const ballast0 = await ballast();
+  await page.click('#settings-open'); await page.fill('#settings-search', 'Ballast');
+  const sel = page.locator('#options label.field', { has: page.locator('span', { hasText: /^Ballast\s*i?$/ }) }).locator('select');
+  await sel.selectOption('ballast'); await page.waitForTimeout(300);
+  check(await ballast() === 'ballast', 'a setting changed (Ballast) is in the design');
+  await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
+  await page.keyboard.press('d');
+  await page.mouse.click(box.x + box.width * 0.12, box.y + box.height * 0.7);
+  await page.mouse.move(box.x + box.width * 0.12, box.y + box.height * 0.4, { steps: 3 });
+  await page.mouse.click(box.x + box.width * 0.12, box.y + box.height * 0.4);
+  await page.keyboard.press('Escape'); await page.keyboard.press('Escape');
+  check(await routes() === 3, 'and a straight drawn after it');
+  await page.keyboard.press('Control+z'); await page.waitForTimeout(150);
+  check(await routes() === 2 && await ballast() === 'ballast', 'Ctrl+Z takes the straight away first');
+  await page.keyboard.press('Control+z'); await page.waitForTimeout(150);
+  check(await ballast() === ballast0, `and again the setting (${await ballast()})`);
+  check(await sel.inputValue() === ballast0, 'the settings panel shows it');
+  await page.keyboard.press('Control+Shift+z'); await page.waitForTimeout(150);
+  check(await ballast() === 'ballast' && await routes() === 2, 'Ctrl+Shift+Z gives back the setting');
+  await page.keyboard.press('Control+Shift+z'); await page.waitForTimeout(150);
+  check(await routes() === 3, 'and the straight');
+  // (with the focus left in the drop-down, Ctrl+Z still undoes)
+  await page.keyboard.press('Control+z'); await page.keyboard.press('Control+z'); await page.waitForTimeout(150);
+  await sel.selectOption('buddy'); await page.waitForTimeout(200);
+  await page.keyboard.press('Control+z'); await page.waitForTimeout(150);
+  check(await ballast() === ballast0, 'Ctrl+Z works with the focus in the setting just changed');
+  await page.fill('#settings-search', ''); await page.click('#settings-close');
+  check(await says(/1 switch.*built in/), 'and the design builds again after the settings undone');
+
   at = 'a dialog';
   await page.keyboard.press('Control+a');
   await page.click('#parts-open');

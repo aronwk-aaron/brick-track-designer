@@ -128,3 +128,53 @@ describe('history kept across a reload', () => {
     expect(() => loadHistory(bad, 'zzz')).not.toThrow();
   });
 });
+
+// The design's JSON carries its settings (options, gauge), so one history holds both kinds of change.
+const D = (o: Record<string, unknown>, segs: number) => JSON.stringify({ version: 1, gaugeStuds: 4, options: o, routes: [{ name: 'R1', segs: Array.from({ length: segs }, () => ({ kind: 'straight', studs: 8 })) }] });
+describe('settings and track edits in one history', () => {
+  it('undo and redo walk back and forward through both, in the order they were made', () => {
+    const h = new History(D({}, 0), 200);
+    h.record(D({ ballast: 'ballast' }, 0), 'ballast');
+    h.record(D({ ballast: 'ballast' }, 1));
+    h.record(D({ ballast: 'ballast', joint: 'dovetail' }, 1), 'joint');
+    expect(h.undo()).toBe(D({ ballast: 'ballast' }, 1));
+    expect(h.undo()).toBe(D({ ballast: 'ballast' }, 0));
+    expect(h.undo()).toBe(D({}, 0));
+    expect(h.redo()).toBe(D({ ballast: 'ballast' }, 0));
+    expect(h.redo()).toBe(D({ ballast: 'ballast' }, 1));
+    expect(h.redo()).toBe(D({ ballast: 'ballast', joint: 'dovetail' }, 1));
+  });
+  it('changes to one setting within a second are one step; another setting, or later, is another', () => {
+    const h = new History(D({}, 0));
+    h.record(D({ printBedX: 201 }, 0), 'printBedX', 1000);
+    h.record(D({ printBedX: 202 }, 0), 'printBedX', 1400);
+    h.record(D({ printBedX: 203 }, 0), 'printBedX', 1900);
+    h.record(D({ printBedX: 203, printBedY: 201 }, 0), 'printBedY', 2000);
+    h.record(D({ printBedX: 203, printBedY: 202 }, 0), 'printBedY', 3500);
+    expect(h.undo()).toBe(D({ printBedX: 203, printBedY: 201 }, 0));
+    expect(h.undo()).toBe(D({ printBedX: 203 }, 0));
+    expect(h.undo()).toBe(D({}, 0));
+    expect(h.canUndo).toBe(false);
+  });
+  it('a track edit between two changes of a setting keeps them apart, and so does an undo', () => {
+    const h = new History(D({}, 0));
+    h.record(D({ a: 1 }, 0), 'a', 1000);
+    h.record(D({ a: 1 }, 1), undefined, 1100);
+    h.record(D({ a: 2 }, 1), 'a', 1200);
+    expect(h.steps().past.length).toBe(4);
+    h.undo();
+    h.record(D({ a: 3 }, 1), 'a', 1300);
+    expect(h.steps().past.length).toBe(4);
+    expect(h.undo()).toBe(D({ a: 1 }, 1));
+  });
+  it('a kept history is of the stored design and its settings: a different setting, or one kept before settings were in it, is dropped', () => {
+    const store = (() => { const m = new Map<string, string>(); return { getItem: (k: string) => m.get(k) ?? null, setItem: (k: string, v: string) => { m.set(k, v); }, removeItem: (k: string) => { m.delete(k); } } satisfies HistoryStore; })();
+    const h = new History(D({}, 0)); h.record(D({ ballast: 'ballast' }, 0), 'ballast');
+    saveHistory(store, h);
+    expect(loadHistory(store, D({ ballast: 'ballast' }, 0))?.current).toBe(D({ ballast: 'ballast' }, 0));
+    expect(loadHistory(store, D({ ballast: 'buddy' }, 0))).toBeUndefined();
+    expect(store.getItem(HISTORY_KEY)).toBeNull();
+    store.setItem(HISTORY_KEY, JSON.stringify({ v: 1, hash: 'x', past: ['a'], future: [] }));
+    expect(loadHistory(store, D({}, 0))).toBeUndefined();
+  });
+});

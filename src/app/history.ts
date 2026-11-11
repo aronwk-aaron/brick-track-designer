@@ -1,5 +1,7 @@
 // Undo and redo: the designs as JSON, the current one last; a step for each change let go of, the oldest dropped
 // past a limit, and whatever was undone forgotten once a new change is made.
+/** Changes to one setting this close together are one step. */
+export const COALESCE_MS = 1000;
 export class History {
   private past: string[];
   private future: string[] = [];
@@ -18,23 +20,34 @@ export class History {
   get canUndo(): boolean { return this.past.length > 1; }
   get canRedo(): boolean { return this.future.length > 0; }
 
-  /** A change: a new step (none if nothing changed), and nothing left to redo. */
-  record(json: string): void {
+  /** The last step's coalescing key and time (not kept across a reload). */
+  private lastKey: string | undefined;
+  private lastAt = 0;
+  /**
+   * A change: a new step (none if nothing changed), and nothing left to redo. The design's text carries its settings too,
+   * so a settings change and a track edit are steps of the one list, undone in the order they were made. coalesce: a key
+   * for the thing changed (a setting's); a change to the same one within a second of the last (a number's arrows clicked
+   * on) joins that step instead of making another. (The first step of a run is never joined into one it's not part of.)
+   */
+  record(json: string, coalesce?: string, now = Date.now()): void {
     if (json === this.current) return;
-    this.past.push(json);
-    this.future.length = 0;
-    if (this.past.length > this.limit) this.past.shift();
+    const join = coalesce !== undefined && coalesce === this.lastKey && now - this.lastAt < COALESCE_MS && this.past.length > 1 && this.future.length === 0;
+    if (join) this.past[this.past.length - 1] = json;
+    else { this.past.push(json); this.future.length = 0; if (this.past.length > this.limit) this.past.shift(); }
+    this.lastKey = coalesce; this.lastAt = now;
   }
   /** The current step replaced (a change that isn't a step of its own: the design's name). */
-  amend(json: string): void { this.past[this.past.length - 1] = json; }
+  amend(json: string): void { this.past[this.past.length - 1] = json; this.lastKey = undefined; }
   /** Back a step: the design to show, or undefined at the first. */
   undo(): string | undefined {
+    this.lastKey = undefined;
     if (!this.canUndo) return undefined;
     this.future.push(this.past.pop()!);
     return this.current;
   }
   /** Forward again: the design to show, or undefined with nothing undone. */
   redo(): string | undefined {
+    this.lastKey = undefined;
     const j = this.future.pop();
     if (j === undefined) return undefined;
     this.past.push(j);
