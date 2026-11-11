@@ -1,7 +1,8 @@
 // Does what's exported print without supports? A representative set of designs (DESIGNS), each built as the app builds it,
 // and every printed part's file, as exported (on the bed, the way up it prints), looked at the way a slicer would:
 // 1. nothing hangs: no face facing down steeper than 45 degrees above the bed with nothing to hold it (scripts/printability.ts
-//    hangingAt: held by the part's own break-out supports, which are in its file, a slope of 45 degrees or less, or a
+//    hangingAt: held by the part's own break-out supports, which are in its file (the ones the build made and carried
+//    with the part, each a loose body: checked here too, supportsSound), a slope of 45 degrees or less, or a
 //    bridge of 10 mm or less across); no more than HANG mm2 (the moving parts' own check, assembly.shared.ts putTogether, has that bound);
 // 2. no floating islands: no bit of a layer (0.2 mm) that touches nothing in the layer below, grown by 0.3 mm
 //    (scripts/printability.ts islandsOf).
@@ -12,6 +13,7 @@ import { kernel } from '../src/geom/kernel';
 import { buildDesign, clearBuildCache, type Piece } from '../src/app/build';
 import { type Design, OPTION_DEFAULTS, type PieceOptions, TEMPLATES } from '../src/app/design';
 import { arena } from '../src/geom/kernel';
+import { solid, supportsSound } from './assembled.shared';
 import { boxText, hangingAt, islandsOf, stlSolid } from '../scripts/printability';
 
 const APP = (globalThis as { APP_DEFAULTS?: PieceOptions }).APP_DEFAULTS!;
@@ -177,6 +179,8 @@ export function printsClean(name: string) {
       const found = b.pieces.flatMap((p) => arena(w, () => [lookAt(w, p)], () => [])).filter((f): f is Found => !!f);
       expect(found.length, `${name}: no printed part`).toBeGreaterThan(0);
       const pins = PINNED[name] ?? {}, bad: string[] = [];
+      // (what holds things up in a file is the supports the build made, no more and none lost: assembled.shared.ts supportsSound)
+      for (const p of b.pieces) if (!p.lego && p.stl.length) bad.push(...arena(w, () => { const part = solid(w, p.positions), file = stlSolid(w, p.stl); return part && file ? supportsSound(w, p, part, file) : []; }, () => []));
       for (const f of found) {
         const pin = pins[f.part];
         if (f.hang > HANG) {
