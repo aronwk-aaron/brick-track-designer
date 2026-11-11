@@ -101,6 +101,17 @@ describe('the kits\' parts are the library\'s modules', { timeout: 900000 }, () 
   });
 });
 
+describe('the compact R40 base\'s lever is where the library\'s base has it', { timeout: 600000 }, () => {
+  // (the library's: 7 studs from the track's centre line and 3.5 in from the toe end; here 3 in: the slider's whole-stud line)
+  for (const [name, x] of [['Switch R40 left, compact base and standard section', -7], ['Switch R40 right, compact base and standard section', 7],
+    ['Yard switch R40 left, compact base and rail yard section', 7], ['Yard switch R40 right, compact base and rail yard section', -7]] as const) it(name, async () => {
+    const b = await build(TEMPLATES[name]), levers = b.pieces.filter((p) => /lever/.test(p.name)).map((p) => bed({ positions: p.positions.map((v, i) => (i % 3 === 2 ? 0 : v)) }));
+    expect(levers.length).toBe(1);
+    expect((levers[0][0] + levers[0][2]) / 2).toBeCloseTo(x, 0);
+    expect(Math.abs((levers[0][1] + levers[0][3]) / 2 - 3.5)).toBeLessThanOrEqual(0.6);
+  });
+});
+
 describe('the R104 switch\'s points and lever are where the library\'s base has them', { timeout: 600000 }, () => {
   // (the library's base: its lever's stand 4.5 studs from the toe end and 7 from the track's centre line; its
   // tongues, in its picture, from 3.1 to 3.5 studs in. Here the lever is 5 in: the slider lies between the

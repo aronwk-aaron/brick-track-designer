@@ -16,12 +16,15 @@ const mirrored = (segs: Seg[]): Seg[] => segs.map((g) => (g.kind === 'curve' ? {
  * past the base). Cut across at 16 studs, square to the straight track (the kit's joint on the branch is square to
  * the branch, 0.7 studs sooner: a cut path runs along the stud grid). On sleepers the detachable section's two
  * tracks aren't joined where they've parted: it prints as two parts where the kit's is one. hand: 1 left, -1 right;
- * lever: on the branch's side, or the straight's (the kit's base with its ground throw outside).
+ * lever: on the branch's side, or the straight's (the kit's base with its ground throw outside); 3 studs in from the
+ * toe end (the kit's is 3.5 in: the slider lies between the baseplate's studs, on a whole-stud line).
  */
 function compactR40(hand: 1 | -1, straight: Seg[], branch: Seg[], lever: 'branch' | 'straight' = 'branch'): Design {
   const side = (hand === 1) === (lever === 'branch') ? 'left' : 'right', flip = (segs: Seg[]) => (hand === 1 ? segs : mirrored(segs));
   return { version: 1, gaugeStuds: 4, options: { legoTrack: 'print', splitTrack: 'lengths' }, routes: [
     { name: 'Straight', x: 0, y: 0, heading: 0, segs: flip(straight) }, { name: 'Branch', x: 0, y: 0, heading: 0, segs: flip(branch), throwSide: side }],
+    // (the lever 7 studs from the track's centre line, 3 past the sleepers' ends, as the kit's base has it)
+    trackwork: { throw: { '0,0': { leverOffset: 24 } } },
     expert: { cutPaths: [{ id: 'c1', pts: [[-10 * hand, 16], [6 * hand, 16]] }] } };
 }
 /** The compact R40 kits, each hand: the base with each of its detachable sections. */
