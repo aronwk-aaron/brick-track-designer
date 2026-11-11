@@ -553,6 +553,46 @@ try {
     check(await all() === '0,0 0,17 0,33 24,0', `a track made longer carries what is joined to its end (${await all()})`);
     await page.keyboard.press('Escape'); }
 
+  // the typed selection (expert): a click selects a cut across a track, a cut path or a stretch; the bar and its card say what it is; Delete, the arrow keys, Esc
+  at = 'selecting a cut, a cut path, a stretch';
+  await page.evaluate(() => localStorage.setItem('btd-design', JSON.stringify({ version: 1, gaugeStuds: 4, options: { splitTrack: 'lengths' }, routes: [
+    { name: 'Main', x: 0, y: 0, heading: -90, segs: [{ kind: 'straight', studs: 48 }], cuts: [12], stretches: [{ from: 20, to: 32, own: { sleepers: 'bed' } }] },
+    { name: 'Far', x: 0, y: 24, heading: -90, segs: [{ kind: 'straight', studs: 48 }] }], expert: { cutPaths: [{ id: 'c1', pts: [[40, 10], [40, -6]] }] } })));
+  await page.reload(); await page.waitForSelector('#track'); await page.click('#mode-select'); await page.click('#fit'); await page.waitForTimeout(400);
+  { const bar = () => page.locator('#sel-count').innerText(), main = () => page.evaluate(() => JSON.parse(localStorage.getItem('btd-design')!).routes[0] as { cuts?: number[]; stretches?: { from: number; to: number }[] });
+    const paths = () => page.evaluate(() => (JSON.parse(localStorage.getItem('btd-design')!).expert?.cutPaths ?? []) as { pts: [number, number][] }[]);
+    const kinds = () => page.evaluate(() => (window as unknown as { btdCanvas: { items(): { kind: string }[] } }).btdCanvas.items().map((i) => i.kind).join());
+    const [cx, cy] = await scr(12, 0.5); await page.mouse.click(cx, cy); await page.waitForTimeout(200);
+    check(await bar() === 'Cut across Main, 12 studs from its start' && await kinds() === 'cut', `a click on a cut across a track selects the cut, and the bar says what it is (${await bar()}; ${await kinds()})`);
+    check(await page.locator('#sel-item-del').isVisible() && !(await page.locator('#sel-copy').isVisible()), 'the bar has Delete for it, and none of the tracks\' buttons');
+    check(await page.locator('#itemcard').isVisible() && await page.locator('#itemcard input').inputValue() === '12', 'its card is over the routes\' cards, with its number');
+    await page.keyboard.press('ArrowRight'); await page.waitForTimeout(150);
+    check((await main()).cuts?.join() === '13' && /13 studs/.test(await bar()), `an arrow key moves it a stud along the track (${(await main()).cuts}; ${await bar()})`);
+    await page.locator('#itemcard input').fill('30'); await page.locator('#itemcard input').press('Enter'); await page.waitForTimeout(300);
+    check((await main()).cuts?.join() === '30' && /30 studs/.test(await bar()), `a number typed on its card moves it (${(await main()).cuts}; ${await bar()})`);
+    await page.click('#sel-item-del'); await page.waitForTimeout(200);
+    check((await main()).cuts === undefined && await page.locator('#selbar').isHidden() && await page.locator('#itemcard').isHidden(), 'Delete on the bar takes the cut out, and the bar and the card go');
+    await page.keyboard.press('Control+z'); await page.waitForTimeout(200);
+    check((await main()).cuts?.join() === '30', 'one undo brings it back');
+    const [px, py] = await scr(40, 7); await page.mouse.click(px, py); await page.waitForTimeout(200);
+    check(await bar() === 'Cut path 1' && await kinds() === 'cutpath' && await page.locator('#itemcard input').count() === 4, `a click on a cut path selects it: its card has its corners (${await bar()})`);
+    await page.keyboard.press('Shift+ArrowRight'); await page.waitForTimeout(150);
+    check(JSON.stringify((await paths())[0]?.pts) === '[[48,10],[48,-6]]', `Shift and an arrow key moves the path eight studs (${JSON.stringify((await paths())[0]?.pts)})`);
+    await page.keyboard.press('Control+z'); await page.waitForTimeout(200);
+    // (a stretch: of the selected track; its track stays selected under it)
+    const [tx, ty] = await scr(44, 0); await page.mouse.click(tx, ty); await page.waitForTimeout(200);
+    check(await bar() === '1 selected' && await page.locator('#sel-copy').isVisible() && await kinds() === 'route', `a click on a track selects the track as ever (${await bar()})`);
+    const [sx2, sy2] = await scr(26, 0.5); await page.mouse.click(sx2, sy2); await page.waitForTimeout(250);
+    check(await bar() === 'Stretch 1 of Main, 20 to 32 studs' && await kinds() === 'route,stretch', `a click on a selected track's stretch selects the stretch, its track with it (${await bar()}; ${await kinds()})`);
+    check(await page.locator('#itemcard input').evaluateAll((els) => els.map((e) => (e as HTMLInputElement).value).join()) === '20,32', 'its card has where it starts and ends');
+    await page.keyboard.press('Escape'); await page.waitForTimeout(150);
+    check(await bar() === '1 selected' && await kinds() === 'route', `Esc lets go of the stretch and keeps the track (${await bar()})`);
+    await page.mouse.click(sx2, sy2); await page.waitForTimeout(200); await page.keyboard.press('Delete'); await page.waitForTimeout(200);
+    check((await main()).stretches === undefined && await routes() === 2 && await bar() === '1 selected', 'Delete takes the stretch out, not its track');
+    await page.keyboard.press('Control+z'); await page.waitForTimeout(200);
+    check((await main()).stretches?.length === 1, 'and one undo brings it back');
+    await page.keyboard.press('Escape'); await page.keyboard.press('Escape'); }
+
   check(errors.length === 0, `no errors on the page${errors.length ? `: ${errors.join(' | ').slice(0, 600)}` : ''}`);
 } catch (err) {
   fails.push(`${at}: ${err instanceof Error ? err.message : err}`);

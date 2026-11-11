@@ -25,7 +25,8 @@ import { lockedWhy, setLocked } from './lock';
 import { addTemplate, openEnds } from './addtemplate';
 import { cardSections, type SectionId } from './cardsections';
 import { designOptions, hasPartOwn, ignoredOwn, inForce, liveOwn, partGroups } from './overrides';
-import { isRouteKey, OWN_RANGES, PART_KEYS, type RouteKey } from './routeown';
+import { isRouteKey, OWN_LABELS, OWN_RANGES, PART_KEYS, type RouteKey } from './routeown';
+import { itemLabel, jointsOf, jointWhere } from './items';
 import { followStretches, liveStretches, lostStretches, type Stretch, STRETCH_KEYS, STRETCH_MIN, stretchProblem } from './stretches';
 import { designOfSelection, listMine, saveMine, type StorageLike } from './mytemplates';
 import { parallelRoute } from './parallelroute';
@@ -477,13 +478,13 @@ function renderCutPaths() {
     const a = p.pts[0], z = p.pts[p.pts.length - 1], head = document.createElement('button'); head.type = 'button'; head.className = 'rreset';
     head.textContent = `Cut path ${k + 1}: ${+a[0].toFixed(1)}, ${+a[1].toFixed(1)} to ${+z[0].toFixed(1)}, ${+z[1].toFixed(1)} (studs)${p.pts.length > 2 ? `, ${p.pts.length - 2} turn${p.pts.length > 3 ? 's' : ''}` : ''}`;
     head.title = 'Select this cut path on the plan: drag its corners or the path, Delete removes it';
-    head.addEventListener('click', () => { canvas.setSelection([]); canvas.selCut = { kind: 'cutpath', id: p.id }; canvas.draw(); });
+    head.addEventListener('click', () => canvas.selectItem({ kind: 'cutpath', id: p.id }));
     const sel = document.createElement('select');
     sel.title = 'How the two sides of this cut join. Design default: as Settings › Print bed and cutting into parts › Parts join with.';
     sel.append(new Option('Joint: design default', ''), ...PATH_JOINTS.map((j) => new Option(`Joint: ${jointNames[j]}`, j)));
     sel.value = p.joint ?? '';
     sel.addEventListener('change', () => { if (sel.value) p.joint = sel.value as PathJoint; else delete p.joint; changed(true); });
-    const out = btn('✕', () => { design.expert!.cutPaths = ps.filter((q) => q !== p); tidyExpert(design); if (canvas.selCut?.kind === 'cutpath' && canvas.selCut.id === p.id) canvas.selCut = undefined; }, 'Take this cut path out');
+    const out = btn('✕', () => { design.expert!.cutPaths = ps.filter((q) => q !== p); tidyExpert(design); { const si = canvas.selItem; if (si?.kind === 'cutpath' && si.id === p.id) canvas.selectItem(undefined); } }, 'Take this cut path out');
     out.style.cssText = 'flex:none;width:auto;padding:2px 8px'; out.setAttribute('aria-label', `Take cut path ${k + 1} out`);
     const pair = document.createElement('div'); pair.style.cssText = 'display:flex;gap:4px;align-items:center;margin-top:4px'; sel.style.cssText = 'min-width:0;flex:1'; sel.setAttribute('aria-label', `Cut path ${k + 1}: joint`); pair.append(sel, out);
     row.append(head, pair);
@@ -519,8 +520,89 @@ function noteCutPaths() {
   pathsWere = new Map(ps.map((p) => [p.id, { pts: JSON.stringify(p.pts), tracks: pathTracks(p.pts, rts).filter((i) => !isMono(design.routes[i])).map((i) => ({ r: design.routes[i], was: placedOf(design.routes[i]) })) }]));
 }
 
+/**
+ * The card of the selected cut, cut path, stretch or joint (items.ts), over the routes' cards: what it is, its
+ * numbers, Delete, and what can be done with it. Nothing of those selected: no card.
+ */
+function renderItemCard() {
+  const box = $('itemcard'), it = canvas?.selItem, js = it ? canvas.jointList() : [], label = it && itemLabel(design, it, js);
+  box.replaceChildren(); box.hidden = !it || !label;
+  if (!it || !label) return;
+  const small = (text: string, warn = false) => { const n = document.createElement('small'); n.className = warn ? 'desc warn' : 'desc'; n.textContent = text; box.append(n); return n; };
+  const title = document.createElement('b'); title.textContent = label.replace(/,.*$/, ''); box.append(title);
+  const row = document.createElement('div'); row.className = 'row';
+  const del = document.createElement('button'); del.type = 'button'; del.className = 'danger'; del.textContent = 'Delete'; del.title = 'Take it out (Del). Undo brings it back.';
+  del.addEventListener('click', () => canvas.deleteItem());
+  const showCard = (i: number, part: string) => { const b = document.createElement('button'); b.type = 'button'; b.textContent = `Show ${design.routes[i].name || `route ${i + 1}`}'s card`; b.title = `Select the track and open its card at ${part}`; b.addEventListener('click', () => { openParts.add(part); keepParts(); canvas.setSelection([i]); }); return b; };
+  if (it.kind === 'cut') {
+    const r = design.routes[it.route], L = cutLength(r), at = r.cuts![it.k];
+    const inp = document.createElement('input'); inp.type = 'number'; inp.step = '1'; inp.min = String(CUT_MIN); inp.max = String(Math.max(CUT_MIN, Math.floor(L - CUT_MIN))); inp.value = String(at);
+    inp.title = `This cut, studs from the track's start. Range ${CUT_MIN} to ${+(L - CUT_MIN).toFixed(1)}.`;
+    inp.addEventListener('change', () => {
+      const n = Number(inp.value), why = inp.value.trim() === '' || !Number.isFinite(n) ? 'Type how far along the cut is, studs' : setCut(r, it.k, n);
+      if (why) { canvas.say(why); inp.value = String(at); return; }
+      const k = (r.cuts ?? []).findIndex((c) => Math.abs(c - n) < 1e-3);
+      coalesceNext = `cut:${it.route}:${it.k}`; changed(); canvas.selectItem(k >= 0 ? { kind: 'cut', route: it.route, k } : undefined); updateSelbar(); soon(render);
+    });
+    box.append(field('Studs from the start', inp));
+    small(`An ordinary track end each side. Range ${CUT_MIN} to ${+(L - CUT_MIN).toFixed(1)}, at least ${CUT_MIN} from the track's other cuts. Drag it on the plan, or press an arrow key.`);
+    if (lostCuts(r).includes(at)) small(`Past the end of the track (${+L.toFixed(1)} studs long): it isn't made.`, true);
+    row.append(del, showCard(it.route, 'Cuts into parts'));
+  } else if (it.kind === 'stretch') {
+    const r = design.routes[it.route], st = r.stretches![it.k], L = cutLength(r);
+    const num = (which: 'from' | 'to') => {
+      const inp = document.createElement('input'); inp.type = 'number'; inp.step = '1'; inp.min = '0'; inp.max = String(Math.ceil(L)); inp.value = String(st[which]);
+      inp.title = `Where the stretch ${which === 'from' ? 'starts' : 'ends'}, studs from the track's start. Range 0 to ${Math.ceil(L)}.`;
+      inp.setAttribute('aria-label', `Selected stretch: ${which}`);
+      inp.addEventListener('change', () => {
+        const n = Math.round(Number(inp.value)), from = which === 'from' ? n : st.from, to = which === 'to' ? n : st.to;
+        const why = inp.value.trim() === '' || !Number.isFinite(n) ? 'Type how far along, studs' : stretchProblem(r, from, to, it.k);
+        if (why) { canvas.say(why); inp.value = String(st[which]); return; }
+        st.from = from; st.to = to; r.stretches!.sort((a, b) => a.from - b.from);
+        coalesceNext = `stretch:${it.route}:${it.k}:${which}`; changed(); canvas.selectItem({ kind: 'stretch', route: it.route, k: r.stretches!.indexOf(st) }); soon(render);
+      });
+      return inp;
+    };
+    const pair = document.createElement('span'); pair.className = 'pair'; pair.append(num('from'), ' to ', num('to'));
+    { const fl = field('Studs from the start', pair); fl.classList.add('stack'); box.append(fl); }
+    small(`Whole studs, 0 to ${Math.ceil(L)}, at least ${STRETCH_MIN} long, not over another stretch. Press an arrow key to move it along the track. What it has: ${Object.keys(st.own).length ? Object.keys(st.own).map((k) => OWN_LABELS[k as RouteKey]).join(', ') : 'nothing of its own yet'} (the track's card below, Bed and underside).`);
+    row.append(del);
+  } else if (it.kind === 'cutpath') {
+    const p = design.expert!.cutPaths!.find((q) => q.id === it.id)!;
+    p.pts.forEach((q, k) => {
+      const num = (ax: 0 | 1) => {
+        const inp = document.createElement('input'); inp.type = 'number'; inp.step = '1'; inp.value = String(q[ax]);
+        inp.title = `Corner ${k + 1}'s ${ax ? 'y' : 'x'}, studs on the plan: it goes to the nearest corner between studs.`; inp.setAttribute('aria-label', `Corner ${k + 1} ${ax ? 'y' : 'x'}`);
+        inp.addEventListener('change', () => {
+          const n = Number(inp.value), to: [number, number] = [ax ? q[0] : n, ax ? n : q[1]];
+          const why = inp.value.trim() === '' || !Number.isFinite(n) ? 'Type where the corner is, studs' : canvas.setPathCorner(it.id, k, to);
+          if (why) { canvas.say(why); inp.value = String(q[ax]); return; }
+          coalesceNext = `path:${it.id}:${k}:${ax}`; changed(); soon(render);
+        });
+        return inp;
+      };
+      const pair = document.createElement('span'); pair.className = 'pair'; pair.append(num(0), ', ', num(1));
+      box.append(field(`${k === 0 ? 'Starts at' : k === p.pts.length - 1 ? 'Ends at' : `Corner ${k + 1}`} x, y`, pair));
+    });
+    small('Studs on the plan; each corner sits between studs. Drag a corner or the path on the plan, or press an arrow key. How its sides join: the Cut paths panel.');
+    const not = canvas.overlay?.pathsNot?.find((n) => n.id === it.id);
+    if (not) small(`Not made: ${not.why}.`, true);
+    row.append(del);
+  } else if (it.kind === 'joint') {
+    const sj = canvas.jointSelected();
+    for (const j of jointsOf(it, js)) small(`${jointWhere(design, j)}, at ${+j.at[0].toFixed(1)}, ${+j.at[1].toFixed(1)} (studs): ${j.apart ? 'taken apart (each moves on its own)' : 'joined (they move together)'}.`);
+    if (sj?.joined) { const b = document.createElement('button'); b.type = 'button'; b.textContent = 'Take apart'; b.title = `Take ${sj.names} apart here: they still touch, but each moves and is reshaped on its own`; b.addEventListener('click', () => canvas.takeApart(true)); row.append(b); }
+    if (sj?.apart) { const b = document.createElement('button'); b.type = 'button'; b.textContent = 'Join'; b.title = `Join ${sj.names} again: they move together`; b.addEventListener('click', () => canvas.takeApart(false)); row.append(b); }
+  }
+  box.append(row);
+}
+const drawItemCard = () => keepingFocus(document.querySelector('aside')!, renderItemCard);
+/** (the selection bar is set up further down: drawn with the forms only once it is) */
+let selbarReady = false;
+
 function render() { keepingFocus(document.querySelector('aside')!, drawForms); }
 function drawForms() {
+  renderItemCard(); if (selbarReady) updateSelbar();
   renderTables(); renderCutPaths(); renderPalette(); renderCircle();
   // (the rows go: no piece left picked out by one that's gone)
   canvas.highlightSeg = undefined;
@@ -675,7 +757,7 @@ function stretchRow(r: DRoute, i: number, st: Stretch, k: number, key: RouteKey)
 function stretchList(box: HTMLElement, r: DRoute, i: number) {
   const L = cutLength(r), small = (text: string, warn = false) => { const n = document.createElement('small'); n.className = 'desc'; n.style.color = warn ? 'var(--warn)' : 'var(--muted)'; n.textContent = text; box.append(n); };
   const head = document.createElement('div'); head.className = 'rsub'; head.textContent = 'Stretches with their own'; head.style.cssText = 'font-weight:600;margin-top:8px'; box.append(head);
-  small(`A stretch of this track, from and to in whole studs from its start (0 to ${+L.toFixed(1)}), at least ${STRETCH_MIN} long, with its own settings over the track's. The track is cut at a stretch's ends: an ordinary track end each side. Ballast lifts the track a plate (3.2 mm), with its buddy layer two: put plates under the track beside it.`);
+  small(`A stretch of this track, from and to in whole studs from its start (0 to ${+L.toFixed(1)}), at least ${STRETCH_MIN} long, with its own settings over the track's. On the plan: click a stretch of the selected track to select it. The track is cut at a stretch's ends: an ordinary track end each side. Ballast lifts the track a plate (3.2 mm), with its buddy layer two: put plates under the track beside it.`);
   const lost = new Set(lostStretches(r).map((s) => s.from)), live = liveStretches(r);
   (r.stretches ?? []).forEach((st, k) => {
     const num = (which: 'from' | 'to') => {
@@ -692,10 +774,10 @@ function stretchList(box: HTMLElement, r: DRoute, i: number) {
       return inp;
     };
     const pair = document.createElement('span'); pair.style.cssText = 'display:flex;gap:4px;align-items:center';
-    const out = btn('✕', () => { r.stretches!.splice(k, 1); if (!r.stretches!.length) delete r.stretches; }, 'Take this stretch out: the track\'s settings there again'); out.style.cssText = 'flex:none;width:auto;padding:2px 8px'; out.setAttribute('aria-label', `Take stretch ${k + 1} out`);
+    const out = btn('✕', () => { r.stretches!.splice(k, 1); if (!r.stretches!.length) delete r.stretches; if (canvas.selItem?.kind === 'stretch') canvas.selectItem(undefined); }, 'Take this stretch out: the track\'s settings there again'); out.style.cssText = 'flex:none;width:auto;padding:2px 8px'; out.setAttribute('aria-label', `Take stretch ${k + 1} out`);
     pair.append(num('from'), ' to ', num('to'), out);
-    // (the two fields and the ✕ on a line of their own, under the name: room for three figures each)
-    { const fl = field(`Stretch ${k + 1}, studs from the start`, pair); fl.classList.add('stack'); box.append(fl); }
+    // (the two fields and the ✕ on a line of their own, under the name: room for three figures each; the one selected on the plan picked out)
+    { const fl = field(`Stretch ${k + 1}, studs from the start`, pair); fl.classList.add('stack'); const si = canvas?.selItem; if (si?.kind === 'stretch' && si.route === i && si.k === k) fl.style.cssText = 'box-shadow:-3px 0 0 #e8892b;padding-left:6px'; box.append(fl); }
     const as = live.find((s) => s.from < st.to && s.to > st.from);
     if (lost.has(st.from) || !as) small(`Stretch ${k + 1} is past the end of the track (${+L.toFixed(1)} studs long): it isn't built.`, true);
     else if (as.from !== st.from || as.to !== st.to) small(`Built from ${as.from} to ${+as.to.toFixed(1)}: no piece under ${STRETCH_MIN} studs is left beside it.`);
@@ -728,7 +810,7 @@ function cutsSection(box: HTMLElement, r: DRoute, i: number) {
     });
     // (the field and its ✕ side by side)
     const pair = document.createElement('span'); pair.style.cssText = 'display:flex;gap:4px;align-items:center';
-    const out = btn('✕', () => { setCut(r, k, undefined); }, 'Take this cut out'); out.style.cssText = 'flex:none;width:auto;padding:2px 8px'; out.setAttribute('aria-label', `Take cut ${k + 1} out`);
+    const out = btn('✕', () => { setCut(r, k, undefined); if (canvas.selItem?.kind === 'cut') canvas.selectItem(undefined); }, 'Take this cut out'); out.style.cssText = 'flex:none;width:auto;padding:2px 8px'; out.setAttribute('aria-label', `Take cut ${k + 1} out`);
     inp.style.minWidth = '0'; pair.append(inp, out);
     box.append(field(`Cut ${k + 1}, studs`, pair));
     if (lost.has(at)) {
@@ -942,7 +1024,7 @@ function makeCard(r: DRoute, i: number): HTMLElement {
         { const why = lockedWhy(design, [i]); if (why) { canvas.say(why); return; } }
         // (the routes after it move up one: the selection stays on the routes it was on)
         const keep = canvas.selection().filter((j) => j !== i).map((j) => (j > i ? j - 1 : j));
-        design.routes.splice(i, 1); openCards.clear(); canvas.stopDrawing();
+        design.routes.splice(i, 1); openCards.clear(); canvas.stopDrawing(); canvas.selectItem(undefined);
         canvas.selected = keep[0]; canvas.extra = new Set(keep.slice(1)); updateSelbar();
       }),
     );
@@ -1593,7 +1675,7 @@ const canvas = new TrackCanvas($<HTMLCanvasElement>('track'), {
   design: () => design,
   changed: (commit) => changed(commit, commit), // (one undo step per finished action, none for each mouse move)
   revert: () => restore(history.current), // (Esc mid-drag: back to the last finished action)
-  joint: () => updateSelbar(),
+  item: () => { const si = canvas.selItem; if (si?.kind === 'stretch' && !openParts.has('Bed and underside')) { openParts.add('Bed and underside'); keepParts(); render(); } updateSelbar(); drawItemCard(); },
   live: (route) => (route === undefined ? render() : renderCard(route)), // (a handle being dragged: the route's card shows its numbers as they change)
   select: () => { foldedCards.clear(); render(); updateSelbar(); },
   radius: () => Number(radiusSel.value),
@@ -2024,8 +2106,13 @@ function mergeSel() {
 }
 function updateSelbar() {
   const n = selected().length + selectedTables().length, bar = $('selbar');
-  bar.hidden = n === 0 && !clipboard.length && !clipTables.length;
-  $('sel-count').textContent = n ? `${n} selected` : 'clipboard:';
+  // (a cut, a cut path or a stretch selected, or a joint alone: the bar is that item's: what it is, and what can be done with it)
+  const it = canvas.selItem, label = it && itemLabel(design, it, canvas.jointList()), itemMode = !!it && !!label && (it.kind !== 'joint' || n === 0);
+  bar.classList.toggle('item', itemMode);
+  $('sel-item-del').hidden = !itemMode || it.kind === 'joint';
+  bar.hidden = !itemMode && n === 0 && !clipboard.length && !clipTables.length;
+  $('sel-count').textContent = itemMode ? label! : n ? `${n} selected` : 'clipboard:';
+  if (itemMode) closeParallel();
   for (const id of ['sel-copy', 'sel-cut', 'sel-dup', 'sel-mirror', 'sel-rotl', 'sel-rotr', 'sel-del']) ($(id) as HTMLButtonElement).disabled = n === 0;
   ($('sel-paste') as HTMLButtonElement).disabled = !clipboard.length && !clipTables.length;
   const sel = selected(), one = sel.length === 1 && !selectedTables().length, two = sel.length === 2 && !selectedTables().length;
@@ -2054,6 +2141,7 @@ $('sel-savetpl').addEventListener('click', () => {
 $('sel-merge').addEventListener('click', mergeSel);
 $('sel-apart').addEventListener('click', () => canvas.takeApart(true));
 $('sel-join').addEventListener('click', () => canvas.takeApart(false));
+$('sel-item-del').addEventListener('click', () => canvas.deleteItem());
 $('sel-rotl').addEventListener('click', () => turnSel(90));
 $('sel-rotr').addEventListener('click', () => turnSel(-90));
 $('sel-del').addEventListener('click', () => { deleteSel(); updateSelbar(); });
@@ -2070,6 +2158,7 @@ addEventListener('keydown', (e) => {
   else return;
   updateSelbar();
 });
+selbarReady = true;
 updateSelbar();
 
 

@@ -24,6 +24,8 @@ import { type End, openEnds, type Placed, type Placement, placeTemplate, transfo
 import { lockedWhy } from './lock';
 import { type MeasurePoint, measureBetween, measurePoint } from './measure';
 import { applyCarry, type Carry, connectedSet, holds, type Joint, jointNames, joints, openedBy, planCarry, poseAt, setApart, tidyExpert } from './connections';
+import { dragStretchEnd, dragStretchWhole, hitItems, type Hit, type Item, jointsOf, type Layer, newStretchAt, type OwnItem, type PickId, PICKS, picks, placeAlong, sameItem, takesFirst, withStretch } from './items';
+import type { Stretch } from './stretches';
 import { COMMON_RADII, type GuideEnd, type GuideResult, type GuideStraight, guidePoint } from './guides';
 import { describe, follow, plan, planAnyway, planAuto, planFreeTurning, planToPose, reversed, trace as traceRaw, type Pose } from './planner';
 
@@ -91,8 +93,8 @@ export interface CanvasHost {
   live?(route?: number): void;
   /** The design as it was at the last finished action (a drag cancelled with Esc: nothing of it kept). */
   revert?(): void;
-  /** The joint selected on the plan changed (the selection bar's Take apart and Join). */
-  joint?(): void;
+  /** The item selected on the plan changed, or what it says of itself (a cut, a cut path, a stretch, a joint: the selection bar and its card). */
+  item?(): void;
 }
 
 /** How long segments run along their centre line, studs. */
@@ -141,6 +143,9 @@ export function typingIn(e: KeyboardEvent) {
 }
 /** A dialog open over the page (the parts list, Help, a setting's pictures): a key pressed then isn't one of the plan's shortcuts. */
 export const dialogOpen = () => !!document.querySelector('dialog[open]');
+/** What a press on the plan takes hold of (TrackCanvas hitTest). */
+type PlanHit = { kind: 'handle'; handle: Handle } | { kind: 'lever'; it: OverlayItem } | { kind: 'mark'; mark: NonNullable<ReturnType<TrackCanvas['itemAt']>> }
+  | { kind: 'end'; route: number; end: 'start' | 'end' } | { kind: 'item'; hit: Hit } | { kind: 'table'; table: number } | { kind: 'route'; route: number };
 const norm180 = (a: number) => ((((a + 180) % 360) + 360) % 360) - 180;
 
 export class TrackCanvas {
@@ -160,9 +165,10 @@ export class TrackCanvas {
     /** the tracks joined to them, that go along (not with Alt held: alone), and the joints between the two (open, with Alt) */
     carried: { i: number; x: number; y: number }[]; watch: Joint[]; alone?: boolean; by?: [number, number] } | undefined;
   // ---------- connections (expert): joined tracks go together (connections.ts) ----------
-  /** The design's joints, worked out again only when its tracks have changed. */
+  /** The design's joints, worked out again only when its tracks have changed (jointList: for the Trackwork panel's rows). */
   private jointsKey = '';
   private jointsList: Joint[] = [];
+  jointList(): Joint[] { return this.joints(); }
   private joints(): Joint[] {
     const d = this.host.design();
     const key = JSON.stringify([d.gaugeStuds, d.expert?.apart, d.routes.map((r) => [r.name, r.x, r.y, r.heading, r.segs, r.system, r.gaugeStuds, r.dualGauge, r.dualGaugeStuds, r.dualShared, r.startEnd, r.endEnd])]);
@@ -209,17 +215,38 @@ export class TrackCanvas {
   }
   /** The tracks a drag is carrying now: not snapped to, nor taken guides from (they move with it). */
   private carriedNow(): Set<number> | undefined { return this.alt ? undefined : (this.drag?.carry ?? this.handleDrag?.carry)?.skip; }
-  /** The joint selected (a click on a joined end): the route and which end of it. */
-  private selJoint: { route: number; end: 'start' | 'end' } | undefined;
-  private setJoint(v: { route: number; end: 'start' | 'end' } | undefined) { if (!v && !this.selJoint) return; this.selJoint = v; this.host.joint?.(); }
+  // ---------- the typed selection (items.ts): tracks and tables, and one cut, cut path, stretch or joint ----------
+  /**
+   * The item selected that isn't a track or a table: a cut across a track, a cut path, a stretch of a track with its own
+   * settings, or a joint (a click on a joined end). One at a time; the tracks and tables are selected beside it
+   * (selection, tableSelection): a stretch's track stays selected, a cut's and a cut path's don't.
+   */
+  private selItemNow: OwnItem | undefined;
+  get selItem(): OwnItem | undefined { return this.selItemNow; }
+  private setItem(v: OwnItem | undefined) { if (sameItem(v, this.selItemNow)) return; this.selItemNow = v; this.host.item?.(); }
+  /** Everything selected, each with its kind: the tracks (the main one first), the tables, and the item. */
+  items(): Item[] {
+    return [...this.selection().map((route): Item => ({ kind: 'route', route })), ...this.tableSelection().map((table): Item => ({ kind: 'table', table })), ...(this.selItemNow ? [this.selItemNow] : [])];
+  }
+  /** Select a cut, a cut path, a stretch or a joint (undefined: none): a stretch with its track, the others alone. */
+  selectItem(v: OwnItem | undefined) {
+    if (v && v.kind === 'stretch') { if (this.selection().length !== 1 || this.selected !== v.route || this.tableSelection().length) this.setSelection([v.route]); }
+    else if (v && (this.selection().length || this.tableSelection().length)) this.setSelection([]);
+    this.setItem(v); this.draw();
+  }
+  /** Expert tools shown (main.ts: remembered per browser): cuts, cut paths and stretches can be picked on the plan. */
+  expert = true;
+  /** The Pick list: what a click on the plan takes (items.ts PICKS). */
+  pick: PickId = 'all';
+  private picks(layer: Layer) { return picks(this.pick, layer, this.expert); }
   private jointsAt(route: number, end: 'start' | 'end'): Joint[] { return this.joints().filter((j) => (j.a === route && j.aEnd === end) || (j.b === route && j.bEnd === end)); }
   /**
    * The selected joint (a joined end clicked; or, with just two tracks selected, where those two meet: a branch's joint is under its
    * points, which take the click): its tracks' names, and whether any of it is joined, or taken apart (the selection bar's Take apart and Join).
    */
   jointSelected(): { names: string; joined: boolean; apart: boolean; joints: Joint[] } | undefined {
-    const sj = this.selJoint, d = this.host.design(), two = !sj && !this.tableSelection().length && this.selection().length === 2 ? this.selection() : undefined;
-    const js = sj && d.routes[sj.route] ? this.jointsAt(sj.route, sj.end) : two ? this.joints().filter((j) => (j.a === two[0] && j.b === two[1]) || (j.a === two[1] && j.b === two[0])) : [];
+    const sj = this.selItemNow?.kind === 'joint' ? this.selItemNow : undefined, d = this.host.design(), two = !sj && !this.tableSelection().length && this.selection().length === 2 ? this.selection() : undefined;
+    const js = sj && d.routes[sj.route] ? jointsOf(sj, this.joints()) : two ? this.joints().filter((j) => (j.a === two[0] && j.b === two[1]) || (j.a === two[1] && j.b === two[0])) : [];
     return js.length ? { names: jointNames(d, js), joined: js.some((j) => !j.apart), apart: js.some((j) => j.apart), joints: js } : undefined;
   }
   /** The selected joint taken apart (its tracks still touch, but each moves and is reshaped on its own), or joined again. One undo step. */
@@ -227,7 +254,7 @@ export class TrackCanvas {
     const sel = this.jointSelected(), d = this.host.design(), id = (i: number) => d.routes[i].name || String(i);
     if (!sel) return;
     for (const j of sel.joints) setApart(d, id(j.a), id(j.b), on);
-    this.host.changed(true); this.host.joint?.();
+    this.host.changed(true); this.host.item?.();
     this.say(on ? `Took ${sel.names} apart: each moves on its own now · Join puts them back together` : `Joined ${sel.names}: they move together again`);
   }
   /** a table being dragged by its handle (its name, in its middle): which, where from, as it was */
@@ -262,8 +289,7 @@ export class TrackCanvas {
   private selTables = new Set<number>();
   tableSelection(): number[] { const n = this.host.design().tables?.length ?? 0; return [...this.selTables].filter((k) => k < n).sort((a, b) => a - b); }
   setSelection(list: number[], tables: number[] = []) {
-    if (list.length || tables.length) this.selCut = undefined;
-    this.setJoint(undefined);
+    this.setItem(undefined);
     this.selected = list[0]; this.extra = new Set(list.slice(1)); this.selTables = new Set(tables); this.host.select(this.selected); this.draw();
   }
   /** The plan's zoom and offset (a report keeps them, to show the same view again). */
@@ -348,7 +374,7 @@ export class TrackCanvas {
     this.placing = { tpl, turn: 0, mirror: false, onto, theirs: openEnds(this.host.design().routes), moved: false };
     this.draw();
   }
-  private letGoSome() { this.splitArmed = false; this.cutArmed = false; this.pathDraw = undefined; this.cutDrag = undefined; this.meas = {}; this.active = undefined; }
+  private letGoSome() { this.splitArmed = false; this.cutArmed = false; this.stretchArmed = false; this.stretchNew = undefined; this.stretchDrag = undefined; this.pathDraw = undefined; this.cutDrag = undefined; this.meas = {}; this.active = undefined; }
   private placedNow(): Placed | undefined {
     const p = this.placing;
     if (!p) return undefined;
@@ -362,10 +388,14 @@ export class TrackCanvas {
   // ---------- cut paths (expert): drawn, selected and dragged on the plan (cutpaths.ts) ----------
   /** A cut path being drawn: its corners so far (studs, on the stud grid). Undefined: none is. */
   pathDraw: CutPt[] | undefined;
-  /** The cut selected on the plan: a cut path (by its id), or a cut across a track (its route, and which of its cuts). */
-  selCut: { kind: 'cutpath'; id: string } | { kind: 'cut'; route: number; k: number } | undefined;
   /** A cut being dragged: a path's corner, a whole path, or a cut across a track along it; why: why it can't go where it is now. */
   private cutDrag: ({ kind: 'corner'; id: string; k: number; orig: CutPt[] } | { kind: 'path'; id: string; x: number; y: number; orig: CutPt[] } | { kind: 'cut'; route: number; orig: number[]; k: number }) & { moved: boolean; why?: string } | undefined;
+  /** A stretch being dragged along its track: one of its ends, or the whole; s0: how far along the press was; orig: its track's stretches as they were; why: what holds it short of the pointer. */
+  private stretchDrag: { route: number; k: number; part: 'from' | 'to' | 'body'; s0: number; orig: Stretch[]; moved: boolean; why?: string } | undefined;
+  /** Add a stretch: the next press on the selected route, dragged along it, lays one from the press to where it's let go (from its card's Bed and underside). */
+  stretchArmed = false;
+  /** The stretch being dragged out (Add a stretch): its route, and how far along the press was and the pointer is. */
+  private stretchNew: { route: number; s0: number; s1: number } | undefined;
   /** The stud grid cut paths are drawn on: the last build's (its parts' undersides'), else the plan's whole studs. */
   private cutGrid(): Grid { const g = this.overlay?.cutting?.grid; return g ? [g[0] / MM, g[1] / MM, g[2]] : [0, 0, 0]; }
   /** The track a cut path is checked against (cutpaths.ts pathProblem): the design's train routes, and what the last build said to keep clear of. */
@@ -384,25 +414,96 @@ export class TrackCanvas {
     if (why) { this.say(why); return; }
     const list = ((d.expert ??= {}).cutPaths ??= []), id = newPathId(list.map((p) => p.id));
     list.push({ id, pts });
-    this.pathDraw = undefined; this.selCut = { kind: 'cutpath', id }; this.host.changed(true); this.draw();
+    this.pathDraw = undefined; this.setItem({ kind: 'cutpath', id }); this.host.changed(true); this.draw();
   }
-  /** The cut under a point of the plan, and how a press there would drag it: the selected path's corners first, then any path's run, then a cut across a track. */
-  private cutItemAt(w: [number, number]): { sel: NonNullable<TrackCanvas['selCut']>; drag: NonNullable<TrackCanvas['cutDrag']> } | undefined {
-    const d = this.host.design(), near = this.reach(8);
-    const off = (q: CutPt, a: CutPt, b: CutPt) => { const dx = b[0] - a[0], dy = b[1] - a[1], l2 = dx * dx + dy * dy, k = l2 ? Math.max(0, Math.min(1, ((q[0] - a[0]) * dx + (q[1] - a[1]) * dy) / l2)) : 0; return Math.hypot(q[0] - a[0] - k * dx, q[1] - a[1] - k * dy); };
-    const sc = this.selCut, selPath = sc?.kind === 'cutpath' ? this.cutPaths().find((p) => p.id === sc.id) : undefined;
-    if (selPath) { const k = selPath.pts.findIndex((q) => Math.hypot(q[0] - w[0], q[1] - w[1]) < this.reach(10)); if (k >= 0) return { sel: { kind: 'cutpath', id: selPath.id }, drag: { kind: 'corner', id: selPath.id, k, orig: structuredClone(selPath.pts), moved: false } }; }
-    for (const p of this.cutPaths()) if (p.pts.some((q, k) => k > 0 && off(w, p.pts[k - 1], q) < near)) return { sel: { kind: 'cutpath', id: p.id }, drag: { kind: 'path', id: p.id, x: w[0], y: w[1], orig: structuredClone(p.pts), moved: false } };
-    for (let i = 0; i < d.routes.length; i++) {
-      const rr = d.routes[i];
-      if (!rr.cuts?.length || rr.locked) continue;
-      const half = ((rr.gaugeStuds ?? d.gaugeStuds) + 4) / 2;
-      for (const at of liveCuts(rr)) {
-        const [first] = cutSegs(rr.segs, at), q = follow(rr, first), h = (q.heading * Math.PI) / 180, dx = w[0] - q.x, dy = w[1] - q.y;
-        if (Math.abs(-dx * Math.sin(h) + dy * Math.cos(h)) < near && Math.abs(dx * Math.cos(h) + dy * Math.sin(h)) < half + near) { const k = rr.cuts.indexOf(at); return { sel: { kind: 'cut', route: i, k }, drag: { kind: 'cut', route: i, orig: [...rr.cuts], k, moved: false } }; }
-      }
+  /** The cuts, cut paths, stretches and joints under a point of the plan, the one a press takes first (items.ts hitItems): of the kinds a click may take now. */
+  private itemHits(w: [number, number]): Hit[] {
+    const kinds: OwnItem['kind'][] = [];
+    if (this.picks('cut')) kinds.push('cut', 'cutpath');
+    if (this.picks('stretch')) kinds.push('stretch');
+    // (a joint is under its track's end, which a press takes while tracks are picked: looked for only when they aren't)
+    if (this.picks('joint') && !this.picks('track')) kinds.push('joint');
+    if (!kinds.length) return [];
+    const d = this.host.design(), sel = this.selection();
+    // (stretches: the selected track's; every track's when only stretches are picked)
+    const stretchesOf = !this.picks('stretch') ? [] : this.pick === 'stretch' ? d.routes.flatMap((r, i) => (r.stretches?.length ? [i] : [])) : sel.length === 1 && !this.tableSelection().length ? sel : [];
+    return hitItems(d, w, { near: this.reach(8), point: this.reach(10), kinds, paths: this.cutPaths(), joints: kinds.includes('joint') ? this.joints() : [], stretchesOf, selected: this.selItemNow });
+  }
+  /**
+   * What a press at a point of the plan (studs) would take hold of, the first of: a handle of the selected track, a
+   * lever, points or a check rail's end, a corner or an end of the selected item, a track's end; and in Select a cut,
+   * a cut path, a stretch or a joint, a table's name, a track. Each only if the Pick list lets a click take it. The
+   * one test for a press, the pointer's shape and the track marked under it.
+   */
+  private hitTest(w: [number, number]): PlanHit | undefined {
+    if (this.active) return undefined;
+    const handle = this.handleAt(w);
+    if (handle) return { kind: 'handle', handle };
+    const lever = this.leverAt(w);
+    if (lever) return { kind: 'lever', it: lever };
+    const mark = this.itemAt(w);
+    if (mark) return { kind: 'mark', mark };
+    const select = this.mode === 'select', hits = select ? this.itemHits(w) : [];
+    if (hits[0] && takesFirst(hits[0])) return { kind: 'item', hit: hits[0] };
+    const end = this.picks('track') ? this.nearTrack(w) : undefined;
+    if (end?.end) return { kind: 'end', route: end.route, end: end.end };
+    if (!select) return undefined;
+    if (hits[0]) return { kind: 'item', hit: hits[0] };
+    if (!this.picks('track')) return undefined;
+    const table = this.hidden.has('tables') ? undefined : this.tableHandle(w);
+    if (table !== undefined) return { kind: 'table', table };
+    const tr = this.nearTrack(w, this.reach(18)) ?? this.onBand(w);
+    return tr && { kind: 'route', route: tr.route };
+  }
+  /** A press on a cut, a cut path, a stretch or a joint: it's selected, and dragged from there (a cut along its track, a path or its corner on the stud grid, a stretch or its end along its track). */
+  private pressItem(h: Hit, w: [number, number]) {
+    const d = this.host.design(), it = h.item;
+    this.selectItem(it);
+    if (it.kind === 'cut') this.cutDrag = { kind: 'cut', route: it.route, orig: [...(d.routes[it.route].cuts ?? [])], k: it.k, moved: false };
+    else if (it.kind === 'cutpath') {
+      const pts = structuredClone(this.cutPaths().find((q) => q.id === it.id)!.pts);
+      this.cutDrag = h.part === 'corner' ? { kind: 'corner', id: it.id, k: h.corner!, orig: pts, moved: false } : { kind: 'path', id: it.id, x: w[0], y: w[1], orig: pts, moved: false };
     }
+    this.draw();
+  }
+  /** The stretch being dragged, taken to the pointer: an end, or the whole, along its track by whole studs; held at the track's ends and the stretches beside it, and why said. */
+  private dragStretch(p: [number, number]) {
+    const sd = this.stretchDrag!, rr = this.host.design().routes[sd.route];
+    if (!rr) return;
+    const s = nearestAlong(rr, p).s, was = { segs: rr.segs, stretches: sd.orig };
+    const put = sd.part === 'body' ? dragStretchWhole(was, sd.k, s - sd.s0) : dragStretchEnd(was, sd.k, sd.part, s);
+    sd.why = put.why;
+    const cur = rr.stretches?.[sd.k];
+    if (!cur || (cur.from === put.from && cur.to === put.to)) return;
+    rr.stretches![sd.k] = { ...cur, from: put.from, to: put.to };
+    sd.moved = true; this.host.changed(false); this.host.live?.(sd.route); this.host.item?.();
+  }
+  /** The stretch dragged out (Add a stretch) let go of: put on the track if one can be there, and selected; else why not, still waiting. */
+  private endNewStretch() {
+    const sn = this.stretchNew!, rr = this.host.design().routes[sn.route];
+    this.stretchNew = undefined;
+    if (!rr) { this.stretchArmed = false; return; }
+    const put = newStretchAt(rr, sn.s0, sn.s1);
+    if ('problem' in put) { this.say(put.problem); return; }
+    const { list, k } = withStretch(rr.stretches, put.from, put.to);
+    rr.stretches = list; this.stretchArmed = false;
+    this.selectItem({ kind: 'stretch', route: sn.route, k });
+    this.host.changed(true);
+    this.say(`Stretch from ${put.from} to ${put.to} studs${put.why ? ` (${put.why[0].toLowerCase()}${put.why.slice(1)})` : ''} · its settings are in the track's card, Bed and underside`, 6000);
+  }
+  /** A cut path's corner put at a point typed on its card (studs; taken to the nearest corner between studs): undefined when done, else why it can't be there. */
+  setPathCorner(id: string, k: number, to: [number, number]): string | undefined {
+    const path = this.cutPaths().find((q) => q.id === id), g = this.cutGrid();
+    if (!path?.pts[k]) return 'No such corner';
+    const pts = gridPath(g, path.pts.map((q, n): CutPt => (n === k ? snapToGrid(g, to) : q))), why = pts.length < 2 ? 'A cut path has two points or more' : this.pathWhy(pts, id);
+    if (why) return why;
+    path.pts = pts;
     return undefined;
+  }
+  /** Wait for a press on the selected route, dragged along it, to lay a stretch with its own settings there. */
+  stretchHere() {
+    if (this.selection().length !== 1 || this.tableSelection().length) { this.say('Select one route to add a stretch to it'); return; }
+    this.splitArmed = false; this.cutArmed = false; this.setItem(undefined); this.stretchArmed = true; this.draw();
   }
   /** The cut being dragged, taken to the pointer: a corner or a path on the stud grid, a cut across a track along it by whole studs; where it can't be, it's shown red and put back when let go. */
   private dragCut(p: [number, number]) {
@@ -414,7 +515,7 @@ export class TrackCanvas {
       cd.why = s === cd.orig[cd.k] ? undefined : cutProblem(rr, s, others);
       if (cd.why || rr.cuts?.includes(s)) return;
       rr.cuts = cleanCuts([...others, s]) ?? [];
-      cd.moved = true; this.selCut = { kind: 'cut', route: cd.route, k: rr.cuts.indexOf(s) }; this.host.changed(false);
+      cd.moved = true; this.selItemNow = { kind: 'cut', route: cd.route, k: rr.cuts.indexOf(s) }; this.host.changed(false); this.host.live?.(cd.route); this.host.item?.();
       return;
     }
     const path = this.cutPaths().find((q) => q.id === cd.id);
@@ -423,20 +524,55 @@ export class TrackCanvas {
     if (cd.kind === 'corner') pts = moveCorner(g, cd.orig, cd.k, p);
     else { const a = snapToGrid(g, [cd.x, cd.y]), b = snapToGrid(g, p); pts = cd.orig.map((q): CutPt => [q[0] + b[0] - a[0], q[1] + b[1] - a[1]]); }
     if (JSON.stringify(pts) === JSON.stringify(path.pts)) return;
-    path.pts = pts; cd.moved = true; cd.why = this.pathWhy(pts, cd.id); this.host.changed(false);
+    path.pts = pts; cd.moved = true; cd.why = this.pathWhy(pts, cd.id); this.host.changed(false); this.host.item?.();
   }
-  /** The selected cut taken out (Delete): a cut path, or a cut across a track. */
-  private deleteCut() {
-    const sc = this.selCut, d = this.host.design();
-    if (!sc) return;
+  /** The selected item taken out (Delete): a cut path, a cut across a track, or a stretch (the track's settings there again). A joint isn't: it's taken apart. One undo step. */
+  deleteItem() {
+    const sc = this.selItemNow, d = this.host.design();
+    if (!sc || sc.kind === 'joint') return;
     if (sc.kind === 'cutpath') { d.expert!.cutPaths = this.cutPaths().filter((p) => p.id !== sc.id); tidyExpert(d); }
-    else { const rr = d.routes[sc.route]; if (rr?.cuts) { rr.cuts.splice(sc.k, 1); if (!rr.cuts.length) delete rr.cuts; } }
-    this.selCut = undefined; this.host.changed(true); this.draw();
+    else if (sc.kind === 'cut') { const rr = d.routes[sc.route]; if (rr?.cuts) { rr.cuts.splice(sc.k, 1); if (!rr.cuts.length) delete rr.cuts; } }
+    else { const rr = d.routes[sc.route]; if (rr?.stretches) { rr.stretches.splice(sc.k, 1); if (!rr.stretches.length) delete rr.stretches; } }
+    this.setItem(undefined); this.host.changed(true); this.draw();
+  }
+  /**
+   * The selected cut, cut path or stretch moved a stud by an arrow key (Shift: eight): a cut or a stretch along its
+   * track, the way the arrow points; a cut path over the stud grid. One undo step; where it can't go, why is said.
+   */
+  private nudgeItem(dx: number, dy: number) {
+    const it = this.selItemNow, d = this.host.design();
+    if (!it || it.kind === 'joint') return;
+    if (it.kind === 'cutpath') {
+      const path = this.cutPaths().find((q) => q.id === it.id), g = this.cutGrid();
+      if (!path) return;
+      const pts = gridPath(g, path.pts.map((q): CutPt => snapToGrid(g, [q[0] + dx, q[1] + dy]))), why = this.pathWhy(pts, it.id);
+      if (why || pts.length < 2) { this.say(why ?? 'The cut path can\'t go there'); return; }
+      path.pts = pts;
+    } else {
+      const rr = d.routes[it.route], st = it.kind === 'stretch' ? rr?.stretches?.[it.k] : undefined, at = it.kind === 'cut' ? rr?.cuts?.[it.k] : st && (st.from + st.to) / 2;
+      if (!rr || at === undefined) return;
+      // (the way the arrow points along the track there: an arrow square across it moves nothing)
+      const h = (placeAlong(rr, at).heading * Math.PI) / 180, along = -dx * Math.sin(h) + dy * Math.cos(h), n = Math.max(Math.abs(dx), Math.abs(dy));
+      if (Math.abs(along) < 0.5 * n) { this.say('This arrow points across the track: press one that points along it'); return; }
+      const by = Math.sign(along) * n;
+      if (it.kind === 'cut') {
+        const others = rr.cuts!.filter((_, k) => k !== it.k), s = Math.round(at + by), why = cutProblem(rr, s, others);
+        if (why) { this.say(why); return; }
+        rr.cuts = cleanCuts([...others, s]) ?? [];
+        this.selItemNow = { kind: 'cut', route: it.route, k: rr.cuts.indexOf(s) };
+      } else {
+        const put = dragStretchWhole(rr, it.k, by);
+        if (put.why) this.say(put.why);
+        if (put.from === st!.from) return;
+        rr.stretches![it.k] = { ...st!, from: put.from, to: put.to };
+      }
+    }
+    this.host.changed(true); this.host.item?.(); this.draw();
   }
   /** Wait for a click on the selected route, to cut it into parts there by hand. */
   cutHere() {
     if (this.selection().length !== 1 || this.tableSelection().length) { this.say('Select one route to cut it into parts'); return; }
-    this.splitArmed = false; this.cutArmed = true; this.draw();
+    this.splitArmed = false; this.stretchArmed = false; this.cutArmed = true; this.draw();
   }
   /** Where the selected route would be cut for a point (studs along it, whole studs), if the point is on it. */
   private cutFor(w: [number, number]): { route: number; s: number } | undefined {
@@ -451,7 +587,7 @@ export class TrackCanvas {
   splitHere(wait = false) {
     if (this.selection().length !== 1 || this.tableSelection().length) { this.say('Select one route to split it'); return; }
     const cut = !wait && this.mouse ? this.cutFor(this.mouse) : undefined;
-    if (!cut) { this.splitArmed = true; this.draw(); return; }
+    if (!cut) { this.cutArmed = false; this.stretchArmed = false; this.splitArmed = true; this.draw(); return; }
     this.splitAt(cut);
   }
   private splitAt(cut: { route: number; s: number }) {
@@ -463,7 +599,8 @@ export class TrackCanvas {
   private touching = false;
   /** The handles on the selected route (when one is selected, in Select mode, nothing being drawn): at least 10 px apart on the screen. */
   private handles(): Handle[] {
-    if (this.mode !== 'select' || this.active || this.selection().length !== 1) return [];
+    // (none while a stretch of it is selected: the stretch's ends are what's dragged then; nor when a click takes no track)
+    if (this.mode !== 'select' || this.active || this.selection().length !== 1 || this.selItemNow?.kind === 'stretch' || this.stretchArmed || !this.picks('track')) return [];
     const r = this.host.design().routes[this.selection()[0]];
     return r && !r.locked ? visibleHandles(segmentHandles(r, END_INSET_PX / this.scale), this.scale, this.touching ? 32 : 10) : [];
   }
@@ -498,8 +635,9 @@ export class TrackCanvas {
     this.host.changed(true);
   }
   /** The check rail end, flangeway cut end or points under a point (studs), to drag. */
-  private itemAt(w: [number, number]) {
+  itemAt(w: [number, number]) {
     const r = Math.max(1, 9 / this.scale), d = this.host.design();
+    if (!this.picks('mark')) return undefined;
     const near = (q: [number, number]) => Math.hypot(q[0] / MM - w[0], q[1] / MM - w[1]) < r;
     const unit = (a: [number, number], b: [number, number]): [number, number] => { const l = Math.hypot(a[0] - b[0], a[1] - b[1]) || 1; return [(a[0] - b[0]) / l, (a[1] - b[1]) / l]; };
     for (const it of this.overlay?.items ?? []) {
@@ -526,7 +664,7 @@ export class TrackCanvas {
       }
       return inside;
     };
-    if (this.hidden.has('levers')) return undefined;
+    if (this.hidden.has('levers') || !this.picks('mark')) return undefined;
     return this.overlay?.items?.find((it) => it.kind === 'throw' && it.lever && (Math.hypot(it.at[0] / MM - w[0], it.at[1] / MM - w[1]) < r || inPoly(it.pts)));
   }
   /** Move a lever to (near) w, studs: its side, how far out and how far along, as the switch allows. */
@@ -581,7 +719,7 @@ export class TrackCanvas {
     el.addEventListener('mousedown', (e) => { this.touching = false; this.down(e); });
     // (a double click on a track, in Select: it and every track joined to it selected)
     el.addEventListener('dblclick', (e) => {
-      if (this.mode !== 'select' || this.active || this.placing || this.pathDraw || this.splitArmed || this.cutArmed) return;
+      if (this.mode !== 'select' || this.active || this.placing || this.pathDraw || this.splitArmed || this.cutArmed || this.stretchArmed || !this.picks('track')) return;
       const w = this.evWorld(e), hit = this.nearTrack(w, this.reach(18)) ?? this.onBand(w);
       if (!hit) return;
       const all = this.withJoined([hit.route]), name = this.host.design().routes[hit.route].name || `Route ${hit.route + 1}`;
@@ -836,7 +974,7 @@ export class TrackCanvas {
       return;
     }
     const w = this.evWorld(e);
-    this.setJoint(undefined);
+    if (this.selItemNow?.kind === 'joint') this.setItem(undefined);
     // a template being placed: the click puts it down
     if (this.placing && e.button === 0) {
       const pl = this.placedNow()!, tpl = this.placing.tpl;
@@ -868,45 +1006,46 @@ export class TrackCanvas {
       if (cut) this.splitAt(cut); else this.say('Click on the selected route, where to cut it (Esc cancels)');
       return;
     }
+    // (Add a stretch's waiting for a press on the route, dragged along it)
+    if (this.stretchArmed && e.button === 0) {
+      const sel = this.selection(), rr = sel.length === 1 ? this.host.design().routes[sel[0]] : undefined, n = rr && nearestAlong(rr, w);
+      if (!rr || !n || n.dist > this.reach(24) + 0.5) { this.say('Press on the selected route where the stretch starts, and drag along it to where it ends (Esc cancels)'); return; }
+      this.stretchNew = { route: sel[0], s0: n.s, s1: n.s }; this.mouse = w; this.draw();
+      return;
+    }
+    // (what the press is on: plan.hitTest; anything but a cut, a cut path, a stretch or a joint, and the one selected is let go of)
+    const hit = this.hitTest(w);
+    if (hit?.kind !== 'item') this.setItem(undefined);
     // Pressing on a handle of the selected route: drag it (a curve's angle or radius, a straight's length)
-    if (!this.active && e.button === 0) {
-      const h = this.handleAt(w), ri = this.selection()[0];
-      if (h) { const hr = this.host.design().routes[ri]; this.handleDrag = { route: ri, seg: h.seg, kind: h.kind, orig: structuredClone(hr.segs[h.seg]), moved: false, sx: e.clientX, sy: e.clientY, carry: this.carrying(ri, 'start', segsStuds(hr.segs.slice(0, h.seg))) }; return; }
+    if (hit?.kind === 'handle') {
+      const h = hit.handle, ri = this.selection()[0], hr = this.host.design().routes[ri];
+      this.handleDrag = { route: ri, seg: h.seg, kind: h.kind, orig: structuredClone(hr.segs[h.seg]), moved: false, sx: e.clientX, sy: e.clientY, carry: this.carrying(ri, 'start', segsStuds(hr.segs.slice(0, h.seg))) }; return;
     }
     // Pressing on a lever: drag it (side, out, along)
-    if (!this.active && e.button === 0) {
-      const it = this.leverAt(w);
-      if (it) { this.leverDrag = { it, moved: false, off: [it.at[0] / MM - w[0], it.at[1] / MM - w[1]] }; return; }  // (held where it was grabbed)
-      const id = this.itemAt(w);
-      if (id) { this.itemDrag = { ...id, sx: e.clientX, sy: e.clientY }; return; }
-    }
+    if (hit?.kind === 'lever') { const it = hit.it; this.leverDrag = { it, moved: false, off: [it.at[0] / MM - w[0], it.at[1] / MM - w[1]] }; return; }  // (held where it was grabbed)
+    if (hit?.kind === 'mark') { this.itemDrag = { ...hit.mark, sx: e.clientX, sy: e.clientY }; return; }
     // Pressing on a track's end (when not drawing): drag it to reshape the
     // track, or (Draw mode, no drag) carry the track on from there.
-    if (!this.active) {
-      const hit = this.nearTrack(w);
-      if (hit?.end) {
-        const r = this.host.design().routes[hit.route];
-        // (a locked track's end isn't dragged or carried on: it's selected, and says so)
-        if (r.locked) { this.extra.clear(); this.selTables.clear(); this.selected = hit.route; this.host.select(this.selected); this.say(lockedWhy(this.host.design(), [hit.route])!); return; }
-        const work = hit.end === 'end' ? r : reversed(r);
-        // reshape from the start of the last curve (and the straight before it)
-        let c = -1;
-        work.segs.forEach((sg, k) => { if (sg.kind === 'curve') c = k; });
-        const anchor = c < 0 ? Math.max(0, work.segs.length - 1) : c > 0 && work.segs[c - 1].kind === 'straight' ? c - 1 : c;
-        // (what's joined to it past where it's reshaped from goes with its end; what's joined before that stays)
-        this.drag = { route: hit.route, end: hit.end, sx: e.clientX, sy: e.clientY, moved: false, orig: structuredClone(r), anchor, lastGood: structuredClone(r), carry: this.carrying(hit.route, hit.end === 'end' ? 'start' : 'end', segsStuds(work.segs.slice(0, anchor))) };
-        this.extra.clear(); this.selTables.clear(); this.selected = hit.route; this.host.select(this.selected);
-        return;
-      }
+    if (hit?.kind === 'end') {
+      const r = this.host.design().routes[hit.route];
+      // (a locked track's end isn't dragged or carried on: it's selected, and says so)
+      if (r.locked) { this.extra.clear(); this.selTables.clear(); this.selected = hit.route; this.host.select(this.selected); this.say(lockedWhy(this.host.design(), [hit.route])!); return; }
+      const work = hit.end === 'end' ? r : reversed(r);
+      // reshape from the start of the last curve (and the straight before it)
+      let c = -1;
+      work.segs.forEach((sg, k) => { if (sg.kind === 'curve') c = k; });
+      const anchor = c < 0 ? Math.max(0, work.segs.length - 1) : c > 0 && work.segs[c - 1].kind === 'straight' ? c - 1 : c;
+      // (what's joined to it past where it's reshaped from goes with its end; what's joined before that stays)
+      this.drag = { route: hit.route, end: hit.end, sx: e.clientX, sy: e.clientY, moved: false, orig: structuredClone(r), anchor, lastGood: structuredClone(r), carry: this.carrying(hit.route, hit.end === 'end' ? 'start' : 'end', segsStuds(work.segs.slice(0, anchor))) };
+      this.extra.clear(); this.selTables.clear(); this.selected = hit.route; this.host.select(this.selected);
+      return;
     }
     if (this.mode === 'select') {
-      // (a cut: a path's corner or run, or a cut across a track: selected, and dragged from there)
-      const ci = e.button === 0 ? this.cutItemAt(w) : undefined;
-      if (ci) { this.setSelection([]); this.selCut = ci.sel; this.cutDrag = ci.drag; this.draw(); return; }
-      this.selCut = undefined;
+      // (a cut, a cut path, a stretch or a joint: selected, and dragged from there)
+      if (hit?.kind === 'item') { this.pressItem(hit.hit, w); return; }
       // (a table's handle: drag the table about)
-      const tk = this.hidden.has('tables') ? undefined : this.tableHandle(w);
-      if (tk !== undefined) {
+      if (hit?.kind === 'table') {
+        const tk = hit.table;
         // (a click on a table's name selects it, with Shift adds it; a selected table dragged takes the whole selection with it)
         const addTo = e.shiftKey || e.ctrlKey || e.metaKey;
         if (addTo) { if (!this.selTables.delete(tk)) this.selTables.add(tk); this.draw(); return; }
@@ -918,21 +1057,21 @@ export class TrackCanvas {
         }
         this.tableDrag = { k: tk, x: w[0], y: w[1], orig: structuredClone(d.tables![tk]), moved: false }; return;
       }
-      const hit = this.nearTrack(w, this.reach(18)) ?? this.onBand(w);
       // pressing on a selected track: drag the selection about
       const add = e.shiftKey || e.ctrlKey || e.metaKey;
       // pressing on empty ground: drag out a box to select what it touches
-      if (!hit) { this.box = { x0: w[0], y0: w[1], x1: w[0], y1: w[1], add }; return; }
-      if (hit && !add && (hit.route === this.selected || this.extra.has(hit.route))) {
+      // (only tracks and tables are boxed: none when a click takes neither)
+      if (hit?.kind !== 'route') { if (this.picks('track')) this.box = { x0: w[0], y0: w[1], x1: w[0], y1: w[1], add }; return; }
+      if (!add && (hit.route === this.selected || this.extra.has(hit.route))) {
         const d = this.host.design();
         this.startMoving(w, this.selection(), this.tableSelection().map((k) => ({ k, orig: structuredClone(d.tables![k]) })));
         return;
       }
-      if (add && hit) this.toggleSelected(hit.route);
+      if (add) this.toggleSelected(hit.route);
       else {
-        this.selected = hit?.route; this.extra.clear(); this.selTables.clear();
+        this.selected = hit.route; this.extra.clear(); this.selTables.clear();
         // (and it can be dragged straight away)
-        if (hit) this.startMoving(w, [hit.route]);
+        this.startMoving(w, [hit.route]);
       }
       this.host.select(this.selected);
       this.draw();
@@ -942,13 +1081,13 @@ export class TrackCanvas {
     if (!this.active) {
       // Start: from a track end (carry it on), from the middle of a track
       // (branch off it), or from an empty grid point.
-      const hit = this.nearTrack(w);
-      if (hit?.end === 'end') this.active = { route: hit.route, end: hit.pose };
-      else if (hit) {
+      const on = this.nearTrack(w);
+      if (on?.end === 'end') this.active = { route: on.route, end: on.pose };
+      else if (on) {
         // from a track's start, or along it: a new track starting there,
         // along it (a branch: a switch) or back out of it, whichever way the
         // mouse goes
-        this.active = { route: undefined, start: hit.pose, end: hit.pose, either: hit.pose.heading, from: hit.route };
+        this.active = { route: undefined, start: on.pose, end: on.pose, either: on.pose.heading, from: on.route };
         this.aimEither();
       }
       else { const g = this.guided(w); this.active = { route: undefined, start: { x: g[0], y: g[1], heading: NaN } }; }
@@ -1030,6 +1169,8 @@ export class TrackCanvas {
       return this.drawSoon();
     }
     if (this.cutDrag) { this.mouse = this.evWorld(e); this.dragCut(this.mouse); return this.drawSoon(); }
+    if (this.stretchDrag) { this.mouse = this.evWorld(e); this.dragStretch(this.mouse); return this.drawSoon(); }
+    if (this.stretchNew) { const sn = this.stretchNew, rr = this.host.design().routes[sn.route]; this.mouse = this.evWorld(e); if (rr) sn.s1 = nearestAlong(rr, this.mouse).s; return this.drawSoon(); }
     if (this.tableDrag) {
       const m = this.tableDrag, p = this.evWorld(e), d = this.host.design();
       const dx = Math.round(p[0] - m.x), dy = Math.round(p[1] - m.y); // (whole studs: stays on the grid)
@@ -1085,12 +1226,12 @@ export class TrackCanvas {
     let c = this.mode !== 'select' ? 'crosshair' : 'default', over: number | undefined;
     if (this.space) c = 'grab';
     else if (w && !this.active) {
-      const grab = !!(this.handleAt(w) || this.leverAt(w) || this.itemAt(w)), hit = grab ? undefined : this.nearTrack(w, this.reach(18)) ?? (this.mode === 'select' ? this.onBand(w) : undefined);
-      if (grab) c = 'grab';
-      else if (hit?.end) c = 'move';
-      else if (hit && this.mode === 'select') c = 'pointer';
-      // (the track a click would pick in Select, lightly marked: not over a handle, a lever or points)
-      if (this.mode === 'select' && !this.panning) over = hit?.route;
+      const hit = this.hitTest(w);
+      if (hit?.kind === 'handle' || hit?.kind === 'lever' || hit?.kind === 'mark' || (hit?.kind === 'item' && hit.hit.item.kind !== 'joint')) c = 'grab';
+      else if (hit?.kind === 'end') c = 'move';
+      else if (hit && this.mode === 'select' && hit.kind !== 'table') c = 'pointer';
+      // (the track a click would pick in Select, lightly marked: not over a handle, a lever, points or a cut)
+      if (this.mode === 'select' && !this.panning && (hit?.kind === 'route' || hit?.kind === 'end')) over = hit.route;
     }
     if (this.el.style.cursor !== c) this.el.style.cursor = c;
     if (over !== this.hoverRoute) { this.hoverRoute = over; this.drawSoon(); }
@@ -1129,6 +1270,8 @@ export class TrackCanvas {
       }
       return this.draw();
     }
+    if (this.stretchDrag) { const moved = this.stretchDrag.moved; this.stretchDrag = undefined; if (moved) this.host.changed(true); return this.draw(); }
+    if (this.stretchNew) { this.endNewStretch(); return this.draw(); }
     if (this.tableDrag) { const moved = this.tableDrag.moved; this.tableDrag = undefined; if (moved) this.host.changed(true); return this.draw(); }
     if (this.moving) {
       const m = this.moving, d = this.host.design(); this.moving = undefined;
@@ -1176,7 +1319,7 @@ export class TrackCanvas {
       return this.draw();
     }
     // (a click on a joined end, in Select: the joint is selected, to take apart or join again)
-    if (this.mode === 'select' && e.button === 0 && this.jointsAt(dr.route, dr.end).length) this.setJoint({ route: dr.route, end: dr.end });
+    if (this.mode === 'select' && e.button === 0 && this.picks('joint') && this.jointsAt(dr.route, dr.end).length) this.setItem({ kind: 'joint', route: dr.route, end: dr.end });
     // a click on an end: in Draw mode, carry the track on from it
     if (this.mode === 'draw' && e.button === 0) {
       const r = this.host.design().routes[dr.route];
@@ -1364,7 +1507,7 @@ export class TrackCanvas {
       if (k === 'm' && !e.ctrlKey && !e.metaKey) { p.mirror = !p.mirror; p.moved = true; this.draw(); return; }
     }
     if (e.key === 'Escape' && this.mode === 'measure') { if (this.meas.a) { this.meas = {}; return this.draw(); } return this.host.leaveDraw?.(); }
-    if (e.key === 'Escape' && (this.splitArmed || this.cutArmed)) { this.splitArmed = false; this.cutArmed = false; return this.draw(); }
+    if (e.key === 'Escape' && (this.splitArmed || this.cutArmed || this.stretchArmed)) { this.splitArmed = false; this.cutArmed = false; this.stretchArmed = false; this.stretchNew = undefined; return this.draw(); }
     // (a cut path being drawn: Enter ends it, Esc cancels it, Backspace takes its last corner back; a cut being dragged: Esc puts it back)
     if (this.pathDraw) {
       if (e.key === 'Enter') { e.preventDefault(); return this.endCutPath(); }
@@ -1373,13 +1516,29 @@ export class TrackCanvas {
     }
     if (e.key === 'Escape' && this.cutDrag) {
       const cd = this.cutDrag, d = this.host.design(); this.cutDrag = undefined;
-      if (cd.kind === 'cut') { if (d.routes[cd.route]) d.routes[cd.route].cuts = cd.orig; this.selCut = { kind: 'cut', route: cd.route, k: cd.k }; }
+      if (cd.kind === 'cut') { if (d.routes[cd.route]) d.routes[cd.route].cuts = cd.orig; this.selItemNow = { kind: 'cut', route: cd.route, k: cd.k }; }
       else { const path = this.cutPaths().find((q) => q.id === cd.id); if (path) path.pts = cd.orig; }
       if (cd.moved) this.host.changed(true);
+      this.host.item?.();
       return this.draw();
     }
-    if (e.key === 'Escape' && this.selCut && !this.active) { this.selCut = undefined; return this.draw(); }
-    if ((e.key === 'Delete' || e.key === 'Backspace') && this.selCut && !this.cutDrag && !this.active) return this.deleteCut();
+    if (e.key === 'Escape' && this.stretchDrag) {
+      // (the stretch put back where it was)
+      const sd = this.stretchDrag, rr = this.host.design().routes[sd.route]; this.stretchDrag = undefined;
+      if (rr) rr.stretches = sd.orig;
+      if (sd.moved) { this.host.changed(true); this.host.live?.(sd.route); }
+      this.host.item?.();
+      return this.draw();
+    }
+    // (a cut, a cut path or a stretch selected: Esc lets go of it (a stretch's track stays selected), Delete takes it out, the arrow keys move it a stud)
+    const own = this.selItemNow && this.selItemNow.kind !== 'joint' && !this.active ? this.selItemNow : undefined;
+    if (e.key === 'Escape' && own) { this.setItem(undefined); return this.draw(); }
+    if ((e.key === 'Delete' || e.key === 'Backspace') && own && !this.cutDrag && !this.stretchDrag) return this.deleteItem();
+    if (e.key.startsWith('Arrow') && own && this.mode === 'select' && plain && onPlan) {
+      e.preventDefault();
+      if (!this.cutDrag && !this.stretchDrag) { const n = e.shiftKey ? 8 : 1; this.nudgeItem(e.key === 'ArrowLeft' ? -n : e.key === 'ArrowRight' ? n : 0, e.key === 'ArrowDown' ? -n : e.key === 'ArrowUp' ? n : 0); }
+      return;
+    }
     if (e.key === 'Escape' && this.handleDrag) {
       // (the handle's segment put back as it was)
       const hd = this.handleDrag, r = this.host.design().routes[hd.route];
@@ -1408,7 +1567,7 @@ export class TrackCanvas {
       return this.draw();
     }
     // (a drag going on: Delete would pull the routes out from under it)
-    if ((e.key === 'Delete' || e.key === 'Backspace') && (this.moving || this.tableDrag || this.itemDrag || this.leverDrag || this.box || this.handleDrag || this.drag)) return;
+    if ((e.key === 'Delete' || e.key === 'Backspace') && (this.moving || this.tableDrag || this.itemDrag || this.leverDrag || this.box || this.handleDrag || this.drag || this.stretchNew)) return;
     // Esc: stop the track being drawn; pressed again (nothing being drawn), back to Select
     // (in Select mode, Esc lets go of the selection)
     if (e.key === 'Escape') {
@@ -1447,6 +1606,7 @@ export class TrackCanvas {
     this.guideNow = undefined; this.guideKey = '';
     this.drag = undefined; this.dragBad = false; this.dragSnap = undefined; this.moving = undefined; this.box = undefined; this.tableDrag = undefined;
     this.itemDrag = undefined; this.handleDrag = undefined; this.leverDrag = undefined; this.leverPending = undefined; this.panning = undefined;
+    this.cutDrag = undefined; this.stretchDrag = undefined; this.stretchNew = undefined; this.stretchArmed = false;
     this.stopDrawing();
   }
   /** The track being drawn carries on from where its route ends now (the route changed on its card, turned or mirrored since the last click); a route that's gone: nothing being drawn. */
@@ -1506,8 +1666,12 @@ export class TrackCanvas {
     if (this.cutArmed) return 'Click on the route where to cut it into parts · it stays one route · Esc cancels';
     if (this.pathDraw) return this.pathDraw.length ? `Cut path, ${this.pathDraw.length} point${this.pathDraw.length > 1 ? 's' : ''}: click the next (between studs; a slant is laid as steps) · Enter ends it · Backspace takes the last back · Esc cancels` : 'Click where the cut path starts: outside the part, or on another cut · it runs between the studs · Esc cancels';
     if (this.cutDrag?.moved) return this.cutDrag.why ?? (this.cutDrag.kind === 'cut' ? 'Moving the cut along its track, whole studs: let go to put it down · Esc puts it back' : 'Moving the cut path on the stud grid: let go to put it down · Esc puts it back');
-    if (this.selCut?.kind === 'cutpath') { const not = this.overlay?.pathsNot?.find((n) => n.id === (this.selCut as { id: string }).id); return `${not ? `This cut path isn't made: ${not.why} · ` : 'Cut path selected · '}drag a corner or the path · Delete removes it · its joint is in the Cut paths panel`; }
-    if (this.selCut?.kind === 'cut') return 'Cut across the track selected · drag it along the track · Delete removes it';
+    if (this.stretchArmed) return this.stretchNew ? 'Drag along the track to where the stretch ends, and let go · Esc cancels' : 'Press on the route where the stretch starts and drag along it to where it ends · whole studs · Esc cancels';
+    if (this.stretchDrag?.moved) return this.stretchDrag.why ?? `Moving the stretch${this.stretchDrag.part === 'from' ? '\'s start' : this.stretchDrag.part === 'to' ? '\'s end' : ''} along its track, whole studs: let go to put it down · Esc puts it back`;
+    const si = this.selItemNow;
+    if (si?.kind === 'cutpath') { const not = this.overlay?.pathsNot?.find((n) => n.id === si.id); return `${not ? `This cut path isn't made: ${not.why} · ` : 'Cut path selected · '}drag a corner or the path · arrow keys move it a stud · Delete removes it · its joint is on its card`; }
+    if (si?.kind === 'cut') return 'Cut across the track selected · drag it along the track, or press an arrow key (a stud; Shift: eight) · Delete removes it';
+    if (si?.kind === 'stretch') return 'Stretch selected · press an arrow key to move it along the track (a stud; Shift: eight) · Delete removes it · its settings are in the track\'s card';
     if (this.mode === 'measure') return this.meas.b ? 'Click to measure again · Esc clears' : this.meas.a ? 'Click the second point · it snaps to track ends and centre lines · Esc clears' : 'Click the first point to measure from: it snaps to track ends and centre lines · Esc stops';
     if (this.handleDrag?.moved && this.handleDrag.why) return this.handleDrag.why;
     // (a track reshaped: what comes along)
@@ -1526,7 +1690,7 @@ export class TrackCanvas {
       if (this.leverDrag?.moved) return 'Let go to put the lever here: it goes on the nearest stud it can';
       return `Lever on the ${ls.side} (${ls.why}) · drag it across the track to change sides, or further out${leverSlides(d) ? ' or along' : ''}`;
     }
-    const hit = this.mouse ? this.nearTrack(this.mouse) ?? (this.mode === 'select' ? this.onBand(this.mouse) : undefined) : undefined;
+    const hit = this.mouse && (this.mode !== 'select' || this.picks('track')) ? this.nearTrack(this.mouse) ?? (this.mode === 'select' ? this.onBand(this.mouse) : undefined) : undefined;
     // (over points: what a click does to them)
     const pi = !this.active && this.mouse ? this.itemAt(this.mouse) : undefined;
     if (pi?.it.kind === 'points' && !this.itemDrag?.moved) {
@@ -1539,10 +1703,19 @@ export class TrackCanvas {
     }
     if (this.mode === 'select') {
       if (this.tableDrag?.moved) return 'Moving the table: let go to put it down';
+      // (over a cut, a cut path, a stretch or a joint a click would take: what it is)
+      const ih = this.mouse && !this.moving && !this.box ? this.hitTest(this.mouse) : undefined;
+      if (ih?.kind === 'item') {
+        const k = ih.hit.item.kind;
+        return k === 'cut' ? 'A cut across the track: click to select it, drag it along the track' : k === 'cutpath' ? 'A cut path: click to select it, drag it over the stud grid' : k === 'joint' ? 'A joint: click to select it, then Take apart or Join (in the bar above)'
+          : 'A stretch with its own settings: click to select it';
+      }
+      // (the Pick list on something else than tracks: a click takes only that)
+      if (!this.picks('track')) return `Picking only ${PICKS.find((q) => q.id === this.pick)!.label.toLowerCase()}: click one to select it · the Pick list (in the legend) lets clicks take tracks again`;
       if (this.tableSelection().length && this.selected === undefined) return `${this.tableSelection().length} table${this.tableSelection().length > 1 ? 's' : ''} selected · drag by the name to move · Shift+click adds more · Delete removes`;
       if (this.mouse && !this.hidden.has('tables') && this.tableHandle(this.mouse) !== undefined) return 'Drag this table by its name to move it (its size and shape: the Tables panel)';
       { // (a joint selected: what the selection bar's button does)
-        const sj = this.selJoint && !this.moving?.moved ? this.jointSelected() : undefined;
+        const sj = si?.kind === 'joint' && !this.moving?.moved ? this.jointSelected() : undefined;
         if (sj) return sj.joined ? `Joint between ${sj.names} selected · they move together · Take apart (in the bar above) lets each move on its own` : `${sj.names} touch here but are taken apart · Join (in the bar above) puts them back together`;
       }
       if (hit?.end) return this.jointsAt(hit.route, hit.end).some((j) => !j.apart) ? 'Drag this end to reshape the track: what is joined to it comes along · click it to select the joint' : 'Drag this end to reshape the track';
@@ -1739,12 +1912,36 @@ export class TrackCanvas {
         });
       }
     }
-    // (a selected track's stretches with their own: an orange line down each)
+    // (a selected track's stretches with their own: an orange line down each; every track's while only stretches are picked)
+    const allStretches = this.expert && this.pick === 'stretch';
     dx.routes.forEach((r, i) => {
-      if (!sx.stretch[i] || !(sx.of[i] === this.selected || this.extra.has(sx.of[i]))) return;
+      if (!sx.stretch[i] || !(allStretches || sx.of[i] === this.selected || this.extra.has(sx.of[i]))) return;
       const pts = trace(r, r.segs, 0.5);
       if (pts.length > 1) line(pts, 'rgba(232,137,43,0.85)', 2);
     });
+    // (the selected stretch: its band picked out, a bar and a grip at each end to drag; the one being dragged out, Add a stretch, likewise)
+    {
+      const si = this.selItemNow, sn = this.stretchNew, ri = si?.kind === 'stretch' ? si.route : sn?.route, rr = ri === undefined ? undefined : d.routes[ri];
+      const put = sn && rr ? newStretchAt(rr, sn.s0, sn.s1) : undefined, st = si?.kind === 'stretch' ? rr?.stretches?.[si.k] : put && !('problem' in put) ? put : undefined;
+      if (rr && st && !isMono(rr)) {
+        const L = segsStuds(rr.segs), from = Math.min(st.from, L), to = Math.min(st.to, L), p0 = placeAlong(rr, from), mid = cutSegs(cutSegs(rr.segs, from)[1], to - from)[0];
+        line(traceRaw(p0, mid, 0.5), 'rgba(232,137,43,0.30)', (2 * gOf(rr) + 3) * this.scale);
+        const half = gOf(rr) + 1.5, why = this.stretchDrag?.why ?? (put && 'why' in put ? put.why : undefined);
+        const ends: [number, number][] = [];
+        for (const q of [p0, placeAlong(rr, to)]) {
+          const h = (q.heading * Math.PI) / 180, rx = Math.cos(h), ry = Math.sin(h);
+          line([[q.x - rx * half, q.y - ry * half], [q.x + rx * half, q.y + ry * half]], '#e8892b', 2.5);
+          const [hx, hy] = this.toScreen(q.x, q.y); ends.push([hx, hy]);
+          c.fillStyle = '#fff'; c.strokeStyle = '#e8892b'; c.lineWidth = 2; c.beginPath(); c.rect(hx - 4.5, hy - 4.5, 9, 9); c.fill(); c.stroke();
+        }
+        // (where its ends are on the screen, for the browser smoke test to grab)
+        this.el.dataset.stretch = JSON.stringify({ from: st.from, to: st.to, ends: ends.map(([x, y]) => [Math.round(x), Math.round(y)]) });
+        if (this.stretchDrag || sn) { const e = this.stretchDrag?.part === 'from' ? ends[0] : ends[1]; tag(e[0], e[1] + 30, why ?? `${st.from} to ${st.to} studs from its start`, why ? '#e0452b' : '#b23c0a'); }
+      } else {
+        delete this.el.dataset.stretch;
+        if (sn && put && 'problem' in put && this.mouse) { const [mx, my] = this.toScreen(this.mouse[0], this.mouse[1]); tag(mx, my + 30, put.problem, '#e0452b'); }
+      }
+    }
     // monorail: the 4-stud beam (its narrower ends where pieces join aren't shown) with the rack's ridge down its middle
     const monoHw = MONO_HW / MM, ridgeHw = MONO_RIDGE_HW / MM;
     const drawMono = (p: Pose, segs: DSeg[], sel: boolean, bad = false) => {
@@ -2019,7 +2216,7 @@ export class TrackCanvas {
     // Cut paths (expert): each a line along the stud grid's lines; red where it isn't made (the last build's word, or
     // what's against it now); the selected one thicker, its corners to drag
     {
-      const sc = this.selCut, line = (pts: CutPt[], color: string, wd: number, dash: number[] = []) => {
+      const sc = this.selItemNow, line = (pts: CutPt[], color: string, wd: number, dash: number[] = []) => {
         c.strokeStyle = color; c.lineWidth = wd; c.setLineDash(dash); c.lineJoin = 'round'; c.beginPath();
         pts.forEach((q, k) => { const [x, y] = this.toScreen(q[0], q[1]); if (k) c.lineTo(x, y); else c.moveTo(x, y); });
         c.stroke(); c.setLineDash([]);
