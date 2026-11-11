@@ -1,6 +1,6 @@
 # Expert mode: design and stages
 
-Status: design agreed with nobody yet (S1, S1b, S2 and S3 are built as section 11 says); decisions are taken here so work doesn't wait (the list for Aaron is in
+Status: design agreed with nobody yet (S1, S1b, S2, S3 and S4 are built as section 11 says); decisions are taken here so work doesn't wait (the list for Aaron is in
 section 10). What is built is in section 11 (State), kept current.
 
 What was asked for, in short: the drawing mode of today stays as the simple mode; an expert can place and edit every
@@ -483,9 +483,57 @@ route-owned storage, the follow rules and the card section they bring are the pa
   with per-track settings builds in one worker. (5) Monorail beams are built once, beside all the train track, as
   before. (6) The part rule's warning: "T2 and T5 are one part (they meet in points or a crossing, or lie side by
   side): both take T5's Ballast".
+- **S4 is built: connections between tracks.** Derived, not stored. Pure part `src/app/connections.ts`: `joints`
+  (every end that lies on another track's centre line, in line with it there, within 0.05 stud and 0.5°, the numbers
+  `splitmerge.ts meeting` goes by: on its end, where the two run on or part as points do, or part way along it, a
+  branch off its side; a narrow-gauge end on dual-gauge track where that track's narrow gauge lies, `gaugeMeet`; never
+  monorail with train track; tracks that only cross aren't joined), `connectedSet` (through others; not through
+  joints taken apart), `planCarry` / `applyCarry` / `openedBy` (what a reshaped track carries: below), `carryChange`
+  (the same for a change typed on a card), and the taken-apart list `Design.expert.apart: [a, b][]` (route names;
+  `cleanApart` in readDesign: pairs of routes there are; `setApart`; `pruneApart`: a pair that no longer touches is
+  forgotten at the next finished action, so put together again they're joined as any two tracks; `renameApart`,
+  `splitApart`, and a merge, in splitmerge.ts). **Move:** a drag, the arrow keys, Mirror and Turn take the connected
+  set along (worked out at the press; a locked track in it holds the move, and the hint says so); Alt held while
+  dragging moves the selection alone, the joints it leaves ringed in red, "Took A apart from B" said when it's let go
+  (nothing is stored: they no longer touch). **Reshape** (an end or a handle dragged, a handle nudged by the keyboard,
+  a number, Flip or ✕ in the card's Shape, Start x, y and Heading in its Place): the track has a fixed end and a place
+  the change begins; what's joined to it before that stays; what's joined past it goes with its joint's place on the
+  track, turned and moved as that place is (the far end's group first; a branch stays on its track: in the changed
+  piece at the same distance from that piece's start, past it as much further on as the piece grew, on a tail laid
+  anew at the same distance from the fixed end, the new end at most); worked out from where everything was at the
+  press, so there's no drift and Alt (alone) or Esc puts it back exactly. Tracks reached from both sides (a loop)
+  stay, and the joint at the changed side opens: the hint says "Opens the joint between T7 and T1" while the mouse is
+  down (both ends ringed in red) and "Opened the joint …" after. The carried tracks aren't snapped to, nor guides
+  taken from them. **On the plan:** a dot at each joint, an orange ring with a bar where two were taken apart, a
+  small ring on an end joined to nothing (not a buffer stop's); the legend's joint row hides them. A click on a
+  joined end selects the joint (ringed), and so does selecting just its two tracks (a branch's joint is under its
+  points' mark, which takes the click): **Take apart** / **Join** in the selection bar (one undo step each). A
+  double click selects the connected set. What's on the carried tracks goes with them with no code of its own: hand
+  cuts, stretches and own settings are the routes', hand edits go by their anchors (`followTrackwork`), a cut path by
+  `sharedMove` of its tracks (they now all move). Speed: the joints are worked out when the tracks change (kept by a
+  key of their places and shapes), the connected set and the carry plan once at the press; a mouse move applies the
+  plan and checks the watched joints only. Measured on 150 tracks (Chrome, this machine): the mouse-move handler 0.1 to
+  0.3 ms before and after, whether one track moves, a chain of 15 or one net of all 150; a redraw 3.7 ms before, 3.6
+  after; a redraw in the middle of a drag 4.7 to 5.1 ms before (one track moving), 5.9 to 7.9 with a chain of 15
+  carried, 21 with a net of 150 carried, which is what dragging 150 selected tracks cost before (19: each moved track
+  is traced again); finding the joints of 150 tracks 0.7 ms. Tests: test/connections.test.ts (joints: chains, either way drawn,
+  branches off straights and curves, points, a loop, crossings and near misses, monorail, dual gauge; apart: kept,
+  pruned, renamed, split, merged, read from a file; carry: exact places, there and back, from either end, branches,
+  a loop, a locked track, the card's changes, and that hand edits and cut paths follow), the browser smoke test's
+  "joined tracks" step.
+- **How S4 differs from section 5:** (1) the tolerance is `meeting`'s (0.05 stud, 0.5°), not 0.01 and 0.1°: one rule
+  for Merge and for joints. (2) Two tracks starting at one point the same way (points drawn as two routes, as the
+  switch templates are) are joined, as a branch off the side is. (3) In a loop the rest stays where it is and the
+  joint at the **changed** side opens, rather than the rest swinging round and the joint at the far side opening:
+  either way one joint opens, and this way only the track being reshaped moves and the gap is under the pointer.
+  (4) `apart` is per pair of tracks, not per joint: two tracks that meet twice (an oval of two) are taken apart at
+  both. (5) Alt+drag stores nothing: tracks that no longer touch aren't joined; `apart` is only what Take apart
+  writes, for tracks that still touch. (6) Alt with the arrow keys isn't a thing (the browser's own keys): take the
+  joint apart first. (7) Dragging an end that is itself joined to another track takes that track along (it is "what
+  is joined past the change"): hold Alt to pull the end off it.
 - **Next, in order:** (1) the double track's budget from CI's log (test/templates.shared.ts); stretches placed and
   dragged on the plan; a group's build told of the other groups' track at its ends, so a track joined onto points
-  can have its own; (2) S1 more keys (buffer stops per end; labels per part); (3) S4 connections; then S5/S6 (the other kit
+  can have its own; (2) S1 more keys (buffer stops per end; labels per part); (3) S4's leftovers: a joint's own row (which tracks, Take apart) in the Trackwork panel; then S5/S6 (the other kit
   modules as templates: the same three kinds of path cover them; `test/templates-cutpaths.test.ts` `MODULES` is the
   pattern for checking a module against the library's ends). Left from S3: the keep-outs are drawn only while a path
   is being drawn; a path's corners can't be typed as numbers (only dragged); "Expert tools" toggle and the layer

@@ -7,7 +7,7 @@ import { MONO_TRACKWORK } from './templates-monorail';
 import { type Table, tableOf } from './tables';
 import { clampDesign } from './limits';
 import { cleanCuts } from './routecuts';
-import { cleanPaths, type Expert } from './cutpaths';
+import { cleanApart, cleanPaths, type Expert } from './cutpaths';
 import { BANK_KEYS, cleanOwn, type Own } from './routeown';
 import { cleanStretches, type Stretch } from './stretches';
 import type { ExtraRails, Roll, Route, RouteEnds, Segment } from '../route/route';
@@ -303,8 +303,13 @@ export function readDesign(v: unknown): Design {
     const tables = d.tables.map(tableOf).filter((t): t is Table => !!t).map((t) => { if (t.locked !== undefined && t.locked !== true) { const { locked: _l, ...rest } = t; return rest as Table; } return t; });
     if (tables.length) d.tables = tables; else delete d.tables;
   } else delete d.tables;
-  // (expert: its cut paths, the well-formed ones (cutpaths.ts cleanPaths); nothing else is kept there yet)
-  { const cutPaths = obj(d.expert) ? cleanPaths(d.expert.cutPaths) : undefined; if (cutPaths) d.expert = { cutPaths }; else delete d.expert; }
+  // (expert: its cut paths, the well-formed ones (cutpaths.ts cleanPaths), and the pairs of its routes taken apart
+  // (connections.ts cleanApart); nothing else is kept there)
+  {
+    const cutPaths = obj(d.expert) ? cleanPaths(d.expert.cutPaths) : undefined;
+    const apart = obj(d.expert) ? cleanApart(d.expert.apart, new Set((d.routes as DRoute[]).map((r, i) => r.name || String(i)))) : undefined;
+    if (cutPaths || apart) d.expert = { ...(cutPaths && { cutPaths }), ...(apart && { apart }) }; else delete d.expert;
+  }
   // (its numbers held to their ranges, as the fields hold what's typed: limits.ts)
   return upgradeDesign(clampDesign(d as unknown as Design));
 }

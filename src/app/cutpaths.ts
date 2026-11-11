@@ -14,8 +14,8 @@ export const PATH_JOINTS = ['lego', 'dovetail', 'axle', 'flataxle', 'butt'] as c
 export type PathJoint = typeof PATH_JOINTS[number];
 /** A cut path: its corners (studs, on the plan), and its own joint (left out: the design's). */
 export interface CutPath { id: string; pts: Pt[]; joint?: PathJoint }
-/** What belongs to two routes or more (expert mode): the cut paths. */
-export interface Expert { cutPaths?: CutPath[] }
+/** What belongs to two routes or more (expert mode): the cut paths; the pairs of routes (by name) that touch but were taken apart (connections.ts). */
+export interface Expert { cutPaths?: CutPath[]; apart?: [string, string][] }
 /** The stud grid in force: a corner between four studs and the way its lines run (studs; degrees, 0 = up the plan). */
 export type Grid = [x: number, y: number, heading: number];
 
@@ -49,6 +49,22 @@ export function cleanPaths(v: unknown): CutPath[] | undefined {
   }
   return out.length ? out : undefined;
 }
+/** At most this many pairs of routes kept apart in a design. */
+export const APART_MAX = 500;
+/** A file's pairs taken apart held to what a design keeps: two different names of routes there are, each pair once. Undefined: none. */
+export function cleanApart(v: unknown, names: ReadonlySet<string>): [string, string][] | undefined {
+  if (!Array.isArray(v)) return undefined;
+  const out: [string, string][] = [], seen = new Set<string>();
+  for (const p of v as unknown[]) {
+    if (out.length >= APART_MAX) break;
+    if (!Array.isArray(p) || p.length !== 2 || typeof p[0] !== 'string' || typeof p[1] !== 'string' || p[0] === p[1] || !names.has(p[0]) || !names.has(p[1])) continue;
+    const key = p[0] < p[1] ? `${p[0]}\n${p[1]}` : `${p[1]}\n${p[0]}`;
+    if (seen.has(key)) continue;
+    seen.add(key); out.push([p[0], p[1]]);
+  }
+  return out.length ? out : undefined;
+}
+
 /** An id no path has yet: c1, c2, … */
 export function newPathId(taken: Iterable<string>): string { const t = new Set(taken); let n = 1; while (t.has(`c${n}`)) n++; return `c${n}`; }
 

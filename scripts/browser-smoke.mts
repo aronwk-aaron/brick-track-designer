@@ -500,6 +500,54 @@ try {
     const hm = (await heads()).join('|');
     check(!/Guard rails|Dual gauge|Ends/.test(hm) && /Height/.test(hm), `a monorail route has neither guard rails nor dual gauge (${hm.replace(/\n/g, ' ')})`); }
 
+  // joined tracks (expert): a chain of three goes together when one is dragged; Alt moves the one alone; a joint taken apart
+  at = 'joined tracks';
+  await page.evaluate(() => localStorage.setItem('btd-design', JSON.stringify({ version: 1, gaugeStuds: 4, routes: [
+    { name: 'A', x: 0, y: 0, heading: 0, segs: [{ kind: 'straight', studs: 16 }] }, { name: 'B', x: 0, y: 16, heading: 0, segs: [{ kind: 'straight', studs: 16 }] },
+    { name: 'C', x: 0, y: 32, heading: 0, segs: [{ kind: 'straight', studs: 8 }] }, { name: 'X', x: 24, y: 0, heading: 0, segs: [{ kind: 'straight', studs: 16 }] }] })));
+  await page.reload(); await page.waitForSelector('#track'); await page.click('#mode-select'); await page.click('#fit'); await page.waitForTimeout(300);
+  { const all = async () => `${await xy('A')} ${await xy('B')} ${await xy('C')} ${await xy('X')}`, hintNow = () => page.locator('#hint').innerText();
+    const apart = () => page.evaluate(() => JSON.stringify(JSON.parse(localStorage.getItem('btd-design')!).expert?.apart ?? null));
+    const data = (k: string) => page.evaluate((key) => document.getElementById('track')!.dataset[key] ?? '', k);
+    const dragA = async (alt = false) => {
+      const [x0, y0] = await scr(0, 8), [x1] = await scr(4, 8);
+      if (alt) await page.keyboard.down('Alt');
+      await page.mouse.move(x0, y0); await page.mouse.down(); await page.mouse.move(x1, y0, { steps: 4 }); await page.waitForTimeout(80);
+      const mid = { hint: await hintNow(), opened: await data('opened'), b: await xyLive('B') };
+      await page.mouse.up(); if (alt) await page.keyboard.up('Alt');
+      await page.waitForTimeout(200);
+      return mid; };
+    check((JSON.parse(await data('joints')) as { a: string; b: string }[]).map((j) => `${j.a}-${j.b}`).join() === 'A-B,B-C', `the plan marks the two joints of the chain (${await data('joints')})`);
+    const m1 = await dragA();
+    check(await all() === '4,0 4,16 4,32 24,0', `dragging one track of a chain takes the chain along, and nothing else (${await all()})`);
+    check(/3 joined tracks/.test(m1.hint), `the hint says so while it moves (${m1.hint})`);
+    await page.keyboard.press('Control+z'); await page.waitForTimeout(200);
+    check(await all() === '0,0 0,16 0,32 24,0', `one undo puts the whole chain back (${await all()})`);
+    const m2 = await dragA(true);
+    check(await all() === '4,0 0,16 0,32 24,0' && m2.b === '0,16', `Alt+drag moves the one track alone (${await all()})`);
+    check(m2.opened === 'A-B' && /takes apart A and B/.test(m2.hint), `the joint it leaves is marked and said while it moves (${m2.opened}: ${m2.hint})`);
+    check(/Took A apart from B/.test(await hintNow()), `and said when it's let go (${await hintNow()})`);
+    await page.keyboard.press('Control+z'); await page.waitForTimeout(200);
+    check(await all() === '0,0 0,16 0,32 24,0' && (JSON.parse(await data('joints')) as unknown[]).length === 2, 'undo joins them again');
+    // (a click on the joint selects it: Take apart; the two still touch, and A then moves alone)
+    const [jx, jy] = await scr(0, 16);
+    await page.mouse.click(jx, jy); await page.waitForTimeout(200);
+    check(await page.locator('#sel-apart').isVisible() && !(await page.locator('#sel-join').isVisible()), 'a click on a joint offers Take apart');
+    await page.click('#sel-apart'); await page.waitForTimeout(200);
+    check(await apart() === '[["A","B"]]' && await page.locator('#sel-join').isVisible(), `Take apart is kept in the design, and Join is offered (${await apart()})`);
+    await dragA();
+    check(await all() === '4,0 0,16 0,32 24,0' && await apart() === 'null', `taken apart, the track moves alone; moved off, the two are just two tracks (${await all()}, ${await apart()})`);
+    await page.keyboard.press('Control+z'); await page.keyboard.press('Control+z'); await page.waitForTimeout(200);
+    check(await all() === '0,0 0,16 0,32 24,0' && await apart() === 'null', 'two undos: back together, joined');
+    const [cx, cy] = await scr(0, 24);
+    await page.mouse.dblclick(cx, cy); await page.waitForTimeout(200);
+    check(await page.locator('#sel-count').innerText() === '3 selected', `a double click selects all that is joined (${await page.locator('#sel-count').innerText()})`);
+    // (a straight made longer by its handle: what is on its end goes with it)
+    await page.keyboard.press('Escape'); const [ax, ay] = await scr(0, 4); await page.mouse.click(ax, ay); await page.waitForTimeout(200);
+    await page.focus('#track'); await page.keyboard.press('Tab'); await page.keyboard.press('ArrowUp'); await page.waitForTimeout(200);
+    check(await all() === '0,0 0,17 0,33 24,0', `a track made longer carries what is joined to its end (${await all()})`);
+    await page.keyboard.press('Escape'); }
+
   check(errors.length === 0, `no errors on the page${errors.length ? `: ${errors.join(' | ').slice(0, 600)}` : ''}`);
 } catch (err) {
   fails.push(`${at}: ${err instanceof Error ? err.message : err}`);

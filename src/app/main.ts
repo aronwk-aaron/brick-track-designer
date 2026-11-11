@@ -34,6 +34,7 @@ import { jointsOn } from './handcuts';
 import { type CutPath, movedPath, PATH_JOINTS, type PathJoint, pathTracks, type PlacedRoute, sharedMove } from './cutpaths';
 import { addCut, alongAfter, cleanCuts, clearCuts, CUT_MIN, cutLength, cutProblem, followCuts, lostCuts, setCut } from './routecuts';
 import { initTemplateBrowser } from './templatebrowser';
+import { carryChange, jointNames, pruneApart, renameApart, tidyExpert } from './connections';
 import { type CopiedEdit, copyEdits, followTrackwork, isEdit, leftOver, mirrorAnchors, pasteEdits, reconcileTrackwork, renameAnchors } from './twfollow';
 import { type OptChoice, optionForm, type OptCtx, type OptField } from './settings';
 import { designFacts, GROUPS, groupFields, groupView, resetFields } from './settingsgroups';
@@ -144,6 +145,16 @@ const field = (label: string, ...els: HTMLElement[]) => {
   const s = document.createElement('span'); s.textContent = label; d.append(s, ...els); return d;
 };
 
+/**
+ * Route i changed on its card (its place, a piece of its shape): the tracks joined to it go with it, as when it's
+ * dragged on the plan (connections.ts carryChange); a joint that opens (a loop can't stay closed) is said.
+ */
+function carrying(i: number, f: () => void) {
+  const before: Design = { ...design, routes: design.routes.map((r) => ({ ...r, segs: structuredClone(r.segs) })) };
+  f();
+  const open = carryChange(before, design, i);
+  if (open.length) canvas.say(`Opened the joint between ${jointNames(design, open)}`);
+}
 function segRow(r: DRoute, k: number, i: number): HTMLElement {
   const sg = r.segs[k], row = document.createElement('div'); row.className = 'seg';
   const what = sg.kind === 'straight' ? 'straight' : 'curve';
@@ -151,16 +162,16 @@ function segRow(r: DRoute, k: number, i: number): HTMLElement {
   const head = document.createElement('div'); head.className = 'seghead';
   const lab = document.createElement('b'); lab.textContent = `${k + 1} · ${what === 'straight' ? 'Straight' : 'Curve'}`;
   const acts = document.createElement('div'); acts.className = 'segacts';
-  if (sg.kind === 'curve') acts.append(btn('Flip', () => { sg.angle = -sg.angle; }, 'Turn this curve the other way (left becomes right); the track after it follows'));
-  const rm = btn('✕', () => { r.segs.splice(k, 1); }, '');
+  if (sg.kind === 'curve') acts.append(btn('Flip', () => carrying(i, () => { sg.angle = -sg.angle; }), 'Turn this curve the other way (left becomes right); the track after it follows'));
+  const rm = btn('✕', () => carrying(i, () => { r.segs.splice(k, 1); }), '');
   const why = lockedWhy(design, [i]);
   rm.className = 'segrm'; rm.setAttribute('aria-label', `Remove this ${what}`);
   rm.title = why ? `${why}` : r.segs.length === 1 ? `Remove this ${what} (the route is left empty)` : `Remove this ${what}`;
   rm.disabled = !!why;
   acts.append(rm); head.append(lab, acts); row.append(head);
-  if (sg.kind === 'straight') row.append(field('Straight, studs', num(sg.studs, (n) => { sg.studs = n; soon(render); }, 1, 'Length in studs.', LIMITS.straight)));
-  else row.append(field('Curve: radius, studs', num(sg.radius, (n) => { (sg as Extract<DSeg, { kind: 'curve' }>).radius = n; soon(render); }, 8, isMono(r) ? 'Radius in studs (LEGO\'s monorail curves are R22).' : 'Radius in studs (the usual curves run 24 + 8k).', radiusRange(r))),
-    field('angle ° (+ left)', num(sg.angle, (n) => { (sg as Extract<DSeg, { kind: 'curve' }>).angle = n; soon(render); }, 0.5, 'How far it turns, degrees: + left, - right. A whole turn at most: add another curve to go on.', LIMITS.angle)));
+  if (sg.kind === 'straight') row.append(field('Straight, studs', num(sg.studs, (n) => { carrying(i, () => { sg.studs = n; }); soon(render); }, 1, 'Length in studs.', LIMITS.straight)));
+  else row.append(field('Curve: radius, studs', num(sg.radius, (n) => { carrying(i, () => { (sg as Extract<DSeg, { kind: 'curve' }>).radius = n; }); soon(render); }, 8, isMono(r) ? 'Radius in studs (LEGO\'s monorail curves are R22).' : 'Radius in studs (the usual curves run 24 + 8k).', radiusRange(r))),
+    field('angle ° (+ left)', num(sg.angle, (n) => { carrying(i, () => { (sg as Extract<DSeg, { kind: 'curve' }>).angle = n; }); soon(render); }, 0.5, 'How far it turns, degrees: + left, - right. A whole turn at most: add another curve to go on.', LIMITS.angle)));
   row.append(...bankFields(sg, isMono(r)));
   return row;
 }
@@ -472,7 +483,7 @@ function renderCutPaths() {
     sel.append(new Option('Joint: design default', ''), ...PATH_JOINTS.map((j) => new Option(`Joint: ${jointNames[j]}`, j)));
     sel.value = p.joint ?? '';
     sel.addEventListener('change', () => { if (sel.value) p.joint = sel.value as PathJoint; else delete p.joint; changed(true); });
-    const out = btn('✕', () => { const left = ps.filter((q) => q !== p); if (left.length) design.expert!.cutPaths = left; else delete design.expert; if (canvas.selCut?.kind === 'cutpath' && canvas.selCut.id === p.id) canvas.selCut = undefined; }, 'Take this cut path out');
+    const out = btn('✕', () => { design.expert!.cutPaths = ps.filter((q) => q !== p); tidyExpert(design); if (canvas.selCut?.kind === 'cutpath' && canvas.selCut.id === p.id) canvas.selCut = undefined; }, 'Take this cut path out');
     out.style.cssText = 'flex:none;width:auto;padding:2px 8px'; out.setAttribute('aria-label', `Take cut path ${k + 1} out`);
     const pair = document.createElement('div'); pair.style.cssText = 'display:flex;gap:4px;align-items:center;margin-top:4px'; sel.style.cssText = 'min-width:0;flex:1'; sel.setAttribute('aria-label', `Cut path ${k + 1}: joint`); pair.append(sel, out);
     row.append(head, pair);
@@ -814,14 +825,15 @@ function makeCard(r: DRoute, i: number): HTMLElement {
       const was = r.name;
       if (openCards.delete(cardId(r, i))) openCards.add(v);
       renameAnchors(design, cardId(r, i), v);
+      renameApart(design, cardId(r, i), v);
       r.name = v;
       for (const e of Object.values(design.trackwork?.points ?? {})) if (e.drop) e.drop = e.drop.map((id) => (id === was ? v : id));
       changed(false, true, false); soon(render);
     });
     place.append(field('Name', name),
-      field('Start x, studs', num(r.x, (n) => { r.x = n; soon(render); }, 1, 'Where it starts, studs across the plan.', LIMITS.start)),
-      field('Start y, studs', num(r.y, (n) => { r.y = n; soon(render); }, 1, 'Where it starts, studs up the plan.', LIMITS.start)),
-      field('Heading ° (0 = up, + = left)', num(r.heading, (n) => { r.heading = n; soon(render); }, 22.5, 'The way it sets off, degrees: 0 up the plan, + turned left.', LIMITS.heading)),
+      field('Start x, studs', num(r.x, (n) => { carrying(i, () => { r.x = n; }); soon(render); }, 1, 'Where it starts, studs across the plan.', LIMITS.start)),
+      field('Start y, studs', num(r.y, (n) => { carrying(i, () => { r.y = n; }); soon(render); }, 1, 'Where it starts, studs up the plan.', LIMITS.start)),
+      field('Heading ° (0 = up, + = left)', num(r.heading, (n) => { carrying(i, () => { r.heading = n; }); soon(render); }, 22.5, 'The way it sets off, degrees: 0 up the plan, + turned left.', LIMITS.heading)),
       rangeNote('Start -10000 to 10000 studs; heading -360 to 360°.'));
     {
       // (what runs on it: train track or the monorail beam)
@@ -1073,6 +1085,8 @@ function changed(rerender = false, record = true, build = true) {
   followOwnStretches(record);
   followCutPaths(record);
   if (record) {
+    // (tracks taken apart that no longer touch: forgotten, so that put together again they're joined as any are)
+    pruneApart(design);
     history.record(JSON.stringify(design), coalesceNext);
     coalesceNext = undefined;
     settleFrom = runner.id + 1; // (the next build is of the design as let go of)
@@ -1579,6 +1593,7 @@ const canvas = new TrackCanvas($<HTMLCanvasElement>('track'), {
   design: () => design,
   changed: (commit) => changed(commit, commit), // (one undo step per finished action, none for each mouse move)
   revert: () => restore(history.current), // (Esc mid-drag: back to the last finished action)
+  joint: () => updateSelbar(),
   live: (route) => (route === undefined ? render() : renderCard(route)), // (a handle being dragged: the route's card shows its numbers as they change)
   select: () => { foldedCards.clear(); render(); updateSelbar(); },
   radius: () => Number(radiusSel.value),
@@ -1946,15 +1961,19 @@ function pasteClip() {
   addRoutes(clipboard, x + 8 * n - p0[0], y + 8 * n - p0[1], clipTables);
 }
 /** Transform the selection (its tables too) about its first route's start (or, with no route, its first table's middle). */
-function transformSel(f: (r: DRoute, px: number, py: number) => void, g: (t: Table, px: number, py: number) => Table) {
+function transformSel(f: (r: DRoute, px: number, py: number) => void, g: (t: Table, px: number, py: number) => Table, first?: (all: number[]) => void) {
   const sel = selected(), tk = selectedTables(); if (!sel.length && !tk.length) return;
   if (refuseLocked()) return;
+  // (the tracks joined to the selected ones go along, as when they're dragged: connections.ts)
+  const all = canvas.withJoined(sel), held = lockedWhy(design, all);
+  if (held) { canvas.say(`${held}, and joined to this: take the joint apart first (click it, then Take apart)`); return; }
+  first?.(all);
   const [px, py] = sel.length ? [design.routes[sel[0]].x, design.routes[sel[0]].y] : (([x, y]) => [Math.round(x), Math.round(y)])(tableMiddle(design.tables![tk[0]]));
-  for (const i of sel) f(design.routes[i], px, py);
+  for (const i of all) f(design.routes[i], px, py);
   for (const k of tk) design.tables![k] = g(design.tables![k], px, py);
   changed(true);
 }
-const mirrorSel = () => { mirrorAnchors(design, selected().map((i) => design.routes[i].name || String(i))); transformSel((r, px) => mirrorRoute(r, px), (t, px) => mirroredTable(t, px)); };
+const mirrorSel = () => transformSel((r, px) => mirrorRoute(r, px), (t, px) => mirroredTable(t, px), (all) => mirrorAnchors(design, all.map((i) => design.routes[i].name || String(i))));
 const turnSel = (a: number) => transformSel((r, px, py) => {
   const c = Math.cos((a * Math.PI) / 180), sn = Math.sin((a * Math.PI) / 180), dx = r.x - px, dy = r.y - py;
   r.x = r3(px + dx * c - dy * sn); r.y = r3(py + dx * sn + dy * c);
@@ -2015,6 +2034,10 @@ function updateSelbar() {
   ($('sel-parallel') as HTMLButtonElement).disabled = !one; if (!one) closeParallel();
   split.disabled = !one; merge.disabled = !two || !!mp;
   split.title = one ? 'Cut the selected route in two where you click on it, a whole stud along (S with the pointer on it)' : 'Split: select one route first';
+  // (a joint selected on the plan: Take apart, or Join again)
+  const sj = canvas.jointSelected(), apart = $('sel-apart') as HTMLButtonElement, join = $('sel-join') as HTMLButtonElement;
+  apart.hidden = !sj?.joined; join.hidden = !sj?.apart;
+  if (sj) { apart.title = `Take ${sj.names} apart here: they still touch, but each moves and is reshaped on its own`; join.title = `Join ${sj.names} again: they move together`; }
   merge.title = two ? (mp ? `Merge: can't, ${mp}` : 'Make these two routes one track') : 'Merge: select two routes that meet end to end';
 }
 $('sel-copy').addEventListener('click', () => { copySel(); updateSelbar(); });
@@ -2029,6 +2052,8 @@ $('sel-savetpl').addEventListener('click', () => {
   if (why) canvas.say(`Not saved: ${why}`);
 });
 $('sel-merge').addEventListener('click', mergeSel);
+$('sel-apart').addEventListener('click', () => canvas.takeApart(true));
+$('sel-join').addEventListener('click', () => canvas.takeApart(false));
 $('sel-rotl').addEventListener('click', () => turnSel(90));
 $('sel-rotr').addEventListener('click', () => turnSel(-90));
 $('sel-del').addEventListener('click', () => { deleteSel(); updateSelbar(); });

@@ -23,6 +23,7 @@ import { isEdit, reverseAnchors } from './twfollow';
 import { type End, openEnds, type Placed, type Placement, placeTemplate, transformed } from './addtemplate';
 import { lockedWhy } from './lock';
 import { type MeasurePoint, measureBetween, measurePoint } from './measure';
+import { applyCarry, type Carry, connectedSet, holds, type Joint, jointNames, joints, openedBy, planCarry, poseAt, setApart, tidyExpert } from './connections';
 import { COMMON_RADII, type GuideEnd, type GuideResult, type GuideStraight, guidePoint } from './guides';
 import { describe, follow, plan, planAnyway, planAuto, planFreeTurning, planToPose, reversed, trace as traceRaw, type Pose } from './planner';
 
@@ -90,6 +91,8 @@ export interface CanvasHost {
   live?(route?: number): void;
   /** The design as it was at the last finished action (a drag cancelled with Esc: nothing of it kept). */
   revert?(): void;
+  /** The joint selected on the plan changed (the selection bar's Take apart and Join). */
+  joint?(): void;
 }
 
 /** How long segments run along their centre line, studs. */
@@ -153,7 +156,80 @@ export class TrackCanvas {
   private meas: { a?: MeasurePoint; b?: MeasurePoint } = {};
   private measureAt(w: [number, number]): MeasurePoint { return measurePoint(this.host.design().routes, w, this.reach(14), this.guided(w)); }
   /** Moving the selected tracks: where the press was (studs) and where they started. */
-  private moving: { x: number; y: number; orig: { i: number; x: number; y: number }[]; tables?: { k: number; orig: Table }[]; moved: boolean; said?: boolean } | undefined;
+  private moving: { x: number; y: number; orig: { i: number; x: number; y: number }[]; tables?: { k: number; orig: Table }[]; moved: boolean; said?: boolean;
+    /** the tracks joined to them, that go along (not with Alt held: alone), and the joints between the two (open, with Alt) */
+    carried: { i: number; x: number; y: number }[]; watch: Joint[]; alone?: boolean; by?: [number, number] } | undefined;
+  // ---------- connections (expert): joined tracks go together (connections.ts) ----------
+  /** The design's joints, worked out again only when its tracks have changed. */
+  private jointsKey = '';
+  private jointsList: Joint[] = [];
+  private joints(): Joint[] {
+    const d = this.host.design();
+    const key = JSON.stringify([d.gaugeStuds, d.expert?.apart, d.routes.map((r) => [r.name, r.x, r.y, r.heading, r.segs, r.system, r.gaugeStuds, r.dualGauge, r.dualGaugeStuds, r.dualShared, r.startEnd, r.endEnd])]);
+    if (key !== this.jointsKey) {
+      this.jointsKey = key; this.jointsList = joints(d);
+      // (and the ends joined to nothing, for the plan's small rings: not a buffer stop's)
+      const joined = new Set<string>();
+      for (const j of this.jointsList) { joined.add(`${j.a}${j.aEnd}`); if (j.bEnd) joined.add(`${j.b}${j.bEnd}`); }
+      this.openEnds = [];
+      d.routes.forEach((r, i) => {
+        if (!r.segs.length) return;
+        if (!joined.has(`${i}start`) && r.startEnd !== 'buffer') this.openEnds.push([r.x, r.y]);
+        if (!joined.has(`${i}end`) && r.endEnd !== 'buffer') { const e = follow(r, r.segs); this.openEnds.push([e.x, e.y]); }
+      });
+    }
+    return this.jointsList;
+  }
+  private openEnds: [number, number][] = [];
+  /** These tracks and every track joined to them, directly or through others (what a move, a turn or a mirror takes along). */
+  withJoined(routes: readonly number[]): number[] { return connectedSet(this.host.design(), routes, this.joints()); }
+  /** The selected tracks begin to move from w (studs): where they and the tracks joined to them are now. */
+  private startMoving(w: [number, number], routes: number[], tables?: { k: number; orig: Table }[]) {
+    const d = this.host.design(), js = this.joints(), sel = new Set(routes), place = (i: number) => ({ i, x: d.routes[i].x, y: d.routes[i].y });
+    this.moving = { x: w[0], y: w[1], moved: false, orig: routes.map(place), tables, carried: this.withJoined(routes).filter((i) => !sel.has(i)).map(place), watch: js.filter((j) => !j.apart && sel.has(j.a) !== sel.has(j.b)) };
+  }
+  /** The tracks joined to the ones being moved: as far over as they are, or (alone, Alt) back where they were. */
+  private moveCarried(alone: boolean) {
+    const m = this.moving, d = this.host.design();
+    if (!m?.by) return;
+    m.alone = alone;
+    for (const o of m.carried) if (d.routes[o.i]) { d.routes[o.i].x = alone ? o.x : Math.round((o.x + m.by[0]) * 1e4) / 1e4; d.routes[o.i].y = alone ? o.y : Math.round((o.y + m.by[1]) * 1e4) / 1e4; }
+  }
+  /** A track being reshaped (an end or a handle dragged): what it carries, and the joints open now that were closed when it began. */
+  private carrying(route: number, fixed: 'start' | 'end', s0: number): { plan: Carry; skip: Set<number>; open: Joint[] } {
+    const plan = planCarry(this.host.design(), route, fixed, s0, this.joints());
+    return { plan, skip: new Set(plan.groups.flatMap((g) => g.routes.map((o) => o.i))), open: [] };
+  }
+  /** The carried tracks put where the reshaped one takes them now (alone, Alt: left where they were). True if any moved. */
+  private carry(c: { plan: Carry; open: Joint[] } | undefined, alone: boolean): boolean {
+    if (!c) return false;
+    const d = this.host.design(), any = applyCarry(c.plan, d, alone);
+    c.open = openedBy(c.plan, d);
+    return any;
+  }
+  /** The tracks a drag is carrying now: not snapped to, nor taken guides from (they move with it). */
+  private carriedNow(): Set<number> | undefined { return this.alt ? undefined : (this.drag?.carry ?? this.handleDrag?.carry)?.skip; }
+  /** The joint selected (a click on a joined end): the route and which end of it. */
+  private selJoint: { route: number; end: 'start' | 'end' } | undefined;
+  private setJoint(v: { route: number; end: 'start' | 'end' } | undefined) { if (!v && !this.selJoint) return; this.selJoint = v; this.host.joint?.(); }
+  private jointsAt(route: number, end: 'start' | 'end'): Joint[] { return this.joints().filter((j) => (j.a === route && j.aEnd === end) || (j.b === route && j.bEnd === end)); }
+  /**
+   * The selected joint (a joined end clicked; or, with just two tracks selected, where those two meet: a branch's joint is under its
+   * points, which take the click): its tracks' names, and whether any of it is joined, or taken apart (the selection bar's Take apart and Join).
+   */
+  jointSelected(): { names: string; joined: boolean; apart: boolean; joints: Joint[] } | undefined {
+    const sj = this.selJoint, d = this.host.design(), two = !sj && !this.tableSelection().length && this.selection().length === 2 ? this.selection() : undefined;
+    const js = sj && d.routes[sj.route] ? this.jointsAt(sj.route, sj.end) : two ? this.joints().filter((j) => (j.a === two[0] && j.b === two[1]) || (j.a === two[1] && j.b === two[0])) : [];
+    return js.length ? { names: jointNames(d, js), joined: js.some((j) => !j.apart), apart: js.some((j) => j.apart), joints: js } : undefined;
+  }
+  /** The selected joint taken apart (its tracks still touch, but each moves and is reshaped on its own), or joined again. One undo step. */
+  takeApart(on: boolean) {
+    const sel = this.jointSelected(), d = this.host.design(), id = (i: number) => d.routes[i].name || String(i);
+    if (!sel) return;
+    for (const j of sel.joints) setApart(d, id(j.a), id(j.b), on);
+    this.host.changed(true); this.host.joint?.();
+    this.say(on ? `Took ${sel.names} apart: each moves on its own now · Join puts them back together` : `Joined ${sel.names}: they move together again`);
+  }
   /** a table being dragged by its handle (its name, in its middle): which, where from, as it was */
   private tableDrag: { k: number; x: number; y: number; orig: Table; moved: boolean } | undefined;
   /** the table whose handle (its name, in its middle) is within reach of a point (studs), if any */
@@ -187,6 +263,7 @@ export class TrackCanvas {
   tableSelection(): number[] { const n = this.host.design().tables?.length ?? 0; return [...this.selTables].filter((k) => k < n).sort((a, b) => a - b); }
   setSelection(list: number[], tables: number[] = []) {
     if (list.length || tables.length) this.selCut = undefined;
+    this.setJoint(undefined);
     this.selected = list[0]; this.extra = new Set(list.slice(1)); this.selTables = new Set(tables); this.host.select(this.selected); this.draw();
   }
   /** The plan's zoom and offset (a report keeps them, to show the same view again). */
@@ -208,9 +285,9 @@ export class TrackCanvas {
   /** Plan layers turned off from the legend: grooves, checks, crossings, ballast, baseplate, points, levers, grips. */
   hidden = new Set<string>();
   /** Dragging a track's end: which route and end, where the press was, and the route as it was. */
-  private drag: { route: number; end: 'start' | 'end'; sx: number; sy: number; moved: boolean; orig: DRoute; anchor: number; lastGood?: DRoute } | undefined;
+  private drag: { route: number; end: 'start' | 'end'; sx: number; sy: number; moved: boolean; orig: DRoute; anchor: number; lastGood?: DRoute; carry?: { plan: Carry; skip: Set<number>; open: Joint[] } } | undefined;
   /** Dragging a curve's or straight's handle (angle, radius, length): which, and the segment as it was. */
-  private handleDrag: { route: number; seg: number; kind: HandleKind; orig: DSeg; moved: boolean; sx: number; sy: number; why?: string } | undefined;
+  private handleDrag: { route: number; seg: number; kind: HandleKind; orig: DSeg; moved: boolean; sx: number; sy: number; why?: string; carry?: { plan: Carry; skip: Set<number>; open: Joint[] } } | undefined;
   /** A short message in the hint line (why something wasn't done), for a few seconds. */
   private noteText: string | undefined;
   private noteTimer = 0;
@@ -241,9 +318,12 @@ export class TrackCanvas {
     const [lo, hi] = h.kind === 'angle' ? [1, LIMITS.angle[1]] : h.kind === 'radius' ? [radiusRange(r)[0], radiusRange(r)[1]] : [1, LIMITS.straight[1]];
     const v = Math.round((cur + dir * step) * 1e6) / 1e6;
     if (v < lo || v > hi) { this.say(`${h.kind === 'angle' ? 'A curve turns' : h.kind === 'radius' ? 'A radius is' : 'A straight is'} ${v < lo ? `at least ${lo}${h.kind === 'angle' ? '°' : ' studs'}` : `at most ${hi}${h.kind === 'angle' ? '°' : ' studs'}`}`, 2500); return; }
+    // (what's joined to the track past this piece goes with it)
+    const c = r.locked ? undefined : this.carrying(ri, 'start', segsStuds(r.segs.slice(0, h.seg)));
     r.segs[h.seg] = withValue(sg, h.kind, h.kind === 'angle' ? Math.sign((sg as Extract<DSeg, { kind: 'curve' }>).angle) * v : v);
+    this.carry(c, false);
     this.host.changed(true); this.host.live?.(ri);
-    this.say(handleLabel(r.segs[h.seg]), 2000);
+    this.say(c?.open.length ? `${handleLabel(r.segs[h.seg])} · opened the joint between ${jointNames(this.host.design(), c.open)}` : handleLabel(r.segs[h.seg]), c?.open.length ? 3500 : 2000);
   }
   /** Enter on a selected route: lay track on from its end (Shift: from its start), by keyboard. */
   private startKeyboardDraw(which: 'start' | 'end') {
@@ -349,7 +429,7 @@ export class TrackCanvas {
   private deleteCut() {
     const sc = this.selCut, d = this.host.design();
     if (!sc) return;
-    if (sc.kind === 'cutpath') { const left = this.cutPaths().filter((p) => p.id !== sc.id); if (left.length) d.expert!.cutPaths = left; else delete d.expert; }
+    if (sc.kind === 'cutpath') { d.expert!.cutPaths = this.cutPaths().filter((p) => p.id !== sc.id); tidyExpert(d); }
     else { const rr = d.routes[sc.route]; if (rr?.cuts) { rr.cuts.splice(sc.k, 1); if (!rr.cuts.length) delete rr.cuts; } }
     this.selCut = undefined; this.host.changed(true); this.draw();
   }
@@ -499,6 +579,15 @@ export class TrackCanvas {
     el.addEventListener('contextmenu', (e) => e.preventDefault());
     el.addEventListener('mouseleave', () => { if (this.hoverRoute !== undefined) { this.hoverRoute = undefined; this.drawSoon(); } });
     el.addEventListener('mousedown', (e) => { this.touching = false; this.down(e); });
+    // (a double click on a track, in Select: it and every track joined to it selected)
+    el.addEventListener('dblclick', (e) => {
+      if (this.mode !== 'select' || this.active || this.placing || this.pathDraw || this.splitArmed || this.cutArmed) return;
+      const w = this.evWorld(e), hit = this.nearTrack(w, this.reach(18)) ?? this.onBand(w);
+      if (!hit) return;
+      const all = this.withJoined([hit.route]), name = this.host.design().routes[hit.route].name || `Route ${hit.route + 1}`;
+      this.setSelection(all);
+      this.say(all.length > 1 ? `${name} and the ${all.length - 1} joined to it selected` : `${name} isn't joined to another track`, 2500);
+    });
     addEventListener('mousemove', (e) => this.move(e));
     addEventListener('mouseup', (e) => this.up(e));
     el.addEventListener('wheel', (e) => this.wheel(e), { passive: false });
@@ -551,8 +640,9 @@ export class TrackCanvas {
   /** What's near a point that a guide can come from: other routes' ends and straights (only the routes whose box is near: the rest aren't walked). */
   private guideCands(p: [number, number], skip: number | undefined) {
     const ends: GuideEnd[] = [], straights: GuideStraight[] = [], m = 26 + (this.touching ? 22 : 10) / this.scale;
+    const carried = skip === undefined ? undefined : this.carriedNow();
     this.host.design().routes.forEach((r, i) => {
-      if (i === skip) return;
+      if (i === skip || carried?.has(i)) return;
       // (further from its start than it's long, and the margin: skipped without a trace; far cheaper than a box kept per route's shape)
       if (Math.hypot(p[0] - r.x, p[1] - r.y) > segsStuds(r.segs) + m) return;
       const name = r.name || String(i), e = follow(r, r.segs);
@@ -613,8 +703,9 @@ export class TrackCanvas {
   }
   private nearTrack(p: [number, number], reach = this.reach(), skip?: number): { route: number; pose: Pose; end: 'start' | 'end' | undefined } | undefined {
     let best: { route: number; pose: Pose; end: 'start' | 'end' | undefined; d: number } | undefined;
+    const carried = skip === undefined ? undefined : this.carriedNow();
     this.host.design().routes.forEach((r, i) => {
-      if (i === skip) return;
+      if (i === skip || carried?.has(i)) return;
       // (a route whose box is further from p than the reach, with a stud for the points between its samples: not looked along)
       const bx = routeBox(r), m = reach * 1.4 + 1;
       if (p[0] < bx[0] - m || p[0] > bx[2] + m || p[1] < bx[1] - m || p[1] > bx[3] + m) return;
@@ -745,6 +836,7 @@ export class TrackCanvas {
       return;
     }
     const w = this.evWorld(e);
+    this.setJoint(undefined);
     // a template being placed: the click puts it down
     if (this.placing && e.button === 0) {
       const pl = this.placedNow()!, tpl = this.placing.tpl;
@@ -779,7 +871,7 @@ export class TrackCanvas {
     // Pressing on a handle of the selected route: drag it (a curve's angle or radius, a straight's length)
     if (!this.active && e.button === 0) {
       const h = this.handleAt(w), ri = this.selection()[0];
-      if (h) { this.handleDrag = { route: ri, seg: h.seg, kind: h.kind, orig: structuredClone(this.host.design().routes[ri].segs[h.seg]), moved: false, sx: e.clientX, sy: e.clientY }; return; }
+      if (h) { const hr = this.host.design().routes[ri]; this.handleDrag = { route: ri, seg: h.seg, kind: h.kind, orig: structuredClone(hr.segs[h.seg]), moved: false, sx: e.clientX, sy: e.clientY, carry: this.carrying(ri, 'start', segsStuds(hr.segs.slice(0, h.seg))) }; return; }
     }
     // Pressing on a lever: drag it (side, out, along)
     if (!this.active && e.button === 0) {
@@ -801,7 +893,8 @@ export class TrackCanvas {
         let c = -1;
         work.segs.forEach((sg, k) => { if (sg.kind === 'curve') c = k; });
         const anchor = c < 0 ? Math.max(0, work.segs.length - 1) : c > 0 && work.segs[c - 1].kind === 'straight' ? c - 1 : c;
-        this.drag = { route: hit.route, end: hit.end, sx: e.clientX, sy: e.clientY, moved: false, orig: structuredClone(r), anchor, lastGood: structuredClone(r) };
+        // (what's joined to it past where it's reshaped from goes with its end; what's joined before that stays)
+        this.drag = { route: hit.route, end: hit.end, sx: e.clientX, sy: e.clientY, moved: false, orig: structuredClone(r), anchor, lastGood: structuredClone(r), carry: this.carrying(hit.route, hit.end === 'end' ? 'start' : 'end', segsStuds(work.segs.slice(0, anchor))) };
         this.extra.clear(); this.selTables.clear(); this.selected = hit.route; this.host.select(this.selected);
         return;
       }
@@ -820,7 +913,7 @@ export class TrackCanvas {
         const d = this.host.design();
         if (!this.selTables.has(tk)) this.setSelection([], [tk]);
         if (this.selection().length || this.selTables.size > 1) {
-          this.moving = { x: w[0], y: w[1], moved: false, orig: this.selection().map((i) => ({ i, x: d.routes[i].x, y: d.routes[i].y })), tables: this.tableSelection().map((k) => ({ k, orig: structuredClone(d.tables![k]) })) };
+          this.startMoving(w, this.selection(), this.tableSelection().map((k) => ({ k, orig: structuredClone(d.tables![k]) })));
           return;
         }
         this.tableDrag = { k: tk, x: w[0], y: w[1], orig: structuredClone(d.tables![tk]), moved: false }; return;
@@ -832,14 +925,14 @@ export class TrackCanvas {
       if (!hit) { this.box = { x0: w[0], y0: w[1], x1: w[0], y1: w[1], add }; return; }
       if (hit && !add && (hit.route === this.selected || this.extra.has(hit.route))) {
         const d = this.host.design();
-        this.moving = { x: w[0], y: w[1], moved: false, orig: this.selection().map((i) => ({ i, x: d.routes[i].x, y: d.routes[i].y })), tables: this.tableSelection().map((k) => ({ k, orig: structuredClone(d.tables![k]) })) };
+        this.startMoving(w, this.selection(), this.tableSelection().map((k) => ({ k, orig: structuredClone(d.tables![k]) })));
         return;
       }
       if (add && hit) this.toggleSelected(hit.route);
       else {
         this.selected = hit?.route; this.extra.clear(); this.selTables.clear();
         // (and it can be dragged straight away)
-        if (hit) { const d = this.host.design(); this.moving = { x: w[0], y: w[1], moved: false, orig: [{ i: hit.route, x: d.routes[hit.route].x, y: d.routes[hit.route].y }] }; }
+        if (hit) this.startMoving(w, [hit.route]);
       }
       this.host.select(this.selected);
       this.draw();
@@ -924,8 +1017,10 @@ export class TrackCanvas {
         // (the same guides as drawing an end: the route's end on another end's straight-on line, or 8 or 16 studs beside a straight; Alt: off)
         const gd = guidedHandle(r, hd, this.mouse, res, { ...this.guideCands(this.mouse, hd.route), scale: this.scale, snapPx: this.touching ? 22 : 10 }, { ...opts, off: this.alt });
         if (gd.guide && gd.end) { res = { value: gd.value }; this.guideNow = { point: gd.end, guides: [gd.guide] }; }
-        const next = withValue(r.segs[hd.seg], hd.kind, res.value);
-        if (JSON.stringify(next) !== JSON.stringify(r.segs[hd.seg])) { r.segs[hd.seg] = next; this.host.changed(false); this.host.live?.(hd.route); }
+        const next = withValue(r.segs[hd.seg], hd.kind, res.value), reshaped = JSON.stringify(next) !== JSON.stringify(r.segs[hd.seg]);
+        if (reshaped) r.segs[hd.seg] = next;
+        // (what's joined to the track past this piece goes with it; Alt: it's left where it was)
+        if (this.carry(hd.carry, e.altKey) || reshaped) { this.host.changed(false); this.host.live?.(hd.route); }
       }
       return this.drawSoon();
     }
@@ -946,11 +1041,13 @@ export class TrackCanvas {
     if (this.moving) {
       const m = this.moving, p = this.evWorld(e), d = this.host.design();
       const dx = Math.round(p[0] - m.x), dy = Math.round(p[1] - m.y); // (whole studs: stays on the grid)
-      const lock = lockedWhy(d, m.orig.map((o) => o.i), (m.tables ?? []).map((t) => t.k));
-      if (lock && (dx || dy)) { if (!m.said) { m.said = true; this.say(lock); } this.mouse = p; return this.drawSoon(); }
+      // (the tracks joined to them go along; Alt held: the selected ones alone, the others back where they were)
+      const alone = e.altKey, own = lockedWhy(d, m.orig.map((o) => o.i), (m.tables ?? []).map((t) => t.k)), lock = own ?? (alone ? undefined : lockedWhy(d, m.carried.map((o) => o.i)));
+      if (lock && (dx || dy)) { if (!m.said) { m.said = true; this.say(own ? lock : `${lock}, and joined to this: hold Alt to move this alone`); } this.mouse = p; return this.drawSoon(); }
       if (dx || dy || m.moved) {
-        m.moved = true;
+        m.moved = true; m.alone = alone; m.by = [dx, dy];
         for (const o of m.orig) { d.routes[o.i].x = Math.round((o.x + dx) * 1e4) / 1e4; d.routes[o.i].y = Math.round((o.y + dy) * 1e4) / 1e4; }
+        this.moveCarried(alone);
         for (const o of m.tables ?? []) if (d.tables?.[o.k]) d.tables[o.k] = movedTable(o.orig, dx, dy);
         this.host.changed(false);
       }
@@ -1011,7 +1108,11 @@ export class TrackCanvas {
       else if (moved) this.host.changed(true);
       return this.draw();
     }
-    if (this.handleDrag) { const moved = this.handleDrag.moved; this.handleDrag = undefined; if (moved) this.host.changed(true); return this.draw(); }
+    if (this.handleDrag) {
+      const hd = this.handleDrag, moved = hd.moved; this.handleDrag = undefined;
+      if (moved) { this.host.changed(true); if (hd.carry?.open.length) this.say(`Opened the joint between ${jointNames(this.host.design(), hd.carry.open)}`); }
+      return this.draw();
+    }
     if (this.leverDrag) {
       const ld = this.leverDrag, moved = ld.moved; this.leverDrag = undefined;
       if (moved && ld.at && ld.arm) this.leverPending = { key: ld.it.key, at: ld.at, arm: ld.arm };
@@ -1029,7 +1130,18 @@ export class TrackCanvas {
       return this.draw();
     }
     if (this.tableDrag) { const moved = this.tableDrag.moved; this.tableDrag = undefined; if (moved) this.host.changed(true); return this.draw(); }
-    if (this.moving) { const moved = this.moving.moved; this.moving = undefined; if (moved) this.host.changed(true); return this.draw(); }
+    if (this.moving) {
+      const m = this.moving, d = this.host.design(); this.moving = undefined;
+      if (m.moved) {
+        // (moved alone, Alt: the joints it left are open now, and said)
+        const open = m.watch.filter((j) => !holds(d, j)), sel = new Set(m.orig.map((o) => o.i)), id = (i: number) => d.routes[i].name || String(i);
+        const list = (ns: string[]) => (ns.length <= 3 ? ns.slice(0, -1).join(', ') + (ns.length > 1 ? ' and ' : '') + ns[ns.length - 1] : `${ns.slice(0, 2).join(', ')} and ${ns.length - 2} more`);
+        const mine = [...new Set(open.map((j) => (sel.has(j.a) ? j.a : j.b)))].map(id), others = [...new Set(open.map((j) => (sel.has(j.a) ? j.b : j.a)))].map(id);
+        this.host.changed(true);
+        if (open.length) this.say(`Took ${list(mine)} apart from ${list(others)}`);
+      }
+      return this.draw();
+    }
     if (this.box) {
       const b = this.box; this.box = undefined;
       const x0 = Math.min(b.x0, b.x1), x1 = Math.max(b.x0, b.x1), y0 = Math.min(b.y0, b.y1), y1 = Math.max(b.y0, b.y1);
@@ -1046,6 +1158,10 @@ export class TrackCanvas {
     this.drag = undefined;
     if (dr.moved) {
       if (this.dragBad && dr.lastGood) this.host.design().routes[dr.route] = dr.lastGood;
+      // (what it carries, where the shape it's left with takes it; a joint that opened is said)
+      this.carry(dr.carry, e.altKey);
+      const opened = dr.carry?.open.length ? `Opened the joint between ${jointNames(this.host.design(), dr.carry.open)}` : undefined;
+      if (this.dragBad && dr.lastGood) { /* (back to the last good shape) */ }
       else if (this.dragSnap?.meet) { /* (dual-gauge track and one of its gauges: their ends met, still two tracks) */ }
       else if (this.dragSnap) {
         // joined: make the two one track (the dragged end meeting the other's end)
@@ -1055,8 +1171,12 @@ export class TrackCanvas {
         this.host.select(this.selected);
       }
       this.dragBad = false; this.dragSnap = undefined;
-      this.host.changed(true); return this.draw();
+      this.host.changed(true);
+      if (opened) this.say(opened);
+      return this.draw();
     }
+    // (a click on a joined end, in Select: the joint is selected, to take apart or join again)
+    if (this.mode === 'select' && e.button === 0 && this.jointsAt(dr.route, dr.end).length) this.setJoint({ route: dr.route, end: dr.end });
     // a click on an end: in Draw mode, carry the track on from it
     if (this.mode === 'draw' && e.button === 0) {
       const r = this.host.design().routes[dr.route];
@@ -1110,6 +1230,7 @@ export class TrackCanvas {
     const cur = d.routes[dr.route];
     cur.x = Math.round(r.x * 1e4) / 1e4; cur.y = Math.round(r.y * 1e4) / 1e4; cur.heading = Math.round(r.heading * 1e6) / 1e6; cur.segs = r.segs;
     if (good) this.drag!.lastGood = structuredClone(cur);
+    this.carry(dr.carry, this.alt);
   }
   private dragBad = false;
   /** Why the end the mouse is at can't be joined to the track being dragged or drawn (set by snapEnd). */
@@ -1132,8 +1253,9 @@ export class TrackCanvas {
     const d0 = this.host.design(), mine = skip !== undefined ? d0.routes[skip] : undefined;
     this.joinBlocked = undefined;
     if (this.alt) return undefined;
+    const carried = skip === undefined ? undefined : this.carriedNow();
     d0.routes.forEach((r, i) => {
-      if (i === skip) return;
+      if (i === skip || carried?.has(i)) return;
       // (an end it can't be joined to isn't snapped to: and the reason is said when it's near)
       const why = r.locked ? 'it is locked' : mine && joinProblem(d0, mine, r);
       const e = follow(r, r.segs);
@@ -1188,7 +1310,14 @@ export class TrackCanvas {
     this.drawPending = requestAnimationFrame(() => { this.drawPending = 0; this.draw(); });
   }
   private key(e: KeyboardEvent, down: boolean) {
-    if (e.key === 'Alt') { this.alt = down; this.guideKey = ''; this.drawSoon(); }
+    if (e.key === 'Alt') {
+      this.alt = down; this.guideKey = '';
+      // (Alt pressed or let go in the middle of a drag: what's joined is left behind, or comes along again, at once)
+      const cy = (this.drag?.moved ? this.drag : this.handleDrag?.moved ? this.handleDrag : undefined)?.carry;
+      if (this.moving?.moved && this.moving.carried.length && !lockedWhy(this.host.design(), this.moving.carried.map((o) => o.i))) { this.moveCarried(down); this.host.changed(false); }
+      else if (cy && this.carry(cy, down)) this.host.changed(false);
+      this.drawSoon();
+    }
     if (e.code === 'Space' && !down) this.space = false;
     if (typingIn(e) || !down || dialogOpen()) return;
     // (Space held pans; not when a button, a tick box or a section's heading has the focus: Space presses it)
@@ -1255,11 +1384,13 @@ export class TrackCanvas {
       // (the handle's segment put back as it was)
       const hd = this.handleDrag, r = this.host.design().routes[hd.route];
       if (r) r.segs[hd.seg] = hd.orig;
+      this.carry(hd.carry, true);
       this.handleDrag = undefined; this.host.changed(true); this.host.live?.(); return this.draw();
     }
     if (e.key === 'Escape' && this.drag) {
       // put the dragged track back as it was
       this.host.design().routes[this.drag.route] = this.drag.orig;
+      this.carry(this.drag.carry, true);
       this.drag = undefined; this.dragBad = false; this.dragSnap = undefined;
       this.host.changed(true); return this.draw();
     }
@@ -1267,7 +1398,7 @@ export class TrackCanvas {
     if (e.key === 'Escape' && (this.moving || this.tableDrag || this.itemDrag || this.leverDrag || this.box)) {
       const m = this.moving, t = this.tableDrag, d = this.host.design();
       const sel = this.selection(), selT = this.tableSelection(), changedAlready = !!(m?.moved || t?.moved || this.itemDrag?.moved || this.leverDrag?.moved);
-      if (m) for (const o of m.orig) if (d.routes[o.i]) { d.routes[o.i].x = o.x; d.routes[o.i].y = o.y; }
+      if (m) for (const o of [...m.orig, ...m.carried]) if (d.routes[o.i]) { d.routes[o.i].x = o.x; d.routes[o.i].y = o.y; }
       if (m?.tables) for (const o of m.tables) if (d.tables?.[o.k]) d.tables[o.k] = o.orig;
       if (t && d.tables?.[t.k]) d.tables[t.k] = t.orig;
       const lever = !!(this.itemDrag?.moved || this.leverDrag?.moved);
@@ -1292,8 +1423,10 @@ export class TrackCanvas {
       if (this.moving || this.drag || this.handleDrag || this.tableDrag || this.itemDrag || this.leverDrag || this.box || this.active || (!dx && !dy)) return;
       const lock = lockedWhy(this.host.design(), this.selection(), this.tableSelection());
       if (lock) { this.say(lock); return; }
-      const routes = this.host.design().routes;
-      for (const i of this.selection()) if (routes[i]) { routes[i].x = Math.round((routes[i].x + dx) * 1e4) / 1e4; routes[i].y = Math.round((routes[i].y + dy) * 1e4) / 1e4; }
+      // (the tracks joined to them go along)
+      const routes = this.host.design().routes, all = this.withJoined(this.selection()), held = lockedWhy(this.host.design(), all);
+      if (held) { this.say(`${held}, and joined to this: take the joint apart first (click it, then Take apart)`); return; }
+      for (const i of all) if (routes[i]) { routes[i].x = Math.round((routes[i].x + dx) * 1e4) / 1e4; routes[i].y = Math.round((routes[i].y + dy) * 1e4) / 1e4; }
       const ts = this.host.design().tables;
       for (const k of this.tableSelection()) if (ts?.[k]) ts[k] = movedTable(ts[k], dx, dy);
       this.host.changed(true); this.draw();
@@ -1361,6 +1494,13 @@ export class TrackCanvas {
   }
   private hintText(): string {
     if (this.placing) { const pl = this.placedNow(); return `Click to put it down${pl?.snapped ? `, joining ${pl.snapped.design.route}` : ''}${pl?.why ? ` (${pl.why})` : ''} · R / Shift+R turn it · M mirrors it · hold Alt for no snapping · Esc cancels`; }
+    // (a drag opening a joint: said before anything else, while it can still be put back)
+    {
+      const d = this.host.design(), m = this.moving, cy = (this.drag?.moved ? this.drag : this.handleDrag?.moved ? this.handleDrag : undefined)?.carry;
+      if (cy?.open.length) return `Opens the joint between ${jointNames(d, cy.open)} · let go to keep the shape · Esc puts it back`;
+      const open = m?.moved && m.alone ? m.watch.filter((j) => !holds(d, j)) : [];
+      if (open.length) return `Moving ${m!.orig.length > 1 ? 'them' : 'it'} alone: takes apart ${jointNames(d, open)} · let go to put ${m!.orig.length > 1 ? 'them' : 'it'} down · Esc puts ${m!.orig.length > 1 ? 'them' : 'it'} back`;
+    }
     if (this.noteText) return this.noteText;
     if (this.splitArmed) return 'Click on the route where to cut it · Esc cancels';
     if (this.cutArmed) return 'Click on the route where to cut it into parts · it stays one route · Esc cancels';
@@ -1370,6 +1510,11 @@ export class TrackCanvas {
     if (this.selCut?.kind === 'cut') return 'Cut across the track selected · drag it along the track · Delete removes it';
     if (this.mode === 'measure') return this.meas.b ? 'Click to measure again · Esc clears' : this.meas.a ? 'Click the second point · it snaps to track ends and centre lines · Esc clears' : 'Click the first point to measure from: it snaps to track ends and centre lines · Esc stops';
     if (this.handleDrag?.moved && this.handleDrag.why) return this.handleDrag.why;
+    // (a track reshaped: what comes along)
+    const cy = (this.drag?.moved ? this.drag : this.handleDrag?.moved ? this.handleDrag : undefined)?.carry;
+    const along = cy?.skip.size && !this.alt ? ` · ${cy.skip.size} joined track${cy.skip.size > 1 ? 's come' : ' comes'} along (hold Alt to leave ${cy.skip.size > 1 ? 'them' : 'it'})` : '';
+    if (this.handleDrag?.moved && along) return `Let go to keep the shape${along} · Esc puts it back`;
+    if (this.drag?.moved && along && !this.dragBad && !this.dragSnap) return `Release to reshape${along} · Esc puts it back`;
     if (this.drag?.moved) return this.dragBad ? "Can't bend the track this way: release to keep the last good shape, Esc puts it back"
       : this.dragSnap ? 'Release to join the two ends' : this.joinBlocked ? `Release to reshape (${this.joinBlocked}) · Esc puts it back` : 'Release to reshape · drop on another end to join · hold Alt for no snapping · Esc puts it back';
     if (this.active && this.kbDraw) return 'Arrow keys move the crosshair a stud (Shift: eight) · Enter lays track · Esc stops';
@@ -1396,12 +1541,20 @@ export class TrackCanvas {
       if (this.tableDrag?.moved) return 'Moving the table: let go to put it down';
       if (this.tableSelection().length && this.selected === undefined) return `${this.tableSelection().length} table${this.tableSelection().length > 1 ? 's' : ''} selected · drag by the name to move · Shift+click adds more · Delete removes`;
       if (this.mouse && !this.hidden.has('tables') && this.tableHandle(this.mouse) !== undefined) return 'Drag this table by its name to move it (its size and shape: the Tables panel)';
-      if (hit?.end) return 'Drag this end to reshape the track';
-      if (this.moving?.moved) return 'Moving: let go to put it down';
+      { // (a joint selected: what the selection bar's button does)
+        const sj = this.selJoint && !this.moving?.moved ? this.jointSelected() : undefined;
+        if (sj) return sj.joined ? `Joint between ${sj.names} selected · they move together · Take apart (in the bar above) lets each move on its own` : `${sj.names} touch here but are taken apart · Join (in the bar above) puts them back together`;
+      }
+      if (hit?.end) return this.jointsAt(hit.route, hit.end).some((j) => !j.apart) ? 'Drag this end to reshape the track: what is joined to it comes along · click it to select the joint' : 'Drag this end to reshape the track';
+      if (this.moving?.moved) {
+        const m = this.moving;
+        return m.carried.length && !m.alone ? `Moving ${m.orig.length + m.carried.length} joined tracks: let go to put them down · hold Alt to move ${m.orig.length > 1 ? 'the selected ones' : 'this one'} alone` : 'Moving: let go to put it down';
+      }
+
       if (this.selected !== undefined && this.selection().length === 1 && this.host.design().routes[this.selected]?.locked) return `${this.host.design().routes[this.selected].name || 'The route'} is locked · unlock it on its card to move or change it · copy still works`;
-      if (this.selected !== undefined) return `${this.selection().length > 1 ? `${this.selection().length} tracks` : this.host.design().routes[this.selected]?.name ?? ''} selected · drag to move · ${matchMedia('(pointer: coarse)').matches ? 'hold a finger on a track to add it or take it out' : 'Shift+click adds more · Delete removes · [ ] pick another · Tab its handles · Enter lays track on'}`;
+      if (this.selected !== undefined) return `${this.selection().length > 1 ? `${this.selection().length} tracks` : this.host.design().routes[this.selected]?.name ?? ''} selected · drag to move · ${matchMedia('(pointer: coarse)').matches ? 'hold a finger on a track to add it or take it out' : 'Shift+click adds more · double-click selects all that is joined to it · Delete removes · [ ] pick another · Tab its handles · Enter lays track on'}`;
       if (!this.host.design().routes.length) return 'No track yet: press D (or ✎ Draw) to lay some';
-      return 'Click a track to select it, drag it to move it · drag an end to reshape it · D to draw';
+      return 'Click a track to select it, drag it to move it (joined tracks come along) · drag an end to reshape it · D to draw';
     }
     if (hit?.end === 'end') return 'Click to carry the track on · drag to reshape it';
     if (hit?.end === 'start') return 'Click to lay a new track from this end (back out of it, or along it as a branch) · drag to reshape it';
@@ -1759,6 +1912,40 @@ export class TrackCanvas {
         const [kx, ky] = this.toScreen(at[0] / MM, at[1] / MM), kr = Math.max(4, Math.min(9, (3 / MM) * this.scale));
         c.fillStyle = '#e8892b'; c.strokeStyle = '#fff'; c.lineWidth = 1.5;
         c.beginPath(); c.arc(kx, ky, kr, 0, 2 * Math.PI); c.fill(); c.stroke();
+      }
+    }
+    // joints (expert): a dot where two tracks are joined (they move together), an orange ring with a bar where they
+    // touch but were taken apart, a small ring on an end that's joined to nothing; the selected joint ringed; and the
+    // joints a drag has open now, ringed in red
+    if (!this.hidden.has('joints')) {
+      const js = this.joints(), id = (i: number) => d.routes[i]?.name || String(i);
+      const inView = (x: number, y: number) => x > -10 && y > -10 && x < W + 10 && y < H + 10;
+      // (where they are on the screen, for the browser smoke test)
+      const where = JSON.stringify(js.map((j) => { const [x, y] = this.toScreen(j.at[0], j.at[1]); return { a: id(j.a), b: id(j.b), x: Math.round(x), y: Math.round(y), ...(j.apart && { apart: true }) }; }));
+      if (this.el.dataset.joints !== where) this.el.dataset.joints = where;
+      if (this.scale >= 2.5) {
+        // (all the rings as one path, all the dots as another: a plan can have hundreds)
+        const spots = (pts: [number, number][], r: number) => { c.beginPath(); for (const p of pts) { const [x, y] = this.toScreen(p[0], p[1]); if (inView(x, y)) { c.moveTo(x + r, y); c.arc(x, y, r, 0, 2 * Math.PI); } } };
+        c.lineWidth = 1.25;
+        spots(this.openEnds, 3.5); c.fillStyle = ink.tagBg; c.fill(); c.strokeStyle = ink.label; c.stroke();
+        spots(js.filter((j) => !j.apart).map((j) => j.at), 3.5); c.fillStyle = ink.rail; c.fill(); c.strokeStyle = ink.tagBg; c.stroke();
+        for (const j of js) {
+          if (!j.apart) continue;
+          const [x, y] = this.toScreen(j.at[0], j.at[1]);
+          c.beginPath(); c.arc(x, y, 5.5, 0, 2 * Math.PI); c.fillStyle = '#fff'; c.fill(); c.strokeStyle = '#e8892b'; c.lineWidth = 2; c.moveTo(x - 4, y + 4); c.lineTo(x + 4, y - 4); c.stroke();
+        }
+      }
+      const sj = this.jointSelected();
+      for (const j of sj?.joints ?? []) { const [x, y] = this.toScreen(j.at[0], j.at[1]); c.beginPath(); c.arc(x, y, 10, 0, 2 * Math.PI); c.strokeStyle = ink.sel; c.lineWidth = 2.5; c.stroke(); }
+      // (opened by the drag going on: where the end is now, and where on the other track it was)
+      const m = this.moving, open = m?.moved && m.alone ? m.watch.filter((j) => !holds(d, j)) : (this.drag?.moved ? this.drag : this.handleDrag?.moved ? this.handleDrag : undefined)?.carry?.open ?? [];
+      { const names = open.map((j) => `${id(j.a)}-${id(j.b)}`).join(' '); if (this.el.dataset.opened !== names) this.el.dataset.opened = names; }
+      c.strokeStyle = '#e0452b'; c.lineWidth = 2;
+      for (const j of open) {
+        const ra = d.routes[j.a], rb = d.routes[j.b];
+        if (!ra || !rb) continue;
+        const pa = j.aEnd === 'start' ? (ra as Pose) : follow(ra, ra.segs), pb = poseAt(rb, j.s);
+        for (const q of [pa, pb]) { const [x, y] = this.toScreen(q.x, q.y); c.beginPath(); c.arc(x, y, 7, 0, 2 * Math.PI); c.stroke(); }
       }
     }
     // the selected route's handles: a curve's angle (round), its radius (diamond), a straight's length (square); the one dragged says its value

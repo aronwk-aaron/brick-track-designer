@@ -4,6 +4,7 @@ import { type BankRamps, type Design, type DRoute, type DSeg, freeName, toRoutes
 import { follow, type Pose } from './planner';
 import { joinedEnds, joinProblem, reversedRoute } from './routeedits';
 import { joinAnchors, reverseAnchors, splitAnchors } from './twfollow';
+import { renameApart, splitApart } from './connections';
 import { cutLength, joinCuts, reverseCuts, splitCuts } from './routecuts';
 import { joinStretches, reverseStretches, splitStretches } from './stretches';
 import { routeLength } from '../route/route';
@@ -83,6 +84,7 @@ export function splitRoute(d: Design, i: number, at: number, nameB?: string): { 
   const L = routeStuds(r), rts = toRoutes(d), rt = rts[i], name = r.name || String(i), nb = nameB ?? freeName(d, 'T');
   const [sa, sb] = cutSegs(r.segs, s), cut = follow(r, sa);
   splitAnchors(d, name, nb, s * 8, routeLength(rt), rt);
+  splitApart(d, name, nb);
   const b: DRoute = { ...structuredClone(r), name: nb, x: r6(cut.x), y: r6(cut.y), heading: r6(norm180(cut.heading)), segs: sb };
   delete b.startEnd; delete b.throwSide;
   const a = r;
@@ -147,6 +149,8 @@ export function joinInto(d: Design, a: number, b: number, bEnd: 'start' | 'end')
 function joinWith(d: Design, a: number, b: number, bEnd: 'start' | 'end'): number {
   const routes = d.routes, rb = routes[b], rts = toRoutes(d);
   joinAnchors(d, routes[a].name || String(a), rb.name || String(b), routeLength(rts[a]), routeLength(rts[b]), bEnd === 'end');
+  // (what b was taken apart from, the joined track is: connections.ts)
+  renameApart(d, rb.name || String(b), routes[a].name || String(a));
   const more = bEnd === 'start' ? rb.segs.map((sg) => ({ ...sg })) : reversedRoute(rb).segs;
   // (their hand cuts: b's on from a's end; both cut by hand only: still two parts where they met, and still by hand only)
   if (routes[a].cuts || rb.cuts || routes[a].cutsLocked || rb.cutsLocked) {
