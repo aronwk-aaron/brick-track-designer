@@ -565,7 +565,7 @@ function renderItemCard() {
     };
     const pair = document.createElement('span'); pair.className = 'pair'; pair.append(num('from'), ' to ', num('to'));
     { const fl = field('Studs from the start', pair); fl.classList.add('stack'); box.append(fl); }
-    small(`Whole studs, 0 to ${Math.ceil(L)}, at least ${STRETCH_MIN} long, not over another stretch. Press an arrow key to move it along the track. What it has: ${Object.keys(st.own).length ? Object.keys(st.own).map((k) => OWN_LABELS[k as RouteKey]).join(', ') : 'nothing of its own yet'} (the track's card below, Bed and underside).`);
+    small(`Whole studs, 0 to ${Math.ceil(L)}, at least ${STRETCH_MIN} long, not over another stretch. Drag it or its ends on the plan, or press an arrow key. What it has: ${Object.keys(st.own).length ? Object.keys(st.own).map((k) => OWN_LABELS[k as RouteKey]).join(', ') : 'nothing of its own yet'} (the track's card below, Bed and underside).`);
     row.append(del);
   } else if (it.kind === 'cutpath') {
     const p = design.expert!.cutPaths!.find((q) => q.id === it.id)!;
@@ -757,7 +757,7 @@ function stretchRow(r: DRoute, i: number, st: Stretch, k: number, key: RouteKey)
 function stretchList(box: HTMLElement, r: DRoute, i: number) {
   const L = cutLength(r), small = (text: string, warn = false) => { const n = document.createElement('small'); n.className = 'desc'; n.style.color = warn ? 'var(--warn)' : 'var(--muted)'; n.textContent = text; box.append(n); };
   const head = document.createElement('div'); head.className = 'rsub'; head.textContent = 'Stretches with their own'; head.style.cssText = 'font-weight:600;margin-top:8px'; box.append(head);
-  small(`A stretch of this track, from and to in whole studs from its start (0 to ${+L.toFixed(1)}), at least ${STRETCH_MIN} long, with its own settings over the track's. On the plan: click a stretch of the selected track to select it. The track is cut at a stretch's ends: an ordinary track end each side. Ballast lifts the track a plate (3.2 mm), with its buddy layer two: put plates under the track beside it.`);
+  small(`A stretch of this track, from and to in whole studs from its start (0 to ${+L.toFixed(1)}), at least ${STRETCH_MIN} long, with its own settings over the track's. On the plan: click a stretch of the selected track to select it, drag it or its ends along the track. The track is cut at a stretch's ends: an ordinary track end each side. Ballast lifts the track a plate (3.2 mm), with its buddy layer two: put plates under the track beside it.`);
   const lost = new Set(lostStretches(r).map((s) => s.from)), live = liveStretches(r);
   (r.stretches ?? []).forEach((st, k) => {
     const num = (which: 'from' | 'to') => {
@@ -783,13 +783,10 @@ function stretchList(box: HTMLElement, r: DRoute, i: number) {
     else if (as.from !== st.from || as.to !== st.to) small(`Built from ${as.from} to ${+as.to.toFixed(1)}: no piece under ${STRETCH_MIN} studs is left beside it.`);
     for (const key of STRETCH_KEYS) box.append(stretchRow(r, i, st, k, key));
   });
-  const add = btn('Add a stretch', () => {
-    // (after the last one, 8 studs or what's left of the track)
-    const from = Math.max(0, ...(r.stretches ?? []).map((s) => s.to)), to = Math.min(from + 8, Math.floor(L)), why = stretchProblem(r, from, to);
-    if (why) { canvas.say(from > 0 ? 'No room after the last stretch: shorten one first' : why); return; }
-    r.stretches = [...(r.stretches ?? []), { from, to, own: {} }];
-  }, 'A stretch of this track with settings of its own, after the last one: then set where it starts and ends, and what it has');
-  add.className = 'rreset'; box.append(add);
+  const add = document.createElement('button'); add.type = 'button'; add.textContent = 'Add a stretch…'; add.className = 'rreset';
+  add.title = 'Then press on this track on the plan where the stretch starts and drag along it to where it ends (whole studs; Esc cancels). After that, set what it has here.';
+  add.addEventListener('click', () => { canvas.setSelection([i]); canvas.stretchHere(); add.blur(); });
+  box.append(add);
 }
 /**
  * A route card's Cuts into parts (expert): where its track is cut into parts by hand, a field each (studs from its

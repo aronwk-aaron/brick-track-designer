@@ -5,7 +5,7 @@ import { describe, expect, it } from 'vitest';
 import type { Design, DRoute, DSeg } from '../src/app/design';
 import { joints } from '../src/app/connections';
 import { stretchProblem } from '../src/app/stretches';
-import { byHand, byHandNote, designByHandNote, dragStretchEnd, dragStretchWhole, EXPERT_SECTIONS, hitItems, type HitCtx, isPick, itemLabel, jointsOf, jointWhere, layerOf, newStretchAt, PICKS, picks, placeAlong, sameItem, takesFirst, withStretch } from '../src/app/items';
+import { alongBeyond, byHand, byHandNote, designByHandNote, dragStretchEnd, dragStretchWhole, EXPERT_SECTIONS, hitItems, type HitCtx, isPick, itemLabel, jointsOf, jointWhere, layerOf, newStretchAt, PICKS, picks, placeAlong, sameItem, takesFirst, withStretch } from '../src/app/items';
 import { cardSections } from '../src/app/cardsections';
 
 const st = (studs: number): DSeg => ({ kind: 'straight', studs });
@@ -155,6 +155,25 @@ describe('a stretch dragged along its track', () => {
     expect(dragStretchWhole(t, 0, 50)).toMatchObject({ from: 28, to: 38 });
     const far = dragStretchEnd({ ...t, stretches: [{ from: 10, to: 38, own: {} }] }, 0, 'from', 37);
     expect(far).toEqual({ from: 35, to: 38, why: 'The track is 37.7 studs long: a stretch starts at 35 at most' });
+  });
+});
+
+describe('how far along a track the pointer is', () => {
+  it('on the track: its studs from the start; past an end: further than the track is long, or less than nothing', () => {
+    const t = r('T', 0, 0, 0, [st(48)]);
+    expect(alongBeyond(t, [1, 20])).toBeCloseTo(20);
+    expect(alongBeyond(t, [1, 60])).toBeCloseTo(60);
+    expect(alongBeyond(t, [-2, -5])).toBeCloseTo(-5);
+    expect(alongBeyond(t, [3, 48])).toBeCloseTo(48);
+    const bend = r('B', 0, 0, 0, [cv(40, 90)]), L = (Math.PI * 40) / 2;   // (ends at -40, 40, heading left)
+    expect(alongBeyond(bend, [-50, 41])).toBeCloseTo(L + 10);
+    expect(alongBeyond(bend, [-30, 41])).toBeLessThan(L);
+  });
+  it('so an end dragged past the track\'s end says the track ends there', () => {
+    const t = r('T', 0, 0, 0, [st(48)], { stretches: [{ from: 20, to: 32, own: {} }] });
+    expect(dragStretchEnd(t, 0, 'to', alongBeyond(t, [0, 47.8]))).toEqual({ from: 20, to: 48 });
+    expect(dragStretchEnd(t, 0, 'to', alongBeyond(t, [0, 60]))).toEqual({ from: 20, to: 48, why: 'The track ends here (48 studs long)' });
+    expect(dragStretchEnd(t, 0, 'from', alongBeyond(t, [0, -9]))).toEqual({ from: 0, to: 32, why: 'The track starts here' });
   });
 });
 

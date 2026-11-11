@@ -593,6 +593,41 @@ try {
     check((await main()).stretches?.length === 1, 'and one undo brings it back');
     await page.keyboard.press('Escape'); await page.keyboard.press('Escape'); }
 
+  // stretches on the plan (expert): an end dragged along the track on whole studs, held at the track's end with why; the whole stretch dragged; Add a stretch… by a drag along the track
+  at = 'stretches on the plan';
+  await page.evaluate(() => localStorage.setItem('btd-design', JSON.stringify({ version: 1, gaugeStuds: 4, routes: [
+    { name: 'Main', x: 0, y: 0, heading: -90, segs: [{ kind: 'straight', studs: 48 }], stretches: [{ from: 20, to: 32, own: { sleepers: 'bed' } }] }] })));
+  await page.reload(); await page.waitForSelector('#track'); await page.click('#mode-select'); await page.click('#fit'); await page.waitForTimeout(400);
+  { const sts = () => page.evaluate(() => JSON.stringify((JSON.parse(localStorage.getItem('btd-design')!).routes[0].stretches ?? []).map((q: { from: number; to: number }) => [q.from, q.to])));
+    const hintNow = () => page.locator('#hint').innerText(), cardTo = () => page.locator('#routes input[aria-label="Stretch 1 to"]').inputValue();
+    const [tx, ty] = await scr(44, 0); await page.mouse.click(tx, ty); await page.waitForTimeout(200);
+    const [bx2, by2] = await scr(26, 0.5); await page.mouse.click(bx2, by2); await page.waitForTimeout(250);
+    const ends = JSON.parse(await page.locator('#track').getAttribute('data-stretch') ?? '{"ends":[]}').ends as [number, number][];
+    check(ends.length === 2, 'the selected stretch has an end to drag each side');
+    if (ends.length === 2) {
+      const [ex2, ey2] = await scr(40.3, 1), [fx, fy] = await scr(60, 1);
+      await page.mouse.move(tbx.x + ends[1][0], tbx.y + ends[1][1]); await page.mouse.down(); await page.mouse.move(ex2, ey2, { steps: 5 }); await page.waitForTimeout(150);
+      check(await cardTo() === '40' && await sts() === '[[20,32]]', `a stretch's end dragged along the track goes to the whole stud, and the card follows; nothing is stored mid-drag (${await cardTo()})`);
+      await page.mouse.move(fx, fy, { steps: 4 }); await page.waitForTimeout(150);
+      check(/The track ends here \(48 studs long\)/.test(await hintNow()), `past the track's end it stops there and says why (${await hintNow()})`);
+      await page.mouse.up(); await page.waitForTimeout(250);
+      check(await sts() === '[[20,48]]', `let go, it is kept (${await sts()})`);
+      await page.keyboard.press('Control+z'); await page.waitForTimeout(250);
+      check(await sts() === '[[20,32]]', 'and the drag is one undo step'); }
+    // (the whole stretch, by its band)
+    await page.mouse.click(tx, ty); await page.waitForTimeout(200);
+    await page.mouse.move(bx2, by2); await page.mouse.down(); await page.mouse.move(...(await scr(31, 0.5)), { steps: 5 }); await page.mouse.up(); await page.waitForTimeout(250);
+    check(await sts() === '[[25,37]]' && await page.locator('#sel-count').innerText() === 'Stretch 1 of Main, 25 to 37 studs', `the whole stretch dragged along keeps its length (${await sts()})`);
+    // (Add a stretch…: a press on the track and a drag along it)
+    await page.locator('#routes button', { hasText: 'Add a stretch…' }).click(); await page.waitForTimeout(150);
+    await page.mouse.move(...(await scr(2, 0))); await page.mouse.down(); await page.mouse.move(...(await scr(9.6, 1)), { steps: 5 }); await page.mouse.up(); await page.waitForTimeout(300);
+    check(await sts() === '[[2,10],[25,37]]' && await page.locator('#sel-count').innerText() === 'Stretch 1 of Main, 2 to 10 studs', `Add a stretch… lays one where the track is dragged along, and selects it (${await sts()})`);
+    await page.locator('#routes button', { hasText: 'Add a stretch…' }).click(); await page.waitForTimeout(150);
+    await page.mouse.move(...(await scr(28, 0))); await page.mouse.down(); await page.mouse.move(...(await scr(34, 0)), { steps: 4 }); await page.mouse.up(); await page.waitForTimeout(250);
+    check(await sts() === '[[2,10],[25,37]]' && /Stretch 2 is here already/.test(await hintNow()), `not over a stretch that is there, and says so (${await hintNow()})`);
+    await page.keyboard.press('Escape'); await page.keyboard.press('Control+z'); await page.waitForTimeout(250);
+    check(await sts() === '[[25,37]]', 'one undo takes the new stretch away'); await page.keyboard.press('Escape'); await page.keyboard.press('Escape'); }
+
   check(errors.length === 0, `no errors on the page${errors.length ? `: ${errors.join(' | ').slice(0, 600)}` : ''}`);
 } catch (err) {
   fails.push(`${at}: ${err instanceof Error ? err.message : err}`);

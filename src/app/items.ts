@@ -112,6 +112,19 @@ export function hitItems(d: Design, w: [number, number], c: HitCtx): Hit[] {
   return out.sort((a, b) => a.rank - b.rank || a.d - b.d);
 }
 
+/**
+ * How far along a route a point is (studs from its start), carried on past its ends: a point beyond the end is
+ * further along than the route is long, one before the start less than 0. (What a dragged stretch goes by: so it
+ * can say the track ends here when the pointer is past it.)
+ */
+export function alongBeyond(r: DRoute, p: [number, number]): number {
+  const n = nearestAlong(r, p), L = cutLength(r);
+  const past = (q: { x: number; y: number; heading: number }) => { const h = (q.heading * Math.PI) / 180; return -(p[0] - q.x) * Math.sin(h) + (p[1] - q.y) * Math.cos(h); };
+  if (n.s >= L - 1e-6) return L + Math.max(0, past(follow(r, r.segs)));
+  if (n.s <= 1e-6) return Math.min(0, past(r));
+  return n.s;
+}
+
 // ---------- what each is called ----------
 const nameOf = (d: Design, i: number) => d.routes[i]?.name || `Route ${i + 1}`;
 /** The joints an item stands for: every joint at its track's end, or every joint between its two tracks. */
