@@ -112,6 +112,8 @@ export function plainKind(kind: string): string {
     [/(^|-)deck$/, 'Monorail points deck'],
     [/(^|-)wheel$/, 'Monorail points wheel'],
     [/(^|-)link$/, 'Monorail points link'],
+    [/(^|-)linkb$/, 'Monorail points second link (to the branch\'s tooth)'],
+    [/(^|-)tooth[ab]$/, 'Monorail points tooth (sets the points for a train coming in)'],
     [/points-a$/, 'Points blade (first of the two)'],
     [/points-b$/, 'Points blade (second of the two)'],
     [/(^|-)points$/, 'Points blades'],

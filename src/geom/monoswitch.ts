@@ -13,14 +13,27 @@
 //    deck's slots are open to the side away from the branch (as LEGO's are), where the slide goes in. The slide prints
 //    on its feet, its racks on thin breakaway walls between the bars.
 //  - The wheel is a plain disc (LEGO's has spokes); the lever has the arm to the link only.
-//  - LEGO's points throw themselves when a train comes in from the exit they aren't set for (a sprung tooth in each
-//    exit's rack, a second link): not built yet; set these by hand before a train trails through.
+//
+// They set themselves, as LEGO's do, when a train comes in from the exit they aren't set for. In each exit's rack is a
+// tooth: a thin fin standing 3.1 mm above the rack on a small plate that slides under the deck. The straight exit's
+// hinges on a pin at the far end of the lever; the branch's on a pin at the end of a second link from the wheel. The
+// tooth of the exit the points are set for is drawn back towards the toe and tilted down, flush with the rack; the
+// other one is pushed out and stands up. A train coming in from that exit pushes the fin along before it: lever or
+// link, wheel, slide, and the points are set for it as it arrives; over the last 2 mm the fin goes down under a hood
+// in the rack, out of the train's way, and the other exit's tooth has come up. (LEGO's: parts 2890, two of 2911.)
+//  - LEGO's tooth is tilted by ramps moulded in the bottom and the top; here a rail on the base's floor lifts its nose
+//    as it's pushed out (a 60 degree ramp at the rail's end), and the hood, a bridge across the fin's slot in the
+//    rack, presses its sloped back down as it's drawn in. Both print as they stand.
+//  - The fin is 1.2 mm thick (LEGO's 1.6 to 2.8) so the rack either side of its slot keeps 0.9 mm at the tooth gaps.
+//  - The deck reaches further along both exits than LEGO's wide top would need, to cover the teeth.
+//  - The train stops pushing when the fin's top is under it, the tooth 0.6 mm from the end of its 25: the lever's detent
+//    rib is in the mouth of its groove by then, and takes it the rest of the way.
 //
 // Units: mm. Frame: the points start (their toe) at y = 0 on x = 0 heading +y, the branch to +x (a left-hand set is
 // built as a right-hand one and mirrored); z = 0 is the bottom of the beam.
 import type { CS, Man, Vec2 } from './scad';
-import { M, T } from './scad';
-import { MONO, type Mono, type RackGap, placeAt } from './monorail';
+import { M, R, T } from './scad';
+import { MONO, type Mono, type RackGap, frameAt, placeAt } from './monorail';
 import { routeLength, routePose, type Pose, type Route } from '../route/route';
 import { sweepRoute } from './sweep';
 
@@ -49,29 +62,103 @@ export const POINTS = {
   leverAlong: 20.4, leverHalf: 8, leverOut: 32, leverStuds: 28, armHw: 4,
   /** the lever's housing beside the straight exit, from the toe (320 to 468 LDU) */
   housing: [128, 187.2] as Vec2,
+  /** the wheel's second link pin (for the branch exit's tooth): where it is round the wheel set straight, degrees from +x (so its 87.6 degree swing draws the tooth back along the branch) */
+  pin2Deg: 11.8,
+  /** a tooth (LEGO's 2890): from its hinge to the upright face of its fin (70 LDU), how far the fin stands above the rack when up and
+   * how far its nose drops (its 6.3 degree tilt: 3.1 mm at the fin; a little more here, to be under the rack's top for sure), the fin's thickness, the plate's half width */
+  toothArm: 28, toothRise: 3.1, toothDrop: 3.3, finT: 1.2, toothHw: 4,
+  /** how fast a tooth's nose goes down as it's drawn back the last of its way, mm per mm: the rail's ramp and the fin's back are this steep (60 degrees) */
+  toothCam: Math.tan(rad(60)),
+  /** the fin's back, steeper (67.4 degrees): as the tooth tilts its fin leans towards the exit, and at this slope its back stays the same distance under the hood all the way down */
+  finSlope: 2.4,
+  /** the straight exit's tooth hinges this far beyond the lever's middle (51 LDU: as far as the link's pin is before it) */
+  toothAlong: 20.4,
+  /** the branch exit's tooth: its fin's face this far short of the branch's end when pushed out */
+  toothFromEnd: 21,
 };
 /** The levels inside (z): the floor's top, then wheel, link and the slide's feet, each 1.8 thick with 0.2 between, and the deck (2 thick). */
-const Z = { floor: 1.6, wheel: [1.8, 3.6], link: [3.8, 5.6], feet: [5.8, 7.8], deck: 8 };
+const Z = { floor: 1.6, wheel: [1.8, 3.6], link: [3.8, 5.6], feet: [5.8, 7.8], deck: 8, tooth: [5.8, 7.5] };
 /** The wheel's pin in the slide: its radius from the pivot (so the swing gives the travel), its own radius; the link's and lever's pins' radius. */
 const PIN_R = POINTS.travel / (2 * Math.sin(rad(POINTS.swing / 2))), PIN = 1.4, LPIN = 1.6;
 /** Where the deck ends along the straight exit (past the lever's reach). */
-const DECK_Y1 = 184;
+const DECK_Y1 = 222;
+/** How far the deck reaches along the branch: this far short of its end. */
+const DECK_B = 17;
+/** How far the hood reaches: to this far towards the toe from the fin's face when drawn back (0: as far as the face; the fin's way is cut out of it). And the gap between the hood and the fin's back. */
+const HOOD_BACK = 0, HOOD_GAP = 0.25;
 const WALL = 1.6;
 
-/** The moving parts, each a rigid move from as assembled (set straight) to f of the way to set for the branch: turned by deg about at, then moved by move (the points' own frame, a right-hand set). */
-export type PointsPart = 'slide' | 'wheel' | 'link' | 'lever';
-export function pointsMove(part: PointsPart, f: number): { at: Vec2; deg: number; move: Vec2 } {
-  const half = POINTS.swing / 2, W: Vec2 = [0, POINTS.wheelY];
-  const lw = (g: number): Vec2 => [W[0] + POINTS.linkR * Math.cos(rad(180 + half - g * POINTS.swing)), W[1] + POINTS.linkR * Math.sin(rad(180 + half - g * POINTS.swing))];
-  const lv = (g: number): Vec2 => { const p = lw(g); return [0, p[1] + Math.sqrt(POINTS.linkLen ** 2 - p[0] ** 2)]; };
+/** The moving parts. linkb: the second link, to the branch exit's tooth; tootha, toothb: the straight exit's tooth and the branch's. */
+export type PointsPart = 'slide' | 'wheel' | 'link' | 'lever' | 'linkb' | 'tootha' | 'toothb';
+const WHEEL: Vec2 = [0, POINTS.wheelY];
+const linkPin = (g: number): Vec2 => { const a = rad(180 + POINTS.swing / 2 - g * POINTS.swing); return [WHEEL[0] + POINTS.linkR * Math.cos(a), WHEEL[1] + POINTS.linkR * Math.sin(a)]; };
+const leverPin = (g: number): Vec2 => { const p = linkPin(g); return [0, p[1] + Math.sqrt(POINTS.linkLen ** 2 - p[0] ** 2)]; };
+const pin2 = (g: number): Vec2 => { const a = rad(POINTS.pin2Deg - g * POINTS.swing); return [WHEEL[0] + POINTS.linkR * Math.cos(a), WHEEL[1] + POINTS.linkR * Math.sin(a)]; };
+/** A tooth where it is f of the way across: its hinge, the way it points (degrees anticlockwise from +y), how far its nose is down (mm). */
+export interface ToothAt { hinge: Vec2; deg: number; drop: number }
+const dropAt = (left: number) => Math.max(0, POINTS.toothDrop - POINTS.toothCam * Math.max(0, left));
+/** The straight exit's tooth: on the lever's far pin; down when the points are set straight. */
+export function toothA(f: number): ToothAt {
+  const y = leverPin(f)[1] + POINTS.leverAlong + POINTS.toothAlong;
+  return { hinge: [0, y], deg: 0, drop: dropAt(leverPin(f)[1] - leverPin(0)[1]) };
+}
+/** The branch exit's tooth, its hinge on the branch's centre line s along it (the second link's length from the wheel's second pin); down when the points are set for the branch. */
+const hingeS = (branch: Route, f: number) => {
+  const s0 = routeLength(branch) - POINTS.toothFromEnd - POINTS.toothArm, h0 = routePose(branch, s0), a0 = pin2(0), len = Math.hypot(h0[0] - a0[0], h0[1] - a0[1]), a = pin2(f);
+  let lo = s0 - 60, hi = s0;
+  for (let k = 0; k < 40; k++) { const m = (lo + hi) / 2, q = routePose(branch, m); if (Math.hypot(q[0] - a[0], q[1] - a[1]) < len) lo = m; else hi = m; }
+  return (lo + hi) / 2;
+};
+export function toothB(branch: Route, f: number): ToothAt {
+  const s = hingeS(branch, f), h = routePose(branch, s), n = routePose(branch, s + POINTS.toothArm);
+  return { hinge: [h[0], h[1]], deg: (Math.atan2(-(n[0] - h[0]), n[1] - h[1]) * 180) / Math.PI, drop: dropAt(s - hingeS(branch, 1)) };
+}
+/** How far each tooth goes along its exit from one end to the other. */
+export const toothTravel = (branch: Route): [number, number] => [leverTravel(), hingeS(branch, 0) - hingeS(branch, 1)];
+/**
+ * Each moving part's rigid move in plan from as assembled (set straight) to f of the way to set for the branch: turned by
+ * deg about at, then moved by move (the points' own frame, a right-hand set). branch: the plan's (the second link and the
+ * branch's tooth follow it). A tooth tilts as well (toothA, toothB: movedPart does both).
+ */
+export function pointsMove(part: PointsPart, f: number, branch?: Route): { at: Vec2; deg: number; move: Vec2 } {
+  const half = POINTS.swing / 2, W = WHEEL;
+  const between = (a0: Vec2, b0: Vec2, a: Vec2, b: Vec2) => ({ at: a0, deg: (Math.atan2(b[1] - a[1], b[0] - a[0]) - Math.atan2(b0[1] - a0[1], b0[0] - a0[0])) * (180 / Math.PI), move: [a[0] - a0[0], a[1] - a0[1]] as Vec2 });
   if (part === 'wheel') return { at: W, deg: -f * POINTS.swing, move: [0, 0] };
   if (part === 'slide') return { at: W, deg: 0, move: [PIN_R * (Math.sin(rad(half - f * POINTS.swing)) - Math.sin(rad(half))), 0] };
-  if (part === 'lever') return { at: W, deg: 0, move: [0, lv(f)[1] - lv(0)[1]] };
-  const a0 = lw(0), b0 = lv(0), a = lw(f), b = lv(f);
-  return { at: a0, deg: (Math.atan2(b[1] - a[1], b[0] - a[0]) - Math.atan2(b0[1] - a0[1], b0[0] - a0[0])) * (180 / Math.PI), move: [a[0] - a0[0], a[1] - a0[1]] };
+  if (part === 'lever' || part === 'tootha') return { at: W, deg: 0, move: [0, leverPin(f)[1] - leverPin(0)[1]] };
+  if (part === 'link') return between(linkPin(0), leverPin(0), linkPin(f), leverPin(f));
+  if (!branch) throw new Error('pointsMove: the branch is needed');
+  const t0 = toothB(branch, 0), t = toothB(branch, f);
+  if (part === 'linkb') return between(pin2(0), t0.hinge, pin2(f), t.hinge);
+  return { at: t0.hinge, deg: t.deg - t0.deg, move: [t.hinge[0] - t0.hinge[0], t.hinge[1] - t0.hinge[1]] };
+}
+/** A tooth tilted nose down about its hinge (by: mm at its nose; negative: back up). */
+const ZC = (Z.tooth[0] + Z.tooth[1]) / 2;
+function tilted(m: Man, t: ToothAt, by: number): Man {
+  if (!by) return m;
+  const tau = (Math.asin(by / POINTS.toothArm) * 180) / Math.PI;
+  return m.translate([-t.hinge[0], -t.hinge[1], -ZC]).rotate([0, 0, -t.deg]).rotate([-tau, 0, 0]).rotate([0, 0, t.deg]).translate([t.hinge[0], t.hinge[1], ZC]);
+}
+/** A part's solid as assembled (set straight), in the points' own frame, moved to f of the way across. */
+export function movedLocal(m: Man, part: PointsPart, f: number, branch?: Route): Man {
+  const mv = pointsMove(part, f, branch);
+  const tooth = part === 'tootha' ? [toothA(0), toothA(f)] : part === 'toothb' ? [toothB(branch!, 0), toothB(branch!, f)] : undefined;
+  let q = tooth ? tilted(m, tooth[0], -tooth[0].drop) : m;
+  q = q.translate([-mv.at[0], -mv.at[1], 0]).rotate([0, 0, mv.deg]).translate([mv.at[0] + mv.move[0], mv.at[1] + mv.move[1], 0]);
+  return tooth ? tilted(q, tooth[1], tooth[1].drop) : q;
+}
+/** A solid in the design brought into the points' own frame (P: their toe; a left-hand set mirrored to the right), and back. */
+export function pointsLocal(m: Man, P: Pose, hand: 1 | -1, back = false): Man {
+  if (back) { const q = hand < 0 ? m.mirror([1, 0, 0]) : m; return q.rotate([0, 0, P[2]]).translate([P[0], P[1], 0]); }
+  const q = m.translate([-P[0], -P[1], 0]).rotate([0, 0, -P[2]]);
+  return hand < 0 ? q.mirror([1, 0, 0]) : q;
+}
+/** The same for a part where it is in the design: P the points' toe, hand its hand (a left-hand set is the mirror image). */
+export function movedPart(m: Man, P: Pose, hand: 1 | -1, part: PointsPart, f: number, branch?: Route): Man {
+  return pointsLocal(movedLocal(pointsLocal(m, P, hand), part, f, branch), P, hand, true);
 }
 /** How far the lever goes along the track from one end to the other. */
-export const leverTravel = () => pointsMove('lever', 1).move[1];
+export function leverTravel() { return leverPin(1)[1] - leverPin(0)[1]; }
 
 export interface SwitchPlan {
   /** the straight route and the branch (local, from the toe; a left-hand set's mirrored to the right), and their rack gaps */
@@ -141,9 +228,9 @@ export function planSwitch(mainRt: Route, mainGaps: RackGap[], branchRt: Route, 
 }
 
 /** supports: the slide's breakaway print supports, loose from it, printed with it. */
-export interface PointsParts { base: Man; deck: Man; slide: Man; supports: Man; wheel: Man; link: Man; lever: Man }
+export interface PointsParts { base: Man; deck: Man; slide: Man; supports: Man; wheel: Man; link: Man; lever: Man; linkb: Man; tootha: Man; toothb: Man }
 /**
- * The points' six parts as assembled (set straight), in the points' frame. fit: the clearance round the moving parts.
+ * The points' nine parts as assembled (set straight), in the points' frame. fit: the clearance round the moving parts.
  */
 export function monoSwitch(mono: Mono, p: SwitchPlan, fit: number): PointsParts {
   const s = mono.s, w = s.w, c = fit, { main, branch } = p;
@@ -155,7 +242,7 @@ export function monoSwitch(mono: Mono, p: SwitchPlan, fit: number): PointsParts 
   const cyl = (at: Vec2, r: number, z0: number, z1: number) => slab(disc(at, r), z0, z1);
   const hull = (cs: CS[]) => w.CrossSection.hull(cs);
   const all = (cs: CS[]) => w.CrossSection.union(cs);
-  const moved = (cs: CS, part: PointsPart, f: number) => { const m = pointsMove(part, f); return cs.translate([-m.at[0], -m.at[1]]).rotate(m.deg).translate([m.at[0] + m.move[0], m.at[1] + m.move[1]]); };
+  const moved = (cs: CS, part: PointsPart, f: number) => { const m = pointsMove(part, f, branch); return cs.translate([-m.at[0], -m.at[1]]).rotate(m.deg).translate([m.at[0] + m.move[0], m.at[1] + m.move[1]]); };
   const STEPS = [0, 0.125, 0.25, 0.375, 0.5, 0.625, 0.75, 0.875, 1];
   /** what a moving part's plan (convex pieces) sweeps from one end to the other */
   const swept = (cs: CS[], part: PointsPart) => all(cs.flatMap((q) => STEPS.slice(1).map((f, k) => hull([moved(q, part, STEPS[k]), moved(q, part, f)]))));
@@ -170,7 +257,53 @@ export function monoSwitch(mono: Mono, p: SwitchPlan, fit: number): PointsParts 
   const edge: Vec2[] = [];
   for (let k = 0; k <= 48; k++) { const y = y0 + ((y1 - y0) * k) / 48; edge.push([cx(branch, y) + Tv + rhw + 1, y]); }
   const wide: CS = s.polygon([[-POINTS.deckHw, y0], ...edge, [-POINTS.deckHw, y1]]);
-  const deckPlan = all([wide, rect(-hw, hw, y1 - 0.01, DECK_Y1)]);
+  // (and along the branch, over its tooth)
+  const Lb = routeLength(branch), sDeckB = Lb - DECK_B;
+  const band = (rt: Route, a: number, b: number, h: number): CS => {
+    const n = Math.max(2, Math.ceil((b - a) / 3)), right: Vec2[] = [], left: Vec2[] = [];
+    for (let k = 0; k <= n; k++) { const f = frameAt(routePose(rt, a + ((b - a) * k) / n)); right.push(f([h, 0])); left.push(f([-h, 0])); }
+    return s.polygon([...right, ...left.reverse()]);
+  };
+  const deckPlan = all([wide, rect(-hw, hw, y1 - 0.01, DECK_Y1), band(branch, rsAt(branch, y1) - 8, sDeckB, hw)]);
+  // ---- the teeth: one in each exit's rack ----
+  const ARM = POINTS.toothArm, finTop = MONO.ridgeTop + POINTS.toothRise;
+  const tA = toothA, tB = (f: number) => toothB(branch, f);
+  const FINE = Array.from({ length: 17 }, (_, k) => k / 16);
+  /** a tooth's plan (drawn at its hinge, pointing +y) where the tooth is */
+  const put = (cs: CS, t: ToothAt) => cs.rotate(t.deg).translate(t.hinge);
+  const sweptT = (cs: CS, at: (f: number) => ToothAt) => all(FINE.slice(1).map((f, k) => hull([put(cs, at(FINE[k])), put(cs, at(f))])));
+  const nose = (t: ToothAt): Vec2 => [t.hinge[0] - ARM * Math.sin(rad(t.deg)), t.hinge[1] + ARM * Math.cos(rad(t.deg))];
+  const platePlan = hull([disc([0, 0], 3.4), rect(-POINTS.toothHw, POINTS.toothHw, 0, ARM)]);
+  /** the fin, from where its sloped back meets the plate to its upright face */
+  const finBack = ARM - 1 - (finTop - Z.tooth[1]) / POINTS.finSlope;
+  const finPlan = rect(-POINTS.finT / 2, POINTS.finT / 2, finBack, ARM);
+  /** a profile (along, up) made a wall t thick along +y */
+  const wall = (pts: Vec2[], t: number) => R(R(T(s.polygon(pts).extrude(t), [0, 0, -t / 2]), [90, 0, 0]), [0, 0, 90]);
+  const toothAt = (t: ToothAt, finT = POINTS.finT, finOnly = false): Man => {
+    const fin = wall([[finBack, Z.tooth[1] - 0.01], [ARM, Z.tooth[1] - 0.01], [ARM, finTop], [ARM - 1, finTop]], finT);
+    const m = finOnly ? fin : s.union([slab(platePlan.subtract(disc([0, 0], LPIN + c / 2 + 0.15)), Z.tooth[0], Z.tooth[1]), fin]);
+    return tilted(T(R(m, [0, 0, t.deg]), [t.hinge[0], t.hinge[1], 0]), t, t.drop);
+  };
+  /** the fin's slot through the deck and the rack, the length of its travel; and the hood over its drawn-back end */
+  const slotOf = (at: (f: number) => ToothAt) => sweptT(finPlan, at).offset(0.3, 'Miter', 2);
+  // (the hood: the slot roofed over behind the fin where it's drawn back, its underside what the fin's back leaves as it
+  // comes in and goes down, a gap off it: it keeps the fin down while the points are set for this exit)
+  const hoodOf = (at: (f: number) => ToothAt, down: number) => {
+    const t = at(down), n = nose(t), ax: Vec2 = [-Math.sin(rad(t.deg)), Math.cos(rad(t.deg))], e: Vec2 = [n[0] - HOOD_BACK * ax[0], n[1] - HOOD_BACK * ax[1]];
+    const block = slab(slotOf(at).intersect(rect(-30, 30, -60, 0).rotate(t.deg).translate(e)), bt + 0.3, MONO.ridgeTop);
+    const way = Array.from({ length: 13 }, (_, k) => (down === 0 ? k / 64 : 1 - k / 64)).flatMap((f) => { const m = toothAt(at(f), POINTS.finT + 1.2, true); return [m.translate([0, 0, HOOD_GAP]), m.translate([-HOOD_GAP * ax[0], -HOOD_GAP * ax[1], HOOD_GAP / 2])]; });
+    return s.union(s.difference(block, way).decompose().filter((q) => q.volume() > 0.5));
+  };
+  /** the rail on the floor under a tooth's nose, from drawn back (where it ramps down, the nose's drop) to pushed out */
+  const railOf = (at: (f: number) => ToothAt, down: number) => {
+    const a = nose(at(down)), b = nose(at(1 - down)), len = Math.hypot(b[0] - a[0], b[1] - a[1]), top = Z.tooth[0] - 0.25;
+    const m = wall([[0, Z.floor - 0.01], [0, top - POINTS.toothDrop], [POINTS.toothDrop / POINTS.toothCam, top], [len + 1.5, top], [len + 1.5, Z.floor - 0.01]], 2.4);
+    return T(R(m, [0, 0, (Math.atan2(-(b[0] - a[0]), b[1] - a[1]) * 180) / Math.PI]), [a[0], a[1], 0]);
+  };
+  const slots = [slotOf(tA), slotOf(tB)], hoods = [hoodOf(tA, 0), hoodOf(tB, 1)];
+  // the second link, from the wheel's second pin to the branch's tooth's hinge
+  const p20 = pin2(0), hB0 = tB(0).hinge;
+  const linkbPlan = hull([disc(p20, POINTS.linkHw), disc(hB0, POINTS.linkHw)]);
   // the cross bars, each from the straight rack to the curved one
   const bars = POINTS.bars;
   const barX1 = (y: number) => cx(branch, y) + Tv + rhw;
@@ -187,7 +320,10 @@ export function monoSwitch(mono: Mono, p: SwitchPlan, fit: number): PointsParts 
   const linkPlan = hull([disc(lw0, POINTS.linkHw), disc(lv0, POINTS.linkHw)]);
   const armPlan = all([disc(lv0, POINTS.armHw), rect(-POINTS.armHw, POINTS.armHw, lv0[1], yc - POINTS.leverHalf + 0.01)]);
   const bodyPlan = rect(-POINTS.leverOut, POINTS.armHw, yc - POINTS.leverHalf, yc + POINTS.leverHalf);
-  const leverPlan = all([armPlan, bodyPlan]);
+  // (and on past its body to a pin the straight exit's tooth hinges on)
+  const hA0 = tA(0).hinge;
+  const extPlan = all([rect(-2.8, 2.8, yc + POINTS.leverHalf - 0.01, hA0[1]), disc(hA0, 2.8)]);
+  const leverPlan = all([armPlan, bodyPlan, extPlan]);
   const wheelPlan = all([disc(W, POINTS.wheelR), disc(pinAt, PIN + 1.4)]);
   // the detent: a rib on the arm's side, a groove for it in the channel's wall at each end of the lever's travel
   const ribAt: Vec2 = [POINTS.armHw - 0.8 + c + 0.2, lv0[1] + 6], lt = leverTravel();
@@ -208,14 +344,15 @@ export function monoSwitch(mono: Mono, p: SwitchPlan, fit: number): PointsParts 
   // the fixed racks: the toe's, the straight exit's past the deck, the branch's past the slide
   add.push(ridge(main, p.gm, -1, y0 - c));
   add.push(ridge(main, p.gm, DECK_Y1 + c, POINTS.mainLen + 1));
-  add.push(ridge(branch, p.gb, y1 + c, 1000));
+  const bits = (m: Man) => s.union(m.decompose().filter((q) => q.volume() > 5));
+  add.push(bits(T(mono.ridgePlan(branch, sDeckB + c, Lb, p.gb).extrude(MONO.ridgeTop - bt + 0.01), [0, 0, bt - 0.01])));
   const cut: Man[] = [];
   // the deck's place (and a hair round it), down to the walls' tops
   cut.push(slab(deckPlan.offset(c / 2, 'Miter', 2), Z.deck, bt + 5));
   // the hollow under the wide deck, walled all round
   const hollow = wide.offset(-WALL, 'Miter', 2);
   // (what stands in it: the wheel's post, and posts under the deck wherever nothing moves)
-  const busy = all([disc(W, PIN_R + PIN + 1.4 + c), swept([...feet, pad], 'slide'), swept([linkPlan], 'link')]).offset(c + 0.4, 'Round', 2, 16);
+  const busy = all([disc(W, PIN_R + PIN + 1.4 + c), swept([...feet, pad], 'slide'), swept([linkPlan], 'link'), swept([linkbPlan], 'linkb'), sweptT(platePlan, tB)]).offset(c + 0.4, 'Round', 2, 16);
   const posts: CS[] = [];
   for (let x = -24; x <= 80; x += 12) for (let y = y0 + 8; y < y1; y += 8) {
     const q = disc([x, y], 2);
@@ -223,7 +360,8 @@ export function monoSwitch(mono: Mono, p: SwitchPlan, fit: number): PointsParts 
   }
   // (the studs the deck presses onto, each on a post of its own: along both edges of the wide deck between the bars, and down the straight exit)
   const mids = [(y0 + bars[0]) / 2, (bars[0] + bars[1]) / 2, (bars[1] + bars[2]) / 2, (bars[2] + y1) / 2];
-  const studs: Vec2[] = [...mids.flatMap((y): Vec2[] => [[-POINTS.deckHw + 3.4, y], [cx(branch, y) + Tv + rhw + 1 - 3.4, y]]), [12, y1 + 10], [12, (hy[0] + hy[1]) / 2], [12, DECK_Y1 - 5], [-12, DECK_Y1 - 4]];
+  const endB = frameAt(routePose(branch, sDeckB - 6));
+  const studs: Vec2[] = [...mids.flatMap((y): Vec2[] => [[-POINTS.deckHw + 3.4, y], [cx(branch, y) + Tv + rhw + 1 - 3.4, y]]), [12, y1 + 10], [12, (hy[0] + hy[1]) / 2], [12, DECK_Y1 - 5], [-12, DECK_Y1 - 4], [-11, 198], [11, 198], endB([-10.5, 0]), endB([10.5, 0])];
   const studPosts = studs.map((q) => disc(q, 3.4));
   cut.push(s.difference(slab(hollow, Z.floor, Z.deck + 0.01), [slab(all([...posts, ...studPosts, disc(W, 2.4)]), 0, bt)]));
   // the slide's feet's way under the deck, the link's and the lever's ways, the wheel's pin's
@@ -232,15 +370,21 @@ export function monoSwitch(mono: Mono, p: SwitchPlan, fit: number): PointsParts 
   cut.push(slab(hull([armPlan, armPlan.translate([0, lt])]).offset(c, 'Miter', 2), Z.floor, Z.deck + 0.01));
   cut.push(slab(rect(-POINTS.deckHw - 1, POINTS.armHw + c, hy[0], hy[1]), Z.floor, bt + 5));
   for (const dy of [0, lt]) cut.push(cyl([ribAt[0], ribAt[1] + dy], 0.9, Z.floor, Z.deck + 0.01));
+  // the teeth's ways under the deck (the straight exit's with the lever's far end and its pin; the branch's with the second link)
+  cut.push(slab(all([sweptT(platePlan, tA), hull([extPlan, extPlan.translate([0, lt])])]).offset(c, 'Miter', 2), Z.floor, Z.deck + 0.01));
+  cut.push(slab(all([sweptT(platePlan, tB), swept([linkbPlan], 'linkb')]).offset(c, 'Round', 2, 16).subtract(disc(W, 2.4)), Z.floor, Z.deck + 0.01));
   let base = s.difference(s.union(add), cut);
-  base = s.union([base, ...studs.map((q) => cyl(q, 2.45, Z.deck - 0.01, bt - 0.2))]);
+  base = s.union([base, ...studs.map((q) => cyl(q, 2.45, Z.deck - 0.01, bt - 0.2)), railOf(tA, 0), railOf(tB, 1)]);
 
   // ---- the deck ----
   const slits = bars.map((y) => rect(-POINTS.deckHw - 1, barX1(y) + c, y - POINTS.barW / 2 - c, y + POINTS.barW / 2 + c));
   const sock = mono.antistud().slice(0);
+  // (its racks: the straight exit's and the branch's, each with its tooth's slot, hooded where the tooth's drawn back)
+  const ridgeB = bits(s.intersection(T(mono.ridgePlan(branch, rsAt(branch, y1) - 3, sDeckB, p.gb).extrude(MONO.ridgeTop - bt + 0.01), [0, 0, bt - 0.01]), yBand(y1 + c, 1000)));
   const deck = s.union([
-    s.difference(slab(deckPlan.subtract(all(slits)), Z.deck, bt), studs.map((q) => T(sock.extrude(4), [q[0], q[1], Z.deck - 1]))),
-    ridge(main, p.gm, y1 + c, DECK_Y1),
+    s.difference(slab(deckPlan.subtract(all([...slits, ...slots])), Z.deck, bt), studs.map((q) => T(sock.extrude(4), [q[0], q[1], Z.deck - 1]))),
+    s.difference(s.union([ridge(main, p.gm, y1 + c, DECK_Y1), ridgeB]), [slab(all(slots), bt - 0.5, MONO.ridgeTop + 1)]),
+    ...hoods,
   ]);
 
   // ---- the slide: its two racks (the curved one aside, where it idles), the bars through the deck's slots, their feet and the pin's slot under it ----
@@ -256,6 +400,12 @@ export function monoSwitch(mono: Mono, p: SwitchPlan, fit: number): PointsParts 
     slab(wheelPlan.subtract(disc(W, 2.4 + c)), Z.wheel[0], Z.wheel[1]),
     cyl(pinAt, PIN + 0.8, Z.wheel[1] - 0.01, Z.link[1]), cyl(pinAt, PIN, Z.link[1] - 0.01, Z.feet[1] - 0.2),
     cyl(lw0, LPIN, Z.wheel[1] - 0.01, Z.link[1]),
+    cyl(p20, LPIN, Z.wheel[1] - 0.01, Z.link[1]),
+  ]);
+  // (thinner under the tooth, whose plate dips there as it tilts)
+  const linkb = s.union([
+    s.difference(slab(linkbPlan.subtract(disc(p20, LPIN + c / 2)), Z.link[0], Z.link[1]), [slab(disc(hB0, POINTS.linkHw + 1), Z.link[1] - 0.6, Z.link[1] + 1)]),
+    cyl(hB0, LPIN, Z.link[1] - 0.61, Z.tooth[1] - 0.1),
   ]);
   const link = slab(linkPlan.subtract(all([disc(lw0, LPIN + c / 2), disc(lv0, LPIN + c / 2)])), Z.link[0], Z.link[1]);
   const lever = s.union([
@@ -264,7 +414,9 @@ export function monoSwitch(mono: Mono, p: SwitchPlan, fit: number): PointsParts 
     slab(bodyPlan, Z.wheel[1] - 0.01, Z.feet[1]),
     ...[-MONO.stud / 2, MONO.stud / 2].map((dy) => cyl([-POINTS.leverStuds, yc + dy], 2.45, Z.feet[1] - 0.01, Z.feet[1] + 1.7)),
     cyl(ribAt, 0.8, Z.wheel[0], Z.wheel[1]),
+    cyl(hA0, LPIN, Z.wheel[1] - 0.01, Z.tooth[1] - 0.1),
   ]);
+  const tootha = toothAt(tA(0)), toothb = toothAt(tB(0));
   // breakaway print supports (thin walls, 0.25 below what they hold, loose from it): the slide prints on its feet, its
   // racks above the bed between the bars; a wall under each flank of each rack holds it up (the rack bridges the 5 mm
   // between them), and snaps off after
@@ -273,5 +425,5 @@ export function monoSwitch(mono: Mono, p: SwitchPlan, fit: number): PointsParts 
   // (a left-hand set: the mirror image; then the three ends, which aren't mirrored: they join plain track either hand)
   const hand = (m: Man) => (p.hand > 0 ? m : M(m, [1, 0, 0]));
   const ended = s.difference(s.union([hand(base), ...p.ends.map((P) => placeAt(mono.endAdds(), P))]), p.ends.map((P) => placeAt(mono.endCuts(), P)));
-  return { base: ended, deck: hand(deck), slide: hand(slide), supports: hand(supports), wheel: hand(wheel), link: hand(link), lever: hand(lever) };
+  return { base: ended, deck: hand(deck), slide: hand(slide), supports: hand(supports), wheel: hand(wheel), link: hand(link), lever: hand(lever), linkb: hand(linkb), tootha: hand(tootha), toothb: hand(toothb) };
 }

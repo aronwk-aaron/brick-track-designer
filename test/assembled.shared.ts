@@ -19,7 +19,9 @@ import { bedFit, tightBox } from '../src/geom/bedfit';
 import { buildDesign, clearBuildCache, type Piece } from '../src/app/build';
 import { type Design, OPTION_DEFAULTS, type PieceOptions, TEMPLATE_GROUPS, TEMPLATES } from '../src/app/design';
 import { putTogether, sharedEdges, stlPositions } from './assembly.shared';
-import { leverTravel, pointsMove, type PointsPart } from '../src/geom/monoswitch';
+import { leverTravel, movedLocal, pointsLocal, toothA, toothB, toothTravel, POINTS, type PointsPart } from '../src/geom/monoswitch';
+import { MONO, placeAt } from '../src/geom/monorail';
+import { routePose, routeSOf, type Route } from '../src/route/route';
 
 type Wasm = Awaited<ReturnType<typeof kernel>>;
 type Man = InstanceType<Wasm['Manifold']>;
@@ -160,30 +162,42 @@ export function moves(w: Wasm, ps: Part[], o: PieceOptions, seen?: Seen) {
 }
 
 /**
- * 7. Monorail points (LEGO's, geom/monoswitch.ts): as assembled they're set straight. Each set:
- * - across the travel (the wheel turned in eighths, the slide, link and lever where it puts them): every moving part
- *   clear of the base, the deck and each other, but the lever's detent rib in the channel's wall between its grooves;
- * - each drives the next: the wheel turned an eighth of the way and the slide or the link left behind run into each other, and so the link moved and the lever;
+ * 7. Monorail points (LEGO's, geom/monoswitch.ts): as assembled they're set straight. Each set (looked at in its own
+ * frame, a left-hand one mirrored):
+ * - across the travel (the wheel turned in eighths, and finer near each end, where the teeth tilt; the slide, links,
+ *   lever and teeth where it puts them): every moving part clear of the base, the deck and each other, but the lever's
+ *   detent rib in the channel's wall between its grooves;
+ * - each drives the next: the wheel turned an eighth of the way and the slide or a link left behind run into each
+ *   other, and so each link moved and the lever or the branch's tooth, the lever and the straight exit's tooth;
  * - the lever's stopped at each end (a little further it's in its housing's wall), and held there: its rib's in a groove
  *   (clear), and out of it at once either way;
  * - the slide's held down (lifted, its feet are under the deck);
- * - it goes together: the wheel, the lever and the link down from above, in that order; the slide into the deck from
- *   the side away from the branch; then the deck, the slide in it, down onto the base.
+ * - they set themselves: with the points set for the other exit, a train's bogie (a block over the rack, 0.8 mm above
+ *   it) brought in from an exit meets that exit's tooth standing up, and pushes it: the tooth where the bogie's front
+ *   is, and all the rest where that puts it, clear of the bogie all the way; the bogie loses the tooth (gone down
+ *   under it) with the tooth at most DETENT_REACH from its end, where the lever's rib is entering its groove, which
+ *   takes it home; then the bogie runs on over the tooth and the slide's rack, touching nothing;
+ * - each tooth's kept where it belongs: down under its hood when its exit's set, up on its rail when not;
+ * - a train on the route the points are set for moves nothing: the bogie run the length of that exit, either way,
+ *   touches no part (its tooth is down, under the rack's top);
+ * - it goes together: the wheel, the lever, the links and the teeth down from above, in that order; the slide into the
+ *   deck from the side away from the branch; then the deck, the slide in it, down onto the base.
  */
+/** (mm) how far from its end a tooth may be when the train stops pushing it: the lever's detent rib (0.8 radius, in a groove of 0.9) is half way into its groove by then */
+const DETENT_REACH = 0.8;
 export function monoPoints(w: Wasm, ps: Part[], seen?: Seen) {
   const out: string[] = [];
   const sets = new Map<string, Part[]>();
   for (const q of ps) if (q.p.monoPoints) { const k = q.p.name.replace(/-[a-z]+$/, ''); sets.set(k, [...(sets.get(k) ?? []), q]); }
   for (const [name, mine] of sets) if (!seen || mine.some((q) => seen.own(q.p))) arena(w, () => {
-    const { P, hand } = mine[0].p.monoPoints!, a = (P[2] * Math.PI) / 180, co = Math.cos(a), si = Math.sin(a);
-    const world = (q: [number, number]): [number, number] => [P[0] + hand * q[0] * co - q[1] * si, P[1] + hand * q[0] * si + q[1] * co];
-    const vec = (q: [number, number], z = 0): [number, number, number] => [hand * q[0] * co - q[1] * si, hand * q[0] * si + q[1] * co, z];
-    const of = (n: string) => mine.find((q) => q.p.name.endsWith(`-${n}`))!.m;
+    const { P, hand, branch } = mine[0].p.monoPoints!;
+    const of = (n: string) => pointsLocal(mine.find((q) => q.p.name.endsWith(`-${n}`))!.m, P, hand);
     const base = of('base'), deck = of('deck');
-    const at = (part: PointsPart, f: number) => { const mv = pointsMove(part, f); return turned(of(part), world(mv.at), hand * mv.deg).translate(vec(mv.move)); };
+    const kinds: PointsPart[] = ['slide', 'wheel', 'link', 'lever', 'linkb', 'tootha', 'toothb'];
+    const home = new Map(kinds.map((k) => [k, of(k)]));
+    const at = (part: PointsPart, f: number) => movedLocal(home.get(part)!, part, f, branch);
     const say = (what: string, v: number) => out.push(`${name}: ${what}: ${v.toFixed(2)} mm3`);
-    const kinds: PointsPart[] = ['slide', 'wheel', 'link', 'lever'];
-    for (const f of [0, 0.125, 0.25, 0.375, 0.5, 0.625, 0.75, 0.875, 1]) {
+    for (const f of [0, 0.02, 0.05, 0.125, 0.25, 0.375, 0.5, 0.625, 0.75, 0.875, 0.95, 0.98, 1]) {
       const m = kinds.map((k) => at(k, f));
       kinds.forEach((k, i) => {
         for (const [n, fixed] of [['base', base], ['deck', deck]] as const) { const v = shared(m[i], fixed); if (v > (k === 'lever' && n === 'base' ? OVERLAP : SLIVER)) say(`its ${k} ${Math.round(f * 100)}% across is in its ${n}`, v); }
@@ -191,23 +205,75 @@ export function monoPoints(w: Wasm, ps: Part[], seen?: Seen) {
       });
     }
     // (each drives the next)
-    for (const [a1, b1] of [['wheel', 'slide'], ['wheel', 'link'], ['link', 'lever']] as const) if (shared(at(a1, 0.125), of(b1)) < 0.05) out.push(`${name}: its ${a1} doesn't move its ${b1}: moved an eighth of the way, it's clear of it where it was`);
+    for (const [a1, b1] of [['wheel', 'slide'], ['wheel', 'link'], ['link', 'lever'], ['wheel', 'linkb'], ['linkb', 'toothb'], ['lever', 'tootha']] as const) if (shared(at(a1, 0.125), home.get(b1)!) < 0.05) out.push(`${name}: its ${a1} doesn't move its ${b1}: moved an eighth of the way, it's clear of it where it was`);
     // (stopped and held at each end)
-    const lt = leverTravel(), lever = of('lever');
-    for (const [f, d] of [[0, -1.5], [1, 1.5]] as const) if (shared(lever.translate(vec([0, f * lt + d])), base) < 1) out.push(`${name}: its lever isn't stopped ${f ? 'set for the branch' : 'set straight'}: 1.5 mm further it's clear of its housing`);
+    const lt = leverTravel(), lever = home.get('lever')!;
+    for (const [f, d] of [[0, -1.5], [1, 1.5]] as const) if (shared(lever.translate([0, f * lt + d, 0]), base) < 1) out.push(`${name}: its lever isn't stopped ${f ? 'set for the branch' : 'set straight'}: 1.5 mm further it's clear of its housing`);
     for (const f of [0, 1]) {
-      if (shared(lever.translate(vec([0, f * lt])), base) > SLIVER) out.push(`${name}: its lever's detent rib isn't in its groove ${f ? 'set for the branch' : 'set straight'}`);
-      if (shared(lever.translate(vec([0, f * lt + (f ? -1.5 : 1.5)])), base) < 0.02) out.push(`${name}: its lever isn't held ${f ? 'set for the branch' : 'set straight'}: 1.5 mm back its rib's clear of the wall`);
+      if (shared(lever.translate([0, f * lt, 0]), base) > SLIVER) out.push(`${name}: its lever's detent rib isn't in its groove ${f ? 'set for the branch' : 'set straight'}`);
+      if (shared(lever.translate([0, f * lt + (f ? -1.5 : 1.5), 0]), base) < 0.02) out.push(`${name}: its lever isn't held ${f ? 'set for the branch' : 'set straight'}: 1.5 mm back its rib's clear of the wall`);
     }
-    if (shared(of('slide').translate([0, 0, 1]), deck) < 1) out.push(`${name}: its slide isn't held down: lifted 1 mm it's clear of the deck`);
+    if (shared(home.get('slide')!.translate([0, 0, 1]), deck) < 1) out.push(`${name}: its slide isn't held down: lifted 1 mm it's clear of the deck`);
+    // (setting themselves)
+    if (branch) {
+      const main: Route = { id: 'main', start: [0, 0, 0], segments: [{ kind: 'straight', length: POINTS.mainLen }] };
+      const under = MONO.ridgeTop + 0.8, bogie = w.Manifold.cube([2 * MONO.ridgeHw + 2, 12, 5]).translate([-MONO.ridgeHw - 1, 0, under]);
+      const travel = toothTravel(branch);
+      // (each exit: its route, its tooth, which way the points are set when that tooth is up, where the tooth is f across)
+      const exits = [
+        { n: 'straight exit', rt: main, tooth: 'tootha' as PointsPart, up: 1, where: (f: number) => toothA(f), travel: travel[0] },
+        { n: 'branch', rt: branch, tooth: 'toothb' as PointsPart, up: 0, where: (f: number) => toothB(branch, f), travel: travel[1] },
+      ];
+      for (const e of exits) {
+        const noseS = (f: number) => { const t = e.where(f), a = (t.deg * Math.PI) / 180; return routeSOf(e.rt, [t.hinge[0] - POINTS.toothArm * Math.sin(a), t.hinge[1] + POINTS.toothArm * Math.cos(a)]); };
+        const top = (f: number) => MONO.ridgeTop + POINTS.toothRise - e.where(f).drop;
+        const hit = (q: number, f: number) => { let v = 0; const b = bogieAt(q); for (const m of [base, deck, ...kinds.map((k) => at(k, f))]) v += shared(b, m); return v; };
+        const bogieAt = (q: number) => placeAt(bogie, routePose(e.rt, q));
+        // the tooth up: the bogie meets it
+        if (top(e.up) < under + 1.5) out.push(`${name}: the ${e.n}'s tooth doesn't stand up in a train's way with the points set for the other exit: its top's ${(top(e.up) - under).toFixed(2)} mm above the bogie's underside`);
+        const s0 = noseS(e.up);
+        if (shared(bogieAt(s0 - 0.5), at(e.tooth, e.up)) < 0.05) out.push(`${name}: a train in from the ${e.n} doesn't meet its tooth`);
+        // pushed: the tooth as far on as the bogie's front has put it (by halving: the least that clears the bogie), till
+        // it's gone down under the bogie, which then runs on over it
+        const set = 1 - e.up, others = (f: number) => [base, deck, ...kinds.filter((k) => k !== e.tooth).map((k) => at(k, f))];
+        const pushed = (q: number, from: number) => {
+          const b = bogieAt(q);
+          if (shared(b, at(e.tooth, from)) <= SLIVER) return from;
+          let lo = from, hi = set;
+          for (let k = 0; k < 14; k++) { const m = (lo + hi) / 2; if (shared(b, at(e.tooth, m)) > SLIVER) lo = m; else hi = m; }
+          return hi;
+        };
+        let f = e.up, stuck = false;
+        for (let d = 0; d <= e.travel + 14 && !stuck; d += 0.5) {
+          const q = s0 - d, b = bogieAt(q);
+          f = pushed(q, f);
+          if (shared(b, at(e.tooth, f)) > SLIVER) { out.push(`${name}: a train in from the ${e.n} is stopped by its tooth ${d.toFixed(1)} mm on: the tooth can go no further and isn't down`); stuck = true; }
+          for (const m of others(f)) { const v = shared(b, m); if (v > SLIVER) { say(`a train in from the ${e.n}, ${d.toFixed(1)} mm past where it met the tooth, is in the points' parts`, v); stuck = true; break; } }
+        }
+        const lost = Math.abs(noseS(f) - noseS(set));
+        if (!stuck && lost > DETENT_REACH) out.push(`${name}: a train in from the ${e.n} leaves its tooth ${lost.toFixed(2)} mm from its end: too far for the lever's detent to finish (${DETENT_REACH})`);
+        if (process.env.MONO_POINTS_SAY) console.log(`${name}: ${e.n}: tooth travel ${e.travel.toFixed(2)} mm, left by the train ${lost.toFixed(2)} mm from its end`);
+        // set for this exit now (the detent's taken it home): the bogie runs on in, and a train either way touches nothing
+        const sEnd = noseS(set);
+        // (each tooth kept where it belongs: its fin down under the hood when its exit's set, its nose up on its rail when not)
+        const above = w.Manifold.cube([400, 600, 20]).translate([-200, -100, MONO.beamTop + 0.35]);
+        if (shared(at(e.tooth, set).translate([0, 0, 0.8]).intersect(above), deck) < 0.02) out.push(`${name}: the ${e.n}'s tooth isn't kept down with the points set for it: lifted 0.8 mm its fin's clear of the hood`);
+        if (shared(at(e.tooth, e.up).translate([0, 0, -0.6]), base) < 0.02) out.push(`${name}: the ${e.n}'s tooth isn't held up with the points set for the other exit: 0.6 mm down it's clear of its rail`);
+        for (let q = sEnd + 16; q >= sEnd - 40; q -= 2) { const v = hit(q, set); if (v > SLIVER) { say(`with the points set for the ${e.n}, a train ${(sEnd - q).toFixed(0)} mm past its tooth's face is in the points' parts`, v); break; } }
+      }
+    }
     // (going together)
     const UP = [0.5, 1, 2, 4, 8, 14];
     const down = (what: string, m: Man, onto: Man[]) => { for (const dz of UP) for (const q of onto) { const v = shared(m.translate([0, 0, dz]), q); if (v > SLIVER) { say(`its ${what} can't go down into place: ${dz} mm up it's in what's there`, v); return; } } };
-    down('wheel', of('wheel'), [base]);
-    down('lever', of('lever'), [base, of('wheel')]);
-    down('link', of('link'), [base, of('wheel'), lever]);
-    for (const dx of [2, 5, 10, 20, 40, 70, 100]) { const v = shared(of('slide').translate(vec([-dx, 0])), deck); if (v > SLIVER) { say(`its slide can't go into the deck from the side: ${dx} mm out it's in it`, v); break; } }
-    down('deck and slide', w.Manifold.union([deck, of('slide')]), [base, of('wheel'), of('link'), lever]);
+    const H = (k: PointsPart) => home.get(k)!;
+    down('wheel', H('wheel'), [base]);
+    down('lever', H('lever'), [base, H('wheel')]);
+    down('link', H('link'), [base, H('wheel'), lever]);
+    down('second link', H('linkb'), [base, H('wheel'), lever, H('link')]);
+    down('straight exit\'s tooth', H('tootha'), [base, lever]);
+    down('branch\'s tooth', H('toothb'), [base, H('linkb')]);
+    for (const dx of [2, 5, 10, 20, 40, 70, 100]) { const v = shared(H('slide').translate([-dx, 0, 0]), deck); if (v > SLIVER) { say(`its slide can't go into the deck from the side: ${dx} mm out it's in it`, v); break; } }
+    down('deck and slide', w.Manifold.union([deck, H('slide')]), [base, H('wheel'), H('link'), lever, H('linkb'), H('tootha'), H('toothb')]);
   }, () => []);
   return out;
 }

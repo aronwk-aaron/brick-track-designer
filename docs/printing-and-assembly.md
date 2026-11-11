@@ -242,21 +242,31 @@ by default) to pin pieces together with axles. A **support** every so many studs
 own: its base grips the baseplate and the beam sits on top. Parts are cut over a support where they can be. Printing is as above: no slicer supports.
 
 **Monorail points** are LEGO's own points (2889 right, 2890 left): 32 studs straight, the branch ending 20 studs on and
-8 studs to the side at 45°, so a set drops in where a LEGO one goes. Six parts (`monorail-points-…`): **base**, **deck**,
-**slide** (the two racks), **wheel**, **link** and **lever**. All print flat as their files lie. The slide's file has thin
-breakaway walls under its racks: snap them off. To put a set together:
+8 studs to the side at 45°, so a set drops in where a LEGO one goes. Nine parts (`monorail-points-…`): **base**, **deck**,
+**slide** (the two racks), **wheel**, **link**, **linkb** (the second link), **lever**, and the two teeth, **tootha**
+(straight exit) and **toothb** (branch): the same part twice. All print flat as their files lie, the teeth with their
+fin up. The slide's file has thin breakaway walls under its racks: snap them off. To put a set together:
 
-1. The **wheel** onto the post in the base, its two pins up.
-2. The **lever** into its housing beside the straight exit, its pin up and its two studs out to the side.
-3. The **link** down onto the wheel's short pin and the lever's pin.
-4. The **slide** into the **deck** from the side away from the branch: its three bars into the deck's three slots, the
+1. The **wheel** onto the post in the base, its three pins up.
+2. The **lever** into its housing beside the straight exit, its pins up and its two studs out to the side.
+3. The **link** down onto the wheel's short pin nearest the lever and the lever's near pin.
+4. The second link (**linkb**) onto the wheel's other short pin, its own pin up, lying along the branch.
+5. A **tooth** onto the lever's far pin, its fin towards the straight exit, its nose down in the pocket at the end of
+   the rail on the floor. The other tooth onto the second link's pin, its fin towards the branch's end, its nose up
+   on the rail there.
+6. The **slide** into the **deck** from the side away from the branch: its three bars into the deck's three slots, the
    racks on top, the bars' feet underneath.
-5. The deck, with the slide in it, down onto the base's studs, the wheel's tall pin up into the slot under the slide's
-   middle bar. Press it home.
+7. The deck, with the slide in it, down onto the base's studs: the wheel's tall pin up into the slot under the slide's
+   middle bar, each tooth's fin up into its slot in the rack. Press it home.
 
 Push the lever along the track (25 mm) to set the points: it clicks into place at each end. A 1 x 2 plate on its two
-studs makes a handle, as on LEGO's. LEGO's points also set themselves when a train comes in from the exit they are not
-set for; these don't yet, so set them by hand first. Points clearance (Settings › Monorail) is the gap round the moving
+studs makes a handle, as on LEGO's.
+
+**They set themselves**, as LEGO's do. The tooth of the exit the points are not set for stands 3 mm above the rack;
+the other is drawn back and down, level with the rack's top. A train coming in from the exit the points are not set
+for pushes that tooth along before it, which throws the points for it; the tooth goes down under the train as the
+lever clicks home. A train on the route the points are set for touches neither tooth. The fins are thin (1.2 mm):
+print the teeth in a tough plastic if they break. Points clearance (Settings › Monorail) is the gap round the moving
 parts.
 *Not yet confirmed by a test print.*
 

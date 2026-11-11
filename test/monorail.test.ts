@@ -184,11 +184,11 @@ describe('monorail', { timeout: 120000 }, () => {
     mono({ name: 'Branch', x: 0, y: 0, heading: 0, segs: [{ kind: 'straight', studs: 2.8873016 }, { kind: 'curve', radius: 22, angle }, { kind: 'straight', studs: 2.2010101 }, { kind: 'straight', studs: 8 }] }),
   ] });
   for (const [hand, angle] of [['right', -45], ['left', 45]] as const)
-    it(`monorail points where a branch leaves the main route, to the ${hand}: LEGO's points (base, deck, slide, wheel, link, lever), the rest plain beam`, async () => {
+    it(`monorail points where a branch leaves the main route, to the ${hand}: LEGO's points (base, deck, slide, wheel, the links, lever, the two teeth), the rest plain beam`, async () => {
       const w = await kernel(), b = buildDesign(w, points(angle));
       expect(b.info.warnings).toEqual([]);
       const names = b.pieces.map((p) => p.name);
-      expect(names.filter((n) => n.startsWith('monorail-points'))).toEqual(['base', 'deck', 'slide', 'wheel', 'link', 'lever'].map((n) => `monorail-points-${n}`));
+      expect(names.filter((n) => n.startsWith('monorail-points'))).toEqual(['base', 'deck', 'slide', 'wheel', 'link', 'lever', 'linkb', 'tootha', 'toothb'].map((n) => `monorail-points-${n}`));
       expect(b.info.switches).toBe(1);
       const man = (n: string) => { const P = b.pieces.find((q) => q.name === n)!.positions, mesh = new w.Mesh({ numProp: 3, vertProperties: new Float32Array(P), triVerts: new Uint32Array(P.length / 3).map((_, i) => i) }); mesh.merge(); return new w.Manifold(mesh); };
       // (each one solid; LEGO's size: 32 studs long from the toe, the branch's end 8 studs across at 20 on; the slide's breakaway supports in its file only)
@@ -199,7 +199,7 @@ describe('monorail', { timeout: 120000 }, () => {
       const sl = b.pieces.find((q) => q.name === 'monorail-points-slide')!;
       expect(sl.supports!.length).toBeGreaterThan(0);
       expect(sl.stl.length).toBeGreaterThan(84 + (sl.positions.length / 9) * 50);
-      expect(b.pieces.filter((q) => q.monoPoints).map((q) => q.monoPoints!.part)).toEqual([undefined, undefined, 'slide', 'wheel', 'link', 'lever']);
+      expect(b.pieces.filter((q) => q.monoPoints).map((q) => q.monoPoints!.part)).toEqual([undefined, undefined, 'slide', 'wheel', 'link', 'lever', 'linkb', 'tootha', 'toothb']);
       // (the plain beam: the main before the toe and after the points, the branch after its end)
       expect(names.filter((n) => !n.startsWith('monorail-points')).length).toBe(3);
       expect(MONO.rackPitch).toBe(1.6);

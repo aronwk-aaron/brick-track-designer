@@ -478,18 +478,20 @@ export function buildMonorail(w: Wasm, routes: Route[], o: Partial<PieceOptions>
       const base = at(g.base), tb = fitAngle(outline(base), X, Y);
       // (each part's file lies as it prints: flat, its underside on the bed; the slide's with its breakaway supports,
       // as assembled without them: the view's to show or hide)
-      const part = (m: Man, turn?: number, sup?: Man) => {
-        const q = at(m), a = turn ?? fitAngle(outline(q), X, Y) ?? 0, lie = (x: Man) => x.rotate([0, 0, -a]).translate([0, 0, -q.boundingBox().min[2]]);
-        return { ...bake(q, 0, sw.elev), stl: stlBytes(lie(sup ? scad.union([q, at(sup)]) : q).getMesh(), true), supports: sup ? meshPositions(at(sup).getMesh(), sw.elev) : undefined };
+      // (the straight exit's tooth is tilted down as assembled: its file as the branch's, level)
+      const part = (m: Man, turn?: number, sup?: Man, level = false) => {
+        const q = at(m), f = level ? at(g.toothb) : q, a = turn ?? fitAngle(outline(f), X, Y) ?? 0, lie = (x: Man) => x.rotate([0, 0, -a]).translate([0, 0, -f.boundingBox().min[2]]);
+        return { ...bake(q, 0, sw.elev), stl: stlBytes(lie(sup ? scad.union([q, at(sup)]) : f).getMesh(), true), supports: sup ? meshPositions(at(sup).getMesh(), sw.elev) : undefined };
       };
-      return { base: part(g.base, tb ?? 0), deck: part(g.deck), slide: part(g.slide, undefined, g.supports), wheel: part(g.wheel), link: part(g.link), lever: part(g.lever), fits: tb !== undefined };
+      return { base: part(g.base, tb ?? 0), deck: part(g.deck), slide: part(g.slide, undefined, g.supports), wheel: part(g.wheel), link: part(g.link), lever: part(g.lever), linkb: part(g.linkb), tootha: part(g.tootha, undefined, undefined, true), toothb: part(g.toothb), fits: tb !== undefined };
     }, () => []));
-    const mp = (part?: PointsPart) => ({ P: sw.P, hand: sw.plan.hand, part });
-    const piece = (n: 'base' | 'deck' | 'slide' | 'wheel' | 'link' | 'lever', color: number) => {
+    const mp = (part?: PointsPart) => ({ P: sw.P, hand: sw.plan.hand, part, branch: sw.plan.branch });
+    const piece = (n: 'base' | 'deck' | 'slide' | 'wheel' | 'link' | 'lever' | 'linkb' | 'tootha' | 'toothb', color: number) => {
       res.pieces.push({ name: `${tag}-${n}`, color, positions: pts[n].positions.slice(), stl: pts[n].stl.slice(), supports: pts[n].supports?.slice(), monoPoints: mp(n === 'base' || n === 'deck' ? undefined : n) });
       res.volume += pts[n].volume;
     };
     piece('base', 0x9aa3ad); piece('deck', 0x9aa3ad); piece('slide', 0x4682b4); piece('wheel', 0x4f8f5f); piece('link', 0x4f8f5f); piece('lever', 0xd4af37);
+    piece('linkb', 0x4f8f5f); piece('tootha', 0xb5483a); piece('toothb', 0xb5483a);
     if (!pts.fits) {
       const bb = pts.base.box;
       issue([(bb.min[0] + bb.max[0]) / 2, (bb.min[1] + bb.max[1]) / 2], Math.hypot(bb.max[0] - bb.min[0], bb.max[1] - bb.min[1]) / 2, `Monorail points too big for the ${X} x ${Y} print bed`);
