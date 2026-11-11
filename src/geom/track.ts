@@ -5,7 +5,6 @@
 // Units: mm. Frame: a piece starts at y = 0 on x = 0 heading +y; z = 0 is the
 // bottom of the sleepers; the rail base is at z = 3.2.
 import { Scad, T, R, M, type Man, type Vec2 } from './scad';
-import { support } from './supports';
 
 export const STUD = 8;
 export const PLATE_H = 3.2;
@@ -212,7 +211,7 @@ export class Track {
     ]);
   }
 
-  /** rail_support(width, height, ribs_pos_y): a thin breakaway wall with a rib and a foot (the shape alone: whoever places it makes it a support, supports.ts). */
+  /** rail_support(width, height, ribs_pos_y): a thin breakaway wall with a rib and a foot. */
   railSupport(width: number, height: number, ribsPosY = true): Man {
     const s = this.s, dz = ribsPosY ? -2 : 0;
     return R(s.union([
@@ -231,24 +230,24 @@ export class Track {
     return this.c.hasCoupler && Math.abs(this.c.railOffset - this.c.couplerX) < 6.8 && !scadParity();
   }
 
-  /** start_rail_supports(z0): xfs, the extra rails' ends (extra_rails(false)), the same way by their kind. (Supports: carried with the part they're joined to, supports.ts.) */
+  /** start_rail_supports(z0): xfs, the extra rails' ends (extra_rails(false)), the same way by their kind. */
   startRailSupports(z0: number, xfs: number[] = []): Man {
     const g = this.c.railOffset;
-    return support(this.s, this.s.union([
+    return this.s.union([
       !this.railOverClip() && T(this.railSupport(4, 2.08 - z0), [g - 2.2, -3, z0]),
       T(this.railSupport(3, 3.23 - z0), [-g - 3.3, -3, z0]),
       ...xfs.map((xf) => (xf < 0 ? T(this.railSupport(3, 3.23 - z0), [xf - 3.3, -3, z0]) : T(this.railSupport(4, 2.08 - z0), [xf - 2.2, -3, z0]))),
-    ]));
+    ]);
   }
 
   /** end_rail_supports(z0): xfs as extra_rails(true), in the end connector's own frame (at -xf here). */
   endRailSupports(z0: number, xfs: number[] = []): Man {
     const g = this.c.railOffset;
-    return support(this.s, this.s.union([
+    return this.s.union([
       T(this.railSupport(3, 3.23 - z0, false), [g + 0.2, 3, z0]),
       !this.railOverClip() && T(this.railSupport(4, 2.08 - z0, false), [-g - 1.8, 3, z0]),
       ...xfs.map((xf) => (xf < 0 ? T(this.railSupport(3, 3.23 - z0, false), [-xf + 0.2, 3, z0]) : T(this.railSupport(4, 2.08 - z0, false), [-xf - 1.8, 3, z0]))),
-    ]));
+    ]);
   }
 
   /** support_footing(z0, y_end, dir), clear of the peg and clip on the bed. */
@@ -261,11 +260,11 @@ export class Track {
       T(s.cube([2 * hw, fw, ft]), [-hw, Math.min(ya, yb), z0]),
       T(s.cube([2 * hw, 0.5, 1.5]), [-hw, yEnd + dir * 1.5 - 0.25, z0]),
     ]);
-    if (!(c.hasCoupler && z0 > -1)) return support(s, body);
-    return support(s, s.difference(body, [
+    if (!(c.hasCoupler && z0 > -1)) return body;
+    return s.difference(body, [
       T(s.cylinder(5, 2.1 + gap, 2.1 + gap, 32), [-m * c.couplerX, yEnd, z0 - 1]),
       T(s.cube([8.6 + 2 * gap, 2 + gap, 5]), [m * c.couplerX - 4.3 - gap, yEnd - (dir < 0 ? 2 + gap : 0), z0 - 1]),
-    ]));
+    ]);
   }
 
   /** The sleeper's stud rows across it (y). */

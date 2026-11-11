@@ -8,7 +8,6 @@ import { R, Scad, T, type Man } from '../geom/scad';
 import { sweepRoute } from '../geom/sweep';
 import { stlBytes } from '../geom/stl';
 import { bedFit } from '../geom/bedfit';
-import { printedWith, support } from '../geom/supports';
 import { MONO, MONO_DEFAULTS, Mono, type MonoOptions, rackGaps, type RackGap, SUPPORT_DEFAULTS, type SupportOptions, placeAt, subOf, supportHeight, supportPart, underLabel } from '../geom/monorail';
 import { monoSwitch, type PointsPart, type SwitchPlan, planSwitch } from '../geom/monoswitch';
 import { poseToWorld, routeLat, routeLength, routePose, routeSOf, segLength, segStarts, type Pose, type Route } from '../route/route';
@@ -482,9 +481,7 @@ export function buildMonorail(w: Wasm, routes: Route[], o: Partial<PieceOptions>
       // (the straight exit's tooth is tilted down as assembled: its file as the branch's, level)
       const part = (m: Man, turn?: number, sup?: Man, level = false) => {
         const q = at(m), f = level ? at(g.toothb) : q, a = turn ?? fitAngle(outline(f), X, Y) ?? 0, lie = (x: Man) => x.rotate([0, 0, -a]).translate([0, 0, -f.boundingBox().min[2]]);
-        // (its supports carried with it, not unioned in: each a loose body of the file, kept clear of the part (supports.ts))
-        const own = sup ? printedWith(w, scad.union([q, support(scad, at(sup))])) : undefined;
-        return { ...bake(q, 0, sw.elev), stl: stlBytes(lie(own ? own.file : f).getMesh(), true), supports: own?.supports ? meshPositions(own.supports.getMesh(), sw.elev) : undefined };
+        return { ...bake(q, 0, sw.elev), stl: stlBytes(lie(sup ? scad.union([q, at(sup)]) : f).getMesh(), true), supports: sup ? meshPositions(at(sup).getMesh(), sw.elev) : undefined };
       };
       return { base: part(g.base, tb ?? 0), deck: part(g.deck), slide: part(g.slide, undefined, g.supports), wheel: part(g.wheel), link: part(g.link), lever: part(g.lever), linkb: part(g.linkb), tootha: part(g.tootha, undefined, undefined, true), toothb: part(g.toothb), fits: tb !== undefined };
     }, () => []));

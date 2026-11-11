@@ -85,30 +85,25 @@ function patch(w: Wasm) {
     recording?.add(x as Handle);
   };
   const note = (r: unknown) => { if (Array.isArray(r)) r.forEach(one); else one(r); };
-  const wrap = (obj: Record<string, unknown>, solids: boolean) => {
+  const wrap = (obj: Record<string, unknown>) => {
     for (const k of Object.getOwnPropertyNames(obj)) {
       if (k.startsWith('_') || k === 'constructor' || k === 'delete' || k === 'prototype') continue;
       const d = Object.getOwnPropertyDescriptor(obj, k);
       if (!d || typeof d.value !== 'function' || !d.writable) continue;
       const f = d.value as (...a: unknown[]) => unknown;
-      if (solids && k === 'boundingBox') rawBox = f as typeof rawBox;
       const works = WORKS_OUT.has(k);
-      const carry = solids ? CARRY[k] : undefined;
       obj[k] = function (this: unknown, ...a: unknown[]) {
         // (every so often: is the kernel's memory nearly gone?)
         if ((++calls & 31) === 0 && memory && memory.buffer.byteLength > full) throw new KernelFull();
-        const r = f.apply(this, a); if (works && this && typeof this === 'object') worked.add(this); note(r);
-        // (a part's supports go through what the part goes through: Supports, below)
-        return carry && carried ? carry(w, this, a, r) : r;
+        const r = f.apply(this, a); if (works && this && typeof this === 'object') worked.add(this); note(r); return r;
       };
     }
   };
   // (the instances' methods are on the kernel's own class prototypes, not on
   // the JS constructors' .prototype: found from an instance of each)
-  const solidProto = Object.getPrototypeOf(w.Manifold.cube([1, 1, 1])) as Record<string, unknown>, sectionProto = Object.getPrototypeOf(w.CrossSection.square([1, 1])) as Record<string, unknown>;
-  for (const c of classes) wrap(c, c === (w.Manifold as unknown));
-  wrap(solidProto, true);
-  if (sectionProto !== solidProto) wrap(sectionProto, false);
+  const protos = new Set<Record<string, unknown>>([w.Manifold.cube([1, 1, 1]), w.CrossSection.square([1, 1])].map((x) => Object.getPrototypeOf(x)));
+  for (const c of classes) wrap(c);
+  for (const pr of protos) wrap(pr);
 }
 /**
  * The kept ones of what was made worked out now, before the rest is deleted. The kernel puts off each boolean till
@@ -130,8 +125,6 @@ export function arena<T>(w: Wasm, f: () => T, keep: (r: T) => unknown[]): T {
     throw err;
   } finally { recording = outer; }
   const kept = new Set(keep(r));
-  // (a kept part's supports kept with it)
-  for (const k of [...kept]) { const sp = k && typeof k === 'object' ? sups.get(k) : undefined; if (sp) kept.add(sp); }
   settle(mine, kept);
   for (const h of mine) if (!kept.has(h) && !h.isDeleted?.()) h.delete();
   // (the kept ones it made belong to whoever's recording outside, if anyone; a kept one made before stays whose it was)
@@ -162,7 +155,7 @@ export const isHandle = (x: unknown): x is Handle => !!x && typeof x === 'object
 export function handlesIn(v: unknown, out = new Set<Handle>(), walked = new Set<object>()): Set<Handle> {
   if (!v || typeof v !== 'object' || ArrayBuffer.isView(v) || v instanceof ArrayBuffer || walked.has(v)) return out;
   walked.add(v);
-  if (isHandle(v)) { out.add(v); const sp = sups.get(v); if (sp) out.add(sp); return out; }
+  if (isHandle(v)) { out.add(v); return out; }
   if (Array.isArray(v) || v instanceof Set) for (const x of v) handlesIn(x, out, walked);
   else if (v instanceof Map) for (const [k, x] of v) { handlesIn(k, out, walked); handlesIn(x, out, walked); }
   else for (const x of Object.values(v)) handlesIn(x, out, walked);
@@ -180,99 +173,8 @@ export function free(hs: Iterable<Handle>) { for (const h of hs) if (!h.isDelete
  * on such a part it took most of a gigabyte, and a few of them ran the
  * kernel out of memory (it aborts).
  */
-export function flat<M>(w: Wasm, m: M, supports = true): M {
+export function flat<M>(w: Wasm, m: M): M {
   const g = (m as unknown as { getMesh(): { numProp: number; vertProperties: Float32Array; triVerts: Uint32Array; mergeFromVert: Uint32Array; mergeToVert: Uint32Array } }).getMesh();
   const mesh = new w.Mesh({ numProp: g.numProp, vertProperties: g.vertProperties, triVerts: g.triVerts, mergeFromVert: g.mergeFromVert, mergeToVert: g.mergeToVert });
-  const out = made(new w.Manifold(mesh));
-  // (its supports with it, flat too; supports false: the part alone)
-  const sp = supports ? supportsOf(m as unknown as Solid) : undefined;
-  if (sp) sups.set(out, flat(w, sp));
-  return out as unknown as M;
+  return made(new w.Manifold(mesh)) as unknown as M;
 }
-
-// Supports. A part's breakaway print supports (the small loose bits printed with it: under rail ends, in sprung
-// blades' pockets) are solids of their own, never part of the part's solid: a support that was unioned into its part
-// and touched it became the part (not shown or counted as a support, not broken off, and hiding an overhang). They
-// are carried with the part instead: noted here against the part's solid, and put through whatever the part is put
-// through, by the kernel's own methods (patch): moved as it's moved, cut as it's cut (a cut cuts both), joined when
-// parts are joined, and, where a part is taken apart into its bodies (decompose), each support with the body nearest
-// it. So no builder or cutter has to pass them along, and none can forget to. The part's solid is the part alone:
-// its triangles, volume and slices are without its supports; only its box is with them (boundingBox: the room it
-// takes on the print bed, as ever). They're owned with their part (arena's kept, handlesIn), and made the part's
-// file's loose bodies, kept clear of the part, in one place (geom/supports.ts finishSupports).
-type Solid = InstanceType<Wasm['Manifold']>;
-const sups = new WeakMap<object, Solid>();
-/** (is any solid carrying supports yet: till then nothing's looked up) */
-let carried = false;
-/** A part's supports (one solid, its bodies the supports); undefined: it has none. */
-export function supportsOf(m: Solid): Solid | undefined {
-  const sp = sups.get(m);
-  return sp && !(sp as unknown as Handle).isDeleted?.() && !sp.isEmpty() ? sp : undefined;
-}
-let rawBox: ((this: Solid) => { min: number[]; max: number[] }) | undefined;
-/** A part's own box, without its supports (boundingBox is with them). */
-export const partBox = (m: Solid): { min: number[]; max: number[] } => (rawBox ? rawBox.call(m) : m.boundingBox() as { min: number[]; max: number[] });
-/** A support, to be joined to its part as any solid is (a union): an empty part carrying it. */
-export function asSupport(w: Wasm, support: Solid): Solid {
-  const none = w.Manifold.union([]) as Solid, inner = has(support);
-  // (a support with supports of its own: all of them)
-  const all = inner ? support.add(inner) : support;
-  sups.delete(all); sups.set(none, all); carried = true;
-  return none;
-}
-/** part with these supports (and its own): a solid of its own (part itself with none to add). */
-export function withSupports(w: Wasm, part: Solid, supports: Solid | undefined): Solid {
-  return supports ? part.add(asSupport(w, supports)) : part;
-}
-/** The supports of r set: sp's (undefined or empty: none). */
-const give = <R>(r: R, sp: Solid | undefined): R => { if (sp && r && typeof r === 'object') sups.set(r, sp); return r; };
-const has = (x: unknown): Solid | undefined => (x && typeof x === 'object' ? sups.get(x) : undefined);
-/** (a solid of its own, the same shape: no two parts share a supports solid, each owner deletes its own) */
-const own = (sp: Solid) => sp.translate([0, 0, 0]);
-const joined = (w: Wasm, sps: (Solid | undefined)[]) => { const l = sps.filter((x): x is Solid => !!x); return l.length > 1 ? w.Manifold.union(l) as Solid : l.length ? own(l[0]) : undefined; };
-const boxGap = (a: { min: ArrayLike<number>; max: ArrayLike<number> }, b: { min: ArrayLike<number>; max: ArrayLike<number> }) =>
-  Math.hypot(Math.max(0, a.min[0] - b.max[0], b.min[0] - a.max[0]), Math.max(0, a.min[1] - b.max[1], b.min[1] - a.max[1]), Math.max(0, a.min[2] - b.max[2], b.min[2] - a.max[2]));
-/** (mm3) A body this small is a chip, not a part (the cutters drop loose bits of 1 to 20 mm3). */
-const CHIP = 20;
-type Carry = (w: Wasm, self: unknown, a: unknown[], r: unknown) => unknown;
-/** moved: the supports moved the same way */
-const moved = (k: string): Carry => (_w, self, a, r) => { const sp = has(self); return sp && r !== self ? give(r, (sp as unknown as Record<string, (...b: unknown[]) => Solid>)[k](...a)) : r; };
-/** unchanged in shape: the supports as they are */
-const same: Carry = (_w, self, _a, r) => { const sp = has(self); return sp && r !== self ? give(r, own(sp)) : r; };
-/** the solids a call was given: two, or a list */
-const listOf = (a: unknown[]) => (Array.isArray(a[0]) ? a[0] : a) as Solid[];
-const CARRY: Record<string, Carry> = {
-  translate: moved('translate'), rotate: moved('rotate'), scale: moved('scale'), mirror: moved('mirror'), transform: moved('transform'), warp: moved('warp'), warpBatch: moved('warpBatch'),
-  refine: same, refineToLength: same, refineToTolerance: same, simplify: same, setTolerance: same, asOriginal: same, calculateNormals: same, calculateCurvature: same, smoothOut: same, smoothByNormals: same, withContext: same,
-  // (cut as the part is: by the other solid, not by its supports)
-  subtract: moved('subtract'), trimByPlane: moved('trimByPlane'),
-  intersect: (w, self, a, r) => { const sp = has(self), so = has(a[0]); return sp || so ? give(r, joined(w, [sp?.intersect(a[0] as Solid), so?.intersect(self as Solid)])) : r; },
-  add: (w, self, a, r) => { const sp = has(self), so = has(a[0]); return (sp || so) && r !== self && r !== a[0] ? give(r, joined(w, [sp, so])) : r; },
-  split: (_w, self, a, r) => { const sp = has(self); if (sp) { const [x, y] = sp.split(a[0] as Solid); give((r as Solid[])[0], x); give((r as Solid[])[1], y); } return r; },
-  splitByPlane: (_w, self, a, r) => { const sp = has(self); if (sp) { const [x, y] = sp.splitByPlane(a[0] as [number, number, number], a[1] as number); give((r as Solid[])[0], x); give((r as Solid[])[1], y); } return r; },
-  // (the class's own: of two solids or a list)
-  union: (w, _self, a, r) => { const l = listOf(a); return l.some(has) && !l.includes(r as Solid) ? give(r, joined(w, l.map(has))) : r; },
-  compose: (w, _self, a, r) => { const l = listOf(a); return l.some(has) && !l.includes(r as Solid) ? give(r, joined(w, l.map(has))) : r; },
-  difference: (w, _self, a, r) => { const l = listOf(a), sp = has(l[0]); return sp && r !== l[0] ? give(r, l.length > 1 ? w.Manifold.difference([sp, ...l.slice(1)]) as Solid : own(sp)) : r; },
-  intersection: (w, _self, a, r) => { const l = listOf(a); return l.some(has) && !l.includes(r as Solid) ? give(r, joined(w, l.map((m, i) => { const sp = has(m); return sp && (w.Manifold.intersection([sp, ...l.filter((_, j) => j !== i)]) as Solid); }))) : r; },
-  // (each support with the body nearest it: the one it's printed for)
-  decompose: (w, self, _a, r) => {
-    const sp = has(self), bodies = r as Solid[];
-    if (!sp || !bodies.length || sp.isEmpty()) return r;
-    if (bodies.length === 1) return [give(bodies[0], own(sp))];
-    // (not with a chip of the part a cut left, CHIP mm3 or less, which is dropped next: its supports would go with it)
-    const boxes = bodies.map((b) => b.boundingBox()), mine: Solid[][] = bodies.map(() => []), real = bodies.map((b) => b.volume() > CHIP), from = real.some((x) => x) ? real : real.map(() => true);
-    for (const one of sp.decompose()) { const sb = one.boundingBox(); let best = from.indexOf(true); boxes.forEach((bx, k) => { if (from[k] && boxGap(sb, bx) < boxGap(sb, boxes[best])) best = k; }); mine[best].push(one); }
-    bodies.forEach((b, k) => give(b, joined(w, mine[k])));
-    return r;
-  },
-  // (the room it takes: with its supports)
-  boundingBox: (_w, self, _a, r) => {
-    const sp = has(self);
-    if (!sp || (sp as unknown as Handle).isDeleted?.() || sp.isEmpty()) return r;
-    const p = r as { min: number[]; max: number[] }, q = sp.boundingBox() as { min: number[]; max: number[] };
-    if ((self as Solid).isEmpty()) return q;
-    return { min: p.min.map((v, k) => Math.min(v, q.min[k])), max: p.max.map((v, k) => Math.max(v, q.max[k])) };
-  },
-};
-
