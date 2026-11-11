@@ -520,7 +520,7 @@ route-owned storage, the follow rules and the card section they bring are the pa
   branches off straights and curves, points, a loop, crossings and near misses, monorail, dual gauge; apart: kept,
   pruned, renamed, split, merged, read from a file; carry: exact places, there and back, from either end, branches,
   a loop, a locked track, the card's changes, and that hand edits and cut paths follow), the browser smoke test's
-  "joined tracks" step.
+  "joined tracks" step. Landed as 194017c (the smoke step failed on CI: the trap below) and fcdc081 (CI green).
 - **How S4 differs from section 5:** (1) the tolerance is `meeting`'s (0.05 stud, 0.5°), not 0.01 and 0.1°: one rule
   for Merge and for joints. (2) Two tracks starting at one point the same way (points drawn as two routes, as the
   switch templates are) are joined, as a branch off the side is. (3) In a loop the rest stays where it is and the
@@ -538,7 +538,14 @@ route-owned storage, the follow rules and the card section they bring are the pa
   pattern for checking a module against the library's ends). Left from S3: the keep-outs are drawn only while a path
   is being drawn; a path's corners can't be typed as numbers (only dragged); "Expert tools" toggle and the layer
   filter of section 5 aren't built (cuts are always selectable in Select mode).
-- **Traps.** S1: a track's own is read only through overrides.ts (never `r.own` in the build): `hasPartOwn` decides
+- **Traps.** S4: the plan's marks (flangeway cuts, check rails, points) are of the last build that came back, and a
+  press on one of their ends is taken before a press on a track's end: right after a drag the marks can still be those
+  of the middle of it, so the browser smoke test waits for nothing of them to be within 2 studs of a joint before it
+  clicks it (CI is slow enough to show it; here it never did). A branch's joint is under its points' mark for the
+  same reason: the two tracks selected offer Take apart instead. Lengthening a track past a neighbour on its end
+  with Alt leaves the neighbour's end on the track's side: still a joint (they touch), so nothing is said to open.
+  `apart` goes by route names: anything that renames, splits or merges routes must say so (`renameApart`,
+  `splitApart`). S1: a track's own is read only through overrides.ts (never `r.own` in the build): `hasPartOwn` decides
   the path, and the group's sub-design has no part own left on its tracks. A lever beside points is placed clear only
   of its own group's tracks, so a track within a lever's reach of points or a crossing is made one part with them
   (`LEVER_REACH`: the reach of network.ts `nearby`; keep the two in step). Two tracks with a short one joined on between
