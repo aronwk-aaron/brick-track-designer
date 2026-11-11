@@ -531,6 +531,38 @@ route-owned storage, the follow rules and the card section they bring are the pa
   writes, for tracks that still touch. (6) Alt with the arrow keys isn't a thing (the browser's own keys): take the
   joint apart first. (7) Dragging an end that is itself joined to another track takes that track along (it is "what
   is joined past the change"): hold Alt to pull the end off it.
+- **S6 is begun: the modular kits as templates** (2026-11-11). Each kit is the whole piece of trackwork cut by hand
+  paths into its modules (src/app/templates-ref-kits.ts; the R104 switch's, three-way's and double slip's in
+  design.ts): 'Three-way R104, base and detachable modules' (base triple, detach 1 triple, the two triple detach 2),
+  'Double slip R104 left|right, middle and detachable sections' (two detach sections of 16 studs and the 8-stud
+  middle), 'Double crossover R104, bases and detachable modules' (four bases, four detach 1, four track terminators,
+  the middle), and the compact R40 switch's base with each of its five detachable sections, each hand ('Switch R40
+  left|right, compact base and standard | short | curved 45° | curved 90° section', 'Yard switch R40 …, compact base and
+  rail yard section'). test/templates-kits.test.ts holds each kit's modules to the library's ends (`KITS`: the
+  `MODULES` pattern, with a width where a module's ends are on its neighbour's edge too) and the R104 switch's points
+  and lever to the library's base (design.ts `r104Work`: toe 16 mm on, lever 7 studs out and 5 in).
+  **Where a kit differs from the maker's, and why:** a cut path is on the stud grid, so the compact R40 base ends
+  square to the straight track at 16 studs (the maker's joint on the branch is square to the branch, 0.7 studs
+  sooner), and the double slip's sections meet square to the straight track 4 studs from the crossing (the maker's
+  are square to the line between the two tracks, 11.25 degrees off: stepped, the path would run down a rail); the
+  double crossover's two middle sections are one part (they meet where the crossovers cross: through the frogs);
+  on sleepers a compact detachable section's two tracks aren't joined where they've parted (two parts).
+  **Not templates, and why:** (1) a module alone (a base, a detach 1, a detach 2 without the rest). Two faults, both
+  with the routes of the module drawn on their own: a track end's connector keeps its studs where another track's
+  rail runs over them (two tracks ending side by side, 1.2 to 3.8 studs apart: 'Switch R104 base' = a 16-stud
+  straight and an R104 curve of 8.85 degrees from one toe: "track1's stud at -28.0, 124.0 is run into", the
+  straight's end connector's stud under the branch's left rail; the same at 3 studs apart on the compact R40 base
+  and at the start of a detach 2), which is the end connectors' geometry (switch/base.ts `fullEndpoint` at
+  `plan.endPoses`); and a detach 1 alone is two tracks side by side with no points, which the build warns of
+  ("tracks run over each other"): it wants the mark of section 4c (`expert.accept`), which isn't built. (2) The
+  double slip crossover and its variants, and the double slip monster crossover: four R104 double slips whose
+  diagonals run on into each other and cross between the tracks. They build (23 s), but the four sets of points
+  round that crossing have their levers in the way of the other diagonal ("the lever of the points at 8, 0 is in
+  the way of a train on another track"), two sets' plates lie 45 mm3 in the next slip's bed (the beds at two
+  heights of network.ts `bedClear`, between slips here), a sprung blade has no lip, and the middle (the kit's two
+  crossover adapters, which meet at the crossing: through its frogs) is 272 mm wide. The maker's adapters have no
+  levers on those four sets. (3) The compact R40 "perpendicular" section and its 3T sets, and the T-junction R40
+  R56: not tried.
 - **Next, in order:** (1) the double track's budget from CI's log (test/templates.shared.ts); stretches placed and
   dragged on the plan; a group's build told of the other groups' track at its ends, so a track joined onto points
   can have its own; (2) S1 more keys (buffer stops per end; labels per part); (3) S4's leftovers: a joint's own row (which tracks, Take apart) in the Trackwork panel; then S5/S6 (the other kit
@@ -567,14 +599,26 @@ route-owned storage, the follow rules and the card section they bring are the pa
   are held by the baseplate (in a section, `bedAt` keeps the bed along the path's runs, as for the app's own cuts).
   Studs on a branch's slanted sleepers follow the track, not the grid, so a path on a grid line can graze one:
   `cutOnPaths` gives every stud it finds in a path's way (`findStuds`) whole to the side its middle is on and takes
-  the cut round it. **Open:** on 'Modular triple crossover R40' the only across line 2 studs clear of both frogs (17
-  studs along) still left five stud-sized rings with a 1.3 mm flat on the cut face (0.09 mm off each): either studs
-  `findStuds` doesn't list (run into by a rail's foot?) or the peg-and-clip joints' own pegs; not looked into, so
-  that template keeps its `KNOWN` pin and is not cut by hand. A peg's socket beside a stud still follows the standing
+  the cut round it. **Open (geometry, src/geom/studs.ts):** on 'Modular triple crossover R40' the only across line 2 studs clear of both
+  frogs (17 studs along) cuts three studs on the branches' slanted sleepers, at 4.22, 16.74; 7.75, 17.10 and -8.25,
+  17.10 (studs): each a whole stud in the piece, its middle 0.8 to 2.1 mm off the line, that `findStuds` doesn't
+  list, so `cutOnPaths` doesn't take the cut round it. Why: its outline at mid-height has 50 points, not 48 (two
+  more on one side, where another solid's edge meets its wall), and `findStuds` takes the middle as the mean of the
+  points: 0.08 to 0.10 mm off, so the furthest point is 0.10 to 0.12 mm off the stud's radius, over the 0.08 allowed
+  (about the outline's box's middle: 0.021). To see it: the template with `splitTrack: 'lengths'` and
+  `expert: { cutPaths: [{ id: 'c1', pts: [[-24, 17], [24, 17]] }] }`: studsCut (test/cutpaths.shared.ts) says "track3:
+  a stud is cut at -8.25, 17.00", "… 7.75, 17.00", "track4: … 4.22, 17.00". The same would leave such a stud to be
+  taken off by `wholeStuds` at the app's own cuts. With that put right the template still keeps its `KNOWN` pin until
+  it's cut along its tracks too: the two sections that cut leaves are 320 and 352 mm wide.
+  A peg's socket beside a stud still follows the standing
   rule (Studs a cut goes through). The tests: no arc of a stud's circle ends on a cut face (every design with cut
   paths, in `goesTogether`), and the switch template has as many whole studs with its paths as without. A single switch is not built by
   `sectioned` but by `buildSwitches`: both take hand paths. LEGO-style tubes under a plate sit on grid corners, so a
   grid-line cut passes through tube walls (as the app's own stepped cuts always have); studs, and the studs of a
   plate below, are at cell middles, 4 mm clear.
+  `cutOnPaths` asks of a part's plan only what's beside the path (does it run through, does it end inside): the plan is
+  taken in within `NEAR` of the path before it's offset; offsetting the whole plan of a big piece cost 8 to 20 s of
+  the three-track crossover's 59 (31 now; test/templates-crossover3.test.ts holds the paths to 1.3 times the build
+  without them).
   `followHandCuts` goes by `DRoute` object identity between finished actions: anything that swaps the design's route
   objects without calling `replaced()` or `changed(true)` loses the follow for that one action (not the cuts).
