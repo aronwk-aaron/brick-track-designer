@@ -95,7 +95,7 @@ says when (section 9).
 | **Frogs** (S5b) | at each rail crossing: flangeways, wing rails, the nose | nose length, wing rail length, flangeway each way; solid or open frog | — |
 | **Joints** (S2, S3) | the design's Joint at every cut; ordinary ends between track pieces | per cut: its joint (`lego`, `dovetail`, `axle`, `flataxle`, `butt`) | a joint that doesn't fit: "No room for an axle here: cut flat, held by the baseplate" (the cutter's fallback, said) |
 | **Cuts** (S2, S3) | section 3 | section 3 | section 3 |
-| **Studs and underside** (S1, S5a) | grid or follow; hollow with tubes, or sockets | per route and stretch (settings); S5a: studs on or off per sleeper | a stud is never split: `studsAtCuts` stays design-wide and defaults to 'off' at a cut |
+| **Studs and underside** (S1, S5a) | grid or follow; hollow with tubes along the edges, or at every corner | per route and stretch (settings); S5a: studs on or off per sleeper | a stud is never split: `studsAtCuts` stays design-wide and defaults to 'off' at a cut |
 
 ## 3. Custom cuts
 

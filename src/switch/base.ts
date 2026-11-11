@@ -3,7 +3,7 @@
 // rails with the frog's flangeways, check rails, the points bed with its
 // pockets and blade slots, long turnout ties and each route's own sleepers,
 // the end connectors, the throw arm with the lever's ears, the throw
-// channel, the stud sockets underneath and the breakaway supports.
+// channel, the underside (a LEGO plate's: hollow, with anti-stud tubes) and the breakaway supports.
 //
 // Units: mm and degrees, switch.scad's frame (the routes start at the origin
 // heading +y). Routes are right to left, as switch.scad's `routes`.
@@ -12,8 +12,8 @@ import { poseToWorld, railOffsetOf, railPoint, routeLat, routeLength, routePose,
 import { M, R, T, type CS, type Man, type Scad, type Vec2, type Vec3 } from '../geom/scad';
 import { sweepRoute } from '../geom/sweep';
 import { rectFits } from '../geom/bedfit';
-import { ANTISTUD_FIT, connectorUnderside, hollowGrid, type Spot, studSpots, TUBE_OD } from '../geom/underside';
-import { DEFAULTS as TRACK_DEFAULTS, getSocketShape, scadParity, PLATE_H, RAIL_PROFILE, STUD, tongueLeans, Track } from '../geom/track';
+import { ANTISTUD_FIT, BOTTOM_WALL, connectorKeep, connectorUnderside, hollowGrid, TUBE_ID, TUBE_OD } from '../geom/underside';
+import { DEFAULTS as TRACK_DEFAULTS, scadParity, PLATE_H, RAIL_PROFILE, STUD, tongueLeans, Track } from '../geom/track';
 import { couplerSupports, trackSeat } from '../geom/extras';
 import { support } from '../geom/supports';
 import { type P2, SNAP, snapGeo, type SnapGeo, snapHalf } from './snap';
@@ -27,7 +27,7 @@ export interface BaseParams extends SwitchParams {
   checkRailFlare: number;   // 1.5
   printBedX: number;        // 256
   printBedY: number;        // 256
-  /** Underside (switch.scad's stud_grip): 'edges' = hollow with anti-stud tubes, 'all' = a gripping square socket at every stud. */
+  /** Underside (switch.scad's stud_grip): 'edges' = hollow with anti-stud tubes, 'all' = a tube at every corner between four studs. */
   studGrip: 'edges' | 'all';
   /** (track alone) The underside lined up with the baseplate's stud grid (the switch's own frame), or with the track (its end connectors on their own ends' frames). */
   undersideGrid?: 'baseplate' | 'track';
@@ -1261,12 +1261,10 @@ export function switchGeometry(s: Scad, plan: SwitchPlan, extraCuts: Man[] = [])
   };
 
   // ---------- ties ----------
-  const studRecess = () => t.studSocket(1 + p.studH + 0.2);
   // (the underside's stud grid: the design's (p.grid) or the switch's own frame; a point on it at a stud's place, 4 + 8k)
   const GR: Pose = !scadParity() && p.grid ? p.grid : [0, 0, 0];
   const onStud = (q: Pt) => worldToPose(GR, q).every((v) => { const e = (((v - 4) % STUD) + STUD) % STUD; return Math.min(e, STUD - e) < 1e-6; });
-  // (a stud recess under a tie's stud only where it's on that grid: elsewhere the underside's own sockets and hollow)
-  const recessOk = (q: Pt) => !p.grid || scadParity() || onStud(q);
+  // (the ties solid underneath here: the underside hollows them, as the rest)
   const endKeepout = () => s.union(plan.endPoses.map((e) => atPose(cube([sleeperLen + 8, 8 + 2 * STUD + 20, 100], [-(sleeperLen / 2 + 4), -(8 + 2 * STUD), -50]), e)));
   const offs = [-1, 1].map((k) => k * (sleeperLen / 2 - 4)).concat(tc.betweenRailsRaw);
   const turnoutTies = () => {
@@ -1298,7 +1296,7 @@ export function switchGeometry(s: Scad, plan: SwitchPlan, extraCuts: Man[] = [])
       // (with ballast, kept within its top layer: the ends don't stick out over the step below)
       const tie = cube([xr - xl, sleeperW, PLATE_H], [xl, y - sleeperW / 2, 0]);
       out.push(s.difference(g.ballast ? s.intersection(tie, s.union(routes.map((rt) => sweep(sq([g.ballastTopW, PLATE_H + 2], [-g.ballastTopW / 2, -1]), rt)))) : tie,
-        [...(g.ballast ? [] : spots.filter(recessOk).map((q) => T(studRecess(), [q[0], q[1], -1]))), endKeepout()]));
+        [endKeepout()]));
       for (const q of spots) out.push(T(t.stud(tc.postD, tc.postH), [q[0], q[1], PLATE_H - 0.2]));
     }
     return s.union(out);
@@ -1313,7 +1311,6 @@ export function switchGeometry(s: Scad, plan: SwitchPlan, extraCuts: Man[] = [])
           if (plan.latOthers(i, railPoint(rt, st + dy, o)) > sleeperLen / 2 + 1 + TRACK_DEFAULTS.studD / 2 + 0.3) keep.push([o, dy]);
         out.push(s.difference(atPose(cube([sleeperLen, sleeperW, PLATE_H], [-sleeperLen / 2, -sleeperW / 2, 0]), ps), [
           ...plan.others(i).map((j) => sweep(sq([sleeperLen + 2, PLATE_H + 10], [-sleeperLen / 2 - 1, -1]), routes[j])),
-          ...(g.ballast ? [] : keep.filter((k) => recessOk(poseToWorld(ps, k))).map((k) => atPose(T(studRecess(), [k[0], k[1], -1]), ps))),
         ]));
         for (const k of keep) out.push(atPose(T(t.stud(tc.postD, tc.postH), [k[0], k[1], PLATE_H - 0.2]), ps));
       }
@@ -1331,22 +1328,23 @@ export function switchGeometry(s: Scad, plan: SwitchPlan, extraCuts: Man[] = [])
   const leadTies = () => {
     const out: Man[] = [];
     for (const ps of leadTiePoses()) {
-      out.push(s.difference(atPose(cube([sleeperLen, sleeperW, PLATE_H], [-sleeperLen / 2, -sleeperW / 2, 0]), ps),
-        g.ballast ? [] : offs.flatMap((o) => [-4, 4].filter((dy) => recessOk(poseToWorld(ps, [o, dy]))).map((dy) => atPose(T(studRecess(), [o, dy, -1]), ps)))));
+      out.push(atPose(cube([sleeperLen, sleeperW, PLATE_H], [-sleeperLen / 2, -sleeperW / 2, 0]), ps));
       for (const o of offs) for (const dy of [-4, 4]) out.push(atPose(T(t.stud(tc.postD, tc.postH), [o, dy, PLATE_H - 0.2]), ps));
     }
     return s.union(out);
   };
   // (on ballast the peg and clip only with pegOnBallast, held up by breakaway supports; the ballast alone has them for its seat, see base())
-  // (their stud recesses only as switch.scad's: else the underside's cut under them, connUnder)
+  // (solid underneath here: the underside's cut under them, connUnder)
   const connectors = (peg = !g.ballast || !!p.pegOnBallast) => s.union([
-    T(t.fullEndpoint(peg, !g.ballast && scadParity()), [0, 4, 0]),
-    ...plan.endPoses.map((e) => atPose(T(R(t.fullEndpoint(peg, !g.ballast && scadParity()), [0, 0, 180]), [0, -4, 0]), e)),
+    T(t.fullEndpoint(peg), [0, 4, 0]),
+    ...plan.endPoses.map((e) => atPose(T(R(t.fullEndpoint(peg), [0, 0, 180]), [0, -4, 0]), e)),
   ]);
   // (track alone: each end connector hollow underneath as a 1 x N plate (underside.ts), where it's on the stud grid
-  // (the start always), or everywhere with the underside lined up with the track; the grid's sockets elsewhere)
-  const connFrames = (): Pose[] => (g.ballast || scadParity() ? [] : [[0, 4, 0] as Pose, ...plan.endPoses.map((e): Pose => [e[0] + 4 * sind(e[2]), e[1] - 4 * cosd(e[2]), e[2] + 180])]
-    .filter((P) => (p.undersideGrid === 'track' && !p.grid) || [4, 12].every((lx) => onStud(poseToWorld(P, [lx, 0])))));
+  // (the start always), or everywhere with the underside lined up with the track; elsewhere hollow inside its wall as the rest, solid only
+  // round its peg and clip: underside())
+  const allConnFrames = (): Pose[] => (g.ballast ? [] : [[0, 4, 0] as Pose, ...plan.endPoses.map((e): Pose => [e[0] + 4 * sind(e[2]), e[1] - 4 * cosd(e[2]), e[2] + 180])]);
+  const connFrames = (): Pose[] => allConnFrames()
+    .filter((P) => (p.undersideGrid === 'track' && !p.grid) || [4, 12].every((lx) => onStud(poseToWorld(P, [lx, 0]))));
   const inConn = (q: Pt) => connFrames().some((P) => { const l = localOf(P, q); return Math.abs(l[0]) <= sleeperLen / 2 && Math.abs(l[1]) <= STUD / 2; });
   const connUnder = () => {
     const fr = connFrames(), cs = connectorUnderside(s, t);
@@ -1414,10 +1412,15 @@ export function switchGeometry(s: Scad, plan: SwitchPlan, extraCuts: Man[] = [])
   /** (the plate-style throw) the bracket: a 3 x 3 stud plate on the arm's studs, slotted for the lever, with the ears on it. */
   const bracketPart = (v: SetV) => {
     const z0 = bedTop, plate = cube([3 * STUD - 0.2, 3 * STUD - 0.2, PLATE_H], [v.leverX - 1.5 * STUD + 0.1, v.throwY - 1.5 * STUD + 0.1, z0]);
-    const socks = bracketStuds(v).map(([x, y]) => T(t.studSocket(t.o.studH + 0.2), [x, y, z0 - 0.01]));
     const wf = leverT() + 2 * c, f0 = Math.min(v.forkX - forkHw, v.forkX + v.leverTravel + forkHw) - c - 1, f1 = Math.max(v.forkX - forkHw, v.forkX + v.leverTravel + forkHw) + c + 1;
+    // (underneath as a 3 x 3 plate: hollow inside its wall, a tube at each corner between four studs that the lever's slot leaves whole)
+    const fitA = p.antistudFit ?? ANTISTUD_FIT, hh = 1.5 * STUD - BOTTOM_WALL;
+    const slot2d = sq([f1 - f0, wf], [f0, v.throwY - wf / 2]);
+    const rings = [-4, 4].flatMap((dx) => [-4, 4].map((dy) => circle((TUBE_OD - fitA) / 2, 24, [v.leverX + dx, v.throwY + dy]).subtract(circle((TUBE_ID + fitA) / 2, 24, [v.leverX + dx, v.throwY + dy]))))
+      .filter((r) => r.intersect(slot2d).area() < 0.01);
+    const hollow = T(s.extrude(sq([2 * hh, 2 * hh], [v.leverX - hh, v.throwY - hh]).subtract(W.CrossSection.union(rings)), t.o.studH + 0.2), [0, 0, z0 - 0.01]);
     const slot = cube([f1 - f0, wf, 30], [f0, v.throwY - wf / 2, z0 - 1]);
-    return s.union([s.difference(plate, [...socks, slot]), ...ears(v, z0 + PLATE_H)]);
+    return s.union([s.difference(plate, [hollow, slot]), ...ears(v, z0 + PLATE_H)]);
   };
   // (the switch stand's yoke holds its eccentric, wider than the lever's tip)
   const forkHw = (p.throwStand && fdb ? STAND.eccD / 2 : g.leverTipD / 2) + c + g.forkWall;
@@ -1444,42 +1447,30 @@ export function switchGeometry(s: Scad, plan: SwitchPlan, extraCuts: Man[] = [])
   };
 
   // ---------- underside ----------
-  // (switch_underside(): the base's stud grid, square to the start)
-  const underside = () => {
-    const xr = plan.baseXRange(plan.baseY0, plan.baseY1), spots: Spot[] = [];
-    if (GR[0] === 0 && GR[1] === 0 && GR[2] === 0) {
-      for (let x = Math.floor(xr[0] / 8) * 8 - 4; x <= xr[1] + 4 + 1e-9; x += 8)
-        for (let y = 4; y <= plan.baseY1 + 1e-9; y += 8) if (!inConn([x, y])) spots.push([x, y, roundScad(x / 8), roundScad(y / 8)]);
-    } else {
-      // (on the design's grid: its studs over the base's box)
-      const box = [[xr[0] - 8, -8], [xr[1] + 8, -8], [xr[0] - 8, plan.baseY1 + 8], [xr[1] + 8, plan.baseY1 + 8]].map((q) => worldToPose(GR, q as Pt));
-      const [i0, i1] = [Math.floor(Math.min(...box.map((q) => q[0])) / 8) - 1, Math.ceil(Math.max(...box.map((q) => q[0])) / 8) + 1];
-      const [j0, j1] = [Math.floor(Math.min(...box.map((q) => q[1])) / 8) - 1, Math.ceil(Math.max(...box.map((q) => q[1])) / 8) + 1];
-      for (let i = i0; i <= i1; i++) for (let j = j0; j <= j1; j++) {
-        const q = poseToWorld(GR, [4 + 8 * i, 4 + 8 * j]);
-        if (q[1] > -4 && q[1] < plan.baseY1 + 8 && !inConn(q)) spots.push([q[0], q[1], i, j]);
-      }
-    }
-    // (the throw arms too: hollow with tubes underneath, like the rest)
-    const onArm = (x: number, y: number, m: number) => !scadParity() && sets.some((v) => {
-      if (v.nail) return false;
-      const xEnd = v.leverX + v.throwDir * 10, xOut = v.throwDir * Math.ceil((v.throwDir * xEnd) / STUD - 1e-6) * STUD;
-      return x >= Math.min(v.throwStockX, xOut) + m - 0.02 && x <= Math.max(v.throwStockX, xOut) - m + 0.02 && Math.abs(y - v.throwY) <= g.armW / 2 - m + 0.02;
-    });
-    const bed = (x: number, y: number, m: number) => (y >= 8 + m
-      && Math.min(...routes.map((rt) => Math.abs(routeLat(rt, [x, y])))) <= sleeperLen / 2 - m || onArm(x, y, m))
-      // clear of every end connector's base (measured in that end's frame)
-      && !plan.endPoses.some((e) => { const dx = x - e[0], dy = y - e[1]; return Math.hypot(dx, dy) < sleeperLen + 16 && dx * sind(e[2]) - dy * cosd(e[2]) < 8 + m; });
-    const ty = plan.tieYs(), half = sleeperW / 2 - (TRACK_DEFAULTS.studD + 1) / 2;
-    // the solid base round the points, before the first tie, or on a tie
-    // (the points' base runs from the points bed's start to the first tie;
-    // before it, on a lead-in, only the lead ties are solid)
-    const bedY0 = Math.min(...sets.map((v) => (v.toeY > 20 ? v.toeY - 2 : Math.min(v.toeY - 2, 7.9))));
-    const leads = leadTiePoses();
-    const solid = (x: number, y: number) => onArm(x, y, 0) || (y < bedY0
-      ? leads.some((e) => { const l = localOf(e, [x, y]); return Math.abs(l[1]) <= half && Math.abs(l[0]) <= sleeperLen / 2; })
-      : ty.length === 0 || y <= ty[0] - sleeperW / 2 - (TRACK_DEFAULTS.studD + 1) / 2 || ty.some((tt) => Math.abs(y - tt) <= half));
-    return studSpots(s, t, spots, bed, [cosd(GR[2]), sind(GR[2])], [-sind(GR[2]), cosd(GR[2])], p.studH + 0.21, GR[2], solid, p.studGrip);
+  /**
+   * The track-only base's underside, as a LEGO plate's on the stud grid (the design's, or the switch's own frame):
+   * hollow inside a wall wherever there's floor over it (the ties, the points' bed, the throw arms: floor, what the
+   * base has just above the hollow's height, less the pockets and the channel that come down into it), with anti-stud
+   * tubes (underside.ts). The end connectors on the grid have their own (connUnder); one that isn't is hollow as the
+   * rest, solid round its peg and clip. No socket for a stud of its own anywhere.
+   */
+  const underside = (floor: CS, foot: CS) => {
+    const cs = connFrames(), half = sleeperLen / 2;
+    let cav = floor.offset(-BOTTOM_WALL, 'Miter', 1000);
+    // (each end connector's strip out of it, and a wall on to the bed's side: on the grid, connUnder's channel and pins; off
+    // it, a channel along it the same, without the pins (its studs aren't the grid's), solid round its peg and clip)
+    const strip = (P: Pose, r: CS) => r.rotate(P[2]).translate([P[0], P[1]]);
+    cav = cav.subtract(W.CrossSection.union(allConnFrames().map((P) => strip(P, sq([2 * half + 2, 9 + BOTTOM_WALL], [-half - 1, -5])))));
+    const keep = connectorKeep(s, t), off = allConnFrames().filter((P) => !cs.some((Q) => Q[0] === P[0] && Q[1] === P[1]));
+    const chan = sq([2 * (half - BOTTOM_WALL), STUD - 2 * BOTTOM_WALL], [-(half - BOTTOM_WALL), -(STUD / 2 - BOTTOM_WALL)]);
+    if (off.length) cav = W.CrossSection.union([cav, ...off.map((P) => strip(P, keep.length ? chan.subtract(W.CrossSection.union(keep)) : chan))]);
+    if (cav.isEmpty()) return { cut: undefined, grips: [] as [number, number][] };
+    // (no tube on a tie the base is cut through for the print bed: the cut and its pegs would leave half rings)
+    const ok = (cs: CS) => { const b = cs.bounds(), cy = (b.min[1] + b.max[1]) / 2; return !plan.baseCuts.some((yc) => Math.abs(cy - yc) < 6); };
+    const bb = cav.bounds(), box = [[bb.min[0], bb.min[1]], [bb.max[0], bb.min[1]], [bb.min[0], bb.max[1]], [bb.max[0], bb.max[1]]].map((q) => worldToPose(GR, q as Pt).map((v) => v / 8));
+    const hg = hollowGrid(s, t, cav, (lx, ly) => poseToWorld(GR, [lx, ly]), Math.floor(Math.min(...box.map((q) => q[0]))) - 2, Math.ceil(Math.max(...box.map((q) => q[0]))) + 1,
+      Math.floor(Math.min(...box.map((q) => q[1]))) - 2, Math.ceil(Math.max(...box.map((q) => q[1]))) + 1, p.studGrip, { foot, skip: inConn, ok });
+    return { cut: T(s.extrude(hg.tubes ? hg.cut.subtract(hg.tubes) : hg.cut, p.studH + 0.21), [0, 0, -0.01]), grips: hg.grips };
   };
 
   // ---------- the plate-style points (mechStyle 'plates') ----------
@@ -2350,23 +2341,15 @@ export function switchGeometry(s: Scad, plan: SwitchPlan, extraCuts: Man[] = [])
     ]);
     let cav = outline.offset(-1.39, 'Miter', 1000);
     for (const yc of plan.baseCuts) cav = cav.subtract(sq([2000, 2 * 1.39 + 8], [-1000, yc - 1.39 - 4]));
-    const xr = plan.baseXRange(plan.baseY0, plan.baseY1), socks: CS[] = [];
-    if (!scadParity()) {
-      // grip along the edges and every 4 studs, thin posts elsewhere (underside.ts), not a tube at every corner
-      // (on the design's grid: the indices over the base's box in it)
-      const box = [[xr[0] - 16, -16], [xr[1] + 16, -16], [xr[0] - 16, plan.baseY1 + 16], [xr[1] + 16, plan.baseY1 + 16]].map((q) => worldToPose(GR, q as Pt).map((v) => v / 8));
-      const hg = hollowGrid(s, t, cav, (lx, ly) => poseToWorld(GR, [lx, ly]), Math.floor(Math.min(...box.map((q) => q[0]))) - 1, Math.ceil(Math.max(...box.map((q) => q[0]))),
-        Math.floor(Math.min(...box.map((q) => q[1]))) - 1, Math.ceil(Math.max(...box.map((q) => q[1]))), p.studGrip);
-      grips.push(...hg.grips);
-      return { under: T(s.extrude(hg.cut, g.bottomCavity + 0.01), [0, 0, pieceBottomZ - 0.01]), tubes: hg.tubes ? T(s.extrude(hg.tubes, g.bottomCavity), [0, 0, pieceBottomZ]) : s.union([]) };
-    }
-    for (let x = Math.floor(xr[0] / 8) * 8 + 4; x <= xr[1] + 1e-9; x += 8) for (let y = 4; y <= plan.baseY1 + 1e-9; y += 8) socks.push(getSocketShape() === 'round' ? circle(tc.studSocketW / 2, 24, [x, y]) : W.CrossSection.square([tc.studSocketW, tc.studSocketW], true).translate([x, y]));
-    const under = T(s.extrude(W.CrossSection.union([cav, ...socks]), g.bottomCavity + 0.01), [0, 0, pieceBottomZ - 0.01]);
-    const rings: CS[] = [];
-    for (let x = Math.floor(xr[0] / 8) * 8; x <= xr[1] + 1e-9; x += 8) for (let y = 0; y <= plan.baseY1 + 1e-9; y += 8)
-      rings.push(circle((6.51 - (p.antistudFit ?? 0.06)) / 2, 32, [x, y]).subtract(circle((4.8 + (p.antistudFit ?? 0.06)) / 2, 32, [x, y])));
-    const tubes = T(s.extrude(W.CrossSection.union(rings).intersect(cav), g.bottomCavity), [0, 0, pieceBottomZ]);
-    return { under, tubes };
+    const xr = plan.baseXRange(plan.baseY0, plan.baseY1);
+    // grip along the edges and every 4 studs, thin posts elsewhere (underside.ts), not a tube at every corner
+    // (on the design's grid: the indices over the base's box in it)
+    const box = [[xr[0] - 16, -16], [xr[1] + 16, -16], [xr[0] - 16, plan.baseY1 + 16], [xr[1] + 16, plan.baseY1 + 16]].map((q) => worldToPose(GR, q as Pt).map((v) => v / 8));
+    // (against switch.scad's: a tube at every corner, as it has)
+    const hg = hollowGrid(s, t, cav, (lx, ly) => poseToWorld(GR, [lx, ly]), Math.floor(Math.min(...box.map((q) => q[0]))) - 1, Math.ceil(Math.max(...box.map((q) => q[0]))),
+      Math.floor(Math.min(...box.map((q) => q[1]))) - 1, Math.ceil(Math.max(...box.map((q) => q[1]))), scadParity() ? 'all' : p.studGrip, { foot: outline });
+    grips.push(...hg.grips);
+    return { under: T(s.extrude(hg.cut, g.bottomCavity + 0.01), [0, 0, pieceBottomZ - 0.01]), tubes: hg.tubes ? T(s.extrude(hg.tubes, g.bottomCavity), [0, 0, pieceBottomZ]) : s.union([]) };
   };
 
   /** Where the base's anti-stud tubes grip (filled in by base()). */
@@ -2402,33 +2385,22 @@ export function switchGeometry(s: Scad, plan: SwitchPlan, extraCuts: Man[] = [])
     ]);
   }
   const track = s.union(Object.values(named));
-  const us = underside();
+  // (the floor over the hollow: what the base has just above it, less the pockets and the channel where they come
+  // down into it (the slider's groove, the lever's opening): the hollow keeps a wall round them)
+  const cuts0 = [...sets.map(throwChannel), ...extraCuts];
+  const solid0 = s.difference(s.union([named.turnoutTies, named.routeTies, named.leadTies, named.pointsBeds, named.connectors, ...sets.map(throwArm)]), cuts0);
+  const low = W.CrossSection.union([...sets.flatMap((v) => [pointsPockets(v), throwChannel(v)]), ...extraCuts].map((m) => m.slice(p.studH + 0.15)));
+  // (foot: all the base has down by the studs, the rails' feet between the ties too: a stud that isn't in the hollow and
+  // stands in any of it has that much cut away, hollowGrid)
+  const us = underside(solid0.slice(p.studH + 0.26).subtract(low), s.difference(s.union([track, ...sets.map(throwArm)]), cuts0).slice((p.studH + 0.21) / 2));
   grips.push(...us.grips);
-  const body = s.difference(s.union([track, ...sets.map(throwArm)]), [...sets.map(throwChannel), us.cut, connUnder(), ...extraCuts]);
+  const body = s.difference(s.union([track, ...sets.map(throwArm)]), [...cuts0, us.cut, connUnder()]);
   const supportZ = pieceBottomZ - 0.02;
-  // The tubes, less the pockets, and only those that hold on to something
-  // above them (a tube under a gap between ties, or a pocket, would print
-  // as a loose ring).
-  let tubes: Man | undefined;
-  if (us.shapes?.length) {
-    // in plan: the floor over the hollow (ties, sleepers, the points' bed,
-    // the connectors) less the pockets and the channel; a tube or post
-    // stays only where it meets some of it
-    const floor = s.union([named.turnoutTies, named.routeTies, named.leadTies, named.pointsBeds, named.connectors, ...(scadParity() ? [] : sets.map(throwArm))]).project()
-      .subtract(W.CrossSection.union([...sets.flatMap((v) => [pointsSweep2d(v, c), bladeSlots2d(v, c)]), ...sets.map((v) => throwChannel(v).project())]));
-    // (and none the pockets or the channel would cut into in the hollow, where they go down into it (the slider's
-    // groove, the lever's opening): a tube cut part way shows as a broken ring, and grips nothing; whole tubes only)
-    const low = W.CrossSection.union(sets.flatMap((v) => [pointsPockets(v), throwChannel(v)].map((m) => m.slice(p.studH + 0.15))));
-    const keep = us.shapes.filter((q) => q.cs.intersect(floor).area() > 1 && (scadParity() || q.cs.intersect(low).area() < 0.01));
-    grips.length = 0; grips.push(...keep.filter((q) => q.tube).map((q) => q.c));
-    tubes = keep.length ? s.difference(s.extrude(W.CrossSection.union(keep.map((q) => q.cs)), PLATE_H), [...sets.map(pointsPockets), ...sets.map(throwChannel)]) : undefined;
-  }
   // (and what the slider's bar rests on, with sprung blades on track alone)
   const rests = sets.map(fdbRests).filter((m): m is Man => !!m);
-  if (parts) { parts.body = body; if (tubes) parts.tubes = tubes; if (rests.length) parts.rests = s.union(rests); }
+  if (parts) { parts.body = body; if (rests.length) parts.rests = s.union(rests); }
   return s.union([
     body,
-    tubes,
     ...rests,
     ...(p.endSupports === false ? [] : [t.startRailSupports(supportZ), t.supportFooting(supportZ, 0, -1),
       ...plan.endPoses.map((e) => atPose(s.union([t.endRailSupports(supportZ), t.supportFooting(supportZ, 0, +1)]), e))]),

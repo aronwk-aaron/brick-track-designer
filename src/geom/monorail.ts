@@ -111,12 +111,15 @@ export class Mono {
     const r = MONO.rackRoot, e = MONO.ridgeHw + 0.01, out = e + 1, wOut = 0.25 + ((0.6 - 0.25) * (out - r)) / (e - r);
     return ([[r, -0.25], [r, 0.25], [out, wOut], [out, -wOut]] as Vec2[]).map(([x, y]) => [side * x, y]);
   }
-  /** An anti-stud from below: square, with a small grip bump in the middle of each side. */
-  antistud(): Man {
-    const h = 5.6 / 2 + this.o.holeFit;
-    let cs = this.s.square([2 * h, 2 * h], true);
-    for (const a of [0, 90, 180, 270]) cs = cs.subtract(this.s.square([0.31, 0.8]).translate([h - 0.3, -0.4]).rotate(a));
-    return T(cs.extrude(this.antistudDepth + 1), [0, 0, -1]);
+  /**
+   * Studs' places from below, as LEGO's: n = 1, two studs in a row along x (a 1 x 2 plate's: a channel as wide as a
+   * stud and its fit, a pin between the two); n = 2, four (a 2 x 2 plate's: hollow inside a wall, a tube between
+   * the four). About the origin, the studs at +-4.
+   */
+  antistuds(n: 1 | 2): Man {
+    const s = this.s, f = this.o.holeFit, hl = 6.4 + f, hw = n === 1 ? 2.4 + f : hl;
+    const mid = n === 1 ? s.w.CrossSection.circle((3.2 - f) / 2, 24) : s.w.CrossSection.circle((6.51 - f) / 2, 32).subtract(s.w.CrossSection.circle((4.8 + f) / 2, 32));
+    return T(s.square([2 * hl, 2 * hw], true).subtract(mid).extrude(this.antistudDepth + 1), [0, 0, -1]);
   }
   /** A Technic axle's cross hole into the end face (along +y from y = -1), half an axle deep and a little. */
   axleHole(): Man {
@@ -146,7 +149,7 @@ export class Mono {
   /** end_cuts: the anti-studs, the axle holes, the top recesses, the end's gap (keeping the tab) and the notch. */
   endCuts(): Man {
     const s = this.s, parts: Man[] = [];
-    for (const sg of [-1, 1]) parts.push(T(this.antistud(), [sg * MONO.axleY, MONO.axleIn, 0]));
+    parts.push(T(this.antistuds(1), [0, MONO.axleIn, 0]));
     if (this.o.axleHoles) for (const sg of [-1, 1]) parts.push(T(this.axleHole(), [sg * this.axleX, 0, this.axleZ]));
     if (this.o.endStuds === 'top') parts.push(this.topRecessCut());
     parts.push(s.difference(T(s.cube([100, 10 + MONO.endGap, 50]), [-50, -10, -1]), [this.endTab()]));
@@ -159,9 +162,9 @@ export class Mono {
     if (this.o.endStuds === 'side') for (const d of MONO.pinIns) parts.push(T(this.sideStudsPair(), [0, d, 0]));
     return this.s.union(parts);
   }
-  /** Two anti-studs either side of y = 0 along the beam (and either side across): where a support's 2 x 2 studs press in mid-piece. */
+  /** Where a support's 2 x 2 studs press in mid-piece: hollow as a 2 x 2 plate's underside, either side of y = 0 along the beam (and either side across). */
   supportSockets(): Man {
-    return this.s.union([-1, 1].flatMap((sx) => [-1, 1].map((sy) => T(this.antistud(), [sx * MONO.axleY, sy * MONO.axleIn, 0]))));
+    return this.antistuds(2);
   }
 
   /**

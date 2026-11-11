@@ -149,7 +149,7 @@ export interface PieceOptions {
   baseplateX: number; baseplateY: number;
   /** How parts cut for the bed or the baseplates join: 'lego' rail-end tongues with a peg and C-clip (as LEGO track); 'dovetail' rail tongues with dovetails through the bed; 'axle' rail tongues with LEGO cross axles across the cut; 'flataxle' cut straight, rails and all, pinned with LEGO axles; 'butt' straight cuts, held only by the baseplate under them. */
   joint?: 'lego' | 'dovetail' | 'butt' | 'axle' | 'flataxle';
-  /** Underside: hollow with anti-stud tubes at the edges and every 4 studs (default), or a square socket at every stud. */
+  /** Underside: hollow with anti-stud tubes at the edges and every 4 studs (default), or a tube at every corner between four studs, as a LEGO plate. */
   grip?: 'edges' | 'all';
   /** Switches' points: one part (both blades on one pivot) or two (each blade on its own, as the plate-style). */
   pointsPieces?: 1 | 2;

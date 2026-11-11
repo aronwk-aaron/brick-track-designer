@@ -11,9 +11,15 @@ import type { Route, Segment } from '../src/route/route';
 import { BASE_DEFAULTS, switchBase, switchPlan, type SetSpec } from '../src/switch/base';
 import { setArcMode } from '../src/geom/sweep';
 setArcMode('scad'); // (OpenSCAD's arc pieces, to compare mesh for mesh)
-setScadParity(true); // (and its square stud sockets, and the arm's end as switch.scad's)
+setScadParity(true); // (the arm's end as switch.scad's; the underside is LEGO's design here, not switch.scad's sockets)
 
 const vols = JSON.parse(readFileSync(new URL('./fixtures/switch-base-volumes.json', import.meta.url), 'utf8')) as Record<string, number>;
+// (the underside is LEGO's design here (hollow inside a wall, anti-stud tubes; no socket for a stud of its own), not
+// switch.scad's square socket at every stud: against the volumes built here when that was changed, which are the
+// OpenSCAD renders' less 7.9 to 11.8% (2821 to 9434 mm3) for its socket grid, and 0.1 to 1.3% (70 to 592 mm3) less
+// than its tube underside (-tubes: no tubes here on the ties the base is cut through). The rest of the base is still
+// switch.scad's.)
+const own = JSON.parse(readFileSync(new URL('./fixtures/switch-base-own-volumes.json', import.meta.url), 'utf8')) as Record<string, number>;
 const lines = readFileSync(new URL('./fixtures/switch-sets.txt', import.meta.url), 'utf8').split('\n');
 const cfg = (name: string) => {
   const i = lines.findIndex((l) => l.startsWith(`CFG ${name} `));
@@ -37,16 +43,10 @@ describe('track-only switch base matches switch.scad', { timeout: 60000 }, () =>
       // (as switch.scad's, with its breakaway supports unioned in: here they're carried with the base, not part of its
       // solid; where one runs into the base, as at R24, switch.scad's are one with it)
       const base = switchBase(new Scad(await kernel()), plan), sp = supportsOf(base), v = (sp ? base.add(sp) : base).volume();
-      // (the tube underside of a wye differs by 0.1%: OpenSCAD cuts the
-      // frog's rails a little more there. On a three-way the first set's
-      // rails are cut clear of the second set's heel bar and tines, which
-      // switch.scad leaves in the way: up to 0.45% less. See docs/history/PHASE3.md.)
-      // (and the tube underside drops the tubes switch.scad leaves loose,
-      // under gaps between ties or pockets: up to 2.5% less)
-      if (name.startsWith('threeway') || tubes) {
-        expect(v).toBeLessThan(ref);
-        expect((ref - v) / ref).toBeLessThan(tubes ? 2.5e-2 : 5e-3);
-      } else expect(Math.abs(v - ref) / ref).toBeLessThan(5e-5);
+      expect(Math.abs(v - own[key]) / own[key], `built ${v.toFixed(1)} mm3`).toBeLessThan(5e-5);
+      // (and by switch.scad's: hollow, so less than its socket grid, by no more than 14.5%; within 4% of its tube underside)
+      expect(v).toBeLessThan(ref);
+      expect((ref - v) / ref).toBeLessThan(tubes ? 4e-2 : 0.145);
     });
   }
 });

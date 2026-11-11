@@ -32,8 +32,8 @@ export function bufferPostX(t: Track): [number, number] {
 
 /**
  * buffer_stop(), in its end's frame: the end at y = 0, the piece towards -y
- * (buffer.scad's frame with L = 0). Without ballast, stud recesses under the
- * slab (square, as every socket here).
+ * (buffer.scad's frame with L = 0). Solid underneath here: the piece's
+ * underside (crossing.ts) runs on under the slab.
  */
 export function bufferStop(t: Track, bo: BufferOptions, onBallast: boolean): Man {
   if ((bo.style ?? 'frame') === 'frame') return frameStop(t, bo);
@@ -50,7 +50,7 @@ export function bufferStop(t: Track, bo: BufferOptions, onBallast: boolean): Man
   if (bo.pinHoles)
     for (const sg of [-1, 1]) for (const x of [px0 + 4, px1 - 4])
       cuts.push(T(R(s.cylinder(BUFFER_DEPTH + 2, 2.5, 2.5, 32), [-90, 0, 0]), [sg * x, y0 - 1, (bz0 + bz1) / 2]));
-  // (no sockets of its own underneath: the piece's underside (crossing.ts) runs on under the slab, tubes and all)
+  // (nothing cut underneath here: the piece's underside (crossing.ts) runs on under the slab, tubes and all)
   void onBallast;
   return s.difference(s.union(parts), cuts);
 }

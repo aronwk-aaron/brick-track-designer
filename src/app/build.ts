@@ -29,7 +29,7 @@ import { type DesignCuts, designCuts, designPaths, handCutsFor } from './handcut
 import { type NoCut, pathTracks } from './cutpaths';
 import { hasPartOwn, partGroups, withoutPartOwn } from './overrides';
 import { expandStretches } from './stretches';
-import { edgeGrip } from '../geom/underside';
+import { ANTISTUD_FIT, BOTTOM_WALL, edgeGrip, rowUnderside, TUBE_ID, TUBE_OD } from '../geom/underside';
 import { cutOnPaths, type HandPath, type HandPathDone, pathSplit, splitOnPath, type Keep } from '../geom/pathsplit';
 import { findStuds, wholeStuds } from '../geom/studs';
 import { dualEndMismatches } from './routeedits';
@@ -1494,7 +1494,9 @@ const place = (m: Man, P: Pose) => T(R(m, [0, 0, P[2]]), [P[0], P[1], 0]);
 // The lower layer (the ballast's bottom, with the pockets the moving parts
 // sit in) and the deck over it (the bed, rails and frogs, slotted for the
 // blades): the moving parts are dropped in and the deck laid on, held by
-// studs on the lower layer in sockets under the deck, as LEGO plates stack.
+// studs on the lower layer under the deck, which is hollow over them as a
+// LEGO plate is (2 x 2 studs inside a wall round a tube, or two in a row
+// with a pin between), as LEGO plates stack.
 /**
  * Where the lid goes over a points set, in its frame: the bed across all its
  * routes from before the toe to past the heels, and the throw's arm out to
@@ -1521,28 +1523,43 @@ function lidRects(track: Track, frameRoutes: Route[], v: { toeY: number; pointsE
  * is everything above the moving parts there (bed, rails, frog, slotted for
  * the blades; the arm's top with the lever's ears), the piece keeps the
  * floor, the points' pockets and the throw's slot under it. Studs on the
- * piece in sockets under the lid hold it on.
+ * piece hold it on: in fours, the lid hollow over each four as a 2 x 2
+ * plate's underside (a wall round them, a tube between), or where there's
+ * no room for four, two in a row as a 1 x 2 plate's (a channel, a pin
+ * between them); the groups 3 studs apart or more.
  */
 function layerSplit(scad: Scad, track: Track, params: SwitchParams, whole: Man, lids: { P: Pose; rects: [number, number, number, number][] }[], gp: Pose) {
   const zs = switchGlobals(params).cavityTop;
   const prisms = lids.flatMap(({ P, rects }) => rects.map((r) => place(T(scad.cube([r[1] - r[0], r[3] - r[2], 100 - zs]), [r[0], r[2], zs]), P)));
   const region = scad.union(prisms);
   let lower = scad.difference(whole, [region]), deck = scad.intersection(whole, region);
-  // the studs that hold it: on a 2-stud lattice, where both are solid round them (and the lid thick enough over them)
-  const bb = deck.boundingBox(), sl = lower.slice(zs - 0.3), d0 = deck.slice(zs + 0.3), d1 = deck.slice(zs + 2.3);
-  const hd = (gp[2] * Math.PI) / 180, studs: Man[] = [], socks: Man[] = [];
+  // the studs that hold it: in groups on the stud grid, where both are solid round the group (and the lid thick enough over it)
+  const bb = deck.boundingBox(), sl = lower.slice(zs - 0.3), d0 = deck.slice(zs + 0.3), d1 = deck.slice(zs + 2.3), CS2 = scad.w.CrossSection;
+  const studs: Man[] = [], hollows: (typeof sl)[] = [], got: [number, number][] = [];
   const reach = Math.ceil((Math.hypot(bb.max[0] - bb.min[0], bb.max[1] - bb.min[1]) + Math.hypot(bb.min[0] - gp[0], bb.min[1] - gp[1])) / 8) + 2;
-  const solid = (cs: typeof sl, q: [number, number]) => scad.w.CrossSection.circle(3.4, 16).translate(q).subtract(cs).area() < 0.01;
-  for (let i = -reach; i <= reach; i += 2) for (let j = -reach; j <= reach; j += 2) {
-    const lx = 4 + i * 8, ly = 4 + j * 8, q: [number, number] = [gp[0] + lx * Math.cos(hd) - ly * Math.sin(hd), gp[1] + lx * Math.sin(hd) + ly * Math.cos(hd)];
-    if (q[0] < bb.min[0] || q[0] > bb.max[0] || q[1] < bb.min[1] || q[1] > bb.max[1]) continue;
-    if (!(solid(sl, q) && solid(d0, q) && solid(d1, q))) continue;
-    studs.push(T(track.stud(), [q[0], q[1], zs - 0.01]));
-    // (square sockets under the lid: a round one grips a stud too hard to lift the lid off again)
-    const sw2 = track.c.studSocketW;
-    socks.push(T(R(scad.cube([sw2, sw2, track.o.studH + 0.2]), [0, 0, gp[2]]), [q[0] - (sw2 / 2) * (Math.cos(hd) - Math.sin(hd)), q[1] - (sw2 / 2) * (Math.sin(hd) + Math.cos(hd)), zs - 0.01]));
+  const wq = (lx: number, ly: number) => poseToWorld(gp, [lx, ly]);
+  const put = (cs: typeof sl, c: [number, number], turn = 0) => cs.rotate(gp[2] + turn).translate(c);
+  const solid = (r: typeof sl) => [sl, d0, d1].every((cs) => r.subtract(cs).area() < 0.01);
+  const far = (c: [number, number]) => got.every((q) => Math.hypot(q[0] - c[0], q[1] - c[1]) > 22);
+  const inBox = (c: [number, number]) => c[0] > bb.min[0] && c[0] < bb.max[0] && c[1] > bb.min[1] && c[1] < bb.max[1];
+  const fit = track.o.antistudFit ?? ANTISTUD_FIT, hh = 8 - BOTTOM_WALL;
+  const four = CS2.square([2 * hh, 2 * hh], true).subtract(CS2.circle((TUBE_OD - fit) / 2, 24).subtract(CS2.circle((TUBE_ID + fit) / 2, 24)));
+  const two = rowUnderside(scad, track, -8, 8);
+  // (2 x 2 studs about a grid corner)
+  for (let i = -reach; i <= reach; i++) for (let j = -reach; j <= reach; j++) {
+    const c = wq(8 * i, 8 * j);
+    if (!inBox(c) || !far(c) || !solid(put(CS2.square([16.4, 16.4], true), c))) continue;
+    got.push(c); hollows.push(put(four, c));
+    for (const dx of [-4, 4]) for (const dy of [-4, 4]) { const q = wq(8 * i + dx, 8 * j + dy); studs.push(T(track.stud(), [q[0], q[1], zs - 0.01])); }
   }
-  if (studs.length) { lower = scad.union([lower, ...studs]); deck = scad.difference(deck, socks); }
+  // (two in a row, along the grid or across it, where four don't fit)
+  for (const turn of [0, 90]) for (let i = -reach; i <= reach; i++) for (let j = -reach; j <= reach; j++) {
+    const c = turn ? wq(4 + 8 * i, 8 * j) : wq(8 * i, 4 + 8 * j);
+    if (!inBox(c) || !far(c) || !solid(put(CS2.square([16.4, 8.4], true), c, turn))) continue;
+    got.push(c); hollows.push(put(two, c, turn));
+    for (const d of [-4, 4]) { const q = turn ? wq(4 + 8 * i, 8 * j + d) : wq(8 * i + d, 4 + 8 * j); studs.push(T(track.stud(), [q[0], q[1], zs - 0.01])); }
+  }
+  if (studs.length) { lower = scad.union([lower, ...studs]); deck = scad.difference(deck, [T(scad.extrude(CS2.union(hollows), track.o.studH + 0.2), [0, 0, zs - 0.01])]); }
   return { lower, deck };
 }
 
@@ -1705,7 +1722,7 @@ function sectioned(b: PieceBuild, name: string, all: Route[], checks: CheckRail[
       if (apart) {
         const none = { crossings: [], grooves: [], splits: [], checkRails: [] }, tol = o.trackFitTol ?? 0.2;
         // (its underside its own, lined up with the piece, each sleeper hollow as a plate: not the baseplate's grid's
-        // sockets, which a bought curve hasn't; studs under it go up into a sleeper square to them (Piece.seats))
+        // tubes, which a bought curve hasn't; studs under it go up into a sleeper square to them (Piece.seats))
         const asBought = { ...copt, sleepers: 'sleepers' as const, sleeperGapStuds: 2, sleeperWidthStuds: 2, ballast: 'none' as const, ballastOnly: undefined, undersideGrid: 'track' as const };
         const trs = rts.map((rt) => networkBody(scad, [rt], none, asBought, [], grips, { gridPose }));
         // (track only: where studs under it go up into it (raised track's beams'): its sleepers, and its ends)
@@ -2431,7 +2448,7 @@ function buildOne(w: Wasm, design: Design, report: (what: string, frac: number) 
       const rt = pc.rest[0], L = routeLength(rt);
       for (let n = 2; n <= 20; n++) {
         // (cut on whole studs from its start, each length's underside and studs on one grid, the design's: lengths of
-        // L / n each were off it, their sockets and tubes beside the baseplate's studs)
+        // L / n each were off it, their tubes beside the baseplate's studs)
         const at = (k: number) => (k === n ? L : Math.round((L * k) / n / 8) * 8);
         const subs = Array.from({ length: n }, (_, k) => subRoute(rt, at(k), at(k + 1)));
         // (lengths whose sleepers' ends alone are over the bed aren't built to find that out: on a bed narrower than

@@ -65,7 +65,7 @@ on purpose: leave them in.
 5. **Seat.** Lay a LEGO R40 curve in it. In 6, in each of the three.
 6. **Clearance** (7). As the switch. Move each lever by hand: the blades should go over and close freely, with no slop.
 7. **Flangeways** (8). Roll a wheelset through each crossing, both ways, along each track.
-8. **Monorail** (9). Push a LEGO axle into the holes in an end, and a stud into its anti-stud: it should go in without force and hold.
+8. **Monorail** (9). Push a LEGO axle into the holes in an end, and press the end down on two studs side by side (its underside there is a 1 × 2 plate's: a channel with a pin between the studs): each should go in without force and hold.
 
 Then, for 3 and 4: roll a wheelset (and a bogie, and your longest-wheelbase loco) by hand through every route, both
 ways, points set each way. For trailing: set the points against the wheels and push through from the heel end.

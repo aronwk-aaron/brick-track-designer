@@ -119,7 +119,9 @@ cross-shaped hole in each end face.)*
    - Plain track cut into LEGO-length pieces (Long track cut into: Track pieces) joins with ordinary end
      connectors, and a bought LEGO straight goes on either end.
 2. **Onto the baseplate.** Parts go down onto a baseplate and grip it with their anti-stud tubes (Settings ›
-   Underside). Along the edges is the default: firm, and comes off again. Every stud grips very hard. Cut at
+   Underside). Every underside is LEGO's own: hollow inside a wall, with tubes between the studs (a single row of studs,
+   as a track end's, in a channel with a pin between each two). Along the edges is the default: firm, and comes off
+   again. Every stud (a tube between every four studs, as a LEGO plate) grips harder. Cut at
    baseplate edges (Print bed and cutting) keeps every part on one baseplate.
 3. **Rail tops** should be level across a joint. *Not yet confirmed by a test print.*
 

@@ -1,0 +1,23 @@
+{
+ "left-R104-arc": 70420.0,
+ "left-R104-s_curve": 70420.0,
+ "left-R24-arc": 45373.5,
+ "left-R24-s_curve": 48590.7,
+ "left-R40-arc": 54556.5,
+ "left-R40-s_curve-tubes": 54389.1,
+ "left-R40-s_curve": 54389.1,
+ "right-R104-arc": 70390.0,
+ "right-R104-s_curve": 70390.1,
+ "right-R24-arc-tubes": 45333.5,
+ "right-R24-arc": 45333.5,
+ "right-R24-s_curve": 48522.9,
+ "right-R40-arc": 54528.3,
+ "right-R40-s_curve": 54374.3,
+ "threeway-R24-arc": 75351.3,
+ "threeway-R40-arc-tubes": 82370.4,
+ "threeway-R40-arc": 82370.4,
+ "wye-R104-arc": 65752.7,
+ "wye-R24-arc": 33108.5,
+ "wye-R40-arc-tubes": 39853.0,
+ "wye-R40-arc": 39853.0
+}

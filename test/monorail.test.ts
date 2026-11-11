@@ -36,8 +36,9 @@ describe('monorail', { timeout: 120000 }, () => {
     expect(gaps.filter((g) => g.side === -1)).toHaveLength(40);
     const p = m.piece(rt, 0, 64, gaps);
     expect(p.decompose()).toHaveLength(1);
-    // (OpenSCAD's render of monorail_straight.scad, labels off: 18617.33 mm3)
-    expect(p.volume()).toBeCloseTo(18617.33, 0);
+    // (OpenSCAD's render of monorail_straight.scad, labels off: 18617.33 mm3; 34.41 more here, each end's two studs' places
+    // underneath a 1 x 2 plate's channel and pin, not the .scad's two square sockets)
+    expect(p.volume()).toBeCloseTo(18617.33 + 34.41, 0);
     // rack: a gap at 1.55 on each flank, a tooth between gaps
     expect(solidAt(w, p, 2.9, 1.55, 12)).toBe(false);
     expect(solidAt(w, p, -2.9, 1.55, 12)).toBe(false);
