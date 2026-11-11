@@ -248,6 +248,8 @@ const SLIVER = 2000, BIT = 600;
 const GAP = 10;
 /** (mm) A path's end this far inside a part, material all round, hasn't reached its edge (less: the cut is carried on to the edge). */
 const END_IN = 4.5;
+/** (mm) How far either side of a path a part's plan is looked at (what's asked of it is within END_IN of the path, and a mitred corner's reach more). */
+const NEAR = 16;
 
 /**
  * A piece cut along the hand paths that run through it: each path cuts every part it runs through from edge to
@@ -348,16 +350,23 @@ export function cutOnPaths(s: Scad, m: Man, routes: Route[], paths: HandPath[], 
     more = false;
     for (const hp of paths) {
       const line = CS.union(hp.pts.slice(1).map((q, k) => leg(hp.pts[k], q, 0.1))), next: Leaf[] = [];
+      const ends: [[number, number], [number, number]][] = [[hp.pts[0], hp.pts[1]], [hp.pts[hp.pts.length - 1], hp.pts[hp.pts.length - 2]]];
+      // (the plan within NEAR of the path, its corners and ends included, and of the lines its ends are carried on along)
+      const wide = (a: [number, number], b2: [number, number]) => { const d = unit(a, b2); return leg([a[0] - d[0] * NEAR, a[1] - d[1] * NEAR], [b2[0] + d[0] * NEAR, b2[1] + d[1] * NEAR], NEAR); };
+      const nearBy = CS.union([...hp.pts.slice(1).map((q, k) => wide(hp.pts[k], q)), ...ends.map(([e, b2]) => { const d = unit(b2, e); return wide(e, [e[0] + d[0] * big, e[1] + d[1] * big]); })]);
       const k0 = Math.floor((hp.pts.length - 1) / 2), at: [number, number] = [(hp.pts[k0][0] + hp.pts[k0 + 1][0]) / 2, (hp.pts[k0][1] + hp.pts[k0 + 1][1]) / 2];
       for (const lf of parts) {
         const bb = lf.man.boundingBox();
         // (a part this path made is its edge, not a cut through it)
         if (lf.by.has(hp.id) || !hp.pts.some((q, k) => k > 0 && Math.max(q[0], hp.pts[k - 1][0]) >= bb.min[0] && Math.min(q[0], hp.pts[k - 1][0]) <= bb.max[0] && Math.max(q[1], hp.pts[k - 1][1]) >= bb.min[1] && Math.min(q[1], hp.pts[k - 1][1]) <= bb.max[1])) { next.push(lf); continue; }
         // (does it run through this part: more than a touch along its edge)
-        const fl = floorOf(lf), deep = fl.offset(-1, 'Miter', 10);
+        // (the part's plan taken in only beside the path and the lines it's carried on along, NEAR either side: all
+        // that the questions below look at; taken in whole, a big part's plan, every stud and sleeper of it, cost
+        // seconds each time, for every path and part)
+        const fl = floorOf(lf).intersect(nearBy), deep = fl.offset(-1, 'Miter', 10);
         if (line.intersect(deep).area() < 0.2) { next.push(lf); continue; }
         // (an end inside the part, or short of its edge: carried straight on, it would cut into the part again further on)
-        const inner = fl.offset(-END_IN, 'Miter', 10), ends: [[number, number], [number, number]][] = [[hp.pts[0], hp.pts[1]], [hp.pts[hp.pts.length - 1], hp.pts[hp.pts.length - 2]]];
+        const inner = fl.offset(-END_IN, 'Miter', 10);
         const short = ends.find(([e, b]) => { if (inside(inner, e)) return true; const d = unit(b, e); return leg([e[0] + d[0] * 2, e[1] + d[1] * 2], [e[0] + d[0] * big, e[1] + d[1] * big], 0.1).intersect(deep).area() > 0.2; })?.[0];
         if (short) { not(hp, 'edge', short); next.push(lf); continue; }
         const o = ownOf(hp), regs = [lf.reg.intersect(o.left), lf.reg.subtract(o.leftGrown)], mans = regs.map((r) => flatOf(s.intersection(m, prism(r))));
