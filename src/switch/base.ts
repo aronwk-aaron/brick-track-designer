@@ -15,6 +15,7 @@ import { rectFits } from '../geom/bedfit';
 import { ANTISTUD_FIT, connectorUnderside, hollowGrid, type Spot, studSpots, TUBE_OD } from '../geom/underside';
 import { DEFAULTS as TRACK_DEFAULTS, getSocketShape, scadParity, PLATE_H, RAIL_PROFILE, STUD, tongueLeans, Track } from '../geom/track';
 import { couplerSupports, trackSeat } from '../geom/extras';
+import { support } from '../geom/supports';
 import { type P2, SNAP, snapGeo, type SnapGeo, snapHalf } from './snap';
 import { SPRUNG_SLIDER, type FdbBladeLayout, sprungLow, squareGrid, HEAD_HW, type Notch, pointsSet, type PointsSetValues, STAND, SWITCH_DEFAULTS, type SwitchParams, switchGlobals } from './context';
 
@@ -1631,7 +1632,7 @@ export function switchGeometry(s: Scad, plan: SwitchPlan, extraCuts: Man[] = [])
     return s.union([
       s.difference(plate, [T(s.extrude(pocket, SP.pocketH + 1), [0, 0, z0 - 1]), hole, ...(relief && relief.area() > 0.01 ? [T(s.extrude(relief, RELIEF.depth + 1), [0, 0, z0 + plateT - RELIEF.depth])] : [])]),
       clip(T(s.extrude(beams, SP.beamH), [0, 0, z0])),
-      ...(supports.area() > 1 ? [clip(T(s.extrude(supports, SP.pocketH - SPRUNG.supportGap), [0, 0, z0]))] : []),
+      ...(supports.area() > 1 ? [support(s, clip(T(s.extrude(supports, SP.pocketH - SPRUNG.supportGap), [0, 0, z0])))] : []),
     ]);
   };
 
@@ -2457,7 +2458,7 @@ export function switchGeometry(s: Scad, plan: SwitchPlan, extraCuts: Man[] = [])
   /** lean: the other way round, for a rail at a slant the way that binds (track.ts tongueLeans) */
   const cutTongue = (type: number, z0: number, lean = false) => { const m = s.union([
     t.cutTongueEnd(type),
-    type < 0 ? T(t.railSupport(3, 3.23 - z0), [-3.3, -3, z0]) : T(t.railSupport(4, 2.08 - z0), [-2.2, -3, z0]),
+    support(s, type < 0 ? T(t.railSupport(3, 3.23 - z0), [-3.3, -3, z0]) : T(t.railSupport(4, 2.08 - z0), [-2.2, -3, z0])),
   ]); return lean ? M(m, [1, 0, 0]) : m; };
   const cutRemovals = (yc: number) => s.union([
     // (down to the bottom: on ballast the tongue's breakaway support stands on the bed, clear of the other part's ballast)

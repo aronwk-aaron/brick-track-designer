@@ -8,6 +8,8 @@
 //    by then: meshes and files).
 // An entry whose value has another entry's solid in it (a cut piece's parts, one of them the piece itself) depends
 // on it: used when it's used, and dropped with it.
+// A part's breakaway supports are solids of their own, carried with the part (kernel.ts Supports): owned with it, as if
+// in the value beside it (handlesIn finds them; an arena that keeps a part keeps them).
 import { free, type Handle, handlesIn, isWorked, recordInto, settle } from '../geom/kernel';
 
 interface Entry { v: unknown; own: Handle[]; /** what else its making made, kept till its value's worked out */ rest: Handle[]; keep: Set<Handle>; deps: Set<Entry>; used: number; live: boolean }

@@ -8,7 +8,8 @@ import { DEFAULTS as TRACK_DEFAULTS, PLATE_H, Track } from '../geom/track';
 import { CROSSING_DEFAULTS, crossingPiece, joinedEnds, ownSleeperSpots } from '../geom/crossing';
 import { trackSeat } from '../geom/extras';
 import { DUAL_CROSS, dualBuilt, markClear } from '../geom/extrarails';
-import { arena, flat, kernelBroke, made, type Wasm } from '../geom/kernel';
+import { arena, flat, kernelBroke, made, supportsOf, type Wasm } from '../geom/kernel';
+import { finishSupports, heldBy, printedWith, type SupportNote } from '../geom/supports';
 import { stlBytes } from '../geom/stl';
 import { bedFit, type BedFit, END_REACH, longestFit, longestTrack, tightBox } from '../geom/bedfit';
 import { splitSelfCrossing } from '../route/selfcross';
@@ -1054,6 +1055,16 @@ function tracksOverEachOther(routes: Route[], sol: { splits: Split[]; dropped?: 
   return spots;
 }
 
+/** A solid's size as a cache key's part: its volume, and its supports' (carried with it, not in its own). */
+const sizeKey = (m: Man) => `${m.volume().toFixed(3)}+${(supportsOf(m)?.volume() ?? 0).toFixed(3)}`;
+/** A part's corners with its supports' (x, y, z each): what lies on the print bed. */
+function cornersOf(m: Man): Float32Array {
+  const sp = supportsOf(m), ms = [m, ...(sp ? [sp] : [])].map((x) => x.getMesh());
+  const out = new Float32Array(ms.reduce((t, g) => t + (g.vertProperties.length / g.numProp) * 3, 0));
+  let k = 0;
+  for (const g of ms) for (let i = 0; i < g.vertProperties.length; i += g.numProp) { out[k++] = g.vertProperties[i]; out[k++] = g.vertProperties[i + 1]; out[k++] = g.vertProperties[i + 2]; }
+  return out;
+}
 /** The cut context for a build: its points kept clear, its joints, and the cutters (fitter, bedCut, whole). fdbPoints: the plate-style blades. */
 function cutContext(w: Wasm, scad: Scad, o: PieceOptions, track: Track, routes: Route[], splits: Split[], crossings: [number, number][], fdbPoints: boolean) {
   // (a part fits the bed if it does turned any way, corner to corner too (geom/bedfit.ts): its file is its own, and
@@ -1065,7 +1076,7 @@ function cutContext(w: Wasm, scad: Scad, o: PieceOptions, track: Track, routes: 
     const b = m.boundingBox(), bw = b.max[0] - b.min[0], bh = b.max[1] - b.min[1];
     if (bw <= o.printBedX && bh <= o.printBedY) f = { fits: true, angle: 0, square: true, size: [bw, bh], over: Math.max(bw / o.printBedX, bh / o.printBedY) };
     else if (bw <= o.printBedY && bh <= o.printBedX) f = { fits: true, angle: 90, square: true, size: [bh, bw], over: Math.max(bh / o.printBedX, bw / o.printBedY) };
-    else { const mesh = m.getMesh(); f = bedFit(mesh.vertProperties, o.printBedX, o.printBedY, mesh.numProp); }
+    else f = bedFit(cornersOf(m), o.printBedX, o.printBedY, 3);
     fits.set(m, f);
     return f;
   };
@@ -1073,7 +1084,7 @@ function cutContext(w: Wasm, scad: Scad, o: PieceOptions, track: Track, routes: 
   /** How far a part's file is turned to lie within the bed (degrees): 0 for one that fits as it is or a quarter turn round, or not at all. */
   const turnOf = (m: Man) => { const f = fitOf(m); return f.fits && !f.square ? f.angle : 0; };
   /** A part's tightest box, turned any way (mm, the longer side first): what's said of one too big. */
-  const tightOf = (m: Man) => { const mesh = m.getMesh(); return tightBox(mesh.vertProperties, mesh.numProp).size; };
+  const tightOf = (m: Man) => tightBox(cornersOf(m), 3).size;
   const bp = (o.baseplate ?? 0) * 8;
   // (how far each side of a centre line the track's base reaches: its sleepers, or its widest ballast layer)
   // (the widest track's, mixed gauges)
@@ -1112,7 +1123,8 @@ function cutContext(w: Wasm, scad: Scad, o: PieceOptions, track: Track, routes: 
   const join = { t: track, joint: o.joint === 'flataxle' ? 'axle' as const : o.joint ?? 'lego', flatRails: o.joint === 'flataxle', noTongue };
   // (a part's pieces that don't touch: for the fitter below, and a section's parts (sectioned))
   const one = new WeakSet<Man>();
-  // (big: what counts as a piece, not a support (mm3); a section's parts' loose pieces from 600, a track end's supports being about 250)
+  // (big: what counts as a piece, not a loose bit (mm3); a section's parts' loose pieces from 600. A part's supports
+  // aren't bodies of it: each goes with the body nearest it (kernel.ts Supports))
   const bodies = (m: Man, big = 1000): Man[] => {
     if (one.has(m) && big === 1000) return [m];
     const all2 = flat(w, m).decompose(), big2 = all2.filter((b2) => b2.volume() > big), small = all2.filter((b2) => b2.volume() <= big);
@@ -1200,7 +1212,8 @@ type CutContext = ReturnType<typeof cutContext>;
 
 /** A part as plain data (baked): its mesh for the view, its STL, its volume, whether it fits the bed. */
 /** turn: how far its file's turned to fit the bed (degrees; cutContext turnOf); tight: one too big, its tightest box */
-type Baked = { positions: Float32Array; supports?: Float32Array; stl: Uint8Array; volume: number; fits: boolean; box: { min: number[]; max: number[] }; turn?: number; tight?: number[] };
+/** says: what the build says of it (a support that had no room, where the part now needs the slicer's: unsupported) */
+type Baked = { positions: Float32Array; supports?: Float32Array; stl: Uint8Array; volume: number; fits: boolean; box: { min: number[]; max: number[] }; turn?: number; tight?: number[]; says?: string[] };
 
 /**
  * One build's pieces as they're made: what makes, cuts, labels and caches
@@ -1249,26 +1262,57 @@ function bedIssue(b: PieceBuild, bb: { min: number[]; max: number[] }, tight: nu
     r: Math.hypot(bb.max[0] - bb.min[0], bb.max[1] - bb.min[1]) / 2, text: `A part ${tight[0].toFixed(0)} x ${tight[1].toFixed(0)} mm: too big for the ${b.o.printBedX} x ${b.o.printBedY} print bed, however it's turned`, area: true });
 }
 
-/** A part for the view: its triangles, and its breakaway supports' apart (loose bits, small beside it), to show or hide. */
+/**
+ * A part for the view and its file: its triangles; its breakaway supports' apart, to show or hide: the ones carried
+ * with it (kernel.ts Supports), finished (geom/supports.ts finishSupports: every one clear of the part); file: the
+ * part with them, each a loose body, as it's printed (volume: its mm3). Nothing is taken for a support by its size:
+ * a loose bit of the part is the part's (and found by the checks: a part in two pieces).
+ */
 // (clean: the part less any flat, empty shells (no volume) the cuts left where faces met, drawn as loose bits and
 // written to the file)
-function viewOf(w: Wasm, m: Man): { positions: Float32Array; supports?: Float32Array; clean: Man } {
-  const all = flat(w, m).decompose(), bits = all.filter((b) => b.volume() >= 0.5);
+function viewOf(w: Wasm, m: Man, notes?: SupportNote[]): { positions: Float32Array; supports?: Float32Array; clean: Man; file: Man; volume: number } {
+  const all = flat(w, m, false).decompose(), bits = all.filter((b) => b.volume() >= 0.5);
   const clean = bits.length === all.length || !bits.length ? m : w.Manifold.compose(bits);
-  if (bits.length <= 1) return { positions: meshPositions(clean.getMesh()), clean };
-  const join = (ms: Man[]) => { const ps = ms.map((b) => meshPositions(b.getMesh())), out = new Float32Array(ps.reduce((t, p) => t + p.length, 0)); let o2 = 0; for (const p of ps) { out.set(p, o2); o2 += p.length; } return out; };
-  // (a support: a loose bit much smaller than the part (a track end's, footing and all, is about 250 mm3), as the fitter's small bits)
-  const vs = bits.map((b) => b.volume()), cut = Math.min(1000, 0.25 * Math.max(...vs)), small = bits.filter((_, k) => vs[k] < cut);
-  return small.length ? { positions: join(bits.filter((_, k) => vs[k] >= cut)), supports: join(small), clean } : { positions: meshPositions(clean.getMesh()), clean };
+  const own = finishSupports(w, m, notes), file = own ? w.Manifold.compose([clean, own]) : clean, volume = m.volume() + (own?.volume() ?? 0);
+  // (tests: the loose bits that were once taken for supports, much smaller than the part: listed)
+  if (supportCheck && bits.length > 1) { const vs = bits.map((b) => b.volume()), cut = Math.min(1000, 0.25 * Math.max(...vs)); supportCheck.push(...bits.filter((_, k) => vs[k] < cut).map((b) => ({ volume: b.volume(), box: b.boundingBox() }))); }
+  return { positions: meshPositions(clean.getMesh()), ...(own && { supports: meshPositions(own.getMesh()) }), clean, file, volume };
 }
+/** (tests) A part's loose bits much smaller than it (what was taken for a support before supports were carried): listed here while it's set. */
+let supportCheck: { volume: number; box: { min: ArrayLike<number>; max: ArrayLike<number> } }[] | undefined;
+export function setSupportCheck(list: typeof supportCheck) { supportCheck = list; }
+
+/** A part as it's printed, where its file isn't its view's (a moving part's, as it lies on the bed): with its supports, finished. */
+const printed = (w: Wasm, m: Man): Man => printedWith(w, m).file;
+
+/**
+ * What's said of a part whose supports had no room (finishSupports' notes: cut back from the part, or left out):
+ * nothing, if what each held is held still (supports.ts heldBy); else that the spot needs the slicer's supports.
+ */
+function unsupported(w: Wasm, part: Man, notes: SupportNote[]): string[] {
+  const out: string[] = [];
+  for (const n of notes) {
+    const lo = n.box.min, hi = n.box.max, { meant, now } = heldBy(w, part, n);
+    supportNotes?.push({ ...n, meant, now });
+    if (meant - now > UNHELD) out.push(`a print support at ${((lo[0] + hi[0]) / 16).toFixed(0)}, ${((lo[1] + hi[1]) / 16).toFixed(0)} (studs) had no room beside the part: print that part with the slicer's supports on`);
+  }
+  return out;
+}
+/** (mm2) More than this of the part no longer held where a support had no room: said (less bridges from what's held beside it; a rail end's tongue is about 20). */
+const UNHELD = 8;
+/** (tests) Each support cut back or left out, with what it held (mm2: as meant, and now): listed here while it's set. */
+let supportNotes: (SupportNote & { meant: number; now: number })[] | undefined;
+export function setSupportNotes(list: typeof supportNotes) { supportNotes = list; }
+/** What a baked part says, said by the build. */
+const said = (b: PieceBuild, b2: { says?: string[] }) => { for (const say of b2.says ?? []) b.bedWarnings.add(say); };
 
 /** A part as plain data (its mesh for the view, its STL, its volume, whether it fits the bed), so its solid can be let go. */
 function bake(b: PieceBuild, m: Man): Baked {
   // (the copies it's told apart on let go at once: a part's worth each, and a build has hundreds)
   return arena(b.w, () => {
-    const { positions, supports, clean } = viewOf(b.w, m);
-    const fits = b.cut.fitsBed(m), turn = b.cut.turnOf(m);
-    return { positions, supports, stl: stlBytes(clean.getMesh(), true, turn), volume: m.volume(), fits, box: m.boundingBox(), ...(turn && { turn }), ...(!fits && { tight: b.cut.tightOf(m) }) };
+    const notes: SupportNote[] = [], { positions, supports, file, volume } = viewOf(b.w, m, notes);
+    const fits = b.cut.fitsBed(m), turn = b.cut.turnOf(m), says = unsupported(b.w, m, notes);
+    return { positions, supports, stl: stlBytes(file.getMesh(), true, turn), volume, fits, box: m.boundingBox(), ...(turn && { turn }), ...(!fits && { tight: b.cut.tightOf(m) }), ...(says.length && { says }) };
   }, () => []);
 }
 
@@ -1296,14 +1340,15 @@ function marked(b: PieceBuild, m: Man): Man {
 function add(b: PieceBuild, name: string, color: number, local: Man, world: Man, turn?: Piece['turn'], move?: Pick<Piece, 'slide' | 'hinge'>) {
   // (the copies it's told apart on let go at once, as bake's)
   arena(b.w, () => {
-    const { positions, supports, clean } = viewOf(b.w, world);
+    const notes: SupportNote[] = [], { positions, supports, file, volume } = viewOf(b.w, world, notes);
+    for (const say of unsupported(b.w, world, notes)) b.bedWarnings.add(say);
     // (its file turned to lie within the bed, a part that fits it only on the slant)
     const bedTurn = b.cut.turnOf(local);
     let f = stlOf.get(local);
     // (each file lying on the bed: a part modelled where it sits in the track (the blades on the bed's top, say) came in floating)
-    if (!f || f.turn !== bedTurn) { f = { stl: stlBytes((local === world ? clean : local).getMesh(), true, bedTurn), turn: bedTurn }; stlOf.set(local, f); }
+    if (!f || f.turn !== bedTurn) { f = { stl: stlBytes((local === world ? file : printed(b.w, local)).getMesh(), true, bedTurn), turn: bedTurn }; stlOf.set(local, f); }
     b.pieces.push({ name, color, positions, stl: f.stl.slice(), ...(supports && { supports }), ...(turn && { turn }), ...move, ...(bedTurn && { bedTurn }) });
-    b.volume += local.volume();
+    b.volume += local === world ? volume : local.volume() + (supportsOf(local)?.volume() ?? 0);
   }, () => []);
 }
 
@@ -1335,10 +1380,10 @@ function addTrack(b: PieceBuild, name: string, world0: Man, pieceRoutes: Route[]
   const lines: CutLine[] = [...plan.xs.map((x): CutLine => ({ p: [x, 0], d: [0, 1], ...lj(x) })), ...plan.ys.map((y): CutLine => ({ p: [0, y], d: [1, 0], ...lj(y) }))];
   b.prog.steps++; b.prog.step(plan.why === 'bed' ? `Cutting ${name} to fit the print bed` : `Cutting ${name} at the baseplate edges`);
   if (rebuild && lines.length) world = rebuild(lines);
-  const cut = cached(`cut:${bp}:${o.joint}:${o.tongueRails ?? 'all'}:${JSON.stringify(lines)}:${JSON.stringify(pieceRoutes)}:${world.volume().toFixed(3)}`, () => arena(w, () => { const holes: Keep[] = [], taken: [number, number][] = []; return { cells: cutPiece(scad, track, world, pieceRoutes, lines, cx.join.joint, cx.join.flatRails, cx.noTongue, holes as [number, number, number][], cx.fitsBed, taken), holes, taken }; }, (r2) => r2.cells), true);
+  const cut = cached(`cut:${bp}:${o.joint}:${o.tongueRails ?? 'all'}:${JSON.stringify(lines)}:${JSON.stringify(pieceRoutes)}:${sizeKey(world)}`, () => arena(w, () => { const holes: Keep[] = [], taken: [number, number][] = []; return { cells: cutPiece(scad, track, world, pieceRoutes, lines, cx.join.joint, cx.join.flatRails, cx.noTongue, holes as [number, number, number][], cx.fitsBed, taken), holes, taken }; }, (r2) => r2.cells), true);
   const cells = cut.cells;
   const fitAll = cx.fitter(pieceRoutes, [...cut.holes], [...cut.taken]);
-  const all = cached(`fit:${o.printBedX}x${o.printBedY}:${bp}:${o.joint}:${o.tongueRails ?? 'all'}:${JSON.stringify(lines)}:${JSON.stringify(pieceRoutes)}:${world.volume().toFixed(3)}`, () => {
+  const all = cached(`fit:${o.printBedX}x${o.printBedY}:${bp}:${o.joint}:${o.tongueRails ?? 'all'}:${JSON.stringify(lines)}:${JSON.stringify(pieceRoutes)}:${sizeKey(world)}`, () => {
     // (and each part gripping along its cut edges too)
     const parts0 = cells.flatMap((m) => arena(w, () => fitAll(m), (r2) => r2)); // (each cell's leftovers freed as it goes)
     if (parts0.length < 2) return parts0;
@@ -1656,6 +1701,7 @@ function sectioned(b: PieceBuild, name: string, all: Route[], checks: CheckRail[
       // (bought pieces' ballast: printed, named for the track it's under)
       const lego = apart ? b2.lego : whole;
       const lift = liftOf(rts, b2.positions);
+      if (!lego) said(b, b2);
       b.pieces.push({ name: lego ? `track-bought-${lego[0].part.replace(/\s+/g, '')}-${++b.num.part}` : seated ? `${name}${b2.id ?? ++b.num.part}-ballast` : b2.id ? `${name}${b2.id}` : `${name}${++b.num.part}`, color: lego ? boughtColor(lego) : TRACK_COLOR, positions: b2.positions.slice(), stl: b2.stl.slice(), ...(b2.supports && !lego && { supports: b2.supports.slice() }), ...(lego && { lego }), ...(lift && { lift }), ...(apart && b2.seats && { seats: b2.seats }), ...(b2.turn && !lego && { bedTurn: b2.turn }) });
       const bought = !!lego;
       if (!bought) b.volume += b2.volume;
@@ -1744,7 +1790,7 @@ function tiled(b: PieceBuild, name: string, all: Route[], checks: CheckRail[], s
     b.overlay.grips.push(...part.grips);
     out.push(...part.ms);
   });
-  for (const b2 of out) { b.pieces.push({ name: b2.id && (out.length > 1 || base > 0) ? `${name}${b2.id}` : out.length > 1 || b.num.part > 0 ? `${name}${++b.num.part}` : name, color: TRACK_COLOR, positions: b2.positions.slice(), stl: b2.stl.slice(), ...(b2.supports && { supports: b2.supports.slice() }), ...(b2.turn && { bedTurn: b2.turn }) }); b.volume += b2.volume; }
+  for (const b2 of out) { said(b, b2); b.pieces.push({ name: b2.id && (out.length > 1 || base > 0) ? `${name}${b2.id}` : out.length > 1 || b.num.part > 0 ? `${name}${++b.num.part}` : name, color: TRACK_COLOR, positions: b2.positions.slice(), stl: b2.stl.slice(), ...(b2.supports && { supports: b2.supports.slice() }), ...(b2.turn && { bedTurn: b2.turn }) }); b.volume += b2.volume; }
   for (const b2 of out) if (!b2.fits) bedIssue(b, b2.box, b2.tight);
   if (out.some((b2) => !b2.fits)) b.bedWarnings.add(plan.why === 'bed'
     ? `some parts don't fit the ${o.printBedX} x ${o.printBedY} print bed without cutting along the track (it isn't)`
@@ -1985,7 +2031,7 @@ function boughtSwitches(b: PieceBuild, bought: BoughtSwitch[], copt: typeof CROS
     const tag = bought.length > 1 ? `switch${n + 1}` : 'switch';
     b.pieces.push({ name: `switch-bought-${bs.part.part.replace(/\s+/g, '')}-${n + 1}`, color: boughtColor([bs.part]), positions: got.view.positions.slice(), stl: got.view.stl.slice(), lego: [{ ...bs.part }] });
     got.bal.forEach((p, k) => {
-      b.pieces.push({ name: `${tag}-ballast${got.bal.length > 1 ? k + 1 : ''}`, color: TRACK_COLOR, positions: p.positions.slice(), stl: p.stl.slice(), ...(p.turn && { bedTurn: p.turn }) });
+      said(b, p); b.pieces.push({ name: `${tag}-ballast${got.bal.length > 1 ? k + 1 : ''}`, color: TRACK_COLOR, positions: p.positions.slice(), stl: p.stl.slice(), ...(p.turn && { bedTurn: p.turn }) });
       b.volume += p.volume;
       if (!p.fits) b.bedWarnings.add(`a bought switch's ballast doesn't fit the ${o.printBedX} x ${o.printBedY} print bed, even in two`);
     });
@@ -2215,7 +2261,7 @@ function buildOne(w: Wasm, design: Design, report: (what: string, frac: number) 
         const { positions, supports } = viewOf(w, m.world);
         // (its file turned to lie within the bed, a part that fits it only on the slant: long blades on a small bed)
         const turn = cut.turnOf(m.local);
-        return { positions, supports, stl: stlBytes((m.local === m.world ? m.world : m.local).getMesh(), true, turn), volume: m.local.volume(), turn };
+        return { positions, supports, stl: stlBytes(printed(w, m.local).getMesh(), true, turn), volume: m.local.volume() + (supportsOf(m.local)?.volume() ?? 0), turn };
       }));
       sp.moving.forEach((m, k) => { b.pieces.push({ name: m.name, color: m.color, positions: ms[k].positions.slice(), stl: ms[k].stl.slice(), ...(ms[k].supports && { supports: ms[k].supports!.slice() }), ...(m.turn && { turn: m.turn }), ...(m.slide && { slide: m.slide }), ...(m.hinge && { hinge: m.hinge }), ...(ms[k].turn && { bedTurn: ms[k].turn }) }); b.volume += ms[k].volume; });
     }

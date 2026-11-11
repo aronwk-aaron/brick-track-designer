@@ -7,6 +7,7 @@
 // (generate_track / generate_ballast apart, track_fit_tol).
 import { Scad, T, R, type Man } from './scad';
 import { PLATE_H, STUD, type Track } from './track';
+import { support } from './supports';
 
 /** buffer.scad's settings. */
 export interface BufferOptions {
@@ -114,10 +115,10 @@ export function endAxleHoles(t: Track): Man {
 export function couplerSupports(t: Track, z0: number): Man | undefined {
   if (!t.c.hasCoupler) return undefined;
   // (0.2 short of the peg and clip: touching, they printed as one with the part, not broken away)
-  return t.s.union([
+  return support(t.s, t.s.union([
     T(t.railSupport(3, -z0 - 0.2, false), [-t.c.couplerX - 1.5, -5, z0]),
     T(t.railSupport(8, -z0 - 0.2, false), [t.c.couplerX - 4, -5, z0]),
-  ]);
+  ]));
 }
 
 /**
