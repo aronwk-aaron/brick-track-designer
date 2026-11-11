@@ -15,7 +15,7 @@ import type { Solution } from '../route/solver';
 import { reversedRoute } from './reverse';
 import { type BaseParams, fdbFootprint, type SetOver, type SetSpec, switchGeometry, switchPlan, type SwitchPlan, thirdRailAt } from './base';
 import { bladeEdit, gridLever, sharedLead, subRoute, type ThrowEdit, toFrame, twoLevers } from './pieces';
-import { gridIn, sprungOnGrid } from './context';
+import { gridIn, sprungOnGrid, switchGlobals } from './context';
 
 export interface NetworkPart { name: string; color: number; local: Man; world: Man; turn?: { at: [number, number]; by: number; swing?: number; tilt?: [[number, number], [number, number]] };
   /** (a slider; a lever) how it moves from as assembled to its other end: build.ts Piece */
@@ -195,7 +195,7 @@ export function networkSplits(s: Scad, routes: Route[], sol: Solution, p: BasePa
     if (blade !== undefined && !three) return undefined;
     const own = blade === undefined ? own0 : blade === 0 ? 'left' : 'right';
     const tside = own === 'left' ? -1 : own === 'right' ? 1 : three ? 1 : bRight ? -1 : 1;
-    const over: SetOver = { ...(ed?.leverOffset !== undefined && { leverOffset: ed.leverOffset }), ...(ed?.springLength !== undefined && { springLength: ed.springLength }) };
+    const over: SetOver = { ...(ed?.leverOffset !== undefined && { leverOffset: ed.leverOffset }), ...(ed?.springLength !== undefined && { springLength: ed.springLength }), ...(ed?.single && { single: ed.single }), ...(ed?.heel && { heelShift: ed.heel }) };
     const specOf = (o: SetOver, ts: number): SetSpec => (three ? [0, 2, 2 + toeShift([P[0], P[1]]), ts, 1, o, blade] : [0, 1, 2 + lead + toeShift([P[0], P[1]]), ts, undefined, o]);
     const spec = (o: SetOver) => specOf(o, tside);
     // (the other track near the points, in their frame; with two branches one side not built as a three-way, the other branch too)
@@ -412,6 +412,28 @@ export function networkSplits(s: Scad, routes: Route[], sol: Solution, p: BasePa
     });
     return cuts.length ? s.difference(m, cuts) : m;
   };
+  // (neighbouring sets with their beds at different heights: sprung blades square to the baseplate grid lie on the bed as
+  // it is, those at an angle to it on a bed 0.7 higher (base.ts, SHALLOW_SLIDER), and a slip's sets are near enough for
+  // the higher bed to run under the next set's plates. Each set's raised bed gives way there, down to the other's own
+  // bed, wherever that set's plates swing (fdbFootprint) and the clearance round them)
+  const bedTops = preps.map((q) => switchGlobals(q.st.pp).bedTop);
+  const plateRoom = preps.map((q) => {
+    if (q.st.pp.mechStyle !== 'plates' || !preps.some((o, m) => o !== q && bedTops[m] > bedTops[preps.indexOf(q)] + 0.01)) return undefined;
+    const f = fdbFootprint(q.st.plan);
+    return f.plates.length ? s.w.CrossSection.union(f.plates.map((r) => s.polygon(r.map((pt) => poseToWorld(q.P, pt) as [number, number])))).offset(p.pointClearance + 0.2, 'Round', 2, 24) : undefined;
+  });
+  /** by: the sets it gives way to (what they're made from: part of what this set's built from, its key). */
+  const bedClear = (n: number, bed: Man): { bed: Man; by: unknown[] } => {
+    const bb = bed.boundingBox(), by: unknown[] = [];
+    const cuts = plateRoom.flatMap((room, k) => {
+      if (!room || k === n || bedTops[n] <= bedTops[k] + 0.01) return [];
+      const rb = room.bounds();
+      if (rb.min[0] > bb.max[0] || rb.max[0] < bb.min[0] || rb.min[1] > bb.max[1] || rb.max[1] < bb.min[1]) return [];
+      by.push({ rts: preps[k].rts, used: preps[k].st.used, p: preps[k].st.pp, P: preps[k].P });
+      return [T(s.extrude(room, bedTops[n] - bedTops[k] + 1), [0, 0, bedTops[k]])];
+    });
+    return { bed: cuts.length ? s.difference(bed, cuts) : bed, by };
+  };
   for (const [n, q] of preps.entries()) {
     const { gr, sp, i, j, j2, P, A, B, rts, blockedOf } = q, { used, plan, pp } = q.st;
     if (q.blade !== 1) throughWarnings(gr, blockedOf(plan));
@@ -445,10 +467,11 @@ export function networkSplits(s: Scad, routes: Route[], sol: Solution, p: BasePa
         && rts.every((rt) => Math.abs(routeLat(rt, [x, y])) > sl + 1);
     } : undefined;
     levers.push({ toe: [P[0], P[1]], frame: P, set: plan.sets[0] });
+    const bed = bedClear(n, place(mech.bed, P));
     built.push({
-      key: JSON.stringify({ rts, used, p: pp, P, routes: [i, j, j2], end, n, of: groups.length }),
+      key: JSON.stringify({ rts, used, p: pp, P, routes: [i, j, j2], end, n, of: groups.length, ...(bed.by.length && { clear: bed.by }) }),
       toe: [P[0], P[1]], frame: P, set: plan.sets[0], src: gr.main,
-      adds: [place(mech.bed, P), place(mech.arm, P), ...mech.steps.map((m) => place(m, P))], cuts: [place(mech.pockets, P), place(mech.channel, P)],
+      adds: [bed.bed, place(mech.arm, P), ...mech.steps.map((m) => place(m, P))], cuts: [place(mech.pockets, P), place(mech.channel, P)],
       ...(mech.rests && { rests: place(mech.rests, P) }),
       ...(mech.stepRect && { stepRect: mech.stepRect }),
       ...(studsOn && { studsOn }),

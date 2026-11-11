@@ -5,6 +5,8 @@ import { templatesBuild } from './templates.shared';
 describe('templates: reference slips', { timeout: 900000 }, () => templatesBuild(['TrixBrix trackwork'], [
   'Double slip R40 45°',
   'Single slip R40 45°',
+  'Double slip R104 left',
+  'Double slip R104 right',
   'Double crossover R40',
   'Narrow-gauge double crossover R36',
   'Crossover, 4-stud gap, left',

@@ -19,7 +19,7 @@ const APP = (globalThis as { APP_DEFAULTS?: PieceOptions }).APP_DEFAULTS!;
  * the log that shows why. A template not here: BUDGET_SMALL.
  */
 const BUDGET: Record<string, number> = {
-  'Crossing 90°, 8 studs': 3, 'Crossing 45° left': 4, 'Crossing 45° right': 4, 'Crossing 45°, 27 studs': 5, 'Double slip R40 45°': 26,
+  'Crossing 90°, 8 studs': 3, 'Crossing 45° left': 4, 'Crossing 45° right': 4, 'Crossing 45°, 27 studs': 5, 'Double slip R40 45°': 26, 'Double slip R104 left': 26, 'Double slip R104 right': 26,
   'Crossing 22.5° left': 11, 'Crossing 22.5° right': 11, 'Single slip R40 45°': 20, 'Star crossing 22.5°': 22, 'Curved crossing R24': 3,
   'Curved crossing R40': 3, 'Curved crossing R56': 3, 'Curved crossing R72': 3, 'Curved crossing R88': 3, 'Curved crossing R104': 3,
   'Crossing of two R120 curves': 4, 'Pass-through crossing R56 left': 4, 'Pass-through crossing R72 (A) left': 4,

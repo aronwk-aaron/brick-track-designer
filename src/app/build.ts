@@ -2230,7 +2230,8 @@ function buildOne(w: Wasm, design: Design, report: (what: string, frac: number) 
   const { routes, sol, solverOpts, tw, items, overlay, grooveCuts, forceWarnings, bankWarnings, bought, gridPose } = solveTrackwork(w, design, o, prog.step);
   const dropInner = (rts: Route[], more: Iterable<string> = []) => droppedInner(routes, sol.dropped ?? [], rts, more);
   const toeShift = (q: [number, number]) => tw.points?.[keyOf(q)]?.toe ?? 0;
-  const throwEdit = (q: [number, number]) => tw.throw?.[keyOf(q)];
+  // (with the points' own choice of moving blade, a single-point switch's, and their blades lengthened: Trackwork.points single, heel)
+  const throwEdit = (q: [number, number]) => { const k = keyOf(q), single = tw.points?.[k]?.single, heel = tw.points?.[k]?.heel; return single || heel ? { ...tw.throw?.[k], ...(single && { single }), ...(heel && { heel }) } : tw.throw?.[k]; };
   // Pieces: a switch wherever routes split, the rest as fixed trackwork.
   const scad = new Scad(w);
   const params = switchParams(o, design.gaugeStuds, alone);

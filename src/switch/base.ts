@@ -58,7 +58,9 @@ export const BASE_DEFAULTS: BaseParams = {
  * own with two positions; the three-way is then two such sets at one toe.
  */
 export type SetSpec = [number, number, number, number?, number?, SetOver?, (0 | 1)?];
-export interface SetOver { leverOffset?: number; springLength?: number; throwShift?: number }
+export interface SetOver { leverOffset?: number; springLength?: number; throwShift?: number; heelShift?: number;
+  /** (a single-point switch) which route's blade moves: the more curved one's (default), or the straighter one's, the curved route's rail fixed */
+  single?: 'curved' | 'straight' }
 
 // Two-piece points (and a three-way's): each blade's pivot level with its
 // heel, so no part of the blade swings out past it into the stock rail, and
@@ -597,11 +599,13 @@ export function threeWaySet(routes: Route[], ps: SetSpec, p: BaseParams, default
 /**
  * A single-point switch (pointBlades 1): the blade on the straighter route is
  * left out, its rail fixed from where it's a flangeway clear of its stock
- * rail; the other blade, moving, steers the wheels both ways.
+ * rail; the other blade, moving, steers the wheels both ways. Set by hand
+ * for a points set (SetOver.single 'straight'), the other way round.
  */
-function singlePoint(v: PointsSetValues, G: number, flangeway: number) {
+function singlePoint(v: PointsSetValues, G: number, flangeway: number, moves: 'curved' | 'straight' = 'curved') {
   const turn = (rt: Route) => Math.abs(((routePose(rt, v.sHeel)[2] - routePose(rt, v.sToe)[2] + 540) % 360) - 180);
-  const fixed = turn(v.ra) >= turn(v.rb) ? 1 : 0;
+  // (moves 'straight': the other blade, as a slip's whose curved route's blade would lie where the other track crosses in)
+  const curved = turn(v.ra) >= turn(v.rb) ? 0 : 1, fixed = (moves === 'straight' ? curved : 1 - curved) as 0 | 1;
   const [rt, o, stock] = fixed === 0 ? [v.ra, -G, v.rb] : [v.rb, +G, v.ra];
   let s = v.sToe;
   while (s < v.sHeel && Math.abs(routeLat(stock, railPoint(rt, s, o)) - o) < 2 * HEAD_HW + flangeway) s += 0.25;
@@ -657,7 +661,7 @@ export function switchPlan(routes: Route[], specs: SetSpec[], p: BaseParams = BA
   const sets = specs.map((ps) => (ps[4] === undefined
     ? pointsSet(routes, { ra: ps[0], rb: ps[1], sToe: ps[2], tside: ps[3] }, { ...p, ...ps[5] }, defaultThrowDir)
     : threeWaySet(routes, ps, p, defaultThrowDir)));
-  if (p.pointBlades === 1 && p.mechStyle === 'plates') for (const v of sets) if (!('three' in v)) singlePoint(v, G, p.flangeway);
+  if (p.pointBlades === 1 && p.mechStyle === 'plates') sets.forEach((v, k) => { if (!('three' in v)) singlePoint(v, G, p.flangeway, specs[k][5]?.single); });
   const set0 = sets[0];
   const others = (i: number) => routes.map((_, j) => j).filter((j) => j !== i);
   const latOthers = (i: number, q: Pt) => Math.min(...others(i).map((j) => Math.abs(routeLat(routes[j], q))));

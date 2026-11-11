@@ -83,7 +83,7 @@ export function gridLever(P: Pose, v: { leverX: number; throwY: number; throwEdg
 }
 
 /** A points set's lever, as moved by hand: which side, how far out, and (by its tines' length) how far along. */
-export interface ThrowEdit { side?: 'left' | 'right'; leverOffset?: number; springLength?: number; each?: { left?: { leverOffset?: number }; right?: { leverOffset?: number } } }
+export interface ThrowEdit { side?: 'left' | 'right'; leverOffset?: number; springLength?: number; /** (the points' own hand edits, Trackwork.points single and heel: a single-point switch's moving blade; the blades lengthened, mm) */ single?: 'curved' | 'straight'; heel?: number; each?: { left?: { leverOffset?: number }; right?: { leverOffset?: number } } }
 /** A lever's hand edit: the points' own; for one of a three-way's two levers (blade 0 the left one's, 1 the right's) with its own over it (each). */
 export const bladeEdit = (ed: ThrowEdit | undefined, blade: number | undefined): ThrowEdit | undefined => {
   const own = blade === undefined ? undefined : ed?.each?.[blade === 0 ? 'left' : 'right'];
@@ -181,7 +181,7 @@ export function planPieces(routes: Route[], splits: Split[], p: BaseParams = BAS
         const own = ed?.side ?? routes[kids[Math.min(n, kids.length - 1)].child].throwSide;
         const side = own && own !== 'auto' ? own : p.throwSide;
         if ((side === 'left' || side === 'right') && st[6] === undefined) st[3] = side === 'right' ? 1 : -1;
-        if (ed && (ed.leverOffset !== undefined || ed.springLength !== undefined)) st[5] = { ...(ed.leverOffset !== undefined && { leverOffset: ed.leverOffset }), ...(ed.springLength !== undefined && { springLength: ed.springLength }) };
+        if (ed && (ed.leverOffset !== undefined || ed.springLength !== undefined || ed.single || ed.heel)) st[5] = { ...(ed.leverOffset !== undefined && { leverOffset: ed.leverOffset }), ...(ed.springLength !== undefined && { springLength: ed.springLength }), ...(ed.single && { single: ed.single }), ...(ed.heel && { heelShift: ed.heel }) };
       });
       const sorted = order.map((k) => frameRoutes[k]);
       // Long enough for the frog and its check rails, and for the ends to be
@@ -212,7 +212,7 @@ export function planPieces(routes: Route[], splits: Split[], p: BaseParams = BAS
           const ed = bladeEdit(throwEdit(setAts[n]), st[6]) ?? {};
           if (ed.leverOffset !== undefined && ed.springLength !== undefined) return;
           const g2 = gridLever(P, built!.plan.sets[n], ed);
-          if (g2.leverOffset !== undefined) { st[5] = g2; moved = true; }
+          if (g2.leverOffset !== undefined) { st[5] = { ...g2, ...(ed.single && { single: ed.single }), ...(ed.heel && { heelShift: ed.heel }) }; moved = true; }
         });
         if (moved) built = { ...built, plan: switchPlan(sorted, sets, pg.p) };
       }

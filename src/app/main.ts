@@ -2345,7 +2345,7 @@ function drawTrackwork(list: TwItem[]) {
           check(row, 'Force points here', st.forced, () => canvas.togglePoints(key), 'Make points here though the track end is a hair off the other track');
         } else {
           const ids = [...new Set(its.flatMap((it) => it.routes ?? []))];
-          const sub = [ids.join(' / '), st.state === 'off' ? 'taken out' : st.forced ? 'forced' : '', cur.toe ? `moved ${cur.toe > 0 ? '+' : ''}${studsOf(cur.toe)} studs` : '', cur.drop?.length ? `without ${cur.drop.join(', ')}` : ''].filter(Boolean).join(' · ');
+          const sub = [ids.join(' / '), st.state === 'off' ? 'taken out' : st.forced ? 'forced' : '', cur.toe ? `moved ${cur.toe > 0 ? '+' : ''}${studsOf(cur.toe)} studs` : '', cur.heel ? `blades ${studsOf(cur.heel)} studs longer` : '', cur.single === 'straight' ? 'the straighter track\'s blade moves' : '', cur.drop?.length ? `without ${cur.drop.join(', ')}` : ''].filter(Boolean).join(' · ');
           const row = item(g, key, `Points ${++n}`, sub, ed, 'points');
           check(row, 'Built (off: both tracks\' rails run through as plain track)', st.state === 'built', () => canvas.togglePoints(key));
           // (a three-way: each route in it or not; one taken out leaves a two-way for the others)
@@ -2354,6 +2354,22 @@ function drawTrackwork(list: TwItem[]) {
             edit('points', key, { drop: drop.length ? drop : undefined });
           });
           if (st.state === 'built') { const i = num((cur.toe ?? 0) / 8, (v) => edit('points', key, { toe: v * 8 }), 0.125, 'How far the points are moved along their track from where they\'re worked out, studs.', LIMITS.twToe); row.append(field('Moved along, studs', i)); }
+          // (the blades lengthened: a two-way's)
+          if (st.state === 'built') {
+            const i = num((cur.heel ?? 0) / 8, (v) => edit('points', key, { heel: v > 0 ? v * 8 : undefined }), 0.125, ids.length > 2 ? 'A three-way\'s blades are as long as they\'re worked out.'
+              : 'How much longer the blades are than they\'re worked out (their heels where the rails are just far enough apart), studs. Longer blades swing through a smaller angle; they need the room between the rails further along clear of other track.', LIMITS.twHeel);
+            i.disabled = ids.length > 2; row.append(field('Blades lengthened, studs', i));
+          }
+          // (one moving blade: which; with two, or a three-way, said why it isn't a choice)
+          if (st.state === 'built') {
+            const sel = document.createElement('select'), one = (design.options?.pointBlades ?? OPTION_DEFAULTS.pointBlades) === 1 && (design.options?.mechStyle ?? OPTION_DEFAULTS.mechStyle) !== 'tines' && ids.length === 2;
+            for (const [v, t] of [['curved', 'The curved track\'s (default)'], ['straight', 'The straighter track\'s']]) { const o = document.createElement('option'); o.value = v; o.textContent = t; sel.append(o); }
+            sel.value = cur.single ?? 'curved'; sel.disabled = !one;
+            sel.title = one ? 'Which blade moves, with one moving blade (Moving blades: One). Default: the blade on the more curved track. The straighter track\'s: for points whose curved-side blade would lie where another track crosses in (a slip\'s); the wheels are then steered at the other rail.'
+              : ids.length > 2 ? 'A three-way keeps both blades.' : 'Only with one moving blade (Switches: points, Moving blades: One, blades on top): both blades move here.';
+            sel.addEventListener('change', () => edit('points', key, { single: sel.value === 'straight' ? 'straight' : undefined }));
+            row.append(field('Moving blade', sel));
+          }
         }
       }
     }

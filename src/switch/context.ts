@@ -63,6 +63,8 @@ export interface SwitchParams {
   threeWayLevers?: 1 | 2;
   /** (the plate-style points) The slider moved along this many studs from where it'd be (toward the heel: +), to keep its lever out of the way of other track or another lever. */
   throwShift?: number;
+  /** (set by hand for a points set, SetOver) the blades lengthened: their heels this much (mm) past where the rails are far enough apart */
+  heelShift?: number;
   /** (switch.scad's throw_ballast) On ballast: the ballast's steps carried on round the lever's arm, with studs. */
   throwBallast?: boolean;
   /**
@@ -239,7 +241,9 @@ export function pointsSet(routes: Route[], ps: PointsSet, p: SwitchParams, defau
   const sepR = (s: number) => Math.abs(routeLat(rb, railPoint(ra, s, -G)) + G);
   const sepL = (s: number) => Math.abs(routeLat(ra, railPoint(rb, s, +G)) - G);
   const firstS = (sep: (s: number) => number) => { let s = sToe; while (!(s > lenMin) && !(sep(s) >= g.bladeNeed)) s += 0.5; return s; };
-  const sHeel = over.sHeel ?? Math.max(firstS(sepR), firstS(sepL), sToe + 20);
+  const sHeel0 = over.sHeel ?? Math.max(firstS(sepR), firstS(sepL), sToe + 20);
+  // (lengthened by hand: not past the shorter route's end)
+  const sHeel = over.sHeel === undefined && (p.heelShift ?? 0) > 0 ? Math.max(sHeel0, Math.min(lenMin, sHeel0 + p.heelShift!)) : sHeel0;
   const toeY = railPoint(ra, sToe, -G)[1];
   const sBpiv = sHeel - 4;
   const a = railPoint(ra, sBpiv, -G), b = railPoint(rb, sBpiv, +G);

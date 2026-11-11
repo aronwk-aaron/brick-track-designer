@@ -43,6 +43,7 @@ describe('the template catalog', () => {
     expect(k('Pass-through crossing R72 (A) left')).toBe('curved crossing');
     expect(k('Double slip R40 45°')).toBe('slip');
     expect(k('Single slip R40 45°')).toBe('slip');
+    expect(k('Double slip R104 left')).toBe('slip');
     expect(k('Crossover, 4-stud gap, left')).toBe('crossover');
     expect(k('Narrow-gauge double crossover R36')).toBe('crossover');
     expect(k('Buffer stop')).toBe('buffer');

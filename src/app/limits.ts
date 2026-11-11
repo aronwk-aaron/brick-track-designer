@@ -33,6 +33,8 @@ export const LIMITS = {
   twEnd: [-16, 16, 0],
   twGrooveEnd: [0, 16, 0],
   twToe: [-16, 16, 0],
+  /** a points set's blades lengthened (their heels moved on), studs */
+  twHeel: [0, 8, 0],
   /** a check rail moved in from its rail, mm */
   twShift: [-3, 3, 0],
   /** a lever out past the track, studs (as far as it can be dragged) */
