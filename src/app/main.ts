@@ -30,6 +30,7 @@ import { mergeProblem, mergeRoutes, splitRoute } from './splitmerge';
 import { initTemplateBrowser } from './templatebrowser';
 import { type CopiedEdit, copyEdits, followTrackwork, isEdit, leftOver, mirrorAnchors, pasteEdits, reconcileTrackwork, renameAnchors } from './twfollow';
 import { type OptChoice, optionForm, type OptCtx, type OptField } from './settings';
+import { designFacts, GROUPS, groupFields, groupView, resetFields } from './settingsgroups';
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 const routesEl = $('routes'), infoEl = $('info'), errEl = $('error');
@@ -1364,8 +1365,8 @@ $('settings-close').addEventListener('click', () => openSettings(false));
   search.addEventListener('input', () => { optQuery = search.value.trim(); renderOptions(); });
   search.addEventListener('keydown', (e) => { if (e.key === 'Escape' && search.value) { e.stopPropagation(); search.value = ''; optQuery = ''; renderOptions(); } });
   $('settings-fold').addEventListener('click', () => {
-    const fold = OPTION_FORM.some((sec) => openSecs.has(sec.title));
-    for (const sec of OPTION_FORM) { if (fold) openSecs.delete(sec.title); else openSecs.add(sec.title); }
+    const fold = GROUPS.some((g) => openSecs.has(g.id));
+    for (const g of GROUPS) { if (fold) openSecs.delete(g.id); else openSecs.add(g.id); }
     keepSecs(); renderOptions();
   });
 }
@@ -1707,7 +1708,7 @@ updateSelbar();
 
 
 // ---------- piece options (switch.scad's Customizer settings, and the underside) ----------
-const { form: OPTION_FORM, noMono } = optionForm(() => design);
+const { form: OPTION_FORM } = optionForm(() => design);
 let optSig = '';
 /** After a build: the options panel again if what applies has changed (switches appearing or going). */
 /** After a build: the route cards again if which routes branch has changed (a branch's card has its lever's side). */
@@ -1719,7 +1720,7 @@ function refreshRoutes() {
   branchSig = sig; render();
 }
 function refreshOptions() {
-  if (JSON.stringify([design.options, design.gaugeStuds, switchesNow(), noMono()]) === optSig) return;
+  if (JSON.stringify([design.options, design.gaugeStuds, switchesNow(), design.routes.map((r) => [r.segs.length, isMono(r), r.startEnd, r.endEnd, r.segs.some((sg) => sg.kind === 'curve' && (sg.bank ?? 0) > 0)])]) === optSig) return;
   if (midEdit($('settings'))) { drawWhenTyped.add(refreshOptions); return; }
   renderOptions();
 }
@@ -1729,9 +1730,9 @@ function switchesNow() {
   const items = canvas?.overlay?.items;
   return items && items.some((it) => it.kind === 'points' && !it.off && !it.cand);
 }
-/** Which settings sections are open (by title), remembered in this browser; the search box's text. */
-const openSecs: Set<string> = (() => { try { const v = JSON.parse(localStorage.getItem('btd-settings-open') ?? 'null'); if (Array.isArray(v)) return new Set<string>(v); } catch { /* (none kept) */ } return new Set(OPTION_FORM.slice(0, 2).map((sec) => sec.title)); })();
-const keepSecs = () => { try { localStorage.setItem('btd-settings-open', JSON.stringify([...openSecs])); } catch { /* (not kept) */ } };
+/** Which settings groups are open (by id), remembered in this browser; the search box's text. */
+const openSecs: Set<string> = (() => { try { const v = JSON.parse(localStorage.getItem('btd-settings-groups') ?? 'null'); if (Array.isArray(v)) return new Set<string>(v); } catch { /* (none kept) */ } return new Set(['track']); })();
+const keepSecs = () => { try { localStorage.setItem('btd-settings-groups', JSON.stringify([...openSecs])); } catch { /* (not kept) */ } };
 let optQuery = '';
 /** The settings' example pictures (public/options/<key>-<value>.webp, made by scripts/option-pictures.mts): each setting's
  * values that have one (index.json; a text's empty value: none). */
@@ -1782,43 +1783,42 @@ function drawOptions() {
   const body = $('options-body'), scroll = $('options').scrollTop;
   const o = { ...OPTION_DEFAULTS, ...design.options } as PieceOptions;
   const c: OptCtx = { o, ballast: o.ballast !== 'none', fdb: o.mechStyle !== 'tines', switches: switchesNow() };
-  optSig = JSON.stringify([design.options, design.gaugeStuds, c.switches, noMono()]);
+  optSig = JSON.stringify([design.options, design.gaugeStuds, c.switches, design.routes.map((r) => [r.segs.length, isMono(r), r.startEnd, r.endEnd, r.segs.some((sg) => sg.kind === 'curve' && (sg.bank ?? 0) > 0)])]);
   body.replaceChildren();
   const setOpt = (f: OptField, v: string | number | boolean) => {
     if (f.set) f.set(v); else design.options = { ...design.options, [f.key]: v };
   };
-  // (searching: only the fields whose label, help or choices have every word in them, their sections open)
+  // (searching: only the settings whose label, help or choices have every word in them, their groups open)
   const words = optQuery.toLowerCase().split(/\s+/).filter(Boolean);
-  const hit = (f: OptField) => { const txt = [f.label, f.help, ...(f.choices ?? []).flatMap((ch) => [ch.t, ch.tip])].join(' ').toLowerCase(); return words.every((w) => txt.includes(w)); };
+  const views = groupView(OPTION_FORM, c, designFacts(design, c.switches), optQuery);
   let shown = 0;
-  for (const sec of OPTION_FORM) {
-    const fields = sec.fields.filter((f) => !words.length || hit(f));
-    if (words.length && !fields.length) continue;
+  for (const gv of views) {
+    const sec = gv.group;
     const det = document.createElement('details'); det.className = 'osec';
-    // (a section for the kind of track the design hasn't got: folded, and says so)
-    const kinds = design.routes.filter((r) => r.segs.length), hasTrain = kinds.some((r) => !isMono(r)), hasMono = kinds.some((r) => isMono(r));
-    const absent = kinds.length > 0 && ((sec.kind === 'train' && !hasTrain) || (sec.kind === 'monorail' && !hasMono));
-    const absentWhy = sec.kind === 'train' ? 'no train track in this design (only monorail)' : 'no monorail in this design';
-    det.open = !absent && (words.length > 0 || openSecs.has(sec.title));
-    if (absent) det.classList.add('absent');
+    det.open = words.length > 0 || openSecs.has(sec.id);
+    if (gv.unused) det.classList.add('absent');
     const sum = document.createElement('summary'); sum.textContent = sec.title;
-    if (absent) { const ab = document.createElement('em'); ab.className = 'ab'; ab.textContent = 'not used'; ab.title = absentWhy; sum.append(ab); }
-    const n = document.createElement('span'); n.className = 'n'; n.textContent = String(fields.length); sum.append(n);
-    det.append(sum);
-    det.addEventListener('toggle', () => { if (words.length) return; if (det.open) openSecs.add(sec.title); else openSecs.delete(sec.title); keepSecs(); });
-    const box = document.createElement('div'); box.className = 'sec';
-    if (sec.switches && c.switches === false) {
-      box.classList.add('idle');
-      const nt = document.createElement('div'); nt.className = 'note'; nt.textContent = 'No switches in this design yet: these apply where a track branches off another.';
-      box.append(nt);
+    if (gv.unused) { const ab = document.createElement('em'); ab.className = 'ab'; ab.textContent = 'not used in this design'; ab.title = `${gv.unused[0].toUpperCase()}${gv.unused.slice(1)}. These are the design's defaults: set them before drawing if you like.`; sum.append(ab); }
+    const n = document.createElement('span'); n.className = 'n';
+    if (gv.changed) { const ch = document.createElement('span'); ch.className = 'chg'; ch.textContent = gv.summary; ch.title = 'Settings in this group that are not at their default'; n.append(ch); }
+    if (gv.changed) {
+      const rs = document.createElement('button'); rs.type = 'button'; rs.className = 'rg'; rs.textContent = 'Reset group'; rs.title = `Put ${gv.changed === 1 ? 'the changed setting' : `the ${gv.changed} changed settings`} in ${sec.title} back to the default (Undo brings them back)`;
+      rs.addEventListener('click', (e) => { e.preventDefault(); e.stopPropagation(); resetFields(design, groupFields(OPTION_FORM, sec)); changed(true); renderOptions(); });
+      n.append(rs);
     }
-    for (const f of fields) {
+    sum.append(n);
+    det.append(sum);
+    det.addEventListener('toggle', () => { if (words.length) return; if (det.open) openSecs.add(sec.id); else openSecs.delete(sec.id); keepSecs(); });
+    const box = document.createElement('div'); box.className = 'sec';
+    if (gv.unused) { const nt = document.createElement('div'); nt.className = 'note'; nt.textContent = `${gv.unused[0].toUpperCase()}${gv.unused.slice(1)}: these are the design's defaults for when it has some.`; box.append(nt); }
+    for (const row of gv.rows) {
+      const f = row.f;
       shown++;
-      if (f.sub) { const h = document.createElement('div'); h.className = 'sub'; h.textContent = f.sub; box.append(h); }
+      if (row.sub) { const h = document.createElement('div'); h.className = 'sub'; h.textContent = row.sub; box.append(h); }
       const cur = f.get ? f.get() : (o as unknown as Record<string, string | number | boolean>)[f.key];
       const def = f.def ?? (OPTION_DEFAULTS as unknown as Record<string, string | number | boolean>)[f.key];
       // (can't be changed now: greyed out, and why, exactly)
-      const off = (absent ? absentWhy : undefined) ?? f.off?.(c);
+      const off = row.off;
       const wrap = document.createElement('div'); wrap.className = off ? 'opt off' : 'opt';
       const note = (txt: string, cls = 'desc') => { const d = document.createElement('small'); d.className = cls; d.textContent = txt; wrap.append(d); };
       // (pictures of the choices, or of a few values: a round button by the label opens them side by side)
@@ -1874,13 +1874,14 @@ function drawOptions() {
       if (off) note(`Locked: ${off}.`, 'desc why');
       box.append(wrap);
     }
+    if (gv.hiddenCount && !words.length) { const mo = document.createElement('div'); mo.className = 'more'; mo.textContent = `${gv.hiddenCount} more ${gv.hiddenCount === 1 ? 'setting appears' : 'settings appear'} when a choice above needs ${gv.hiddenCount === 1 ? 'it' : 'them'}.`; box.append(mo); }
     det.append(box); body.append(det);
   }
   if (words.length && !shown) { const nm = document.createElement('div'); nm.className = 'nomatch'; nm.textContent = `No setting matches “${optQuery}”.`; body.append(nm); }
   const reset = btn('Reset to defaults', () => { design.options = {}; renderOptions(); }, 'Every piece setting back to its default (Undo brings them back; the gauge stays)');
   reset.classList.add('reset'); body.append(reset);
   $('options').scrollTop = scroll;
-  $('settings-fold').textContent = OPTION_FORM.some((sec) => openSecs.has(sec.title)) ? 'Fold all' : 'Open all';
+  $('settings-fold').textContent = GROUPS.some((g) => openSecs.has(g.id)) ? 'Fold all' : 'Open all';
 }
 renderOptions();
 

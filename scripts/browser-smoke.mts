@@ -104,7 +104,18 @@ try {
   await sel.selectOption('buddy'); await page.waitForTimeout(200);
   await page.keyboard.press('Control+z'); await page.waitForTimeout(150);
   check(await ballast() === ballast0, 'Ctrl+Z works with the focus in the setting just changed');
-  await page.fill('#settings-search', ''); await page.click('#settings-close');
+  // the settings in groups: each header says what's changed and has its own reset; a group the design can't use says so
+  await page.fill('#settings-search', '');
+  check(await page.locator('#options summary').count() === 14, `the settings are in 14 groups (${await page.locator('#options summary').count()})`);
+  check(await page.locator('#options summary', { hasText: 'Monorail' }).first().innerText().then((t) => /not used in this design/.test(t)), 'a design with no monorail marks Monorail "not used in this design"');
+  await page.locator('#options summary', { hasText: 'Sleepers and ballast' }).click(); await page.locator('#options label.field', { has: page.locator('span', { hasText: /^Ballast\s*i?$/ }) }).locator('select').selectOption('buddy'); await page.waitForTimeout(200);
+  check(await page.locator('#options summary', { hasText: 'Sleepers and ballast' }).locator('.chg').innerText().then((t) => /1 changed/.test(t)), 'a changed setting is counted in its group header');
+  await page.locator('#options summary', { hasText: 'Sleepers and ballast' }).getByRole('button', { name: 'Reset group' }).click(); await page.waitForTimeout(200);
+  check(await ballast() === 'none', 'Reset group puts it back');
+  await page.keyboard.press('Control+z'); await page.waitForTimeout(150);
+  check(await ballast() === 'buddy', 'and it is one undo step');
+  await page.keyboard.press('Control+z'); await page.waitForTimeout(150);
+  await page.click('#settings-close');
   check(await says(/1 switch.*built in/), 'and the design builds again after the settings undone');
 
   at = 'a dialog';

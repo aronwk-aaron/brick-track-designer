@@ -147,8 +147,11 @@
     #options details.osec > summary::-webkit-details-marker { display: none; }
     #options details.osec > summary::before { content: '▸'; } #options details.osec[open] > summary::before { content: '▾'; }
     #options details.osec.absent > summary { opacity: 0.55; } #options details.osec > summary .ab { font-style: normal; font-weight: 400; text-transform: none; letter-spacing: 0; margin-left: 6px; }
-    #options details.osec > summary .n { margin-left: auto; font-weight: 400; text-transform: none; letter-spacing: 0; }
+    #options details.osec > summary .n { display: flex; align-items: center; gap: 6px; white-space: nowrap; margin-left: auto; font-weight: 400; text-transform: none; letter-spacing: 0; }
     #options details.osec > .sec { padding-bottom: 8px; }
+    #options details.osec > summary { align-items: center; flex-wrap: wrap; } #options details.osec > summary .chg { color: var(--accent, #1a6dd4); }
+    #options details.osec > summary .rg { font-size: 11px; font-weight: 500; text-transform: none; letter-spacing: 0; padding: 1px 7px; }
+    #options .more { margin: 6px 0 2px; font-size: 11.5px; color: var(--muted); }
     #options .sub { margin: 10px 0 2px; font-size: 11.5px; font-weight: 600; color: var(--ink); }
     #options .nomatch { color: var(--muted); padding: 12px 0; }
     #options mark { background: rgba(240,180,0,0.35); color: inherit; border-radius: 2px; }

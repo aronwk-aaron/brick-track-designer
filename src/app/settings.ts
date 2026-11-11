@@ -22,14 +22,9 @@ export interface OptField {
   def?: string | number | boolean;
   get?: () => string | number | boolean; set?: (v: string | number | boolean) => void;
 }
-export interface OptSection { title: string; switches?: boolean; /** only for one kind of track: folded, its settings locked, when the design has none of it */ kind?: 'train' | 'monorail'; fields: OptField[] }
-/** The settings form for the design d() (the one being edited, read when a setting's asked about): its sections, and
- * why the monorail settings are locked (no monorail in the design). */
-export function optionForm(d: () => Design): { form: OptSection[]; noMono: (c?: OptCtx) => string | undefined } {
-  /** (buffer stop settings) why they don't apply: no route ends in one */
-  const noBuf = () => (d().routes.some((r) => r.startEnd === 'buffer' || r.endEnd === 'buffer') ? undefined : 'no route ends in a buffer stop (set Starts in / Ends in on a route card)');
-  /** (the banked curves' settings: locked till a curve has a bank) */
-  const noBank = () => (d().routes.some((r) => r.segs.some((sg) => sg.kind === 'curve' && (sg.bank ?? 0) > 0)) ? undefined : 'no curve is banked: give one a bank on its route card (Shape)');
+export interface OptSection { title: string; switches?: boolean; kind?: 'train' | 'monorail'; fields: OptField[] }
+/** The settings form for the design d() (the one being edited, read when a setting's asked about): its sections (the panel's groups are in settingsgroups.ts). */
+export function optionForm(d: () => Design): { form: OptSection[] } {
   /** (settings for the tines mechanism only) */
   const onlyTines = (c: OptCtx) => (c.fdb ? 'only with Mechanism: Under the bed, on spring tines' : undefined);
   /** A length kept in mm, shown and set in studs (lengths are studs to the user; fits and clearances stay mm). */
@@ -56,7 +51,6 @@ export function optionForm(d: () => Design): { form: OptSection[]; noMono: (c?: 
         { v: '1', t: '1 stud', tip: 'Narrow, like bridge ties.' }] },
       { key: 'sleeperGapStuds', label: 'Gap between sleepers, studs', step: 1, min: 1, max: 6, off: (c) => (c.ballast ? 'with ballast there are no separate sleepers' : c.o.sleepers !== 'sleepers' ? 'set Under the rails to Sleepers with gaps' : undefined), help: 'LEGO track is 2.' },
       { key: 'raisedOn', label: 'Raised track stands on', get: () => d().options?.raisedOn ?? 'printed', set: (v) => { d().options = { ...d().options, raisedOn: v as 'printed' | 'lego' }; }, def: 'printed',
-        off: () => (d().routes.some((r) => !isMono(r) && ((r.monoHeight ?? 0) > 0 || (r.monoHeightEnd ?? 0) > 0)) ? undefined : 'no train route is raised: give one a Height on its card (Place)'),
         help: 'What holds up train track off the baseplate (a route\'s Height, End height), every 16 studs.', choices: [
         { v: 'printed', t: 'Printed pillars', tip: 'Every 16 studs, a beam across under the track on two pillars beside it, each on a flared foot. Track over other track (a helix) goes on the same pillars, carried up past the lower track, clear of its trains. One part each; lower than a brick and a beam, LEGO 2 x 8 plates instead.', con: 'Parts to print, tall ones on a high track.' },
         { v: 'lego', t: 'LEGO bricks', tip: 'Stacks of LEGO 2 x 8 bricks and plates every 16 studs, in the parts list. Over other track: 2 x 2 brick pillars beside it under 2 x 14 plates.', con: 'A lot of bricks for a high track (a helix\'s top turn).' }] },
@@ -167,20 +161,20 @@ export function optionForm(d: () => Design): { form: OptSection[]; noMono: (c?: 
       { key: 'flangewayDepth', label: 'Flangeway depth, mm', step: 0.5, min: 1, max: 6, help: 'How deep the flangeways are cut below the rail tops. Deep enough for your wheels\' flanges.' },
     ] },
     { title: 'Banked curves', kind: 'train', fields: [
-      { key: 'bankRampAt', label: 'Bank ramps', off: noBank, choices: [
+      { key: 'bankRampAt', label: 'Bank ramps', choices: [
         { v: 'straight', t: 'On the track before and after', tip: 'The bank eases in on the track leading into a curve and out on the track after it, as real railways do: the curve is banked in full from end to end. With no straight there, or not enough, the ramp runs on into the curve.' },
         { v: 'curve', t: 'Inside the curve', tip: 'The bank eases in and out inside the curve, as the plate-style banked pieces do.', con: 'The outer rail climbs while the train is already turning, and a short curve leaves little room: the ramps get steep.' }] },
-      { key: 'bankRampStuds', label: 'Shortest bank ramp, studs', off: noBank, step: 1, min: 2, max: 200, help: 'Each ramp from level to a curve\'s full bank, eased in and out (no kink in the outer rail). Made longer by itself where the outer rail would climb steeper than the limit below. 40 keeps a 3° bank under 1 in 100.' },
-      { key: 'bankClimb', label: 'Steepest climb of the outer rail, 1 in', off: noBank, step: 10, min: 20, max: 1000, help: 'The outer rail rises at most 1 mm in this many, at the ramp\'s steepest (its middle). 100 is a gentle model railway run-off; full-size railways use 400 or more. Where there isn\'t room for a ramp that gentle, the build warns and rings the place on the plan.' },
+      { key: 'bankRampStuds', label: 'Shortest bank ramp, studs', step: 1, min: 2, max: 200, help: 'Each ramp from level to a curve\'s full bank, eased in and out (no kink in the outer rail). Made longer by itself where the outer rail would climb steeper than the limit below. 40 keeps a 3° bank under 1 in 100.' },
+      { key: 'bankClimb', label: 'Steepest climb of the outer rail, 1 in', step: 10, min: 20, max: 1000, help: 'The outer rail rises at most 1 mm in this many, at the ramp\'s steepest (its middle). 100 is a gentle model railway run-off; full-size railways use 400 or more. Where there isn\'t room for a ramp that gentle, the build warns and rings the place on the plan.' },
     ] },
     { title: 'Buffer stops', kind: 'train', fields: [
-      { key: 'bufferStyle', label: 'Style', off: () => noBuf(), choices: [
+      { key: 'bufferStyle', label: 'Style', choices: [
         { v: 'frame', t: 'Rail-built frame with buffers', tip: 'A braced frame over each rail, a beam across with two sprung buffers, like a real buffer stop.' },
         { v: 'blocks', t: 'Brick posts', tip: 'Two 2 x 2 posts with studs on top to build on, joined by a beam.' }] },
-      { key: 'bufferPostPlates', label: 'Post height, plates', step: 1, min: 4, max: 15, off: (c) => noBuf() ?? (c.o.bufferStyle === 'blocks' ? undefined : 'only with Style: Brick posts'), help: 'Height of the posts above the ballast top, with studs on top.' },
-      { key: 'bufferBeamBottom', label: 'Beam bottom above the rails, mm', step: 0.5, min: 0, max: 10, off: () => noBuf(), help: 'Set it to meet your trains\' buffers or magnets.' },
-      { key: 'bufferBeamTop', label: 'Beam top above the rails, mm', step: 0.5, min: 4, max: 20, off: () => noBuf(), help: 'The beam\'s top: with its bottom, how tall the beam the trains stop against is.' },
-      { key: 'bufferPinHoles', label: 'Pin holes in the posts', check: true, off: (c) => noBuf() ?? (c.o.bufferStyle === 'blocks' ? undefined : 'only with Style: Brick posts'), help: 'Holes for LEGO Technic pins at beam height: for a bumper, lights or a sign.' },
+      { key: 'bufferPostPlates', label: 'Post height, plates', step: 1, min: 4, max: 15, off: (c) => (c.o.bufferStyle === 'blocks' ? undefined : 'only with Style: Brick posts'), help: 'Height of the posts above the ballast top, with studs on top.' },
+      { key: 'bufferBeamBottom', label: 'Beam bottom above the rails, mm', step: 0.5, min: 0, max: 10, help: 'Set it to meet your trains\' buffers or magnets.' },
+      { key: 'bufferBeamTop', label: 'Beam top above the rails, mm', step: 0.5, min: 4, max: 20, help: 'The beam\'s top: with its bottom, how tall the beam the trains stop against is.' },
+      { key: 'bufferPinHoles', label: 'Pin holes in the posts', check: true, off: (c) => (c.o.bufferStyle === 'blocks' ? undefined : 'only with Style: Brick posts'), help: 'Holes for LEGO Technic pins at beam height: for a bumper, lights or a sign.' },
     ] },
     { title: 'Print bed and cutting into parts', fields: [
       { key: 'printBedX', label: 'Print bed width, mm', step: 1, min: 50, max: 1000, help: 'Your printer\'s bed, across (x). Every part is cut to fit on the bed, and turned to fit it best.' },
@@ -236,23 +230,23 @@ export function optionForm(d: () => Design): { form: OptSection[]; noMono: (c?: 
       { key: 'antistudFit', label: 'Anti-stud fit, mm', step: 0.01, min: -0.3, max: 0.5, help: 'Makes the tubes underneath looser. Bigger: grips the baseplate less.' },
     ] },
     { title: 'Monorail', kind: 'monorail', fields: [
-      { key: 'monoEndStuds', label: 'Studs at the ends', off: noMono, choices: [
+      { key: 'monoEndStuds', label: 'Studs at the ends', choices: [
         { v: 'side', t: 'Out of the sides', tip: 'Hollow studs out of both sides of each end, like LEGO monorail track.' },
         { v: 'top', t: 'On top, in recesses', tip: 'Two studs in a recess each side of the ridge at each end. A 1 x 2 tile sits in flush; a 1 x 4 plate across a joint holds it.' },
         { v: 'none', t: 'None', tip: 'Plain ends, the full beam width.' }] },
-      { key: 'monoAxleHoles', label: 'Axle holes in the ends', check: true, off: noMono, help: 'Two LEGO cross-axle holes in each end face, to pin pieces together with axles.' },
-      { key: 'monoAxleLengthStuds', label: 'Joining axle length, studs', step: 1, min: 2, max: 6, off: (c) => noMono(c) ?? (c.o.monoAxleHoles === false ? 'Axle holes in the ends is off' : undefined), help: 'Each end\'s hole takes half the axle.' },
-      { key: 'monoHoleFit', label: 'Hole fit, mm', step: 0.05, min: 0, max: 0.5, off: noMono, help: 'Added round the axle holes and anti-studs. Bigger: looser.' },
-      { key: 'monoLegoAntistud', label: 'Anti-stud depth', off: noMono, get: () => ((d().options?.monoLegoAntistud ?? false) ? 'lego' : 'short'), set: (v) => { d().options = { ...d().options, monoLegoAntistud: v === 'lego' }; }, def: 'short', choices: [
+      { key: 'monoAxleHoles', label: 'Axle holes in the ends', check: true, help: 'Two LEGO cross-axle holes in each end face, to pin pieces together with axles.' },
+      { key: 'monoAxleLengthStuds', label: 'Joining axle length, studs', step: 1, min: 2, max: 6, off: (c) => (c.o.monoAxleHoles === false ? 'Axle holes in the ends is off' : undefined), help: 'Each end\'s hole takes half the axle.' },
+      { key: 'monoHoleFit', label: 'Hole fit, mm', step: 0.05, min: 0, max: 0.5, help: 'Added round the axle holes and anti-studs. Bigger: looser.' },
+      { key: 'monoLegoAntistud', label: 'Anti-stud depth', get: () => ((d().options?.monoLegoAntistud ?? false) ? 'lego' : 'short'), set: (v) => { d().options = { ...d().options, monoLegoAntistud: v === 'lego' }; }, def: 'short', choices: [
         { v: 'short', t: '2.2 mm', tip: 'Deep enough for a stud, with room for the axle holes above.' },
         { v: 'lego', t: '4 mm, like LEGO', tip: 'As deep as LEGO monorail track\'s anti-studs.',
           con: 'The axle holes move: side-stud and top-stud pieces then don\'t join with axles; on side-stud pieces only 0.2 mm is left between hole and anti-stud; the end notch opens into a hole.' }] },
-      { key: 'monoLabels', label: 'Monorail parts engraved with', off: noMono, choices: [
+      { key: 'monoLabels', label: 'Monorail parts engraved with', choices: [
         { v: 'name', t: 'Label text and part name', tip: 'Two lines underneath, reading from below: the Label text (Labels section; empty: the design\'s name) and the part\'s name, as its file.' },
         { v: 'part', t: 'Part name', tip: 'One line underside: the part\'s name, as its file.' },
         { v: 'none', t: 'Nothing', tip: 'A plain underside.' }] },
-      { key: 'monoSwitchFit', label: 'Points clearance, mm', step: 0.05, min: 0.1, max: 0.6, sub: 'Points', off: noMono, help: 'The gap round the points\' moving parts: the slide, the wheel, the link and the lever. 0.1 to 0.6; 0.3 unless changed.' },
-      { key: 'monoSupportStuds', label: 'Support every, studs', step: 4, min: 0, max: 256, rerender: true, sub: 'Supports', off: noMono, help: 'A support column under the beam this often, each its own part. 0: none. Parts are cut over a support where they can.' },
+      { key: 'monoSwitchFit', label: 'Points clearance, mm', step: 0.05, min: 0.1, max: 0.6, sub: 'Points', help: 'The gap round the points\' moving parts: the slide, the wheel, the link and the lever. 0.1 to 0.6; 0.3 unless changed.' },
+      { key: 'monoSupportStuds', label: 'Support every, studs', step: 4, min: 0, max: 256, rerender: true, sub: 'Supports', help: 'A support column under the beam this often, each its own part. 0: none. Parts are cut over a support where they can.' },
       { key: 'monoSupportBricks', label: 'Support height, bricks', step: 1, min: 1, max: 30, off: noSupports, help: 'Height of the beam\'s underside above the baseplate. LEGO\'s supports: 5 and 10.' },
       { key: 'monoSupportPlates', label: 'Extra height, plates', step: 1, min: 0, max: 2, off: noSupports, help: 'Plates added on top of the bricks.' },
       { key: 'monoSupportBaseXStuds', label: 'Support base across, studs', step: 1, min: 2, max: 16, off: noSupports, help: 'Base plate size across the legs. LEGO\'s: 4 (short), 6 (tall).' },
@@ -262,8 +256,6 @@ export function optionForm(d: () => Design): { form: OptSection[]; noMono: (c?: 
       { key: 'monoSupportSolid', label: 'Support frame closed', check: true, off: noSupports, help: 'A full web between the legs, no openings. Stiffer; more to print.' },
     ] },
   ];
-  /** Why the monorail settings can't be changed: no monorail in the design (undefined: there is). */
-  function noMono(_c?: OptCtx) { return d().routes.some(isMono) ? undefined : 'no monorail track in this design'; }
-  function noSupports(c: OptCtx) { return noMono(c) ?? ((c.o.monoSupportStuds ?? 0) > 0 ? undefined : 'Support every is 0'); }
-  return { form, noMono };
+  function noSupports(c: OptCtx) { return ((c.o.monoSupportStuds ?? 0) > 0 ? undefined : 'Support every is 0'); }
+  return { form };
 }
