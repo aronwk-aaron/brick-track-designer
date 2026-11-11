@@ -7,8 +7,11 @@ import { copyEdits, pasteEdits } from './twfollow';
 
 export interface StorageLike { getItem(k: string): string | null; setItem(k: string, v: string): void }
 export const MINE_KEY = 'btd-my-templates';
-/** How much text the saved templates may take together, and how many there may be (the browser keeps about 5 MB for the whole app). */
-export const MINE_MAX_CHARS = 1_000_000, MINE_MAX_COUNT = 60;
+/** How much text the saved templates may take together: the browser keeps about 5 MB for the whole app (the design, its undo
+ * history, the settings), so they get a fifth of it. No cap on how many: a template is a few KB. */
+export const MINE_MAX_CHARS = 1_000_000;
+/** Where they're kept, and what that means, said beside the list and on saving. */
+export const KEPT_NOTE = "Kept in this browser only: clearing the browser's data for this site deletes them, and they don't move to another browser or computer. Export one to keep it as a file.";
 export const UNAVAILABLE = "Saving templates isn't available in this browser window";
 
 interface Stored { v: number; id: string; name: string; at: number; design: unknown }
@@ -47,13 +50,12 @@ export function uniqueName(names: readonly string[], want: string): string {
   for (let k = 2; ; k++) if (!taken.has(`${base} ${k}`.toLowerCase())) return `${base} ${k}`;
 }
 
-/** How much is used, in words: "3 of 60 templates, 120 KB of 977 KB". */
-export const usedText = (l: MineList) => `${l.entries.length} of ${MINE_MAX_COUNT} templates, ${Math.ceil(l.chars / 1024)} KB of ${Math.floor(MINE_MAX_CHARS / 1024)} KB`;
+/** How much is used, in words: "3 templates, 120 KB of the 976 KB this browser keeps for them". */
+export const usedText = (l: MineList) => `${l.entries.length} template${l.entries.length === 1 ? '' : 's'}, ${Math.ceil(l.chars / 1024)} KB of the ${Math.floor(MINE_MAX_CHARS / 1024)} KB this browser keeps for them`;
 
 function write(st: StorageLike | undefined, list: Stored[]): string | undefined {
   if (!st) return UNAVAILABLE;
   const text = JSON.stringify(list);
-  if (list.length > MINE_MAX_COUNT) return `there are already ${MINE_MAX_COUNT} saved templates, the most it keeps: delete some first`;
   if (text.length > MINE_MAX_CHARS) return `that would take the saved templates to ${Math.ceil(text.length / 1024)} KB, over the ${Math.floor(MINE_MAX_CHARS / 1024)} KB it keeps: delete some first`;
   try { st.setItem(MINE_KEY, text); } catch { return "the browser has no room left to keep it (or won't let this page keep anything): delete a template, or free some space"; }
   return undefined;

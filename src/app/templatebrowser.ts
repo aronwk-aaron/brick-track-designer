@@ -2,7 +2,7 @@
 // filters, stars and the last ones used. What each card says, its sections and its filters come from templatecatalog.ts;
 // this only shows them. Pictures are drawn when a card scrolls into view.
 import { type Design, TEMPLATES } from './design';
-import { deleteMine, importMine, listMine, type Mine, renameMine, type StorageLike, usedText } from './mytemplates';
+import { deleteMine, importMine, KEPT_NOTE, listMine, type Mine, renameMine, type StorageLike, usedText } from './mytemplates';
 import {
   GAUGES, KIND_LABEL, RANGES, type Range, type Card, type Filters, type Gauge, type Kind, type PlanPicture, type System,
   buildCatalog, cardFor, cardsOf, catalog, countOf, describe, filterCards, filtering, kindsOf, noFilters, planPicture, radiiOf, sectionsOf,
@@ -250,7 +250,9 @@ export function initTemplateBrowser(pick: (name: string) => Promise<boolean>, ad
           mineNote = notes.length ? `Not imported: ${notes.join('; ')}` : ''; render();
         });
         const used = document.createElement('span'); used.className = 'mine-note'; used.textContent = usedText(list);
-        bar.append(imp, file, used);
+        // (said where it's seen: these live in this browser only)
+        const kept = document.createElement('span'); kept.className = 'mine-note mine-kept'; kept.textContent = KEPT_NOTE;
+        bar.append(imp, file, used, kept);
       }
       if (mineNote) { const p = document.createElement('span'); p.className = 'mine-note warn'; p.setAttribute('role', 'status'); p.textContent = mineNote; bar.append(p); }
       body.append(bar);
@@ -291,12 +293,11 @@ export function initTemplateBrowser(pick: (name: string) => Promise<boolean>, ad
       if (stars.length) section('starred', 'Starred', byName(stars));
       if (recent.length) {
         section('recent', 'Recent', byName(recent));
-        // (under the recent cards: forget them; stars and the templates themselves stay)
-        const bar = document.createElement('div'); bar.className = 'mine-bar';
-        const clr = document.createElement('button'); clr.type = 'button'; clr.id = 'tpl-recent-clear';
-        clr.textContent = 'Clear recent'; clr.title = 'Forget the recently used templates (starred ones stay starred)';
+        // (beside the Recent heading: forget them; stars and the templates themselves stay)
+        const clr = document.createElement('button'); clr.type = 'button'; clr.id = 'tpl-recent-clear'; clr.className = 'hbtn';
+        clr.textContent = 'Clear'; clr.title = 'Forget the recently used templates (starred ones stay starred)';
         clr.addEventListener('click', () => { recent = []; writeList(RECENT, recent); render(); document.getElementById('tpl-search')?.focus(); });
-        bar.append(clr); body.append(bar);
+        body.querySelector('#tpl-s-recent')?.append(clr);
       }
     }
     const last: { v?: string } = {};
