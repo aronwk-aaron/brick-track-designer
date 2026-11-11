@@ -1043,7 +1043,8 @@ function tracksOverEachOther(routes: Route[], sol: { splits: Split[]; dropped?: 
     const p = pts[a2], q = pts[b2];
     // (closer than their sleepers: half of each one's, mixed gauges)
     const gap2 = mixed ? (sleeperLenOf(routes[p[4]], gap) + sleeperLenOf(routes[q[4]], gap)) / 2 : gap;
-    if (Math.abs(p[0] - q[0]) > gap2 || Math.abs(p[1] - q[1]) > gap2 || Math.hypot(p[0] - q[0], p[1] - q[1]) >= gap2) continue;
+    // (a hundredth of a mm short of it counts as not closer: two tracks exactly a sleeper's length apart, sleeper ends touching, came out a hair under on a curve)
+    if (Math.abs(p[0] - q[0]) > gap2 || Math.abs(p[1] - q[1]) > gap2 || Math.hypot(p[0] - q[0], p[1] - q[1]) >= gap2 - 0.01) continue;
     if (p[4] === q[4] && Math.abs(p[3] - q[3]) < 4 * gap) continue; // (the same stretch of one route)
     if (Math.abs(heightAt(routes[p[4]], p[3]) - heightAt(routes[q[4]], q[3])) >= GRADE_APART) continue; // (one over the other, on a grade)
     if (parting(p, q)) continue;

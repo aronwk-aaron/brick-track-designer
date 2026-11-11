@@ -49,3 +49,19 @@ describe('a parallel track', () => {
     expect('route' in res && [res.route.guardRails, res.route.system, res.route.monoHeight, res.route.throwSide]).toEqual([true, 'monorail', 3, undefined]);
   });
 });
+
+// Two tracks exactly a sleeper's length (8 studs) apart touch edge to edge: that is not "run over each other".
+describe('a parallel pair 8 studs apart', () => {
+  it('raises no issue ring (the curve came out a hair under 8 studs); closer, it does', async () => {
+    const { buildDesign } = await import('../src/app/build');
+    const { kernel } = await import('../src/geom/kernel');
+    const r: DRoute = { name: 'R1', x: 0, y: 0, heading: 0, segs: [{ kind: 'straight', studs: 16 }, { kind: 'curve', radius: 40, angle: 45 }] };
+    const w = await kernel();
+    for (const [spacing, rings] of [[8, 0], [7.5, 1]] as const) {
+      const d = des(r), res = parallelRoute(d, r, 'left', spacing);
+      if ('problem' in res) throw new Error(res.problem);
+      const b = buildDesign(w, { ...d, routes: [r, res.route] });
+      expect(b.overlay.issues.filter((q) => /over each other/.test(q.text)).length > 0, `${spacing} studs`).toBe(rings > 0);
+    }
+  }, 60000);
+});
