@@ -15,7 +15,7 @@ import { BuildRunner, dropsBuild, planOnlyFor, type WorkerPort } from './buildru
 import { History, loadHistory, saveHistory } from './history';
 import { fileBase as fileBaseOf, partsDownload, plainKind, printedKinds, stlDownload, turnedText } from './exports';
 import { clamp, LIMITS, radiusRange, type Range, rangeText } from './limits';
-import { mirrorRoute } from './routeedits';
+import { dualEndMismatches, mirrorRoute, reseatOnDual } from './routeedits';
 import { TabStore, unsaved } from './session';
 import { addCircle, cleanPieces, cleanRadius, defaultPieces, pieceFit, piecesText, PIECES } from './circle';
 import { APP_VERSION, type BuiltEntry, pngBytes, pushBuilt, readBuilt, readReportZip, type Report, reportName, type ReportInput, reportZip } from './report';
@@ -621,6 +621,18 @@ function makeCard(r: DRoute, i: number): HTMLElement {
     if (!box.open) { box.append(sum); return box; }
     const body = document.createElement('div'); body.className = 'body';
     body.append(lockToggle(r));
+    // (a narrow-gauge track drawn on the middle of a dual-gauge end, not on its narrow gauge (designs from before the
+    // two snapped together): said, and put right in one click. routeedits.ts dualEndMismatches)
+    for (const q of dualEndMismatches(design).filter((m) => m.route === i)) {
+      const n = document.createElement('small'); n.className = 'desc'; n.style.color = 'var(--warn)'; n.textContent = `${q.text.replace(/ \(its card's .*\)$/, '')}.`;
+      body.append(n);
+      const mv = q.move;
+      if (mv) {
+        const b = btn('Move onto the narrow gauge', () => { r.x = +(r.x + mv[0]).toFixed(6); r.y = +(r.y + mv[1]).toFixed(6); changed(true); }, `Move this track across so its rails run on from ${q.onto}'s narrow gauge`);
+        b.className = 'rreset'; b.disabled = !!r.locked; if (r.locked) b.title = 'Locked: unlock this track to move it';
+        body.append(b);
+      }
+    }
     // (the card in folding sections, each remembered open or shut for every card: only the shape open to start with)
     const part = (title: string, note = '', toggle?: { on: boolean; set: (v: boolean) => void; tip: string; locked?: string }) => {
       const d2 = document.createElement('details'); d2.className = 'rsub'; d2.open = openParts.has(title) && (!toggle || toggle.on);
@@ -671,7 +683,7 @@ function makeCard(r: DRoute, i: number): HTMLElement {
       place.append(overrideRow({
         label: 'Gauge, studs', cur: isMono(r) ? undefined : r.gaugeStuds, def: design.gaugeStuds, defWhere: 'Settings › Track › Gauge for new tracks', range: LIMITS.gauge, step: 1,
         help: 'Studs between this track\'s rails. Tracks of different gauges cross and run side by side in one design.',
-        locked: isMono(r) ? 'a monorail beam has no gauge' : undefined, set: (v) => { if (v === undefined) delete r.gaugeStuds; else r.gaugeStuds = clamp(Math.round(v), LIMITS.gauge); changed(true); },
+        locked: isMono(r) ? 'a monorail beam has no gauge' : undefined, set: (v) => { const was = routeGaugeStuds(design, r); if (v === undefined) delete r.gaugeStuds; else r.gaugeStuds = clamp(Math.round(v), LIMITS.gauge); reseatOnDual(design, design.routes.indexOf(r), was); changed(true); },
       }));
       // (monorail: the beam's height off the baseplate, in plates; empty: the supports' height in Settings, or on the baseplate)
       const hi = document.createElement('input'); hi.type = 'number'; hi.step = '1'; hi.min = '0'; hi.max = String(LIMITS.plates[1]);

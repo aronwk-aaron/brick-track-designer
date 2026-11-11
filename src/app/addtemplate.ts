@@ -3,7 +3,7 @@
 // the group following the pointer and calls this to place it.
 import { type Design, type DRoute, freeName, isMono, OPTION_DEFAULTS } from './design';
 import { follow, type Pose } from './planner';
-import { joinProblem, mirrorRoute } from './routeedits';
+import { gaugeMeet, joinProblem, mirrorRoute } from './routeedits';
 import { nearestAlong, routeStuds } from './splitmerge';
 import { mirroredTable, movedTable, type Table, tableMiddle, turnedTable } from './tables';
 import { copyEdits, mirrorAnchors, moveEdits, pasteEdits } from './twfollow';
@@ -90,8 +90,9 @@ export function placeTemplate(d: Design, t: Design, at: Pt, turn: number, mirror
   else for (const a of mine) for (const b of theirs) {
     const dist = Math.hypot(a.pose.x + free.dx - b.pose.x, a.pose.y + free.dy - b.pose.y);
     if (dist > reach || (best && dist >= best.dist)) continue;
-    const problem = joinProblem(d, byName(d.routes, b.route), asAdded(d, t, byName(t0.routes, a.route)));
-    if (problem) { why = `can't join ${b.route}: ${problem}`; continue; }
+    const theirs1 = byName(d.routes, b.route), mine1 = asAdded(d, t, byName(t0.routes, a.route)), problem = joinProblem(d, theirs1, mine1);
+    // (dual-gauge track and its standard gauge carrying on alone: not one track, but their ends meet on the same middle: routeedits.ts gaugeMeet)
+    if (problem && gaugeMeet(d, theirs1, mine1)?.off !== 0) { why = `can't join ${b.route}: ${problem}`; continue; }
     best = { dist, a, b };
   }
   if (!best) return { placement: free, ...(why && { why }) };

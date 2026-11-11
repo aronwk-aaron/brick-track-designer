@@ -29,6 +29,7 @@ import type { NoCut } from './cutpaths';
 import { edgeGrip } from '../geom/underside';
 import { cutOnPaths, type HandPath, type HandPathDone, pathSplit, splitOnPath, type Keep } from '../geom/pathsplit';
 import { findStuds, wholeStuds } from '../geom/studs';
+import { dualEndMismatches } from './routeedits';
 import { bankRolls, type Design, OPTION_DEFAULTS, type PieceOptions, type Trackwork, bufferEnds, isMono, routeGaugeStuds, toRoutes, upgradeDesign } from './design';
 import { labelCut, labelLines } from '../geom/labels';
 import { buildMonorail, clearMonoCache } from './monobuild';
@@ -2188,6 +2189,12 @@ function buildOne(w: Wasm, design: Design, report: (what: string, frac: number) 
     const spots = tracksOverEachOther(routes, sol, track.c.sleeperLen), gap = track.c.sleeperLen;
     for (const q of spots) overlay.issues.push({ at: [q[0], q[1]], r: 2 * gap, text: 'Tracks run over each other here: trains on them would hit' });
     if (spots.length) bedWarnings.add(`tracks run over each other (closer than their sleepers, nearly parallel) at ${spots.slice(0, 4).map((q) => `${(q[0] / 8).toFixed(0)}, ${(q[1] / 8).toFixed(0)}`).join('; ')}${spots.length > 4 ? ' …' : ''} (studs): trains on them would hit; move them apart, or cross at a steeper angle`);
+  }
+  // (a narrower track starting within a dual-gauge track's end, but not where its narrow gauge lies: the rails don't
+  // meet across the joint. Said, with where to move it: routeedits.ts dualEndMismatches)
+  for (const q of dualEndMismatches(design)) {
+    overlay.issues.push({ at: [q.at[0] * 8, q.at[1] * 8], r: track.c.sleeperLen, text: q.text });
+    bedWarnings.add(q.text);
   }
   const fdbPoints = params.mechStyle === 'plates';
   const cut = cutContext(w, scad, o, track, routes, sol.splits, overlay.crossings, fdbPoints);

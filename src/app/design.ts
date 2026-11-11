@@ -535,6 +535,53 @@ function bricktracksLoop(turn: number): Design {
   return { ...d, tables };
 }
 
+/**
+ * Dual-gauge track parting into its two gauges: a dual-gauge straight, then from its end a standard-gauge route and a
+ * narrow-gauge one (a route of its own gauge, starting within the standard one's end where the dual-gauge track's
+ * narrow gauge lies: a stud to the shared rail's side, or on the middle centred: route.ts hostedEnds), fanning apart.
+ * Fixed rails, no points: each gauge's trains keep to their own rails. Which rails cross (each crossing a fixed frog,
+ * both flangeways cut through, a check rail on the rail opposite: geom/crossing.ts, as where any two tracks cross):
+ *
+ *   narrow gauge beside the shared rail (three rails), one gauge straight on, the other curving away:
+ *    - the narrow gauge away on the shared rail's side: nothing crosses. The shared rail forks, the narrow gauge's
+ *      rail curving off it; its flangeway opens out of the standard one's and runs across the standard rail (a frog
+ *      at the fork). Its other rail (the third rail) leaves between the standard rails and crosses the standard rail
+ *      on that side further on: a second frog.
+ *    - the narrow gauge away on the other side: its own rail crosses the far standard rail (a frog), and its rail on
+ *      the shared side curves off the shared rail inwards (the fork's frog, in the narrow rail this time).
+ *    - the standard gauge away on the shared rail's side: its rail there curves off the shared rail outwards, its
+ *      flangeway running across the narrow gauge's rail (the fork's frog); its far rail crosses the third rail,
+ *      then the narrow gauge's rail on the shared side (two more frogs).
+ *    - the standard gauge away on the other side: its shared-side rail curves off the shared rail inwards (the
+ *      fork's frog, in the standard rail) and crosses the third rail (one more); its far rail crosses nothing.
+ *   both curving apart: the same rails cross, sooner and steeper.
+ *   narrow gauge centred (four rails): no rail is shared, so nothing forks. The narrow gauge away: both its rails
+ *   cross the standard rail on that side, one after the other (two frogs). The standard gauge away: its rail on the
+ *   far side crosses both narrow rails (two frogs), its near one nothing.
+ *
+ * At a fork neither rail moves: a wheel keeping to its rail is carried by the rail that leaves until the frog's nose
+ * is wide enough to take it, and held across by the check rail opposite, as at any frog (the fixed turnout and slide
+ * templates do the same). Left and right are mirror images.
+ */
+const gaugeSplit = (shared: 'right' | 'left' | 'centre', std: DSeg[], narrow: DSeg[], mirror: boolean): Design => {
+  const m = mirror ? -1 : 1, sh = mirror && shared !== 'centre' ? (shared === 'right' ? 'left' : 'right') : shared;
+  const segs = (ss: DSeg[]) => ss.map((sg) => (sg.kind === 'curve' ? { ...sg, angle: m * sg.angle } : { ...sg }));
+  return { version: 1, gaugeStuds: 4, options: { legoTrack: 'print' }, routes: [
+    { name: 'Dual', x: 0, y: 0, heading: 0, dualGauge: true, ...(sh !== 'right' && { dualShared: sh }), segs: [{ kind: 'straight', studs: 16 }] },
+    { name: 'Standard', x: 0, y: 16, heading: 0, segs: segs(std) },
+    { name: 'Narrow', x: sh === 'right' ? 1 : sh === 'left' ? -1 : 0, y: 16, heading: 0, gaugeStuds: 2, segs: segs(narrow) }] };
+};
+const GAUGE_SPLITS: Record<string, Design> = Object.fromEntries((['left', 'right'] as const).flatMap((hand): [string, Design][] => {
+  const mir = hand === 'right', st = (studs: number): DSeg => ({ kind: 'straight', studs }), cv = (radius: number, angle: number): DSeg => ({ kind: 'curve', radius, angle });
+  return [
+    [`Dual gauge split, narrow gauge leaves R36 ${hand}`, gaugeSplit('left', [st(32)], [cv(36, 45)], mir)],
+    [`Dual gauge split, narrow gauge crosses out R36 ${hand}`, gaugeSplit('right', [st(32)], [cv(36, 45)], mir)],
+    [`Dual gauge split, standard gauge leaves R40 ${hand}`, gaugeSplit('right', [cv(40, 33.75)], [st(32)], mir)],
+    [`Dual gauge split, both ways, standard gauge R40 ${hand}`, gaugeSplit('right', [cv(40, 33.75)], [cv(36, -45)], mir)],
+    [`Dual gauge split, narrow gauge centred, R36 ${hand}`, gaugeSplit('centre', [st(32)], [cv(36, 45)], mir)],
+  ];
+}));
+
 /** The templates that are sets: several parts as their maker sells them together (the catalog lists them as sets). */
 export const TEMPLATE_SETS = new Set<string>([...Object.keys(REF1_SETS), ...Object.keys(BRICKTRACKS_SETS), ...RANGE2_SETS]);
 
@@ -544,7 +591,7 @@ export const TEMPLATE_GROUPS: [string, string[]][] = [
   ['Crossings', ['90° crossing', '22.5° crossing', 'Double slip (22.5°)', 'Double slip (45°, R40)', 'Crossing on a curve']],
   ['Switches', ['Left switch (LEGO)', 'Right switch (LEGO)', 'Wye switch', 'Three-way switch (one throw)', 'Three-way switch (tandem, two throws)']],
   ['Layouts', ['Oval (LEGO R40)', 'Crossover (R40)', 'Double crossover (R56)', 'Yard ladder (R40)', 'Yard (R56)', 'X yard (6 tracks, single slips)', 'Wye with a crossover', 'Double-track return loop (turning right)', 'Double-track return loop (turning left)']],
-  ['Features', ['Grade up at 2.5%', 'Helix (R104, two turns)', 'Siding ending in a buffer stop', 'Bridge with guard rails', 'Straight cut into parts by hand', 'Curve and straights cut into parts by hand', 'Dual gauge track', 'Dual gauge crossing 90°', 'Dual gauge crossing 45°', 'Dual gauge track, narrow gauge centred', 'Dual gauge crossing 90°, narrow gauge centred', 'Narrow gauge beside and across standard track', 'Banked curve', 'Crossing on sleepers']],
+  ['Features', ['Grade up at 2.5%', 'Helix (R104, two turns)', 'Siding ending in a buffer stop', 'Bridge with guard rails', 'Straight cut into parts by hand', 'Curve and straights cut into parts by hand', 'Dual gauge track', 'Dual gauge crossing 90°', 'Dual gauge crossing 45°', 'Dual gauge track, narrow gauge centred', 'Dual gauge crossing 90°, narrow gauge centred', ...Object.keys(GAUGE_SPLITS), 'Narrow gauge beside and across standard track', 'Banked curve', 'Crossing on sleepers']],
   ['Monorail', ['Monorail oval on supports', 'Monorail siding (points and a short curve)', 'Monorail level crossing (experimental)']],
   ['Test prints', ['Test print 1: stud and anti-stud fits', 'Test print 2: track joints', 'Test print 3: switch as built', 'Test print 4: points three ways', 'Test print 5: seat for a LEGO curve', 'Test print 6: seat fits', 'Test print 7: clearance round the points', 'Test print 8: flangeway width', 'Test print 9: monorail hole fit']],
   ['TrixBrix trackwork', ['Switch R40 left', 'Switch R40 right', 'Switch R40 left, 28-stud straight', 'Switch R40 right, 28-stud straight', 'Yard switch R40 left', 'Yard switch R40 right', 'Switch R56 left', 'Switch R56 right', 'Switch R72 left', 'Switch R72 right', 'Switch R104 left', 'Switch R104 right', 'Switch R104 left, lever on the straight side', 'Switch R104 right, lever on the straight side', 'Switch R120 left', 'Switch R120 right', 'Switch R148 left', 'Switch R148 right', 'Switch R148 left, lever on the straight side', 'Switch R148 right, lever on the straight side', 'Curved switch R40 45° left', 'Curved switch R40 45° right', 'Curved switch R40 90° left', 'Curved switch R40 90° right', 'Curved switch R56 90° left', 'Curved switch R56 90° right', 'Curved switch R104 90° left', 'Curved switch R104 90° right', 'Wye R40', 'Wye R40, 8-stud spacing', 'Wye R104', 'Wye R40 left, R56 right', 'Wye R56 left, R40 right', 'Wye R104 left, R120 right', 'Wye R120 left, R104 right', 'Three-way R40', 'Three-way R104', 'Switch to the next track, no gap, left', 'Switch to the next track, no gap, right', 'Switch, 2-stud gap, left', 'Switch, 2-stud gap, right', 'Switch, 4-stud gap, left', 'Switch, 4-stud gap, right', 'Three-way, no gap', 'Three-way, 2-stud gap', 'Three-way, 4-stud gap', 'Crossing 90°, 8 studs', 'Crossing 45° left', 'Crossing 45° right', 'Crossing 45°, 27 studs', 'Crossing 22.5° left', 'Crossing 22.5° right', 'Star crossing 22.5°', 'Curved crossing R24', 'Curved crossing R40', 'Curved crossing R56', 'Curved crossing R72', 'Curved crossing R88', 'Curved crossing R104', 'Crossing of two R120 curves', 'Pass-through crossing R56 left', 'Pass-through crossing R72 (A) left', 'Pass-through crossing R72 (B) left', 'Pass-through crossing R120 left', 'Pass-through crossing R56 right', 'Pass-through crossing R72 (A) right', 'Pass-through crossing R72 (B) right', 'Pass-through crossing R120 right', 'T-junction core R56', 'Double slip R40 45°', 'Single slip R40 45°', 'Double crossover R40', 'Crossover, 4-stud gap, left', 'Crossover, 4-stud gap, right', 'Buffer stop', 'Narrow-gauge crossing 90°', 'Narrow-gauge crossing of standard track 90°', 'Narrow-gauge crossing of standard track 45° left', 'Narrow-gauge crossing of standard track 45° right', 'Narrow-gauge buffer stop', 'Narrow-gauge switch R36 left', 'Narrow-gauge switch R36 right', 'Narrow-gauge switch R48 left', 'Narrow-gauge switch R48 right', 'Narrow-gauge switch R84 left', 'Narrow-gauge switch R84 right', 'Narrow-gauge wye R36', 'Narrow-gauge switch R36 left, lever on the branch side', 'Narrow-gauge switch R36 right, lever on the branch side', 'Narrow-gauge double crossover R36', 'Narrow-gauge crossing 22.5° left', 'Narrow-gauge crossing 22.5° right', 'Narrow-gauge crossing 33.75° left', 'Narrow-gauge crossing 33.75° right', 'Wye R104, 8-stud gap', 'Dual gauge switch R40 left', 'Dual gauge switch R40 right', 'Dual gauge turnout R36 left', 'Dual gauge turnout R36 right', 'Dual gauge slide, centre to left', 'Dual gauge slide, centre to right', 'Dual gauge switch R36, narrow gauge branch, left', 'Dual gauge switch R36, narrow gauge branch, right', 'Crossover, three tracks, R104', 'Switch R104 left, base and detachable modules', 'Switch R104 right, base and detachable modules', ...Object.keys(REF1_PLAIN), ...Object.keys(REF1_SETS)]],
@@ -1056,6 +1103,8 @@ export const TEMPLATES: Record<string, Design> = {
   // straight on however the points are set. Rigid blades: a sprung one's plate has no room beside the standard rails)
   'Dual gauge switch R36, narrow gauge branch, left': { version: 1, gaugeStuds: 4, options: { legoTrack: 'print', bladeStyle: 'simple' }, routes: [{ name: 'Standard', x: 0, y: 0, heading: 0, segs: [{ kind: 'straight', studs: 32 }] }, { name: 'Narrow', x: -1, y: 0, heading: 0, gaugeStuds: 2, segs: [{ kind: 'straight', studs: 32 }] }, { name: 'Branch', x: -1, y: 0, heading: 0, gaugeStuds: 2, segs: [{ kind: 'curve', radius: 36, angle: 33.75 }] }] },
   'Dual gauge switch R36, narrow gauge branch, right': { version: 1, gaugeStuds: 4, options: { legoTrack: 'print', bladeStyle: 'simple' }, routes: [{ name: 'Standard', x: 0, y: 0, heading: 0, segs: [{ kind: 'straight', studs: 32 }] }, { name: 'Narrow', x: 1, y: 0, heading: 0, gaugeStuds: 2, segs: [{ kind: 'straight', studs: 32 }] }, { name: 'Branch', x: 1, y: 0, heading: 0, gaugeStuds: 2, segs: [{ kind: 'curve', radius: 36, angle: -33.75 }] }] },
+  // (dual-gauge track parting into its two gauges: GAUGE_SPLITS)
+  ...GAUGE_SPLITS,
   // (the reference range's plain track: templates-ref1.ts)
   ...REF1_PLAIN, ...REF1_SETS,
   // (BrickTracks' range: templates-bricktracks.ts)

@@ -298,6 +298,16 @@ export function crossingPiece(s: Scad, routes: Route[], o: CrossingOptions = CRO
     return [Math.max(lo, -2 * lenOf[i]), Math.min(hi, 2 * lenOf[i])];
   };
   const tieStuds: Vec2[] = [];
+  /** (a stud at q too near a check rail: beside it, or beside one of its flared ends) */
+  const byCheckRail = (q: Vec2) => sol.checkRails.some((cr) => {
+    const rt = routes[cr.route], lat = routeLat(rt, q), mid = cr.offset + cr.width / 2, near = c.postD / 2 + cr.width / 2 + 0.6;
+    // (and of its flared ends, which lean away from the rail it guards by the flare: a stud beside one was sliced by it)
+    const flared = o.checkRailFlare ?? 1.5, away = -cr.side * (lat - mid);
+    if (Math.abs(lat - mid) > near && !(away > 0 && away <= near + flared)) return false;
+    const sq2 = routeSOf(rt, q);
+    if (Math.abs(lat - mid) > near) return (sq2 >= cr.s0 - 3 && sq2 <= cr.s0 + 4 + 3) || (sq2 >= cr.s1 - 4 - 3 && sq2 <= cr.s1 + 3);
+    return sq2 >= cr.s0 - 3 && sq2 <= cr.s1 + 3;
+  });
   // (each route's guard rails and third rail, if it has them: extrarails.ts)
   // (mixed gauges: a narrower route's end in a wider one's (route.ts hostedEnds): no connector of its own there; the
   // wider one's has a rail end for each of its rails that isn't the wider one's own, in that connector's frame)
@@ -376,8 +386,12 @@ export function crossingPiece(s: Scad, routes: Route[], o: CrossingOptions = CRO
       // (its own sleepers, but none on another route's tie or sleeper)
       const half = c.sleeperLen / 2, at = atAll.filter((v) => { const P = routePose(rt, v); return !Array.from({ length: 17 }, (_, k) => -half + (k * half) / 8).some((o2) => onOtherTie(i, P, o2)); });
       for (const v of at) { tiesBuilt.push({ i, P: routePose(rt, v), lo: -half, hi: half }); sleeperAt.push({ i, v, lo: -half, hi: half }); }
+      // (where the gauges of dual-gauge track part (a narrower route out of this piece's wider one's end), a check rail
+      // can run over a plain sleeper past the fan: its studs kept clear of it, as the bed's are. Elsewhere as it was)
+      const exOk = ex ? (P: Pose) => ex.postOk(P) : undefined;
+      const sleeperPostOk = (P: Pose) => (hosted.length && sol.checkRails.length ? (p: Vec2) => (exOk?.(P)(p) ?? true) && !byCheckRail(poseToWorld(P, p)) : exOk?.(P));
       // (banked: each sleeper turned by the roll at it)
-      if (at.length) parts.push(s.union(at.map((v) => { const P = routePose(rt, v), sl = t.sleeper(true, ex?.postOk(P)); return atPose(banked ? bankedSleeper(s, sl, trackBank(c.sleeperLen), routeRoll(rt, v), c.sleeperLen, c.sleeperW) : sl, P); })));
+      if (at.length) parts.push(s.union(at.map((v) => { const P = routePose(rt, v), sl = t.sleeper(true, sleeperPostOk(P)); return atPose(banked ? bankedSleeper(s, sl, trackBank(c.sleeperLen), routeRoll(rt, v), c.sleeperLen, c.sleeperW) : sl, P); })));
     }
     // End connectors and breakaway supports, at both ends.
     // (on ballast: no peg and clip, no stud recesses, as the switches')
@@ -451,15 +465,7 @@ export function crossingPiece(s: Scad, routes: Route[], o: CrossingOptions = CRO
       if (addBoxes.some((bb) => q[0] > bb.min[0] - 3 && q[0] < bb.max[0] + 3 && q[1] > bb.min[1] - 3 && q[1] < bb.max[1] + 3) && !x.studsOn?.(q)) continue;
       if (bufPoses.some(({ e, t: tb }) => inBufferPost(tb, worldToPose(e, q), c.postD / 2 + 0.6, (o.buffer ?? BUFFER_DEFAULTS).style ?? 'frame'))) continue;
       // (and of the check rails)
-      if (sol.checkRails.some((cr) => {
-        const rt = routes[cr.route], lat = routeLat(rt, q), mid = cr.offset + cr.width / 2, near = c.postD / 2 + cr.width / 2 + 0.6;
-        // (and of its flared ends, which lean away from the rail it guards by the flare: a stud beside one was sliced by it)
-        const flared = o.checkRailFlare ?? 1.5, away = -cr.side * (lat - mid);
-        if (Math.abs(lat - mid) > near && !(away > 0 && away <= near + flared)) return false;
-        const sq2 = routeSOf(rt, q);
-        if (Math.abs(lat - mid) > near) return (sq2 >= cr.s0 - 3 && sq2 <= cr.s0 + 4 + 3) || (sq2 >= cr.s1 - 4 - 3 && sq2 <= cr.s1 + 3);
-        return sq2 >= cr.s0 - 3 && sq2 <= cr.s1 + 3;
-      })) continue;
+      if (byCheckRail(q)) continue;
       studPts.push(q);
     }
   }

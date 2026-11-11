@@ -88,6 +88,14 @@ describe('snapping onto open ends', () => {
     addTemplate(d, t, res.placement);
     expect(d.routes[1].gaugeStuds).toBe(3);
   });
+  it('snaps standard track onto a dual-gauge end (its standard gauge carrying on), not a narrow-gauge piece (its place is beside the middle)', () => {
+    const d: Design = { version: 1, gaugeStuds: 4, routes: [{ name: 'Dual', x: 0, y: 0, heading: 0, dualGauge: true, segs: [{ kind: 'straight', studs: 16 }] }] };
+    const res = placeTemplate(d, straight(), [0.4, 16.5], 0, false, 3);
+    expect(res.snapped?.design.route).toBe('Dual'); expect(res.why).toBeUndefined();
+    const n: Design = { version: 1, gaugeStuds: 2, routes: [{ name: 'N', x: 0, y: 0, heading: 0, segs: [{ kind: 'straight', studs: 8 }] }] };
+    const no = placeTemplate(d, n, [0.4, 16.5], 0, false, 3);
+    expect(no.snapped).toBeUndefined(); expect(no.why).toMatch(/gauge/);
+  });
   it("does not offer an end that joins something, nor a branch's start on its main line", () => {
     const sw = TEMPLATES['Left switch (LEGO)'], ends = openEnds(sw.routes);
     expect(ends.length).toBe(3);

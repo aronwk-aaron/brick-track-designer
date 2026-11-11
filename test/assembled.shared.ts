@@ -516,7 +516,9 @@ export const RAIL_KNOWN: Record<string, (keyof typeof RAIL_KINDS)[]> = { 'Double
  */
 export const EDGES: Record<string, number> = { 'Modular wye R40, lever on the left': 10, 'Modular wye R40, lever on the right': 8, 'Modular wye R40 with continuous-curve adapters': 8, 'Test print 7: clearance round the points': 8, 'Curve R40, 5.62°': 15, 'X yard (6 tracks, single slips)': 472, 'Yard (R56)': 159, 'Double-track return loop (turning left)': 109, 'Double-track return loop (turning right)': 109, 'Double crossover (R56)': 97, 'Wye with a crossover': 74, 'Double slip (22.5°)': 35, 'Yard ladder (R40)': 33, 'Wye R40, 8-stud spacing': 32, 'T-junction core R56': 30, 'Pass-through crossing R72 (B) right': 26, 'Siding ending in a buffer stop': 16, 'Pass-through crossing R72 (B) left': 14, 'Crossing 45° left': 14, 'Double crossover R40': 9, 'Wye R40 left, R56 right': 8, 'Wye switch': 7, 'Wye R120 left, R104 right': 7, 'Dual gauge track': 7, 'Crossing 45° right': 7, 'Banked curve': 6, 'Pass-through crossing R120 right': 6, 'Wye R104 left, R120 right': 6, 'Narrow-gauge crossing 33.75° left': 6, 'Curved switch R56 90° left': 6, 'Wye R40': 6, 'Narrow-gauge crossing 90°': 5, 'Narrow-gauge switch R48 left': 5, 'Narrow-gauge wye R36': 5, 'Dual gauge crossing 45°': 5, 'Switch R72 left': 5,
   // (mixed gauges: as the same layout at one gauge has them, 92 at 4 studs, in the sleepered crossing's part; and the 45° crossings as the standard ones)
-  'Narrow gauge beside and across standard track': 118, 'Narrow-gauge crossing of standard track 45° right': 21, 'Narrow-gauge crossing of standard track 45° left': 7 };
+  'Narrow gauge beside and across standard track': 118, 'Narrow-gauge crossing of standard track 45° right': 21, 'Narrow-gauge crossing of standard track 45° left': 7,
+  // (the right hand's sleepered part where the gauges part: corners of its bed meeting on the baseplate, as the 45° crossings')
+  'Dual gauge split, both ways, standard gauge R40 right': 7 };
 /** (edges) A template not in EDGES may have this many: one or two come and go with a corner's last digit. */
 export const EDGES_FEW = 4;
 

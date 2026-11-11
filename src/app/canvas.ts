@@ -11,7 +11,7 @@ import { type Design, type DRoute, type DSeg, dualRailOffsets, freeName, isMono,
 import { sleeperSpots } from '../geom/crossing';
 import { poseToWorld, routeLength, routePose, worldToPose } from '../route/route';
 import { forFingers } from './hints';
-import { joinProblem, reversedRoute } from './routeedits';
+import { gaugeMeetPose, joinProblem, reversedRoute } from './routeedits';
 import { LIMITS, radiusRange } from './limits';
 import { cutSegs, joinInto, nearestAlong, routeStuds, splitProblem } from './splitmerge';
 import { cleanCuts, cutProblem, liveCuts } from './routecuts';
@@ -873,7 +873,7 @@ export class TrackCanvas {
     }
     // laid onto another track's end: join them into one track, and stop
     if (snapTo && this.active.route !== undefined) {
-      this.extra.clear(); this.selTables.clear(); this.selected = this.join(this.active.route, snapTo.route, snapTo.end);
+      this.extra.clear(); this.selTables.clear(); this.selected = snapTo.meet ? this.active.route : this.join(this.active.route, snapTo.route, snapTo.end);
       this.active = undefined;
       this.host.select(this.selected); this.host.changed(true); return this.draw();
     }
@@ -1038,6 +1038,7 @@ export class TrackCanvas {
     this.drag = undefined;
     if (dr.moved) {
       if (this.dragBad && dr.lastGood) this.host.design().routes[dr.route] = dr.lastGood;
+      else if (this.dragSnap?.meet) { /* (dual-gauge track and one of its gauges: their ends met, still two tracks) */ }
       else if (this.dragSnap) {
         // joined: make the two one track (the dragged end meeting the other's end)
         const routes = this.host.design().routes;
@@ -1064,7 +1065,7 @@ export class TrackCanvas {
     const from = follow(work, head);
     const t = this.guided(w, from, dr.route);
     // onto another track's end: join it, arriving heading into it
-    let snap = this.snapEnd(this.mouse ?? t, dr.route);
+    let snap = this.snapEnd(this.mouse ?? t, dr.route, dr.end);
     let good = snap ? planToPose(from, snap.pose, this.host.radius() > 0 ? this.host.radius() : 24) : this.planFrom(from, t);
     // (an end nearby that it can't join head on: just go to the point, beside it)
     if (snap && !good) { snap = undefined; good = this.planFrom(from, t); }
@@ -1105,7 +1106,7 @@ export class TrackCanvas {
   private dragBad = false;
   /** Why the end the mouse is at can't be joined to the track being dragged or drawn (set by snapEnd). */
   private joinBlocked: string | undefined;
-  private dragSnap: { route: number; end: 'start' | 'end'; pose: Pose } | undefined;
+  private dragSnap: { route: number; end: 'start' | 'end'; pose: Pose; meet?: boolean } | undefined;
   /**
    * Another track's end near p to join onto (not route skip): which route and
    * end, and the pose to arrive at (heading into that track).
@@ -1117,8 +1118,9 @@ export class TrackCanvas {
     const sn = this.snapEnd(p, a.route);
     return sn && planToPose(a.end, sn.pose, this.host.radius() > 0 ? this.host.radius() : 24) ? sn : undefined;
   }
-  private snapEnd(p: [number, number], skip: number | undefined): { route: number; end: 'start' | 'end'; pose: Pose } | undefined {
-    let best: { route: number; end: 'start' | 'end'; pose: Pose; d: number } | undefined;
+  /** meet: the two stay two routes, their ends met (dual-gauge track and one of its gauges carrying on: routeedits.ts gaugeMeet). mineEnd: the end of route skip that's dragged or drawn from. */
+  private snapEnd(p: [number, number], skip: number | undefined, mineEnd: 'start' | 'end' = 'end'): { route: number; end: 'start' | 'end'; pose: Pose; meet?: boolean } | undefined {
+    let best: { route: number; end: 'start' | 'end'; pose: Pose; d: number; meet?: boolean } | undefined;
     const d0 = this.host.design(), mine = skip !== undefined ? d0.routes[skip] : undefined;
     this.joinBlocked = undefined;
     if (this.alt) return undefined;
@@ -1129,11 +1131,17 @@ export class TrackCanvas {
       const e = follow(r, r.segs);
       for (const [end, pose] of [['start', { x: r.x, y: r.y, heading: r.heading }], ['end', { ...e, heading: e.heading + 180 }]] as const) {
         const d = Math.hypot(pose.x - p[0], pose.y - p[1]);
-        if (why) { if (d < this.reach(18)) this.joinBlocked = `can't join ${r.name || i}: ${why}`; continue; }
+        if (why) {
+          // (dual-gauge track and one of its two gauges: their ends meet, the narrow gauge's beside the middle)
+          const mp = !r.locked && mine ? gaugeMeetPose(d0, r, end, mine, mineEnd) : undefined;
+          if (mp) { if (d < this.reach(18) && (!best || d < best.d)) best = { route: i, end, pose: mp, d, meet: true }; }
+          else if (d < this.reach(18)) this.joinBlocked = `can't join ${r.name || i}: ${why}`;
+          continue;
+        }
         if (d < this.reach(18) && (!best || d < best.d)) best = { route: i, end, pose: { ...pose, heading: ((pose.heading % 360) + 540) % 360 - 180 }, d };
       }
     });
-    return best && { route: best.route, end: best.end, pose: best.pose };
+    return best && { route: best.route, end: best.end, pose: best.pose, ...(best.meet && { meet: true }) };
   }
   /** Join route b onto the end of route a (b's start or end meeting a's end): a gets b's track, b goes. */
   private join(a: number, b: number, bEnd: 'start' | 'end') {
