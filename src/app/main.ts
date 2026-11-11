@@ -24,6 +24,8 @@ import { COMMON_RADII } from './guides';
 import { lockedWhy, setLocked } from './lock';
 import { addTemplate, openEnds } from './addtemplate';
 import { cardSections, type SectionId } from './cardsections';
+import { designOptions, hasPartOwn, ignoredOwn, inForce, liveOwn, partGroups } from './overrides';
+import { isRouteKey, OWN_RANGES, PART_KEYS, type RouteKey } from './routeown';
 import { designOfSelection, listMine, saveMine, type StorageLike } from './mytemplates';
 import { parallelRoute } from './parallelroute';
 import { mergeProblem, mergeRoutes, splitRoute } from './splitmerge';
@@ -533,7 +535,7 @@ function lockToggle(x: { locked?: boolean }): HTMLElement {
  * One setting the design has a default for and a track can override: a number field (empty: the default), which one is in force said under it,
  * and a button to go back to the default. (The pattern for any setting a track can carry itself.)
  */
-function overrideRow(o: { label: string; cur: number | undefined; def: number; defWhere: string; range: Range; step: number; help: string; locked?: string; set: (v: number | undefined) => void }): HTMLElement {
+function overrideRow(o: { label: string; cur: number | undefined; def: number; defWhere: string; range: Range; step: number; help: string; locked?: string; quiet?: boolean; set: (v: number | undefined) => void }): HTMLElement {
   const wrap = document.createElement('div');
   const inp = document.createElement('input'); inp.type = 'number'; inp.step = String(o.step); inp.min = String(o.range[0]); inp.max = String(o.range[1]);
   inp.value = o.cur === undefined ? '' : String(o.cur); inp.placeholder = String(o.def); inp.disabled = !!o.locked;
@@ -542,9 +544,74 @@ function overrideRow(o: { label: string; cur: number | undefined; def: number; d
   const note = document.createElement('small'); note.className = 'desc';
   if (o.locked) { note.style.color = 'var(--warn)'; note.textContent = `Locked: ${o.locked}.`; }
   else { note.style.color = 'var(--muted)'; note.textContent = o.cur === undefined ? `Design default: ${o.def} (${o.defWhere}). Type a number to give this track its own.` : `This track: ${o.cur}. Design default: ${o.def} (${o.defWhere}).`; }
-  wrap.append(field(o.label, inp), note);
+  wrap.append(field(o.label, inp));
+  // (quiet: why it's locked is said once over it, as for a track that takes another's settings)
+  if (!(o.quiet && o.locked)) wrap.append(note);
   if (o.cur !== undefined && !o.locked) { const b = btn('Use the design default', () => o.set(undefined), `Go back to the design default, ${o.def}`); b.className = 'rreset'; wrap.append(b); }
   return wrap;
+}
+/**
+ * (expert) One setting a track can have of its own (DRoute.own), as the Gauge row: a choice whose first entry is the
+ * design's ("Design default: Solid bed"), or a number field (empty: the design's); with its own, the design's is said
+ * under it, with Use the design default. A value set to the design's is no setting of its own (left out). Greyed, with
+ * why, where it can't apply (as in Settings), or where the track is one part with another whose settings it takes.
+ */
+function ownRow(r: DRoute, i: number, key: RouteKey): HTMLElement {
+  const f = OPTION_FORM.flatMap((sec) => sec.fields).find((x) => x.key === key)!;
+  const where = `Settings › ${OPTION_FORM.find((sec) => sec.fields.includes(f))!.title}`;
+  const dop = designOptions(design), o = inForce(design, i), cur = r.own?.[key];
+  const from = (PART_KEYS as readonly string[]).includes(key) && hasPartOwn(design) ? partGroups(design).takes[i] : undefined;
+  const c: OptCtx = { o, ballast: o.ballast !== 'none', fdb: o.mechStyle !== 'tines', switches: switchesNow() };
+  // (taken from another track (one part): said once, at the top of the section, not on every row)
+  const locked = from !== undefined ? `one part with ${design.routes[from].name}, so it takes ${design.routes[from].name}'s`
+    : key === 'legoTrack' ? (o.splitTrack !== 'lengths' ? 'only with Long track cut into: Track pieces' : routeGaugeStuds(design, r) !== 4 ? 'LEGO track is 4 studs between the rails: this track\'s gauge isn\'t 4' : undefined)
+    : f.off?.(c);
+  const set = (v: string | number | undefined) => {
+    // (the design's value is no setting of its own: left out, so the card stays the design's)
+    const own = { ...r.own };
+    if (v === undefined || v === dop[key]) delete own[key]; else (own as Record<string, unknown>)[key] = v;
+    if (Object.keys(own).length) r.own = own; else delete r.own;
+    changed(true); render();
+  };
+  const show = (v: unknown) => f.choices?.find((ch) => ch.v === String(v))?.t ?? String(v);
+  const range = OWN_RANGES[key];
+  if (range) return overrideRow({ label: f.label, cur: cur as number | undefined, def: dop[key] as number, defWhere: where, range: [range.min, range.max, dop[key] as number], step: range.step, help: f.help ?? f.label, locked, quiet: from !== undefined, set: (v) => set(v === undefined ? undefined : clamp(range.step >= 1 ? Math.round(v) : v, [range.min, range.max, 0])) });
+  const wrap = document.createElement('div');
+  const sel = document.createElement('select');
+  sel.append(new Option(`Design default: ${show(dop[key])}`, ''));
+  for (const ch of f.choices ?? []) {
+    const op = new Option(ch.t, ch.v), no = ch.no?.(c);
+    op.title = [ch.tip, ch.con && `Drawback: ${ch.con}`, no && `Not here: ${no}.`].filter(Boolean).join(' ');
+    if (no && String(cur) !== ch.v) op.disabled = true;
+    sel.append(op);
+  }
+  sel.value = from !== undefined ? String(o[key]) : cur === undefined ? '' : String(cur);
+  sel.disabled = !!locked;
+  sel.title = `${f.help ?? f.label} The design default is in ${where}; a choice here is this track's own.`;
+  sel.addEventListener('change', () => set(sel.value === '' ? undefined : f.numeric ? Number(sel.value) : sel.value));
+  const fl = field(f.label, sel); fl.classList.add('stack'); wrap.append(fl);
+  const note = (text: string, warn = false) => { const n = document.createElement('small'); n.className = 'desc'; n.style.color = warn ? 'var(--warn)' : 'var(--muted)'; n.textContent = text; wrap.append(n); };
+  if (locked && from === undefined) note(`Locked: ${locked}.`, true);
+  if (cur !== undefined && !locked) {
+    note(`This track's own. Design default: ${show(dop[key])} (${where}).`);
+    const b = document.createElement('button'); b.type = 'button'; b.textContent = 'Use the design default'; b.className = 'rreset'; b.title = `Go back to the design default, ${show(dop[key])}`;
+    b.addEventListener('click', () => set(undefined)); wrap.append(b);
+  } else if (cur !== undefined) {
+    const b = document.createElement('button'); b.type = 'button'; b.textContent = 'Take off its own'; b.className = 'rreset'; b.title = `This track has its own ${f.label} (${show(cur)}), not used: ${locked}`;
+    b.addEventListener('click', () => set(undefined)); wrap.append(b);
+  }
+  return wrap;
+}
+/** (expert) A route card's Bed and underside: its own settings for those, the one-part rule said where it applies, and what it has that isn't used. */
+function bedSection(box: HTMLElement, r: DRoute, i: number) {
+  const small = (text: string, warn = false) => { const n = document.createElement('small'); n.className = 'desc'; n.style.color = warn ? 'var(--warn)' : 'var(--muted)'; n.textContent = text; box.append(n); };
+  small('The design\'s settings unless this track has its own. Tracks that are one part (points, a crossing, or side by side) share them: the first with its own wins.');
+  const pg = hasPartOwn(design) ? partGroups(design) : undefined, from = pg?.takes[i];
+  if (from !== undefined) small(`Locked: one part with ${design.routes[from].name} (points, a crossing, or side by side), so it takes ${design.routes[from].name}'s settings here. Set them on that track's card.`, true);
+  const mine = pg ? pg.takes.flatMap((t, j) => (t === i ? [design.routes[j].name] : [])) : [];
+  if (mine.length) small(`${mine.join(', ')} ${mine.length > 1 ? 'are' : 'is'} one part with this track and take${mine.length > 1 ? '' : 's'} its settings here.`);
+  for (const q of ignoredOwn(r)) small(`Its own ${q.key} isn't used: ${q.why}.`, true);
+  for (const key of ['ballast', 'sleepers', 'sleeperWidthStuds', 'sleeperGapStuds', 'curveStuds', 'bottomStyle', 'undersideGrid', 'grip'] as const) box.append(ownRow(r, i, key));
 }
 /**
  * A route card's Cuts into parts (expert): where its track is cut into parts by hand, a field each (studs from its
@@ -716,6 +783,8 @@ function makeCard(r: DRoute, i: number): HTMLElement {
       row.addEventListener('mouseleave', () => { canvas.highlightSeg = undefined; canvas.draw(); });
       shape.append(row);
     });
+    // (a banked curve on it: its ramps' settings, its own or the design's)
+    if (!isMono(r) && r.segs.some((sg) => sg.kind === 'curve' && (sg.bank ?? 0) > 0)) for (const key of ['bankRampAt', 'bankRampStuds', 'bankClimb'] as const) shape.append(ownRow(r, i, key));
     // (which sections this route has, and what each says shut: cardsections.ts)
     const id = r.name || String(i), items = canvas?.overlay?.items ?? [];
     const keys = new Set(items.filter((it) => it.kind === 'points' && !it.cand && (it.routes ?? []).slice(1).includes(id)).map((it) => it.key));
@@ -743,6 +812,7 @@ function makeCard(r: DRoute, i: number): HTMLElement {
       if (r.dualGauge && sec('dual')!.note) { const n = document.createElement('small'); n.className = 'desc'; n.style.color = 'var(--warn)'; n.style.fontWeight = '600'; n.textContent = sec('dual')!.note!; g.append(n); }
       if (r.dualGauge) extraRailFields(r, g, 'dual');
     }
+    if (sec('bed')) bedSection(part('Bed and underside', sec('bed')!.summary), r, i);
     // (a branch, i.e. a switch's: its lever's side, where it branches; shown once the plan knows it's one)
     if (sec('levers')) {
       const lev = part('Points and levers', sec('levers')!.summary);
@@ -761,7 +831,7 @@ function makeCard(r: DRoute, i: number): HTMLElement {
       }
     }
     { const hs = part(sec('height')!.title, sec('height')!.summary); hs.append(...hBox.childNodes); }
-    if (sec('cuts')) cutsSection(part(sec('cuts')!.title, sec('cuts')!.summary), r, i);
+    if (sec('cuts')) { const cb = part(sec('cuts')!.title, sec('cuts')!.summary); cutsSection(cb, r, i); cb.append(ownRow(r, i, 'legoTrack')); }
     const add = document.createElement('div'); add.className = 'row';
     add.append(
       btn('+ Straight', () => r.segs.push({ kind: 'straight', studs: 16 })),
@@ -1888,7 +1958,7 @@ function refreshRoutes() {
   branchSig = sig; render();
 }
 function refreshOptions() {
-  if (JSON.stringify([design.options, design.gaugeStuds, switchesNow(), design.routes.map((r) => [r.segs.length, isMono(r), r.startEnd, r.endEnd, r.segs.some((sg) => sg.kind === 'curve' && (sg.bank ?? 0) > 0)])]) === optSig) return;
+  if (JSON.stringify([design.options, design.gaugeStuds, switchesNow(), design.routes.map((r) => [r.segs.length, isMono(r), r.startEnd, r.endEnd, r.segs.some((sg) => sg.kind === 'curve' && (sg.bank ?? 0) > 0), r.own])]) === optSig) return;
   if (midEdit($('settings'))) { drawWhenTyped.add(refreshOptions); return; }
   renderOptions();
 }
@@ -1951,7 +2021,7 @@ function drawOptions() {
   const body = $('options-body'), scroll = $('options').scrollTop;
   const o = { ...OPTION_DEFAULTS, ...design.options } as PieceOptions;
   const c: OptCtx = { o, ballast: o.ballast !== 'none', fdb: o.mechStyle !== 'tines', switches: switchesNow() };
-  optSig = JSON.stringify([design.options, design.gaugeStuds, c.switches, design.routes.map((r) => [r.segs.length, isMono(r), r.startEnd, r.endEnd, r.segs.some((sg) => sg.kind === 'curve' && (sg.bank ?? 0) > 0)])]);
+  optSig = JSON.stringify([design.options, design.gaugeStuds, c.switches, design.routes.map((r) => [r.segs.length, isMono(r), r.startEnd, r.endEnd, r.segs.some((sg) => sg.kind === 'curve' && (sg.bank ?? 0) > 0), r.own])]);
   body.replaceChildren();
   const setOpt = (f: OptField, v: string | number | boolean) => {
     if (f.set) f.set(v); else design.options = { ...design.options, [f.key]: v };
@@ -2040,6 +2110,11 @@ function drawOptions() {
         note([f.help, [range && `Range ${range}`, def !== undefined && `default ${def}`].filter(Boolean).join(', ') + '.'].filter(Boolean).join(' '));
       }
       if (off) note(`Locked: ${off}.`, 'desc why');
+      // (expert: the tracks that have their own, by name: this is their design default)
+      if (isRouteKey(f.key)) {
+        const own = design.routes.filter((r) => Object.keys(liveOwn(design, r, [f.key as RouteKey])).length).map((r) => r.name);
+        if (own.length) note(`${own.length === 1 ? `1 track has its own (${own[0]})` : `${own.length} tracks have their own (${own.slice(0, 4).join(', ')}${own.length > 4 ? ' …' : ''})`}: this is the default for the rest. Their cards say.`);
+      }
       box.append(wrap);
     }
     if (gv.hiddenCount && !words.length) { const mo = document.createElement('div'); mo.className = 'more'; mo.textContent = `${gv.hiddenCount} more ${gv.hiddenCount === 1 ? 'setting appears' : 'settings appear'} when a choice above needs ${gv.hiddenCount === 1 ? 'it' : 'them'}.`; box.append(mo); }

@@ -8,6 +8,7 @@
 // zooms.
 import { movedTable, type Table, TABLE_COLORS, tableInBox, tableMiddle, tableOutline } from './tables';
 import { type Design, type DRoute, type DSeg, dualRailOffsets, freeName, isMono, routeGaugeStuds, toRoutes, type Trackwork } from './design';
+import { inForceAll } from './overrides';
 import { sleeperSpots } from '../geom/crossing';
 import { poseToWorld, routeLength, routePose, worldToPose } from '../route/route';
 import { forFingers } from './hints';
@@ -597,11 +598,17 @@ export class TrackCanvas {
   private reach(px = 14) { return Math.min(4, Math.max(0.1, px / this.scale)); }
   /** (select) The track whose bed, sleepers or ballast p is on: a click anywhere on it picks it, not only near its centre line. */
   private onBand(p: [number, number]) {
-    const d = this.host.design(), bal = d.options?.ballast ?? 'none';
-    // (each track's own width: its own gauge's, mixed gauges; looked for as far as the widest reaches)
-    const halfOf = (gs: number) => (gs + 1) / 2 + 1.5 + (bal === 'buddy' ? 2 : bal === 'ballast' ? 1 : 0);
-    const h = this.nearTrack(p, halfOf(Math.max(d.gaugeStuds, ...d.routes.map((r) => routeGaugeStuds(d, r)))));
-    return h && Math.hypot(h.pose.x - p[0], h.pose.y - p[1]) <= halfOf(routeGaugeStuds(d, d.routes[h.route])) + 0.25 ? { ...h, end: undefined } : undefined;
+    const d = this.host.design();
+    // (each track's own width: its own gauge's, mixed gauges, and its ballast (its own, expert))
+    const halfOf = (gs: number, bal: string) => (gs + 1) / 2 + 1.5 + (bal === 'buddy' ? 2 : bal === 'ballast' ? 1 : 0);
+    // (looked for as far as the widest reaches, then as far as each narrower one: a route's end within the reach is
+    // found before its band, so the widest track's reach alone would miss a narrower track's band near an end)
+    const all = inForceAll(d), halves = d.routes.map((r, i) => halfOf(routeGaugeStuds(d, r), all[i].ballast));
+    for (const reach of [...new Set([halfOf(d.gaugeStuds, d.options?.ballast ?? 'none'), ...halves])].sort((a, b) => b - a)) {
+      const h = this.nearTrack(p, reach);
+      if (h && Math.hypot(h.pose.x - p[0], h.pose.y - p[1]) <= halves[h.route] + 0.25) return { ...h, end: undefined };
+    }
+    return undefined;
   }
   private nearTrack(p: [number, number], reach = this.reach(), skip?: number): { route: number; pose: Pose; end: 'start' | 'end' | undefined } | undefined {
     let best: { route: number; pose: Pose; end: 'start' | 'end' | undefined; d: number } | undefined;
@@ -1532,13 +1539,14 @@ export class TrackCanvas {
     // ballast (Piece options), under all the track: the layer a stud wider
     // each side than the sleepers, and with the bottom ("buddy") layer
     // another stud wider each side
-    const ballast = d.options?.ballast ?? 'none';
-    if (ballast !== 'none' && !this.hidden.has('ballast')) {
-      const wide = (r: DRoute) => (2 * gOf(r) + 3 + (ballast === 'buddy' ? 4 : 2)) * this.scale;
-      layer(ink.ballastLow, (draw) => { for (const r of d.routes) if (!isMono(r)) draw(trace(r, r.segs, 0.5), wide(r)); });
-      if (ballast === 'buddy') layer(ink.ballast, (draw) => { for (const r of d.routes) if (!isMono(r)) draw(trace(r, r.segs, 0.5), (2 * gOf(r) + 5) * this.scale); });
+    // (each track's own, expert: the design's unless it has its own)
+    const all = inForceAll(d), balOf = d.routes.map((r, i) => (isMono(r) ? 'none' : all[i].ballast));
+    if (balOf.some((b) => b !== 'none') && !this.hidden.has('ballast')) {
+      const wide = (r: DRoute, i: number) => (2 * gOf(r) + 3 + (balOf[i] === 'buddy' ? 4 : 2)) * this.scale;
+      layer(ink.ballastLow, (draw) => d.routes.forEach((r, i) => { if (balOf[i] !== 'none') draw(trace(r, r.segs, 0.5), wide(r, i)); }));
+      layer(ink.ballast, (draw) => d.routes.forEach((r, i) => { if (balOf[i] === 'buddy') draw(trace(r, r.segs, 0.5), (2 * gOf(r) + 5) * this.scale); }));
       // (the selected tracks' ballast picked out with them, as their band)
-      layer('rgba(43,111,224,0.16)', (draw) => d.routes.forEach((r, i) => { if (!isMono(r) && (i === this.selected || this.extra.has(i))) draw(trace(r, r.segs, 0.5), wide(r)); }));
+      layer('rgba(43,111,224,0.16)', (draw) => d.routes.forEach((r, i) => { if (balOf[i] !== 'none' && (i === this.selected || this.extra.has(i))) draw(trace(r, r.segs, 0.5), wide(r, i)); }));
     }
     // the sleeper bands, each colour as one layer (red where a drag can't bend the track)
     {
@@ -1561,11 +1569,12 @@ export class TrackCanvas {
     // (track only with sleepers: each sleeper across the band, where the build lays them (crossing.ts sleeperSpots;
     // where tracks meet the build keeps the bed, drawn as the band))
     {
-      const op = d.options ?? {};
-      if (op.sleepers === 'sleepers' && (op.ballast ?? 'none') === 'none') {
-        const gapS = op.sleeperGapStuds ?? 2, sw = op.sleeperWidthStuds ?? 2;
+      // (each track's own, expert: the design's unless it has its own)
+      const ops = inForceAll(d);
+      if (ops.some((op) => op.sleepers === 'sleepers' && op.ballast === 'none')) {
         toRoutes(d).forEach((rt, i) => {
-          if (isMono(d.routes[i]) || !rt.segments.length) return;
+          const op = ops[i], gapS = op.sleeperGapStuds ?? 2, sw = op.sleeperWidthStuds ?? 2;
+          if (isMono(d.routes[i]) || !rt.segments.length || op.sleepers !== 'sleepers' || op.ballast !== 'none') return;
           const half = gOf(d.routes[i]) + 1.5;
           for (const sAt of sleeperSpots(routeLength(rt), false, false, gapS, sw, rt.segments.every((sg) => sg.kind === 'arc'))) {
             const p = routePose(rt, sAt), h = (p[2] * Math.PI) / 180, rx = Math.cos(h), ry = Math.sin(h), x = p[0] / MM, y = p[1] / MM;

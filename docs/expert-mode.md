@@ -1,6 +1,6 @@
 # Expert mode: design and stages
 
-Status: design agreed with nobody yet (S2 and S3 are built as section 11 says); decisions are taken here so work doesn't wait (the list for Aaron is in
+Status: design agreed with nobody yet (S1, S1b, S2 and S3 are built as section 11 says); decisions are taken here so work doesn't wait (the list for Aaron is in
 section 10). What is built is in section 11 (State), kept current.
 
 What was asked for, in short: the drawing mode of today stays as the simple mode; an expert can place and edit every
@@ -413,13 +413,87 @@ route-owned storage, the follow rules and the card section they bring are the pa
   made only with Long track cut into: Track pieces (as across-cuts); the other way of cutting says so. (5) With
   baseplate edges set, a section cut by hand paths is not cut again at the baseplates' edges. (6) No
   `expert.lockedSections`: a part left by hand paths is cut again only when it doesn't fit the bed.
-- **Next, in order:** (1) S1 `overrides.ts` + the group build as section 1 says (not started: `DRoute.own`,
-  `resolveOptions`, the card's override rows); (2) S1b stretches; (3) S4 connections; then S5/S6 (the other kit
+- **S1 is built: settings of a track's own.** `DRoute.own` (routeown.ts: `ROUTE_KEYS` = the part keys `ballast`,
+  `sleepers`, `sleeperWidthStuds`, `sleeperGapStuds`, `curveStuds`, `bottomStyle`, `undersideGrid`, `grip`,
+  `legoTrack`, and the track's own `bankRampAt`, `bankRampStuds`, `bankClimb`; their labels, choices and ranges held
+  to settings.ts by a test; `cleanOwn` in readDesign, `clampOwn` in clampDesign). Pure part `src/app/overrides.ts`:
+  `resolveOptions` (defaults → design → route → feature; other keys ignored, `ignoredOwn` says why), `sourceOf`,
+  `liveOwn` (an own value equal to the design's is none), `partsOf` (one part: beds within `PART_MARGIN`, 16 mm, of
+  each other, which takes in points and crossings, and a track passing within a lever's reach, `LEVER_REACH`, of where
+  two others meet in points or a crossing; tracks joined end to end in line are two parts unless dual gauge or
+  their gauges differ), `partGroups` (each part takes its first track's own, warned by name; parts that come out the
+  same are one group), `inForce`/`inForceAll` (the plan and the card). Build: `trainBuild` in build.ts picks
+  `buildTrain` as ever when no track has part settings of its own (identical output by construction), else
+  `buildGroups`: each group a sub-design (its tracks with their part own taken off, `withoutPartOwn`; the group's
+  settings as its options; the cut paths drawn by its tracks), its own `settingsKey`, so a track's own changed
+  rebuilds its group only; parts numbered on across groups; overlays merged (the cut-path keep-outs of every group).
+  Bank ramps need no group: `bankRolls` reads the track's own. Editor: the card's **Bed and underside** section (a
+  row each, the Gauge row's pattern: a choice whose first entry is "Design default: …", the design's said under a
+  value of its own with Use the design default; greyed with the Settings panel's reason where it can't apply, or
+  "one part with T2" where the track takes another's), Bought track under Cuts into parts, the ramps under Shape on a
+  track with a banked curve; Settings says which tracks have their own of a setting; the plan draws each track's
+  ballast and sleepers as in force. Templates (Features): 'Double track, one on sleepers, one on ballast', 'Station track on a
+  solid bed, the line beyond on sleepers' (not ballast against none along one line: ballast lifts the track a plate, and
+  `ballastSteps` warns where two tracks joined end to end aren't as high as each other). Tests: test/overrides.test.ts (pure), test/overrides-build.test.ts (each group is
+  the design's build with its settings, byte for byte; reset is byte-identical; the part rule; bought per track).
+- **S1b is built: stretches of a track with settings of their own.** `DRoute.stretches[] = { from, to, own }` (whole
+  studs from the track's start; `own`: the part keys but for bought or printed, `STRETCH_KEYS`). Pure part
+  `src/app/stretches.ts`: `cleanStretches` (readDesign: in order, none over another, at least 2 studs),
+  `liveStretches` / `lostStretches` (as built: an end under 2 studs from the track's end or the stretch before is taken
+  there; one past the end is kept, said, not built), `stretchProblem`, reverse / split / join / follow a reshape
+  (`routecuts.ts alongAfter`, which `followCuts` now goes by too), and `expandStretches`: the design the build builds,
+  each track with stretches cut at their ends by `splitRoute` (so what's on the track goes with its piece: hand cuts,
+  hand edits, ends, heights, banks), every piece a track with the settings in force on it as its `own`, named for
+  where it is ("Main (12 to 20)"; the first keeps the track's name). Build: `buildAll` builds the expanded design
+  (`buildWhole` is the build as it was) and says the plan's trackwork of the design's own tracks again
+  (`TrackworkItem.routes`); with no stretches the design is passed on as it is (the same object: identical by
+  construction). From there S1 does the rest: pieces are tracks with their own, joined end to end in line, so two
+  parts; inside points or beside other track the part rule applies and the warning names the piece. Editor: the
+  card's Bed and underside has **Stretches with their own** (From, to, ✕, a row per setting whose first entry is "As
+  the track: …", Add a stretch), the plan draws ballast and sleepers per piece and an orange line down a selected
+  track's stretches, `followOwnStretches` in main.ts `changed()`. Template (Features): 'Track on sleepers, a stretch
+  of it on a solid bed'. Tests: in test/overrides.test.ts and test/overrides-build.test.ts (no new files: the shards
+  stay as they were).
+- **How S1b differs from section 1:** (1) `resolveOptions` has no `at`: the place is resolved by cutting the track
+  (`expandStretches`), then per piece. (2) Stretches aren't placed or dragged on the plan (numbers in the card only).
+  (3) A stretch's one-part lock isn't shown on its rows: the build's warning says it, by the piece's name. (4) Ballast
+  beside none is a step of a plate in the rails (3.2 mm, 6.4 with the buddy layer): said in the card and the help,
+  not warned by the build.
+- **S1 and S1b as landed (2026-11-11).** Checked: tsc and eslint clean; the identical-output baseline over the 303
+  templates and 3 saved designs that have none of this (the four heaviest left out) against d3edd5d: 306 the same (names, triangles, volumes, vertex hashes, warnings), 0 different, 1471 pieces, cold 874.4 s before and
+  699.6 s after (a shared machine: noise);
+  test/overrides.test.ts and test/overrides-build.test.ts (each group is the design's build with its settings, byte
+  for byte; a track's own or a stretch taken off again is byte-identical; the part rule; bought per track), shards,
+  coverage, templates-features and assembled-features with the three new templates, the browser smoke test. Found
+  on the way and put right: the plan's click on a track's band looked as far as the widest ballast there is, and so
+  found a route's end before a narrower track's band near it (the smoke test: now as far as each width in turn);
+  ballast against none along one line is a step of a
+  plate (warned, `ballastSteps`); 'Double track, one on sleepers, one on ballast' has 17 edges shared by more than
+  two triangles, as its two tracks have alone (pinned in `EDGES`). Its budget (25 s) is not from CI's log yet. 'Station track on a solid bed, the line beyond on sleepers' has 5 such edges
+  (pinned at 7). **Not this stage's, found on the way:** a straight joined onto the end of 'Left switch (LEGO)''s
+  branch (x -12.955183, y 32.692665, heading 22.5) runs into switch-base2 by 2.61 mm3 at the right rail (-84.2,
+  268.8, 6.0), built in one go with no settings of its own too (track pieces or not): so there is no template of a
+  siding with its own settings straight off a switch, and it wants a geometry look.
+- **How S1 differs from section 1:** (1) no stretches yet (`at` is not an argument of `resolveOptions`: S1b adds it
+  with `DRoute.stretches`). (2) The first set is the reviewed table's cheap ones (above); check rails, flangeways,
+  buffer stops, `raisedOn` and labels stay design-wide. (3) The bank keys are per track, never a part's (they shape
+  the track's own heights, not a part's body). (4) Groups aren't shared out to helper workers (`mayHaveJobs` is false
+  with part settings of a track's own: a job's result would be kept under another group's settings key): a big design
+  with per-track settings builds in one worker. (5) Monorail beams are built once, beside all the train track, as
+  before. (6) The part rule's warning: "T2 and T5 are one part (they meet in points or a crossing, or lie side by
+  side): both take T5's Ballast".
+- **Next, in order:** (1) the double track's budget from CI's log (test/templates.shared.ts); stretches placed and
+  dragged on the plan; a group's build told of the other groups' track at its ends, so a track joined onto points
+  can have its own; (2) S1 more keys (buffer stops per end; labels per part); (3) S4 connections; then S5/S6 (the other kit
   modules as templates: the same three kinds of path cover them; `test/templates-cutpaths.test.ts` `MODULES` is the
   pattern for checking a module against the library's ends). Left from S3: the keep-outs are drawn only while a path
   is being drawn; a path's corners can't be typed as numbers (only dragged); "Expert tools" toggle and the layer
   filter of section 5 aren't built (cuts are always selectable in Select mode).
-- **Traps.** The tests' defaults are not the app's (test/setup-defaults.ts: `splitTrack: 'bed'`): a template with
+- **Traps.** S1: a track's own is read only through overrides.ts (never `r.own` in the build): `hasPartOwn` decides
+  the path, and the group's sub-design has no part own left on its tracks. A lever beside points is placed clear only
+  of its own group's tracks, so a track within a lever's reach of points or a crossing is made one part with them
+  (`LEVER_REACH`: the reach of network.ts `nearby`; keep the two in step). Two tracks with a short one joined on between
+  them are near each other only along the line (`viaOne`): not one part. The tests' defaults are not the app's (test/setup-defaults.ts: `splitTrack: 'bed'`): a template with
   hand cuts must say `splitTrack: 'lengths'` or every test build warns that hand cuts aren't made. Cuts are kept off
   the solver's `Route` on purpose (section 7). An automatic joint within 2 studs of a hand cut is left out
   (`HAND_CLEAR`), so "Keep the cuts it has now" on a track that already has hand cuts keeps exactly the parts it has.

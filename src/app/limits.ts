@@ -2,6 +2,7 @@
 // are with them, settings.ts): each field shows its range and takes nothing outside it, and a design opened from a
 // file is held to the same (a straight a million studs long, typed or in a file, was a build that never ended).
 import type { Design } from './design';
+import { clampOwn } from './routeown';
 
 /** [least, most, default] */
 export type Range = readonly [min: number, max: number, def: number];
@@ -44,13 +45,15 @@ export const clamp = (v: number, r: Range) => Math.min(r[1], Math.max(r[0], v));
 /** A range as a field says it: "Range 0 to 2000, default 16." */
 export const rangeText = (r: Range) => `Range ${r[0]} to ${r[1]}, default ${r[2]}.`;
 
-/** A design's numbers held to their ranges, in place (a file's, or the browser's kept one): its routes' pieces, starts and heights, its tables. Returns it. */
+/** A design's numbers held to their ranges, in place (a file's, or the browser's kept one): its routes' pieces, starts, heights and own settings, its tables. Returns it. */
 export function clampDesign(d: Design): Design {
   for (const r of d.routes) {
     r.x = clamp(r.x, LIMITS.start); r.y = clamp(r.y, LIMITS.start); r.heading = clamp(r.heading, LIMITS.heading);
     if (typeof r.gaugeStuds === 'number') r.gaugeStuds = clamp(Math.round(r.gaugeStuds), LIMITS.gauge);
     if (typeof r.monoHeight === 'number') r.monoHeight = clamp(r.monoHeight, LIMITS.plates);
     if (typeof r.monoHeightEnd === 'number') r.monoHeightEnd = clamp(r.monoHeightEnd, LIMITS.plates);
+    // (its own settings' numbers, as the Settings panel holds the design's: routeown.ts)
+    if (r.own) clampOwn(r.own);
     for (const sg of r.segs) {
       if (sg.kind === 'straight') sg.studs = clamp(sg.studs, LIMITS.straight);
       else { sg.radius = clamp(sg.radius, radiusRange(r)); sg.angle = clamp(sg.angle, LIMITS.angle); }

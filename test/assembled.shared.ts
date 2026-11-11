@@ -518,7 +518,11 @@ export const EDGES: Record<string, number> = { 'Modular wye R40, lever on the le
   // (mixed gauges: as the same layout at one gauge has them, 92 at 4 studs, in the sleepered crossing's part; and the 45° crossings as the standard ones)
   'Narrow gauge beside and across standard track': 118, 'Narrow-gauge crossing of standard track 45° right': 21, 'Narrow-gauge crossing of standard track 45° left': 7,
   // (the right hand's sleepered part where the gauges part: corners of its bed meeting on the baseplate, as the 45° crossings')
-  'Dual gauge split, both ways, standard gauge R40 right': 7 };
+  'Dual gauge split, both ways, standard gauge R40 right': 7,
+  // (a track's own settings, expert: 15 on the outer track's ballast slopes and 2 on the inner's sleepers' ends, as each alone has them)
+  'Double track, one on sleepers, one on ballast': 19,
+  // (its line's sleepered parts: 5, on sleepers' ends and a joint, as the line has alone)
+  'Station track on a solid bed, the line beyond on sleepers': 7 };
 /** (edges) A template not in EDGES may have this many: one or two come and go with a corner's last digit. */
 export const EDGES_FEW = 4;
 

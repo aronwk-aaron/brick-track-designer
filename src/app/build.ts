@@ -25,7 +25,8 @@ import { planSections } from './sections';
 import type { Route } from '../route/route';
 import { cutPiece, type CutLine } from '../geom/cutter';
 import { type DesignCuts, designCuts, designPaths, handCutsFor } from './handcuts';
-import type { NoCut } from './cutpaths';
+import { type NoCut, pathTracks } from './cutpaths';
+import { hasPartOwn, partGroups, withoutPartOwn } from './overrides';
 import { edgeGrip } from '../geom/underside';
 import { cutOnPaths, type HandPath, type HandPathDone, pathSplit, splitOnPath, type Keep } from '../geom/pathsplit';
 import { findStuds, wholeStuds } from '../geom/studs';
@@ -262,7 +263,10 @@ const SECTIONS_OVER = 2000;
 export function mayHaveJobs(design: Design): boolean {
   // (a test-print kit: small coupons, each its own build, nothing to share out)
   if (design.kit?.length) return false;
-  const d = upgradeDesign(design), len = toRoutes(d).reduce((t, rt) => t + routeLength(rt), 0);
+  const d = upgradeDesign(design);
+  // (tracks with settings of their own: built in groups, one after another (buildGroups), not shared out)
+  if (hasPartOwn(d)) return false;
+  const len = toRoutes(d).reduce((t, rt) => t + routeLength(rt), 0);
   return len >= TILE_OVER || ({ ...OPTION_DEFAULTS, ...d.options }.splitTrack === 'lengths' && len >= SECTIONS_OVER);
 }
 export function buildJobs(w: Wasm, design: Design, early?: (overlay: unknown) => void): BuildJob[] {
@@ -496,8 +500,8 @@ function buildAll(w: Wasm, design: Design, report: (what: string, frac: number) 
   { const why = unbuildable(design); if (why) throw new Error(why); }
   if (design.kit?.length) return buildKit(w, design, report, early, opts);
   // (a kit coupon's number is on its parts: kept apart from the same parts without it)
-  settingsKey = `${JSON.stringify([{ ...OPTION_DEFAULTS, ...design.options }, design.gaugeStuds])}${opts.mark ? `#${opts.mark}` : ''}|`;
-  if (!design.routes.some((r) => isMono(r) && r.segs.length > 0)) return buildTrain(w, design, report, early, opts);
+  settingsKey = keyOfSettings(design, opts);
+  if (!design.routes.some((r) => isMono(r) && r.segs.length > 0)) return trainBuild(w, design, report, early, opts);
   const t0 = performance.now();
   const trainD: Design = { ...design, routes: design.routes.filter((r) => !isMono(r)) };
   const hasTrain = trainD.routes.some((r) => r.segs.length > 0);
@@ -507,9 +511,9 @@ function buildAll(w: Wasm, design: Design, report: (what: string, frac: number) 
   // plan has them as soon as the train's trackwork is ready)
   const mp = early || opts.planOnly ? buildMonorail(w, monoRoutes, o, design.name, undefined, undefined, true) : undefined;
   const withMono = (ov: unknown) => { const v = ov as Overlay; early?.({ ...v, splits: [...v.splits, ...(mp?.splits ?? [])], monoPoints: mp?.splits ?? [], issues: [...v.issues, ...(mp?.issues ?? [])] }); };
-  if (opts.plan) { if (hasTrain) buildTrain(w, trainD, report, withMono, opts); throw PLANNED; }
+  if (opts.plan) { if (hasTrain) trainBuild(w, trainD, report, withMono, opts); throw PLANNED; }
   const share = hasTrain ? 0.7 : 0;
-  const tr = hasTrain ? buildTrain(w, trainD, (what, f) => report(what, f * share), withMono, opts) : undefined;
+  const tr = hasTrain ? trainBuild(w, trainD, (what, f) => report(what, f * share), withMono, opts) : undefined;
   const overlay = tr?.overlay ?? { grooves: [], checkRails: [], crossings: [], splits: [], grips: [], items: [], issues: [] };
   if (!tr) { withMono(overlay); if (opts.planOnly) throw PLAN_ONLY; }
   let top = 0;
@@ -532,6 +536,61 @@ function buildAll(w: Wasm, design: Design, report: (what: string, frac: number) 
   return { overlay, pieces, info };
 }
 
+/** The build's settings key (settingsKey): every option, the gauge, a kit coupon's number. */
+const keyOfSettings = (design: Design, opts: BuildOpts) => `${JSON.stringify([{ ...OPTION_DEFAULTS, ...design.options }, design.gaugeStuds])}${opts.mark ? `#${opts.mark}` : ''}|`;
+/** The train track's build: in one go, as ever, or (tracks with part settings of their own) in groups. */
+function trainBuild(w: Wasm, design: Design, report: (what: string, frac: number) => void, early: ((overlay: unknown) => void) | undefined, opts: BuildOpts): ReturnType<typeof buildTrain> {
+  return hasPartOwn(design) ? buildGroups(w, design, report, early, opts) : buildTrain(w, design, report, early, opts);
+}
+/**
+ * (expert) Tracks with settings of their own (DRoute.own): the tracks that come out with the same settings built
+ * together, each group as a design of its own with its settings (overrides.ts partGroups: tracks that are one part
+ * are in one group), as a test-print kit's coupons are. Each group's settings are its cache's key, so a track's own
+ * setting changed rebuilds its group's pieces only. A cut path goes with the groups whose tracks it's drawn by.
+ * (Tracks in two groups aren't checked against each other for running over each other: they're never one part.)
+ */
+function buildGroups(w: Wasm, design: Design, report: (what: string, frac: number) => void, early: ((overlay: unknown) => void) | undefined, opts: BuildOpts): ReturnType<typeof buildTrain> {
+  // (shared out to helpers, a job's results would be kept under the wrong group's settings: built here; mayHaveJobs says none)
+  if (opts.plan) throw PLANNED;
+  const t0 = performance.now(), pg = partGroups(design), rts = toRoutes(design);
+  const paths = design.expert?.cutPaths ?? [], near = paths.map((p) => pathTracks(p.pts, rts));
+  const earlies: Record<string, unknown>[] = [];
+  const merged = () => {
+    const out: Record<string, unknown> = {};
+    for (const e of earlies) for (const [key, v] of Object.entries(e ?? {})) {
+      if (Array.isArray(v)) out[key] = [...((out[key] as unknown[] | undefined) ?? []), ...v];
+      // (the stud grid and the keep-outs for cut paths: the grid is the design's, the keep-outs every group's)
+      else if (key === 'cutting' && v) { const c = v as NonNullable<Overlay['cutting']>, was = out.cutting as Overlay['cutting']; out.cutting = was ? { ...was, no: { blades: [...was.no.blades, ...c.no.blades], frogs: [...was.no.frogs, ...c.no.frogs] } } : c; }
+      else if (!(key in out)) out[key] = v;
+    }
+    return out;
+  };
+  const built: ReturnType<typeof buildTrain>[] = [];
+  pg.groups.forEach((g, i) => {
+    const mine = paths.filter((_, k) => near[k].some((r) => g.routes.includes(r)) || (i === 0 && !near[k].length));
+    const sub: Design = { ...design, routes: g.routes.map((r) => withoutPartOwn(design.routes[r])), options: g.options, ...(design.expert && { expert: mine.length ? { ...design.expert, cutPaths: mine } : undefined }) };
+    settingsKey = keyOfSettings(sub, opts);
+    try {
+      built.push(buildTrain(w, sub, (what, f) => report(what, (i + f) / pg.groups.length), (ov) => { earlies[i] = ov as Record<string, unknown>; early?.(merged()); }, opts));
+    } catch (e) { if (e !== PLAN_ONLY) throw e; }
+  });
+  settingsKey = keyOfSettings(design, opts);
+  if (opts.planOnly) throw PLAN_ONLY;
+  // (each group's parts are numbered from 1: a later group's numbered on from the earlier ones', track5 after track4)
+  const top = new Map<string, number>();
+  const renumbered = built.map((r) => {
+    const out = r.pieces.map((p) => { const m = /^(.*?)(\d+)$/.exec(p.name); return m && top.has(m[1]) ? { ...p, name: `${m[1]}${Number(m[2]) + top.get(m[1])!}` } : p; });
+    for (const p of out) { const m = /^(.*?)(\d+)$/.exec(p.name); if (m) top.set(m[1], Math.max(top.get(m[1]) ?? 0, Number(m[2]))); }
+    return out;
+  });
+  const pieces = uniqueNames(renumbered.flat()), sum = (f: (r: (typeof built)[number]) => number) => built.reduce((t, r) => t + f(r), 0);
+  const mn = [Infinity, Infinity, Infinity], mx = [-Infinity, -Infinity, -Infinity];
+  for (const p of pieces) for (let i = 0; i < p.positions.length; i += 3) for (let k = 0; k < 3; k++) { mn[k] = Math.min(mn[k], p.positions[i + k]); mx[k] = Math.max(mx[k], p.positions[i + k]); }
+  earlies.length = 0; built.forEach((r, i) => { earlies[i] = r.overlay as unknown as Record<string, unknown>; });
+  return { overlay: merged() as unknown as Overlay, pieces, info: { ms: performance.now() - t0, volume: sum((r) => r.info.volume), size: [0, 1, 2].map((k) => mx[k] - mn[k]),
+    crossings: sum((r) => r.info.crossings), checkRails: sum((r) => r.info.checkRails), splits: sum((r) => r.info.splits), switches: sum((r) => r.info.switches), pieces: pieces.length, turned: sum((r) => r.info.turned ?? 0),
+    warnings: [...new Set([...pg.warnings, ...built.flatMap((r) => r.info.warnings)])] } };
+}
 /** The train track's build: all of a design's routes (as buildDesign passes them, the train routes only). */
 function buildTrain(w: Wasm, design: Design, report: (what: string, frac: number) => void = () => {}, early?: (overlay: unknown) => void, opts: BuildOpts = {}) {
   return graded(w, design, buildLevel(w, design, report, early, opts));

@@ -3,8 +3,10 @@
 // is off is one line (its title and switch), its options coming only once it's on. Pure: main.ts draws what this says.
 import { type Design, isMono, RAIL_DEFAULTS, routeGaugeStuds, type DRoute } from './design';
 import { cutsSummary } from './routecuts';
+import { hasPartOwn, inForce, liveOwn, partGroups, resolveOptions } from './overrides';
+import { PART_KEYS } from './routeown';
 
-export type SectionId = 'shape' | 'place' | 'ends' | 'guard' | 'dual' | 'levers' | 'height' | 'cuts';
+export type SectionId = 'shape' | 'place' | 'ends' | 'guard' | 'dual' | 'bed' | 'levers' | 'height' | 'cuts';
 export interface CardSection {
   id: SectionId;
   /** the names the card uses */
@@ -35,6 +37,13 @@ export function dualSummary(d: Design, r: DRoute): string {
 }
 const endsSummary = (r: DRoute) => [r.startEnd === 'buffer' && 'buffer stop at the start', r.endEnd === 'buffer' && 'buffer stop at the end'].filter(Boolean).join(', ') || 'end connectors';
 
+/** What a track's bed is ("sleepers", "ballast"), and whose: its own, another track's it's one part with, or the design's. */
+export function bedSummary(d: Design, r: DRoute): string {
+  const i = d.routes.indexOf(r), o = i >= 0 ? inForce(d, i) : resolveOptions(d, r);
+  const bed = o.ballast === 'buddy' ? 'ballast + buddy layer' : o.ballast === 'ballast' ? 'ballast' : o.sleepers === 'sleepers' ? 'sleepers' : 'solid bed';
+  const from = i >= 0 && hasPartOwn(d) ? partGroups(d).takes[i] : undefined;
+  return `${bed} · ${from !== undefined ? `as ${d.routes[from].name || `route ${from + 1}`} (one part)` : Object.keys(liveOwn(d, r, PART_KEYS)).length ? 'its own' : 'design default'}`;
+}
 /** The sections of a route's card, in their fixed order. */
 export function cardSections(d: Design, r: DRoute, ctx: CardContext): CardSection[] {
   const mono = isMono(r), out: CardSection[] = [
@@ -48,6 +57,8 @@ export function cardSections(d: Design, r: DRoute, ctx: CardContext): CardSectio
     out.push(
       { id: 'guard', title: 'Guard rails', summary: guardSummary(r), on: !!r.guardRails, ...(r.dualGauge && !r.guardRails && { locked: 'not with dual gauge: the inner rail is in the way' }), ...(both && { note: clash }) },
       { id: 'dual', title: 'Dual gauge', summary: dualSummary(d, r), on: !!r.dualGauge, ...(r.guardRails && !r.dualGauge && { locked: 'not with guard rails: they are in the way of the third rail' }), ...(both && { note: clash }) });
+    // (expert: its bed, sleepers, ballast and underside, the design's unless it has its own)
+    out.push({ id: 'bed', title: 'Bed and underside', summary: bedSummary(d, r) });
   }
   if (ctx.branches || (r.throwSide !== undefined && r.throwSide !== 'auto')) out.push({ id: 'levers', title: 'Points and levers', summary: `lever on the ${r.throwSide && r.throwSide !== 'auto' ? r.throwSide : (d.options?.throwSide ?? 'auto') === 'auto' ? 'auto side' : d.options?.throwSide}` });
   const h = r.monoHeight, he = r.monoHeightEnd;

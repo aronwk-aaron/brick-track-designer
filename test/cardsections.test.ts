@@ -13,7 +13,7 @@ describe('which sections a route card shows', () => {
     for (const branches of [false, true]) {
       it(`train track, ${name}${branches ? ', branching' : ''}: Guard rails and Dual gauge are sections of their own, in a fixed order`, () => {
         const got = ids(route(extra), branches);
-        expect(got).toEqual(['shape', 'place', 'ends', 'guard', 'dual', ...(branches ? ['levers'] : []), 'height', 'cuts']);
+        expect(got).toEqual(['shape', 'place', 'ends', 'guard', 'dual', 'bed', ...(branches ? ['levers'] : []), 'height', 'cuts']);
       });
     }
   }
