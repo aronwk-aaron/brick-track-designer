@@ -28,12 +28,15 @@ export function rowUnderside(s: Scad, t: Track, lo: number, hi: number, keep: CS
  * What stays solid under an end connector, in its own frame (fullEndpoint's:
  * its row of studs on y = 0 at 4 + 8k across, the end at y = -4): round the
  * peg (its neck and the dovetail it stands in) and the C-clip's socket, so
- * they keep their walls, less room for the studs beside them.
+ * they keep their walls, less room for the studs beside them. row: the
+ * studs' places, if not this end's own row (a short piece's one row, in its
+ * middle: crossing.ts).
  */
-export function connectorKeep(s: Scad, t: Track): CS[] {
+export function connectorKeep(s: Scad, t: Track, row?: [number, number][]): CS[] {
   const W = s.w, c = t.c, studR = c.rowW / 2;
   if (!c.hasCoupler) return [];
-  const studs = (x: number) => W.CrossSection.union([-4, 4].map((d) => W.CrossSection.circle(studR, 24).translate([x + d, 0])));
+  const all = row?.length ? W.CrossSection.union(row.map((q) => W.CrossSection.circle(studR, 24).translate(q))) : undefined;
+  const studs = (x: number) => all ?? W.CrossSection.union([-4, 4].map((d) => W.CrossSection.circle(studR, 24).translate([x + d, 0])));
   return [
     // (the peg's side: its dovetail and neck to 3.6 in from the end, less room for the studs beside it)
     W.CrossSection.square([10.2, 3.6]).translate([-c.couplerX - 5.1, -4]).subtract(studs(-c.couplerX)),
@@ -80,9 +83,11 @@ export function sleeperUnderside(s: Scad, t: Track, lo: number, hi: number, n: n
  * out; tubes: the tubes and posts (in the hollow); grips: the tubes' centres.
  */
 export function hollowGrid(s: Scad, t: Track, cav: CS, wd: (lx: number, ly: number) => [number, number], i0: number, i1: number, j0: number, j1: number,
-  grip: 'edges' | 'all', x: { foot?: CS; ok?: (cs: CS) => boolean; skip?: (q: [number, number]) => boolean; stubs?: boolean } = {}): { cut: CS; tubes?: CS; grips: [number, number][] } {
+  grip: 'edges' | 'all', x: { foot?: CS; ok?: (cs: CS) => boolean; skip?: (q: [number, number]) => boolean; stubs?: boolean; bare?: boolean } = {}): { cut: CS; tubes?: CS; grips: [number, number][] } {
   const W = s.w, studR = t.o.studD / 2 + 0.1;
-  if (cav.isEmpty()) return { cut: cav, grips: [] };
+  // (no hollow at all: nothing, unless asked (bare: a piece that's all end connector, its channel cut apart:
+  // the wall still cut away where a stud stands in it))
+  if (cav.isEmpty() && !x.bare) return { cut: cav, grips: [] };
   const deepC = new Map<string, boolean>(), nearCav = clipNear(W, cav, 4), cb = cav.bounds();
   const foot = x.foot ?? cav.offset(BOTTOM_WALL, 'Miter', 4), nearFoot = clipNear(W, foot, 4);
   const fb = foot.bounds();

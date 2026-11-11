@@ -4,8 +4,8 @@
 // rest as fixed trackwork. Runs in the worker (and in tests).
 import { Scad, R, T, type CS, type Man } from '../geom/scad';
 import { sweepRoute } from '../geom/sweep';
-import { DEFAULTS as TRACK_DEFAULTS, PLATE_H, Track } from '../geom/track';
-import { CROSSING_DEFAULTS, crossingPiece, joinedEnds, ownSleeperSpots } from '../geom/crossing';
+import { DEFAULTS as TRACK_DEFAULTS, PLATE_H, STUD, Track } from '../geom/track';
+import { CROSSING_DEFAULTS, crossingPiece, joinedEnds, ownSleeperSpots, ROW_CLEAR } from '../geom/crossing';
 import { trackSeat } from '../geom/extras';
 import { DUAL_CROSS, dualBuilt, markClear } from '../geom/extrarails';
 import { arena, flat, kernelBroke, made, supportsOf, type Wasm } from '../geom/kernel';
@@ -936,7 +936,10 @@ function solveTrackwork(w: Wasm, design: Design, o: PieceOptions, step: (what: s
   if (flip.size) { routes = routes.map((rt, k) => (flip.has(k) ? reversedRoute(rt) : rt)); sol = solve(routes, solverOpts, splitEdits); }
   // (switches that are bought pieces (Bought track: Bought), LEGO's or BrickTracks': cut out of the routes, the rest
   // worked out without them, joining them at ordinary track ends; the stud grid where it was)
-  const gridPose = routePose(routes[0], 0);
+  // (a short piece on its own, with one row of studs in its middle (crossingPiece): the grid under that row, so its
+  // underside is a 1 x N plate's, in its middle too; with other track, where that puts it)
+  const L0 = routeLength(routes[0]), mid0 = routePose(routes[0], L0 / 2);
+  const gridPose: Pose = routes.length === 1 && L0 - STUD < STUD - ROW_CLEAR ? [...poseToWorld(mid0, [0, -STUD / 2]), mid0[2]] as Pose : routePose(routes[0], 0);
   // (only track at LEGO's gauge, 4 studs: the design's, or a route's own)
   const isStd = (rt: Route) => (rt.gauge ?? gauge) === 40;
   const kinds = o.splitTrack === 'lengths' && routes.some(isStd) ? ({ lego: [LEGO_SWITCH, BRICKTRACKS_SWITCH], 'lego-only': [LEGO_SWITCH], print: [] }[o.legoTrack ?? 'lego'] ?? []) : [];

@@ -122,20 +122,28 @@ export class Track {
     return this.s.polygon([[-offL, 0], [2 - offL, 1.9], [6 + offL, 1.9], [8 + offL, 0]]).extrude(h);
   }
 
+  /** Where an end connector's row of studs stands, across it (xfs, guardX: as endpointBase). */
+  endpointPosts(xfs: number[] = [], guardX?: number): number[] {
+    const c = this.c, clr = c.railFootHalfW + this.o.studD / 2 + 0.3, gclr = 3.0 + this.o.studD / 2 + 0.3;
+    const offs = !xfs.length && guardX === undefined ? c.betweenRailsRaw
+      : c.betweenRailsRaw.filter((o) => xfs.every((xf) => Math.abs(o - xf) >= clr) && (guardX === undefined || Math.abs(Math.abs(o) - guardX) >= gclr));
+    return [-c.outerPostX, ...offs, c.outerPostX];
+  }
+
   /**
    * endpoint_base(peg_and_clip, xfs): xfs, the extra rails'
    * offsets in this end's frame (extra_rails()), get room for the next
    * piece's rail ends; guardX, the guard rails' offset if the piece has them
-   * (the posts keep clear of them: endpoint_offsets()).
+   * (the posts keep clear of them: endpoint_offsets()). studs: its row of
+   * studs, or the ones of them it has (endpointPosts': not on a piece too
+   * short for a row at each end, which has one row in its middle, nor where
+   * another end's stud stands: crossing.ts).
    */
-  endpointBase(pegAndClip = true, xfs: number[] = [], guardX?: number): Man {
+  endpointBase(pegAndClip = true, xfs: number[] = [], guardX?: number, studs: boolean | number[] = true): Man {
     const s = this.s, c = this.c, g = c.railOffset;
     const off = 0.1;
     const capW = c.sleeperLen / 2 - (g + 4);
-    const clr = c.railFootHalfW + this.o.studD / 2 + 0.3, gclr = 3.0 + this.o.studD / 2 + 0.3;
-    const offs = !xfs.length && guardX === undefined ? c.betweenRailsRaw
-      : c.betweenRailsRaw.filter((o) => xfs.every((xf) => Math.abs(o - xf) >= clr) && (guardX === undefined || Math.abs(Math.abs(o) - guardX) >= gclr));
-    const posts = [-c.outerPostX, ...offs, c.outerPostX];
+    const posts = studs === true ? this.endpointPosts(xfs, guardX) : studs || [];
     const plate = s.difference(T(s.cube([2 * g - 4.4, 8, PLATE_H]), [-(g - 4.2), -4, 0]), [
       c.hasCoupler && T(this.attachPoly(4), [-c.couplerX - 4, -4.11, -0.5]),
     ]);
@@ -164,7 +172,7 @@ export class Track {
    * too (the left-hand kind left of the centre line, the right-hand kind
    * right of it, as the running rails), so they lock into the next piece's.
    */
-  fullEndpoint(pegAndClip = true, xfs: number[] = [], guardX?: number): Man {
+  fullEndpoint(pegAndClip = true, xfs: number[] = [], guardX?: number, studs: boolean | number[] = true): Man {
     const s = this.s, g = this.c.railOffset;
     return s.union([
       T(this.railEndpointLeft(), [-(g + 4), -8, 0]),
@@ -173,7 +181,7 @@ export class Track {
       // (each run on TONGUE_ROOT into its own rail, as a cut's tongue is: the rail stops flush with it (extrarails.ts),
       // and on a curve the two only nearly met, the rail a loose body)
       ...xfs.map((xf) => { const e = T(xf < 0 ? this.railEndpointLeft() : this.railEndpointRight(), [xf - 4, -8, 0]); return scadParity() ? e : s.union([e, T(e, [0, TONGUE_ROOT, 0])]); }),
-      this.endpointBase(pegAndClip, xfs, guardX),
+      this.endpointBase(pegAndClip, xfs, guardX, studs),
     ]);
   }
 

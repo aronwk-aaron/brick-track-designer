@@ -8,6 +8,26 @@ import { T } from './scad';
 import { arena } from './kernel';
 
 type Pt = [number, number];
+
+/**
+ * Studs never overlap or touch: none stands closer to another, middle to middle, than a stud's width and half a
+ * millimetre (mm; studD: a stud's nominal width, 4.8). Where two would, the one there first stays, whole.
+ */
+export const studApart = (studD: number) => studD + 0.5;
+/** Studs' places as they're taken, to keep the next ones clear of them (in cells, so only the ones near a spot are looked at). */
+export class StudPlaces {
+  private cells = new Map<string, { p: Pt; src?: string }[]>();
+  constructor(private cell = 8) {}
+  /** src: what it's a stud of, for near() to leave its own kind out. */
+  add(q: Pt, src?: string) { const k = `${Math.floor(q[0] / this.cell)},${Math.floor(q[1] / this.cell)}`, c = this.cells.get(k); if (c) c.push({ p: q, src }); else this.cells.set(k, [{ p: q, src }]); }
+  /** Is there one closer than d (no more than a cell) to q? notSrc: not counting the ones of this kind (its own, taken when it was built before). */
+  near(q: Pt, d: number, notSrc?: string): boolean {
+    const i = Math.floor(q[0] / this.cell), j = Math.floor(q[1] / this.cell);
+    for (let a = i - 1; a <= i + 1; a++) for (let b = j - 1; b <= j + 1; b++)
+      if (this.cells.get(`${a},${b}`)?.some((e) => (notSrc === undefined || e.src !== notSrc) && Math.hypot(e.p[0] - q[0], e.p[1] - q[1]) < d)) return true;
+    return false;
+  }
+}
 export interface Stud { c: Pt; mid: number }
 
 /** The heights half way up the studs on m: on surfaces a plate apart, from the bed's top (top) down to m's bottom. */

@@ -4,10 +4,12 @@
 // rigid blades on points at an angle to the baseplate grid (a sprung slider there would run over its studs).
 // (Split over files by group: the kernel wears out after a few big builds in one worker.)
 // Each within its time (BUDGET), and built again unchanged near enough at once: a guard against a build made slower.
+// And on every part of each, studs never overlap or touch (studs-apart.shared.ts).
 import { expect, it } from 'vitest';
 import { kernel } from '../src/geom/kernel';
 import { buildDesign, clearBuildCache } from '../src/app/build';
 import { OPTION_DEFAULTS, type PieceOptions, TEMPLATE_GROUPS, TEMPLATES } from '../src/app/design';
+import { studFaults } from './studs-apart.shared';
 
 const APP = (globalThis as { APP_DEFAULTS?: PieceOptions }).APP_DEFAULTS!;
 
@@ -91,6 +93,10 @@ export function templatesBuild(groups: string[], only?: string[]) {
       const extra = b.info.warnings.filter((w) => !/experimental/.test(w) && !/at an angle to the baseplate grid/.test(w) && !(/Double slip/.test(name) && /blades are rigid/.test(w)) && !(/Helix/.test(name) && /stands over other track/.test(w)) && !(/triple crossover/.test(name) && /sections don't fit the \d+ x \d+ print bed/.test(w)) && !(/X yard/.test(name) && /lever of the points at 67, 209|sprung blade's front has no lip|blades are rigid/.test(w)));
       // (said in full when it fails)
       expect(extra.join(' | ')).toBe('');
+      // (and on every part: no two studs that touch or overlap, nor tubes, nor pins; each
+      // part's own fits (a test print's coupons have their own))
+      const faults = studFaults(w, b.pieces, (p) => ({ studD: 4.8, studFit: APP.studFit, antistudFit: APP.antistudFit, ...TEMPLATES[name].options, ...TEMPLATES[name].kit?.find((k) => k.name === p.kit)?.options }));
+      expect(faults.join(' | ')).toBe('');
     } finally { Object.assign(OPTION_DEFAULTS, saved); clearBuildCache(); }
   });
 }
