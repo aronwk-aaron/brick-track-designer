@@ -454,14 +454,16 @@ export class TrackCanvas {
     if (mark) return { kind: 'mark', mark };
     const select = this.mode === 'select', hits = select ? this.itemHits(w) : [];
     if (hits[0] && takesFirst(hits[0])) return { kind: 'item', hit: hits[0] };
-    const end = this.picks('track') ? this.nearTrack(w) : undefined;
+    // (the track near the point, looked for once as far as a click picks a track: with none that near, there's no end nearer still)
+    const tracks = this.picks('track'), near = tracks ? this.nearTrack(w, this.reach(18)) : undefined;
+    const end = near ? this.nearTrack(w) : undefined;
     if (end?.end) return { kind: 'end', route: end.route, end: end.end };
     if (!select) return undefined;
     if (hits[0]) return { kind: 'item', hit: hits[0] };
-    if (!this.picks('track')) return undefined;
+    if (!tracks) return undefined;
     const table = this.hidden.has('tables') ? undefined : this.tableHandle(w);
     if (table !== undefined) return { kind: 'table', table };
-    const tr = this.nearTrack(w, this.reach(18)) ?? this.onBand(w);
+    const tr = near ?? this.onBand(w);
     return tr && { kind: 'route', route: tr.route };
   }
   /** A press on a cut, a cut path, a stretch or a joint: it's selected, and dragged from there (a cut along its track, a path or its corner on the stud grid, a stretch or its end along its track). */
@@ -1716,11 +1718,12 @@ export class TrackCanvas {
     if (this.mode === 'select') {
       if (this.tableDrag?.moved) return 'Moving the table: let go to put it down';
       // (over a cut, a cut path, a stretch or a joint a click would take: what it is)
-      const ih = this.mouse && !this.moving && !this.box ? this.hitTest(this.mouse) : undefined;
-      if (ih?.kind === 'item' && !sameItem(ih.hit.item, this.selItemNow)) {
-        const k = ih.hit.item.kind;
+      // (not one under a track's end, which a press takes first, nor under a handle)
+      const ih = this.mouse && !this.moving && !this.box ? this.itemHits(this.mouse)[0] : undefined;
+      if (ih && !sameItem(ih.item, this.selItemNow) && (takesFirst(ih) || !hit?.end) && !this.handleAt(this.mouse!)) {
+        const k = ih.item.kind;
         return k === 'cut' ? 'A cut across the track: click to select it, drag it along the track' : k === 'cutpath' ? 'A cut path: click to select it, drag it over the stud grid' : k === 'joint' ? 'A joint: click to select it, then Take apart or Join (in the bar above)'
-          : ih.hit.part === 'body' ? 'A stretch with its own settings: click to select it, drag it along the track' : 'A stretch\'s end: drag it along the track, whole studs';
+          : ih.part === 'body' ? 'A stretch with its own settings: click to select it, drag it along the track' : 'A stretch\'s end: drag it along the track, whole studs';
       }
       // (the Pick list on something else than tracks: a click takes only that)
       if (!this.picks('track')) return `Picking only ${PICKS.find((q) => q.id === this.pick)!.label.toLowerCase()}: click one to select it · the Pick list (in the legend) lets clicks take tracks again`;
