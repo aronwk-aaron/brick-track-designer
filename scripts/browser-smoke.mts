@@ -42,7 +42,7 @@ try {
   check(await page.locator('#tpl-dlg').evaluate((d: HTMLDialogElement) => d.open), 'the template browser opens');
   check((await page.locator('#tpl-body .tcard').count()) > 50, 'it lists the templates');
   await page.fill('#tpl-search', 'switch lego');
-  check((await page.locator('#tpl-body .tcard').count()) === 1, 'a search narrows them to the card');
+  check((await page.locator('#tpl-body .tcard').count()) === 2, 'a search narrows them to the two cards (LEGO\'s switches, and the monorail points)');
   await page.click('#tpl-body .tcard[data-template="Left switch (LEGO)"] .tpick');
   check(!(await page.locator('#tpl-dlg').evaluate((d: HTMLDialogElement) => d.open)), 'pressing the card closes the browser');
   check(await says(/1 switch.*parts? to print.*built in/), `a template loads and builds (${await status()})`);
