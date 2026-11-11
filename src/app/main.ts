@@ -493,7 +493,7 @@ function makeCard(r: DRoute, i: number): HTMLElement {
     const body = document.createElement('div'); body.className = 'body';
     body.append(lockToggle(r));
     // (the card in folding sections, each remembered open or shut for every card: only the shape open to start with)
-    const part = (title: string, note = '', toggle?: { on: boolean; set: (v: boolean) => void; tip: string }) => {
+    const part = (title: string, note = '', toggle?: { on: boolean; set: (v: boolean) => void; tip: string; locked?: string }) => {
       const d2 = document.createElement('details'); d2.className = 'rsub'; d2.open = openParts.has(title) && (!toggle || toggle.on);
       const s2 = document.createElement('summary'); s2.textContent = title;
       if (toggle) {
@@ -501,6 +501,7 @@ function makeCard(r: DRoute, i: number): HTMLElement {
         const cb = document.createElement('input'); cb.type = 'checkbox'; cb.checked = toggle.on; cb.title = toggle.tip; cb.className = 'rswitch'; cb.setAttribute('aria-label', `${title}: on or off`);
         cb.addEventListener('click', (e) => e.stopPropagation());
         cb.addEventListener('change', () => { toggle.set(cb.checked); if (cb.checked) openParts.add(title); changed(true); });
+        if (toggle.locked) { cb.disabled = true; cb.title = `Locked: ${toggle.locked}`; note = `off · locked: ${toggle.locked}`; }
         s2.prepend(cb);
         if (!toggle.on) { d2.classList.add('off'); s2.addEventListener('click', (e) => { if (e.target !== cb) e.preventDefault(); }); }
       }
@@ -592,11 +593,13 @@ function makeCard(r: DRoute, i: number): HTMLElement {
     }
     // (guard rails and dual gauge: a section each, a switch in the heading; the options come once it's on; none on a monorail)
     if (sec('guard')) {
-      const g = part('Guard rails', sec('guard')!.summary, { on: !!r.guardRails, set: (v) => { r.guardRails = v || undefined; }, tip: 'Guard rails: one inside each running rail, as on bridges, to keep a derailed train on the track. More to print; fewer studs between the rails. ' + LEFT_OUT });
+      const g = part('Guard rails', sec('guard')!.summary, { locked: sec('guard')!.locked, on: !!r.guardRails, set: (v) => { r.guardRails = v || undefined; }, tip: 'Guard rails: one inside each running rail, as on bridges, to keep a derailed train on the track. More to print; fewer studs between the rails. ' + LEFT_OUT });
+      if (r.guardRails && sec('guard')!.note) { const n = document.createElement('small'); n.className = 'desc'; n.style.color = 'var(--warn)'; n.style.fontWeight = '600'; n.textContent = sec('guard')!.note!; g.append(n); }
       if (r.guardRails) extraRailFields(r, g, 'guard');
     }
     if (sec('dual')) {
-      const g = part('Dual gauge', sec('dual')!.summary, { on: !!r.dualGauge, set: (v) => { r.dualGauge = v || undefined; }, tip: 'Dual gauge: a third rail, so trains of a narrower gauge run on it and one running rail. More to print; no studs near the third rail. ' + LEFT_OUT });
+      const g = part('Dual gauge', sec('dual')!.summary, { locked: sec('dual')!.locked, on: !!r.dualGauge, set: (v) => { r.dualGauge = v || undefined; }, tip: 'Dual gauge: a third rail, so trains of a narrower gauge run on it and one running rail. More to print; no studs near the third rail. ' + LEFT_OUT });
+      if (r.dualGauge && sec('dual')!.note) { const n = document.createElement('small'); n.className = 'desc'; n.style.color = 'var(--warn)'; n.style.fontWeight = '600'; n.textContent = sec('dual')!.note!; g.append(n); }
       if (r.dualGauge) extraRailFields(r, g, 'dual');
     }
     // (a branch, i.e. a switch's: its lever's side, where it branches; shown once the plan knows it's one)

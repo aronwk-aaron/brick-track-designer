@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { TEMPLATES } from '../src/app/design';
 import { cardSections, dualSummary, guardSummary, lockedOptions } from '../src/app/cardsections';
 import type { Design, DRoute } from '../src/app/design';
 
@@ -44,5 +45,24 @@ describe('which sections a route card shows', () => {
       for (const [k, why] of Object.entries(lockedOptions(r))) { expect(k).not.toBe(''); expect(why.length).toBeGreaterThan(5); }
     expect(Object.keys(lockedOptions(route({ guardRails: true })))).toEqual(['Point length', 'Point shape', 'Nose ramp']);
     expect(lockedOptions(route({ guardRails: true, guardRailEnds: 'both' }))).toEqual({});
+  });
+});
+
+describe('guard rails and dual gauge are one or the other', () => {
+  const sec = (r: DRoute, id: string) => cardSections(d, r, { branches: false }).find((x) => x.id === id)!;
+  it('with dual gauge on, the guard rails switch is locked with a reason; and the other way round', () => {
+    expect(sec(route({ dualGauge: true }), 'guard').locked).toMatch(/not with dual gauge/);
+    expect(sec(route({ guardRails: true }), 'dual').locked).toMatch(/not with guard rails/);
+    expect(sec(route({ dualGauge: true }), 'dual').locked).toBeUndefined();
+    expect(sec(route({ guardRails: true }), 'guard').locked).toBeUndefined();
+    expect(sec(route(), 'guard').locked).toBeUndefined(); expect(sec(route(), 'dual').locked).toBeUndefined();
+  });
+  it('a route that has both (an older file) is unlocked, with a note on both sections that says they clash', () => {
+    for (const id of ['guard', 'dual']) { const s = sec(route({ guardRails: true, dualGauge: true }), id); expect(s.locked).toBeUndefined(); expect(s.note).toMatch(/clash/); }
+    expect(sec(route({ guardRails: true }), 'guard').note).toBeUndefined();
+  });
+  it('which templates have both on one route (listed: they open as they are)', () => {
+    const both = Object.entries(TEMPLATES).filter(([, t]) => t.routes.some((r) => r.guardRails && r.dualGauge)).map(([n]) => n);
+    expect(both).toEqual([]);
   });
 });

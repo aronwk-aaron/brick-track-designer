@@ -12,6 +12,10 @@ export interface CardSection {
   summary: string;
   /** a section with a switch of its own (guard rails, dual gauge): whether it's on; its options show only then */
   on?: boolean;
+  /** (a section with a switch) why the switch can't be turned on now, in a few words */
+  locked?: string;
+  /** a plain note for the open section (the two rail kinds both on a route that has them: they can clash) */
+  note?: string;
 }
 export interface CardContext { /** the plan knows this route branches off another (a switch's): its lever has a side */ branches: boolean }
 
@@ -37,7 +41,13 @@ export function cardSections(d: Design, r: DRoute, ctx: CardContext): CardSectio
     { id: 'place', title: 'Place', summary: `${r.x}, ${r.y} · ${r.heading}°${mono ? ' · monorail' : ''}${!mono && r.gaugeStuds !== undefined && r.gaugeStuds !== d.gaugeStuds ? ` · gauge ${r.gaugeStuds}` : ''}` },
   ];
   if (!mono) out.push({ id: 'ends', title: 'Ends', summary: endsSummary(r) });
-  if (!mono) out.push({ id: 'guard', title: 'Guard rails', summary: guardSummary(r), on: !!r.guardRails }, { id: 'dual', title: 'Dual gauge', summary: dualSummary(d, r), on: !!r.dualGauge });
+  if (!mono) {
+    // (guard rails and a third rail share the space inside the running rail: one or the other per track; a file that has both still opens, with a note)
+    const both = !!r.guardRails && !!r.dualGauge, clash = 'Both are on, and the build lays both (guard rails inside each running rail, the third rail beside one): they can clash. Turn one off.';
+    out.push(
+      { id: 'guard', title: 'Guard rails', summary: guardSummary(r), on: !!r.guardRails, ...(r.dualGauge && !r.guardRails && { locked: 'not with dual gauge: the inner rail is in the way' }), ...(both && { note: clash }) },
+      { id: 'dual', title: 'Dual gauge', summary: dualSummary(d, r), on: !!r.dualGauge, ...(r.guardRails && !r.dualGauge && { locked: 'not with guard rails: they are in the way of the third rail' }), ...(both && { note: clash }) });
+  }
   if (ctx.branches || (r.throwSide !== undefined && r.throwSide !== 'auto')) out.push({ id: 'levers', title: 'Points and levers', summary: `lever on the ${r.throwSide && r.throwSide !== 'auto' ? r.throwSide : (d.options?.throwSide ?? 'auto') === 'auto' ? 'auto side' : d.options?.throwSide}` });
   const h = r.monoHeight, he = r.monoHeightEnd;
   out.push({ id: 'height', title: mono ? 'Height' : 'Height and grade', summary: h === undefined && he === undefined ? 'on the baseplate' : he !== undefined ? `${h ?? 0} to ${he} plates` : `${h} plates` });
