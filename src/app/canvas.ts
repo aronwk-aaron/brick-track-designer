@@ -244,7 +244,8 @@ export class TrackCanvas {
   }
   /** The Pick list: what a click on the plan takes (items.ts PICKS). */
   pick: PickId = 'all';
-  private picks(layer: Layer) { return picks(this.pick, layer, this.expert); }
+  /** May a click take something of this layer now? In Select what the Pick list says; drawing and measuring, everything as ever. */
+  private picks(layer: Layer) { return picks(this.mode === 'select' ? this.pick : 'all', layer, this.expert); }
   private jointsAt(route: number, end: 'start' | 'end'): Joint[] { return this.joints().filter((j) => (j.a === route && j.aEnd === end) || (j.b === route && j.bEnd === end)); }
   /**
    * The selected joint (a joined end clicked; or, with just two tracks selected, where those two meet: a branch's joint is under its
@@ -1716,7 +1717,7 @@ export class TrackCanvas {
       if (this.tableDrag?.moved) return 'Moving the table: let go to put it down';
       // (over a cut, a cut path, a stretch or a joint a click would take: what it is)
       const ih = this.mouse && !this.moving && !this.box ? this.hitTest(this.mouse) : undefined;
-      if (ih?.kind === 'item') {
+      if (ih?.kind === 'item' && !sameItem(ih.hit.item, this.selItemNow)) {
         const k = ih.hit.item.kind;
         return k === 'cut' ? 'A cut across the track: click to select it, drag it along the track' : k === 'cutpath' ? 'A cut path: click to select it, drag it over the stud grid' : k === 'joint' ? 'A joint: click to select it, then Take apart or Join (in the bar above)'
           : ih.hit.part === 'body' ? 'A stretch with its own settings: click to select it, drag it along the track' : 'A stretch\'s end: drag it along the track, whole studs';
@@ -1924,7 +1925,7 @@ export class TrackCanvas {
       }
     }
     // (a selected track's stretches with their own: an orange line down each; every track's while only stretches are picked)
-    const allStretches = this.expert && this.pick === 'stretch';
+    const allStretches = this.expert && this.pick === 'stretch' && this.mode === 'select';
     dx.routes.forEach((r, i) => {
       if (!sx.stretch[i] || !(allStretches || sx.of[i] === this.selected || this.extra.has(sx.of[i]))) return;
       const pts = trace(r, r.segs, 0.5);

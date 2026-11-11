@@ -59,7 +59,7 @@
     header input[type=number] { width: 52px; height: 30px; }
     #radius { width: 150px; }
     @media (max-width: 1240px) { #radius { width: 120px; } #expert-toggle .xt { display: none; } } /* (the narrower routes panel: its name in full is its tip) */
-    aside .head h2 { white-space: nowrap; }
+    aside .head h2 { white-space: nowrap; } #expert-toggle { gap: 0.28em; }
     button, select, input { font: inherit; color: inherit; }
     /* (hidden means hidden, whatever a rule below gives the element to be laid out as: the Rebuild button showed all the time) */
     [hidden] { display: none !important; }
@@ -250,6 +250,8 @@
     #legend .lhead { display: flex; align-items: center; gap: 6px; color: var(--ink); font-size: 12px; }
     #legend .lhead b { flex: 1; }
     #legend .lhead button { margin: 0; padding: 0 6px; line-height: 16px; }
+    /* (the Pick list, with the expert tools shown: what a click takes; there with the legend folded too) */
+    #pick-row { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--ink); white-space: nowrap; margin: 2px 0; } #pick-row select { flex: 1; min-width: 0; height: 24px; font-size: 12px; padding: 0 4px; }
     #legend-rows { display: flex; flex-direction: column; gap: 2px; }
     #legend-rows [hidden] { display: none; }
     #legend.folded #legend-rows { display: none; }
@@ -383,7 +385,7 @@
       aside, #settings { position: fixed; top: var(--head-h, 52px); bottom: 0; z-index: 20; width: min(92vw, 400px); max-height: none; box-shadow: var(--shadow); }
       aside { left: 0; border-right: 1px solid var(--line); } #settings { right: 0; grid-column: auto; grid-row: auto; }
       body.nopanel aside { display: none; }
-      #legend #legend-rows, #legend .lhead { display: none; } /* (just its Help button: the plan's too small for the rest) */
+      #legend #legend-rows, #legend .lhead, #legend #pick-row { display: none; } /* (just its Help button: the plan's too small for the rest) */
       #views .sep { display: none; } #views .explode input { width: 60px; }
       #selbar { max-width: calc(100% - 20px); }
       #help { width: calc(100vw - 20px); padding: 16px; font-size: 14px; }
@@ -543,7 +545,7 @@
     </div>
   </header>
   <aside>
-    <div class="head"><h2 id="routes-title">Routes</h2><button id="expert-toggle" type="button" aria-pressed="false" aria-label="Expert tools">Expert<span class="xt">&nbsp;tools</span></button><button id="add-route" type="button" title="Add a route by numbers">+ Route</button></div>
+    <div class="head"><h2 id="routes-title">Routes</h2><button id="expert-toggle" type="button" aria-pressed="false" aria-label="Expert tools">Expert<span class="xt">tools</span></button><button id="add-route" type="button" title="Add a route by numbers">+ Route</button></div>
     <div id="itemcard" hidden></div>
     <div id="routes"></div>
     <details id="circle"><summary title="Lay a whole circle of curve in one step, in equal pieces">Full circle</summary><div id="circle-body"></div></details>
@@ -589,6 +591,7 @@
       <div id="empty" hidden><div><b>Lay some track</b>In Draw mode (<kbd>D</kbd>), click a grid point to start, then click where the track should go.<br>Templates: ready-made switches, crossings and yards, with pictures.<br>Parts palette (left): LEGO and BrickTracks track pieces, laid one after another.<br>Full circle (left): a ring of equal curves in one step.</div></div>
       <div id="legend" class="chip">
         <div class="lhead"><b>Legend</b><button id="legend-fold" type="button" title="Fold the legend away (or open it)">–</button></div>
+        <label id="pick-row" hidden title="What a click on the plan takes, in Select. Everything: whatever is under the pointer. One kind: only that, so it can be reached under the others (a joint under its points, a cut on a stretch) and the rest is left alone.">Clicks pick <select id="pick" aria-label="What a click on the plan takes"></select></label>
         <div id="legend-rows">
           <span id="legend-grooves" data-layer="grooves"><i style="background:#e0452b"></i>flangeway cut</span>
           <span id="legend-checks" data-layer="checks"><i style="background:#2b6fe0"></i>check rail</span>
@@ -651,6 +654,7 @@
           <li>Stretches (expert): part of a track can have its own of the same settings. In the track's card, Bed and underside, press Add a stretch…, then press on the track on the plan where the stretch starts and drag along it to where it ends (whole studs, at least 2 long; <kbd>Esc</kbd> cancels); then set what it has in the card, where its from and to can be typed too (whole studs from the track's start); each setting says the track's (As the track: …) until you choose one. The track is cut at a stretch's ends, with an ordinary track end each side, and stays one route; no piece under 2 studs is left beside a stretch (it is built to the track's end or the stretch before instead). Stretches go with the track when it is turned, split, merged or reshaped; one left past the end of a shortened track is kept, said so, and not built. A selected track's stretches are drawn with an orange line. On the plan, click a stretch of the selected track to select it, then drag it, or one of its ends, along the track: it moves on whole studs and stops at the track's ends and at the stretch beside it, and says why it stopped. The numbers in the card follow. <kbd>Delete</kbd> takes the selected stretch out. Each is one undo step.</li>
           <li>Expert tools (the button at the top of the routes panel; off to start with, remembered in this browser, not kept in the design): shows what an expert edits one by one, on the plan and in the cards: cuts across a track, cut paths, stretches, and a track's own settings (the cards' Bed and underside and Cuts into parts, the Cut paths panel, the Pick list in the legend). Hidden, nothing in the design changes and it is built the same: cuts and stretches stay drawn on the plan, a click picks the track under them, and a track that has any says so on its card ("Has 2 cuts by hand, 1 stretch") with Show, which turns the tools on. The things marked (expert) below need them shown.</li>
           <li>Selecting a cut, a cut path, a stretch or a joint (expert): click it on the plan in Select. The bar over the plan says what it is ("Cut across T1, 12 studs from its start") and has only what can be done with it, and its card comes over the routes' cards with its numbers to type: a cut's studs from the track's start, a stretch's from and to, a cut path's corners (x, y in studs). <kbd>Delete</kbd> (or Delete on the bar or the card) takes it out, the arrow keys move it a stud (<kbd>Shift</kbd>: eight; a cut or a stretch along its track, the way the arrow points), <kbd>Esc</kbd> lets go of it. Each is one undo step. A click on a track or on empty ground lets go of it; tracks and tables are selected as ever.</li>
+          <li>Clicks pick (expert; in the legend): what a click on the plan takes in Select. Everything, to start with: whatever is under the pointer. Tracks and tables; Cuts and cut paths; Stretches (every track's are drawn and can be picked, not only the selected track's); Joints (a click on a joint selects it, also a branch's under its points); Points, levers, check rails. With one kind picked a click takes only that and leaves the rest alone, and the hint line says which. Remembered in this browser.</li>
           <li>Joined tracks: two tracks are joined where an end of one lies on the other's end, or on its side, in line with it (a dot on the plan; an end joined to nothing has a small ring). Nothing is set: tracks that meet are joined. Drag a track, nudge it with the arrow keys, mirror or turn it, and every track joined to it goes along. Hold <kbd>Alt</kbd> while dragging to move it alone: the joints it leaves are ringed in red and the hint line says "Took T3 apart from T2". Reshape a track (an end, a handle, a number in its card) and what is joined to it past the change goes with it; where that can't be (a loop), the track still takes its new shape, the joint at its changed side opens, and the hint line says which. A branch stays on the track it leaves. Double-click a track to select it and all that is joined to it. Click a joined end to select the joint, or select just the two tracks (a branch's joint is under its points, which take the click): Take apart (selection bar) leaves the two touching but each on its own (an orange ring); select it again and Join puts them back. Tracks taken apart and then moved off are simply two tracks: put back together they are joined again. A locked track holds what is joined to it. Tracks that only cross are not joined. Every joint is also a row in the Trackwork panel, under Joints between tracks: the two tracks, where it is, and whether it is joined or taken apart. Hover the row to see it ringed on the plan, click it to select the joint there, and Take apart or Join in the row does the same as on the bar (a branch's joint is easiest reached this way).</li>
           <li>Parallel…: with one track selected, a new track beside it, 6 to 200 studs over (default 16; 8 and 16 are the usual), to its left or right: straights as long, curves with the radius concentric with the original. It says why not where a curve would go under R24.</li>
           <li>Lock: tick Locked on a route's card (or a table's) and it can still be selected and copied, but not dragged, nudged, reshaped by its handles or ends, mirrored, turned, split, merged or deleted; the plan shows a small padlock on it, and the hint line says "R3 is locked" when you try. A copy isn't locked.</li>

@@ -678,6 +678,33 @@ try {
     check(await apart() === '[["S","A"]]', 'each is one undo step');
     await page.keyboard.press('Control+z'); await page.waitForTimeout(300); }
 
+  // the Pick list (expert, in the legend): what a click takes; one kind picked, a click takes only that (a branch's joint under its points; a cut and not its track)
+  at = 'the Pick list';
+  await page.evaluate(() => localStorage.setItem('btd-design', JSON.stringify({ version: 1, gaugeStuds: 4, options: { splitTrack: 'lengths' }, routes: [
+    { name: 'A', x: 0, y: 0, heading: 0, segs: [{ kind: 'straight', studs: 32 }], cuts: [20] }, { name: 'B', x: 0, y: 32, heading: 0, segs: [{ kind: 'straight', studs: 16 }] },
+    { name: 'S', x: 0, y: 8, heading: 0, segs: [{ kind: 'curve', radius: 40, angle: -22.5 }] }] })));
+  await page.reload(); await page.waitForSelector('#track'); await page.click('#mode-select'); await page.click('#fit'); await page.waitForTimeout(400);
+  { const bar = () => page.locator('#sel-count').innerText(), hintNow = () => page.locator('#hint').innerText();
+    const kinds = () => page.evaluate(() => (window as unknown as { btdCanvas: { items(): { kind: string }[] } }).btdCanvas.items().map((i) => i.kind).join());
+    const points = () => page.evaluate(() => (window as unknown as { btdCanvas: { overlay?: { items?: { kind: string; off?: boolean; cand?: unknown }[] } } }).btdCanvas.overlay?.items?.filter((it) => it.kind === 'points' && !it.off && !it.cand).length ?? 0);
+    for (let k = 0; k < 100 && await points() === 0; k++) await page.waitForTimeout(200);
+    check(await page.locator('#pick-row').isVisible() && await page.locator('#pick').inputValue() === 'all' && await page.locator('#pick option').count() === 6, 'with the expert tools shown the legend has the Pick list, on Everything');
+    const [jx, jy] = await scr(0, 8), [ax, ay] = await scr(0.5, 26), [cx, cy] = await scr(0.5, 20);
+    await page.selectOption('#pick', 'joint'); await page.mouse.click(jx, jy); await page.waitForTimeout(250);
+    check(await bar() === 'Joint between S and A' && await kinds() === 'joint' && await points() === 1, `picking joints, a click on a branch's joint selects it, under its points, which stay as they are (${await bar()}; ${await kinds()})`);
+    await page.mouse.click(ax, ay); await page.waitForTimeout(200); await page.mouse.move(ax + 3, ay); await page.waitForTimeout(150);
+    check(await kinds() === '' && /Picking only joints/.test(await hintNow()), `and a click on a track takes nothing, the hint saying why (${await hintNow()})`);
+    await page.selectOption('#pick', 'cut'); await page.mouse.click(cx, cy); await page.waitForTimeout(200);
+    check(/^Cut across A, 20 studs/.test(await bar()), `picking cuts, a click on a cut selects it (${await bar()})`);
+    await page.selectOption('#pick', 'track'); await page.mouse.click(cx, cy); await page.waitForTimeout(200);
+    check(await bar() === '1 selected' && await kinds() === 'route', `picking tracks, the same click takes the track (${await bar()})`);
+    await page.selectOption('#pick', 'mark'); await page.reload(); await page.waitForSelector('#track'); await page.click('#mode-select'); await page.waitForTimeout(300);
+    check(await page.locator('#pick').inputValue() === 'mark', 'the list is remembered in the browser');
+    // (the expert tools hidden: the list goes, and a click takes a track again whatever it was left on)
+    await page.click('#expert-toggle'); await page.waitForTimeout(200); await page.mouse.click(ax, ay); await page.waitForTimeout(200);
+    check(await page.locator('#pick-row').isHidden() && await bar() === '1 selected', 'with the expert tools hidden the list is away and a click takes a track');
+    await page.click('#expert-toggle'); await page.selectOption('#pick', 'all'); await page.keyboard.press('Escape'); }
+
   check(errors.length === 0, `no errors on the page${errors.length ? `: ${errors.join(' | ').slice(0, 600)}` : ''}`);
 } catch (err) {
   fails.push(`${at}: ${err instanceof Error ? err.message : err}`);

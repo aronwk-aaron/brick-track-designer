@@ -26,7 +26,7 @@ import { addTemplate, openEnds } from './addtemplate';
 import { cardSections, type SectionId } from './cardsections';
 import { designOptions, hasPartOwn, ignoredOwn, inForce, liveOwn, partGroups } from './overrides';
 import { isRouteKey, OWN_LABELS, OWN_RANGES, PART_KEYS, type RouteKey } from './routeown';
-import { byHandNote, designByHandNote, EXPERT_SECTIONS, itemLabel, jointsOf, jointWhere } from './items';
+import { byHandNote, designByHandNote, EXPERT_SECTIONS, isPick, itemLabel, jointsOf, jointWhere, PICKS } from './items';
 import { followStretches, liveStretches, lostStretches, type Stretch, STRETCH_KEYS, STRETCH_MIN, stretchProblem } from './stretches';
 import { designOfSelection, listMine, saveMine, type StorageLike } from './mytemplates';
 import { parallelRoute } from './parallelroute';
@@ -629,6 +629,7 @@ function setExpert(on: boolean) {
 }
 function syncExpert() {
   const b = $('expert-toggle');
+  $('pick-row').hidden = !expertTools;
   b.classList.toggle('on', expertTools); b.setAttribute('aria-pressed', String(expertTools));
   b.title = expertTools ? 'The expert tools are shown: cuts across a track, cut paths, stretches and a track\'s own settings, on the plan and in the cards. Click to hide them: nothing in the design changes.'
     : 'Show the expert tools: cut a track where you choose, draw cut paths, give a track or a stretch of it its own settings. Hidden, the design is built the same, and a track that has any of these says so on its card.';
@@ -1757,6 +1758,20 @@ const legendEl = $('legend');
 const foldLegend = (on: boolean) => { legendEl.classList.toggle('folded', on); $('legend-fold').textContent = on ? '+' : '–'; try { localStorage.setItem('btd-legend', on ? '0' : '1'); } catch { /* fine */ } };
 try { foldLegend(localStorage.getItem('btd-legend') === '0'); } catch { /* fine */ }
 $('legend-fold').addEventListener('click', () => foldLegend(!legendEl.classList.contains('folded')));
+// The Pick list (in the legend, with the expert tools shown): what a click on the plan takes; remembered.
+{
+  const pick = $<HTMLSelectElement>('pick');
+  for (const p of PICKS) { const o = new Option(p.label, p.id); o.title = p.tip; pick.append(o); }
+  try { const v = localStorage.getItem('btd-pick'); if (isPick(v)) canvas.pick = v; } catch { /* fine */ }
+  pick.value = canvas.pick;
+  pick.addEventListener('change', () => {
+    if (!isPick(pick.value)) return;
+    canvas.pick = pick.value;
+    try { localStorage.setItem('btd-pick', pick.value); } catch { /* fine */ }
+    // (back to the plan: its keys work at once)
+    pick.blur(); canvas.draw();
+  });
+}
 canvas.expert = expertTools; syncExpert();
 $('expert-toggle').addEventListener('click', () => setExpert(!expertTools));
 canvas.draw();
