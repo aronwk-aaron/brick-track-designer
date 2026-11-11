@@ -1,10 +1,11 @@
 // The template browser: a dialog of cards (a plan picture, a name, what it is and its size), in sections, with search,
 // filters, stars and the last ones used. What each card says, its sections and its filters come from templatecatalog.ts;
 // this only shows them. Pictures are drawn when a card scrolls into view.
-import { TEMPLATES } from './design';
+import { type Design, TEMPLATES } from './design';
+import { deleteMine, importMine, listMine, type Mine, renameMine, type StorageLike, usedText } from './mytemplates';
 import {
   GAUGES, KIND_LABEL, RANGES, type Range, type Card, type Filters, type Gauge, type Kind, type PlanPicture, type System,
-  cardFor, cardsOf, catalog, countOf, describe, filterCards, filtering, kindsOf, noFilters, planPicture, radiiOf, sectionsOf,
+  buildCatalog, cardFor, cardsOf, catalog, countOf, describe, filterCards, filtering, kindsOf, noFilters, planPicture, radiiOf, sectionsOf,
 } from './templatecatalog';
 
 const STARS = 'btd-template-stars', RECENT = 'btd-template-recent', RECENT_MAX = 8;
@@ -34,7 +35,15 @@ export function pictureSvg(p: PlanPicture): string {
  * Sets the browser up. pick(name) puts the template on the plan, asking first if the design has changes in no file; it
  * says whether it did (the browser then closes; if not, it stays open).
  */
-export function initTemplateBrowser(pick: (name: string) => Promise<boolean>, add: (name: string) => boolean) {
+/** What the browser needs from the page for My templates: where they're kept, the design to save, a yes/no and a typed name. */
+export interface MineHooks {
+  storage(): StorageLike | undefined;
+  /** Save the whole design as a template (asks its name): the reason if it didn't, else undefined */
+  saveWhole(): string | undefined;
+  ask(text: string, yes: string, no: string): Promise<boolean>;
+  askName(label: string, def: string): string | null;
+}
+export function initTemplateBrowser(pick: (name: string) => Promise<boolean>, add: (name: string) => boolean, mineHooks?: MineHooks) {
   const dlg = $<HTMLDialogElement>('tpl-dlg'), body = $('tpl-body'), search = $<HTMLInputElement>('tpl-search');
   const chipsEl = $('tpl-chips'), countEl = $('tpl-count'), clearBtn = $<HTMLButtonElement>('tpl-clear');
   const filtersBtn = $<HTMLButtonElement>('tpl-filters');
@@ -45,6 +54,9 @@ export function initTemplateBrowser(pick: (name: string) => Promise<boolean>, ad
   let stars: string[] = [], recent: string[] = [];
   let observer: IntersectionObserver | undefined;
   const pictures = new Map<string, string>();
+  /** My templates as last read: by their card name ("mine:" + id) */
+  const mineDesigns = new Map<string, Design>();
+  let mineNote = '';
 
   // ---- what's kept: names that are no longer templates are dropped
   const keep = (names: string[]) => [...new Set(names.flatMap((n) => { const c = cardFor(infos, n); return c ? [c.name] : []; }))];
@@ -72,7 +84,7 @@ export function initTemplateBrowser(pick: (name: string) => Promise<boolean>, ad
     row('Kind', kindsOf(cards).map((k) => chip('kinds', k, KIND_LABEL[k])));
     row('Gauge', GAUGES.filter((g) => cards.some((c) => c.gauge === g)).map((g) => chip('gauges', g, ({ standard: 'Standard', narrow: 'Narrow', dual: 'Dual', mixed: 'Mixed', none: '' } as Record<Gauge, string>)[g])));
     row('Track', (['train', 'monorail'] as const).filter((s) => cards.some((c) => c.system === s)).map((s) => chip('systems', s, s === 'train' ? 'Train' : 'Monorail')));
-    row('Range', RANGES.filter((r) => cards.some((c) => c.range === r)).map((r) => chip('ranges', r, r)));
+    row('Range', RANGES.filter((r) => r === 'Mine' || cards.some((c) => c.range === r)).map((r) => chip('ranges', r, r)));
     row('Radius', radiiOf(cards).map((r) => chip('radii', r, `R${r}`)));
   }
   function syncChips() {
@@ -90,7 +102,7 @@ export function initTemplateBrowser(pick: (name: string) => Promise<boolean>, ad
     if (el.firstChild) return;
     const name = el.dataset.name!;
     let svg = pictures.get(name);
-    if (svg === undefined) { svg = pictureSvg(planPicture(TEMPLATES[name])); pictures.set(name, svg); }
+    if (svg === undefined) { const d = TEMPLATES[name] ?? mineDesigns.get(name); svg = d ? pictureSvg(planPicture(d)) : ''; if (!name.startsWith('mine:')) pictures.set(name, svg); }
     el.innerHTML = svg;
   }
   const choose = async (name: string) => {
@@ -142,14 +154,85 @@ export function initTemplateBrowser(pick: (name: string) => Promise<boolean>, ad
     return el;
   }
 
+  // ---- My templates: saved in this browser; a card each, with Open and Add to design, and Rename, Export and Delete
+  const download = (name: string, d: Design) => {
+    const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([JSON.stringify(d, null, 2)], { type: 'application/json' })); a.download = `${name.replace(/[^\w.-]+/g, '-')}.btd.json`; a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+  };
+  const mineInfo = (m: Mine): Card => {
+    const base = m.design ? buildCatalog({ [m.name]: m.design }, [['My templates', [m.name]]])[0] : undefined;
+    return { ...(base ?? { group: 'My templates', kind: 'feature' as Kind, gauge: 'none' as Gauge, system: 'train' as System, length: 0, width: 0, routes: 0, section: 'My templates' }), name: `mine:${m.id}`, title: m.name, hand: 'none', twin: undefined, range: 'Mine', mine: true, ...(m.damaged && { damaged: m.damaged }) };
+  };
+  function mineCardEl(c: Card): HTMLElement {
+    const el = document.createElement('div'); el.className = 'tcard single mine'; el.dataset.card = c.name;
+    const pic = document.createElement('div'); pic.className = 'tpic'; pic.dataset.name = c.name;
+    const name = document.createElement('div'); name.className = 'tname'; name.textContent = c.title;
+    const sub = document.createElement('div'); sub.className = 'tsub'; sub.textContent = c.damaged ? `Damaged: ${c.damaged}` : describe(c);
+    const act = document.createElement('div'); act.className = 'tact';
+    const id = c.name.slice(5), hooks = mineHooks!;
+    const btn = (label: string, cls: string, title: string, f: () => void) => { const b = document.createElement('button'); b.type = 'button'; b.className = cls; b.textContent = label; b.title = title; b.addEventListener('click', (e) => { e.stopPropagation(); f(); }); return b; };
+    const r1 = document.createElement('div'), r2 = document.createElement('div');
+    r1.className = 'trow'; r2.className = 'trow';
+    if (!c.damaged) {
+      const open = btn('Open', 'tpick', `Open ${c.title}: it replaces the design on the plan`, () => void choose(c.name)); open.dataset.template = c.name;
+      const addb = btn('Add to design', 'tadd', `Add ${c.title} to the design: it follows the pointer, a click puts it down`, () => addChoose(c.name)); addb.dataset.template = c.name;
+      r1.append(open, addb); act.append(r1);
+      r2.append(
+        btn('Rename', 'trename', 'Give it another name', () => { const v = hooks.askName('Name the template:', c.title); if (v !== null && v.trim()) { const r = renameMine(hooks.storage(), id, v); mineNote = r.ok ? '' : `Not renamed: ${r.why}`; render(); } }),
+        btn('Export', 'texport', 'Download it as a .btd.json file', () => { const d = mineDesigns.get(c.name); if (d) download(c.title, d); }),
+      );
+    }
+    r2.append(btn('Delete', 'tdelete danger', 'Delete this template from this browser', () => void hooks.ask(`Delete the template "${c.title}"? It can't be undone.`, 'Delete it', 'Keep it').then((yes) => { if (!yes) return; const r = deleteMine(hooks.storage(), id); mineNote = r.ok ? '' : `Not deleted: ${r.why}`; render(); })));
+    act.append(r2);
+    el.append(pic, name, sub, act);
+    if (!c.damaged) { if (observer) observer.observe(pic); else drawPicture(pic); }
+    return el;
+  }
+  /** The My templates group, first in the list: its cards, what's used, Import…, and why not where nothing can be kept. */
+  function mineGroup(): Card[] {
+    if (!mineHooks) return [];
+    const list = listMine(mineHooks.storage());
+    mineDesigns.clear();
+    for (const m of list.entries) if (m.design) mineDesigns.set(`mine:${m.id}`, m.design);
+    const cards = list.entries.map(mineInfo), shown = filterCards(cards, filters);
+    if (filtering(filters) && !shown.length) return [];
+    const h = document.createElement('h3'); h.id = 'tpl-s-mine'; h.append('My templates'); const n = document.createElement('span'); n.className = 'n'; n.textContent = String(shown.length); h.append(n);
+    body.append(h);
+    if (!filtering(filters)) {
+      const bar = document.createElement('div'); bar.className = 'mine-bar';
+      if (list.unavailable) { const p = document.createElement('span'); p.className = 'mine-note'; p.textContent = `${list.unavailable}.`; bar.append(p); }
+      else {
+        const imp = document.createElement('button'); imp.type = 'button'; imp.textContent = 'Import…'; imp.title = 'Read .btd.json files into My templates';
+        const file = document.createElement('input'); file.type = 'file'; file.accept = '.json,.btd.json'; file.multiple = true; file.hidden = true; file.id = 'tpl-import';
+        imp.addEventListener('click', () => file.click());
+        file.addEventListener('change', async () => {
+          const notes: string[] = [];
+          for (const f of [...(file.files ?? [])]) { const r = importMine(mineHooks!.storage(), await f.text(), f.name); if (!r.ok) notes.push(r.why); }
+          mineNote = notes.length ? `Not imported: ${notes.join('; ')}` : ''; render();
+        });
+        const used = document.createElement('span'); used.className = 'mine-note'; used.textContent = usedText(list);
+        bar.append(imp, file, used);
+      }
+      if (mineNote) { const p = document.createElement('span'); p.className = 'mine-note warn'; p.setAttribute('role', 'status'); p.textContent = mineNote; bar.append(p); }
+      body.append(bar);
+    }
+    if (!shown.length) { const e = document.createElement('div'); e.className = 'mine-empty'; e.textContent = list.unavailable ? '' : 'Nothing saved yet. Save as template… keeps this design (or the selected tracks) here.'; if (e.textContent) body.append(e); return shown; }
+    const g = document.createElement('div'); g.className = 'grid'; g.setAttribute('role', 'group'); g.setAttribute('aria-labelledby', h.id);
+    for (const c of shown) g.append(mineCardEl(c));
+    body.append(g);
+    return shown;
+  }
+
   // ---- the whole list, drawn again as the search or a filter changes
   function render() {
     observer?.disconnect();
     body.replaceChildren();
+    const mineShown = mineGroup();
     const shown = filterCards(cards, filters);
     const total = infos.length, n = shown.reduce((a, c) => a + countOf(c), 0);
-    countEl.textContent = `${n} of ${total}`;
+    countEl.textContent = `${n + mineShown.length} of ${total + mineShown.length}`;
     clearBtn.disabled = !filtering(filters);
+    if (!shown.length && mineShown.length) return;
     if (!shown.length) {
       const e = document.createElement('div'); e.id = 'tpl-empty';
       e.textContent = 'No template fits the search and the filters. Press Clear to start again.';
@@ -207,6 +290,10 @@ export function initTemplateBrowser(pick: (name: string) => Promise<boolean>, ad
   });
   search.addEventListener('input', () => { filters = { ...filters, query: search.value }; syncChips(); render(); });
   clearBtn.addEventListener('click', () => { filters = noFilters(); search.value = ''; syncChips(); render(); search.focus(); });
+
+  // ---- Save as template… in the header: the whole design
+  const saveBtn = document.getElementById('tpl-save') as HTMLButtonElement | null;
+  saveBtn?.addEventListener('click', () => { const why = mineHooks?.saveWhole(); mineNote = why ? `Not saved: ${why}` : ''; render(); });
 
   // ---- open and close
   $('tpl-close').addEventListener('click', () => dlg.close());

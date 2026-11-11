@@ -19,8 +19,8 @@ export const GAUGES: Exclude<Gauge, 'none'>[] = ['standard', 'narrow', 'dual', '
 export const GAUGE_LABEL: Record<Gauge, string> = { standard: 'Standard gauge', narrow: 'Narrow gauge', dual: 'Dual gauge', mixed: 'Mixed gauges', none: '' };
 export type System = 'train' | 'monorail';
 /** Whose range of parts a template is from (its group's), if it's one of the makers' groups. */
-export type Range = 'TrixBrix' | '4DBrix' | 'BrickTracks';
-export const RANGES: Range[] = ['TrixBrix', '4DBrix', 'BrickTracks'];
+export type Range = 'TrixBrix' | '4DBrix' | 'BrickTracks' | 'Mine';
+export const RANGES: Range[] = ['TrixBrix', '4DBrix', 'BrickTracks', 'Mine'];
 export type Hand = 'left' | 'right' | 'none';
 
 export interface TemplateInfo {
@@ -38,6 +38,10 @@ export interface TemplateInfo {
   routes: number;
   /** Where the browser lists it: a section of its own for a stock group, else by kind (and gauge) for the reference trackwork. */
   section: string; parent?: string;
+  /** one of My templates (saved in this browser): its name is "mine:" and its id */
+  mine?: boolean;
+  /** (mine) why it can't be used: it's damaged */
+  damaged?: string;
 }
 
 /** The kinds the names don't say (or say wrongly): checked first. */

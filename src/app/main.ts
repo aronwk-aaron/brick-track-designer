@@ -23,6 +23,7 @@ import { isZip } from '../geom/unzip';
 import { COMMON_RADII } from './guides';
 import { lockedWhy, setLocked } from './lock';
 import { addTemplate, openEnds } from './addtemplate';
+import { designOfSelection, listMine, saveMine, type StorageLike } from './mytemplates';
 import { parallelRoute } from './parallelroute';
 import { mergeProblem, mergeRoutes, splitRoute } from './splitmerge';
 import { initTemplateBrowser } from './templatebrowser';
@@ -1014,7 +1015,19 @@ renderer.setAnimationLoop(() => { if (!dirty3d) return; dirty3d = false; rendere
 
 // ---------- toolbar ----------
 // The template browser (a dialog: templatebrowser.ts) picks one; it replaces the design, after asking if the design has changes in no file.
-const templateByName = (name: string): Design | undefined => TEMPLATES[name];
+/** Where My templates are kept: this browser's storage, or none where the browser won't give it. */
+const mineStore = (): StorageLike | undefined => { try { return localStorage; } catch { return undefined; } };
+const templateByName = (name: string): Design | undefined => (name.startsWith('mine:') ? listMine(mineStore()).entries.find((m) => `mine:${m.id}` === name)?.design : TEMPLATES[name]);
+/** A design (or part of one) kept as a template under a name asked for: undefined when saved, else why not. */
+function saveAsTemplate(d: Design, def: string): string | undefined {
+  if (!d.routes.length && !d.tables?.length) return 'there is nothing on the plan to keep';
+  const name = prompt('Name the template (it is kept in this browser, under Templates › My templates):', def);
+  if (name === null) return undefined;
+  const res = saveMine(mineStore(), name, d);
+  if (!res.ok) return res.why;
+  canvas.say(`Saved as the template "${res.name}" (Templates › My templates)`);
+  return undefined;
+}
 initTemplateBrowser(async (name) => {
   if (!templateByName(name) || !(await mayReplace())) return false;
   design = structuredClone(templateByName(name)!); replaced(); framed = false; changed(true); markClean(); canvas.fit();
@@ -1028,6 +1041,11 @@ initTemplateBrowser(async (name) => {
   const mine = onto && openEnds(design.routes).find((e) => e.route === onto.route && e.end === onto.end);
   setMode('select'); canvas.startPlacing(structuredClone(t), mine);
   return true;
+}, {
+  storage: mineStore,
+  saveWhole: () => saveAsTemplate(design, design.name || design.routes[0]?.name || 'My design'),
+  ask: (text, yes, no) => ask(text, yes, no),
+  askName: (label, def) => prompt(label, def),
 });
 $('add-route').addEventListener('click', () => {
   design.routes.push({ name: nextName(), ...freeStart(design), segs: [{ kind: 'straight', studs: 16 }] });
@@ -1609,6 +1627,7 @@ function updateSelbar() {
   ($('sel-paste') as HTMLButtonElement).disabled = !clipboard.length && !clipTables.length;
   const sel = selected(), one = sel.length === 1 && !selectedTables().length, two = sel.length === 2 && !selectedTables().length;
   const split = $('sel-split') as HTMLButtonElement, merge = $('sel-merge') as HTMLButtonElement, mp = two ? mergeProblem(design, sel[0], sel[1]) : undefined;
+  ($('sel-savetpl') as HTMLButtonElement).disabled = n === 0;
   ($('sel-parallel') as HTMLButtonElement).disabled = !one; if (!one) closeParallel();
   split.disabled = !one; merge.disabled = !two || !!mp;
   split.title = one ? 'Cut the selected route in two where you click on it, a whole stud along (S with the pointer on it)' : 'Split: select one route first';
@@ -1620,6 +1639,11 @@ $('sel-paste').addEventListener('click', () => { pasteClip(); updateSelbar(); })
 $('sel-dup').addEventListener('click', () => { duplicateSel(); updateSelbar(); });
 $('sel-mirror').addEventListener('click', mirrorSel);
 $('sel-split').addEventListener('click', () => canvas.splitHere(true));
+$('sel-savetpl').addEventListener('click', () => {
+  const sel = selected(), tk = selectedTables();
+  const why = saveAsTemplate(designOfSelection(design, sel, tk), (sel.length ? design.routes[sel[0]].name : '') || design.name || 'My template');
+  if (why) canvas.say(`Not saved: ${why}`);
+});
 $('sel-merge').addEventListener('click', mergeSel);
 $('sel-rotl').addEventListener('click', () => turnSel(90));
 $('sel-rotr').addEventListener('click', () => turnSel(-90));

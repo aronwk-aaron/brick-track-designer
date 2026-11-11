@@ -385,6 +385,21 @@ try {
     await page.keyboard.press('Escape'); await page.waitForTimeout(100);
     check(await placing() === 'none' && await routes() === 1, 'Esc cancels placing'); }
 
+  // My templates: the design saved as a template survives a reload, is listed, adds to a design, and is deleted (asking first)
+  at = 'my templates';
+  await page.evaluate(() => localStorage.setItem('btd-design', JSON.stringify({ version: 1, gaugeStuds: 4, routes: [{ name: 'R1', x: 0, y: 0, heading: 0, segs: [{ kind: 'straight', studs: 16 }] }] })));
+  await page.reload(); await page.waitForSelector('#track'); await page.click('#mode-select');
+  { await page.click('#templates-open'); await page.click('#tpl-save'); await page.waitForTimeout(250);
+    check(await page.locator('.tcard.mine').count() === 1, 'Save as template… puts the design in My templates');
+    await page.reload(); await page.waitForSelector('#track'); await page.click('#templates-open'); await page.waitForTimeout(250);
+    check(await page.locator('.tcard.mine').count() === 1, 'it is still listed after a reload');
+    await page.locator('.tcard.mine .tadd').click(); await page.waitForTimeout(200); await page.click('#fit'); await page.waitForTimeout(300);
+    const [px, py] = await scr(20, 8); await page.mouse.move(px, py); await page.waitForTimeout(150); await page.mouse.click(px, py); await page.waitForTimeout(300);
+    check(await routes() === 2, 'Add to design puts it on the plan beside the design');
+    await page.click('#templates-open'); await page.waitForTimeout(200);
+    await page.locator('.tcard.mine .tdelete').click(); await page.waitForTimeout(150); await page.click('#ask-yes'); await page.waitForTimeout(250);
+    check(await page.locator('.tcard.mine').count() === 0, 'Delete asks, then takes it out of the list'); await page.keyboard.press('Escape'); }
+
   check(errors.length === 0, `no errors on the page${errors.length ? `: ${errors.join(' | ').slice(0, 600)}` : ''}`);
 } catch (err) {
   fails.push(`${at}: ${err instanceof Error ? err.message : err}`);
