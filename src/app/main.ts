@@ -137,16 +137,23 @@ const field = (label: string, ...els: HTMLElement[]) => {
   const s = document.createElement('span'); s.textContent = label; d.append(s, ...els); return d;
 };
 
-function segRow(r: DRoute, k: number): HTMLElement {
+function segRow(r: DRoute, k: number, i: number): HTMLElement {
   const sg = r.segs[k], row = document.createElement('div'); row.className = 'seg';
+  const what = sg.kind === 'straight' ? 'straight' : 'curve';
+  // (a header row: which one it is, its Flip (a curve) and its remove button, at the top right)
+  const head = document.createElement('div'); head.className = 'seghead';
+  const lab = document.createElement('b'); lab.textContent = `${k + 1} · ${what === 'straight' ? 'Straight' : 'Curve'}`;
+  const acts = document.createElement('div'); acts.className = 'segacts';
+  if (sg.kind === 'curve') acts.append(btn('Flip', () => { sg.angle = -sg.angle; }, 'Turn this curve the other way (left becomes right); the track after it follows'));
+  const rm = btn('✕', () => { r.segs.splice(k, 1); }, '');
+  const why = lockedWhy(design, [i]);
+  rm.className = 'segrm'; rm.setAttribute('aria-label', `Remove this ${what}`);
+  rm.title = why ? `${why}` : r.segs.length === 1 ? `Remove this ${what} (the route is left empty)` : `Remove this ${what}`;
+  rm.disabled = !!why;
+  acts.append(rm); head.append(lab, acts); row.append(head);
   if (sg.kind === 'straight') row.append(field('Straight, studs', num(sg.studs, (n) => { sg.studs = n; soon(render); }, 1, 'Length in studs.', LIMITS.straight)));
   else row.append(field('Curve: radius, studs', num(sg.radius, (n) => { (sg as Extract<DSeg, { kind: 'curve' }>).radius = n; soon(render); }, 8, 'Radius in studs (the usual curves run 24 + 8k).', LIMITS.radius)),
     field('angle ° (+ left)', num(sg.angle, (n) => { (sg as Extract<DSeg, { kind: 'curve' }>).angle = n; soon(render); }, 0.5, 'How far it turns, degrees: + left, - right. A whole turn at most: add another curve to go on.', LIMITS.angle)));
-  // (a curve's Flip beside its ✕, one cell of the card's grid)
-  const acts = document.createElement('div'); acts.style.cssText = 'display:flex;gap:4px';
-  if (sg.kind === 'curve') acts.append(btn('Flip', () => { sg.angle = -sg.angle; }, 'Turn this curve the other way (left becomes right); the track after it follows'));
-  acts.append(btn('✕', () => { r.segs.splice(k, 1); }, 'Remove this segment'));
-  row.append(acts);
   row.append(...bankFields(sg, isMono(r)));
   return row;
 }
@@ -569,7 +576,7 @@ function makeCard(r: DRoute, i: number): HTMLElement {
       if (r.monoHeight === undefined) { const n4 = document.createElement('small'); n4.className = 'desc'; n4.textContent = 'End height: locked until Height is set.'; n4.style.color = 'var(--warn)'; place.append(n4); }
     }
     r.segs.forEach((_, k) => {
-      const row = segRow(r, k);
+      const row = segRow(r, k, i);
       // (hovered: that straight or curve picked out on the plan)
       row.addEventListener('mouseenter', () => { canvas.highlightSeg = [i, k]; canvas.draw(); });
       row.addEventListener('mouseleave', () => { canvas.highlightSeg = undefined; canvas.draw(); });
