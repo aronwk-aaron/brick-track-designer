@@ -417,6 +417,8 @@ export interface Known { problems: RegExp[]; warning?: RegExp; why: string }
  * design limit the build says itself has a warning: nail-switch.test.ts has one, a double slip's middle points as nail switches.)
  */
 export const KNOWN: Record<string, Known> = {
+  'Banked curve': { problems: [/^track6 and track7 overlap: 7\.\d+ mm3 at -269\.\d, 751\.\d/],
+    why: 'its R56 curve is cut every 22.5 degrees now (as the bought R56 piece is), and at the joint 67.5 degrees round, at the full bank, the outer rail\'s end joint of one piece is 7 mm3 into the next piece (7.4 x 4.4 x 5.4 mm, at rail height); in 11.25 degree pieces the same joint was clear. An open fault in the banked end joints (geom/crossing.ts bankedEnd) on long pieces' },
   'Modular triple crossover R40': { problems: [/^track[12] is 3\d\d x 2\d\d at its tightest: over the 256 x 256 print bed/], warning: /sections don't fit the 256 x 256 print bed/,
     why: 'as the three-track R104 crossover: cut across only, its two sections three tracks wide (352 and 368 mm)' },
   'Straight, 1 stud': { problems: [/^track is in 3 pieces/],
