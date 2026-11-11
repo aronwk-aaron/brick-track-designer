@@ -1,6 +1,6 @@
 # Expert mode: design and stages
 
-Status: design agreed with nobody yet (S1, S1b, S2, S3 and S4 are built as section 11 says); decisions are taken here so work doesn't wait (the list for Aaron is in
+Status: design agreed with nobody yet (S1, S1b, S2, S3, S4 and the editor's side of section 5 are built as section 11 says); decisions are taken here so work doesn't wait (the list for Aaron is in
 section 10). What is built is in section 11 (State), kept current.
 
 What was asked for, in short: the drawing mode of today stays as the simple mode; an expert can place and edit every
@@ -563,14 +563,63 @@ route-owned storage, the follow rules and the card section they bring are the pa
   crossover adapters, which meet at the crossing: through its frogs) is 272 mm wide. The maker's adapters have no
   levers on those four sets. (3) The compact R40 "perpendicular" section and its 3T sets, and the T-junction R40
   R56: not tried.
-- **Next, in order:** (1) the double track's budget from CI's log (test/templates.shared.ts); stretches placed and
-  dragged on the plan; a group's build told of the other groups' track at its ends, so a track joined onto points
-  can have its own; (2) S1 more keys (buffer stops per end; labels per part); (3) S4's leftovers: a joint's own row (which tracks, Take apart) in the Trackwork panel; then S5/S6 (the other kit
+- **The editor's side of section 5 is built: typed selection, stretches on the plan, joints in the Trackwork panel,
+  the Expert tools switch, the Pick list.** Pure part `src/app/items.ts`: `Item` (the typed ids: `route`, `table`,
+  `cut` (route, k), `cutpath` (id), `stretch` (route, k), `joint` (a track's end, or its two tracks)), `hitItems` (the
+  one hit test for the expert kinds, each by its shape: a cut a line across its track, a path its runs and, selected,
+  its corners, a stretch its band and its two ends, a joint its place; the smaller thing first, so a cut on a stretch
+  can be picked, then the nearest), `itemLabel` / `jointWhere` (what each is called), `alongBeyond`, `dragStretchEnd`,
+  `dragStretchWhole`, `newStretchAt` (where a dragged stretch may go, and the words for why it stopped), `byHandNote` /
+  `designByHandNote` / `EXPERT_SECTIONS` (what the Expert tools switch hides, and what is said meanwhile), `PICKS` /
+  `picks` (the Pick list). **Selection** (canvas.ts): the tracks and tables as ever, and beside them one `selItem` (a
+  cut, a cut path, a stretch or a joint; `items()` gives the lot); `hitTest` is what a press, the pointer's shape and
+  the hover mark go by, in this order: a handle, a lever, points or a check rail's end, a corner or end of the selected
+  item, a track's end, then (Select) a cut, cut path, stretch or joint, a table's name, a track. The selection bar
+  says what the item is and has only its buttons (`#selbar.item`); its card (`#itemcard`, over the routes' cards) has
+  its numbers to type (a cut's studs, a stretch's from and to, a path's corners: `setPathCorner`), Delete, a joint's
+  Take apart or Join. Delete takes it out, the arrow keys move it a stud (Shift: eight; a cut or a stretch along its
+  track the way the arrow points, `nudgeItem`), Esc lets go; one undo step each. **Stretches on the plan:** a click
+  on a stretch of the selected track selects it (its track stays selected; the track's handles are away meanwhile),
+  a drag moves it or one of its ends on whole studs, held at the track's ends and the stretch beside it with why said
+  in the hint line and by the pointer; Add a stretch… (the card) then a press and drag along the track lays one in
+  the room there; the card's numbers follow (`host.live`). **Joints:** a row each in the Trackwork panel (Joints
+  between tracks: the two names, where, joined or taken apart; hover rings it, a click selects it, Take apart / Join
+  in the row), from the design's joints as they are (not the build). **Expert tools** (the routes panel's heading;
+  `btd-expert` in localStorage, off to start with): hidden, a card has no Bed and underside, Cuts into parts or own
+  bank ramps, the Cut paths panel is away unless the design has paths, and a click takes no cut or stretch (they stay
+  drawn); a track with any of it says "Has 2 cuts by hand, 1 setting of its own, 1 stretch" with Show. **Clicks pick**
+  (the legend, with the tools shown; `btd-pick`): Everything, or one layer (tracks and tables; cuts and cut paths;
+  stretches, then every track's; joints, then a click on a joint selects it, a branch's too; points, levers, check
+  rails); in Select only. Tests: test/items.test.ts (the hit test, the names, the drags held to what `stretchProblem`
+  takes, the switch's notes, the list), five steps in the browser smoke test.
+- **How that differs from section 5:** (1) the selection is the tracks and tables plus one item, not a list of
+  items of any kind: nothing yet needs two cuts selected at once. (2) Ids are a track's place in the list and the
+  item's place in the track's list, not names: they are let go of whenever the list changes under them (undo, a
+  track deleted, a card's ✕). (3) The switch is in the routes panel's heading, not the toolbar: the toolbar has no
+  room left at 1440 px. (4) The Pick list's default is Everything (what a click took before), not tracks only; its
+  kinds are the ones there are (no sleepers or rails yet). (5) Hidden, the card says "Has …" with Show, not "Edited
+  by hand … · Reset to automatic": there is no reset of everything at once. (6) "Show what's overridden" (dimming the
+  rest) isn't built. (7) Joints are selectable with the tools hidden too (joined tracks are simple mode's).
+  Speed, 150 tracks (Chrome, this machine, a third with a cut and a third with a stretch): the
+  mouse-move handler while hovering 0.2 to 0.3 ms before, 0.3 to 0.4 after (the one hit test also looks for a
+  track's end and a table's name under the pointer, which the pointer's shape didn't go by before; with nothing
+  near, a track is looked for once); while dragging a track 0.2 to 0.4 ms before, 0.2 to 0.3 after; a redraw 5 to 7
+  ms before and after (the machine was busy: the redraw alone read 4 to 11 ms from run to run).
+- **Next, in order:** (1) the double track's budget from CI's log (test/templates.shared.ts); a group's build told of the other groups' track at its ends, so a track joined onto points
+  can have its own; (2) S1 more keys (buffer stops per end; labels per part); (3) then S5/S6 (the other kit
   modules as templates: the same three kinds of path cover them; `test/templates-cutpaths.test.ts` `MODULES` is the
   pattern for checking a module against the library's ends). Left from S3: the keep-outs are drawn only while a path
-  is being drawn; a path's corners can't be typed as numbers (only dragged); "Expert tools" toggle and the layer
-  filter of section 5 aren't built (cuts are always selectable in Select mode).
-- **Traps.** S4: the plan's marks (flangeway cuts, check rails, points) are of the last build that came back, and a
+  is being drawn. Left from the editor's side: "Show what's overridden"; several items selected at once (a box round
+  cuts); the Pick list's kinds for S5 (sleepers, rails, ballast: add to `PICKS` and `Layer`, and a kind to
+  `hitItems`).
+- **Traps.** The editor: an item goes by its track's and its own place in their lists, so whatever changes those lists
+  without `setSelection` (which lets go of it) must let go of it itself (`canvas.selectItem(undefined)`: the card's ✕
+  on a cut or a stretch, Delete on a card). `updateSelbar` and `renderTrackwork` are set up after the first `render()`
+  and `changed()`: they're called from there only once `selbarReady` / `twReady` say so (their `let`s aren't there
+  yet before). A press past a track's end is no further along than its end by `nearestAlong`: a drag that must say
+  "the track ends here" goes by `alongBeyond`. The expert steps of the browser smoke test set `btd-expert` (the tools
+  are hidden to start with): a new step that clicks a cut or a stretch must come after "the Expert tools switch" or
+  set it. S4: the plan's marks (flangeway cuts, check rails, points) are of the last build that came back, and a
   press on one of their ends is taken before a press on a track's end: right after a drag the marks can still be those
   of the middle of it, so the browser smoke test waits for nothing of them to be within 2 studs of a joint before it
   clicks it (CI is slow enough to show it; here it never did). A branch's joint is under its points' mark for the
