@@ -198,6 +198,11 @@ export function crossingPiece(s: Scad, routes: Route[], o: CrossingOptions = CRO
   // length, its end connectors. The rest, and every route of a design with one gauge, the piece's)
   const tOf = routes.map((rt) => (rt.gauge === undefined || rt.gauge === c.trackGauge ? t : new Track(s, { ...o, gaugeStuds: rt.gauge / STUD - 1 })));
   const cOf = tOf.map((tt) => tt.c), gOf = cOf.map((ci) => ci.railOffset), lenOf = cOf.map((ci) => ci.sleeperLen);
+  // (mixed gauges: a narrower route's end in a wider one's (route.ts hostedEnds) is at the piece's edge, though the
+  // points' routes run on from one another there (a narrow-gauge switch's toe on dual-gauge track): not an inner end, its
+  // rails cut back and its sleepers clear of the end for the next piece's, as the wider one's are)
+  const hosted = hostedEnds(routes, gOf);
+  for (const h of hosted) joined.delete(`${h.route}:${h.end}`);
   // (route ends that end in a buffer stop: no connector, the rails run into its posts, the bed and ballast to the end)
   const bufAt = (q: Pose) => !!o.buffers?.some((b) => Math.hypot(b[0] - q[0], b[1] - q[1]) < 0.5);
   const bufEnd = (i: number, end: 'start' | 'end') => !x.innerEnds?.has(`${i}:${end}`) && bufAt(end === 'start' ? routes[i].start : routePose(routes[i], routeLength(routes[i])));
@@ -311,7 +316,6 @@ export function crossingPiece(s: Scad, routes: Route[], o: CrossingOptions = CRO
   // (each route's guard rails and third rail, if it has them: extrarails.ts)
   // (mixed gauges: a narrower route's end in a wider one's (route.ts hostedEnds): no connector of its own there; the
   // wider one's has a rail end for each of its rails that isn't the wider one's own, in that connector's frame)
-  const hosted = hostedEnds(routes, gOf);
   const isHosted = (i: number, end: 'start' | 'end') => hosted.some((h) => h.route === i && h.end === end);
   const hostXfs = (i: number, end: 'start' | 'end', have: number[] = []) => {
     const out = [...have];
@@ -471,7 +475,14 @@ export function crossingPiece(s: Scad, routes: Route[], o: CrossingOptions = CRO
   }
   const anyBank = routes.some(hasRoll), bedStud = t.stud(c.postD, c.postH);
   const bedStuds = studPts.length ? s.union(studPts.map(([px, py]) => (anyBank && bankedStud(routes, lenOf, [px, py], PLATE_H - 0.2, bedStud)) || T(t.stud(c.postD, c.postH), [px, py, PLATE_H - 0.2]))) : undefined;
-  const body = s.union([...parts, ...(x.adds ?? []), bedStuds]);
+  // (points on a narrower route whose toe is in a wider one's end (a narrow-gauge switch's on dual-gauge track): what
+  // they add kept off the wider one's end connector, which is the joint, as the route's own bed is)
+  const hostBoxes = hosted.map((h) => {
+    const k = h.host, rt = routes[k], w = lenOf[k] + 2 * STUD, P = h.hostEnd === 'start' ? routePose(rt, 0) : routePose(rt, routeLength(rt));
+    return atPose(T(s.cube([w, BED_END + 8, 30]), [-w / 2, h.hostEnd === 'start' ? -8 : -BED_END, -5]), P);
+  });
+  const adds = hostBoxes.length ? (x.adds ?? []).map((m) => s.difference(m, hostBoxes)) : (x.adds ?? []);
+  const body = s.union([...parts, ...adds, bedStuds]);
   if (onBallast) return withAxleHoles(ballastPiece());
 
   // The underside, on the stud grid of the first route's start (spots at

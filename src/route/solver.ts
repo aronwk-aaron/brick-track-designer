@@ -197,7 +197,9 @@ export function solve(routes: Route[], opts: Partial<SolverOptions> = {}, edits:
       if (dh < 89) continue; // (not along it: a crossing)
       const shared = [-1, 1].find((sd) => Math.abs(lat0 + sd * gs[i] - sd * gs[k]) < 0.1);
       if (shared === undefined) return 'centre';
-      const ea = routePose(routes[i], a1), eb = routePose(routes[j], b1), da = routeLat(rk, [ea[0], ea[1]]) - lat0, db = routeLat(rk, [eb[0], eb[1]]) - lat0;
+      const ea = routePose(routes[i], a1), eb = routePose(routes[j], b1), la = routeLat(rk, [ea[0], ea[1]]), lb = routeLat(rk, [eb[0], eb[1]]), da = la - lat0, db = lb - lat0;
+      // (a wider route that ends at the toe (dual-gauge track before the points: dualbranch.ts): not the one they're on)
+      if (Math.abs(la) >= 1e5 && Math.abs(lb) >= 1e5) continue;
       const [stay, leave] = Math.abs(da) <= Math.abs(db) ? [da, db] : [db, da];
       return Math.abs(stay) < 0.5 && Math.sign(leave) === shared ? undefined : 'side';
     }

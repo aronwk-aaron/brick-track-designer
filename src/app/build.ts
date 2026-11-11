@@ -30,6 +30,7 @@ import { edgeGrip } from '../geom/underside';
 import { cutOnPaths, type HandPath, type HandPathDone, pathSplit, splitOnPath, type Keep } from '../geom/pathsplit';
 import { findStuds, wholeStuds } from '../geom/studs';
 import { dualEndMismatches } from './routeedits';
+import { dualBranches } from './dualbranch';
 import { bankRolls, type Design, OPTION_DEFAULTS, type PieceOptions, type Trackwork, bufferEnds, isMono, routeGaugeStuds, toRoutes, upgradeDesign } from './design';
 import { labelCut, labelLines } from '../geom/labels';
 import { buildMonorail, clearMonoCache } from './monobuild';
@@ -839,7 +840,8 @@ const keyOf = (q: [number, number]) => `${Math.round(q[0])},${Math.round(q[1])}`
  */
 function solveTrackwork(w: Wasm, design: Design, o: PieceOptions, step: (what: string) => void) {
   // (a route that crosses itself, cut where it does into routes joined end to end: see route/selfcross.ts)
-  let routes = orient(splitSelfCrossing(toRoutes(design).filter((r) => r.segments.length > 0), (design.gaugeStuds + 1) * 8));
+  // (a narrow-gauge track leaving dual-gauge track part way along it: that stretch as the narrow gauge's points, dualbranch.ts)
+  let routes = orient(dualBranches(splitSelfCrossing(toRoutes(design).filter((r) => r.segments.length > 0), (design.gaugeStuds + 1) * 8), (design.gaugeStuds + 1) * 8));
   if (routes.length === 0) throw new Error('Draw some track: click a grid point to start, then click where it should go.');
   // (banked curves: level where other track comes near; ramps cut short)
   const bankWarnings = design.routes.flatMap((r) => bankRolls(design, r).warnings);
