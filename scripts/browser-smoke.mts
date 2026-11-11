@@ -420,6 +420,21 @@ try {
     check(more === 30, `Enter lays track on from the end, the arrow key moving the crosshair a stud, Enter laying it (${more} studs)`);
     await page.keyboard.press('Escape'); }
 
+  // the route card: Guard rails and Dual gauge are sections of their own with a switch each, options only when on; none on a monorail
+  at = 'route card sections';
+  await page.evaluate(() => localStorage.setItem('btd-design', JSON.stringify({ version: 1, gaugeStuds: 4, routes: [{ name: 'A', x: 0, y: 0, heading: 0, segs: [{ kind: 'straight', studs: 16 }] }, { name: 'M', x: 30, y: 0, heading: 0, system: 'monorail', segs: [{ kind: 'straight', studs: 8 }] }] })));
+  await page.reload(); await page.waitForSelector('#track'); await page.click('#mode-select'); await page.click('#fit'); await page.waitForTimeout(300);
+  { const heads = () => page.locator('details.rsub > summary').allInnerTexts();
+    const [ax, ay] = await scr(0, 8); await page.mouse.click(ax, ay); await page.waitForTimeout(250);
+    const h0 = (await heads()).join('|');
+    check(/Guard rails\noff/.test(h0) && /Dual gauge\noff/.test(h0), `Guard rails and Dual gauge are separate sections, one line each when off (${h0.replace(/\n/g, ' ')})`);
+    check(await page.locator('details.rsub:has(> summary:has-text("Guard rails")) small, details.rsub:has(> summary:has-text("Guard rails")) select').count() === 0, 'with guard rails off there are no options under it');
+    await page.locator('details.rsub:has(> summary:has-text("Guard rails")) .rswitch').check(); await page.waitForTimeout(250);
+    check(/Guard rail points/.test(await page.locator('#routes').innerText()) && /Dual gauge\noff/.test((await heads()).join('|')), 'turning guard rails on shows its options, the dual gauge section staying one line');
+    const [mx, my] = await scr(30, 4); await page.mouse.click(mx, my); await page.waitForTimeout(250);
+    const hm = (await heads()).join('|');
+    check(!/Guard rails|Dual gauge|Ends/.test(hm) && /Height/.test(hm), `a monorail route has neither guard rails nor dual gauge (${hm.replace(/\n/g, ' ')})`); }
+
   check(errors.length === 0, `no errors on the page${errors.length ? `: ${errors.join(' | ').slice(0, 600)}` : ''}`);
 } catch (err) {
   fails.push(`${at}: ${err instanceof Error ? err.message : err}`);

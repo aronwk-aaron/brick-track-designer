@@ -44,7 +44,7 @@ export function optionForm(d: () => Design): { form: OptSection[]; noMono: (c?: 
   const noTongues = (c: OptCtx) => (c.o.joint === 'butt' || c.o.joint === 'flataxle' ? 'Parts join with is Straight cuts: no rail tongues' : undefined);
   const form: OptSection[] = [
     { title: 'Track', kind: 'train', fields: [
-      { key: 'gaugeStuds', label: 'Gauge, studs', step: 1, min: 2, max: 10, rerender: true, help: 'Studs between the rails. LEGO track is 4. The whole design\'s, but for a route given its own (its card › Place › Gauge).',
+      { key: 'gaugeStuds', label: 'Gauge for new tracks, studs', step: 1, min: 2, max: 10, rerender: true, help: 'The design\'s default gauge: studs between the rails. LEGO track is 4. A track can have its own (its card › Place › Gauge), which wins over this.',
         def: 4, get: () => d().gaugeStuds, set: (v) => { d().gaugeStuds = Math.round(Number(v)); } },
       { key: 'sleepers', label: 'Under the rails', choices: [
         { v: 'bed', t: 'Solid bed', tip: 'One solid bed under the rails, like LEGO switches.' },

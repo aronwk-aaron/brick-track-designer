@@ -209,6 +209,7 @@
     #coords { right: 10px; bottom: 10px; color: var(--muted); font-variant-numeric: tabular-nums; pointer-events: none; }
     #selbar { left: 10px; top: 10px; display: flex; gap: 4px; align-items: center; padding: 4px 6px; z-index: 1; flex-wrap: wrap; max-width: calc(100% - 280px); } /* (clear of the legend, which is about 250px wide open) */
     #selbar[hidden] { display: none; }
+    details.rsub.off > summary { cursor: default; list-style: none; } details.rsub.off > summary::-webkit-details-marker { display: none; } .rswitch { margin: 0 6px 0 0; vertical-align: middle; } .rreset { margin: 2px 0 6px; font-size: 12px; }
     #track:focus-visible { outline: 3px solid var(--accent, #2b5fb8); outline-offset: -3px; }
     #selform { left: 10px; top: 50px; display: flex; gap: 8px; align-items: center; padding: 4px 8px; z-index: 2; flex-wrap: wrap; max-width: calc(100% - 280px); }
     #selform[hidden] { display: none; }

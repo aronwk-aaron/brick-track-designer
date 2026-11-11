@@ -23,6 +23,7 @@ import { isZip } from '../geom/unzip';
 import { COMMON_RADII } from './guides';
 import { lockedWhy, setLocked } from './lock';
 import { addTemplate, openEnds } from './addtemplate';
+import { cardSections, type SectionId } from './cardsections';
 import { designOfSelection, listMine, saveMine, type StorageLike } from './mytemplates';
 import { parallelRoute } from './parallelroute';
 import { mergeProblem, mergeRoutes, splitRoute } from './splitmerge';
@@ -153,7 +154,7 @@ function segRow(r: DRoute, k: number): HTMLElement {
 type Choice = { v: string; t: string; tip: string; con?: string };
 const LEFT_OUT = 'Left out within a sleeper length of another track (switches, crossings, a track close alongside).';
 /** A route card's bridge guard rails and dual gauge (straight.scad's guard_* and dual_* settings): off by default, always shown, greyed out with the reason when they don't apply. */
-function extraRailFields(r: DRoute, body: HTMLElement) {
+function extraRailFields(r: DRoute, body: HTMLElement, which: 'guard' | 'dual') {
   const d = { ...RAIL_DEFAULTS, ...Object.fromEntries(Object.entries(r).filter(([, v]) => v !== undefined)) } as typeof RAIL_DEFAULTS & DRoute;
   const opt = (off: string | undefined) => {
     const wrap = document.createElement('div'); body.append(wrap);
@@ -188,10 +189,7 @@ function extraRailFields(r: DRoute, body: HTMLElement) {
     { v: 'end', t: 'End', tip: at('the end'), con },
     { v: 'both', t: 'Both ends', tip: at('both ends'), con }];
   const gOff = r.guardRails ? undefined : 'only with Guard rails on';
-  pick('Guard rails', r.guardRails ? 'on' : 'off', 'off', [
-    { v: 'off', t: 'Off', tip: 'Just the two running rails.' },
-    { v: 'on', t: 'On', tip: 'A guard rail just inside each running rail, as on bridges, to keep a derailed train on the track.', con: 'More to print. Fewer studs between the rails.' }],
-  (v) => { r.guardRails = v === 'on' || undefined; }, undefined, LEFT_OUT);
+  if (which === 'guard') {
   pick('Guard rail points', d.guardRailEnds, RAIL_DEFAULTS.guardRailEnds, ends(
     { v: 'none', t: 'None', tip: 'The guard rails run to both ends, with rail ends that join the next piece\'s guard rails.' },
     (w) => `The guard rails curve in to a point on the centre line at ${w}, as where a bridge starts.`),
@@ -204,11 +202,9 @@ function extraRailFields(r: DRoute, body: HTMLElement) {
     { v: 'curve', t: 'Curve', tip: 'One smooth curve from the point into the parallel guard rails.', con: 'Wider sooner, so fewer studs near the point.' }],
   (v) => { r.guardRailTaperShape = v as DRoute['guardRailTaperShape']; }, pOff);
   studs('Nose ramp, studs', d.guardRailNoseRampStuds, RAIL_DEFAULTS.guardRailNoseRampStuds, 0.25, 0, 5, (n) => { r.guardRailNoseRampStuds = n; }, 'The point\'s nose slopes from just above the bed up to the rail top over this length, so anything dragging rides over it. 0: no slope.', pOff);
+  return;
+  }
   const gs = routeGaugeStuds(design, r), dOff = r.dualGauge ? undefined : 'only with Dual gauge on';
-  pick('Dual gauge', r.dualGauge ? 'on' : 'off', 'off', [
-    { v: 'off', t: 'Off', tip: 'One gauge.' },
-    { v: 'on', t: 'On', tip: 'A third rail, so trains of a narrower gauge run on it and one running rail.', con: 'More to print. No studs near the third rail.' }],
-  (v) => { r.dualGauge = v === 'on' || undefined; }, undefined, LEFT_OUT);
   studs('Narrow gauge, studs', d.dualGaugeStuds, RAIL_DEFAULTS.dualGaugeStuds, 1, 1, 9, (n) => { r.dualGaugeStuds = Math.round(n); }, 'Studs between the narrow gauge\'s rails (2: LEGO narrow gauge).', dOff);
   const centred = d.dualShared === 'centre';
   if (r.dualGauge && d.dualGaugeStuds >= gs - (centred ? 1 : 0)) {
@@ -456,6 +452,23 @@ function lockToggle(x: { locked?: boolean }): HTMLElement {
   lab.append(cb, ' Locked: not moved, reshaped, mirrored, turned or deleted');
   return lab;
 }
+/**
+ * One setting the design has a default for and a track can override: a number field (empty: the default), which one is in force said under it,
+ * and a button to go back to the default. (The pattern for any setting a track can carry itself.)
+ */
+function overrideRow(o: { label: string; cur: number | undefined; def: number; defWhere: string; range: Range; step: number; help: string; locked?: string; set: (v: number | undefined) => void }): HTMLElement {
+  const wrap = document.createElement('div');
+  const inp = document.createElement('input'); inp.type = 'number'; inp.step = String(o.step); inp.min = String(o.range[0]); inp.max = String(o.range[1]);
+  inp.value = o.cur === undefined ? '' : String(o.cur); inp.placeholder = String(o.def); inp.disabled = !!o.locked;
+  inp.title = `${o.help} ${rangeText(o.range)}`;
+  inp.addEventListener('change', () => { const n = Number(inp.value); if (inp.value.trim() === '' || !Number.isFinite(n)) o.set(undefined); else o.set(n); });
+  const note = document.createElement('small'); note.className = 'desc';
+  if (o.locked) { note.style.color = 'var(--warn)'; note.textContent = `Locked: ${o.locked}.`; }
+  else { note.style.color = 'var(--muted)'; note.textContent = o.cur === undefined ? `Design default: ${o.def} (${o.defWhere}). Type a number to give this track its own.` : `This track: ${o.cur}. Design default: ${o.def} (${o.defWhere}).`; }
+  wrap.append(field(o.label, inp), note);
+  if (o.cur !== undefined && !o.locked) { const b = btn('Use the design default', () => o.set(undefined), `Go back to the design default, ${o.def}`); b.className = 'rreset'; wrap.append(b); }
+  return wrap;
+}
 /** One route's card: its heading, and its form when it's open (a folded one is its heading only). */
 function makeCard(r: DRoute, i: number): HTMLElement {
   {
@@ -480,14 +493,23 @@ function makeCard(r: DRoute, i: number): HTMLElement {
     const body = document.createElement('div'); body.className = 'body';
     body.append(lockToggle(r));
     // (the card in folding sections, each remembered open or shut for every card: only the shape open to start with)
-    const part = (title: string, note = '') => {
-      const d2 = document.createElement('details'); d2.className = 'rsub'; d2.open = openParts.has(title);
+    const part = (title: string, note = '', toggle?: { on: boolean; set: (v: boolean) => void; tip: string }) => {
+      const d2 = document.createElement('details'); d2.className = 'rsub'; d2.open = openParts.has(title) && (!toggle || toggle.on);
       const s2 = document.createElement('summary'); s2.textContent = title;
+      if (toggle) {
+        // (a feature with a switch: off, the section is its title and the switch, nothing more; its options come once it's on)
+        const cb = document.createElement('input'); cb.type = 'checkbox'; cb.checked = toggle.on; cb.title = toggle.tip; cb.className = 'rswitch'; cb.setAttribute('aria-label', `${title}: on or off`);
+        cb.addEventListener('click', (e) => e.stopPropagation());
+        cb.addEventListener('change', () => { toggle.set(cb.checked); if (cb.checked) openParts.add(title); changed(true); });
+        s2.prepend(cb);
+        if (!toggle.on) { d2.classList.add('off'); s2.addEventListener('click', (e) => { if (e.target !== cb) e.preventDefault(); }); }
+      }
       if (note) { const n2 = document.createElement('span'); n2.textContent = note; s2.append(n2); }
       d2.addEventListener('toggle', () => { if (d2.open) openParts.add(title); else openParts.delete(title); keepParts(); });
       const b2 = document.createElement('div'); d2.append(s2, b2); body.append(d2); return b2;
     };
     const shape = part('Shape', `${r.segs.length} piece${r.segs.length === 1 ? '' : 's'}`);
+    const hBox = document.createElement('div');
     const place = part('Place', `${r.x}, ${r.y} · ${r.heading}°${isMono(r) ? ' · monorail' : ''}${!isMono(r) && r.gaugeStuds !== undefined && r.gaugeStuds !== design.gaugeStuds ? ` · gauge ${r.gaugeStuds}` : ''}${r.monoHeight !== undefined ? ` · ${r.monoHeight}${r.monoHeightEnd !== undefined && r.monoHeightEnd !== r.monoHeight ? `→${r.monoHeightEnd}` : ''} plates up` : ''}`);
     const name = document.createElement('input'); name.value = r.name; name.type = 'text';
     // (routes are known by their names, in the trackwork and the switches: no two the same)
@@ -515,32 +537,26 @@ function makeCard(r: DRoute, i: number): HTMLElement {
       sys.title = 'Train track, or LEGO monorail: the 4-stud beam with a rack down the middle.';
       sys.addEventListener('change', () => { setSystem(r, sys.value === 'monorail' ? 'monorail' : 'train'); changed(true); renderOptions(); });
       place.append(field('Track', sys));
-      // (its own gauge: empty, the design's (Settings › Track › Gauge), shown; locked on a monorail, with why)
-      {
-        const gi = document.createElement('input'); gi.type = 'number'; gi.step = '1'; gi.min = String(LIMITS.gauge[0]); gi.max = String(LIMITS.gauge[1]);
-        gi.value = r.gaugeStuds === undefined || isMono(r) ? '' : String(r.gaugeStuds); gi.placeholder = String(design.gaugeStuds); gi.disabled = isMono(r);
-        gi.title = `Studs between this route's rails, if not the design's ${design.gaugeStuds} (Settings › Track › Gauge). Range ${LIMITS.gauge[0]} to ${LIMITS.gauge[1]}.`;
-        gi.addEventListener('change', () => { const n = Math.round(Number(gi.value)); if (gi.value.trim() === '' || !Number.isFinite(n)) delete r.gaugeStuds; else r.gaugeStuds = clamp(n, LIMITS.gauge); changed(true); });
-        place.append(field('Gauge, studs', gi));
-        const n5 = document.createElement('small'); n5.className = 'desc';
-        if (isMono(r)) { n5.textContent = 'Gauge: locked, a monorail beam has none (Place › Track).'; n5.style.color = 'var(--warn)'; }
-        else { n5.style.color = 'var(--muted)'; n5.textContent = `Gauge: studs between this route's rails, ${LIMITS.gauge[0]} to ${LIMITS.gauge[1]}; empty: the design's, ${design.gaugeStuds} (Settings › Track › Gauge). Tracks of different gauges cross and run side by side; points between them aren't built. A narrower track starting in a wider one's end, within its rails, leaves it on fixed rails (the narrow gauge out of dual-gauge track).`; }
-        place.append(n5);
-      }
+      // (its own gauge: the design's, unless set here; the value in force is said, with a reset)
+      place.append(overrideRow({
+        label: 'Gauge, studs', cur: isMono(r) ? undefined : r.gaugeStuds, def: design.gaugeStuds, defWhere: 'Settings › Track › Gauge for new tracks', range: LIMITS.gauge, step: 1,
+        help: 'Studs between this track\'s rails. Tracks of different gauges cross and run side by side in one design.',
+        locked: isMono(r) ? 'a monorail beam has no gauge' : undefined, set: (v) => { if (v === undefined) delete r.gaugeStuds; else r.gaugeStuds = clamp(Math.round(v), LIMITS.gauge); changed(true); },
+      }));
       // (monorail: the beam's height off the baseplate, in plates; empty: the supports' height in Settings, or on the baseplate)
       const hi = document.createElement('input'); hi.type = 'number'; hi.step = '1'; hi.min = '0'; hi.max = String(LIMITS.plates[1]);
       hi.value = r.monoHeight === undefined ? '' : String(r.monoHeight); hi.placeholder = 'auto';
       hi.title = isMono(r) ? 'The beam\'s height off the baseplate in plates (3.2 mm). Empty: the supports\' height (Settings › Monorail), or on the baseplate. Raise it to pass over train track or another monorail (5 plates clear of a beam, more over track).'
         : 'Train track: its height off the baseplate at its start, in plates (3.2 mm), on risers (LEGO 2 x 8 bricks and plates, in the parts list). The pieces are printed level and laid on them. Empty: on the baseplate.';
       hi.addEventListener('change', () => { const n = Math.round(Number(hi.value)); if (hi.value.trim() === '' || !Number.isFinite(n)) { delete r.monoHeight; delete r.monoHeightEnd; /* (its end height is locked without it: not kept, to take effect unseen) */ } else r.monoHeight = clamp(n, LIMITS.plates); changed(); soon(render); });
-      place.append(field(isMono(r) && r.monoHeightEnd !== undefined ? 'Start height, plates' : 'Height, plates', hi));
+      hBox.append(field(isMono(r) && r.monoHeightEnd !== undefined ? 'Start height, plates' : 'Height, plates', hi));
       // (a ramp: its height at its end; empty: level)
       const he = document.createElement('input'); he.type = 'number'; he.step = '1'; he.min = '0'; he.max = String(LIMITS.plates[1]);
       he.value = r.monoHeightEnd === undefined ? '' : String(r.monoHeightEnd); he.placeholder = 'level';
       he.disabled = r.monoHeight === undefined;
       he.title = r.monoHeight === undefined ? 'Locked: set its Height first' : !isMono(r) ? 'Train track: its height at its end, in plates: an even grade from its start height to this. The standard is 2.5% (a plate a 16-stud straight; a whole turn of R40 rises 15.7 plates, R104 40.8). Empty: level.' : 'Its height at its end, in plates: it ramps from its start height to this, easing in and out (level at both ends). Empty: level. It may be as steep as LEGO\'s monorail ramps (21° at the steepest): those rise 5 bricks over each 32-stud piece.';
       he.addEventListener('change', () => { const n = Math.round(Number(he.value)); if (he.value.trim() === '' || !Number.isFinite(n)) delete r.monoHeightEnd; else r.monoHeightEnd = clamp(n, LIMITS.plates); changed(); soon(render); });
-      place.append(field(isMono(r) ? 'End height, plates (a ramp)' : 'End height, plates (a grade)', he));
+      hBox.append(field(isMono(r) ? 'End height, plates (a ramp)' : 'End height, plates (a grade)', he));
       // (train track on a grade: how steep, against the standard 2.5%)
       if (!isMono(r) && r.monoHeight !== undefined && r.monoHeightEnd !== undefined && r.monoHeightEnd !== r.monoHeight) {
         const g = gradeOf(r), n5 = document.createElement('small'); n5.className = 'desc';
@@ -548,7 +564,7 @@ function makeCard(r: DRoute, i: number): HTMLElement {
         if (g > 2.5 + 1e-6) n5.style.color = 'var(--warn)';
         place.append(n5);
       }
-      place.append(rangeNote('Heights: 0 to 250 plates; empty: none.'));
+      hBox.append(rangeNote('Heights: 0 to 250 plates; empty: none.'));
       if (r.monoHeight === undefined) { const n4 = document.createElement('small'); n4.className = 'desc'; n4.textContent = 'End height: locked until Height is set.'; n4.style.color = 'var(--warn)'; place.append(n4); }
     }
     r.segs.forEach((_, k) => {
@@ -558,40 +574,49 @@ function makeCard(r: DRoute, i: number): HTMLElement {
       row.addEventListener('mouseleave', () => { canvas.highlightSeg = undefined; canvas.draw(); });
       shape.append(row);
     });
-    const ends = part('Ends', !isMono(r) && [r.startEnd, r.endEnd].includes('buffer') ? 'buffer stop' : '');
-    // (each end: an ordinary end connector, or a buffer stop)
-    for (const [prop, label] of [['startEnd', 'Starts in'], ['endEnd', 'Ends in']] as const) {
-      const es = document.createElement('select');
-      for (const [v, t] of [['connector', 'An end connector'], ['buffer', 'A buffer stop']]) es.append(new Option(t, v));
-      es.value = r[prop] ?? 'connector';
-      es.title = 'An ordinary end connector, to join more track, or a buffer stop: the rails run into two posts joined by a buffer beam, its last two studs (the Buffer stops settings)';
-      es.addEventListener('change', () => { if (es.value === 'buffer') r[prop] = 'buffer'; else delete r[prop]; changed(true); });
-      if (isMono(r)) { es.disabled = true; es.title = 'Locked: buffer stops are for train track'; }
-      const f = field(label, es); f.classList.add('stack'); ends.append(f);
-    }
-    // (a branch, i.e. a switch's: its lever's side, where it branches; shown once the plan knows it's one)
+    // (which sections this route has, and what each says shut: cardsections.ts)
     const id = r.name || String(i), items = canvas?.overlay?.items ?? [];
     const keys = new Set(items.filter((it) => it.kind === 'points' && !it.cand && (it.routes ?? []).slice(1).includes(id)).map((it) => it.key));
-    if (keys.size || (r.throwSide && r.throwSide !== 'auto')) {
+    const secs = cardSections(design, r, { branches: keys.size > 0 }), sec = (sid: SectionId) => secs.find((x) => x.id === sid);
+    if (sec('ends')) {
+      const ends = part('Ends', sec('ends')!.summary);
+      // (each end: an ordinary end connector, or a buffer stop)
+      for (const [prop, label] of [['startEnd', 'Starts in'], ['endEnd', 'Ends in']] as const) {
+        const es = document.createElement('select');
+        for (const [v, t] of [['connector', 'An end connector'], ['buffer', 'A buffer stop']]) es.append(new Option(t, v));
+        es.value = r[prop] ?? 'connector';
+        es.title = 'An ordinary end connector, to join more track, or a buffer stop: the rails run into two posts joined by a buffer beam, its last two studs (the Buffer stops settings)';
+        es.addEventListener('change', () => { if (es.value === 'buffer') r[prop] = 'buffer'; else delete r[prop]; changed(true); });
+        const f = field(label, es); f.classList.add('stack'); ends.append(f);
+      }
+    }
+    // (guard rails and dual gauge: a section each, a switch in the heading; the options come once it's on; none on a monorail)
+    if (sec('guard')) {
+      const g = part('Guard rails', sec('guard')!.summary, { on: !!r.guardRails, set: (v) => { r.guardRails = v || undefined; }, tip: 'Guard rails: one inside each running rail, as on bridges, to keep a derailed train on the track. More to print; fewer studs between the rails. ' + LEFT_OUT });
+      if (r.guardRails) extraRailFields(r, g, 'guard');
+    }
+    if (sec('dual')) {
+      const g = part('Dual gauge', sec('dual')!.summary, { on: !!r.dualGauge, set: (v) => { r.dualGauge = v || undefined; }, tip: 'Dual gauge: a third rail, so trains of a narrower gauge run on it and one running rail. More to print; no studs near the third rail. ' + LEFT_OUT });
+      if (r.dualGauge) extraRailFields(r, g, 'dual');
+    }
+    // (a branch, i.e. a switch's: its lever's side, where it branches; shown once the plan knows it's one)
+    if (sec('levers')) {
+      const lev = part('Points and levers', sec('levers')!.summary);
       const sel = document.createElement('select');
       const opt = design.options?.throwSide ?? 'auto';
       for (const [v, t] of [['auto', opt === 'auto' ? 'Auto: away from this branch' : `As the Settings say (${opt})`], ['left', 'Left'], ['right', 'Right']]) sel.append(new Option(t, v));
       sel.value = r.throwSide ?? 'auto';
       sel.title = 'Which side the lever goes at the points where this track branches off another, as you face along them from their toe';
       sel.addEventListener('change', () => { r.throwSide = sel.value as DRoute['throwSide']; changed(true); });
-      const f = field('Lever side where it branches', sel); f.classList.add('stack'); ends.append(f);
+      const f = field('Lever side where it branches', sel); f.classList.add('stack'); lev.append(f);
       const hand = [...keys].filter((k) => design.trackwork?.throw?.[k]?.side);
       if (hand.length) {
         const n = document.createElement('small'); n.className = 'desc';
         n.textContent = `The lever${keys.size > 1 ? 's' : ''} here ${hand.length > 1 ? 'were' : 'was'} dragged across by hand, which wins: set its Side back to Auto in the Trackwork panel for this to apply.`;
-        ends.append(n);
+        lev.append(n);
       }
     }
-    {
-      const rails = part('Guard rails and dual gauge', isMono(r) ? 'train track only' : [r.guardRails && 'guard rails', r.dualGauge && 'dual gauge'].filter(Boolean).join(' · '));
-      if (isMono(r)) { const n2 = document.createElement('small'); n2.className = 'desc'; n2.textContent = 'Locked: guard rails and a third rail are for train track; this route is monorail (Place › Track).'; rails.append(n2); }
-      else extraRailFields(r, rails);
-    }
+    { const hs = part(sec('height')!.title, sec('height')!.summary); hs.append(...hBox.childNodes); }
     const add = document.createElement('div'); add.className = 'row';
     add.append(
       btn('+ Straight', () => r.segs.push({ kind: 'straight', studs: 16 })),
