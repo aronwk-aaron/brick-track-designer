@@ -24,6 +24,7 @@ import type { CheckRail, Split } from '../route/solver';
 import { planSections } from './sections';
 import type { Route } from '../route/route';
 import { cutPiece, type CutLine } from '../geom/cutter';
+import { type DesignCuts, designCuts, handCutsFor } from './handcuts';
 import { edgeGrip } from '../geom/underside';
 import { pathSplit, splitOnPath, type Keep } from '../geom/pathsplit';
 import { findStuds, wholeStuds } from '../geom/studs';
@@ -816,6 +817,8 @@ export interface Overlay {
   grooves: [number, number][][]; checkRails: [number, number][][]; crossings: [number, number][]; splits: [number, number][]; grips: [number, number][]; items: TrackworkItem[];
   /** what's wrong, and where (mm, and how far round it): ringed in red on the plan and in the 3D view */
   issues: { at: [number, number]; r: number; text: string; area?: boolean }[];
+  /** where the track's cut across into track pieces (mm), with Long track cut into: Track pieces: the plan's "Keep these cuts" */
+  joints?: [number, number][];
 }
 
 /** A hand edit's key: where the item is (its middle, mm, "x,y"). */
@@ -1210,6 +1213,8 @@ type Baked = { positions: Float32Array; supports?: Float32Array; stl: Uint8Array
 interface PieceBuild {
   w: Wasm; scad: Scad; o: PieceOptions; gaugeStuds: number; track: Track; cut: CutContext; prog: Progress;
   pieces: Piece[]; volume: number; bedWarnings: Set<string>; overlay: Overlay;
+  /** the design's hand cuts across its tracks (handcuts.ts); undefined: none */
+  handCuts?: DesignCuts;
   /** A heavy job (BuildJob): built (or found in the cache); or, planning, listed (if it isn't cached) and passed over. */
   job: <T>(key: string, cost: number, f: () => T, none: T) => T;
   /** labels engraved under the parts (name, label_*) */
@@ -1439,8 +1444,17 @@ function sectioned(b: PieceBuild, name: string, all: Route[], checks: CheckRail[
     if (!fitLens.has(k)) fitLens.set(k, longestTrack(r, half, Math.min(half, track.c.sleeperLen / 2), END_REACH + 0.5, o.printBedX, o.printBedY) - 1);
     return fitLens.get(k)!;
   };
-  const plan = cached(`secplan:${key}:${room}:${o.printBedX}x${o.printBedY}:${bandHalf}:${ex}:${JSON.stringify(plates)}:${JSON.stringify(std && [...std])}:${stdStraights}:${lead}:${JSON.stringify(tables)}`, () => planSections(all, solSplits, cx.bandHalf0, room, 40, ex, plates, std, stdStraights, lead, seamOf, track.c.trackGauge, pieceFit));
+  // (the hand cuts across these routes (expert): joints of the plan's too; with none, the plan and its key as ever)
+  const hc = b.handCuts && handCutsFor(b.handCuts, all);
+  const plan = cached(`secplan:${key}:${room}:${o.printBedX}x${o.printBedY}:${bandHalf}:${ex}:${JSON.stringify(plates)}:${JSON.stringify(std && [...std])}:${stdStraights}:${lead}:${JSON.stringify(tables)}${hc ? `:hand${JSON.stringify(hc.hand)}` : ''}`, () => planSections(all, solSplits, cx.bandHalf0, room, 40, ex, plates, std, stdStraights, lead, seamOf, track.c.trackGauge, pieceFit, hc?.hand));
   const st = (q: [number, number]) => `${(q[0] / 8).toFixed(0)}, ${(q[1] / 8).toFixed(0)}`;
+  if (hc) {
+    const at = (q: number[]) => `${+(q[0] / 8).toFixed(1)}, ${+(q[1] / 8).toFixed(1)}`;
+    for (const c of hc.lost) b.bedWarnings.add(`the hand cut at ${at(c.at)} (studs) on ${c.name} isn't made: it is in points (cut before or after them)`);
+    for (const bl of plan.blocked) b.bedWarnings.add(`the hand cut at ${at(routePose(all[bl.route], bl.s))} (studs) isn't made: ${bl.why === 'points' ? 'it is in points or a crossing (cut before or after them)' : 'the track is one part with the track beside it there'}`);
+  }
+  // (where the track's cut across into pieces: for the plan)
+  (b.overlay.joints ??= []).push(...plan.pieces.flatMap(([i, a]) => (a > 0 ? [[routePose(all[i], a)[0], routePose(all[i], a)[1]] as [number, number]] : [])));
   for (const sm of plan.seams) b.bedWarnings.add(sm.kind === 'blocked' ? `a table's seam crosses points or a crossing at ${st(sm.at)} (studs): the track isn't cut there (move the table's edge)`
     : `a table's seam at ${st(sm.at)} (studs) isn't where two track pieces join: the piece there is printed in two (move the table's edge to a joint to buy it)`);
   const gridPose = b.gridPose;
@@ -1652,6 +1666,8 @@ function sectioned(b: PieceBuild, name: string, all: Route[], checks: CheckRail[
       return;
     }
     b.overlay.grips.push(...part.grips);
+    // (a piece of a track cut by hand only, too long for the bed: cut again to fit, as any part is, and said)
+    if (hc && part.ms.length > 1 && ps.length === 1 && hc.hand[ps[0][0]]?.only) { const q = routePose(rts[0], routeLength(rts[0]) / 2); b.bedWarnings.add(`a part of a track cut by hand only doesn't fit the ${o.printBedX} x ${o.printBedY} print bed at ${(q[0] / 8).toFixed(0)}, ${(q[1] / 8).toFixed(0)} (studs): it's cut again to fit (add a cut there)`); }
     for (const b2 of part.ms) {
       // (bought pieces' ballast: printed, named for the track it's under)
       const lego = apart ? b2.lego : whole;
@@ -2144,10 +2160,12 @@ function buildOne(w: Wasm, design: Design, report: (what: string, frac: number) 
   // (long track in pieces cut square across it, each end an ordinary connector, as LEGO track: Long track cut into)
   const inLengths = o.splitTrack === 'lengths';
   if (design.tables?.length && !inLengths) bedWarnings.add('the tables cut the track at their seams only with Long track cut into: Track pieces');
+  const handCuts = designCuts(design);
+  if (handCuts && !inLengths) bedWarnings.add('the hand cuts across tracks are made only with Long track cut into: Track pieces');
   const sleepered = o.sleepers === 'sleepers' && o.ballast === 'none';
   const labelOn = o.ballast !== 'none' && o.bottomStyle === 'float' && !!o.labelText?.trim();
   const b: PieceBuild = { w, scad, o, gaugeStuds: design.gaugeStuds, track, cut, prog, pieces: [], volume: 0, bedWarnings, overlay, job,
-    labelOn, ...(opts.mark && { mark: opts.mark }), num: { part: 0, sec: 0 }, alongTrack, gridPose, sleepered, bufs, grooveCuts, grooveEdits: tw.groove, dropInner, tables: design.tables ?? [], boughtSw: bought, trackRoutes: routes };
+    labelOn, ...(opts.mark && { mark: opts.mark }), num: { part: 0, sec: 0 }, alongTrack, gridPose, sleepered, bufs, grooveCuts, grooveEdits: tw.groove, dropInner, tables: design.tables ?? [], boughtSw: bought, trackRoutes: routes, ...(handCuts && { handCuts }) };
   const copt = { ...CROSSING_DEFAULTS, gaugeStuds: design.gaugeStuds, grip: o.grip ?? 'edges', flangeway: o.flangeway, flangewayDepth: o.flangewayDepth, checkRailW: o.checkRailW, checkRailFlare: o.checkRailFlare,
     ballast: o.ballast, bottomStyle: o.bottomStyle, supports: o.endSupports !== false, curveStuds: o.curveStuds,
     studFit: o.studFit, antistudFit: o.antistudFit, sleepers: o.sleepers, undersideGrid: o.ballast === 'none' ? o.undersideGrid : undefined, sleeperWidthStuds: o.sleeperWidthStuds, sleeperGapStuds: o.sleeperGapStuds,

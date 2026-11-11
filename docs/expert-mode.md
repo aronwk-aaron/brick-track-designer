@@ -148,10 +148,11 @@ says when (section 9).
 | doesn't reach an edge | "Carry the cut on to the edge of the part" |
 
 **Automatic except where I cut.** Hand cuts are made first; every part that results is then treated as today: if it
-fits the bed, done; if not, the automatic cuts (lengths, `middleCut`, `lengthwiseCut`, `bedCut`) apply to it, unless
-its route is `cutsLocked` or the path's section is locked (`expert.lockedSections`, by ident): then it is left and the
-bed-fit warning says so ("track3 is 320 x 120: over the 256 x 256 bed. It is cut by hand only: add a cut or unlock").
-Bed-fit checks apply to hand-cut parts as to any other (`bake`'s `fits`).
+fits the bed, done; if not, the automatic cuts (lengths, `middleCut`, `lengthwiseCut`, `bedCut`) apply to it. A route
+that is `cutsLocked` (or, S3, a section locked in `expert.lockedSections`, by ident) gets no automatic joints; a part
+of it that still doesn't fit the bed is cut to fit all the same (a part that can't be printed helps nobody) and the
+warning says where ("a part of a track cut by hand only doesn't fit the 256 x 256 print bed at 0, 24 (studs): it's
+cut again to fit (add a cut there)"). Bed-fit checks apply to hand-cut parts as to any other (`bake`'s `fits`).
 
 **Which joint.** The design's Joint, or the cut's own (`joint`). Across-track cuts between track pieces are ordinary
 track ends (no choice: that is what makes them stud-safe); a per-cut joint applies to path cuts.
@@ -371,3 +372,21 @@ route-owned storage, the follow rules and the card section they bring are the pa
 (kept current by whoever builds a stage: what is built, what is next, traps)
 
 - Design document: this file.
+- **S2 is built: hand cuts across a track.** `DRoute.cuts` (studs from the start) and `cutsLocked`; pure part
+  `src/app/routecuts.ts` (clean, problems, reverse, split, join, follow a reshape, lost cuts); build side
+  `src/app/handcuts.ts` (cuts by place on the ground, mapped onto whatever routes the build cuts into pieces) and one
+  argument to `planSections` (`hand`: forced joints as a table's seam; `blocked` says which weren't made); in build.ts
+  only `sectioned` (the plan's key and warnings, `overlay.joints`) and two lines in `buildOne`. Editor: the card's
+  "Cuts into parts" section (a field per cut, ✕, Only these cuts, Add a cut… then a click on the track, Keep the cuts
+  it has now, Automatic cuts), orange lines on the plan (dashed while the app may add its own), `followHandCuts` in
+  main.ts `changed()`. Templates (Features): 'Straight cut into parts by hand', 'Curve and straights cut into parts by
+  hand'. Tests: test/routecuts.test.ts, test/handcuts.test.ts.
+- **Next, in order:** (1) drag a cut along its track on the plan, and select it (the typed item ids of section 5; today
+  cuts are edited in the card); (2) S1 `overrides.ts` + `buildGroups` as section 1 says; (3) S3: cut paths, and with
+  them the across cuts that are refused today ("one part with the track beside it", "in points").
+- **Traps.** The tests' defaults are not the app's (test/setup-defaults.ts: `splitTrack: 'bed'`): a template with
+  hand cuts must say `splitTrack: 'lengths'` or every test build warns that hand cuts aren't made. Cuts are kept off
+  the solver's `Route` on purpose (section 7). An automatic joint within 2 studs of a hand cut is left out
+  (`HAND_CLEAR`), so "Keep the cuts it has now" on a track that already has hand cuts keeps exactly the parts it has.
+  `followHandCuts` goes by `DRoute` object identity between finished actions: anything that swaps the design's route
+  objects without calling `replaced()` or `changed(true)` loses the follow for that one action (not the cuts).

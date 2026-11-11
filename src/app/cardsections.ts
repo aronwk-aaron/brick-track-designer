@@ -2,8 +2,9 @@
 // the route (guard rails and a third rail on a monorail, end connectors and buffer stops likewise) isn't shown at all; a feature that
 // is off is one line (its title and switch), its options coming only once it's on. Pure: main.ts draws what this says.
 import { type Design, isMono, RAIL_DEFAULTS, routeGaugeStuds, type DRoute } from './design';
+import { cutsSummary } from './routecuts';
 
-export type SectionId = 'shape' | 'place' | 'ends' | 'guard' | 'dual' | 'levers' | 'height';
+export type SectionId = 'shape' | 'place' | 'ends' | 'guard' | 'dual' | 'levers' | 'height' | 'cuts';
 export interface CardSection {
   id: SectionId;
   /** the names the card uses */
@@ -51,6 +52,8 @@ export function cardSections(d: Design, r: DRoute, ctx: CardContext): CardSectio
   if (ctx.branches || (r.throwSide !== undefined && r.throwSide !== 'auto')) out.push({ id: 'levers', title: 'Points and levers', summary: `lever on the ${r.throwSide && r.throwSide !== 'auto' ? r.throwSide : (d.options?.throwSide ?? 'auto') === 'auto' ? 'auto side' : d.options?.throwSide}` });
   const h = r.monoHeight, he = r.monoHeightEnd;
   out.push({ id: 'height', title: mono ? 'Height' : 'Height and grade', summary: h === undefined && he === undefined ? 'on the baseplate' : he !== undefined ? `${h ?? 0} to ${he} plates` : `${h} plates` });
+  // (expert: where its track is cut into parts by hand; a monorail beam's parts are its own)
+  if (!mono) out.push({ id: 'cuts', title: 'Cuts into parts', summary: cutsSummary(r) });
   return out;
 }
 

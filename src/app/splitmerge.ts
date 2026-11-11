@@ -4,6 +4,7 @@ import { type BankRamps, type Design, type DRoute, type DSeg, freeName, toRoutes
 import { follow, type Pose } from './planner';
 import { joinedEnds, joinProblem, reversedRoute } from './routeedits';
 import { joinAnchors, reverseAnchors, splitAnchors } from './twfollow';
+import { cutLength, joinCuts, reverseCuts, splitCuts } from './routecuts';
 import { routeLength } from '../route/route';
 import type { RouteEnds } from '../route/route';
 
@@ -69,7 +70,8 @@ const endsFrom = (start: boolean, end: boolean): RouteEnds => (start && end ? 'b
  * Route i cut at s studs along it (whole studs: rounded): the first half keeps its name and place in the list, the second is a new route
  * after it, starting where the first ends. What's on the track goes with it: the guard rails' and third rail's settings on both (their
  * pointed ends the cut routes' far ends only), buffer stops and the second end on the half that has that end, the lever's side with the
- * first (the route's start), a monorail's or a grade's height at the cut on both sides, hand edits by where they are (splitAnchors).
+ * first (the route's start), a monorail's or a grade's height at the cut on both sides, hand edits by where they are (splitAnchors),
+ * hand cuts each on its own half (splitCuts).
  * Returns the two names, or why not.
  */
 export function splitRoute(d: Design, i: number, at: number): { first: string; second: string } | { problem: string } {
@@ -83,6 +85,8 @@ export function splitRoute(d: Design, i: number, at: number): { first: string; s
   const b: DRoute = { ...structuredClone(r), name: nb, x: r6(cut.x), y: r6(cut.y), heading: r6(norm180(cut.heading)), segs: sb };
   delete b.startEnd; delete b.throwSide;
   const a = r;
+  // (its hand cuts: each half its own, the second's from its own start)
+  if (r.cuts) { const [ca, cb] = splitCuts(r.cuts, s); if (ca) a.cuts = ca; else delete a.cuts; if (cb) b.cuts = cb; else delete b.cuts; }
   a.segs = sa; delete a.endEnd;
   if (r.endEnd) b.endEnd = r.endEnd;
   for (const k of ['guardRailEnds', 'dualPlainEnds'] as const) {
@@ -142,6 +146,13 @@ function joinWith(d: Design, a: number, b: number, bEnd: 'start' | 'end'): numbe
   const routes = d.routes, rb = routes[b], rts = toRoutes(d);
   joinAnchors(d, routes[a].name || String(a), rb.name || String(b), routeLength(rts[a]), routeLength(rts[b]), bEnd === 'end');
   const more = bEnd === 'start' ? rb.segs.map((sg) => ({ ...sg })) : reversedRoute(rb).segs;
+  // (their hand cuts: b's on from a's end; both cut by hand only: still two parts where they met, and still by hand only)
+  if (routes[a].cuts || rb.cuts || routes[a].cutsLocked || rb.cutsLocked) {
+    const both = !!routes[a].cutsLocked && !!rb.cutsLocked, lenB = cutLength(rb);
+    const cuts = joinCuts(routes[a].cuts, bEnd === 'start' ? rb.cuts : reverseCuts(rb.cuts, lenB), cutLength(routes[a]), both);
+    if (cuts) routes[a].cuts = cuts; else delete routes[a].cuts;
+    if (both) routes[a].cutsLocked = true; else delete routes[a].cutsLocked;
+  }
   const segs = routes[a].segs;
   for (const sg of more) {
     const last = segs[segs.length - 1], first = more[0];

@@ -9,6 +9,10 @@ import type { Split } from '../route/solver';
 
 /** A piece of one route: [route, from, to] (arc lengths). */
 export type RoutePiece = [number, number, number];
+/** A route's hand cuts across it (expert mode): where, mm along it; only: it's cut by hand only, none of the app's own joints. */
+export interface HandCuts { cuts: number[]; only: boolean }
+/** (mm) An automatic joint nearer a hand cut than this is left out: the hand cut is the joint there. */
+const HAND_CLEAR = 16;
 
 /**
  * Where to cut: each route's pieces, and the pieces grouped into the
@@ -34,11 +38,17 @@ export type RoutePiece = [number, number, number];
  * goes on the print bed, turned any way (geom/bedfit.ts): with std, a printed segment whose pieces would be longer is
  * cut into shorter ones.
  */
-export function planSections(routes: Route[], splits: Split[], half: number, room: number, minPart = 40, exact = 0, plates?: { size: number; x: number; y: number }, std?: Map<number, number>, stdStraights: number[] = [], lead = 0, seamOf?: (q: [number, number]) => number, gauge0?: number, fit?: (sg: Route['segments'][number], half: number) => number) {
+/**
+ * hand: each route's hand cuts (HandCuts, from handcuts.ts): a hand cut is a joint there exactly, as a table's seam
+ * is, the pieces either side as short as they come; a route cut by hand only gets no others (but the tables' seams).
+ * One in points or a crossing, or where other track's base touches its own, isn't made: listed in blocked, with why.
+ */
+export function planSections(routes: Route[], splits: Split[], half: number, room: number, minPart = 40, exact = 0, plates?: { size: number; x: number; y: number }, std?: Map<number, number>, stdStraights: number[] = [], lead = 0, seamOf?: (q: [number, number]) => number, gauge0?: number, fit?: (sg: Route['segments'][number], half: number) => number, hand?: (HandCuts | undefined)[]) {
   // (mixed gauges: a route with a gauge of its own reaches that much less, or more, each side than the design's (half, at gauge0))
   const halves = routes.map((rt) => (rt.gauge !== undefined && gauge0 !== undefined ? half + (rt.gauge - gauge0) / 2 : half));
   /** where a table seam crosses the track: cut there ('cut'), or not, through points or a crossing ('blocked'); 'split': cut, but between its pieces' joints (a bought piece printed in two) */
   const seams: { at: [number, number]; kind: 'blocked' | 'split' }[] = [];
+  const blocked: { route: number; s: number; why: 'points' | 'beside' }[] = [];
   const boxes = routes.map((rt, i) => routesBox([rt], halves[i] + 16, 8));
   const inBox = (j: number, q: [number, number]) => q[0] >= boxes[j][0] && q[0] <= boxes[j][2] && q[1] >= boxes[j][1] && q[1] <= boxes[j][3];
   // (track on a grade: route i at s and route j where it's level with q pass one over the other, GRADE_APART or more apart in height)
@@ -49,8 +59,13 @@ export function planSections(routes: Route[], splits: Split[], half: number, roo
   for (const sp of splits) sp.routes.forEach((ri, k) => busy[ri].push([sp.spans[k][0] - 24, sp.spans[k][1] + 24]));
   /** Can route i be cut square at s: its base there (and a connector's depth either side) clear of every other track's base? */
   const free = (i: number, s: number) => {
-    const rt = routes[i], L = routeLength(rt);
+    const L = routeLength(routes[i]);
     if (s < minPart || s > L - minPart || busy[i].some(([a, b]) => s >= a && s <= b)) return false;
+    return clear(i, s);
+  };
+  /** Is route i's base at s (and a connector's depth either side) clear of every other track's base? */
+  const clear = (i: number, s: number) => {
+    const rt = routes[i];
     for (const ds of [-10, 0, 10]) for (let o = -halves[i]; o <= halves[i] + 1e-9; o += 8) {
       const q = railPoint(rt, s + ds, o);
       for (let j = 0; j < routes.length; j++) if (j !== i && inBox(j, q) && Math.abs(routeLat(routes[j], q)) < halves[j] + 2 && !over(i, s + ds, j, q)) return false;
@@ -74,11 +89,11 @@ export function planSections(routes: Route[], splits: Split[], half: number, roo
   };
   const pieces: RoutePiece[] = [];
   routes.forEach((rt, i) => {
-    const L = routeLength(rt), step = 8, cuts: number[] = [];
+    const L = routeLength(rt), step = 8, cuts: number[] = [], hd = hand?.[i];
     // (its pieces' joints, when they're track pieces of their own (std): each segment on from its start, a straight every
     // exact, such a curve every piece's angle)
     const nat = new Set<number>();
-    if (std && exact > 0) {
+    if (std && exact > 0 && !hd?.only) {
       let s0 = 0;
       const isLead = (k: number) => { const g = rt.segments[k]; return !!g && lead > 0 && g.kind === 'straight' && Math.abs(g.length - lead) < 0.01; };
       const isR104 = (k: number) => { const g = rt.segments[k]; return !!g && g.kind === 'arc' && Math.abs(g.radius - 104 * 8) < 0.01; };
@@ -101,7 +116,8 @@ export function planSections(routes: Route[], splits: Split[], half: number, roo
     };
     // free stretches along it (on the stud grid from its start)
     const ok: boolean[] = [];
-    for (let s = 0; s <= L; s += step) ok.push(free(i, s));
+    // (cut by hand only: no stretch is free for the app's own cuts)
+    for (let s = 0; s <= L; s += step) ok.push(!hd?.only && free(i, s));
     let k = 0;
     while (k < ok.length) {
       if (!ok[k]) { k++; continue; }
@@ -174,6 +190,17 @@ export function planSections(routes: Route[], splits: Split[], half: number, roo
         if (std && exact > 0) seams.push({ at: pt, kind: 'split' });
       }
     }
+    // (its hand cuts: there exactly, the pieces either side as short as they come; not in points or a crossing, nor
+    // where other track's base touches its own (the two are one part there: no ordinary end to make))
+    const mine: number[] = [];
+    for (const c2 of hd?.cuts ?? []) {
+      if (!(c2 > 1 && c2 < L - 1)) continue;
+      if (busy[i].some(([a, b]) => c2 >= a && c2 <= b)) blocked.push({ route: i, s: c2, why: 'points' });
+      else if (!clear(i, c2)) blocked.push({ route: i, s: c2, why: 'beside' });
+      else { mine.push(c2); nat.add(c2); seamAt.add(c2); }
+    }
+    // (and no joint of the app's own within two studs of one: the hand cut is the joint there)
+    if (mine.length) { const kept = cuts.filter((c) => seamAt.has(c) || !mine.some((h) => Math.abs(h - c) < HAND_CLEAR - 1e-6)); cuts.length = 0; cuts.push(...kept, ...mine); }
     const cs = [...new Set(cuts)].filter((c) => (c >= minPart && c <= L - minPart) || (nat.has(c) && c > 1 && c < L - 1)).sort((p, q) => p - q);
     let s0 = 0;
     const mine0 = pieces.length;
@@ -215,5 +242,5 @@ export function planSections(routes: Route[], splits: Split[], half: number, roo
   }
   const groups = new Map<number, number[]>();
   pieces.forEach((_, k) => { const g = find(k); if (!groups.has(g)) groups.set(g, []); groups.get(g)!.push(k); });
-  return { pieces, sections: [...groups.values()], seams };
+  return { pieces, sections: [...groups.values()], seams, blocked };
 }

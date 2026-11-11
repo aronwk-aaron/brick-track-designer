@@ -3,6 +3,7 @@
 import type { RouteEnds } from '../route/route';
 import { type BankRamps, type Design, type DRoute, isMono, routeGaugeStuds } from './design';
 import { reversed } from './planner';
+import { cutLength, reverseCuts } from './routecuts';
 
 const otherEnd = <T extends string | undefined>(e: T): T => (e === 'start' ? 'end' : e === 'end' ? 'start' : e) as T;
 const otherSide = <T extends string | undefined>(s: T): T => (s === 'left' ? 'right' : s === 'right' ? 'left' : s) as T;
@@ -10,7 +11,7 @@ const otherSide = <T extends string | undefined>(s: T): T => (s === 'left' ? 'ri
 /**
  * The same track drawn from its other end (a start dragged onto another track's end, to join them): its start and
  * end swapped, and so what each ends in (a buffer stop), the ends its guard rails come to a point at, the ends its
- * third rail stops short of, its banked curves' ramps, and its heights (a grade runs the other way); the rail both
+ * third rail stops short of, its banked curves' ramps, its hand cuts, and its heights (a grade runs the other way); the rail both
  * gauges share is on the other side, facing along it. (Its lever's side is by the points, not the route: kept.)
  */
 export function reversedRoute(r: DRoute): DRoute {
@@ -24,6 +25,8 @@ export function reversedRoute(r: DRoute): DRoute {
   // (the shared rail left out is the right one: said here only where there's a third rail, or it was said)
   if (r.dualGauge || r.dualShared) out.dualShared = otherSide(r.dualShared ?? 'right');
   if (r.monoHeight !== undefined && r.monoHeightEnd !== undefined) { out.monoHeight = r.monoHeightEnd; out.monoHeightEnd = r.monoHeight; }
+  // (its hand cuts: each as far from the new start as it was from the old end)
+  if (r.cuts) { const cuts = reverseCuts(r.cuts, cutLength(r)); if (cuts) out.cuts = cuts; else delete out.cuts; }
   return out;
 }
 

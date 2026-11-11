@@ -27,6 +27,8 @@ import { cardSections, type SectionId } from './cardsections';
 import { designOfSelection, listMine, saveMine, type StorageLike } from './mytemplates';
 import { parallelRoute } from './parallelroute';
 import { mergeProblem, mergeRoutes, splitRoute } from './splitmerge';
+import { jointsOn } from './handcuts';
+import { addCut, cleanCuts, clearCuts, CUT_MIN, cutLength, cutProblem, followCuts, lostCuts, setCut } from './routecuts';
 import { initTemplateBrowser } from './templatebrowser';
 import { type CopiedEdit, copyEdits, followTrackwork, isEdit, leftOver, mirrorAnchors, pasteEdits, reconcileTrackwork, renameAnchors } from './twfollow';
 import { type OptChoice, optionForm, type OptCtx, type OptField } from './settings';
@@ -477,6 +479,58 @@ function overrideRow(o: { label: string; cur: number | undefined; def: number; d
   if (o.cur !== undefined && !o.locked) { const b = btn('Use the design default', () => o.set(undefined), `Go back to the design default, ${o.def}`); b.className = 'rreset'; wrap.append(b); }
   return wrap;
 }
+/**
+ * A route card's Cuts into parts (expert): where its track is cut into parts by hand, a field each (studs from its
+ * start), the ones no longer on its track said so; Add a cut (then a click on the track), Only these cuts, Keep the
+ * cuts it has now (the app's own made its hand cuts), Automatic cuts (all of it undone).
+ */
+function cutsSection(box: HTMLElement, r: DRoute, i: number) {
+  const L = cutLength(r), lost = new Set(lostCuts(r)), small = (text: string, warn = false) => { const n = document.createElement('small'); n.className = 'desc'; n.style.color = warn ? 'var(--warn)' : 'var(--muted)'; n.textContent = text; return n; };
+  box.append(small(`Where this track is cut into separate parts: an ordinary track end each side, as between two track pieces. Studs from its start, ${CUT_MIN} to ${+(L - CUT_MIN).toFixed(1)}, at least ${CUT_MIN} apart. Left empty, the app cuts it (Settings › Cutting).`));
+  (r.cuts ?? []).forEach((at, k) => {
+    const inp = document.createElement('input'); inp.type = 'number'; inp.step = '1'; inp.min = String(CUT_MIN); inp.max = String(Math.max(CUT_MIN, Math.floor(L - CUT_MIN))); inp.value = String(at);
+    inp.title = `This cut, studs from the track's start. Range ${CUT_MIN} to ${+(L - CUT_MIN).toFixed(1)}.`;
+    inp.addEventListener('change', () => {
+      const n = Number(inp.value);
+      const why = inp.value.trim() === '' || !Number.isFinite(n) ? 'Type how far along the cut is, studs' : setCut(r, k, n);
+      if (why) { canvas.say(why); inp.value = String(at); return; }
+      coalesceNext = `cut:${i}:${k}`; changed(); soon(render);
+    });
+    // (the field and its ✕ side by side)
+    const pair = document.createElement('span'); pair.style.cssText = 'display:flex;gap:4px;align-items:center';
+    const out = btn('✕', () => { setCut(r, k, undefined); }, 'Take this cut out'); out.style.cssText = 'flex:none;width:auto;padding:2px 8px'; out.setAttribute('aria-label', `Take cut ${k + 1} out`);
+    inp.style.minWidth = '0'; pair.append(inp, out);
+    box.append(field(`Cut ${k + 1}, studs`, pair));
+    if (lost.has(at)) {
+      box.append(small(`Cut ${k + 1} is past the end of the track (${+L.toFixed(1)} studs long): it isn't made.`, true));
+      const to = Math.floor(L - CUT_MIN), fix = btn(`Move it to ${to}`, () => { const why = setCut(r, k, to); if (why) canvas.say(why); }, 'Put this cut back on the track, as near its end as a cut can be');
+      fix.className = 'rreset'; fix.disabled = !!cutProblem(r, to, (r.cuts ?? []).filter((_, n) => n !== k)); box.append(fix);
+    }
+  });
+  const only = document.createElement('label'); only.className = 'lockrow';
+  const cb = document.createElement('input'); cb.type = 'checkbox'; cb.checked = r.cutsLocked === true;
+  cb.addEventListener('change', () => { if (cb.checked) r.cutsLocked = true; else delete r.cutsLocked; changed(true); });
+  only.title = 'Cut this track only where its cuts here are (and at tables\' seams): the app adds none of its own, whatever changes around it. A part too long for the print bed is still cut to fit, and the warnings say so.';
+  only.append(cb, ' Only these cuts: none of the app\'s own on this track');
+  const row = document.createElement('div'); row.className = 'row';
+  const addB = document.createElement('button'); addB.type = 'button'; addB.textContent = 'Add a cut…'; addB.title = 'Then click on this track where to cut it into parts (a whole stud along; Esc cancels). It stays one route.';
+  addB.addEventListener('click', () => { canvas.setSelection([i]); canvas.cutHere(); });
+  const keep = btn('Keep the cuts it has now', () => {
+    const js = canvas?.overlay?.joints;
+    if (!js) { canvas.say('Wait for the build to finish, then Keep the cuts it has now'); return; }
+    // (the app's own joints on this track, by where they are: its hand cuts now, and only these)
+    const mine = jointsOn(design, i, js).filter((s) => s >= CUT_MIN - 1e-6 && s <= L - CUT_MIN + 1e-6);
+    const cuts = cleanCuts([...(r.cuts ?? []), ...mine]);
+    if (cuts) r.cuts = cuts; else delete r.cuts;
+    r.cutsLocked = true;
+    canvas.say(`${r.name || 'This track'}: ${cuts?.length ?? 0} cut${cuts?.length === 1 ? '' : 's'} kept, and only these`);
+  }, 'Make the cuts the app has made on this track its hand cuts, and tick Only these cuts: later changes to the design or the settings won\'t move them');
+  const auto = btn('Automatic cuts', () => clearCuts(r), 'Take out every hand cut on this track and untick Only these cuts: the app cuts it again');
+  auto.disabled = !r.cuts?.length && !r.cutsLocked;
+  if (auto.disabled) auto.title = 'Automatic already: this track has no hand cuts';
+  row.append(addB, keep, auto);
+  box.append(only, row);
+}
 /** One route's card: its heading, and its form when it's open (a folded one is its heading only). */
 function makeCard(r: DRoute, i: number): HTMLElement {
   {
@@ -628,6 +682,7 @@ function makeCard(r: DRoute, i: number): HTMLElement {
       }
     }
     { const hs = part(sec('height')!.title, sec('height')!.summary); hs.append(...hBox.childNodes); }
+    if (sec('cuts')) cutsSection(part(sec('cuts')!.title, sec('cuts')!.summary), r, i);
     const add = document.createElement('div'); add.className = 'row';
     add.append(
       btn('+ Straight', () => r.segs.push({ kind: 'straight', studs: 16 })),
@@ -739,9 +794,31 @@ function updateExports() {
  */
 /** The setting being changed (set just before `changed`): changes to it within a second are one undo step. */
 let coalesceNext: string | undefined;
+/** Each route with hand cuts as it was at the last finished action (its pieces, its cuts), and its cuts as last moved to follow a reshape since. */
+let cutsWere = new Map<DRoute, { segs: string; cuts: string; moved?: string }>();
+/**
+ * A route's hand cuts go with its track when one of its pieces is reshaped (a handle dragged, a number typed:
+ * routecuts.ts followCuts), worked out from how it was at the last finished action, so a drag there and back loses
+ * nothing. Only cuts nothing else has changed since: an undo, a cut typed, a split or a join bring their own.
+ */
+function followHandCuts(record: boolean) {
+  for (const r of design.routes) {
+    const was = cutsWere.get(r), now = JSON.stringify(r.cuts ?? []);
+    if (!was || !r.cuts?.length || (now !== was.cuts && now !== was.moved)) continue;
+    const segs = JSON.stringify(r.segs);
+    if (segs === was.segs) { if (now !== was.cuts) r.cuts = JSON.parse(was.cuts); continue; }
+    const cuts = followCuts({ segs: JSON.parse(was.segs) }, { segs: r.segs, cuts: JSON.parse(was.cuts) });
+    if (cuts) r.cuts = cuts; else delete r.cuts;
+    was.moved = JSON.stringify(r.cuts ?? []);
+  }
+  if (record) noteHandCuts();
+}
+/** The routes with hand cuts noted as they are now (an action finished, or another design opened). */
+function noteHandCuts() { cutsWere = new Map(design.routes.filter((r) => r.cuts?.length).map((r) => [r, { segs: JSON.stringify(r.segs), cuts: JSON.stringify(r.cuts) }])); }
 function changed(rerender = false, record = true, build = true) {
   // (the trackwork's hand edits go with their track: each one's place worked out again from the route it's on)
   followTrackwork(design, canvas?.overlay?.items ?? []);
+  followHandCuts(record);
   if (record) {
     history.record(JSON.stringify(design), coalesceNext);
     coalesceNext = undefined;
@@ -1111,7 +1188,7 @@ function updateLegend() {
 }
 /** A different design (a template, a file, undo or redo): the toolbar and the forms show it, nothing selected. */
 function replaced() {
-  canvas.letGo(); canvas.setSelection([]); openCards.clear(); twSig = ''; renderOptions();
+  canvas.letGo(); canvas.setSelection([]); openCards.clear(); twSig = ''; renderOptions(); noteHandCuts();
 }
 
 const download = (blob: Blob, name: string) => {
@@ -1253,6 +1330,7 @@ const canvas = new TrackCanvas($<HTMLCanvasElement>('track'), {
   system: () => (systemSel.value === 'monorail' ? 'monorail' : 'train'),
   leaveDraw: () => setMode('select'),
   split: (i, s) => splitRouteAt(i, s),
+  cut: (i, s) => cutRouteAt(i, s),
   enterDraw: () => setMode('draw'),
   place: (tpl, pl) => {
     const res = addTemplate(design, tpl, pl);
@@ -1627,6 +1705,14 @@ const turnSel = (a: number) => transformSel((r, px, py) => {
   r.x = r3(px + dx * c - dy * sn); r.y = r3(py + dx * sn + dy * c);
   r.heading = r3((((r.heading + a + 180) % 360) + 360) % 360 - 180);
 }, (t, px, py) => turnedTable(t, px, py, a));
+/** Route i cut into parts by hand at s studs along it (its card's Add a cut): still one route. Undefined when done, else why not. */
+function cutRouteAt(i: number, s: number): string | undefined {
+  const r = design.routes[i], why = r ? addCut(r, s) : 'no such route';
+  if (why) return why;
+  openParts.add('Cuts into parts'); keepParts(); changed(true);
+  canvas.say(`${r.name || 'The track'} is cut into parts at ${s} studs: an ordinary track end each side`);
+  return undefined;
+}
 /** Route i cut in two at s studs along it (Split): both halves selected. Undefined when done, else why not. */
 function splitRouteAt(i: number, s: number): string | undefined {
   { const why = lockedWhy(design, [i]); if (why) return why; }

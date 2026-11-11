@@ -28,5 +28,7 @@ export function parallelRoute(d: Design, r: DRoute, side: 'left' | 'right', spac
   }
   out.name = freeName(d, 'T');
   delete out.throwSide; delete out.locked;
+  // (its hand cuts not copied: studs along the original, they'd be elsewhere along a curve of another radius; the app cuts the new track)
+  delete out.cuts; delete out.cutsLocked;
   return { route: out };
 }

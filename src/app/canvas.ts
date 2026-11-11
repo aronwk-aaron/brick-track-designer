@@ -14,6 +14,7 @@ import { forFingers } from './hints';
 import { joinProblem, reversedRoute } from './routeedits';
 import { LIMITS, radiusRange } from './limits';
 import { cutSegs, joinInto, nearestAlong, routeStuds, splitProblem } from './splitmerge';
+import { cutProblem, liveCuts } from './routecuts';
 import { dragResult, END_INSET_PX, guidedHandle, type Handle, type HandleKind, handleLabel, segmentHandles, visibleHandles, withValue } from './handles';
 import { isEdit, reverseAnchors } from './twfollow';
 import { type End, openEnds, type Placed, type Placement, placeTemplate, transformed } from './addtemplate';
@@ -51,6 +52,7 @@ const trace = (p: Pose, segs: DSeg[], step = 0.5) => tracedOnce(`t${p.x},${p.y},
 /** How big the ring round a problem's spot is at most, mm (a stud and a half). */
 export const ISSUE_R = 12;
 export interface Overlay { grooves: [number, number][][]; checkRails: [number, number][][]; crossings: [number, number][]; splits: [number, number][]; /** monorail points' toes (mm) */ monoPoints?: [number, number][]; grips?: [number, number][]; items?: OverlayItem[];
+  /** where the track's cut across into track pieces, mm (a route card's Keep the cuts it has now) */ joints?: [number, number][];
   /** what's wrong, and where (mm): ringed in red */ issues?: { at: [number, number]; r: number; text: string; /** r is the size of the thing itself (a part too big for the bed): ringed whole; else the ring is kept small, on the spot */ area?: boolean }[] }
 /** A trackwork item on the plan (mm); a lever ('throw') has its points' frame and settings, to drag it. */
 export interface OverlayItem { kind: string; key: string; at: [number, number]; pts: [number, number][]; dir?: [number, number];
@@ -73,6 +75,8 @@ export interface CanvasHost {
   place?(tpl: Design, placement: Placement): void;
   /** Split the route at studs along it (whole studs): undefined when done, else why not. */
   split?(route: number, studs: number): string | undefined;
+  /** Cut the route into parts by hand at studs along it (a hand cut, its track still one route): undefined when done, else why not. */
+  cut?(route: number, studs: number): string | undefined;
   /** Esc with nothing being drawn: back to Select mode. */
   leaveDraw?(): void;
   /** What new routes are: train track or monorail (Draw's Track choice). */
@@ -258,7 +262,7 @@ export class TrackCanvas {
     this.placing = { tpl, turn: 0, mirror: false, onto, theirs: openEnds(this.host.design().routes), moved: false };
     this.draw();
   }
-  private letGoSome() { this.splitArmed = false; this.meas = {}; this.active = undefined; }
+  private letGoSome() { this.splitArmed = false; this.cutArmed = false; this.meas = {}; this.active = undefined; }
   private placedNow(): Placed | undefined {
     const p = this.placing;
     if (!p) return undefined;
@@ -267,6 +271,13 @@ export class TrackCanvas {
   }
   /** Split: the next click on the selected route cuts it there (from the selection bar's button). */
   splitArmed = false;
+  /** Add a cut: the next click on the selected route cuts it into parts there by hand (from its card's Cuts into parts). */
+  cutArmed = false;
+  /** Wait for a click on the selected route, to cut it into parts there by hand. */
+  cutHere() {
+    if (this.selection().length !== 1 || this.tableSelection().length) { this.say('Select one route to cut it into parts'); return; }
+    this.splitArmed = false; this.cutArmed = true; this.draw();
+  }
   /** Where the selected route would be cut for a point (studs along it, whole studs), if the point is on it. */
   private cutFor(w: [number, number]): { route: number; s: number } | undefined {
     const sel = this.selection();
@@ -660,6 +671,13 @@ export class TrackCanvas {
       this.draw(); return;
     }
     // (Split's waiting for a click on the route)
+    if (this.cutArmed && e.button === 0) {
+      const cut = this.cutFor(w);
+      if (!cut) { this.say('Click on the selected route, where to cut it into parts (Esc cancels)'); return; }
+      const why = this.host.cut?.(cut.route, cut.s);
+      if (why) this.say(why); else { this.cutArmed = false; this.draw(); }
+      return;
+    }
     if (this.splitArmed && e.button === 0) {
       const cut = this.cutFor(w);
       if (cut) this.splitAt(cut); else this.say('Click on the selected route, where to cut it (Esc cancels)');
@@ -1100,7 +1118,7 @@ export class TrackCanvas {
       if (k === 'm' && !e.ctrlKey && !e.metaKey) { p.mirror = !p.mirror; p.moved = true; this.draw(); return; }
     }
     if (e.key === 'Escape' && this.mode === 'measure') { if (this.meas.a) { this.meas = {}; return this.draw(); } return this.host.leaveDraw?.(); }
-    if (e.key === 'Escape' && this.splitArmed) { this.splitArmed = false; return this.draw(); }
+    if (e.key === 'Escape' && (this.splitArmed || this.cutArmed)) { this.splitArmed = false; this.cutArmed = false; return this.draw(); }
     if (e.key === 'Escape' && this.handleDrag) {
       // (the handle's segment put back as it was)
       const hd = this.handleDrag, r = this.host.design().routes[hd.route];
@@ -1213,6 +1231,7 @@ export class TrackCanvas {
     if (this.placing) { const pl = this.placedNow(); return `Click to put it down${pl?.snapped ? `, joining ${pl.snapped.design.route}` : ''}${pl?.why ? ` (${pl.why})` : ''} · R / Shift+R turn it · M mirrors it · hold Alt for no snapping · Esc cancels`; }
     if (this.noteText) return this.noteText;
     if (this.splitArmed) return 'Click on the route where to cut it · Esc cancels';
+    if (this.cutArmed) return 'Click on the route where to cut it into parts · it stays one route · Esc cancels';
     if (this.mode === 'measure') return this.meas.b ? 'Click to measure again · Esc clears' : this.meas.a ? 'Click the second point · it snaps to track ends and centre lines · Esc clears' : 'Click the first point to measure from: it snaps to track ends and centre lines · Esc stops';
     if (this.handleDrag?.moved && this.handleDrag.why) return this.handleDrag.why;
     if (this.drag?.moved) return this.dragBad ? "Can't bend the track this way: release to keep the last good shape, Esc puts it back"
@@ -1652,6 +1671,28 @@ export class TrackCanvas {
       }
       this.el.dataset.measure = text;
     } else delete this.el.dataset.measure;
+    // Hand cuts (expert): a line across each track where it's cut into parts by hand
+    for (const rr of d.routes) {
+      if (!rr.cuts?.length) continue;
+      const half = ((rr.gaugeStuds ?? d.gaugeStuds) + 4) / 2 * this.scale;
+      c.strokeStyle = '#d9480f'; c.lineWidth = 2.5; c.setLineDash(rr.cutsLocked ? [] : [5, 3]);
+      for (const at of liveCuts(rr)) {
+        const [first] = cutSegs(rr.segs, at), q = follow(rr, first), [qx, qy] = this.toScreen(q.x, q.y), ang = (q.heading * Math.PI) / 180;
+        const nx = Math.cos(ang) * half, ny = -Math.sin(ang) * half;
+        c.beginPath(); c.moveTo(qx - nx, qy - ny); c.lineTo(qx + nx, qy + ny); c.stroke();
+      }
+      c.setLineDash([]);
+    }
+    // Add a cut: where the selected route would be cut into parts (the whole stud nearest the pointer)
+    if (this.cutArmed && this.mouse && !this.active && !this.drag && !this.moving) {
+      const cut = this.cutFor(this.mouse), rr = cut && d.routes[cut.route];
+      if (cut && rr) {
+        const why = cutProblem(rr, cut.s), [first] = cutSegs(rr.segs, cut.s), q = follow(rr, first), [qx, qy] = this.toScreen(q.x, q.y);
+        const ang = (q.heading * Math.PI) / 180, nx = Math.cos(ang) * 14, ny = -Math.sin(ang) * 14;
+        c.strokeStyle = why ? '#e0452b' : '#d9480f'; c.lineWidth = 2.5; c.beginPath(); c.moveTo(qx - nx, qy - ny); c.lineTo(qx + nx, qy + ny); c.stroke();
+        tag(qx, qy + 30, why ?? `cut into parts here: ${cut.s} studs from its start`, why ? '#e0452b' : '#b23c0a');
+      }
+    }
     // Split: where the selected route would be cut (the whole stud nearest the pointer), and the two lengths
     if (this.splitArmed && this.mouse && !this.active && !this.drag && !this.moving) {
       const cut = this.cutFor(this.mouse), rr = cut && d.routes[cut.route];
