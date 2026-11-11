@@ -7,6 +7,7 @@
 // cuts along the stud grid (pathsplit.ts, via pathJoints).
 import { clipNear, M, R, T, type CS, type Man, type Scad } from './scad';
 import { flat } from './kernel';
+import { support } from './supports';
 import { PLATE_H, tongueLeans, type Track } from './track';
 import type { Route } from '../route/route';
 import { railOffsetOf, railPoint, routeLat, routeLength, routePose, sleeperLenOf } from '../route/route';
@@ -100,7 +101,7 @@ export function jointKit(s: Scad, t: Track, bz: number) {
   /** lean: the other way round, for a rail at a slant the way that binds (track.ts tongueLeans) */
   const cutTongue = (type: number, z0: number, lean = false) => { const m = s.union([
     t.cutTongueEnd(type),
-    type < 0 ? T(t.railSupport(3, 3.23 - z0), [-3.3, -3, z0]) : T(t.railSupport(4, 2.08 - z0), [-2.2, -3, z0]),
+    support(s, type < 0 ? T(t.railSupport(3, 3.23 - z0), [-3.3, -3, z0]) : T(t.railSupport(4, 2.08 - z0), [-2.2, -3, z0])),
   ]); return lean ? M(m, [1, 0, 0]) : m; };
   /** The coupler a cut gets: cut flat, pinned with axles where they fit, or nothing (never a peg and clip: nothing sticks out); an axle joint where the piece is too thin for the hole, peg and clip. */
   const kindOf = (joint: Joint, flatRails: boolean): Joint => (flatRails ? (axleFits ? 'axle' : 'butt') : joint === 'axle' && !axleFits ? 'lego' : joint);

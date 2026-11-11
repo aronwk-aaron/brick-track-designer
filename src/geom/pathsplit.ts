@@ -242,7 +242,7 @@ export interface HandPath { id: string; pts: [number, number][]; joint?: Joint; 
 /** What became of a hand path in a piece: made (it cut a part in two), or why not and where: 'edge', it ends inside a part; 'sliver', a side would be a sliver; 'two', a side would be in two bodies. */
 export interface HandPathDone { id: string; made?: true; why?: 'edge' | 'sliver' | 'two'; at?: [number, number] }
 
-/** (mm3) A side of a hand cut smaller than this is a sliver; a loose bit smaller than BIT isn't a body (a support). */
+/** (mm3) A side of a hand cut smaller than this is a sliver; a loose bit smaller than BIT isn't a body (a loose bit the piece had anyway; its supports are carried apart, kernel.ts Supports). */
 const SLIVER = 2000, BIT = 600;
 /** (mm) No joint of a hand cut within this of where another hand cut meets or crosses it. */
 const GAP = 10;
@@ -338,7 +338,7 @@ export function cutOnPaths(s: Scad, m: Man, routes: Route[], paths: HandPath[], 
   };
   const all = CS.square([bb0.max[0] - bb0.min[0] + 100, bb0.max[1] - bb0.min[1] + 100]).translate([bb0.min[0] - 50, bb0.min[1] - 50]);
   let parts: Leaf[] = [{ reg: all, man: m, cuts: [], adds: [], by: new Set() }];
-  // (the loose bits the piece has anyway, its breakaway supports: by size and place)
+  // (the loose bits the piece has anyway (not its breakaway supports, which are carried apart and cut with it): by size and place)
   let bits: { v: number; c: number[] }[] | undefined;
   const mid = (y: Man) => { const b = y.boundingBox(); return [(b.min[0] + b.max[0]) / 2, (b.min[1] + b.max[1]) / 2, (b.min[2] + b.max[2]) / 2]; };
   const isBit = (y: Man) => { bits ??= flatOf(m).decompose().filter((x) => x.volume() < BIT).map((x) => ({ v: x.volume(), c: mid(x) })); const v = y.volume(), c = mid(y); return bits.some((b) => Math.abs(b.v - v) < 0.02 * b.v + 0.5 && Math.hypot(b.c[0] - c[0], b.c[1] - c[1], b.c[2] - c[2]) < 0.5); };
@@ -361,7 +361,7 @@ export function cutOnPaths(s: Scad, m: Man, routes: Route[], paths: HandPath[], 
         const short = ends.find(([e, b]) => { if (inside(inner, e)) return true; const d = unit(b, e); return leg([e[0] + d[0] * 2, e[1] + d[1] * 2], [e[0] + d[0] * big, e[1] + d[1] * big], 0.1).intersect(deep).area() > 0.2; })?.[0];
         if (short) { not(hp, 'edge', short); next.push(lf); continue; }
         const o = ownOf(hp), regs = [lf.reg.intersect(o.left), lf.reg.subtract(o.leftGrown)], mans = regs.map((r) => flatOf(s.intersection(m, prism(r))));
-        // (each side one body, and no sliver: loose bits under BIT are supports, or bits put back at the end (below))
+        // (each side one body, and no sliver: loose bits under BIT are the piece's own, or bits put back at the end (below))
         const sides = mans.map((x) => x.decompose().filter((y) => y.volume() > 5));
         if (sides.some((bs) => !bs.length)) { next.push(lf); continue; } // (nothing one side: it only ran along the part's edge)
         const why = sides.some((bs) => bs.reduce((t, y) => t + y.volume(), 0) < SLIVER || bs.some((y) => y.volume() >= BIT && y.volume() < SLIVER)) ? 'sliver' as const
@@ -385,7 +385,7 @@ export function cutOnPaths(s: Scad, m: Man, routes: Route[], paths: HandPath[], 
     return flatOf(lf.adds.length ? tidy(s, s.union([body, ...lf.adds.map((ad) => ad.m)])) : body);
   });
   // (a small bit a cut took off something that's another part's, held by nothing on its own side (the far half of
-  // a track end's tab, which reaches across the centre line; a support cut through): put back whole on the part
+  // a track end's tab, which reaches across the centre line): put back whole on the part
   // it was one with, joined across the cut's gap beside it, so the cut goes round it. One no part takes stays
   // where it is, loose)
   const kerf = paths.flatMap((hp) => { const o = own.get(hp.id); return o && done.get(hp.id)?.made ? [o.leftGrown.subtract(o.left)] : []; });

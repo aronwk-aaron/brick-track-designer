@@ -57,9 +57,16 @@ with a small screwdriver and check nothing is left in the slots.
 | Under every rail end of a cut part (Settings › Joints › Supports under rail ends, on by default) | A small block under each rail tongue. It snaps off whole, and the tongue's underside has to be flat enough to slide over the next piece's sleeper. In the October prints it came out clean. |
 | Under the peg and clip on ballast ends (Peg and clip on ballast ends, when it's on) | Small supports under the peg and the clip. |
 | In each sprung blade (`…-points-a`, `…-points-b`, with Blade shape: Sprung, the default) | Small loose pieces in the spring pocket under the plate, 0.2 under its roof, with a slit off the two beams. Break them out: the pocket must be empty end to end, so the plate's spring flexes when you press the blade sideways. *Not yet confirmed by a test print since the plates changed.* |
+| Under the monorail points' frame (`monorail-points-frame`, experimental) | Thin walls under its bars and racks. |
 
 Nothing else has supports: rigid blades, sliders, levers, brackets, stands and lids print with none. A snap
 clamp's **two small links are loose inside it on purpose**: leave them in.
+
+Every support is a loose body in its part's file, at least 0.2 mm clear of the part all round, so it breaks away
+whole. Where something else of the part is in a support's way (ballast beside a rail end, say), the support is cut
+back to keep that gap, or left out if nothing of it would stand. If something of the part is then no longer held up there,
+the build says so in its warnings (*a print support at … had no room beside the part*): print that one part with
+your slicer's supports on.
 
 If you'd rather your slicer made the rail-end supports, turn Supports under rail ends off.
 
@@ -296,4 +303,6 @@ overhang beyond what the project allows without supports (faces facing down stee
 part's own break-out supports, are a slope of 45 degrees or less, or are a bridge held both sides and 10 mm
 or less across), and no floating island (a bit of a layer, 0.2 mm, resting on nothing in the layer below). Where a design fails, the exact part and place is
 written down in `test/printable.shared.ts` (`PINNED`) to be fixed, and the test fails if it gets worse. That
-is a check of the geometry, not of a print.
+is a check of the geometry, not of a print. And every part of every template and saved design is checked for its
+supports: its file holds the part and exactly the supports the build made, each loose, none closer to the part than
+the gap, none standing more than 7.5 mm outside it.
