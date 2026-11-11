@@ -3,7 +3,7 @@
 import * as THREE from 'three';
 import wasmUrl from 'manifold-3d/manifold.wasm?url';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
-import { BANK_MAX, type BankRamps, type Design, type DRoute, type DSeg, OPTION_DEFAULTS, type PieceOptions, RAIL_DEFAULTS, TEMPLATES, type Trackwork, endOf, freeName, isMono, readDesign, routeGaugeStuds, setSystem } from './design';
+import { BANK_MAX, type BankRamps, type Design, type DRoute, type DSeg, OPTION_DEFAULTS, type PieceOptions, RAIL_DEFAULTS, TEMPLATES, type Trackwork, endOf, freeName, isMono, readDesign, routeGaugeStuds, setSystem, toRoutes } from './design';
 import { ISSUE_R, TrackCanvas, type OverlayItem, dialogOpen, eachLever, leverSide, leverSlides, typingIn } from './canvas';
 import { describe } from './planner';
 import { BRICKTRACKS_COLOR, gradeOf, LEGO_COLOR, type LegoPart, legoParts, type Piece } from './build';
@@ -28,6 +28,7 @@ import { designOfSelection, listMine, saveMine, type StorageLike } from './mytem
 import { parallelRoute } from './parallelroute';
 import { mergeProblem, mergeRoutes, splitRoute } from './splitmerge';
 import { jointsOn } from './handcuts';
+import { type CutPath, movedPath, PATH_JOINTS, type PathJoint, pathTracks, type PlacedRoute, sharedMove } from './cutpaths';
 import { addCut, cleanCuts, clearCuts, CUT_MIN, cutLength, cutProblem, followCuts, lostCuts, setCut } from './routecuts';
 import { initTemplateBrowser } from './templatebrowser';
 import { type CopiedEdit, copyEdits, followTrackwork, isEdit, leftOver, mirrorAnchors, pasteEdits, reconcileTrackwork, renameAnchors } from './twfollow';
@@ -438,9 +439,75 @@ function renderCircle() {
   body.append(add);
 }
 
+/**
+ * The Cut paths panel (expert): the cuts drawn along and between tracks. Add a cut path… (then clicks on the plan),
+ * and each path there is: where it runs, how its two sides join (the design's joint, or its own), whether the last
+ * build made it (and why not), ✕. A click on a row selects the path on the plan.
+ */
+function renderCutPaths() {
+  const body = $('cutpaths-body'), ps = design.expert?.cutPaths ?? [];
+  $('cutpaths-count').textContent = ps.length ? ` (${ps.length})` : '';
+  body.replaceChildren();
+  const small = (text: string, warn = false) => { const n = document.createElement('small'); n.className = 'desc'; n.style.color = warn ? 'var(--warn)' : 'var(--muted)'; n.style.display = 'block'; n.textContent = text; return n; };
+  body.append(small('Cuts drawn by hand where tracks are one part (points, a crossover): along a track, between two tracks, or across them. A path runs between the studs, never through one, and cuts every part it crosses from edge to edge. Not through a blade or a frog.'));
+  const bar = document.createElement('div'); bar.className = 'tbar';
+  const addB = document.createElement('button'); addB.type = 'button'; addB.textContent = 'Add a cut path…';
+  addB.title = 'Then click its points on the plan: they snap to the corners between studs. Start outside the part (or on another cut) and end outside it. Enter ends the path, Esc cancels.';
+  addB.addEventListener('click', () => { canvas.drawCutPath(); addB.blur(); });
+  bar.append(addB); body.append(bar);
+  if ((design.options?.splitTrack ?? OPTION_DEFAULTS.splitTrack) !== 'lengths' && ps.length) body.append(small('Cut paths are made only with Long track cut into: Track pieces (Settings › Print bed and cutting into parts).', true));
+  // (named as Settings › Parts join with names them)
+  const jointNames: Record<PathJoint, string> = { lego: 'Rail tongues + peg and clip', dovetail: 'Rail tongues + dovetails', axle: 'Rail tongues + LEGO axles', flataxle: 'Straight cuts + LEGO axles', butt: 'Straight cuts' };
+  ps.forEach((p, k) => {
+    const row = document.createElement('div'); row.className = 'cprow'; row.style.cssText = 'border-top:1px solid var(--line);padding:6px 0';
+    const a = p.pts[0], z = p.pts[p.pts.length - 1], head = document.createElement('button'); head.type = 'button'; head.className = 'rreset';
+    head.textContent = `Cut path ${k + 1}: ${+a[0].toFixed(1)}, ${+a[1].toFixed(1)} to ${+z[0].toFixed(1)}, ${+z[1].toFixed(1)} (studs)${p.pts.length > 2 ? `, ${p.pts.length - 2} turn${p.pts.length > 3 ? 's' : ''}` : ''}`;
+    head.title = 'Select this cut path on the plan: drag its corners or the path, Delete removes it';
+    head.addEventListener('click', () => { canvas.setSelection([]); canvas.selCut = { kind: 'cutpath', id: p.id }; canvas.draw(); });
+    const sel = document.createElement('select');
+    sel.title = 'How the two sides of this cut join. Design default: as Settings › Print bed and cutting into parts › Parts join with.';
+    sel.append(new Option('Joint: design default', ''), ...PATH_JOINTS.map((j) => new Option(`Joint: ${jointNames[j]}`, j)));
+    sel.value = p.joint ?? '';
+    sel.addEventListener('change', () => { if (sel.value) p.joint = sel.value as PathJoint; else delete p.joint; changed(true); });
+    const out = btn('✕', () => { const left = ps.filter((q) => q !== p); if (left.length) design.expert!.cutPaths = left; else delete design.expert; if (canvas.selCut?.kind === 'cutpath' && canvas.selCut.id === p.id) canvas.selCut = undefined; }, 'Take this cut path out');
+    out.style.cssText = 'flex:none;width:auto;padding:2px 8px'; out.setAttribute('aria-label', `Take cut path ${k + 1} out`);
+    const pair = document.createElement('div'); pair.style.cssText = 'display:flex;gap:4px;align-items:center;margin-top:4px'; sel.style.cssText = 'min-width:0;flex:1'; sel.setAttribute('aria-label', `Cut path ${k + 1}: joint`); pair.append(sel, out);
+    row.append(head, pair);
+    const not = canvas?.overlay?.pathsNot?.find((n) => n.id === p.id);
+    if (not) row.append(small(`Not made: ${not.why}.`, true));
+    body.append(row);
+  });
+}
+
+/** Each cut path as it was at the last finished action, with the tracks it lies between and where they were. */
+let pathsWere = new Map<string, { pts: string; moved?: string; tracks: { r: DRoute; was: PlacedRoute }[] }>();
+const placedOf = (r: DRoute): PlacedRoute => ({ x: r.x, y: r.y, heading: r.heading, segs: structuredClone(r.segs) });
+/**
+ * A cut path goes with the tracks it lies between when they're all moved, turned or mirrored together (cutpaths.ts
+ * sharedMove), worked out from how they were at the last finished action; if only some move, or one is reshaped, it
+ * stays where it is (and the build says so if it then cuts nothing). Only paths nothing else has changed since.
+ */
+function followCutPaths(record: boolean) {
+  for (const p of design.expert?.cutPaths ?? []) {
+    const was = pathsWere.get(p.id), now = JSON.stringify(p.pts);
+    if (!was || !was.tracks.length || (now !== was.pts && now !== was.moved)) continue;
+    const f = was.tracks.every((t) => design.routes.includes(t.r)) ? sharedMove(was.tracks.map((t) => t.was), was.tracks.map((t) => placedOf(t.r))) : undefined;
+    p.pts = f ? movedPath({ ...p, pts: JSON.parse(was.pts) as CutPath['pts'] }, f).pts : JSON.parse(was.pts);
+    was.moved = JSON.stringify(p.pts);
+  }
+  if (record) noteCutPaths();
+}
+/** The cut paths noted as they are now, with their tracks (an action finished, or another design opened). */
+function noteCutPaths() {
+  const ps = design.expert?.cutPaths;
+  if (!ps?.length) { pathsWere = new Map(); return; }
+  const rts = toRoutes(design);
+  pathsWere = new Map(ps.map((p) => [p.id, { pts: JSON.stringify(p.pts), tracks: pathTracks(p.pts, rts).filter((i) => !isMono(design.routes[i])).map((i) => ({ r: design.routes[i], was: placedOf(design.routes[i]) })) }]));
+}
+
 function render() { keepingFocus(document.querySelector('aside')!, drawForms); }
 function drawForms() {
-  renderTables(); renderPalette(); renderCircle();
+  renderTables(); renderCutPaths(); renderPalette(); renderCircle();
   // (the rows go: no piece left picked out by one that's gone)
   canvas.highlightSeg = undefined;
   routesEl.replaceChildren();
@@ -819,6 +886,7 @@ function changed(rerender = false, record = true, build = true) {
   // (the trackwork's hand edits go with their track: each one's place worked out again from the route it's on)
   followTrackwork(design, canvas?.overlay?.items ?? []);
   followHandCuts(record);
+  followCutPaths(record);
   if (record) {
     history.record(JSON.stringify(design), coalesceNext);
     coalesceNext = undefined;
@@ -1188,7 +1256,7 @@ function updateLegend() {
 }
 /** A different design (a template, a file, undo or redo): the toolbar and the forms show it, nothing selected. */
 function replaced() {
-  canvas.letGo(); canvas.setSelection([]); openCards.clear(); twSig = ''; renderOptions(); noteHandCuts();
+  canvas.letGo(); canvas.setSelection([]); openCards.clear(); twSig = ''; renderOptions(); noteHandCuts(); noteCutPaths();
 }
 
 const download = (blob: Blob, name: string) => {

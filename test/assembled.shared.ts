@@ -19,6 +19,7 @@ import { bedFit, tightBox } from '../src/geom/bedfit';
 import { buildDesign, clearBuildCache, type Piece } from '../src/app/build';
 import { type Design, OPTION_DEFAULTS, type PieceOptions, TEMPLATE_GROUPS, TEMPLATES } from '../src/app/design';
 import { putTogether, sharedEdges, stlPositions } from './assembly.shared';
+import { studsCut } from './cutpaths.shared';
 import { leverTravel, movedLocal, pointsLocal, toothA, toothB, toothTravel, POINTS, type PointsPart } from '../src/geom/monoswitch';
 import { MONO, placeAt } from '../src/geom/monorail';
 import { routePose, routeSOf, type Route } from '../src/route/route';
@@ -486,11 +487,9 @@ export const KNOWN: Record<string, Known> = {
   'Banked curve': { problems: [/^track6 and track7 overlap: 7\.\d+ mm3 at -269\.\d, 751\.\d/],
     why: 'its R56 curve is cut every 22.5 degrees now (as the bought R56 piece is), and at the joint 67.5 degrees round, at the full bank, the outer rail\'s end joint of one piece is 7 mm3 into the next piece (7.4 x 4.4 x 5.4 mm, at rail height); in 11.25 degree pieces the same joint was clear. An open fault in the banked end joints (geom/crossing.ts bankedEnd) on long pieces' },
   'Modular triple crossover R40': { problems: [/^track[12] is 3\d\d x 2\d\d at its tightest: over the 256 x 256 print bed/], warning: /sections don't fit the 256 x 256 print bed/,
-    why: 'as the three-track R104 crossover: cut across only, its two sections three tracks wide (352 and 368 mm)' },
+    why: 'cut across only, its two sections three tracks wide (352 and 368 mm). Cut paths (expert) as the three-track R104 crossover has them don\'t fit it yet: between its frogs (14.4 and 19.4 studs along) only the line at 17 studs is 2 studs clear of both, and that line grazes five studs on the branches\' slanted sleepers by 0.09 mm (found by the check that no stud is cut, cutpaths.shared.ts)' },
   'Straight, 1 stud': { problems: [/^track is in 3 pieces/],
     why: 'a straight one stud long is shorter than its own end joints: the peg and the clip at its two ends take the bed between them, and the part comes out in three bodies (on sleepers and on a solid bed alike)' },
-  'Crossover, three tracks, R104': { problems: [/^track[1-4] is 3\d\d x 1\d\d at its tightest: over the 256 x 256 print bed/], warning: /sections don't fit the 256 x 256 print bed/,
-    why: 'its four sections are cut across only, each three tracks wide (320 to 368 mm): between the tracks the crossovers\' diamonds fill the gap from rail to rail, so no cut runs along it clear of a frog. The reference cuts its middle sections along the track centre lines (clear of every rail from 28 to 52 studs along, 20 mm from the three-ways\' frogs): a cut the cutter doesn\'t make yet' },
 };
 
 /** The kinds of rail fault (railFaults) a design may be known for. */
@@ -536,6 +535,8 @@ export async function goesTogether(name: string, design: Design, k?: Known, edge
     const problems = [...assembledProblems(w, b.pieces, { ...APP, ...d.options }), ...railFaults(w, b.pieces, b.overlay?.checkRails)];
     const allowed = [...(k?.problems ?? []), ...(RAIL_KNOWN[name] ?? []).map((q) => RAIL_KINDS[q])];
     expect(problems.filter((q) => !allowed.some((re) => re.test(q))).join('; ')).toBe('');
+    // (9. cut by hand along paths (expert): no stud is cut, cutpaths.shared.ts)
+    if (d.expert?.cutPaths?.length) expect(studsCut(d, b).join('; ')).toBe('');
     // (what's allowed is still there (else it comes off the list), and said by the build where it's a limit)
     for (const re of allowed) expect(problems.some((q) => re.test(q)), `${name}: ${re} is no longer found: take it off the list`).toBe(true);
     if (k?.warning) expect(b.info.warnings.some((q) => k.warning!.test(q)), `${name}: the build doesn't say ${k.warning}`).toBe(true);

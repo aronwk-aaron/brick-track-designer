@@ -5,7 +5,9 @@
 import { type Design, isMono, toRoutes } from './design';
 import { liveCuts } from './routecuts';
 import type { HandCuts } from './sections';
-import { type Route, routeLength, routePose, routeSOf } from '../route/route';
+import { type Pose, type Route, routeLength, routePose, routeSOf } from '../route/route';
+import { gridPath, type Grid, type NoCut, pathProblem, type PathFault } from './cutpaths';
+import type { HandPath } from '../geom/pathsplit';
 
 /** A design's hand cuts: each one's route (its name, for what's said of it) and place (mm); and the routes cut by hand only. */
 export interface DesignCuts { cuts: { name: string; at: [number, number] }[]; only: Route[] }
@@ -54,4 +56,24 @@ export function jointsOn(d: Design, i: number, joints: [number, number][]): numb
   const rt = toRoutes(d)[i];
   if (!rt?.segments.length) return [];
   return joints.flatMap((q) => { const { s, off } = onRoute(rt, q); return off < 0.05 ? [Math.round((s / 8) * 1000) / 1000] : []; });
+}
+
+/**
+ * A design's cut paths for the build (undefined: it has none): each laid on the build's stud grid (gp, mm: a file's
+ * corners a hair off it, or a path left behind by track since moved, are put on the nearest grid corners, so no cut
+ * goes through a stud), in mm; the ones that can't be made (cutpaths.ts pathProblem: a blade, a frog, down a rail, a
+ * sliver between two) left out and listed in refused, with why and where (studs).
+ */
+export function designPaths(d: Design, gp: Pose, routes: Route[], railG: number, no: NoCut): { cut: HandPath[]; refused: (PathFault & { id: string })[] } | undefined {
+  const ps = d.expert?.cutPaths;
+  if (!ps?.length) return undefined;
+  const g: Grid = [gp[0] / 8, gp[1] / 8, gp[2]], laid = ps.map((p) => ({ ...p, pts: gridPath(g, p.pts) }));
+  const cut: HandPath[] = [], refused: (PathFault & { id: string })[] = [], ok: typeof laid = [];
+  for (const p of laid) {
+    const why = pathProblem(p.pts, ok.map((q) => q.pts), { routes, railG, no });
+    if (why) { refused.push({ id: p.id, ...why }); continue; }
+    ok.push(p);
+    cut.push({ id: p.id, pts: p.pts.map((q): [number, number] => [q[0] * 8, q[1] * 8]), ...(p.joint && { joint: p.joint === 'flataxle' ? 'axle' as const : p.joint, flatRails: p.joint === 'flataxle' }) });
+  }
+  return { cut, refused };
 }

@@ -7,9 +7,10 @@
 // side of the part to the other near where an even split would be, with as
 // few turns as it can. Each straight run of it is joined as a straight cut
 // would be (cutter.ts pathJoints).
-import { T, type Man, type Scad } from './scad';
+import { T, type CS, type Man, type Scad } from './scad';
 import { PLATE_H, type Track } from './track';
 import { jointKit, pathJoints, tidy, type Joint, type Run } from './cutter';
+import { findStuds, type Stud } from './studs';
 import type { Route } from '../route/route';
 import { railOffsetOf, routeLength, routePose } from '../route/route';
 
@@ -234,4 +235,180 @@ export function splitOnPath(s: Scad, m: Man, routes: Route[], path: [number, num
   if (j?.add[0].length) a = tidy(s, s.union([a, ...j.add[0]]));
   if (j?.add[1].length) b = tidy(s, s.union([b, ...j.add[1]]));
   return { parts: [a, b].filter((p) => p.volume() > 300), path, runs, couplers: j?.couplers ?? 0, tongues: j?.tongues ?? 0, holes: j?.holes ?? [], tongueAt: j?.tongueAt ?? [] };
+}
+
+/** A cut path drawn by hand (expert mode, app/cutpaths.ts), for the build: its corners (mm, on the stud grid, each run along a grid line), and its own joint if it has one. */
+export interface HandPath { id: string; pts: [number, number][]; joint?: Joint; flatRails?: boolean }
+/** What became of a hand path in a piece: made (it cut a part in two), or why not and where: 'edge', it ends inside a part; 'sliver', a side would be a sliver; 'two', a side would be in two bodies. */
+export interface HandPathDone { id: string; made?: true; why?: 'edge' | 'sliver' | 'two'; at?: [number, number] }
+
+/** (mm3) A side of a hand cut smaller than this is a sliver; a loose bit smaller than BIT isn't a body (a support). */
+const SLIVER = 2000, BIT = 600;
+/** (mm) No joint of a hand cut within this of where another hand cut meets or crosses it. */
+const GAP = 10;
+/** (mm) A path's end this far inside a part, material all round, hasn't reached its edge (less: the cut is carried on to the edge). */
+const END_IN = 4.5;
+
+/**
+ * A piece cut along the hand paths that run through it: each path cuts every part it runs through from edge to
+ * edge (carried straight on past its own ends), in the order given, and again after the others (a path from one
+ * cut to another cuts the part between them once they're made). Not made, and said why: a path that ends inside a
+ * part (or short of its edge), or would leave a sliver or a side in two bodies. join: the design's joints (a path's
+ * own joint over it), along each path's runs as pathSplit's are; taken: cutter.ts jointsNear's, added to.
+ *
+ * A part is the same, to the last triangle, whatever is cut elsewhere in the piece and wherever those cuts are
+ * moved to: its outline in plan is worked out from the paths, and it's cut from the whole piece in one go; each
+ * path's joints are worked out on the whole piece too, once, and no joint is put within GAP of where another path
+ * meets or crosses the cut. (Cut one after another, each from the last, the faces a far cut had crossed came out
+ * in other triangles, and the joints a hair off.)
+ */
+export function cutOnPaths(s: Scad, m: Man, routes: Route[], paths: HandPath[], join: PathJoin | undefined, taken: [number, number][], flatOf: (m: Man) => Man = (x) => x): { parts: Man[]; done: HandPathDone[] } {
+  const CS = s.w.CrossSection, big = 4000;
+  const bb0 = m.boundingBox(), c0 = [(bb0.min[0] + bb0.max[0]) / 2, (bb0.min[1] + bb0.max[1]) / 2];
+  const unit = (a: [number, number], b: [number, number]): [number, number] => { const l = Math.hypot(b[0] - a[0], b[1] - a[1]); return [(b[0] - a[0]) / l, (b[1] - a[1]) / l]; };
+  const prism = (cs: CS) => T(s.extrude(cs, 1000), [0, 0, -500]);
+  const leg = (a: [number, number], b: [number, number], w: number) => { const d = unit(a, b); return s.polygon([[a[0] - d[1] * w, a[1] + d[0] * w], [a[0] + d[1] * w, a[1] - d[0] * w], [b[0] + d[1] * w, b[1] - d[0] * w], [b[0] - d[1] * w, b[1] + d[0] * w]]); };
+  const inside = (f: CS, q: [number, number]) => CS.square([0.2, 0.2], true).translate(q).intersect(f).area() > 0.02;
+  /** The plan left of a path as it goes: the path, carried straight on past both ends, closed round its left by a ring far outside the piece (anticlockwise from where it leaves to where it came in). */
+  const leftOf = (pts: [number, number][]) => {
+    const n = pts.length, d0 = unit(pts[1], pts[0]), d1 = unit(pts[n - 2], pts[n - 1]);
+    const S: [number, number] = [pts[0][0] + d0[0] * big, pts[0][1] + d0[1] * big], E: [number, number] = [pts[n - 1][0] + d1[0] * big, pts[n - 1][1] + d1[1] * big];
+    const aE = Math.atan2(E[1] - c0[1], E[0] - c0[0]), aS = Math.atan2(S[1] - c0[1], S[0] - c0[0]);
+    const sweep = ((aS - aE) % (2 * Math.PI) + 2 * Math.PI) % (2 * Math.PI) || 2 * Math.PI, steps = Math.max(1, Math.ceil(sweep / (Math.PI / 4)));
+    const ring: [number, number][] = Array.from({ length: steps + 1 }, (_, k) => { const a = aE + (sweep * k) / steps; return [c0[0] + 3 * big * Math.cos(a), c0[1] + 3 * big * Math.sin(a)]; });
+    return s.polygon([S, ...pts, E, ...ring]);
+  };
+  // (the piece's studs, and their radius: found once, if any path needs them)
+  let studs0: Stud[] | undefined;
+  const studR = join ? join.t.c.postD / 2 : 0, studs = () => (studs0 ??= join ? findStuds(s, m, studR, join.t.o.studH, PLATE_H, PLATE_H) : []);
+  // (where each path is met or crossed by another: a corner or an end of the other on it, or the two crossing)
+  const meets = new Map<string, [number, number][]>(paths.map((hp) => [hp.id, paths.filter((o) => o !== hp).flatMap((o) => {
+    const out: [number, number][] = [...o.pts];
+    for (let i = 1; i < hp.pts.length; i++) for (let k = 1; k < o.pts.length; k++) {
+      const a = hp.pts[i - 1], b = hp.pts[i], c = o.pts[k - 1], d = o.pts[k], den = (b[0] - a[0]) * (d[1] - c[1]) - (b[1] - a[1]) * (d[0] - c[0]);
+      if (Math.abs(den) < 1e-9) continue;
+      const t = ((c[0] - a[0]) * (d[1] - c[1]) - (c[1] - a[1]) * (d[0] - c[0])) / den, u = ((c[0] - a[0]) * (b[1] - a[1]) - (c[1] - a[1]) * (b[0] - a[0])) / den;
+      if (t >= 0 && t <= 1 && u >= 0 && u <= 1) out.push([a[0] + t * (b[0] - a[0]), a[1] + t * (b[1] - a[1])]);
+    }
+    return out;
+  })]));
+  /** A path's own: the plan left of it (and that grown a hair, for the gap between the parts), and its joints, worked out on the whole piece along its runs, each run broken GAP either side of where another path meets it. */
+  const own = new Map<string, { left: CS; leftGrown: CS; cut?: Man; add: [{ m: Man; fp: CS }[], { m: Man; fp: CS }[]] }>();
+  const ownOf = (hp: HandPath) => {
+    let o = own.get(hp.id);
+    if (o) return o;
+    const runs: Run[] = [], gaps = meets.get(hp.id) ?? [];
+    for (let k = 1; k < hp.pts.length; k++) {
+      const p = hp.pts[k - 1], d = unit(p, hp.pts[k]), len = Math.hypot(hp.pts[k][0] - p[0], hp.pts[k][1] - p[1]);
+      const us = gaps.flatMap((q) => { const u = (q[0] - p[0]) * d[0] + (q[1] - p[1]) * d[1], v = Math.abs((q[0] - p[0]) * -d[1] + (q[1] - p[1]) * d[0]); return v < 1 && u > -GAP && u < len + GAP ? [u] : []; }).sort((a, b) => a - b);
+      let u0 = 0;
+      for (const u of [...us, Infinity]) {
+        const u1 = Math.min(len, u - GAP);
+        if (u1 - u0 > 4) runs.push({ p: [p[0] + d[0] * u0, p[1] + d[1] * u0], d, len: u1 - u0 });
+        u0 = Math.max(u0, u + GAP);
+      }
+    }
+    const jn = join && hp.joint ? { ...join, joint: hp.joint, flatRails: !!hp.flatRails } : join;
+    const j = jn && runs.length ? pathJoints(s, jn.t, m, routes, runs, jn.joint, jn.flatRails, jn.noTongue) : undefined;
+    if (j) taken.push(...j.tongueAt);
+    // (a stud the path would go through, one not on the grid (on a branch's slanted sleepers): whole with the side
+    // its middle is on, the cut going round it; so no stud is ever cut, or taken off for being cut)
+    let left = leftOf(hp.pts);
+    const fp = (x: Man) => ({ m: x, fp: x.project().offset(0.5, 'Round') }), mine: CS[] = [], theirs: CS[] = [];
+    for (const st of studs()) for (let k = 1; k < hp.pts.length; k++) {
+      const p = hp.pts[k - 1], d = unit(p, hp.pts[k]), len = Math.hypot(hp.pts[k][0] - p[0], hp.pts[k][1] - p[1]);
+      const u = (st.c[0] - p[0]) * d[0] + (st.c[1] - p[1]) * d[1], v = (st.c[0] - p[0]) * -d[1] + (st.c[1] - p[1]) * d[0];
+      if (u < -studR || u > len + studR || Math.abs(v) > studR + 0.15) continue;
+      if (v >= 0) mine.push(CS.circle(studR + 0.05, 48).translate(st.c)); else theirs.push(CS.circle(studR + 0.15, 48).translate(st.c));
+      break;
+    }
+    if (mine.length) left = left.add(CS.union(mine));
+    if (theirs.length) left = left.subtract(CS.union(theirs));
+    o = { left, leftGrown: left.offset(0.1, 'Miter', 10), cut: j?.cut, add: [(j?.add[0] ?? []).map(fp), (j?.add[1] ?? []).map(fp)] };
+    own.set(hp.id, o);
+    return o;
+  };
+  // (a part: its outline in plan, itself cut from the whole piece by it (no joints yet: what's decided on), and the
+  // joints that are its: their holes, and their own parts)
+  interface Leaf { reg: CS; man: Man; floor?: CS; cuts: Man[]; adds: { m: Man; fp: CS }[]; by: Set<string> }
+  // (a part seen from above, as pathSplit sees it: slices up it together)
+  const floorOf = (lf: Leaf) => {
+    if (!lf.floor) { const bb = lf.man.boundingBox(), zs: number[] = []; for (let z = bb.min[2] + 0.3; z < bb.max[2] - 0.1; z += 1.5) zs.push(z); lf.floor = CS.union(zs.map((z) => lf.man.slice(z))); }
+    return lf.floor;
+  };
+  const all = CS.square([bb0.max[0] - bb0.min[0] + 100, bb0.max[1] - bb0.min[1] + 100]).translate([bb0.min[0] - 50, bb0.min[1] - 50]);
+  let parts: Leaf[] = [{ reg: all, man: m, cuts: [], adds: [], by: new Set() }];
+  // (the loose bits the piece has anyway, its breakaway supports: by size and place)
+  let bits: { v: number; c: number[] }[] | undefined;
+  const mid = (y: Man) => { const b = y.boundingBox(); return [(b.min[0] + b.max[0]) / 2, (b.min[1] + b.max[1]) / 2, (b.min[2] + b.max[2]) / 2]; };
+  const isBit = (y: Man) => { bits ??= flatOf(m).decompose().filter((x) => x.volume() < BIT).map((x) => ({ v: x.volume(), c: mid(x) })); const v = y.volume(), c = mid(y); return bits.some((b) => Math.abs(b.v - v) < 0.02 * b.v + 0.5 && Math.hypot(b.c[0] - c[0], b.c[1] - c[1], b.c[2] - c[2]) < 0.5); };
+  const done = new Map<string, HandPathDone>();
+  const not = (hp: HandPath, why: NonNullable<HandPathDone['why']>, at: [number, number]) => { if (!done.get(hp.id)?.made) done.set(hp.id, { id: hp.id, why, at }); };
+  for (let round = 0, more = true; more && round < paths.length + 1; round++) {
+    more = false;
+    for (const hp of paths) {
+      const line = CS.union(hp.pts.slice(1).map((q, k) => leg(hp.pts[k], q, 0.1))), next: Leaf[] = [];
+      const k0 = Math.floor((hp.pts.length - 1) / 2), at: [number, number] = [(hp.pts[k0][0] + hp.pts[k0 + 1][0]) / 2, (hp.pts[k0][1] + hp.pts[k0 + 1][1]) / 2];
+      for (const lf of parts) {
+        const bb = lf.man.boundingBox();
+        // (a part this path made is its edge, not a cut through it)
+        if (lf.by.has(hp.id) || !hp.pts.some((q, k) => k > 0 && Math.max(q[0], hp.pts[k - 1][0]) >= bb.min[0] && Math.min(q[0], hp.pts[k - 1][0]) <= bb.max[0] && Math.max(q[1], hp.pts[k - 1][1]) >= bb.min[1] && Math.min(q[1], hp.pts[k - 1][1]) <= bb.max[1])) { next.push(lf); continue; }
+        // (does it run through this part: more than a touch along its edge)
+        const fl = floorOf(lf), deep = fl.offset(-1, 'Miter', 10);
+        if (line.intersect(deep).area() < 0.2) { next.push(lf); continue; }
+        // (an end inside the part, or short of its edge: carried straight on, it would cut into the part again further on)
+        const inner = fl.offset(-END_IN, 'Miter', 10), ends: [[number, number], [number, number]][] = [[hp.pts[0], hp.pts[1]], [hp.pts[hp.pts.length - 1], hp.pts[hp.pts.length - 2]]];
+        const short = ends.find(([e, b]) => { if (inside(inner, e)) return true; const d = unit(b, e); return leg([e[0] + d[0] * 2, e[1] + d[1] * 2], [e[0] + d[0] * big, e[1] + d[1] * big], 0.1).intersect(deep).area() > 0.2; })?.[0];
+        if (short) { not(hp, 'edge', short); next.push(lf); continue; }
+        const o = ownOf(hp), regs = [lf.reg.intersect(o.left), lf.reg.subtract(o.leftGrown)], mans = regs.map((r) => flatOf(s.intersection(m, prism(r))));
+        // (each side one body, and no sliver: loose bits under BIT are supports, or bits put back at the end (below))
+        const sides = mans.map((x) => x.decompose().filter((y) => y.volume() > 5));
+        if (sides.some((bs) => !bs.length)) { next.push(lf); continue; } // (nothing one side: it only ran along the part's edge)
+        const why = sides.some((bs) => bs.reduce((t, y) => t + y.volume(), 0) < SLIVER || bs.some((y) => y.volume() >= BIT && y.volume() < SLIVER)) ? 'sliver' as const
+          : sides.some((bs) => bs.filter((y) => y.volume() >= BIT).length > 1) ? 'two' as const : undefined;
+        if (why) { not(hp, why, at); next.push(lf); continue; }
+        // (the joints along this stretch of the path: their holes, within the part; their own parts, each side's
+        // with its side; and of the joints' parts the part had already, each with the side it's on)
+        const here = o.cut ? s.intersection(o.cut, prism(lf.reg)) : undefined, over = (ad: { fp: CS }, r: CS) => ad.fp.intersect(r).area();
+        regs.forEach((reg, k) => next.push({ reg, man: mans[k], cuts: here && here.numTri() > 0 ? [...lf.cuts, here] : lf.cuts, by: new Set([...lf.by, hp.id]),
+          adds: [...lf.adds.filter((ad) => over(ad, reg) > over(ad, regs[1 - k])), ...o.add[k].filter((ad) => over(ad, lf.reg) > 0.5)] }));
+        done.set(hp.id, { id: hp.id, made: true });
+        more = true;
+      }
+      parts = next;
+    }
+  }
+  const near = (a: Man, b: { min: number[]; max: number[] }) => { const x = a.boundingBox(); return [0, 1, 2].every((k) => x.max[k] >= b.min[k] - 1 && x.min[k] <= b.max[k] + 1); };
+  const out = parts.map((lf) => {
+    if (!lf.by.size) return lf.man;
+    const bb = lf.man.boundingBox(), cuts = lf.cuts.filter((c) => near(c, bb)), body = cuts.length ? s.difference(lf.man, cuts) : lf.man;
+    return flatOf(lf.adds.length ? tidy(s, s.union([body, ...lf.adds.map((ad) => ad.m)])) : body);
+  });
+  // (a small bit a cut took off something that's another part's, held by nothing on its own side (the far half of
+  // a track end's tab, which reaches across the centre line; a support cut through): put back whole on the part
+  // it was one with, joined across the cut's gap beside it, so the cut goes round it. One no part takes stays
+  // where it is, loose)
+  const kerf = paths.flatMap((hp) => { const o = own.get(hp.id); return o && done.get(hp.id)?.made ? [o.leftGrown.subtract(o.left)] : []; });
+  if (kerf.length) {
+    const gap = CS.union(kerf), bodiesOf = (x: Man) => x.decompose().filter((y) => y.volume() > 5), loose: { from: number; chip: Man }[] = [];
+    parts.forEach((lf, i) => {
+      if (!lf.by.size) return;
+      const bs = bodiesOf(out[i]), chips = bs.filter((y) => y.volume() < BIT && !isBit(y));
+      if (!chips.length || chips.length === bs.length) return;
+      for (const c of chips) loose.push({ from: i, chip: c });
+      out[i] = flatOf(s.union(bs.filter((y) => !chips.includes(y))));
+    });
+    for (const { from, chip } of loose) {
+      const cb = chip.boundingBox(), fp = chip.project().offset(0.25, 'Miter', 10).intersect(gap);
+      const bridge = fp.area() > 0.01 ? [s.intersection(m, T(s.extrude(fp, cb.max[2] - cb.min[2] + 0.02), [0, 0, cb.min[2] - 0.01]))] : [];
+      let to = -1;
+      for (let i = 0; i < out.length && to < 0; i++) {
+        if (i === from || !parts[i].by.size || !near(out[i], cb)) continue;
+        const u = flatOf(s.union([out[i], chip, ...bridge]));
+        if (bodiesOf(u).length === bodiesOf(out[i]).length) { out[i] = u; to = i; }
+      }
+      if (to < 0) out[from] = flatOf(s.union([out[from], chip]));
+    }
+  }
+  return { parts: out, done: [...done.values()] };
 }

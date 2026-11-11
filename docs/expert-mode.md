@@ -1,6 +1,6 @@
 # Expert mode: design and stages
 
-Status: design agreed with nobody yet; decisions are taken here so work doesn't wait (the list for Aaron is in
+Status: design agreed with nobody yet (S2 and S3 are built as section 11 says); decisions are taken here so work doesn't wait (the list for Aaron is in
 section 10). What is built is in section 11 (State), kept current.
 
 What was asked for, in short: the drawing mode of today stays as the simple mode; an expert can place and edit every
@@ -381,12 +381,70 @@ route-owned storage, the follow rules and the card section they bring are the pa
   it has now, Automatic cuts), orange lines on the plan (dashed while the app may add its own), `followHandCuts` in
   main.ts `changed()`. Templates (Features): 'Straight cut into parts by hand', 'Curve and straights cut into parts by
   hand'. Tests: test/routecuts.test.ts, test/handcuts.test.ts.
-- **Next, in order:** (1) drag a cut along its track on the plan, and select it (the typed item ids of section 5; today
-  cuts are edited in the card); (2) S1 `overrides.ts` + `buildGroups` as section 1 says; (3) S3: cut paths, and with
-  them the across cuts that are refused today ("one part with the track beside it", "in points").
+- **S3 is built: cut paths along and between tracks, and across-cuts selected and dragged on the plan.**
+  `Design.expert.cutPaths[] = { id, pts, joint? }` (studs on the plan). Pure part `src/app/cutpaths.ts`: `cleanPaths`
+  (readDesign), `gridPath` (a path laid on the build's stud grid, a slant as steps of 2 studs or more), `pathProblem`
+  (before the build: a run under 2 studs between turns, crossing itself, under 2 studs beside another path, down a
+  rail, through a blade's moving length, within 2 studs of a frog), `moveCorner`, `sharedMove` + `pathTracks` (a path
+  goes with the tracks within 12 studs of it when they all move, turn or mirror together; else it stays). Build side:
+  `handcuts.ts designPaths` (the paths on the grid in mm, the impossible ones left out with why), `geom/pathsplit.ts
+  cutOnPaths` (every path cuts every part it runs through from edge to edge, again after the others, so a path from
+  one cut to another works; joints along its runs as a stepped cut's, `pathJoints`; refused there: ends inside a
+  part or short of its edge, a sliver, a side in two bodies). In build.ts: `sectioned` (the paths that
+  reach a section are in its key and cut its body before any automatic cut; parts they leave are cut again only if
+  still over the bed), `switchByHand` (a lone switch's base, built by `buildSwitches`), the warnings and
+  `overlay.pathsNot` at the end of `buildOne`, `overlay.cutting` (grid, rail offset, blades and frogs: what the
+  editor draws and checks against). Editor: the Cut paths panel (Add a cut path…, each path's Joint and ✕, why one
+  wasn't made), canvas.ts (clicks snapped to grid corners, Enter ends, Backspace takes a point back, Esc cancels;
+  click selects a path or an across-cut, drag a corner, a whole path, or an across-cut along its track; Delete;
+  one undo step each), `followCutPaths` in main.ts `changed()`. Templates: 'Crossover, three tracks, R104' (cut
+  by hand to fit the bed: its pin is out of `KNOWN`), 'Switch R104 left|right, base and detachable modules' (the
+  kit's base, detach 1, detach 2, track terminator). 'Modular triple crossover R40' is still pinned: see the traps. Tests:
+  test/cutpaths.test.ts (pure), test/templates-cutpaths.test.ts (the modules against the library's ends, studs,
+  identical without paths, a moved path, what's refused), test/cutpaths.shared.ts (no stud cut: run by
+  `goesTogether` on every design with cut paths).
+- **How S3 differs from sections 3 and 4 above** (decided while building): (1) there is no `on: TwAnchor[]` on a
+  path and no `near` flag: which tracks a path goes with is worked out (`pathTracks`), and the frog rule is one
+  number (`FROG_CLEAR`, 2 studs: the kit's centre-line cuts are 2.5 from the three-ways' frogs). (2) An across cut
+  inside points or a crossover is not a `DRoute.cuts` entry turned into a clipped `CutLine`: it is drawn as a path
+  across the part (the card's across-cuts stay ordinary track ends only). (3) The kit's "detach 1" of the R104
+  switch ends square across at 28 studs, and from there the straight is cut along its centre line (detach 2 and the
+  track terminator): the library's 15.75° end of the branch there is its logical end, not the cut. (4) Path cuts are
+  made only with Long track cut into: Track pieces (as across-cuts); the other way of cutting says so. (5) With
+  baseplate edges set, a section cut by hand paths is not cut again at the baseplates' edges. (6) No
+  `expert.lockedSections`: a part left by hand paths is cut again only when it doesn't fit the bed.
+- **Next, in order:** (1) S1 `overrides.ts` + the group build as section 1 says (not started: `DRoute.own`,
+  `resolveOptions`, the card's override rows); (2) S1b stretches; (3) S4 connections; then S5/S6 (the other kit
+  modules as templates: the same three kinds of path cover them; `test/templates-cutpaths.test.ts` `MODULES` is the
+  pattern for checking a module against the library's ends). Left from S3: the keep-outs are drawn only while a path
+  is being drawn; a path's corners can't be typed as numbers (only dragged); "Expert tools" toggle and the layer
+  filter of section 5 aren't built (cuts are always selectable in Select mode).
 - **Traps.** The tests' defaults are not the app's (test/setup-defaults.ts: `splitTrack: 'bed'`): a template with
   hand cuts must say `splitTrack: 'lengths'` or every test build warns that hand cuts aren't made. Cuts are kept off
   the solver's `Route` on purpose (section 7). An automatic joint within 2 studs of a hand cut is left out
   (`HAND_CLEAR`), so "Keep the cuts it has now" on a track that already has hand cuts keeps exactly the parts it has.
+  Cut paths: a part's file must not depend on cuts elsewhere in its piece (tested: a path moved leaves the far
+  parts' bytes alone), so in `cutOnPaths` every part is `whole piece ∩ its outline in plan` (the outline worked out
+  from the paths) and every path's joints are worked out once on the whole piece: cut one after another, each from
+  the last, a far cut changed the triangles of long faces, and the joints came out a hair off. A path's end in a gap
+  between sleepers or tracks is not "inside" the part: the cut is carried straight on, and is refused if that runs
+  into the same part again. No joint is put within 10 mm of where another path meets or crosses the cut (`GAP`), or
+  the later cut would slice the earlier one's peg. A track end's connector has a tab that reaches across the centre
+  line: a centre-line cut through the end takes its far half off as a loose bit, so small bits a cut takes off
+  another part's body are put back on it at the end (the cut goes round them); a real support (a loose bit the
+  piece had before) is told apart by size and place. On sleepers a lone switch's base has no bed between the
+  sleepers, so a path there gets rail tongues where rails cross it (not beside the blades) and no pegs: the parts
+  are held by the baseplate (in a section, `bedAt` keeps the bed along the path's runs, as for the app's own cuts).
+  Studs on a branch's slanted sleepers follow the track, not the grid, so a path on a grid line can graze one:
+  `cutOnPaths` gives every stud it finds in a path's way (`findStuds`) whole to the side its middle is on and takes
+  the cut round it. **Open:** on 'Modular triple crossover R40' the only across line 2 studs clear of both frogs (17
+  studs along) still left five stud-sized rings with a 1.3 mm flat on the cut face (0.09 mm off each): either studs
+  `findStuds` doesn't list (run into by a rail's foot?) or the peg-and-clip joints' own pegs; not looked into, so
+  that template keeps its `KNOWN` pin and is not cut by hand. A peg's socket beside a stud still follows the standing
+  rule (Studs a cut goes through). The tests: no arc of a stud's circle ends on a cut face (every design with cut
+  paths, in `goesTogether`), and the switch template has as many whole studs with its paths as without. A single switch is not built by
+  `sectioned` but by `buildSwitches`: both take hand paths. LEGO-style tubes under a plate sit on grid corners, so a
+  grid-line cut passes through tube walls (as the app's own stepped cuts always have); studs, and the studs of a
+  plate below, are at cell middles, 4 mm clear.
   `followHandCuts` goes by `DRoute` object identity between finished actions: anything that swaps the design's route
   objects without calling `replaced()` or `changed(true)` loses the follow for that one action (not the cuts).

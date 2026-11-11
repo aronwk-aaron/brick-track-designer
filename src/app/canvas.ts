@@ -14,7 +14,8 @@ import { forFingers } from './hints';
 import { joinProblem, reversedRoute } from './routeedits';
 import { LIMITS, radiusRange } from './limits';
 import { cutSegs, joinInto, nearestAlong, routeStuds, splitProblem } from './splitmerge';
-import { cutProblem, liveCuts } from './routecuts';
+import { cleanCuts, cutProblem, liveCuts } from './routecuts';
+import { type CutPath, type Grid, gridPath, type NoCut, moveCorner, newPathId, PATH_MAX, pathProblem, type Pt as CutPt, snapToGrid } from './cutpaths';
 import { dragResult, END_INSET_PX, guidedHandle, type Handle, type HandleKind, handleLabel, segmentHandles, visibleHandles, withValue } from './handles';
 import { isEdit, reverseAnchors } from './twfollow';
 import { type End, openEnds, type Placed, type Placement, placeTemplate, transformed } from './addtemplate';
@@ -53,6 +54,8 @@ const trace = (p: Pose, segs: DSeg[], step = 0.5) => tracedOnce(`t${p.x},${p.y},
 export const ISSUE_R = 12;
 export interface Overlay { grooves: [number, number][][]; checkRails: [number, number][][]; crossings: [number, number][]; splits: [number, number][]; /** monorail points' toes (mm) */ monoPoints?: [number, number][]; grips?: [number, number][]; items?: OverlayItem[];
   /** where the track's cut across into track pieces, mm (a route card's Keep the cuts it has now) */ joints?: [number, number][];
+  /** for cut paths (expert): the stud grid in force (mm; degrees), the rails' offset, where no cut goes; and the paths the last build didn't make, with why */
+  cutting?: { grid: [number, number, number]; railG: number; no: NoCut }; pathsNot?: { id: string; why: string }[];
   /** what's wrong, and where (mm): ringed in red */ issues?: { at: [number, number]; r: number; text: string; /** r is the size of the thing itself (a part too big for the bed): ringed whole; else the ring is kept small, on the spot */ area?: boolean }[] }
 /** A trackwork item on the plan (mm); a lever ('throw') has its points' frame and settings, to drag it. */
 export interface OverlayItem { kind: string; key: string; at: [number, number]; pts: [number, number][]; dir?: [number, number];
@@ -181,6 +184,7 @@ export class TrackCanvas {
   private selTables = new Set<number>();
   tableSelection(): number[] { const n = this.host.design().tables?.length ?? 0; return [...this.selTables].filter((k) => k < n).sort((a, b) => a - b); }
   setSelection(list: number[], tables: number[] = []) {
+    if (list.length || tables.length) this.selCut = undefined;
     this.selected = list[0]; this.extra = new Set(list.slice(1)); this.selTables = new Set(tables); this.host.select(this.selected); this.draw();
   }
   /** The plan's zoom and offset (a report keeps them, to show the same view again). */
@@ -262,7 +266,7 @@ export class TrackCanvas {
     this.placing = { tpl, turn: 0, mirror: false, onto, theirs: openEnds(this.host.design().routes), moved: false };
     this.draw();
   }
-  private letGoSome() { this.splitArmed = false; this.cutArmed = false; this.meas = {}; this.active = undefined; }
+  private letGoSome() { this.splitArmed = false; this.cutArmed = false; this.pathDraw = undefined; this.cutDrag = undefined; this.meas = {}; this.active = undefined; }
   private placedNow(): Placed | undefined {
     const p = this.placing;
     if (!p) return undefined;
@@ -273,6 +277,80 @@ export class TrackCanvas {
   splitArmed = false;
   /** Add a cut: the next click on the selected route cuts it into parts there by hand (from its card's Cuts into parts). */
   cutArmed = false;
+  // ---------- cut paths (expert): drawn, selected and dragged on the plan (cutpaths.ts) ----------
+  /** A cut path being drawn: its corners so far (studs, on the stud grid). Undefined: none is. */
+  pathDraw: CutPt[] | undefined;
+  /** The cut selected on the plan: a cut path (by its id), or a cut across a track (its route, and which of its cuts). */
+  selCut: { kind: 'cutpath'; id: string } | { kind: 'cut'; route: number; k: number } | undefined;
+  /** A cut being dragged: a path's corner, a whole path, or a cut across a track along it; why: why it can't go where it is now. */
+  private cutDrag: ({ kind: 'corner'; id: string; k: number; orig: CutPt[] } | { kind: 'path'; id: string; x: number; y: number; orig: CutPt[] } | { kind: 'cut'; route: number; orig: number[]; k: number }) & { moved: boolean; why?: string } | undefined;
+  /** The stud grid cut paths are drawn on: the last build's (its parts' undersides'), else the plan's whole studs. */
+  private cutGrid(): Grid { const g = this.overlay?.cutting?.grid; return g ? [g[0] / MM, g[1] / MM, g[2]] : [0, 0, 0]; }
+  /** The track a cut path is checked against (cutpaths.ts pathProblem): the design's train routes, and what the last build said to keep clear of. */
+  private cutTrack() { const ct = this.overlay?.cutting, d = this.host.design(); return ct ? { routes: toRoutes(d).filter((rt, i) => rt.segments.length > 0 && !isMono(d.routes[i])), railG: ct.railG, no: ct.no } : undefined; }
+  private cutPaths(): CutPath[] { return this.host.design().expert?.cutPaths ?? []; }
+  /** Why a path can't be made where it is (laid on the grid; not: the path it is, left out of the others it's checked against). */
+  private pathWhy(pts: CutPt[], not?: string): string | undefined { return pathProblem(gridPath(this.cutGrid(), pts), this.cutPaths().filter((p) => p.id !== not).map((p) => p.pts), this.cutTrack())?.why; }
+  /** Draw a cut path: each click a corner on the stud grid, Enter ends it, Esc cancels (the Cut paths panel's Add a cut path). */
+  drawCutPath() { this.letGoSome(); this.setSelection([]); this.pathDraw = []; this.draw(); }
+  /** The path being drawn, ended: kept if it has two corners and nothing's against it (else said, and it's still being drawn). */
+  endCutPath() {
+    if (!this.pathDraw) return;
+    const pts = gridPath(this.cutGrid(), this.pathDraw), d = this.host.design();
+    if (pts.length < 2) { this.say('Click two points or more, then press Enter (Esc cancels)'); return; }
+    const why = this.pathWhy(pts);
+    if (why) { this.say(why); return; }
+    const list = ((d.expert ??= {}).cutPaths ??= []), id = newPathId(list.map((p) => p.id));
+    list.push({ id, pts });
+    this.pathDraw = undefined; this.selCut = { kind: 'cutpath', id }; this.host.changed(true); this.draw();
+  }
+  /** The cut under a point of the plan, and how a press there would drag it: the selected path's corners first, then any path's run, then a cut across a track. */
+  private cutItemAt(w: [number, number]): { sel: NonNullable<TrackCanvas['selCut']>; drag: NonNullable<TrackCanvas['cutDrag']> } | undefined {
+    const d = this.host.design(), near = this.reach(8);
+    const off = (q: CutPt, a: CutPt, b: CutPt) => { const dx = b[0] - a[0], dy = b[1] - a[1], l2 = dx * dx + dy * dy, k = l2 ? Math.max(0, Math.min(1, ((q[0] - a[0]) * dx + (q[1] - a[1]) * dy) / l2)) : 0; return Math.hypot(q[0] - a[0] - k * dx, q[1] - a[1] - k * dy); };
+    const sc = this.selCut, selPath = sc?.kind === 'cutpath' ? this.cutPaths().find((p) => p.id === sc.id) : undefined;
+    if (selPath) { const k = selPath.pts.findIndex((q) => Math.hypot(q[0] - w[0], q[1] - w[1]) < this.reach(10)); if (k >= 0) return { sel: { kind: 'cutpath', id: selPath.id }, drag: { kind: 'corner', id: selPath.id, k, orig: structuredClone(selPath.pts), moved: false } }; }
+    for (const p of this.cutPaths()) if (p.pts.some((q, k) => k > 0 && off(w, p.pts[k - 1], q) < near)) return { sel: { kind: 'cutpath', id: p.id }, drag: { kind: 'path', id: p.id, x: w[0], y: w[1], orig: structuredClone(p.pts), moved: false } };
+    for (let i = 0; i < d.routes.length; i++) {
+      const rr = d.routes[i];
+      if (!rr.cuts?.length || rr.locked) continue;
+      const half = ((rr.gaugeStuds ?? d.gaugeStuds) + 4) / 2;
+      for (const at of liveCuts(rr)) {
+        const [first] = cutSegs(rr.segs, at), q = follow(rr, first), h = (q.heading * Math.PI) / 180, dx = w[0] - q.x, dy = w[1] - q.y;
+        if (Math.abs(-dx * Math.sin(h) + dy * Math.cos(h)) < near && Math.abs(dx * Math.cos(h) + dy * Math.sin(h)) < half + near) { const k = rr.cuts.indexOf(at); return { sel: { kind: 'cut', route: i, k }, drag: { kind: 'cut', route: i, orig: [...rr.cuts], k, moved: false } }; }
+      }
+    }
+    return undefined;
+  }
+  /** The cut being dragged, taken to the pointer: a corner or a path on the stud grid, a cut across a track along it by whole studs; where it can't be, it's shown red and put back when let go. */
+  private dragCut(p: [number, number]) {
+    const cd = this.cutDrag!, d = this.host.design(), g = this.cutGrid();
+    if (cd.kind === 'cut') {
+      const rr = d.routes[cd.route];
+      if (!rr) return;
+      const s = Math.round(nearestAlong(rr, p).s), others = cd.orig.filter((_, n) => n !== cd.k);
+      cd.why = s === cd.orig[cd.k] ? undefined : cutProblem(rr, s, others);
+      if (cd.why || rr.cuts?.includes(s)) return;
+      rr.cuts = cleanCuts([...others, s]) ?? [];
+      cd.moved = true; this.selCut = { kind: 'cut', route: cd.route, k: rr.cuts.indexOf(s) }; this.host.changed(false);
+      return;
+    }
+    const path = this.cutPaths().find((q) => q.id === cd.id);
+    if (!path) return;
+    let pts: CutPt[];
+    if (cd.kind === 'corner') pts = moveCorner(g, cd.orig, cd.k, p);
+    else { const a = snapToGrid(g, [cd.x, cd.y]), b = snapToGrid(g, p); pts = cd.orig.map((q): CutPt => [q[0] + b[0] - a[0], q[1] + b[1] - a[1]]); }
+    if (JSON.stringify(pts) === JSON.stringify(path.pts)) return;
+    path.pts = pts; cd.moved = true; cd.why = this.pathWhy(pts, cd.id); this.host.changed(false);
+  }
+  /** The selected cut taken out (Delete): a cut path, or a cut across a track. */
+  private deleteCut() {
+    const sc = this.selCut, d = this.host.design();
+    if (!sc) return;
+    if (sc.kind === 'cutpath') { const left = this.cutPaths().filter((p) => p.id !== sc.id); if (left.length) d.expert!.cutPaths = left; else delete d.expert; }
+    else { const rr = d.routes[sc.route]; if (rr?.cuts) { rr.cuts.splice(sc.k, 1); if (!rr.cuts.length) delete rr.cuts; } }
+    this.selCut = undefined; this.host.changed(true); this.draw();
+  }
   /** Wait for a click on the selected route, to cut it into parts there by hand. */
   cutHere() {
     if (this.selection().length !== 1 || this.tableSelection().length) { this.say('Select one route to cut it into parts'); return; }
@@ -670,6 +748,13 @@ export class TrackCanvas {
       this.meas = !this.meas.a || this.meas.b ? { a: mp } : { a: this.meas.a, b: mp };
       this.draw(); return;
     }
+    // (a cut path being drawn: each click a corner on the stud grid, if nothing's against the path so far)
+    if (this.pathDraw && e.button === 0) {
+      const next = [...this.pathDraw, snapToGrid(this.cutGrid(), w)], laid = gridPath(this.cutGrid(), next);
+      const why = laid.length > PATH_MAX.pts ? `A cut path has ${PATH_MAX.pts} corners at most: press Enter to end it` : laid.length >= 2 ? this.pathWhy(next) : undefined;
+      if (why) this.say(why); else this.pathDraw = next;
+      this.draw(); return;
+    }
     // (Split's waiting for a click on the route)
     if (this.cutArmed && e.button === 0) {
       const cut = this.cutFor(w);
@@ -714,6 +799,10 @@ export class TrackCanvas {
       }
     }
     if (this.mode === 'select') {
+      // (a cut: a path's corner or run, or a cut across a track: selected, and dragged from there)
+      const ci = e.button === 0 ? this.cutItemAt(w) : undefined;
+      if (ci) { this.setSelection([]); this.selCut = ci.sel; this.cutDrag = ci.drag; this.draw(); return; }
+      this.selCut = undefined;
       // (a table's handle: drag the table about)
       const tk = this.hidden.has('tables') ? undefined : this.tableHandle(w);
       if (tk !== undefined) {
@@ -837,6 +926,7 @@ export class TrackCanvas {
       this.dragLever([this.mouse[0] + this.leverDrag.off[0], this.mouse[1] + this.leverDrag.off[1]]);
       return this.drawSoon();
     }
+    if (this.cutDrag) { this.mouse = this.evWorld(e); this.dragCut(this.mouse); return this.drawSoon(); }
     if (this.tableDrag) {
       const m = this.tableDrag, p = this.evWorld(e), d = this.host.design();
       const dx = Math.round(p[0] - m.x), dy = Math.round(p[1] - m.y); // (whole studs: stays on the grid)
@@ -918,6 +1008,17 @@ export class TrackCanvas {
       const ld = this.leverDrag, moved = ld.moved; this.leverDrag = undefined;
       if (moved && ld.at && ld.arm) this.leverPending = { key: ld.it.key, at: ld.at, arm: ld.arm };
       if (moved) this.host.changed(true); return this.draw();
+    }
+    if (this.cutDrag) {
+      // (let go where it can't be: back where it was, and why said; else kept, a path tidied on the grid: one undo step)
+      const cd = this.cutDrag, d = this.host.design(); this.cutDrag = undefined;
+      if (cd.moved) {
+        const path = cd.kind !== 'cut' ? this.cutPaths().find((q) => q.id === cd.id) : undefined;
+        if (cd.why) { if (path && cd.kind !== 'cut') path.pts = cd.orig; this.say(cd.why); }
+        else if (path) { const laid = gridPath(this.cutGrid(), path.pts); if (laid.length >= 2) path.pts = laid; else if (cd.kind !== 'cut') path.pts = cd.orig; }
+        void d; this.host.changed(true);
+      }
+      return this.draw();
     }
     if (this.tableDrag) { const moved = this.tableDrag.moved; this.tableDrag = undefined; if (moved) this.host.changed(true); return this.draw(); }
     if (this.moving) { const moved = this.moving.moved; this.moving = undefined; if (moved) this.host.changed(true); return this.draw(); }
@@ -1119,6 +1220,21 @@ export class TrackCanvas {
     }
     if (e.key === 'Escape' && this.mode === 'measure') { if (this.meas.a) { this.meas = {}; return this.draw(); } return this.host.leaveDraw?.(); }
     if (e.key === 'Escape' && (this.splitArmed || this.cutArmed)) { this.splitArmed = false; this.cutArmed = false; return this.draw(); }
+    // (a cut path being drawn: Enter ends it, Esc cancels it, Backspace takes its last corner back; a cut being dragged: Esc puts it back)
+    if (this.pathDraw) {
+      if (e.key === 'Enter') { e.preventDefault(); return this.endCutPath(); }
+      if (e.key === 'Escape') { this.pathDraw = undefined; return this.draw(); }
+      if (e.key === 'Backspace') { this.pathDraw.pop(); return this.draw(); }
+    }
+    if (e.key === 'Escape' && this.cutDrag) {
+      const cd = this.cutDrag, d = this.host.design(); this.cutDrag = undefined;
+      if (cd.kind === 'cut') { if (d.routes[cd.route]) d.routes[cd.route].cuts = cd.orig; this.selCut = { kind: 'cut', route: cd.route, k: cd.k }; }
+      else { const path = this.cutPaths().find((q) => q.id === cd.id); if (path) path.pts = cd.orig; }
+      if (cd.moved) this.host.changed(true);
+      return this.draw();
+    }
+    if (e.key === 'Escape' && this.selCut && !this.active) { this.selCut = undefined; return this.draw(); }
+    if ((e.key === 'Delete' || e.key === 'Backspace') && this.selCut && !this.cutDrag && !this.active) return this.deleteCut();
     if (e.key === 'Escape' && this.handleDrag) {
       // (the handle's segment put back as it was)
       const hd = this.handleDrag, r = this.host.design().routes[hd.route];
@@ -1232,6 +1348,10 @@ export class TrackCanvas {
     if (this.noteText) return this.noteText;
     if (this.splitArmed) return 'Click on the route where to cut it · Esc cancels';
     if (this.cutArmed) return 'Click on the route where to cut it into parts · it stays one route · Esc cancels';
+    if (this.pathDraw) return this.pathDraw.length ? `Cut path, ${this.pathDraw.length} point${this.pathDraw.length > 1 ? 's' : ''}: click the next (between studs; a slant is laid as steps) · Enter ends it · Backspace takes the last back · Esc cancels` : 'Click where the cut path starts: outside the part, or on another cut · it runs between the studs · Esc cancels';
+    if (this.cutDrag?.moved) return this.cutDrag.why ?? (this.cutDrag.kind === 'cut' ? 'Moving the cut along its track, whole studs: let go to put it down · Esc puts it back' : 'Moving the cut path on the stud grid: let go to put it down · Esc puts it back');
+    if (this.selCut?.kind === 'cutpath') { const not = this.overlay?.pathsNot?.find((n) => n.id === (this.selCut as { id: string }).id); return `${not ? `This cut path isn't made: ${not.why} · ` : 'Cut path selected · '}drag a corner or the path · Delete removes it · its joint is in the Cut paths panel`; }
+    if (this.selCut?.kind === 'cut') return 'Cut across the track selected · drag it along the track · Delete removes it';
     if (this.mode === 'measure') return this.meas.b ? 'Click to measure again · Esc clears' : this.meas.a ? 'Click the second point · it snaps to track ends and centre lines · Esc clears' : 'Click the first point to measure from: it snaps to track ends and centre lines · Esc stops';
     if (this.handleDrag?.moved && this.handleDrag.why) return this.handleDrag.why;
     if (this.drag?.moved) return this.dragBad ? "Can't bend the track this way: release to keep the last good shape, Esc puts it back"
@@ -1682,6 +1802,43 @@ export class TrackCanvas {
         c.beginPath(); c.moveTo(qx - nx, qy - ny); c.lineTo(qx + nx, qy + ny); c.stroke();
       }
       c.setLineDash([]);
+    }
+    // Cut paths (expert): each a line along the stud grid's lines; red where it isn't made (the last build's word, or
+    // what's against it now); the selected one thicker, its corners to drag
+    {
+      const sc = this.selCut, line = (pts: CutPt[], color: string, wd: number, dash: number[] = []) => {
+        c.strokeStyle = color; c.lineWidth = wd; c.setLineDash(dash); c.lineJoin = 'round'; c.beginPath();
+        pts.forEach((q, k) => { const [x, y] = this.toScreen(q[0], q[1]); if (k) c.lineTo(x, y); else c.moveTo(x, y); });
+        c.stroke(); c.setLineDash([]);
+      };
+      for (const p of this.cutPaths()) {
+        const sel = sc?.kind === 'cutpath' && sc.id === p.id, dragged = this.cutDrag && this.cutDrag.kind !== 'cut' && this.cutDrag.id === p.id;
+        const bad = dragged ? !!this.cutDrag!.why : !!this.overlay?.pathsNot?.some((n) => n.id === p.id);
+        line(p.pts, bad ? '#e0452b' : '#d9480f', sel ? 4 : 2.5);
+        if (sel) for (const q of p.pts) { const [x, y] = this.toScreen(q[0], q[1]); c.fillStyle = '#fff'; c.strokeStyle = bad ? '#e0452b' : '#d9480f'; c.lineWidth = 2; c.beginPath(); c.rect(x - 4, y - 4, 8, 8); c.fill(); c.stroke(); }
+        if (dragged && this.cutDrag!.why && this.mouse) { const [mx, my] = this.toScreen(this.mouse[0], this.mouse[1]); tag(mx, my + 30, this.cutDrag!.why, '#e0452b'); }
+      }
+      // (the selected cut across a track: ringed)
+      if (sc?.kind === 'cut') {
+        const rr = d.routes[sc.route], at = rr?.cuts?.[sc.k];
+        if (rr && at !== undefined) { const [first] = cutSegs(rr.segs, at), q = follow(rr, first), [qx, qy] = this.toScreen(q.x, q.y); c.strokeStyle = '#d9480f'; c.lineWidth = 2; c.beginPath(); c.arc(qx, qy, 9, 0, 2 * Math.PI); c.stroke(); if (this.cutDrag?.why && this.mouse) tag(qx, qy + 30, this.cutDrag.why, '#e0452b'); else if (this.cutDrag?.moved) tag(qx, qy + 30, `${at} studs from its start`, '#b23c0a'); }
+      }
+      // (the path being drawn: its corners so far, and on to the grid corner under the pointer, as it would be laid)
+      if (this.pathDraw) {
+        const g = this.cutGrid(), tip = this.mouse ? snapToGrid(g, this.mouse) : undefined, next = [...this.pathDraw, ...(tip ? [tip] : [])];
+        const laid = next.length ? gridPath(g, next) : [], why = laid.length >= 2 ? this.pathWhy(next) : undefined;
+        // (what no cut goes through, from the last build: where blades move, and the frogs)
+        const no = this.overlay?.cutting?.no;
+        if (no) {
+          c.strokeStyle = 'rgba(224, 69, 43, 0.28)'; c.lineCap = 'round';
+          for (const bl of no.blades) { c.lineWidth = Math.max(2, (2 * bl.half / MM) * this.scale); c.beginPath(); bl.line.forEach((q, k) => { const [x, y] = this.toScreen(q[0] / MM, q[1] / MM); if (k) c.lineTo(x, y); else c.moveTo(x, y); }); c.stroke(); }
+          c.lineCap = 'butt'; c.fillStyle = 'rgba(224, 69, 43, 0.28)';
+          for (const f of no.frogs) { const [x, y] = this.toScreen(f[0] / MM, f[1] / MM); c.beginPath(); c.arc(x, y, 2 * this.scale, 0, 2 * Math.PI); c.fill(); }
+        }
+        if (laid.length >= 2) line(laid, why ? '#e0452b' : '#d9480f', 2.5, [6, 4]);
+        for (const q of this.pathDraw) { const [x, y] = this.toScreen(q[0], q[1]); c.fillStyle = '#d9480f'; c.beginPath(); c.arc(x, y, 4, 0, 2 * Math.PI); c.fill(); }
+        if (tip) { const [x, y] = this.toScreen(tip[0], tip[1]); c.strokeStyle = why ? '#e0452b' : '#d9480f'; c.lineWidth = 2; c.beginPath(); c.arc(x, y, 5, 0, 2 * Math.PI); c.stroke(); if (why) tag(x, y + 30, why, '#e0452b'); }
+      }
     }
     // Add a cut: where the selected route would be cut into parts (the whole stud nearest the pointer)
     if (this.cutArmed && this.mouse && !this.active && !this.drag && !this.moving) {
