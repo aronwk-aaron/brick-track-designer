@@ -15,6 +15,7 @@ import { rectFits } from '../geom/bedfit';
 import { ANTISTUD_FIT, BOTTOM_WALL, connectorKeep, connectorUnderside, hollowGrid, TUBE_ID, TUBE_OD } from '../geom/underside';
 import { DEFAULTS as TRACK_DEFAULTS, scadParity, PLATE_H, RAIL_PROFILE, STUD, tongueLeans, Track } from '../geom/track';
 import { couplerSupports, trackSeat } from '../geom/extras';
+import { StudPlaces, studApart } from '../geom/studs';
 import { support } from '../geom/supports';
 import { type P2, SNAP, snapGeo, type SnapGeo, snapHalf } from './snap';
 import { SPRUNG_SLIDER, type FdbBladeLayout, sprungLow, squareGrid, HEAD_HW, type Notch, pointsSet, type PointsSetValues, STAND, SWITCH_DEFAULTS, type SwitchParams, switchGlobals } from './context';
@@ -1267,7 +1268,17 @@ export function switchGeometry(s: Scad, plan: SwitchPlan, extraCuts: Man[] = [])
   // (the ties solid underneath here: the underside hollows them, as the rest)
   const endKeepout = () => s.union(plan.endPoses.map((e) => atPose(cube([sleeperLen + 8, 8 + 2 * STUD + 20, 100], [-(sleeperLen / 2 + 4), -(8 + 2 * STUD), -50]), e)));
   const offs = [-1, 1].map((k) => k * (sleeperLen / 2 - 4)).concat(tc.betweenRailsRaw);
+  // Studs never overlap or touch (geom/studs.ts): each takes its place, and none stands closer than studApart to one of
+  // another kind there already. First the end connectors' rows, the start's whole, each end's that don't run into the ones
+  // before it (two ends side by side at an angle, on a short switch); then the ties' studs, in the order they're built.
+  // (Each kind keeps its own from one build to the next: built again, a tie isn't in its own studs' way. Not when
+  // matching the OpenSCAD output.)
+  const studsTaken = new StudPlaces(), studsApart = studApart(TRACK_DEFAULTS.studD);
+  const claimStud = (q: Pt, src: string, d = studsApart) => { if (scadParity()) return true; if (studsTaken.near(q, d, src)) return false; if (!studsTaken.near(q, 0.01)) studsTaken.add(q, src); return true; };
+  let connPosts: { start: number[]; ends: number[][] } | undefined;
+  const connStuds = () => (connPosts ??= { start: t.endpointPosts().filter((px) => claimStud([px, 4], 'start')), ends: plan.endPoses.map((e, k) => t.endpointPosts().filter((px) => claimStud(poseToWorld(e, [-px, -4]) as Pt, `end${k}`, tc.postD))) });
   const turnoutTies = () => {
+    connStuds();
     const railClear = 3.9 + TRACK_DEFAULTS.studD / 2 + 0.3, out: Man[] = [];
     for (const y of plan.longTieYs) {
       const sv = routes.map((_, i) => plan.routeServed(i, y));
@@ -1297,11 +1308,12 @@ export function switchGeometry(s: Scad, plan: SwitchPlan, extraCuts: Man[] = [])
       const tie = cube([xr - xl, sleeperW, PLATE_H], [xl, y - sleeperW / 2, 0]);
       out.push(s.difference(g.ballast ? s.intersection(tie, s.union(routes.map((rt) => sweep(sq([g.ballastTopW, PLATE_H + 2], [-g.ballastTopW / 2, -1]), rt)))) : tie,
         [endKeepout()]));
-      for (const q of spots) out.push(T(t.stud(tc.postD, tc.postH), [q[0], q[1], PLATE_H - 0.2]));
+      for (const q of spots) if (claimStud(q, 'turnout')) out.push(T(t.stud(tc.postD, tc.postH), [q[0], q[1], PLATE_H - 0.2]));
     }
     return s.union(out);
   };
   const routeTies = () => {
+    connStuds();
     const out: Man[] = [];
     routes.forEach((rt, i) => {
       for (const st of plan.routeTieList[i]) {
@@ -1312,7 +1324,7 @@ export function switchGeometry(s: Scad, plan: SwitchPlan, extraCuts: Man[] = [])
         out.push(s.difference(atPose(cube([sleeperLen, sleeperW, PLATE_H], [-sleeperLen / 2, -sleeperW / 2, 0]), ps), [
           ...plan.others(i).map((j) => sweep(sq([sleeperLen + 2, PLATE_H + 10], [-sleeperLen / 2 - 1, -1]), routes[j])),
         ]));
-        for (const k of keep) out.push(atPose(T(t.stud(tc.postD, tc.postH), [k[0], k[1], PLATE_H - 0.2]), ps));
+        for (const k of keep) if (claimStud(poseToWorld(ps, k) as Pt, `tie${i}`)) out.push(atPose(T(t.stud(tc.postD, tc.postH), [k[0], k[1], PLATE_H - 0.2]), ps));
       }
     });
     return s.union(out);
@@ -1329,15 +1341,15 @@ export function switchGeometry(s: Scad, plan: SwitchPlan, extraCuts: Man[] = [])
     const out: Man[] = [];
     for (const ps of leadTiePoses()) {
       out.push(atPose(cube([sleeperLen, sleeperW, PLATE_H], [-sleeperLen / 2, -sleeperW / 2, 0]), ps));
-      for (const o of offs) for (const dy of [-4, 4]) out.push(atPose(T(t.stud(tc.postD, tc.postH), [o, dy, PLATE_H - 0.2]), ps));
+      for (const o of offs) for (const dy of [-4, 4]) if (claimStud(poseToWorld(ps, [o, dy]) as Pt, 'lead')) out.push(atPose(T(t.stud(tc.postD, tc.postH), [o, dy, PLATE_H - 0.2]), ps));
     }
     return s.union(out);
   };
   // (on ballast the peg and clip only with pegOnBallast, held up by breakaway supports; the ballast alone has them for its seat, see base())
   // (solid underneath here: the underside's cut under them, connUnder)
   const connectors = (peg = !g.ballast || !!p.pegOnBallast) => s.union([
-    T(t.fullEndpoint(peg), [0, 4, 0]),
-    ...plan.endPoses.map((e) => atPose(T(R(t.fullEndpoint(peg), [0, 0, 180]), [0, -4, 0]), e)),
+    T(t.fullEndpoint(peg, [], undefined, connStuds().start), [0, 4, 0]),
+    ...plan.endPoses.map((e, k) => atPose(T(R(t.fullEndpoint(peg, [], undefined, connStuds().ends[k]), [0, 0, 180]), [0, -4, 0]), e)),
   ]);
   // (track alone: each end connector hollow underneath as a 1 x N plate (underside.ts), where it's on the stud grid
   // (the start always), or everywhere with the underside lined up with the track; elsewhere hollow inside its wall as the rest, solid only

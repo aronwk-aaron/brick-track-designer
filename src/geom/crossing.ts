@@ -10,9 +10,10 @@ import { hasRoll, hostedEnds, poseToWorld, railPoint, routeLat, routeLength, rou
 import { solve, type Solution, type SolverOptions, SOLVER_DEFAULTS } from '../route/solver';
 import { clipNear, Scad, T, R, type CS, type Man, type Vec2 } from './scad';
 import { type Bank, bankPoint, sweepRoute, trackBank } from './sweep';
-import { connectorKeep, connectorUnderside, hollowGrid, sleeperUnderside } from './underside';
+import { connectorKeep, connectorUnderside, hollowGrid, rowUnderside, sleeperUnderside } from './underside';
 import { type ExtraBuilt, extraRails } from './extrarails';
 import { DEFAULTS, PLATE_H, RAIL_PROFILE, STUD, Track, type TrackOptions } from './track';
+import { StudPlaces, studApart } from './studs';
 import { BUFFER_DEFAULTS, BUFFER_RAIL_END, type BufferOptions, bufferStop, couplerSupports, endAxleHoles, inBufferPost, trackSeat } from './extras';
 
 export interface CrossingOptions extends TrackOptions {
@@ -70,6 +71,10 @@ const END = 4;        // rails stop this far from a route end (the connector tak
 const BED_END = 8;    // the track bed stops here (the connector's base is the rest)
 
 /** Place a shape given in a pose's frame (origin at the pose, +y along the heading). */
+/** (mm) Rows of studs closer than a stud apart less this are one row (a short piece's two ends': crossingPiece). */
+export const ROW_CLEAR = 0.05;
+/** (mm) What's left beside a short piece's channel thinner than this is taken out with it (crossingPiece). */
+const THIN = 0.6;
 const atPose = (m: Man, p: [number, number, number]) => T(R(m, [0, 0, p[2]]), [p[0], p[1], 0]);
 
 // Banked track (curves.scad's bank_piece): the track bed (the bed, rails,
@@ -331,6 +336,31 @@ export function crossingPiece(s: Scad, routes: Route[], o: CrossingOptions = CRO
   // (a third rail through a crossing: its own flangeway (the narrow gauge's wheels') cut through the other routes' rails
   // and third rails, as each route's flangeways are; and theirs through it)
   const dualBands = (i: number) => extras.flatMap((ex, j) => (j !== i && ex?.dualBand && meet(boxes[i], boxes[j]) ? [ex.dualBand] : []));
+  // Studs never overlap or touch (studs.ts): each one takes its place, and none stands closer than STUD_APART to one
+  // already there. First the end connectors' rows, whole where they can be (two ends side by side at an angle: the
+  // later one's studs that would stand in the first one's left out); then the sleepers' and ties'; then the bed's.
+  // (a piece too short for a row at each end (the two closer than a stud's pitch, run into each other): one whole row, in
+  // its middle, where both ends' rows have a stud; the ends without theirs. oneRows: its pose and its studs across it)
+  const taken = new StudPlaces(), apart = studApart(o.studD);
+  // (an end's stud against another end's: only where they'd run into each other. Two ends side by side, their rows
+  // in line, have studs a hair apart, each on its own part once the piece is cut between them)
+  const claim = (q: [number, number], d = apart) => { if (taken.near(q, d)) return false; taken.add(q); return true; };
+  const oneRows = new Map<number, { P: Pose; xs: number[] }>(), rowStuds: [number, number][] = [];
+  const connPlan = routes.map((rt, i) => {
+    const L = routeLength(rt), tt = tOf[i], ex: ExtraBuilt | undefined = extras[i], e0 = routePose(rt, 0), e1 = routePose(rt, L);
+    const noConn0 = !!x.innerEnds?.has(`${i}:start`) || bufEnd(i, 'start') || isHosted(i, 'start'), noConn1 = !!x.innerEnds?.has(`${i}:end`) || bufEnd(i, 'end') || isHosted(i, 'end');
+    const xfs0 = hostXfs(i, 'start', ex?.xfs[0]), xfs1 = hostXfs(i, 'end', ex?.xfs[1]);
+    const oneRow = !noConn0 && !noConn1 && L - STUD < STUD - ROW_CLEAR;
+    const all0 = tt.endpointPosts(xfs0, ex?.guardX), all1 = tt.endpointPosts(xfs1, ex?.guardX);
+    if (oneRow) {
+      const Pm = routePose(rt, L / 2), xs = all0.filter((px) => all1.some((q) => Math.abs(q + px) < 1e-6)).filter((px) => claim(poseToWorld(Pm, [px, 0]) as [number, number], tt.c.postD));
+      oneRows.set(i, { P: Pm, xs });
+      rowStuds.push(...xs.map((px) => poseToWorld(Pm, [px, 0]) as [number, number]));
+    }
+    const posts0 = oneRow || noConn0 ? [] : all0.filter((px) => claim(poseToWorld(e0, [px, 4]) as [number, number], tt.c.postD));
+    const posts1 = oneRow || noConn1 ? [] : all1.filter((px) => claim(poseToWorld(e1, [-px, -4]) as [number, number], tt.c.postD));
+    return { xfs0, xfs1, noConn0, noConn1, oneRow, posts0, posts1 };
+  });
   routes.forEach((rt, i) => {
     const L = routeLength(rt), ex: ExtraBuilt | undefined = extras[i];
     // (this route's own track: the piece's, or its own gauge's)
@@ -397,15 +427,17 @@ export function crossingPiece(s: Scad, routes: Route[], o: CrossingOptions = CRO
       const exOk = ex ? (P: Pose) => ex.postOk(P) : undefined;
       const sleeperPostOk = (P: Pose) => (hosted.length && sol.checkRails.length ? (p: Vec2) => (exOk?.(P)(p) ?? true) && !byCheckRail(poseToWorld(P, p)) : exOk?.(P));
       // (banked: each sleeper turned by the roll at it)
-      if (at.length) parts.push(s.union(at.map((v) => { const P = routePose(rt, v), sl = t.sleeper(sleeperPostOk(P)); return atPose(banked ? bankedSleeper(s, sl, trackBank(c.sleeperLen), routeRoll(rt, v), c.sleeperLen, c.sleeperW) : sl, P); })));
+      // (and each stud clear of the ones there already: an end's row, a sleeper's before it)
+      const clearOk = (P: Pose) => { const ok = sleeperPostOk(P); return (p: Vec2) => (ok?.(p) ?? true) && claim(poseToWorld(P, p) as [number, number]); };
+      if (at.length) parts.push(s.union(at.map((v) => { const P = routePose(rt, v), sl = t.sleeper(clearOk(P)); return atPose(banked ? bankedSleeper(s, sl, trackBank(c.sleeperLen), routeRoll(rt, v), c.sleeperLen, c.sleeperW) : sl, P); })));
     }
     // End connectors and breakaway supports, at both ends.
     // (on ballast: no peg and clip, as the switches')
     const peg = !onBallast || !!o.pegOnBallast || alone;
     // (at a banked end, a route left banked to its end: turned with the bed)
     // (solid underneath here: the underside's cut under them, below)
-    const xfs0 = hostXfs(i, 'start', ex?.xfs[0]), xfs1 = hostXfs(i, 'end', ex?.xfs[1]), noConn0 = inStart || isHosted(i, 'start'), noConn1 = inEnd || isHosted(i, 'end');
-    const conn0 = T(t.fullEndpoint(peg, xfs0, ex?.guardX), [0, 4, 0]), conn1 = T(R(t.fullEndpoint(peg, xfs1, ex?.guardX), [0, 0, 180]), [0, -4, 0]);
+    const { xfs0, xfs1, noConn0, noConn1, posts0, posts1 } = connPlan[i];
+    const conn0 = T(t.fullEndpoint(peg, xfs0, ex?.guardX, posts0), [0, 4, 0]), conn1 = T(R(t.fullEndpoint(peg, xfs1, ex?.guardX, posts1), [0, 0, 180]), [0, -4, 0]);
     if (!noConn0) parts.push(atPose(roll0 ? bankedEnd(s, conn0, trackBank(c.sleeperLen), roll0, c.sleeperLen, true) : conn0, p0));
     if (!noConn1) parts.push(atPose(roll1 ? bankedEnd(s, conn1, trackBank(c.sleeperLen), roll1, c.sleeperLen, false) : conn1, p1));
     // (buffer stops, in their end's frame; the peg and clip above the bed on ballast held up by breakaway supports)
@@ -472,8 +504,12 @@ export function crossingPiece(s: Scad, routes: Route[], o: CrossingOptions = CRO
       if (bufPoses.some(({ e, t: tb }) => inBufferPost(tb, worldToPose(e, q), c.postD / 2 + 0.6, (o.buffer ?? BUFFER_DEFAULTS).style ?? 'frame'))) continue;
       // (and of the check rails)
       if (byCheckRail(q)) continue;
+      // (and of every stud there already: the ends' rows, the sleepers' and the ties')
+      if (!claim(q)) continue;
       studPts.push(q);
     }
+    // (and the short pieces' one row each)
+    studPts.push(...rowStuds);
   }
   const anyBank = routes.some(hasRoll), bedStud = t.stud(c.postD, c.postH);
   const bedStuds = studPts.length ? s.union(studPts.map(([px, py]) => (anyBank && bankedStud(routes, lenOf, [px, py], PLATE_H - 0.2, bedStud)) || T(t.stud(c.postD, c.postH), [px, py, PLATE_H - 0.2]))) : undefined;
@@ -550,7 +586,7 @@ export function crossingPiece(s: Scad, routes: Route[], o: CrossingOptions = CRO
   // wall, as the bed, solid only round its peg and clip)
   const connPoses = routes.flatMap((rt, i) => {
     const L = routeLength(rt);
-    if (L < STUD) return [];
+    if (L < STUD || oneRows.has(i)) return [];
     return ([['start', routePose(rt, 0), 4, 0], ['end', routePose(rt, L), -4, 180]] as const)
       .filter(([end]) => !x.innerEnds?.has(`${i}:${end}`) && !bufEnd(i, end))
       .map(([, e, dy, turn]) => ({ P: [...poseToWorld(e, [0, dy]), e[2] + turn] as Pose, i }));
@@ -558,8 +594,39 @@ export function crossingPiece(s: Scad, routes: Route[], o: CrossingOptions = CRO
   const onGrid = (P: Pose) => o.undersideGrid === 'track' || [4, 12].every((lx) => worldToPose(p0, poseToWorld(P, [lx, 0])).every((v) => { const e = (((v - 4) % STUD) + STUD) % STUD; return Math.min(e, STUD - e) < 1e-6; }));
   const conns = connPoses.filter(({ P }) => onGrid(P)), connCSs = new Map<Track, CS>();
   const connCS = (i: number) => { let cs = connCSs.get(tOf[i]); if (!cs) connCSs.set(tOf[i], cs = connectorUnderside(s, tOf[i])); return cs; };
-  const connCut = conns.length ? T(s.extrude(s.w.CrossSection.union(conns.map(({ P, i }) => connCS(i).rotate(P[2]).translate([P[0], P[1]]))), cavH), [0, 0, -0.01]) : undefined;
-  const inConn = (q: [number, number]) => conns.some(({ P, i }) => { const l = worldToPose(P, q); return Math.abs(l[0]) <= lenOf[i] / 2 && Math.abs(l[1]) <= STUD / 2; });
+  // (a short piece with one row of studs: one channel and its pins, as a 1 x N plate's, on the grid the underside is
+  // lined up with: under its own row (the track's grid, always; the baseplate's where the row is on its studs), else under
+  // the row of the baseplate's studs wholly under it that an end's own row would be on (the start's first), if any. Solid
+  // round both ends' pegs and clips. On the baseplate's grid, the rest of it hollow inside its wall where there's 2 mm
+  // or more of that, and the wall cut away where the plate's other studs stand (hollowGrid))
+  const rowCSs: CS[] = [], rowAt: { P: Pose; i: number }[] = [];
+  for (const [i, { P: Pm, xs }] of oneRows) {
+    const rt = routes[i], L = routeLength(rt), tt = tOf[i], e0 = routePose(rt, 0), e1 = routePose(rt, L);
+    const P0: Pose = [...poseToWorld(e0, [0, 4]), e0[2]] as Pose, P1: Pose = [...poseToWorld(e1, [0, -4]), e1[2] + 180] as Pose;
+    const P = [Pm, P0, P1].find((q) => onGrid(q));
+    const wide = lenOf[i] / 2, mid = P === Pm || !P;
+    // (the studs the pegs' and clips' walls make room for: the piece's own row, where the channel's under it; else the baseplate's)
+    const row = (E: Pose) => (P ? (mid ? xs : [-wide + 4, ...Array.from({ length: Math.round(lenOf[i] / STUD) - 1 }, (_, k) => -wide + 12 + k * STUD)]).map((px) => worldToPose(E, poseToWorld(P, [px, 0])) as [number, number]) : undefined);
+    const keeps = [P0, P1].flatMap((E) => connectorKeep(s, tt, row(E)).map((cs) => cs.rotate(E[2]).translate([E[0], E[1]])));
+    const less = (cs: CS) => (keeps.length ? cs.subtract(s.w.CrossSection.union(keeps)) : cs);
+    if (P) {
+      const ch = less(rowUnderside(s, tt, -wide, wide).rotate(P[2]).translate([P[0], P[1]]));
+      // (and what's left beside it thinner than can be printed taken out with it: a hair of the far end's floor, where
+      // the two ends' floors, one over the other, aren't the same shape)
+      const left = body.slice(cavH / 2).intersect(s.w.CrossSection.square([4 * wide, tt.c.rowW + 2 * WALL], true).rotate(P[2]).translate([P[0], P[1]])).subtract(ch);
+      const thin = left.subtract(left.offset(-THIN / 2, 'Miter', 4).offset(THIN / 2, 'Miter', 4)).decompose().filter((cs) => cs.area() > 0.1);
+      rowCSs.push(thin.length ? s.w.CrossSection.union([ch, ...thin]) : ch);
+      rowAt.push({ P, i });
+    }
+    if (o.undersideGrid === 'track') continue;
+    let rest = s.w.CrossSection.square([2 * (wide - WALL), L - 2 * WALL], true).rotate(Pm[2]).translate([Pm[0], Pm[1]]);
+    if (P) rest = rest.subtract(s.w.CrossSection.square([4 * wide, tt.c.rowW + 2 * WALL], true).rotate(P[2]).translate([P[0], P[1]]));
+    const strips = rest.decompose().filter((cs) => !cs.offset(-1, 'Miter', 4).isEmpty());
+    if (strips.length) beds.push(less(s.w.CrossSection.union(strips)));
+  }
+  const connCSAll = [...conns.map(({ P, i }) => connCS(i).rotate(P[2]).translate([P[0], P[1]])), ...rowCSs];
+  const connCut = connCSAll.length ? T(s.extrude(s.w.CrossSection.union(connCSAll), cavH), [0, 0, -0.01]) : undefined;
+  const inConn = (q: [number, number]) => [...conns, ...rowAt].some(({ P, i }) => { const l = worldToPose(P, q); return Math.abs(l[0]) <= lenOf[i] / 2 && Math.abs(l[1]) <= STUD / 2; });
   // (lined up with the track: hollow as LEGO track's underside, with anti-stud tubes in rows along each track a stud
   // apart, turned with it, between its rows of studs; none in the end connectors (they have their own), none two at a
   // place where tracks meet)
@@ -631,7 +698,7 @@ export function crossingPiece(s: Scad, routes: Route[], o: CrossingOptions = CRO
     beds.push((keep.length ? strip.subtract(s.w.CrossSection.union(keep)) : strip).rotate(P[2]).translate([P[0], P[1]]));
   }
   const cuts: Man[] = [];
-  if (beds.length && spots.length) {
+  if ((beds.length || oneRows.size) && spots.length) {
     const is = spots.map((q) => q.i), js = spots.map((q) => q.j);
     // (whole tubes only: a sleeper has no floor under the rails' feet, and a tube half under one is a broken ring; a thin
     // post there instead (hollowGrid), a hair of it under the rail's foot)
@@ -644,9 +711,10 @@ export function crossingPiece(s: Scad, routes: Route[], o: CrossingOptions = CRO
     // hollow comes through its top (as the studs under it would), and a tube or post there stood loose in the hole)
     const high = anyBank ? clipNear(s.w, body.slice(cavH - 0.1), 4) : undefined;
     const okAll = (cs: CS) => ok(cs) && (!high || (() => { const b = cs.bounds(); return cs.subtract(high([(b.min[0] + b.max[0]) / 2, (b.min[1] + b.max[1]) / 2])).area() < 0.01; })());
-    const hg = hollowGrid(s, t, s.w.CrossSection.union(beds), world, Math.min(...is), Math.max(...is), Math.min(...js), Math.max(...js), o.grip, { ok: okAll, skip: inConn, foot, stubs: anyBank });
+    const hg = hollowGrid(s, t, beds.length ? s.w.CrossSection.union(beds) : foot.subtract(foot), world, Math.min(...is), Math.max(...is), Math.min(...js), Math.max(...js), o.grip, { ok: okAll, skip: inConn, foot, stubs: anyBank, bare: !beds.length });
     grips?.push(...hg.grips);
-    cuts.push(T(s.extrude(hg.tubes ? hg.cut.subtract(hg.tubes) : hg.cut, cavH), [0, 0, -0.01]));
+    // (nothing to cut: a piece that's all channel, no stud of the plate's standing in its walls)
+    if (!hg.cut.isEmpty()) cuts.push(T(s.extrude(hg.tubes ? hg.cut.subtract(hg.tubes) : hg.cut, cavH), [0, 0, -0.01]));
   }
   if (connCut) cuts.push(connCut);
   return s.difference(body, [...roofed(cuts), ...(x.cuts ?? [])]);
