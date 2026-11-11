@@ -530,9 +530,14 @@ try {
     await page.keyboard.press('Control+z'); await page.waitForTimeout(200);
     check(await all() === '0,0 0,16 0,32 24,0' && (JSON.parse(await data('joints')) as unknown[]).length === 2, 'undo joins them again');
     // (a click on the joint selects it: Take apart; the two still touch, and A then moves alone)
+    // (once the plan is of the tracks as they are again: a flangeway cut's end left over from the middle of a drag, when A's rails lay
+    // across B's, would take the click)
+    const nearJoint = () => page.evaluate(() => { const cv = (window as unknown as { btdCanvas: { overlay?: { items?: { kind: string; at: [number, number]; pts: [number, number][] }[] } } }).btdCanvas;
+      return (cv.overlay?.items ?? []).filter((it) => [it.at, ...it.pts].some((q) => Math.hypot(q[0] / 8, q[1] / 8 - 16) < 2)).map((it) => it.kind).join(); });
+    for (let k = 0; k < 150 && await nearJoint() !== ''; k++) await page.waitForTimeout(200);
     const [jx, jy] = await scr(0, 16);
     await page.mouse.click(jx, jy); await page.waitForTimeout(200);
-    check(await page.locator('#sel-apart').isVisible() && !(await page.locator('#sel-join').isVisible()), 'a click on a joint offers Take apart');
+    check(await page.locator('#sel-apart').isVisible() && !(await page.locator('#sel-join').isVisible()), `a click on a joint offers Take apart (selected: ${await page.locator('#sel-count').innerText()}; on the plan there: ${await nearJoint() || 'nothing else'}; ${await hintNow()})`);
     await page.click('#sel-apart'); await page.waitForTimeout(200);
     check(await apart() === '[["A","B"]]' && await page.locator('#sel-join').isVisible(), `Take apart is kept in the design, and Join is offered (${await apart()})`);
     await dragA();
