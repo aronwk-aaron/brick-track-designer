@@ -289,7 +289,15 @@ export function initTemplateBrowser(pick: (name: string) => Promise<boolean>, ad
     if (!filtering(filters)) {
       const byName = (names: string[]) => names.flatMap((nm) => cards.find((c) => c.name === nm) ?? []);
       if (stars.length) section('starred', 'Starred', byName(stars));
-      if (recent.length) section('recent', 'Recent', byName(recent));
+      if (recent.length) {
+        section('recent', 'Recent', byName(recent));
+        // (under the recent cards: forget them; stars and the templates themselves stay)
+        const bar = document.createElement('div'); bar.className = 'mine-bar';
+        const clr = document.createElement('button'); clr.type = 'button'; clr.id = 'tpl-recent-clear';
+        clr.textContent = 'Clear recent'; clr.title = 'Forget the recently used templates (starred ones stay starred)';
+        clr.addEventListener('click', () => { recent = []; writeList(RECENT, recent); render(); document.getElementById('tpl-search')?.focus(); });
+        bar.append(clr); body.append(bar);
+      }
     }
     const last: { v?: string } = {};
     for (const s of sectionsOf(shown)) section(s.id, s.title, s.cards, s.parent, last);

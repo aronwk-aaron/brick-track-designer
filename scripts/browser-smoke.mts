@@ -41,6 +41,12 @@ try {
   await page.click('#templates-open');
   check(await page.locator('#tpl-dlg').evaluate((d: HTMLDialogElement) => d.open), 'the template browser opens');
   check((await page.locator('#tpl-body .tcard').count()) > 50, 'it lists the templates');
+  // (Clear recent under the Recent cards: empties that section)
+  await page.evaluate(() => localStorage.setItem('btd-template-recent', JSON.stringify(['Left switch (LEGO)'])));
+  await page.click('#tpl-close'); await page.click('#templates-open');
+  check((await page.locator('#tpl-s-recent').count()) === 1, 'a recently used template shows under Recent');
+  await page.click('#tpl-recent-clear');
+  check((await page.locator('#tpl-s-recent').count()) === 0 && (await page.evaluate(() => localStorage.getItem('btd-template-recent'))) === '[]', 'Clear recent empties Recent');
   await page.fill('#tpl-search', 'switch lego');
   check((await page.locator('#tpl-body .tcard').count()) === 2, 'a search narrows them to the two cards (LEGO\'s switches, and the monorail points)');
   await page.click('#tpl-body .tcard[data-template="Left switch (LEGO)"] .tpick');
