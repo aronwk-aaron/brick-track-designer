@@ -114,12 +114,12 @@ export class Mono {
   /**
    * Studs' places from below, as LEGO's: n = 1, two studs in a row along x (a 1 x 2 plate's: a channel as wide as a
    * stud and its fit, a pin between the two); n = 2, four (a 2 x 2 plate's: hollow inside a wall, a tube between
-   * the four). About the origin, the studs at +-4.
+   * the four). About the origin, the studs at +-4. depth: how far up from z = 0 (the end's or the piece's own, unless given).
    */
-  antistuds(n: 1 | 2): Man {
+  antistuds(n: 1 | 2, depth = this.antistudDepth): Man {
     const s = this.s, f = this.o.holeFit, hl = 6.4 + f, hw = n === 1 ? 2.4 + f : hl;
     const mid = n === 1 ? s.w.CrossSection.circle((3.2 - f) / 2, 24) : s.w.CrossSection.circle((6.51 - f) / 2, 32).subtract(s.w.CrossSection.circle((4.8 + f) / 2, 32));
-    return T(s.square([2 * hl, 2 * hw], true).subtract(mid).extrude(this.antistudDepth + 1), [0, 0, -1]);
+    return T(s.square([2 * hl, 2 * hw], true).subtract(mid).extrude(depth + 1), [0, 0, -1]);
   }
   /** A Technic axle's cross hole into the end face (along +y from y = -1), half an axle deep and a little. */
   axleHole(): Man {
@@ -146,10 +146,13 @@ export class Mono {
   endTab(): Man {
     return T(this.s.cube([MONO.tabX[1] - MONO.tabX[0], MONO.tabOut + 1, MONO.beamTop]), [MONO.tabX[0], -MONO.tabOut, 0]);
   }
-  /** end_cuts: the anti-studs, the axle holes, the top recesses, the end's gap (keeping the tab) and the notch. */
-  endCuts(): Man {
+  /**
+   * end_cuts: the anti-studs, the axle holes, the top recesses, the end's gap (keeping the tab) and the notch.
+   * studs false: without the anti-studs (a ramp's end over a support: they're cut in its level pad instead).
+   */
+  endCuts(studs = true): Man {
     const s = this.s, parts: Man[] = [];
-    parts.push(T(this.antistuds(1), [0, MONO.axleIn, 0]));
+    if (studs) parts.push(T(this.antistuds(1), [0, MONO.axleIn, 0]));
     if (this.o.axleHoles) for (const sg of [-1, 1]) parts.push(T(this.axleHole(), [sg * this.axleX, 0, this.axleZ]));
     if (this.o.endStuds === 'top') parts.push(this.topRecessCut());
     parts.push(s.difference(T(s.cube([100, 10 + MONO.endGap, 50]), [-50, -10, -1]), [this.endTab()]));
@@ -192,9 +195,10 @@ export class Mono {
    * A piece of beam along rt from a to b (in rt's s), in the design's frame:
    * narrow ends (end_len each) and the full beam between, the ridge with its
    * rack, and an end's features at a (ends[0]) and at b (ends[1]). sockets:
-   * where a support's studs press in mid-piece (s along rt).
+   * where a support's studs press in mid-piece (s along rt). padEnds: the
+   * ends (at a, at b) without their anti-studs (a ramp's, cut in its pad).
    */
-  piece(rt: Route, a: number, b: number, gaps: RackGap[], ends: [boolean, boolean] = [true, true], sockets: number[] = [], label?: Man): Man {
+  piece(rt: Route, a: number, b: number, gaps: RackGap[], ends: [boolean, boolean] = [true, true], sockets: number[] = [], label?: Man, padEnds: [boolean, boolean] = [false, false]): Man {
     const s = this.s, L = b - a;
     const sub = subOf(rt, a, b);
     const body: Man[] = [];
@@ -206,7 +210,7 @@ export class Mono {
     const P0 = routePose(rt, a), P1e = routePose(rt, b), P1: Pose = [P1e[0], P1e[1], P1e[2] + 180];
     const endP = [ends[0] && P0, ends[1] && P1].filter((p): p is Pose => !!p);
     for (const P of endP) body.push(placeAt(this.endAdds(), P));
-    const cuts: Man[] = endP.map((P) => placeAt(this.endCuts(), P));
+    const cuts: Man[] = endP.map((P) => placeAt(this.endCuts(!padEnds[P === P0 ? 0 : 1]), P));
     for (const q of sockets) cuts.push(placeAt(this.supportSockets(), routePose(rt, q)));
     if (label) cuts.push(placeAt(label, routePose(rt, (a + b) / 2)));
     return s.difference(s.union(body), cuts);

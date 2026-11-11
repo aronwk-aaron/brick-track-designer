@@ -250,6 +250,12 @@ LEGO monorail), two studs on top in recesses, or plain. Each end has two LEGO cr
 by default) to pin pieces together with axles. A **support** every so many studs (Support every, studs) is a part of its
 own: its base grips the baseplate and the beam sits on top. Parts are cut over a support where they can be. Printing is as above: no slicer supports.
 
+A support is always a plain column: whole bricks and plates tall, its top level, its studs straight up. Under a **ramp**
+the beam carries a level pad over each one, its stud holes straight down: mid-part the pad is set up into the beam (as
+LEGO's ramp pieces have it: 5 plates up under the lower one's middle, a brick below the top under the upper one's);
+under a joint between two parts half of it is on each part's end and hangs a little below the beam. Ramp parts print
+tilted on thin ribs that break away (0.25 mm clear of the part); a pad has ribs of its own, pull them out of it too.
+
 **Monorail points** are LEGO's own points (2889 right, 2890 left): 32 studs straight, the branch ending 20 studs on and
 8 studs to the side at 45°, so a set drops in where a LEGO one goes. Nine parts (`monorail-points-…`): **base**, **deck**,
 **slide** (the two racks), **wheel**, **link**, **linkb** (the second link), **lever**, and the two teeth, **tootha**

@@ -9,7 +9,7 @@ import { sweepRoute } from '../geom/sweep';
 import { stlBytes } from '../geom/stl';
 import { bedFit } from '../geom/bedfit';
 import { printedWith, support } from '../geom/supports';
-import { MONO, MONO_DEFAULTS, Mono, type MonoOptions, rackGaps, type RackGap, SUPPORT_DEFAULTS, type SupportOptions, placeAt, subOf, supportHeight, supportPart, underLabel } from '../geom/monorail';
+import { MONO, MONO_DEFAULTS, Mono, type MonoOptions, rackGaps, type RackGap, SUPPORT_DEFAULTS, type SupportOptions, endFrame, placeAt, subOf, supportHeight, supportPart, underLabel } from '../geom/monorail';
 import { monoSwitch, type PointsPart, type SwitchPlan, planSwitch } from '../geom/monoswitch';
 import { poseToWorld, routeLat, routeLength, routePose, routeSOf, segLength, segStarts, type Pose, type Route } from '../route/route';
 import { reversedRoute } from '../switch/reverse';
@@ -208,24 +208,68 @@ function bake(m: Man, turn = 0, dz = 0): Baked {
   return { positions: meshPositions(wm, dz), stl: stlBytes(turn ? local.getMesh() : wm, true), volume: m.volume(), box: m.boundingBox() };
 }
 
+/** Half a support's top and its clearance (its top 2 studs less 0.2 square): a pad's half-width, and half-length along the beam. */
+const PAD_HW = MONO.stud + 0.1;
+/** The least beam left over a pad let up into it (mm, under the running surface). */
+const PAD_ROOF = 2;
+/**
+ * A ramp's level pad over a support (as LEGO's ramps 2677 and 2678 have one
+ * mid-way, a 2 x 2 plate's underside set level in the sloping beam): the
+ * support's top is level at H, a whole number of plates, and the beam meets
+ * it there: cut away below H over the top (a pocket up into the beam), built
+ * down to H where the beam's above it (a boss under it), and the studs'
+ * places cut straight up from H. In P's frame (x across, y along the beam):
+ * y0 to y1 long, n = 2 a whole pad mid-part, n = 1 half of one at a part's
+ * end (the support under the joint, two studs in each part; end: which, the
+ * part's start 0 or its far end 1), cy the studs' middle, depth how far up
+ * they're cut.
+ */
+interface Pad { P: Pose; y0: number; y1: number; H: number; n: 1 | 2; cy: number; depth: number; end?: 0 | 1 }
+
 /**
  * A ramp part: the level part (its beam, rack, ends and side studs just as
  * the level track's) refined, then each point lifted by the ramp's height
  * where it is along it (z(s), s along sub), so the beam rises with its
- * cross-section upright, its ends square. Printed tilted so the line between
- * its ends lies level (the least height off the bed), on thin breakaway ribs
- * under the rest of its curve, 0.25 mm below it.
+ * cross-section upright, its ends square; then its pads (level, over the
+ * supports). Printed tilted so the line between its ends lies level (the
+ * least height off the bed), on thin breakaway ribs under the rest of its
+ * curve, 0.25 mm below it (and below each pad: under its rim where it hangs
+ * below the beam, and under the tube or pin between its studs).
  */
-function bakeRamp(scad: Scad, flat: Man, sub: Route, z: (s: number) => number, turn0: number, X: number, Y: number): Baked {
+function bakeRamp(scad: Scad, mono: Mono, flat: Man, sub: Route, z: (s: number) => number, turn0: number, X: number, Y: number, pads: Pad[] = []): Baked {
   const L = routeLength(sub);
-  const world = flat.refineToLength(2).warp((v) => { v[2] += z(Math.min(L, Math.max(0, routeSOf(sub, [v[0], v[1]])))); });
-  // (the print: the ends' line level; the bed under the lowest of the curve below that line)
-  const pA = routePose(sub, 0), pB = routePose(sub, L), zA = z(0), zB = z(L), run = Math.hypot(pB[0] - pA[0], pB[1] - pA[1]) || 1;
-  const dir: [number, number] = [(pB[0] - pA[0]) / run, (pB[1] - pA[1]) / run], th = Math.atan2(zB - zA, run);
+  const zOf = (x: number, y: number) => z(Math.min(L, Math.max(0, routeSOf(sub, [x, y]))));
+  const lift = (m: Man) => m.refineToLength(2).warp((v) => { v[2] += zOf(v[0], v[1]); });
+  const box = (p: Pad, grow: number, y0: number, y1: number, z0: number, z1: number) => placeAt(T(scad.cube([2 * (PAD_HW + grow), y1 - y0, z1 - z0]), [-PAD_HW - grow, y0, z0]), p.P);
+  let world = lift(flat);
+  if (pads.length) {
+    const adds: Man[] = [], cuts: Man[] = [];
+    for (const p of pads) {
+      // (the boss: the pad's column from H up, as far as the beam's underside (what's under the beam there, lifted as it
+      // is); mid-part a little into it, through the label cut under it there (1 mm), which would be left as hollows over the pad)
+      const boss = scad.intersection(box(p, 0, p.y0, p.y1, p.H, p.H + 60), lift(box(p, 1, p.y0 - 1, p.y1 + 1, -60, p.n === 2 ? 1.1 : 0.02)));
+      if (!boss.isEmpty() && boss.volume() > 1e-3) adds.push(boss);
+      // (the pocket: nothing of the beam below H over the support's top; a half pad's open to its end)
+      cuts.push(box(p, 0, p.n === 1 ? p.y0 - 1 : p.y0, p.y1, p.H - 60, p.H));
+      cuts.push(placeAt(T(mono.antistuds(p.n, p.depth), [0, p.cy, p.H]), p.P));
+    }
+    world = scad.difference(scad.union([world, ...adds]), cuts);
+  }
+  // (the print: the ends' line level; the bed under the lowest of the curve, and of a pad that hangs below the beam,
+  // under that line. An end with a pad under it: the line from the pad's underside instead, if the part lies lower so)
+  const pA = routePose(sub, 0), pB = routePose(sub, L), run = Math.hypot(pB[0] - pA[0], pB[1] - pA[1]) || 1;
+  const dir: [number, number] = [(pB[0] - pA[0]) / run, (pB[1] - pA[1]) / run];
   const along = (q: [number, number]) => (q[0] - pA[0]) * dir[0] + (q[1] - pA[1]) * dir[1];
-  const chord = (q: [number, number]) => zA + ((zB - zA) * along(q)) / run;
-  let drop = 0;
-  for (let k = 0; k <= 64; k++) { const sv = (L * k) / 64, q = routePose(sub, sv); drop = Math.max(drop, chord([q[0], q[1]]) - z(sv)); }
+  const lie = (zA: number, zB: number) => {
+    const chord = (q: [number, number]) => zA + ((zB - zA) * along(q)) / run;
+    let drop = 0, rise = -Infinity;
+    for (let k = 0; k <= 64; k++) { const sv = (L * k) / 64, q = routePose(sub, sv), d = chord([q[0], q[1]]) - z(sv); drop = Math.max(drop, d); rise = Math.max(rise, -d); }
+    for (const p of pads) for (const x of [-PAD_HW, PAD_HW]) for (const y of [p.y0, p.y1]) drop = Math.max(drop, chord(poseToWorld(p.P, [x, y])) - p.H);
+    return { zA, th: Math.atan2(zB - zA, run), chord, drop, tall: (drop + rise) * Math.cos(Math.atan2(zB - zA, run)) };
+  };
+  const endZ = (e: 0 | 1) => Math.min(z(e ? L : 0), ...pads.filter((p) => p.end === e).map((p) => p.H));
+  const plain = lie(z(0), z(L)), padded = pads.some((p) => p.end !== undefined) ? lie(endZ(0), endZ(1)) : plain;
+  const { zA, th, chord, drop } = padded.tall < plain.tall - 1e-6 ? padded : plain;
   const ribs: Man[] = [];
   for (let sv = 3; sv <= L - 3; sv += 6) {
     const q = routePose(sub, sv), gap = z(sv) - (chord([q[0], q[1]]) - drop);
@@ -234,7 +278,19 @@ function bakeRamp(scad: Scad, flat: Man, sub: Route, z: (s: number) => number, t
     const rib = scad.cube([2 * w2, 0.6, gap - 0.25]);
     ribs.push(T(R(T(rib, [-w2, -0.3, 0]), [0, 0, q[2]]), [q[0], q[1], chord([q[0], q[1]]) - drop]));
   }
-  const withRibs = ribs.length ? scad.union([world, ...ribs]) : world;
+  // (the pads' own ribs, up to each pad's level underside: the beam's ribs kept out of its column)
+  const padRibs: Man[] = [];
+  for (const p of pads) {
+    const rim = [p.y0 + 0.8, p.y1 - 0.8], mid = p.n === 2 ? [p.cy - 2.4, p.cy, p.cy + 2.4] : [p.cy];
+    for (const y of [...rim, ...mid]) {
+      const q = poseToWorld(p.P, [0, y]), bed = chord(q) - drop, h = p.H - 0.25 - bed;
+      // (under the rim only where it hangs below the beam: in a pocket it's held by the pocket's sides)
+      if (h < 0.3 || (rim.includes(y) && zOf(q[0], q[1]) < p.H - 0.5)) continue;
+      padRibs.push(placeAt(T(scad.cube([2 * (PAD_HW - 0.3), 0.6, h]), [-PAD_HW + 0.3, y - 0.3, bed]), p.P));
+    }
+  }
+  const beamRibs = ribs.length && pads.length ? [scad.difference(scad.union(ribs), pads.map((p) => box(p, 0.3, p.y0 - 0.3, p.y1 + 0.3, -1000, 2000)))] : ribs;
+  const withRibs = beamRibs.length || padRibs.length ? scad.union([world, ...beamRibs, ...padRibs]) : world;
   // (tilted about the horizontal line through the start square to the run, by the chord's angle)
   const c = Math.cos(-th), sn = Math.sin(-th);
   const print = withRibs.warp((v) => {
@@ -398,7 +454,7 @@ export function buildMonorail(w: Wasm, routes: Route[], o: Partial<PieceOptions>
   // ---- the plain beam: each chain's stretches outside the switches, cut for the bed ----
   type Part = { c: number; a: number; b: number };
   const parts: Part[] = [];
-  const supportsAt: { c: number; s: number }[] = [];
+  const supportsAt: { c: number; s: number; H?: number }[] = [];
   chains.forEach((c, ci) => {
     const tk = [...taken[ci]].map(([p, q]) => (c.closed ? [((p % c.L) + c.L) % c.L, ((p % c.L) + c.L) % c.L + (q - p)] : [p, q]) as [number, number]).sort((x, y) => x[0] - y[0]);
     // free stretches
@@ -429,8 +485,34 @@ export function buildMonorail(w: Wasm, routes: Route[], o: Partial<PieceOptions>
       for (let k = 0; k + 1 < bounds.length; k++) parts.push({ c: ci, a: bounds[k], b: bounds[k + 1] });
     }
   });
+  // (how much higher the beam is y along it from where a support stands, at each of SUP_YS: a ramp's slope changes all
+  // the way, so its underside over a support's top isn't a plane)
+  const SUP_YS = Array.from({ length: 9 }, (_, k) => -10 + 2.5 * k);
+  const levelAt = (ci: number, sv: number) => SUP_YS.every((y) => Math.abs(zAt(ci, sv + y) - zAt(ci, sv)) < 1e-3 * Math.max(1, Math.abs(y)));
+  /**
+   * How tall a support under a ramp stands (its top level, whole plates), mid-part or under a joint (end): the highest
+   * whole plate that fits. Mid-part as LEGO's ramps' pads: up in the beam, as high as clears the beam all over its top
+   * (LEGO's 2677: 5 plates up 16 studs along; 2678: a brick below its top end), while PAD_ROOF of beam is left over its
+   * studs; under a joint under the beam (the ends' axle holes are just above their anti-studs), 0.3 into it at most (where a
+   * ramp starts down from a level part, whose own underside is the support's top), and so too mid-part where the ramp's
+   * all but level (where it starts and ends): the plate the level track beside it stands on. None (0) where the beam's
+   * too low for one: under 2 plates up, or into the support's base (its plate and the studs on it).
+   */
+  const PAD_STUDS = Math.min(mono.antistudDepth, 2.2);
+  const padH = (ci: number, sv: number, end: boolean) => {
+    let lo = Infinity, hi = -Infinity;
+    for (let k = -8; k <= 8; k++) { const u = zAt(ci, sv + (PAD_HW * k) / 8); lo = Math.min(lo, u); hi = Math.max(hi, u); }
+    const allow = end || hi - lo < 0.3 ? 0.3 : MONO.beamTop - PAD_ROOF - PAD_STUDS;
+    const H = Math.max(0, Math.min(Math.ceil((hi - 1e-6) / 3.2), Math.floor((lo + allow + 1e-6) / 3.2))) * 3.2;
+    const half = so.baseYStuds * MONO.stud / 2, base = 3.2 + (so.baseStuds ? 1.8 : 0) + 0.2;
+    return H < 6.4 - 1e-6 || [-1, -0.5, 0.5, 1].some((k) => zAt(ci, sv + half * k) < base) ? 0 : H;
+  };
   // (a support near a part's end, but not at it, moved onto the joint: its studs in the two ends' anti-studs)
   const sockets = new Map<Part, number[]>();
+  /** each ramp part's pads: where along the chain (the part's start or end: half a pad, the support under the joint), and how high */
+  const padsOf = new Map<Part, { s: number; H: number; at: 'mid' | 'a' | 'b' }[]>();
+  const pad = (p: Part, q: { s: number; H: number; at: 'mid' | 'a' | 'b' }) => padsOf.set(p, [...(padsOf.get(p) ?? []), q]);
+  const isRamp = (p: Part) => { const [lo, hi] = zRange(p.c, p.a, p.b); return hi - lo > 0.05; };
   for (const sp of supportsAt) {
     const c = chains[sp.c];
     const sIn = (p: Part, s: number) => s >= p.a - 1e-6 && s <= p.b + 1e-6;
@@ -439,7 +521,20 @@ export function buildMonorail(w: Wasm, routes: Route[], o: Partial<PieceOptions>
     if (!p) { sp.s = NaN; continue; } // (on a switch: it stands under the switch's ends instead)
     const s = alt(sp.s).find((x) => sIn(p, x))!;
     if (s - p.a < 1.5 * MONO.endLen) sp.s = p.a; else if (p.b - s < 1.5 * MONO.endLen) sp.s = p.b;
-    else { sp.s = s; sockets.set(p, [...(sockets.get(p) ?? []), s]); }
+    else {
+      sp.s = s;
+      if (levelAt(sp.c, s) || !isRamp(p)) sockets.set(p, [...(sockets.get(p) ?? []), s]);
+      else { sp.H = padH(sp.c, s, false); if (sp.H) pad(p, { s, H: sp.H, at: 'mid' }); }
+      continue;
+    }
+    // (under a joint on a ramp: half a pad on each ramp part's end there)
+    if (levelAt(sp.c, sp.s)) continue;
+    const H = padH(sp.c, sp.s, true);
+    if (!H) { if (parts.some((q) => q.c === sp.c && isRamp(q) && (Math.abs(q.a - sp.s) < 1e-6 || Math.abs(q.b - sp.s) < 1e-6))) sp.H = 0; continue; }
+    for (const q of parts) if (q.c === sp.c && isRamp(q)) for (const x of c.closed ? [sp.s, sp.s + c.L, sp.s - c.L] : [sp.s]) {
+      if (Math.abs(q.a - x) < 1e-6) { pad(q, { s: q.a, H, at: 'a' }); sp.H = H; }
+      else if (Math.abs(q.b - x) < 1e-6) { pad(q, { s: q.b, H, at: 'b' }); sp.H = H; }
+    }
   }
 
   // ---- build them ----
@@ -456,12 +551,21 @@ export function buildMonorail(w: Wasm, routes: Route[], o: Partial<PieceOptions>
     const sock = (sockets.get(p) ?? []).map((s) => s - p.a);
     const [zlo, zhi] = zRange(p.c, p.a, p.b), ramp = zhi - zlo > 0.05, elev = zlo;
     const zs = ramp ? Array.from({ length: 33 }, (_, k) => zAt(p.c, p.a + ((p.b - p.a) * k) / 32)) : [];
-    const key = JSON.stringify({ seg: sub.segments, start: sub.start, gaps, sock, lines, mo, elev, zs });
+    // (its pads: a ramp part's only (a level part's underside is the support's top as it is))
+    const pq = padsOf.get(p) ?? [];
+    const key = JSON.stringify({ seg: sub.segments, start: sub.start, gaps, sock, lines, mo, elev, zs, pads: pq.length ? pq.map((q) => [q.s - p.a, q.H, q.at]) : undefined });
     const turn = fitAngle(footprint(c.route, p.a, p.b), X, Y);
     const b = cached(`mp:${key}:${turn}${ramp ? `:${X}x${Y}` : ''}`, () => arena(w, () => {
-      const label = underLabel(scad, lines, p.b - p.a - 20), flat = mono.piece(sub, 0, p.b - p.a, gaps, [true, true], sock, label);
+      const label = underLabel(scad, lines, p.b - p.a - 20);
+      const flat = mono.piece(sub, 0, p.b - p.a, gaps, [true, true], sock, label, [pq.some((q) => q.at === 'a'), pq.some((q) => q.at === 'b')]);
       if (!ramp) return bake(flat, turn ?? 0, elev);
-      return bakeRamp(scad, flat, sub, (sl) => zAt(p.c, p.a + sl), turn ?? 0, X, Y);
+      const pads = pq.map((q): Pad => {
+        if (q.at === 'mid') return { P: routePose(sub, q.s - p.a), y0: -PAD_HW, y1: PAD_HW, H: q.H, n: 2, cy: 0, depth: PAD_STUDS };
+        // (an end's frame: the part's body at +y; its anti-studs as a level end's, less what the pad's let up into the beam)
+        const P = q.at === 'a' ? routePose(sub, 0) : endFrame(sub);
+        return { P, y0: MONO.endGap, y1: PAD_HW, H: q.H, n: 1, cy: MONO.axleIn, depth: mono.antistudDepth - Math.max(0, q.H - zAt(p.c, q.s)), end: q.at === 'a' ? 0 : 1 };
+      });
+      return bakeRamp(scad, mono, flat, sub, (sl) => zAt(p.c, p.a + sl), turn ?? 0, X, Y, pads);
     }, () => []));
     res.pieces.push({ name, color: 0x9aa3ad, positions: b.positions.slice(), stl: b.stl.slice() });
     res.volume += b.volume;
@@ -522,35 +626,27 @@ export function buildMonorail(w: Wasm, routes: Route[], o: Partial<PieceOptions>
   });
   // ---- supports: one part each, standing under the beam ----
   const sups = supportsAt.filter((q) => Number.isFinite(q.s));
-  // (and under each switch's ends)
-  // (how much higher the beam is y along it from where a support stands, at each of SUP_YS: a ramp's slope changes all
-  // the way, so its underside over a support's top isn't a plane)
-  const SUP_YS = Array.from({ length: 9 }, (_, k) => -10 + 2.5 * k);
-  const riseAt = (ci: number, sv: number) => SUP_YS.map((y) => zAt(ci, sv + y) - zAt(ci, sv));
-  const supPoses: { P: Pose; h: number; rise?: number[] }[] = sups.map((q) => ({ P: routePose(chains[q.c].route, q.s), h: zAt(q.c, q.s), rise: riseAt(q.c, q.s) }));
+  // (under a ramp: as tall as its pad, mid-part or under a joint as it is; and under each switch's ends)
+  const supPoses: { P: Pose; h: number }[] = sups.map((q) => ({ P: routePose(chains[q.c].route, q.s), h: q.H ?? zAt(q.c, q.s) }));
   if (every) for (const sw of switches) for (const e of sw.plan.ends) {
     supPoses.push({ P: [...poseToWorld(sw.P, [e[0], e[1]]), sw.P[2] + e[2]], h: sw.elev });
   }
   const seen: Pose[] = [];
   if (supPoses.length) {
-    // (each as tall as its beam: whole bricks and plates)
-    // (under a ramp: exactly as tall as the beam where it stands, its top lifted as the beam is along it there, the
-    // studs into its anti-studs (which lean with the beam, as they're lifted with it). Tilted flat to the slope where it
-    // stands, its top was in the beam where the ramp curves back to level: 0.05 at its edges, 1 mm3 in each track end)
-    const supFor = (h: number, rise: number[] = []) => {
-      const flat = rise.every((r, k) => Math.abs(r) < 1e-3 * Math.max(1, Math.abs(SUP_YS[k]))), bricks = Math.floor((h + 0.01) / 9.6);
-      const so2 = { ...so, bricks, plates: flat ? Math.max(0, Math.round((h - bricks * 9.6) / 3.2)) : (h - bricks * 9.6) / 3.2 };
-      const riseOf = (y: number) => { const t = Math.min(SUP_YS.length - 1 - 1e-9, Math.max(0, (y - SUP_YS[0]) / 2.5)), k = Math.floor(t); return rise[k] + (rise[k + 1] - rise[k]) * (t - k); };
-      return cached(`sup:${JSON.stringify(so2)}:${flat ? '' : rise.map((r) => r.toFixed(4)).join()}`, () => arena(w, () => {
-        let m = supportPart(scad, so2);
-        if (!flat) { const H = supportHeight(so2); m = m.refineToLength(2).warp((v) => { const k = Math.min(1, Math.max(0, (v[2] - (H - 8)) / 8)); v[2] += k * riseOf(v[1]); }); }
+    // (each a plain column as tall as its beam: whole bricks and plates, its top level and its studs straight up, under
+    // level track and under a ramp alike (LEGO's stanchions; the ramp's pad comes down to it))
+    const supFor = (h: number) => {
+      const bricks = Math.floor((h + 0.01) / 9.6);
+      const so2 = { ...so, bricks, plates: Math.max(0, Math.round((h - bricks * 9.6) / 3.2)) };
+      return cached(`sup:${JSON.stringify(so2)}:`, () => arena(w, () => {
+        const m = supportPart(scad, so2);
         return { stl: stlBytes(m.getMesh(), true), volume: m.volume(), mesh: m.getMesh() };
       }, () => []));
     };
     let n = 0;
-    for (const { P, h, rise } of supPoses) {
+    for (const { P, h } of supPoses) {
       if (h < 3.2) continue; // (a beam on the baseplate: nothing to hold up)
-      const sp = supFor(h, rise);
+      const sp = supFor(h);
       if (seen.some((q) => near(q, P, 1))) continue;
       seen.push(P);
       const pos = meshPositions(sp.mesh), c = Math.cos((P[2] * Math.PI) / 180), s = Math.sin((P[2] * Math.PI) / 180);

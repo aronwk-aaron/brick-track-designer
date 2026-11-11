@@ -246,7 +246,7 @@ export function optionForm(d: () => Design): { form: OptSection[] } {
         { v: 'part', t: 'Part name', tip: 'One line underside: the part\'s name, as its file.' },
         { v: 'none', t: 'Nothing', tip: 'A plain underside.' }] },
       { key: 'monoSwitchFit', label: 'Points clearance, mm', step: 0.05, min: 0.1, max: 0.6, sub: 'Points', help: 'The gap round the points\' moving parts: the slide, the wheel, the links, the lever and the two teeth that set the points when a train comes in from the other exit. 0.1 to 0.6; 0.3 unless changed.' },
-      { key: 'monoSupportStuds', label: 'Support every, studs', step: 4, min: 0, max: 256, rerender: true, sub: 'Supports', help: 'A support column under the beam this often, each its own part. 0: none. Parts are cut over a support where they can.' },
+      { key: 'monoSupportStuds', label: 'Support every, studs', step: 4, min: 0, max: 256, rerender: true, sub: 'Supports', help: 'A support column under the beam this often, each its own part. 0: none. Parts are cut over a support where they can. Under a ramp each is whole plates tall with a level top, and the beam has a level pad over it.' },
       { key: 'monoSupportBricks', label: 'Support height, bricks', step: 1, min: 1, max: 30, off: noSupports, help: 'Height of the beam\'s underside above the baseplate. LEGO\'s supports: 5 and 10.' },
       { key: 'monoSupportPlates', label: 'Extra height, plates', step: 1, min: 0, max: 2, off: noSupports, help: 'Plates added on top of the bricks.' },
       { key: 'monoSupportBaseXStuds', label: 'Support base across, studs', step: 1, min: 2, max: 16, off: noSupports, help: 'Base plate size across the legs. LEGO\'s: 4 (short), 6 (tall).' },

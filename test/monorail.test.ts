@@ -163,6 +163,76 @@ describe('monorail', { timeout: 120000 }, () => {
     // (steeper than LEGO's own ramps, 21°: 10 plates up over 12 studs)
     expect(buildDesign(w, lay(12)).info.warnings.some((wn) => /steeper than LEGO/.test(wn))).toBe(true);
   });
+  it('supports under a ramp: each a plain column (whole plates, its top level, its studs straight up), the beam\'s pad level on it; LEGO\'s ramp uncut: its pads 5 and 27 plates up, as 2677 and 2678', { timeout: 600000 }, async () => {
+    const w = await kernel();
+    const ramp = (bed: number, every: number, studs = 64, plates = 30): Design => ({ version: 1, gaugeStuds: 4, options: { printBedX: bed, printBedY: bed, monoSupportStuds: every }, routes: [
+      { name: 'Low', x: 0, y: 0, heading: 0, system: 'monorail', monoHeight: 0, segs: [{ kind: 'straight', studs: 16 }] },
+      { name: 'Ramp', x: 0, y: 16, heading: 0, system: 'monorail', monoHeight: 0, monoHeightEnd: plates, segs: [{ kind: 'straight', studs }] },
+      { name: 'High', x: 0, y: 16 + studs, heading: 0, system: 'monorail', monoHeight: plates, segs: [{ kind: 'straight', studs: 16 }] },
+    ] });
+    /** the supports of a design, each checked: [along the track (studs), plates tall] */
+    const supports = (d: Design, straight = true) => {
+      const b = buildDesign(w, d), beams = b.pieces.filter((p) => /^monorail-Low/.test(p.name)), out: [number, number][] = [];
+      expect(b.info.warnings).toEqual([]);
+      for (const sp of b.pieces.filter((p) => /^monorail-support/.test(p.name))) {
+        const P = sp.positions; let top = -Infinity, x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity;
+        for (let i = 0; i < P.length; i += 3) { top = Math.max(top, P[i + 2]); x0 = Math.min(x0, P[i]); x1 = Math.max(x1, P[i]); y0 = Math.min(y0, P[i + 1]); y1 = Math.max(y1, P[i + 1]); }
+        const H = top - 1.79, cx = (x0 + x1) / 2, cy = (y0 + y1) / 2;
+        // (whole plates tall)
+        expect(Math.abs(H / 3.2 - Math.round(H / 3.2)), `${sp.name}: ${(H / 3.2).toFixed(3)} plates`).toBeLessThan(1e-3);
+        // (its top plate and studs: every face level or upright; its top face at H all over, the studs' tops all at one height)
+        let tops = 0;
+        for (let i = 0; i < P.length; i += 9) {
+          const z = [P[i + 2], P[i + 5], P[i + 8]];
+          if (Math.min(...z) < H - 3.2 - 1e-3) continue;
+          const u = [P[i + 3] - P[i], P[i + 4] - P[i + 1], P[i + 5] - P[i + 2]], v = [P[i + 6] - P[i], P[i + 7] - P[i + 1], P[i + 8] - P[i + 2]];
+          const n = [u[1] * v[2] - u[2] * v[1], u[2] * v[0] - u[0] * v[2], u[0] * v[1] - u[1] * v[0]], len = Math.hypot(...n);
+          if (len < 1e-9) continue;
+          const nz = Math.abs(n[2] / len);
+          expect(nz < 5e-3 || nz > 1 - 1e-5, `${sp.name}: a face of its top leans (${nz.toFixed(4)})`).toBe(true);
+          for (const q of z) {
+            if (q > H + 1) { expect(q).toBeCloseTo(top, 3); tops++; }
+            else if (q > H - 1) expect(Math.abs(q - H)).toBeLessThan(0.03);
+          }
+        }
+        expect(tops).toBeGreaterThan(4 * 32);
+        // (the beam over it: level at H round the support's top (its pad's rim, or a level beam's underside), nothing of it
+        // lower over the top; and its studs' places cut straight up from there, their walls upright)
+        let rim = 0, low = 0, lean = 0;
+        if (straight) for (const bp of beams) for (let i = 0, Q = bp.positions; i < Q.length; i += 9) {
+          const t = [0, 3, 6].map((k) => [Q[i + k] - cx, Q[i + k + 1] - cy, Q[i + k + 2]]);
+          if (t.some((q) => Math.abs(q[0]) > 8.15 || Math.abs(q[1]) > 8.15)) continue;
+          for (const q of t) { if (Math.abs(q[2] - H) < 1e-3) rim++; if (q[2] < H - 1e-3 && Math.abs(q[0]) < 7.9 && Math.abs(q[1]) < 7.9) low++; }
+          if (t.every((q) => q[2] < H + 1.8 + 1e-3 && Math.abs(q[0]) < 6.6 && Math.abs(q[1]) < 6.6)) {
+            const u = t[1].map((c, k) => c - t[0][k]), v = t[2].map((c, k) => c - t[0][k]);
+            const n = [u[1] * v[2] - u[2] * v[1], u[2] * v[0] - u[0] * v[2], u[0] * v[1] - u[1] * v[0]], len = Math.hypot(...n), nz = Math.abs(n[2] / (len || 1));
+            if (len > 1e-9 && nz > 1e-3 && nz < 1 - 1e-6) lean++;
+          }
+        }
+        if (straight) expect(rim, `${sp.name}: the beam level on its top`).toBeGreaterThan(8);
+        expect(low, `${sp.name}: the beam below its top`).toBe(0);
+        expect(lean, `${sp.name}: its studs' places lean`).toBe(0);
+        // (and it's clear of the beam as it stands: its top in the pad, its studs in their places)
+        const solid = (Q: Float32Array) => { const mesh = new w.Mesh({ numProp: 3, vertProperties: Q, triVerts: new Uint32Array(Q.length / 3).map((_, i) => i) }); mesh.merge(); return new w.Manifold(mesh); };
+        const col = solid(sp.positions);
+        expect(col.status()).toBe('NoError');
+        for (const bp of beams) expect(col.intersect(solid(bp.positions)).volume(), `${sp.name} in ${bp.name}`).toBeLessThan(0.2);
+        out.push([Math.round(cy / 8), Math.round(H / 3.2)]);
+      }
+      return out;
+    };
+    // (LEGO's ramp in one piece, a support under the middle of each half (16 and 48 studs up it), where 2677 and 2678 have
+    // their pads: 5 plates up, and a brick below the top (27); the one between, where it's steepest, half in the beam, half under it)
+    expect(supports(ramp(900, 16))).toEqual([[32, 5], [48, 15], [64, 27], [80, 30], [96, 30]]);
+    // (cut for the bed at its supports: each under a joint, the two ends' pads under the beam (their axle holes just above))
+    expect(supports(ramp(256, 32))).toEqual([[32, 3], [64, 25], [96, 30]]);
+    // (a short steep one, a support every 8 studs)
+    expect(supports(ramp(256, 8, 24, 10)).length).toBeGreaterThanOrEqual(4);
+    // (a ramp round a curve, raised at both ends: the supports turned with it, clear of the beam)
+    const round: Design = { version: 1, gaugeStuds: 4, options: { printBedX: 256, printBedY: 256, monoSupportStuds: 12 }, routes: [
+      { name: 'Low', x: 0, y: 0, heading: 0, system: 'monorail', monoHeight: 6, monoHeightEnd: 20, segs: [{ kind: 'curve', radius: 40, angle: 90 }] }] };
+    expect(supports(round, false).length).toBeGreaterThanOrEqual(5);
+  });
   it('a design with train track and monorail: the train built as on its own; a warning where the beam runs into it, none on supports', async () => {
     const train: DRoute = { name: 'T', x: 0, y: -12, heading: 0, segs: [{ kind: 'straight', studs: 24 }] };
     const beam = mono({ name: 'M', x: 12, y: 0, heading: 90, segs: [{ kind: 'straight', studs: 24 }] });
