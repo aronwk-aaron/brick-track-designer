@@ -30,6 +30,13 @@ const bodies = (m: ReturnType<typeof crossingPiece>) => m.decompose().filter((b)
 const solidAt = (s: Scad, m: ReturnType<typeof crossingPiece>, x: number, y: number, z: number) => m.slice(z).intersect(s.square([0.4, 0.4], true).translate([x, y])).area() > 0.01;
 
 describe('guard rails and dual gauge', { timeout: 60000 }, () => {
+  it('guard rails and dual gauge on one route: both are built, and the build says they can clash', async () => {
+    const w = await kernel();
+    const both = buildDesign(w, design({ guardRails: true, dualGauge: true }));
+    expect(both.info.warnings.filter((x) => /guard rails and dual gauge/.test(x))).toEqual(['A has guard rails and dual gauge: both are built, the guard rails inside each running rail and the third rail beside one, so they can clash (turn one off)']);
+    expect(buildDesign(w, design({ guardRails: true })).info.warnings.filter((x) => /guard rails and dual gauge/.test(x))).toEqual([]);
+    expect(buildDesign(w, design({ dualGauge: true })).info.warnings.filter((x) => /guard rails and dual gauge/.test(x))).toEqual([]);
+  });
   it('a straight with guard rails: more rail, one body, studs clear of them; pointed ends where asked', async () => {
     const plain = await piece(toRoutes(design({})));
     const none = await piece(toRoutes(design({ guardRails: true })));
@@ -136,7 +143,7 @@ describe('guard rails and dual gauge', { timeout: 60000 }, () => {
     const d = design({ segs: [{ kind: 'straight', studs: 48 }], y: -24, guardRails: true, guardRailEnds: 'both', dualGauge: true },
       [{ name: 'B', x: 24, y: 0, heading: 90, segs: [{ kind: 'straight', studs: 48 }] }]);
     const b = buildDesign(await kernel(), { ...d, options: { printBedX: 600, printBedY: 600 } });
-    expect(b.info.warnings).toEqual([]);
+    expect(b.info.warnings).toEqual(['A has guard rails and dual gauge: both are built, the guard rails inside each running rail and the third rail beside one, so they can clash (turn one off)']); // (nothing else said)
     const plain = buildDesign(await kernel(), { ...d, routes: d.routes.map((r) => ({ ...r, guardRails: false, dualGauge: false })), options: { printBedX: 600, printBedY: 600 } });
     expect(b.pieces.map((p) => p.name)).toEqual(plain.pieces.map((p) => p.name));
     expect(b.info.volume).toBeGreaterThan(plain.info.volume + 1000);

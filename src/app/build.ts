@@ -871,6 +871,10 @@ function solveTrackwork(w: Wasm, design: Design, o: PieceOptions, step: (what: s
   }
   // (guard rails and third rails: where each may run, clear of the other routes, worked out on the whole design so its parts agree)
   if (routes.some((rt) => rt.extra)) routes = markClear(routes, gauge + 24);
+  // (guard rails and dual gauge on one route: the build lays both, the guard rails inside each running rail and the third rail beside one; the card allows one or the other)
+  for (const id of new Set(routes.filter((rt) => rt.extra?.guard && dualBuilt(rt.extra, (rt.gauge ?? gauge) / 8 - 1)).map((rt) => rt.id.replace(/[~:]\d+$/, '')))) {
+    bankWarnings.push(`${id} has guard rails and dual gauge: both are built, the guard rails inside each running rail and the third rail beside one, so they can clash (turn one off)`);
+  }
   // (a third rail runs on through track that crosses it (extrarails.ts DUAL_CROSS); through points, beside track alongside
   // and across a shallow crossing it's left out, and it's said: where, and that narrow-gauge trains can't run there)
   for (const rt of routes) {
