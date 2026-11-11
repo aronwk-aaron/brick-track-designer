@@ -172,7 +172,8 @@ describe('search and filters', () => {
     expect(names({ query: 'switch zzzz' })).toEqual([]);
   });
   it('finds a card by its other hand\'s name too', () => {
-    expect(names({ query: 'right switch lego' })).toEqual(['Left switch (LEGO)']);
+    // (the monorail points are LEGO's too: a switch by its other hand's name)
+    expect(names({ query: 'right switch lego' })).toEqual(['Left switch (LEGO)', 'Monorail points left (as LEGO\'s)']);
   });
   it('filters by the maker\'s range', () => {
     const bt = names({ ranges: new Set(['BrickTracks']) });
@@ -188,7 +189,7 @@ describe('search and filters', () => {
     expect(names({ kinds: new Set(['wye']) }).every((n) => /wye/i.test(n))).toBe(true);
     expect(names({ kinds: new Set(['wye', 'three-way']) }).length).toBeGreaterThan(names({ kinds: new Set(['wye']) }).length);
     expect(names({ gauges: new Set(['narrow']) }).every((n) => /^Narrow-gauge/.test(n))).toBe(true);
-    expect(names({ systems: new Set(['monorail']) }).length).toBe(6); // (the Monorail group's six, the points' two hands one card, and the monorail hole-fit coupons)
+    expect(names({ systems: new Set(['monorail']) }).length).toBe(30); // (the Monorail group's three, the Monorail trackwork group's cards (hands paired), and the monorail hole-fit coupons)
     const r104 = names({ radii: new Set([104]) });
     expect(r104.length).toBeGreaterThan(3);
     const both = names({ radii: new Set([104]), kinds: new Set(['switch']), query: 'lever' });
