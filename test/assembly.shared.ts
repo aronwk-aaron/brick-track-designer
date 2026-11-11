@@ -185,7 +185,9 @@ export function putTogether(w: Awaited<ReturnType<typeof kernel>>, pieces: Piece
   for (const p of pieces.filter((q) => /lever/.test(q.name) && mine(q))) {
     // (and on its bracket, where it's on one)
     const m = man(p), withLids = w.Manifold.union([trackBox(m, 2).cut, ...lids, ...pieces.filter((q) => /bracket/.test(q.name)).map(man)]);
-    if ([-0.6, 0.6].some((dy) => m.translate([0, dy, 0]).intersect(withLids).volume() < 0.5)) problems.push(`${p.name} isn't held by its ears`);
+    // (along its own hinge's axis, whichever way its track runs; a lever with no hinge said: along y, as its points are built)
+    const [ax, ay] = p.hinge?.axis ?? [0, 1], al = Math.hypot(ax, ay) || 1;
+    if ([-0.6, 0.6].some((d) => m.translate([(d * ax) / al, (d * ay) / al, 0]).intersect(withLids).volume() < 0.5)) problems.push(`${p.name} isn't held by its ears`);
   }
   for (const p of pieces.filter((q) => /lid/.test(q.name) && mine(q))) {
     const m = man(p), others = w.Manifold.union([trackBox(m, 2).cut, ...moving]);
