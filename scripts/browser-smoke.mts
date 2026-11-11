@@ -553,6 +553,31 @@ try {
     check(await all() === '0,0 0,17 0,33 24,0', `a track made longer carries what is joined to its end (${await all()})`);
     await page.keyboard.press('Escape'); }
 
+  // the Expert tools switch: off to start with, the cards have no cuts or own-settings sections and a click on a cut picks its track; a track that has cuts says so, with Show; remembered
+  at = 'the Expert tools switch';
+  await page.evaluate(() => { localStorage.removeItem('btd-expert'); localStorage.setItem('btd-design', JSON.stringify({ version: 1, gaugeStuds: 4, options: { splitTrack: 'lengths' }, routes: [
+    { name: 'Main', x: 0, y: 0, heading: -90, segs: [{ kind: 'straight', studs: 48 }], cuts: [12], own: { ballast: 'ballast' }, stretches: [{ from: 20, to: 32, own: { sleepers: 'bed' } }] },
+    { name: 'Far', x: 0, y: 24, heading: -90, segs: [{ kind: 'straight', studs: 48 }] }] })); });
+  await page.reload(); await page.waitForSelector('#track'); await page.click('#mode-select'); await page.click('#fit'); await page.waitForTimeout(400);
+  { const heads = async () => (await page.locator('details.route.selected details.rsub > summary').allInnerTexts()).map((t) => t.split('\n')[0]).join('|');
+    const pressed = () => page.locator('#expert-toggle').getAttribute('aria-pressed'), bar = () => page.locator('#sel-count').innerText();
+    const [tx, ty] = await scr(44, 0); await page.mouse.click(tx, ty); await page.waitForTimeout(250);
+    check(await pressed() === 'false' && !/Cuts into parts|Bed and underside/.test(await heads()), `the expert tools are hidden to start with: a card has no Cuts or Bed sections (${await heads()})`);
+    check(/Has 1 cut by hand, 1 setting of its own, 1 stretch\./.test(await page.locator('details.route.selected').innerText()), 'a track that has cuts, settings and stretches of its own says so on its card');
+    const [fx, fy] = await scr(44, 24); await page.mouse.click(fx, fy); await page.waitForTimeout(250);
+    check(await page.locator('details.route.selected .byhand').count() === 0, 'a track with none has no such line');
+    const [cx, cy] = await scr(12, 0.5); await page.mouse.click(cx, cy); await page.waitForTimeout(250);
+    check(await bar() === '1 selected' && await page.locator('#itemcard').isHidden(), `hidden, a click on a cut picks the track under it (${await bar()})`);
+    check(await page.locator('#cutpaths').isHidden(), 'and the Cut paths panel is away (the design has none)');
+    await page.locator('details.route.selected .byhand button').click(); await page.waitForTimeout(250);
+    check(await pressed() === 'true' && /Bed and underside/.test(await heads()) && /Cuts into parts/.test(await heads()) && await page.locator('.byhand').count() === 0, `Show turns the expert tools on: the card has its sections (${await heads()})`);
+    await page.mouse.click(cx, cy); await page.waitForTimeout(250);
+    check(/^Cut across Main, 12 studs/.test(await bar()), `shown, the click picks the cut (${await bar()})`);
+    await page.click('#expert-toggle'); await page.waitForTimeout(250);
+    check(await pressed() === 'false' && await page.locator('#itemcard').isHidden() && await page.locator('#selbar').isHidden(), 'the button hides them again, and lets go of the cut');
+    await page.click('#expert-toggle'); await page.reload(); await page.waitForSelector('#track'); await page.click('#mode-select'); await page.waitForTimeout(300);
+    check(await pressed() === 'true' && await page.locator('#cutpaths').isVisible(), 'shown or hidden is remembered in the browser'); }
+
   // the typed selection (expert): a click selects a cut across a track, a cut path or a stretch; the bar and its card say what it is; Delete, the arrow keys, Esc
   at = 'selecting a cut, a cut path, a stretch';
   await page.evaluate(() => localStorage.setItem('btd-design', JSON.stringify({ version: 1, gaugeStuds: 4, options: { splitTrack: 'lengths' }, routes: [

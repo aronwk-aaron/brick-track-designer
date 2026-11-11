@@ -26,7 +26,7 @@ import { addTemplate, openEnds } from './addtemplate';
 import { cardSections, type SectionId } from './cardsections';
 import { designOptions, hasPartOwn, ignoredOwn, inForce, liveOwn, partGroups } from './overrides';
 import { isRouteKey, OWN_LABELS, OWN_RANGES, PART_KEYS, type RouteKey } from './routeown';
-import { itemLabel, jointsOf, jointWhere } from './items';
+import { byHandNote, designByHandNote, EXPERT_SECTIONS, itemLabel, jointsOf, jointWhere } from './items';
 import { followStretches, liveStretches, lostStretches, type Stretch, STRETCH_KEYS, STRETCH_MIN, stretchProblem } from './stretches';
 import { designOfSelection, listMine, saveMine, type StorageLike } from './mytemplates';
 import { parallelRoute } from './parallelroute';
@@ -289,6 +289,13 @@ const foldedCards = new Set<string>();
 const cardId = (r: DRoute, i: number) => r.name || String(i);
 
 /** The route cards' sections open (by title), the same for every card, remembered in this browser. */
+/**
+ * Expert tools shown (the routes panel's button): what an expert edits one by one, on the plan and in the cards (cuts,
+ * cut paths, stretches, a track's own settings). Remembered in this browser, not kept in the design: a design is
+ * built the same shown or hidden, and a track that has any of it says so on its card while they're hidden.
+ */
+let expertTools = false;
+try { expertTools = localStorage.getItem('btd-expert') === '1'; } catch { /* fine */ }
 const openParts: Set<string> = (() => { try { const v = JSON.parse(localStorage.getItem('btd-card-parts') ?? 'null'); if (Array.isArray(v)) return new Set<string>(v); } catch { /* (none kept) */ } return new Set(['Shape']); })();
 const keepParts = () => { try { localStorage.setItem('btd-card-parts', JSON.stringify([...openParts])); } catch { /* (not kept) */ } };
 // ---------- the tables ----------
@@ -464,6 +471,9 @@ function renderCutPaths() {
   $('cutpaths-count').textContent = ps.length ? ` (${ps.length})` : '';
   body.replaceChildren();
   const small = (text: string, warn = false) => { const n = document.createElement('small'); n.className = 'desc'; n.style.color = warn ? 'var(--warn)' : 'var(--muted)'; n.style.display = 'block'; n.textContent = text; return n; };
+  // (the expert tools hidden: the panel only where the design has cut paths, saying so, with Show)
+  $('cutpaths').hidden = !expertTools && !ps.length;
+  if (!expertTools) { const note = designByHandNote(design); if (note) body.append(byHandRow(`${note}: they are made as drawn.`)); return; }
   body.append(small('Cuts drawn by hand where tracks are one part (points, a crossover): along a track, between two tracks, or across them. A path runs between the studs, never through one, and cuts every part it crosses from edge to edge. Not through a blade or a frog.'));
   const bar = document.createElement('div'); bar.className = 'tbar';
   const addB = document.createElement('button'); addB.type = 'button'; addB.textContent = 'Add a cut path…';
@@ -600,6 +610,29 @@ const drawItemCard = () => keepingFocus(document.querySelector('aside')!, render
 /** (the selection bar is set up further down: drawn with the forms only once it is) */
 let selbarReady = false;
 
+/** A line saying what is there that only the expert tools show, with Show to turn them on. */
+function byHandRow(text: string): HTMLElement {
+  const row = document.createElement('div'); row.className = 'byhand';
+  const t = document.createElement('span'); t.textContent = text;
+  const b = document.createElement('button'); b.type = 'button'; b.textContent = 'Show'; b.title = 'Show the expert tools: cuts, cut paths, stretches and a track\'s own settings, on the plan and in the cards';
+  b.addEventListener('click', () => setExpert(true));
+  row.append(t, b);
+  return row;
+}
+/** The expert tools shown or hidden (remembered): the plan picks cuts and stretches only when shown, and the cards have their sections. */
+function setExpert(on: boolean) {
+  expertTools = on;
+  try { localStorage.setItem('btd-expert', on ? '1' : '0'); } catch { /* fine */ }
+  canvas.expert = on;
+  if (!on) canvas.stopExpert();
+  syncExpert(); render(); updateSelbar(); canvas.draw();
+}
+function syncExpert() {
+  const b = $('expert-toggle');
+  b.classList.toggle('on', expertTools); b.setAttribute('aria-pressed', String(expertTools));
+  b.title = expertTools ? 'The expert tools are shown: cuts across a track, cut paths, stretches and a track\'s own settings, on the plan and in the cards. Click to hide them: nothing in the design changes.'
+    : 'Show the expert tools: cut a track where you choose, draw cut paths, give a track or a stretch of it its own settings. Hidden, the design is built the same, and a track that has any of these says so on its card.';
+}
 function render() { keepingFocus(document.querySelector('aside')!, drawForms); }
 function drawForms() {
   renderItemCard(); if (selbarReady) updateSelbar();
@@ -863,6 +896,8 @@ function makeCard(r: DRoute, i: number): HTMLElement {
     if (!box.open) { box.append(sum); return box; }
     const body = document.createElement('div'); body.className = 'body';
     body.append(lockToggle(r));
+    // (the expert tools hidden: what the track has that they'd show is said, never out of sight, with Show)
+    if (!expertTools) { const note = byHandNote(design, r); if (note) body.append(byHandRow(`${note}.`)); }
     // (a narrow-gauge track drawn on the middle of a dual-gauge end, not on its narrow gauge (designs from before the
     // two snapped together): said, and put right in one click. routeedits.ts dualEndMismatches)
     for (const q of dualEndMismatches(design).filter((m) => m.route === i)) {
@@ -960,11 +995,12 @@ function makeCard(r: DRoute, i: number): HTMLElement {
       shape.append(row);
     });
     // (a banked curve on it: its ramps' settings, its own or the design's)
-    if (!isMono(r) && r.segs.some((sg) => sg.kind === 'curve' && (sg.bank ?? 0) > 0)) for (const key of ['bankRampAt', 'bankRampStuds', 'bankClimb'] as const) shape.append(ownRow(r, i, key));
+    if (expertTools && !isMono(r) && r.segs.some((sg) => sg.kind === 'curve' && (sg.bank ?? 0) > 0)) for (const key of ['bankRampAt', 'bankRampStuds', 'bankClimb'] as const) shape.append(ownRow(r, i, key));
     // (which sections this route has, and what each says shut: cardsections.ts)
     const id = r.name || String(i), items = canvas?.overlay?.items ?? [];
     const keys = new Set(items.filter((it) => it.kind === 'points' && !it.cand && (it.routes ?? []).slice(1).includes(id)).map((it) => it.key));
-    const secs = cardSections(design, r, { branches: keys.size > 0 }), sec = (sid: SectionId) => secs.find((x) => x.id === sid);
+    // (the sections that are the expert tools' own: only while those are shown)
+    const secs = cardSections(design, r, { branches: keys.size > 0 }), sec = (sid: SectionId) => (expertTools || !EXPERT_SECTIONS.includes(sid) ? secs.find((x) => x.id === sid) : undefined);
     if (sec('ends')) {
       const ends = part('Ends', sec('ends')!.summary);
       // (each end: an ordinary end connector, or a buffer stop)
@@ -1721,6 +1757,8 @@ const legendEl = $('legend');
 const foldLegend = (on: boolean) => { legendEl.classList.toggle('folded', on); $('legend-fold').textContent = on ? '+' : '–'; try { localStorage.setItem('btd-legend', on ? '0' : '1'); } catch { /* fine */ } };
 try { foldLegend(localStorage.getItem('btd-legend') === '0'); } catch { /* fine */ }
 $('legend-fold').addEventListener('click', () => foldLegend(!legendEl.classList.contains('folded')));
+canvas.expert = expertTools; syncExpert();
+$('expert-toggle').addEventListener('click', () => setExpert(!expertTools));
 canvas.draw();
 (window as unknown as { btdCanvas: unknown }).btdCanvas = canvas; // (for the browser checks)
 const setMode = (m: 'draw' | 'select' | 'measure') => {

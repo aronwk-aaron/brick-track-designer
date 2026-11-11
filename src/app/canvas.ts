@@ -236,6 +236,12 @@ export class TrackCanvas {
   }
   /** Expert tools shown (main.ts: remembered per browser): cuts, cut paths and stretches can be picked on the plan. */
   expert = true;
+  /** The expert tools hidden: whatever of theirs is being drawn, dragged or waited for is let go of, and a selected cut, cut path or stretch too. */
+  stopExpert() {
+    this.cutArmed = false; this.stretchArmed = false; this.stretchNew = undefined; this.pathDraw = undefined; this.cutDrag = undefined; this.stretchDrag = undefined;
+    if (this.selItemNow && this.selItemNow.kind !== 'joint') this.setItem(undefined);
+    this.draw();
+  }
   /** The Pick list: what a click on the plan takes (items.ts PICKS). */
   pick: PickId = 'all';
   private picks(layer: Layer) { return picks(this.pick, layer, this.expert); }
