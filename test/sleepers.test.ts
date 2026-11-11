@@ -68,8 +68,9 @@ describe('sleepers', { timeout: 120000 }, () => {
     const cut = buildDesign(w, d), whole = buildDesign(w, { ...d, options: { ...d.options, printBedX: 500, printBedY: 500 } });
     expect(cut.pieces).toHaveLength(2);
     // (the same plastic as the whole: the sleeper at the join not in both)
-    // (the two end connectors at the join in place of track: a little more; a sleeper twice was 14% more)
-    expect(Math.abs(cut.info.volume / whole.info.volume - 1)).toBeLessThan(0.02);
+    // (the two end connectors at the join in place of track: a little more, 6% with the sleepers hollow underneath as
+    // LEGO's; a sleeper twice was 14% more with them solid)
+    expect(Math.abs(cut.info.volume / whole.info.volume - 1)).toBeLessThan(0.08);
   });
   it('builds and cuts for a small bed', async () => {
     const b = buildDesign(await kernel(), { ...straight(64), options: { sleepers: 'sleepers', printBedX: 200, printBedY: 200 } });

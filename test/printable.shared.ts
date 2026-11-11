@@ -61,16 +61,20 @@ export interface Pin { hang?: { area: number; where: string }; islands?: { count
  * whole way between its pillars (z 22.4) and its feet's undersides (z 1.8) are flat. Islands: a few mm2 (listed below), not yet
  * looked into. where: x, y over the bed and z up from the part's bottom, mm (the box the unheld bits lie in). area: the most
  * hanging, mm2 (found, rounded up); the test allows 10% over. Fix one and take it off the list: the test says when to.
+ * (2026-11-11, every underside LEGO's design: sleepers are hollow underneath now, where they were solid with a socket at each
+ * stud, so their roofs are of the same kind: 62 to 70 or 117 mm2 on a straight's part (a thin post stands where a tube can't,
+ * by the rails' feet), 114 and 119 to 459 and 843 on the curve's two, whose sleepers lie at an angle to the stud grid (posts
+ * where they fit); the lever's bracket, a 3 x 3 plate's hollow, 327. One island is gone.)
  */
 export const PINNED: Record<string, Record<string, Pin>> = {
   'plain track on sleepers (straight and curve)': {
-    'track1': { hang: { area: 62, where: '-23.0..23.0 -67.5..67.2 2.0..3.5' }, why: 'unheld by height (mm2 at z): 29 at 2.4, 25 at 3.5, 7 at 2.0' },
-    'track2': { hang: { area: 63, where: '-58.4..40.4 -70.5..66.8 2.0..3.5' }, why: 'unheld by height (mm2 at z): 29 at 2.4, 25 at 3.5, 8 at 2.0' },
-    'track3': { hang: { area: 114, where: '-37.1..36.0 -31.5..31.6 2.0..3.5' }, why: 'unheld by height (mm2 at z): 50 at 2.0, 34 at 2.4, 29 at 3.5' },
-    'track4': { hang: { area: 119, where: '-31.0..35.1 -46.9..44.1 2.0..9.5' }, why: 'unheld by height (mm2 at z): 63 at 2.0, 29 at 2.4, 25 at 3.5' },
+    'track1': { hang: { area: 117, where: '-27.0..27.0 -66.8..67.2 2.0..3.5' }, why: 'unheld by height (mm2 at z): 70 at 2.0, 25 at 3.5, 21 at 2.4' },
+    'track2': { hang: { area: 94, where: '-30.7..23.2 -66.8..67.2 2.0..3.5' }, why: 'unheld by height (mm2 at z): 47 at 2.0, 25 at 3.5, 21 at 2.4' },
+    'track3': { hang: { area: 459, where: '-37.9..35.8 -28.7..34.5 2.0..3.5' }, why: 'unheld by height (mm2 at z): 397 at 2.0, 31 at 2.4, 30 at 3.5' },
+    'track4': { hang: { area: 843, where: '-31.6..35.5 -46.2..44.1 2.0..9.5' }, why: 'unheld by height (mm2 at z): 790 at 2.0, 26 at 2.4, 25 at 3.5' },
   },
   'plain track on ballast': {
-    'track1': { hang: { area: 3220, where: '-71.0..81.6 -70.5..67.1 2.0..6.7' }, islands: { count: 1, area: 2.75, where: '7.9..7.9 48.0..48.0 2.1..2.1' }, why: 'unheld by height (mm2 at z): 3168 at 2.0, 52 at 6.7' },
+    'track1': { hang: { area: 3220, where: '-71.0..81.6 -70.5..67.1 2.0..6.7' }, why: 'unheld by height (mm2 at z): 3168 at 2.0, 52 at 6.7' },
     'track2': { hang: { area: 1933, where: '-41.9..42.5 -46.9..44.1 2.0..12.8' }, why: 'unheld by height (mm2 at z): 1906 at 2.0, 25 at 6.7, 0 at 12.8' },
   },
   'switch: blades on top, lever built in': {
@@ -80,6 +84,7 @@ export const PINNED: Record<string, Record<string, Pin>> = {
   'switch: blades on top, lever on a bracket': {
     'switch-base1': { hang: { area: 1314, where: '-49.0..54.4 -57.6..60.4 2.0..3.5' }, why: 'unheld by height (mm2 at z): 1205 at 2.0, 58 at 3.5, 50 at 2.4' },
     'switch-base2': { hang: { area: 1073, where: '-79.0..77.6 -85.0..78.8 2.0..3.5' }, why: 'unheld by height (mm2 at z): 950 at 2.0, 64 at 3.5, 58 at 2.4' },
+    'switch-bracket': { hang: { area: 327, where: '-9.3..9.3 -9.8..9.8 2.0..2.0' }, why: 'unheld by height (mm2 at z): 327 at 2.0' },
   },
   'switch: blades on top, switch stand': {
     'switch-base1': { hang: { area: 1314, where: '-45.0..50.4 -57.6..60.4 2.0..3.5' }, why: 'unheld by height (mm2 at z): 1205 at 2.0, 58 at 3.5, 50 at 2.4' },
@@ -105,14 +110,14 @@ export const PINNED: Record<string, Record<string, Pin>> = {
     'track1': { hang: { area: 733, where: '-67.2..67.5 -67.5..67.2 2.0..3.5' }, why: 'unheld by height (mm2 at z): 623 at 2.0, 59 at 2.4, 50 at 3.5' },
   },
   'cut: peg and clip': {
-    'track1': { hang: { area: 62, where: '-23.0..23.0 -47.5..47.2 2.0..3.5' }, why: 'unheld by height (mm2 at z): 29 at 2.4, 25 at 3.5, 7 at 2.0' },
-    'track2': { hang: { area: 62, where: '-23.0..23.0 -43.5..43.2 2.0..3.5' }, why: 'unheld by height (mm2 at z): 29 at 2.4, 25 at 3.5, 7 at 2.0' },
-    'track3': { hang: { area: 62, where: '-23.0..23.0 -47.5..47.2 2.0..3.5' }, why: 'unheld by height (mm2 at z): 29 at 2.4, 25 at 3.5, 7 at 2.0' },
+    'track1': { hang: { area: 70, where: '-27.0..27.0 -46.8..47.2 2.0..3.5' }, why: 'unheld by height (mm2 at z): 25 at 3.5, 23 at 2.0, 21 at 2.4' },
+    'track2': { hang: { area: 70, where: '-27.0..27.0 -42.8..43.2 2.0..3.5' }, why: 'unheld by height (mm2 at z): 25 at 3.5, 23 at 2.0, 21 at 2.4' },
+    'track3': { hang: { area: 70, where: '-27.0..27.0 -46.8..47.2 2.0..3.5' }, why: 'unheld by height (mm2 at z): 25 at 3.5, 23 at 2.0, 21 at 2.4' },
   },
   'cut: dovetail': {
-    'track1': { hang: { area: 62, where: '-23.0..23.0 -47.5..47.2 2.0..3.5' }, why: 'unheld by height (mm2 at z): 29 at 2.4, 25 at 3.5, 7 at 2.0' },
-    'track2': { hang: { area: 62, where: '-23.0..23.0 -43.5..43.2 2.0..3.5' }, why: 'unheld by height (mm2 at z): 29 at 2.4, 25 at 3.5, 7 at 2.0' },
-    'track3': { hang: { area: 62, where: '-23.0..23.0 -47.5..47.2 2.0..3.5' }, why: 'unheld by height (mm2 at z): 29 at 2.4, 25 at 3.5, 7 at 2.0' },
+    'track1': { hang: { area: 70, where: '-27.0..27.0 -46.8..47.2 2.0..3.5' }, why: 'unheld by height (mm2 at z): 25 at 3.5, 23 at 2.0, 21 at 2.4' },
+    'track2': { hang: { area: 70, where: '-27.0..27.0 -42.8..43.2 2.0..3.5' }, why: 'unheld by height (mm2 at z): 25 at 3.5, 23 at 2.0, 21 at 2.4' },
+    'track3': { hang: { area: 70, where: '-27.0..27.0 -46.8..47.2 2.0..3.5' }, why: 'unheld by height (mm2 at z): 25 at 3.5, 23 at 2.0, 21 at 2.4' },
   },
   'cut: axle holes': {
     'track1': { hang: { area: 1322, where: '-36.6..36.6 -47.5..47.2 2.0..9.9' }, why: 'unheld by height (mm2 at z): 1276 at 2.0, 25 at 9.9, 21 at 8.8' },
@@ -123,8 +128,8 @@ export const PINNED: Record<string, Record<string, Pin>> = {
     'track2-ballast': { hang: { area: 3184, where: '-50.2..48.8 -66.2..65.3 2.0..2.0' }, why: 'unheld by height (mm2 at z): 3184 at 2.0' },
   },
   'raised track on pillars and a beam': {
-    'track1': { hang: { area: 62, where: '-23.0..23.0 -67.5..67.2 2.0..3.5' }, why: 'unheld by height (mm2 at z): 29 at 2.4, 25 at 3.5, 7 at 2.0' },
-    'track2': { hang: { area: 62, where: '-23.0..23.0 -67.5..67.2 2.0..3.5' }, why: 'unheld by height (mm2 at z): 29 at 2.4, 25 at 3.5, 7 at 2.0' },
+    'track1': { hang: { area: 117, where: '-27.0..27.0 -66.8..67.2 2.0..3.5' }, why: 'unheld by height (mm2 at z): 70 at 2.0, 25 at 3.5, 21 at 2.4' },
+    'track2': { hang: { area: 117, where: '-27.0..27.0 -66.8..67.2 2.0..3.5' }, why: 'unheld by height (mm2 at z): 70 at 2.0, 25 at 3.5, 21 at 2.4' },
     'track-support1': { hang: { area: 2400, where: '-56.6..56.6 -11.8..11.8 1.8..22.4' }, why: 'unheld by height (mm2 at z): 1258 at 1.8, 1141 at 22.4' },
     'track-support2': { hang: { area: 2400, where: '-56.6..56.6 -11.8..11.8 1.8..22.4' }, why: 'unheld by height (mm2 at z): 1258 at 1.8, 1141 at 22.4' },
     'track-support3': { hang: { area: 2400, where: '-56.6..56.6 -11.8..11.8 1.8..22.4' }, why: 'unheld by height (mm2 at z): 1258 at 1.8, 1141 at 22.4' },

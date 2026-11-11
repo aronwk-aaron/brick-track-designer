@@ -101,7 +101,7 @@ export function pathSplit(s: Scad, m: Man, routes: Route[], railG: number, avoid
   // cut keeps to it where it can and the parts get their axles; where only the ballast's thin outer step is, none fit)
   const kit = join ? jointKit(s, join.t, bb.min[2]) : undefined;
   // (the joints already in it, an earlier cut's axle holes and peg sockets: no cut through one. Holes in its
-  // section at the axles' height and at the bed's, small ones (not the hollow underneath), kept a few mm clear of)
+  // section at the axles' height and at the bed's, small ones (not the hollows underneath), kept a few mm clear of)
   const area = (pl: [number, number][]) => pl.reduce((t, q, k) => { const r2 = pl[(k + 1) % pl.length]; return t + q[0] * r2[1] - r2[0] * q[1]; }, 0) / 2;
   const holes: Keep[] = [];
   for (const z of [(bb.min[2] + 2 + PLATE_H) / 2, 1.0]) { // (the axles' height: as jointKit's, studs 1.8 high)
@@ -109,6 +109,9 @@ export function pathSplit(s: Scad, m: Man, routes: Route[], railG: number, avoid
       const a = area(pl);
       if (a >= 0 || -a > 400) continue; // (an outline, or the hollow)
       const xs = pl.map((q) => q[0]), ys = pl.map((q) => q[1]), cx = (Math.min(...xs) + Math.max(...xs)) / 2, cy = (Math.min(...ys) + Math.max(...ys)) / 2;
+      // (or a smaller hollow underneath: a sleeper's, or a bit of one between the rails' feet. Hollows are for cutting
+      // across. A joint's hole is small, a peg's socket or a notch; a track end's channel is a stud wide, and stays kept clear of)
+      if (z === 1.0 && -a > 60 && Math.min(Math.max(...xs) - Math.min(...xs), Math.max(...ys) - Math.min(...ys)) > 6) continue;
       const r = Math.hypot(Math.max(...xs) - Math.min(...xs), Math.max(...ys) - Math.min(...ys)) / 2;
       // (a long thin one, a groove or a slot: kept clear of along its outline, not as one circle round all of it, which
       // shut a cut out of everywhere near it)
@@ -333,9 +336,11 @@ export function cutOnPaths(s: Scad, m: Man, routes: Route[], paths: HandPath[], 
   // (a part: its outline in plan, itself cut from the whole piece by it (no joints yet: what's decided on), and the
   // joints that are its: their holes, and their own parts)
   interface Leaf { reg: CS; man: Man; floor?: CS; cuts: Man[]; adds: { m: Man; fp: CS }[]; by: Set<string> }
-  // (a part seen from above, as pathSplit sees it: slices up it together)
+  // (a part seen from above, as pathSplit sees it: slices up it together; one of them through the roof over the hollow
+  // underneath (2.6 up): a tie between two tracks is hollow below that, and its studs alone above, and a path along the
+  // gap between the tracks found nothing of it to cut)
   const floorOf = (lf: Leaf) => {
-    if (!lf.floor) { const bb = lf.man.boundingBox(), zs: number[] = []; for (let z = bb.min[2] + 0.3; z < bb.max[2] - 0.1; z += 1.5) zs.push(z); lf.floor = CS.union(zs.map((z) => lf.man.slice(z))); }
+    if (!lf.floor) { const bb = lf.man.boundingBox(), zs: number[] = []; for (let z = bb.min[2] + 0.3; z < bb.max[2] - 0.1; z += 1.5) zs.push(z); zs.push(bb.min[2] + 2.6); lf.floor = CS.union(zs.map((z) => lf.man.slice(z))); }
     return lf.floor;
   };
   const all = CS.square([bb0.max[0] - bb0.min[0] + 100, bb0.max[1] - bb0.min[1] + 100]).translate([bb0.min[0] - 50, bb0.min[1] - 50]);

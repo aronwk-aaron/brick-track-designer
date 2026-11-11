@@ -63,21 +63,15 @@ export function constants(o: TrackOptions) {
     postD: o.studD + o.studFit,
     postH: 2,
     studFn: 24,
-    studSocketW: o.studD + 0.2,
+    /** A single row of studs' channel underneath (underside.ts): the stud and its fit. */
+    rowW: o.studD + 0.2,
   };
 }
 
 /**
- * Stud sockets: square, as the OpenSCAD library cuts them (Aaron: never
- * round ones, they grip too hard). 'round' is kept only to compare against.
- */
-let socketShape: 'round' | 'square' = 'square';
-export const setSocketShape = (m: 'round' | 'square') => { socketShape = m; };
-export const getSocketShape = () => socketShape;
-/**
- * Parity with the OpenSCAD files, for the checks against their renders:
- * square sockets, and the throw arm's end where switch.scad puts it (not out
- * to the next stud line).
+ * Parity with the OpenSCAD files, for the checks against their renders: the
+ * throw arm's end where switch.scad puts it (not out to the next stud line),
+ * and the like. (Not the undersides: those are LEGO's design here, underside.ts.)
  */
 let parity = false;
 export const setScadParity = (on: boolean) => { parity = on; };
@@ -92,27 +86,6 @@ export class Track {
   /** stud(d, h) */
   stud(d = this.o.studD + this.o.studFit, h = this.o.studH): Man {
     return this.s.cylinder(h, d / 2, d / 2, this.c.studFn);
-  }
-
-  /** A socket a stud grips in: square (stud_socket(h, corner), a corner cut off if given). */
-  studSocket(h: number, corner?: Vec2): Man {
-    const s = this.s, w = this.c.studSocketW / 2, cc = 1.2;
-    if (socketShape === 'round') return s.cylinder(h, w, w, 24);
-    let cs = s.square([2 * w, 2 * w], true);
-    if (corner) cs = cs.subtract(s.square([cc * Math.SQRT2, cc * Math.SQRT2], true).rotate(45).translate([corner[0] * w, corner[1] * w]));
-    return cs.extrude(h);
-  }
-
-  /** A loose recess for a stud: room for it without gripping it (0.5 clear each side). */
-  studRecess(h: number): Man {
-    const w = this.o.studD + 1.0;
-    if (socketShape === 'round') return this.s.cylinder(h, w / 2, w / 2, 24);
-    return T(this.s.cube([w, w, h]), [-w / 2, -w / 2, 0]);
-  }
-
-  /** A 5mm stud hole centred at (x, y), from z: square. */
-  hole5(x: number, y: number, z: number, h: number): Man {
-    return socketShape === 'round' ? T(this.s.cylinder(h, 2.5, 2.5, 24), [x, y, z]) : T(this.s.cube([5, 5, h]), [x - 2.5, y - 2.5, z]);
   }
 
   /** The right-hand kind of rail end (rail_endpoint_right). */
@@ -150,12 +123,12 @@ export class Track {
   }
 
   /**
-   * endpoint_base(peg_and_clip, stud_recesses, xfs): xfs, the extra rails'
+   * endpoint_base(peg_and_clip, xfs): xfs, the extra rails'
    * offsets in this end's frame (extra_rails()), get room for the next
    * piece's rail ends; guardX, the guard rails' offset if the piece has them
    * (the posts keep clear of them: endpoint_offsets()).
    */
-  endpointBase(pegAndClip = true, studRecesses = false, xfs: number[] = [], guardX?: number): Man {
+  endpointBase(pegAndClip = true, xfs: number[] = [], guardX?: number): Man {
     const s = this.s, c = this.c, g = c.railOffset;
     const off = 0.1;
     const capW = c.sleeperLen / 2 - (g + 4);
@@ -183,23 +156,15 @@ export class Track {
       ...xfs.map((xf) => T(s.cube([8.6, 8.2, 10]), [xf - 4.3, -4.1, 2.3])),
       c.hasCoupler && T(s.cylinder(4, 2 + off, 2 - off, 32), [c.couplerX, -4, -0.5]),
     ];
-    if (studRecesses) {
-      for (const x of [-c.outerPostX, c.outerPostX]) cuts.push(this.hole5(x, 0, -1, PLATE_H));
-      cuts.push(T(this.studSocket(1 + this.o.studH + 0.2), [g, 0, -1]));
-      for (const x of c.betweenRailsRaw) {
-        const toward = (x < 0 ? -c.couplerX : c.couplerX) > x ? 1 : -1;
-        cuts.push(T(this.studSocket(PLATE_H, [toward, -1]), [x, 0, -1]));
-      }
-    }
     return s.difference(body, cuts);
   }
 
   /**
-   * full_endpoint(peg_and_clip, stud_recesses, xfs): the extra rails' ends
+   * full_endpoint(peg_and_clip, xfs): the extra rails' ends
    * too (the left-hand kind left of the centre line, the right-hand kind
    * right of it, as the running rails), so they lock into the next piece's.
    */
-  fullEndpoint(pegAndClip = true, studRecesses = false, xfs: number[] = [], guardX?: number): Man {
+  fullEndpoint(pegAndClip = true, xfs: number[] = [], guardX?: number): Man {
     const s = this.s, g = this.c.railOffset;
     return s.union([
       T(this.railEndpointLeft(), [-(g + 4), -8, 0]),
@@ -208,7 +173,7 @@ export class Track {
       // (each run on TONGUE_ROOT into its own rail, as a cut's tongue is: the rail stops flush with it (extrarails.ts),
       // and on a curve the two only nearly met, the rail a loose body)
       ...xfs.map((xf) => { const e = T(xf < 0 ? this.railEndpointLeft() : this.railEndpointRight(), [xf - 4, -8, 0]); return scadParity() ? e : s.union([e, T(e, [0, TONGUE_ROOT, 0])]); }),
-      this.endpointBase(pegAndClip, studRecesses, xfs, guardX),
+      this.endpointBase(pegAndClip, xfs, guardX),
     ]);
   }
 
@@ -274,8 +239,8 @@ export class Track {
     return Array.from({ length: n }, (_, k) => (k - (n - 1) / 2) * STUD);
   }
 
-  /** sleeper(simplified_bottom, post_ok), without guard or dual rails. */
-  sleeper(simplifiedBottom = false, postOk?: (p: [number, number]) => boolean): Man {
+  /** sleeper(post_ok), without guard or dual rails: solid underneath (the piece's underside hollows it, underside.ts). */
+  sleeper(postOk?: (p: [number, number]) => boolean): Man {
     const s = this.s, c = this.c, g = c.railOffset, w = c.sleeperW, len = c.sleeperLen;
     const skip = 0.3, capW = len / 2 - (g + 4);
     const posts: [number, number][] = [];
@@ -287,14 +252,7 @@ export class Track {
       T(s.cube([capW + skip, w, PLATE_H]), [g + 4 - skip, -w / 2, 0]),
       ...posts.map(([x, y]) => T(this.stud(c.postD, c.postH), [x, y, 3])),
     ]);
-    if (simplifiedBottom) return body;
-    const cuts: Man[] = [];
-    for (const y of this.sleeperRows().map((r) => r - 2.5)) {
-      cuts.push(this.hole5(-(g + 8), y + 2.5, -1, PLATE_H));
-      cuts.push(T(s.cube([2 * (g - 5), 5, PLATE_H]), [-(g - 5), y, -1]));
-      cuts.push(this.hole5(g + 8, y + 2.5, -1, PLATE_H));
-    }
-    return s.difference(body, cuts);
+    return body;
   }
 
   /** The rail's cross-section at offset o, swept along a straight from y0 to y1 (straight_sweep). */

@@ -74,13 +74,13 @@ export function optionForm(d: () => Design): { form: OptSection[] } {
         { v: 'antistud', t: 'Anti-studs (grips the baseplate)', tip: 'Hollow with LEGO tubes, so it clicks onto the baseplate.' },
         { v: 'float', t: 'Flat', tip: 'Flat underneath. It rests on the studs without gripping.' }] },
       { key: 'undersideGrid', label: 'Underside lined up with', off: (c) => (c.ballast ? 'only for track without ballast (ballast always lines up with the baseplate)' : undefined), choices: [
-        { v: 'baseplate', t: 'The baseplate grid', tip: 'The sockets and tubes line up with the baseplate\'s studs, so the track clicks onto it.' },
+        { v: 'baseplate', t: 'The baseplate grid', tip: 'The tubes underneath line up with the baseplate\'s studs, so the track clicks onto it.' },
         { v: 'track', t: 'The track itself', tip: 'Hollow with anti-stud tubes in rows along the track, turned with it, like LEGO track\'s underside: for track not on a baseplate, or on other parts\' studs.',
           con: 'On a baseplate it only clicks on where the track happens to line up with the grid.' }] },
       { key: 'grip', label: 'Grip on the baseplate', off: (c) => (c.ballast && c.o.bottomStyle === 'float' ? 'Ballast underside is Flat, so nothing grips' : !c.ballast && c.o.undersideGrid === 'track' && c.switches === false ? 'Underside lined up with the track: tubes all along it, as LEGO track (it\'s for switches, and there are none)' : undefined), help: 'Switches always; track and crossings with Underside lined up with: The baseplate grid, or with ballast. With Sleepers with gaps (no ballast), only under the solid bed (switches, crossings): the sleepers\' own underside is LEGO track\'s.',
         choices: [
-          { v: 'edges', t: 'Along the edges', tip: 'Like a LEGO plate: tubes grip along the edges and every 4 studs (green circles on the plan). Firm, and comes off again.' },
-          { v: 'all', t: 'Every stud', tip: 'A socket on every stud.', con: 'Grips very hard: can be difficult to pull off.' }] },
+          { v: 'edges', t: 'Along the edges', tip: 'Tubes grip along the edges and every 4 studs (green circles on the plan); thin posts between. Firm, and comes off again.' },
+          { v: 'all', t: 'Every stud', tip: 'Like a LEGO plate: a tube between every four studs.', con: 'Grips harder: can be difficult to pull off.' }] },
     ] },
     { title: 'Switches: points', kind: 'train', switches: true, fields: [
       { key: 'mechStyle', label: 'Mechanism', choices: [

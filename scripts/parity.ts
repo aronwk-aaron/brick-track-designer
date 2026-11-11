@@ -14,11 +14,9 @@ import { stlBytes } from '../src/geom/stl';
 import { compare } from './colcmp';
 import { setArcMode } from '../src/geom/sweep';
 setArcMode('scad'); // (OpenSCAD's arc pieces, to compare mesh for mesh)
-setScadParity(true); // (and its square stud sockets, and the arm's end as switch.scad's)
+setScadParity(true); // (the arm's end as switch.scad's; the undersides differ: LEGO's design here)
 import { Scad } from '../src/geom/scad';
 import { Track } from '../src/geom/track';
-import { STRAIGHT_DEFAULTS, straightTrackOnly } from '../src/geom/straight';
-import { CURVE_DEFAULTS, curveTrackOnly } from '../src/geom/curve';
 import type { Route, Segment } from '../src/route/route';
 import { BASE_DEFAULTS, switchBase, switchGeometry, switchPlan, type SetSpec } from '../src/switch/base';
 
@@ -40,57 +38,11 @@ interface Case {
 const SEGMENTS = 64;
 const track = (w: Wasm) => new Track(new Scad(w));
 const cases: Case[] = [
-  {
-    name: 'endpoint-trackonly',
-    scad: 'include <track_lib.scad>\nfull_endpoint(true, true);\n',
-    build: (w) => track(w).fullEndpoint(true, true),
-  },
-  ...[8, 16, 32].map((n) => ({
-    name: `straight-trackonly-S${n}`,
-    scad: `include <straight.scad>\n`,
-    defines: { generate_ballast: 'false', stud_grip: '"all"', length_studs: n },
-    build: (w: Wasm) => straightTrackOnly(new Scad(w), { ...STRAIGHT_DEFAULTS, lengthStuds: n }),
-  })),
-  {
-    name: 'straight-trackonly-ln2',
-    scad: `include <straight.scad>\n`,
-    defines: { generate_ballast: 'false', stud_grip: '"all"', gauge_studs: 2 },
-    build: (w: Wasm) => straightTrackOnly(new Scad(w), { ...STRAIGHT_DEFAULTS, gaugeStuds: 2 }),
-  },
-  {
-    name: 'straight-trackonly-ties1',
-    scad: `include <straight.scad>\n`,
-    defines: { generate_ballast: 'false', stud_grip: '"all"', sleeper_width_studs: 1, sleeper_gap_studs: 1, length_studs: 15 },
-    build: (w: Wasm) => straightTrackOnly(new Scad(w), { ...STRAIGHT_DEFAULTS, sleeperWidthStuds: 1, sleeperGapStuds: 1, lengthStuds: 15 }),
-  },
-  ...([[24, 22.5001], [40, 22.5001], [104, 22.5001], [40, 90], [24, 45]] as const).map(([r, a]) => ({
-    name: `curve-trackonly-R${r}-${a}`,
-    scad: `include <curves.scad>\n`,
-    defines: { generate_ballast: 'false', stud_grip: '"all"', Radius: r, SegAng: a },
-    build: (w: Wasm) => curveTrackOnly(new Scad(w), { ...CURVE_DEFAULTS, radiusStuds: r, segAng: a }),
-  })),
-  {
-    name: 'curve-trackonly-ln2-end',
-    scad: `include <curves.scad>\n`,
-    defines: { generate_ballast: 'false', stud_grip: '"all"', gauge_studs: 2, Radius: 24, SegAng: 45, antistud_grid: '"end"' },
-    build: (w: Wasm) => curveTrackOnly(new Scad(w), { ...CURVE_DEFAULTS, gaugeStuds: 2, radiusStuds: 24, segAng: 45, antistudGrid: 'end' }),
-  },
-  {
-    name: 'curve-trackonly-ln2',
-    scad: `include <curves.scad>\n`,
-    defines: { generate_ballast: 'false', stud_grip: '"all"', gauge_studs: 2, Radius: 24, SegAng: 45 },
-    build: (w: Wasm) => curveTrackOnly(new Scad(w), { ...CURVE_DEFAULTS, gaugeStuds: 2, radiusStuds: 24, segAng: 45 }),
-  },
-  {
-    name: 'curve-trackonly-R40-end',
-    scad: `include <curves.scad>\n`,
-    defines: { generate_ballast: 'false', stud_grip: '"all"', antistud_grid: '"end"' },
-    build: (w: Wasm) => curveTrackOnly(new Scad(w), { ...CURVE_DEFAULTS, antistudGrid: 'end' }),
-  },
+  // (no track-only straights, curves or end connectors: their undersides are LEGO's design here, not the .scad files' sockets)
   {
     name: 'endpoint-ballast',
     scad: 'include <track_lib.scad>\nfull_endpoint(false, false);\n',
-    build: (w) => track(w).fullEndpoint(false, false),
+    build: (w) => track(w).fullEndpoint(false),
   },
   {
     name: 'rails-straight-128',

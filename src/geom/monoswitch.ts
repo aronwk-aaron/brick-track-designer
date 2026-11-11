@@ -378,7 +378,10 @@ export function monoSwitch(mono: Mono, p: SwitchPlan, fit: number): PointsParts 
 
   // ---- the deck ----
   const slits = bars.map((y) => rect(-POINTS.deckHw - 1, barX1(y) + c, y - POINTS.barW / 2 - c, y + POINTS.barW / 2 + c));
-  const sock = mono.antistud().slice(0);
+  // (the deck's holes for the base's posts: square, a small bump in the middle of each side to hold the post)
+  const sockH = 5.6 / 2 + mono.o.holeFit;
+  let sock = s.square([2 * sockH, 2 * sockH], true);
+  for (const a of [0, 90, 180, 270]) sock = sock.subtract(s.square([0.31, 0.8]).translate([sockH - 0.3, -0.4]).rotate(a));
   // (its racks: the straight exit's and the branch's, each with its tooth's slot, hooded where the tooth's drawn back)
   const ridgeB = bits(s.intersection(T(mono.ridgePlan(branch, rsAt(branch, y1) - 3, sDeckB, p.gb).extrude(MONO.ridgeTop - bt + 0.01), [0, 0, bt - 0.01]), yBand(y1 + c, 1000)));
   const deck = s.union([

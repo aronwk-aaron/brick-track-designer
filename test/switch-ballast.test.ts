@@ -12,8 +12,13 @@ import type { Route, Segment } from '../src/route/route';
 import { BASE_DEFAULTS, switchBase, switchPlan, type SetSpec } from '../src/switch/base';
 
 setArcMode('scad');
-setScadParity(true); // (and its square stud sockets, and the arm's end as switch.scad's)
+setScadParity(true); // (the arm's end as switch.scad's; the underside is LEGO's design here, not switch.scad's sockets)
 const vols = JSON.parse(readFileSync(new URL('./fixtures/switch-ballast-volumes.json', import.meta.url), 'utf8')) as Record<string, number>;
+// (the anti-stud bottom is LEGO's design here: a tube only between four studs, and no socket at each stud, where
+// switch.scad has a ring at every grid corner, those along the rim too, and a socket at every stud: against the
+// volumes built here when that was changed, 0.36 to 0.41% (852 to 2449 mm3) less than the OpenSCAD renders'. The flat
+// bottoms are switch.scad's still.)
+const own = JSON.parse(readFileSync(new URL('./fixtures/switch-ballast-own-volumes.json', import.meta.url), 'utf8')) as Record<string, number>;
 const lines = readFileSync(new URL('./fixtures/switch-sets-ballast.txt', import.meta.url), 'utf8').split('\n');
 const cfg = (name: string) => {
   const i = lines.findIndex((l) => l.startsWith(`CFG ${name} `));
@@ -36,7 +41,8 @@ describe('switch on ballast matches switch.scad', { timeout: 120000 }, () => {
       // (the wye with the buddy differs by 0.04% where its two routes' buddies meet; the right switch and the
       // three-way on a float bottom by 0.006% and 0.011%, 14 and 41 mm3)
       const tol = name.startsWith('wye') && !float ? 6e-4 : float && /^(right|threeway)/.test(name) ? 2e-4 : 5e-5;
-      expect(Math.abs(v - ref) / ref).toBeLessThan(tol);
+      if (float) expect(Math.abs(v - ref) / ref).toBeLessThan(tol);
+      else { expect(Math.abs(v - own[key]) / own[key], `built ${v.toFixed(1)} mm3`).toBeLessThan(5e-5); expect(v).toBeLessThan(ref); expect((ref - v) / ref).toBeLessThan(0.012); }
     });
   }
 });
