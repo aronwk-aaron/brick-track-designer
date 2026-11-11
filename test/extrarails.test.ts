@@ -1,6 +1,6 @@
 // Bridge guard rails and the dual-gauge third rail (straight.scad / curves.scad's guard_* and dual_*), per route.
 import { describe, expect, it } from 'vitest';
-import { kernel, supportsOf } from '../src/geom/kernel';
+import { kernel } from '../src/geom/kernel';
 import { Scad } from '../src/geom/scad';
 import { CROSSING_DEFAULTS, crossingPiece } from '../src/geom/crossing';
 import { extraRails } from '../src/geom/extrarails';
@@ -83,11 +83,9 @@ describe('guard rails and dual gauge', { timeout: 60000 }, () => {
     const rt = toRoutes(design({ guardRails: true, guardRailEnds: 'none', segs: [{ kind: 'straight', studs: 16 }] }))[0];
     const { m } = await piece([rt], { supports: true });
     // (the part, and each end's supports on their own: none of the guard rails' reaching in under the C-clip)
-    expect(m.decompose()).toHaveLength(1);
-    const sp = supportsOf(m)!, vs = sp.decompose().map((b) => b.volume());
-    expect(vs).toHaveLength(2);
-    for (const v of vs) expect(v).toBeLessThan(400);
-    expect(m.minGap(sp, 1)).toBeGreaterThan(0.2);
+    const vs = m.decompose().map((b) => b.volume()).sort((a, b) => b - a);
+    expect(vs).toHaveLength(3);
+    for (const v of vs.slice(1)) expect(v).toBeLessThan(400);
   });
   it('a curve with guard rails, both kinds of end: one body, studs clear', async () => {
     for (const ends of ['none', 'both'] as const) {

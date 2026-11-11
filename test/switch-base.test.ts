@@ -5,7 +5,7 @@
 import { setScadParity } from '../src/geom/track';
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import { kernel, supportsOf } from '../src/geom/kernel';
+import { kernel } from '../src/geom/kernel';
 import { Scad } from '../src/geom/scad';
 import type { Route, Segment } from '../src/route/route';
 import { BASE_DEFAULTS, switchBase, switchPlan, type SetSpec } from '../src/switch/base';
@@ -34,9 +34,7 @@ describe('track-only switch base matches switch.scad', { timeout: 60000 }, () =>
       // switch.scad builds it with the parts clashing; here it's a warning)
       if (name === 'threeway-R104-arc') { expect(plan.warnings.join()).toMatch(/overlap/); return; }
       expect(plan.warnings.filter((w) => /overlap/.test(w))).toHaveLength(0);
-      // (as switch.scad's, with its breakaway supports unioned in: here they're carried with the base, not part of its
-      // solid; where one runs into the base, as at R24, switch.scad's are one with it)
-      const base = switchBase(new Scad(await kernel()), plan), sp = supportsOf(base), v = (sp ? base.add(sp) : base).volume();
+      const v = switchBase(new Scad(await kernel()), plan).volume();
       // (the tube underside of a wye differs by 0.1%: OpenSCAD cuts the
       // frog's rails a little more there. On a three-way the first set's
       // rails are cut clear of the second set's heel bar and tines, which
