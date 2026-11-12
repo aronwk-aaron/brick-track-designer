@@ -1206,9 +1206,24 @@ export function switchGeometry(s: Scad, plan: SwitchPlan, extraCuts: Man[] = [])
   };
 
   // ---------- rails ----------
+  // (a rail ending on a curve: cut square to the track's end, as the track's own rails are (crossing.ts endBoxes). Swept
+  // to endTrim short of the end along the curve, its end was square to the curve there, not to the end: at R40 the inner
+  // rail stopped 3.75 mm from the end and the outer 4.25, 0.25 mm into the next part's rail-end tongue (a straight on
+  // the branch end of LEGO's R40 switch: 2.61 mm3). On a straight, as it was)
+  const curvedAt = (rt: Route, sAt: number) => {
+    let a = 0;
+    for (const sg of rt.segments) { const len = sg.kind === 'straight' ? sg.length : (Math.abs(sg.angle) * Math.PI * sg.radius) / 180; if (sAt >= a - 1e-9 && sAt <= a + len + 1e-9) return sg.kind !== 'straight'; a += len; }
+    return false;
+  };
+  const railOf = (cs: CS, rt: Route, s0: number, fromStart: boolean) => {
+    const L = routeLength(rt), c0 = fromStart && curvedAt(rt, 1e-6), c1 = curvedAt(rt, L - 1e-6);
+    if ((!c0 && !c1) || scadParity()) return sweep(cs, rt, s0, L - endTrim); // (matching switch.scad: as it was)
+    const bw = sleeperLen + 2 * STUD, box = (y: number, P: Pose) => atPose(cube([bw, endTrim + 1, 40], [-bw / 2, y, -10]), P);
+    return s.difference(sweep(cs, rt, c0 ? 0 : s0, c1 ? L : L - endTrim), [...(c0 ? [box(-1, routePose(rt, 0))] : []), ...(c1 ? [box(-endTrim, routePose(rt, L))] : [])]);
+  };
   const stockRails = () => s.difference(s.union([
-    sweep(rail2d(+G), routes[0], endTrim, routeLength(routes[0]) - endTrim),
-    sweep(rail2d(-G), routes[nRoutes - 1], endTrim, routeLength(routes[nRoutes - 1]) - endTrim),
+    railOf(rail2d(+G), routes[0], endTrim, true),
+    railOf(rail2d(-G), routes[nRoutes - 1], endTrim, true),
   ]), [...sets.map(stockFootCut), ...(fdb ? sets.map(pointsPockets) : [])]); // (the plate-style: the slider's groove runs on under the stock rail)
   const crossingRails = () => {
     const out: Man[] = [];
@@ -1226,7 +1241,7 @@ export function switchGeometry(s: Scad, plan: SwitchPlan, extraCuts: Man[] = [])
         // set's points, and their feet would block its heel bar and tines
         // (switch.scad doesn't cut them: 107 mm3 of clash at R40).
         for (const v of sets) cuts.push(pointsPockets(v));
-        out.push(s.difference(sweep(rail2d(o), routes[i], plan.railFixS(i, o) + c, routeLength(routes[i]) - endTrim), cuts));
+        out.push(s.difference(railOf(rail2d(o), routes[i], plan.railFixS(i, o) + c, false), cuts));
       }
     return s.union(out);
   };
