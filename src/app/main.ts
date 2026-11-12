@@ -2822,7 +2822,7 @@ function drawTrackwork(list: TwItem[]) {
           check(row, 'Force points here', st.forced, () => canvas.togglePoints(key), 'Make points here though the track end is a hair off the other track');
         } else {
           const ids = [...new Set(its.flatMap((it) => it.routes ?? []))];
-          const sub = [ids.join(' / '), st.state === 'off' ? 'taken out' : st.forced ? 'forced' : '', cur.toe ? `moved ${cur.toe > 0 ? '+' : ''}${studsOf(cur.toe)} studs` : '', cur.heel ? `blades ${studsOf(cur.heel)} studs longer` : '', cur.single === 'straight' ? 'the straighter track\'s blade moves' : '', cur.bladeStyle ? `${cur.bladeStyle === 'simple' ? 'rigid' : cur.bladeStyle} blades` : '', cur.blades ? `${cur.blades === 1 ? 'one moving blade' : 'two moving blades'}` : '', cur.drop?.length ? `without ${cur.drop.join(', ')}` : ''].filter(Boolean).join(' · ');
+          const sub = [ids.join(' / '), st.state === 'off' ? 'taken out' : st.forced ? 'forced' : '', cur.toe ? `moved ${cur.toe > 0 ? '+' : ''}${studsOf(cur.toe)} studs` : '', cur.heel ? `blades ${studsOf(cur.heel)} studs longer` : '', cur.single === 'straight' ? 'the straighter track\'s blade moves' : '', cur.mech ? (cur.mech === 'tines' ? 'on tines' : 'blades on top') : '', cur.bladeStyle ? `${cur.bladeStyle === 'simple' ? 'rigid' : cur.bladeStyle} blades` : '', cur.blades ? `${cur.blades === 1 ? 'one moving blade' : 'two moving blades'}` : '', cur.drop?.length ? `without ${cur.drop.join(', ')}` : ''].filter(Boolean).join(' · ');
           const row = item(g, key, `Points ${++n}`, sub, ed, 'points');
           check(row, 'Built (off: both tracks\' rails run through as plain track)', st.state === 'built', () => canvas.togglePoints(key));
           // (a three-way: each route in it or not; one taken out leaves a two-way for the others)
@@ -2839,7 +2839,7 @@ function drawTrackwork(list: TwItem[]) {
           }
           // (one moving blade: which; with two, or a three-way, said why it isn't a choice)
           if (st.state === 'built') {
-            const sel = document.createElement('select'), one = (design.options?.pointBlades ?? OPTION_DEFAULTS.pointBlades) === 1 && (design.options?.mechStyle ?? OPTION_DEFAULTS.mechStyle) !== 'tines' && ids.length === 2;
+            const sel = document.createElement('select'), one = (design.options?.pointBlades ?? OPTION_DEFAULTS.pointBlades) === 1 && (cur.mech ?? design.options?.mechStyle ?? OPTION_DEFAULTS.mechStyle) !== 'tines' && ids.length === 2;
             for (const [v, t] of [['curved', 'The curved track\'s (default)'], ['straight', 'The straighter track\'s']]) { const o = document.createElement('option'); o.value = v; o.textContent = t; sel.append(o); }
             sel.value = cur.single ?? 'curved'; sel.disabled = !one;
             sel.title = one ? 'Which blade moves, with one moving blade (Moving blades: One). Default: the blade on the more curved track. The straighter track\'s: for points whose curved-side blade would lie where another track crosses in (a slip\'s); the wheels are then steered at the other rail.'
@@ -2849,15 +2849,18 @@ function drawTrackwork(list: TwItem[]) {
           }
           // (expert, stage 5c: this set's own blade shape and moving blades, over the design's)
           if (st.state === 'built' && expertTools) {
-            const mech = design.options?.mechStyle ?? OPTION_DEFAULTS.mechStyle;
-            const pick = (label: string, prop: 'bladeStyle' | 'blades', opts: [string, string][], dflt: string, tip: string, off?: string) => {
+            // (this set's own mechanism, else the design's: what its blade settings go by)
+            const mechD = design.options?.mechStyle ?? OPTION_DEFAULTS.mechStyle, mech = cur.mech ?? mechD;
+            const pick = (label: string, prop: 'bladeStyle' | 'blades' | 'mech', opts: [string, string][], dflt: string, tip: string, off?: string) => {
               const sel = document.createElement('select');
               sel.append(new Option(`As the design: ${opts.find(([v]) => v === dflt)?.[1] ?? dflt}`, ''), ...opts.map(([v, t]) => new Option(t, v)));
               sel.value = cur[prop] === undefined ? '' : String(cur[prop]); sel.disabled = !!off; sel.title = off ? `Locked: ${off}` : tip;
               sel.addEventListener('change', () => edit('points', key, { [prop]: sel.value === '' ? undefined : prop === 'blades' ? Number(sel.value) : sel.value }));
               const fl = field(label, sel); fl.classList.add('stack'); row.append(fl);
             };
-            const plates = mech === 'plates' ? undefined : 'only with blades on top (Settings › Points and levers: Mechanism)';
+            pick('Mechanism, these points', 'mech', [['plates', 'Blades on top, on pins'], ['tines', 'Under the bed, on spring tines']], mechD ?? 'plates',
+              'These points\' mechanism: its bed, the floor under its throw and its moving parts are that mechanism\'s. Default: the design\'s.', ids.length > 2 ? 'a three-way keeps the design\'s' : undefined);
+            const plates = mech === 'plates' ? undefined : 'only with blades on top (Mechanism, these points; or Settings › Points and levers: Mechanism)';
             pick('Blade shape, these points', 'bladeStyle', [['sprung', 'Sprung'], ['simple', 'Rigid'], ['prototype', 'Rigid, realistic']], design.options?.bladeStyle ?? OPTION_DEFAULTS.bladeStyle ?? 'sprung', 'These points\' blades. Default: the design\'s.', plates);
             pick('Moving blades, these points', 'blades', [['2', 'Two'], ['1', 'One (single point)']], String(design.options?.pointBlades ?? OPTION_DEFAULTS.pointBlades), 'How many of these points\' blades move. Default: the design\'s.', plates ?? (ids.length > 2 ? 'a three-way keeps both blades' : undefined));
           }

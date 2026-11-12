@@ -111,6 +111,6 @@ describe('frog and points edits a design file keeps (stages 5b and 5c)', () => {
       groove: { '1,2': { open: true, through: 'yes', d0: 8 } },
       points: { '0,64': { mech: 'tines', bladeStyle: 'bendy', blades: 1 }, '0,0': { mech: 'magic', blades: 3 } },
       throw: { '128,448': { throwShift: 2.4 }, '9,9': { throwShift: 40, side: 'left' }, '8,8': { throwShift: 'x' } } } });
-    expect(d.trackwork).toEqual({ groove: { '1,2': { open: true, d0: 8 } }, points: { '0,64': { blades: 1 }, '0,0': {} }, throw: { '128,448': { throwShift: 2 }, '9,9': { throwShift: 5, side: 'left' }, '8,8': {} } });
+    expect(d.trackwork).toEqual({ groove: { '1,2': { open: true, d0: 8 } }, points: { '0,64': { mech: 'tines', blades: 1 }, '0,0': {} }, throw: { '128,448': { throwShift: 2 }, '9,9': { throwShift: 5, side: 'left' }, '8,8': {} } });
   });
 });

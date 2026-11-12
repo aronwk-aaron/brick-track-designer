@@ -87,7 +87,7 @@ export function gridLever(P: Pose, v: { leverX: number; throwY: number; throwEdg
 /** A points set's lever, as moved by hand: which side, how far out, and (by its tines' length) how far along. */
 export interface ThrowEdit { side?: 'left' | 'right'; leverOffset?: number; springLength?: number; /** (the points' own hand edits, Trackwork.points single and heel: a single-point switch's moving blade; the blades lengthened, mm) */ single?: 'curved' | 'straight'; heel?: number;
   /** (expert, stage 5c) the throw bar moved along, whole studs (+: towards the heel); this set's own blade style and moving blades */
-  throwShift?: number; bladeStyle?: 'simple' | 'prototype' | 'sprung'; blades?: 1 | 2; each?: { left?: { leverOffset?: number }; right?: { leverOffset?: number } } }
+  throwShift?: number; bladeStyle?: 'simple' | 'prototype' | 'sprung'; blades?: 1 | 2; /** (expert) this set's own mechanism */ mech?: 'tines' | 'plates'; each?: { left?: { leverOffset?: number }; right?: { leverOffset?: number } } }
 /** A lever's hand edit: the points' own; for one of a three-way's two levers (blade 0 the left one's, 1 the right's) with its own over it (each). */
 export const bladeEdit = (ed: ThrowEdit | undefined, blade: number | undefined): ThrowEdit | undefined => {
   const own = blade === undefined ? undefined : ed?.each?.[blade === 0 ? 'left' : 'right'];

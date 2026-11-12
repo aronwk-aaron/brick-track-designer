@@ -127,7 +127,9 @@ export interface Trackwork {
    * heel: the blades lengthened, their heels this far (mm) past where they're worked out (not a three-way's) */
   points?: Record<string, { toe?: number; off?: boolean; drop?: string[]; force?: boolean; single?: 'curved' | 'straight'; heel?: number;
     /** (expert, stage 5c) this set's own blade shape and moving blades, over the design's (Settings › Points; blades on top) */
-    bladeStyle?: 'simple' | 'prototype' | 'sprung'; blades?: 1 | 2; on?: TwAnchor; is?: TwIdent }>;
+    bladeStyle?: 'simple' | 'prototype' | 'sprung'; blades?: 1 | 2;
+    /** (expert) this set's own mechanism, over the design's: its bed, the floor under its throw and its moving parts as that mechanism's */
+    mech?: 'tines' | 'plates'; on?: TwAnchor; is?: TwIdent }>;
   /** each points set's lever, moved on the plan: its side, how far out (lever offset, mm), and how far along (its tines' length, mm);
    * each: a three-way's two levers (threeWayLevers 2), the left one's and the right one's own, where they differ (each is on its own side) */
   throw?: Record<string, { side?: 'left' | 'right'; leverOffset?: number; springLength?: number; /** (expert, stage 5c) its throw bar moved along the points, whole studs (+: towards the heel; blades on top) */ throwShift?: number; each?: { left?: { leverOffset?: number }; right?: { leverOffset?: number } }; on?: TwAnchor; is?: TwIdent }>;
@@ -323,7 +325,7 @@ export function readDesign(v: unknown): Design {
     const tw = d.trackwork as Trackwork, keep = <T>(e: Record<string, unknown>, f: string, ok: (x: unknown) => x is T) => { if (f in e && !ok(e[f])) delete e[f]; };
     for (const e of Object.values(tw.groove ?? {}) as Record<string, unknown>[]) { keep(e, 'open', (x): x is true => x === true); keep(e, 'through', (x): x is true => x === true); }
     for (const e of Object.values(tw.points ?? {}) as Record<string, unknown>[]) {
-      delete e.mech; keep(e, 'bladeStyle', (x): x is string => x === 'simple' || x === 'prototype' || x === 'sprung'); keep(e, 'blades', (x): x is number => x === 1 || x === 2);
+      keep(e, 'mech', (x): x is string => x === 'tines' || x === 'plates'); keep(e, 'bladeStyle', (x): x is string => x === 'simple' || x === 'prototype' || x === 'sprung'); keep(e, 'blades', (x): x is number => x === 1 || x === 2);
     }
     for (const e of Object.values(tw.throw ?? {}) as Record<string, unknown>[]) {
       if ('throwShift' in e) { const v = e.throwShift; if (typeof v === 'number' && Number.isFinite(v) && Math.round(v) !== 0) e.throwShift = Math.max(-5, Math.min(5, Math.round(v))); else delete e.throwShift; }
