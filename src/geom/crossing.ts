@@ -87,6 +87,8 @@ const CHECK_CLEAR = 1;
 export const ROW_CLEAR = 0.05;
 /** (mm) What's left beside a short piece's channel thinner than this is taken out with it (crossingPiece). */
 const THIN = 0.6;
+/** (mm) A tube or post in the hollow this far at least from a single row's channel (its pins in it). */
+const ROW_GAP = 0.4;
 const atPose = (m: Man, p: [number, number, number]) => T(R(m, [0, 0, p[2]]), [p[0], p[1], 0]);
 
 // Banked track (curves.scad's bank_piece): the track bed (the bed, rails,
@@ -452,6 +454,14 @@ export function crossingPiece(s: Scad, routes: Route[], o: CrossingOptions = CRO
   // in line, have studs a hair apart, each on its own part once the piece is cut between them)
   const claim = (q: [number, number], d = apart) => { if (taken.near(q, d)) return false; taken.add(q); return true; };
   const oneRows = new Map<number, { P: Pose; xs: number[] }>(), rowStuds: [number, number][] = [];
+  /** (an end's stud at q clear of the other routes' rails, as the bed's studs are: a branch's end beside the straight, in a
+   * short coupon, had a stud standing against the straight's rail) */
+  const clearOfRails = (i: number, q: [number, number]) => routes.every((r2, k) => {
+    if (k === i) return true;
+    const sk = routeSOf(r2, q);
+    if (sk < 0 || sk > routeLength(r2)) return true;
+    return Math.abs(Math.abs(routeLat(r2, q)) - gOf[k]) >= c.postD / 2 + HEAD_HW + 0.6;
+  });
   const connPlan = routes.map((rt, i) => {
     const L = routeLength(rt), tt = tOf[i], ex: ExtraBuilt | undefined = extras[i], e0 = routePose(rt, 0), e1 = routePose(rt, L);
     const noConn0 = !!x.innerEnds?.has(`${i}:start`) || bufEnd(i, 'start') || isHosted(i, 'start'), noConn1 = !!x.innerEnds?.has(`${i}:end`) || bufEnd(i, 'end') || isHosted(i, 'end');
@@ -463,8 +473,8 @@ export function crossingPiece(s: Scad, routes: Route[], o: CrossingOptions = CRO
       oneRows.set(i, { P: Pm, xs });
       rowStuds.push(...xs.map((px) => poseToWorld(Pm, [px, 0]) as [number, number]));
     }
-    const posts0 = oneRow || noConn0 ? [] : all0.filter((px) => claim(poseToWorld(e0, [px, 4]) as [number, number], tt.c.postD));
-    const posts1 = oneRow || noConn1 ? [] : all1.filter((px) => claim(poseToWorld(e1, [-px, -4]) as [number, number], tt.c.postD));
+    const posts0 = oneRow || noConn0 ? [] : all0.filter((px) => { const q = poseToWorld(e0, [px, 4]) as [number, number]; return clearOfRails(i, q) && claim(q, tt.c.postD); });
+    const posts1 = oneRow || noConn1 ? [] : all1.filter((px) => { const q = poseToWorld(e1, [-px, -4]) as [number, number]; return clearOfRails(i, q) && claim(q, tt.c.postD); });
     return { xfs0, xfs1, noConn0, noConn1, oneRow, posts0, posts1 };
   });
   routes.forEach((rt, i) => {
@@ -870,7 +880,10 @@ export function crossingPiece(s: Scad, routes: Route[], o: CrossingOptions = CRO
     // (banked: and only where the piece is thick enough for a roof over it: at a banked sleeper's low end, 1 mm thick, the
     // hollow comes through its top (as the studs under it would), and a tube or post there stood loose in the hole)
     const high = anyBank ? clipNear(s.w, body.slice(cavH - 0.1), 4) : undefined;
-    const okAll = (cs: CS) => ok(cs) && (!high || (() => { const b = cs.bounds(); return cs.subtract(high([(b.min[0] + b.max[0]) / 2, (b.min[1] + b.max[1]) / 2])).area() < 0.01; })());
+    // (and clear of the single rows' channels (a short piece's, the end connectors') and their pins by ROW_GAP: a tube in the
+    // hollow beside a row stood 4 mm from a pin, the two one lump; a 1 x N plate's channel has none beside it)
+    const rowKeep = connCSAll.length ? s.w.CrossSection.union(connCSAll).offset(ROW_GAP, 'Round', 2, 16) : undefined;
+    const okAll = (cs: CS) => ok(cs) && (!rowKeep || cs.intersect(rowKeep).area() < 1e-4) && (!high || (() => { const b = cs.bounds(); return cs.subtract(high([(b.min[0] + b.max[0]) / 2, (b.min[1] + b.max[1]) / 2])).area() < 0.01; })());
     const hg = hollowGrid(s, t, beds.length ? s.w.CrossSection.union(beds) : foot.subtract(foot), world, Math.min(...is), Math.max(...is), Math.min(...js), Math.max(...js), o.grip, { ok: okAll, skip: inConn, foot, stubs: anyBank, bare: !beds.length });
     grips?.push(...hg.grips);
     // (nothing to cut: a piece that's all channel, no stud of the plate's standing in its walls)

@@ -1292,7 +1292,15 @@ export function switchGeometry(s: Scad, plan: SwitchPlan, extraCuts: Man[] = [])
   const studsTaken = new StudPlaces(), studsApart = studGap(TRACK_DEFAULTS.studD, p.studsFullPitch);
   const claimStud = (q: Pt, src: string, d = studsApart) => { if (scadParity()) return true; if (studsTaken.near(q, d, src)) return false; if (!studsTaken.near(q, 0.01)) studsTaken.add(q, src); return true; };
   let connPosts: { start: number[]; ends: number[][] } | undefined;
-  const connStuds = () => (connPosts ??= { start: t.endpointPosts().filter((px) => claimStud([px, 4], 'start')), ends: plan.endPoses.map((e, k) => t.endpointPosts().filter((px) => claimStud(poseToWorld(e, [-px, -4]) as Pt, `end${k}`, tc.postD))) });
+  // (an end's stud clear of the other routes' rails, as the bed's studs are (crossing.ts):
+  // a branch's end beside the straight, in a short coupon, had a stud standing against the straight's rail)
+  const railFree = (q: Pt, own?: number) => scadParity() || routes.every((rt, i) => {
+    if (i === own) return true;
+    const sq = routeSOf(rt, q);
+    if (sq < 0 || sq > routeLength(rt)) return true;
+    return Math.abs(Math.abs(routeLat(rt, q)) - G) >= tc.postD / 2 + HEAD_HW + 0.6;
+  });
+  const connStuds = () => (connPosts ??= { start: t.endpointPosts().filter((px) => railFree([px, 4]) && claimStud([px, 4], 'start')), ends: plan.endPoses.map((e, k) => t.endpointPosts().filter((px) => { const q = poseToWorld(e, [-px, -4]) as Pt; return railFree(q, k) && claimStud(q, `end${k}`, tc.postD); })) });
   let tieBands: CS | undefined;
   const turnoutTies = () => {
     connStuds();

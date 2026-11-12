@@ -1,13 +1,15 @@
 // A piece too short for a row of studs at each end has one whole row, in its middle: the two ends' rows, closer than a
 // stud's pitch, ran into each other (a 1.6-stud straight's were 4.8 mm apart, fused in pairs). Underneath it's a 1 x N
 // plate's: one channel under the row, a pin between each two studs. A 2-stud straight, its rows a pitch apart, keeps both.
-// And where two ends' rows cross (a switch cut short, its ends side by side at an angle), no stud stands in another.
+// And where two ends' rows cross (a switch cut short, its ends side by side at an angle), no stud stands in another,
+// nor against the other track's rail.
 import { describe, expect, it } from 'vitest';
 import { kernel } from '../src/geom/kernel';
 import { buildDesign, clearBuildCache, type Piece } from '../src/app/build';
 import { Scad } from '../src/geom/scad';
 import { CROSSING_DEFAULTS, crossingPiece } from '../src/geom/crossing';
 import { type Design, OPTION_DEFAULTS, type PieceOptions, TEMPLATES, toRoutes } from '../src/app/design';
+import { routeLat, routeLength, routeSOf } from '../src/route/route';
 import { studFaults, studsOf } from './studs-apart.shared';
 
 const APP = (globalThis as { APP_DEFAULTS?: PieceOptions }).APP_DEFAULTS!;
@@ -66,6 +68,17 @@ describe('short pieces: one row of studs', { timeout: 600000 }, () => {
     const own = crossingPiece(sc, [rt], { ...CROSSING_DEFAULTS, supports: false, undersideGrid: 'track' }, undefined, undefined, { gridPose: [0, 0, 0] });
     expect(own.volume()).toBeGreaterThan(m.volume() - 200);
   });
+
+  // (and no stud against a rail of the other track: a branch's end beside the straight had one 5 mm from its rail, where a
+  // stud on the bed keeps 4.25 (crossing.ts clearOfRails, switch/base.ts railFree))
+  for (const name of ['Test print 4: points three ways', 'Test print 7: clearance round the points'])
+    it(`${name}: no stud stands against a rail`, async () => {
+      const d = structuredClone(TEMPLATES[name]), r = await built(d), rts = toRoutes(d), G = 20, clr = 4.8 / 2 + 1.25 + 0.6 - 0.05;
+      const bad: string[] = [];
+      for (const p of r.b.pieces.filter((q) => !q.lego && /track|switch-base/.test(q.name))) for (const q of studsOf(r.w, p, FITS).studs.flat())
+        for (const rt of rts) { const sq = routeSOf(rt, q); if (sq < 0 || sq > routeLength(rt)) continue; const off = Math.abs(Math.abs(routeLat(rt, q)) - G); if (off < clr) bad.push(`${p.name}: a stud at ${q.map((v) => v.toFixed(1)).join(', ')} ${off.toFixed(2)} mm from a rail of ${rt.id}`); }
+      expect(bad).toEqual([]);
+    });
 
   it('a switch cut short (test print 4\'s coupons): no stud of one end stands in the other\'s', async () => {
     const r = await built(structuredClone(TEMPLATES['Test print 4: points three ways']));

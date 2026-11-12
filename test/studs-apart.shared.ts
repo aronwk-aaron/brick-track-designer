@@ -4,7 +4,7 @@
 // a crossing's ends at its corners: each is still its own row's).
 // Found in the part's file itself, as it's printed: the round outlines of a stud's size in a slice half a millimetre
 // under each flat top (whole circles and the arcs of ones run into each other alike), and the tubes' and pins' in a
-// slice half a millimetre above its bottom.
+// slice half a millimetre above its bottom. Nor is a pin that near a tube.
 import type { Wasm } from '../src/geom/kernel';
 import type { Piece } from '../src/app/build';
 import { studApart } from '../src/geom/studs';
@@ -43,6 +43,15 @@ export function circlesIn(polys: Pt[][], r: number, tol: number): Pt[] {
   }
   return out;
 }
+/** Each of ps within lim of one of qs (two kinds: a single row's pins and the hollow's tubes). */
+const across = (ps: Pt[], qs: Pt[], lim: number, what: string, name: string) => {
+  const out: string[] = [];
+  for (const p of ps) for (const q of qs) {
+    const d = Math.hypot(p[0] - q[0], p[1] - q[1]);
+    if (d < lim) out.push(`${name}: ${what} ${d.toFixed(2)} mm apart at ${p.map((v) => v.toFixed(1)).join(', ')} and ${q.map((v) => v.toFixed(1)).join(', ')}`);
+  }
+  return out;
+};
 const pairs = (ps: Pt[], lim: number, what: string, name: string) => {
   const out: string[] = [];
   for (let i = 0; i < ps.length; i++) for (let j = i + 1; j < ps.length; j++) {
@@ -80,7 +89,10 @@ export function studFaults(w: Wasm, pieces: Piece[], optsOf: (p: Piece) => { stu
     if (p.lego || !/track|switch-base|ballast|deck|lid|bracket/.test(p.name)) continue;
     const o = optsOf(p), s = studsOf(w, p, o);
     for (const level of s.studs) out.push(...pairs(level, studApart(o.studD) - SLACK, 'studs', p.name));
-    out.push(...pairs(s.tubes, TUBE_OD - (o.antistudFit ?? 0.06) + GAP, 'tubes', p.name), ...pairs(s.pins, STUD - o.studD - (o.antistudFit ?? 0.06) + GAP, 'pins', p.name));
+    const tubeD = TUBE_OD - (o.antistudFit ?? 0.06), pinD = STUD - o.studD - (o.antistudFit ?? 0.06);
+    out.push(...pairs(s.tubes, tubeD + GAP, 'tubes', p.name), ...pairs(s.pins, pinD + GAP, 'pins', p.name));
+    // (nor a single row's pin and a tube: a tube in the hollow beside a short piece's row stood 4 mm from a pin, one lump)
+    out.push(...across(s.pins, s.tubes, (pinD + tubeD) / 2 + GAP, 'a pin and a tube', p.name));
   }
   return out;
 }
