@@ -2416,7 +2416,10 @@ function buildOne(w: Wasm, design: Design, report: (what: string, frac: number) 
   const dropInner = (rts: Route[], more: Iterable<string> = []) => droppedInner(routes, sol.dropped ?? [], rts, more);
   const toeShift = (q: [number, number]) => tw.points?.[keyOf(q)]?.toe ?? 0;
   // (with the points' own choice of moving blade, a single-point switch's, and their blades lengthened: Trackwork.points single, heel)
-  const throwEdit = (q: [number, number]) => { const k = keyOf(q), single = tw.points?.[k]?.single, heel = tw.points?.[k]?.heel; return single || heel ? { ...tw.throw?.[k], ...(single && { single }), ...(heel && { heel }) } : tw.throw?.[k]; };
+  const throwEdit = (q: [number, number]) => {
+    const k = keyOf(q), pt = tw.points?.[k], single = pt?.single, heel = pt?.heel, bladeStyle = pt?.bladeStyle, blades = pt?.blades;
+    return single || heel || bladeStyle || blades ? { ...tw.throw?.[k], ...(single && { single }), ...(heel && { heel }), ...(bladeStyle && { bladeStyle }), ...(blades && { blades }) } : tw.throw?.[k];
+  };
   // Pieces: a switch wherever routes split, the rest as fixed trackwork.
   const scad = new Scad(w);
   const params = switchParams(o, design.gaugeStuds, alone);
@@ -2442,7 +2445,9 @@ function buildOne(w: Wasm, design: Design, report: (what: string, frac: number) 
   const handOnSwitch = pc.switches.some((sw) => sw.covers.some(([ri]) => !!routes[ri].hand));
   const ownGaugeSwitch = sol.splits.some((sp) => sp.routes.some((ri) => routes[ri].gauge !== undefined));
   const network = sol.splits.length > 0 && (sol.splits.some((sp) => sp.merge) || pc.warnings.some((w2) => !/print bed/.test(w2))
-    || sol.crossings.some((c) => groupOf(c.a.route) !== groupOf(c.b.route)) || bufOnSwitch || extraOnSwitch || ownGaugeSwitch || handOnSwitch || grooveKeeps.length > 0);
+    || sol.crossings.some((c) => groupOf(c.a.route) !== groupOf(c.b.route)) || bufOnSwitch || extraOnSwitch || ownGaugeSwitch || handOnSwitch || grooveKeeps.length > 0
+    // (expert, stage 5c: a points set with its own blade shape or moving blades: a network piece, which plans each set with its own)
+    || Object.values(tw.points ?? {}).some((e) => !!(e.bladeStyle || e.blades)));
   const bedWarnings = new Set<string>();
   const track = new Track(scad, { ...TRACK_DEFAULTS, gaugeStuds: design.gaugeStuds, studFit: o.studFit, antistudFit: o.antistudFit, sleeperWidthStuds: o.sleeperWidthStuds, axleStuds: o.axleStuds, flangewayDepth: o.flangewayDepth, ...(o.tongueRails === 'square' && { tongueMaxAngle: 12 }) });
   {

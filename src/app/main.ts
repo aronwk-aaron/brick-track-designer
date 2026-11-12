@@ -2807,7 +2807,7 @@ function drawTrackwork(list: TwItem[]) {
           check(row, 'Force points here', st.forced, () => canvas.togglePoints(key), 'Make points here though the track end is a hair off the other track');
         } else {
           const ids = [...new Set(its.flatMap((it) => it.routes ?? []))];
-          const sub = [ids.join(' / '), st.state === 'off' ? 'taken out' : st.forced ? 'forced' : '', cur.toe ? `moved ${cur.toe > 0 ? '+' : ''}${studsOf(cur.toe)} studs` : '', cur.heel ? `blades ${studsOf(cur.heel)} studs longer` : '', cur.single === 'straight' ? 'the straighter track\'s blade moves' : '', cur.drop?.length ? `without ${cur.drop.join(', ')}` : ''].filter(Boolean).join(' · ');
+          const sub = [ids.join(' / '), st.state === 'off' ? 'taken out' : st.forced ? 'forced' : '', cur.toe ? `moved ${cur.toe > 0 ? '+' : ''}${studsOf(cur.toe)} studs` : '', cur.heel ? `blades ${studsOf(cur.heel)} studs longer` : '', cur.single === 'straight' ? 'the straighter track\'s blade moves' : '', cur.bladeStyle ? `${cur.bladeStyle === 'simple' ? 'rigid' : cur.bladeStyle} blades` : '', cur.blades ? `${cur.blades === 1 ? 'one moving blade' : 'two moving blades'}` : '', cur.drop?.length ? `without ${cur.drop.join(', ')}` : ''].filter(Boolean).join(' · ');
           const row = item(g, key, `Points ${++n}`, sub, ed, 'points');
           check(row, 'Built (off: both tracks\' rails run through as plain track)', st.state === 'built', () => canvas.togglePoints(key));
           // (a three-way: each route in it or not; one taken out leaves a two-way for the others)
@@ -2831,6 +2831,20 @@ function drawTrackwork(list: TwItem[]) {
               : ids.length > 2 ? 'A three-way keeps both blades.' : 'Only with one moving blade (Switches: points, Moving blades: One, blades on top): both blades move here.';
             sel.addEventListener('change', () => edit('points', key, { single: sel.value === 'straight' ? 'straight' : undefined }));
             row.append(field('Moving blade', sel));
+          }
+          // (expert, stage 5c: this set's own blade shape and moving blades, over the design's)
+          if (st.state === 'built' && expertTools) {
+            const mech = design.options?.mechStyle ?? OPTION_DEFAULTS.mechStyle;
+            const pick = (label: string, prop: 'bladeStyle' | 'blades', opts: [string, string][], dflt: string, tip: string, off?: string) => {
+              const sel = document.createElement('select');
+              sel.append(new Option(`As the design: ${opts.find(([v]) => v === dflt)?.[1] ?? dflt}`, ''), ...opts.map(([v, t]) => new Option(t, v)));
+              sel.value = cur[prop] === undefined ? '' : String(cur[prop]); sel.disabled = !!off; sel.title = off ? `Locked: ${off}` : tip;
+              sel.addEventListener('change', () => edit('points', key, { [prop]: sel.value === '' ? undefined : prop === 'blades' ? Number(sel.value) : sel.value }));
+              const fl = field(label, sel); fl.classList.add('stack'); row.append(fl);
+            };
+            const plates = mech === 'plates' ? undefined : 'only with blades on top (Settings › Points and levers: Mechanism)';
+            pick('Blade shape, these points', 'bladeStyle', [['sprung', 'Sprung'], ['simple', 'Rigid'], ['prototype', 'Rigid, realistic']], design.options?.bladeStyle ?? OPTION_DEFAULTS.bladeStyle ?? 'sprung', 'These points\' blades. Default: the design\'s.', plates);
+            pick('Moving blades, these points', 'blades', [['2', 'Two'], ['1', 'One (single point)']], String(design.options?.pointBlades ?? OPTION_DEFAULTS.pointBlades), 'How many of these points\' blades move. Default: the design\'s.', plates ?? (ids.length > 2 ? 'a three-way keeps both blades' : undefined));
           }
         }
       }
@@ -2887,6 +2901,13 @@ function drawTrackwork(list: TwItem[]) {
         const sf = field('Side', side); sf.classList.add('stack'); row.append(sf);
         const out = num(lv.leverOffset / 8, (v) => (blade ? setEach(v * 8) : edit('throw', it.key, { leverOffset: v * 8 })), 0.125, 'How far out past the track the lever is, studs.', LIMITS.twLeverOut);
         row.append(field('Out past the track, studs', out));
+        // (expert, stage 5c: the throw bar moved along the points, whole studs; with blades on top)
+        if (expertTools && !blade) {
+          const mechHere = design.options?.mechStyle ?? OPTION_DEFAULTS.mechStyle;
+          const sh = num(Number(cur.throwShift ?? 0), (v) => edit('throw', it.key, { throwShift: Math.round(v) || undefined }), 1, 'How far the throw bar is moved along the points from where it\'s worked out, whole studs (+: towards the heel). Range -5 to 5, default 0. Set by hand, the app no longer moves it to clear other track.', LIMITS.twThrowShift);
+          sh.disabled = mechHere !== 'plates'; if (sh.disabled) sh.title = 'Locked: only with blades on top (on spring tines the lever\'s place is the tines\' length)';
+          row.append(field('Throw bar moved along, studs', sh));
+        }
         if (leverSlides(design)) {
           const tine = num(lv.springLength / 8, (v) => edit('throw', it.key, { springLength: Math.min(lv.maxTine, Math.max(16, v * 8)) }), 0.125); tine.min = '2'; tine.max = String(Math.floor(lv.maxTine / 8 * 8) / 8);
           row.append(field('Spring tines (shorter: the lever nearer the heel), studs', tine));
