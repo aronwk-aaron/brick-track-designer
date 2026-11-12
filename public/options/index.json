@@ -32,6 +32,18 @@
   "ballast",
   "buddy"
  ],
+ "ballastLeftStuds": [
+  "1",
+  "3"
+ ],
+ "ballastRightStuds": [
+  "1",
+  "0"
+ ],
+ "ballastEnds": [
+  "square",
+  "stepped"
+ ],
  "trackBallast": [
   "together",
   "apart"
