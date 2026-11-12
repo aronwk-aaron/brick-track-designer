@@ -658,7 +658,7 @@ route-owned storage, the follow rules and the card section they bring are the pa
   built in equal lengths keeps its gaps and check rails. Editor: the card's **Rails** section (a row per gap, guard rail stretch and check
   rail, with ✕ and Add; Rail ends; Rails as laid), the frog rows' Open frog and The rail runs through (expert tools
   shown), each edit orange on the plan. Template (Features): 'Rails edited by hand'. Tests: test/railedits.test.ts,
-  test/railedits-build.test.ts.
+  test/rail-edits-build.test.ts.
   Identical when unused: the S5b and S5c tree against main 922e27b, every part's STL sha1 over the 367 templates and
   saved designs there: 367 the same, 0 different (S5c's code acts only with its own edits set).
 - **Section 10, as built:** every recommendation taken: (1) no stored mode, one Expert tools switch; (2) connections
