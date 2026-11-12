@@ -157,7 +157,7 @@ const field = (label: string, ...els: HTMLElement[]) => {
 function carrying(i: number, f: () => void) {
   const before: Design = { ...design, routes: design.routes.map((r) => ({ ...r, segs: structuredClone(r.segs) })) };
   f();
-  const open = carryChange(before, design, i);
+  const open = carryChange(before, design, i, canvas.loopOpens);
   if (open.length) canvas.say(`Opened the joint between ${jointNames(design, open)}`);
 }
 function segRow(r: DRoute, k: number, i: number): HTMLElement {
@@ -636,7 +636,7 @@ function setExpert(on: boolean) {
 }
 function syncExpert() {
   const b = $('expert-toggle');
-  $('pick-row').hidden = !expertTools;
+  $('pick-row').hidden = !expertTools; $('loop-row').hidden = !expertTools;
   b.classList.toggle('on', expertTools); b.setAttribute('aria-pressed', String(expertTools));
   b.title = expertTools ? 'The expert tools are shown: cuts across a track, cut paths, stretches and a track\'s own settings, on the plan and in the cards. Click to hide them: nothing in the design changes.'
     : 'Show the expert tools: cut a track where you choose, draw cut paths, give a track or a stretch of it its own settings. Hidden, the design is built the same, and a track that has any of these says so on its card.';
@@ -1998,6 +1998,21 @@ $('legend-fold').addEventListener('click', () => foldLegend(!legendEl.classList.
     try { localStorage.setItem('btd-pick', pick.value); } catch { /* fine */ }
     // (back to the plan: its keys work at once)
     pick.blur(); canvas.draw();
+  });
+}
+// Loops open at (in the legend, with the expert tools shown): where a loop that can't stay closed opens when a track in
+// it is reshaped (connections.ts LoopOpens); remembered in this browser, as the Pick list.
+{
+  const lo = $<HTMLSelectElement>('loop-opens');
+  for (const [v, t, tip] of [['changed', 'the changed end (default)', 'The rest of the loop stays where it is; the joint at the end being changed opens, under the pointer.'],
+    ['far', 'the far side', 'The rest of the loop swings round with the change, as joined track does elsewhere; the joint at the reshaped track\'s other end opens.']] as const) { const o = new Option(t, v); o.title = tip; lo.append(o); }
+  try { const v = localStorage.getItem('btd-loop-opens'); if (v === 'changed' || v === 'far') canvas.loopOpens = v; } catch { /* fine */ }
+  lo.value = canvas.loopOpens;
+  lo.addEventListener('change', () => {
+    if (lo.value !== 'changed' && lo.value !== 'far') return;
+    canvas.loopOpens = lo.value;
+    try { localStorage.setItem('btd-loop-opens', lo.value); } catch { /* fine */ }
+    lo.blur();
   });
 }
 canvas.expert = expertTools; syncExpert();

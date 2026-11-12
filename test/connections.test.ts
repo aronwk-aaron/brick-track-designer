@@ -255,6 +255,28 @@ describe('what a reshaped track carries', () => {
     expect(openedBy(c2, two)).toEqual([]);
     expect(pruneApart(two)).toBe(false); // (L4's end is on L1's side now, 8 studs along: they still touch, still apart)
   });
+  it('Loops open at: the far side: the rest of the loop goes round with the change, the joint at the fixed end opens', () => {
+    const des = loop(), c = planCarry(des, 0, 'start', 0, undefined, 'far');
+    expect(c.groups.map((g) => g.routes.map((o) => des.routes[o.i].name).sort())).toEqual([['L2', 'L3', 'L4']]);
+    des.routes[0].segs = [st(24), cv(40, 90)];
+    expect(applyCarry(c, des)).toBe(true);
+    closeTo(des.routes[1], follow(des.routes[0], des.routes[0].segs));
+    const open = openedBy(c, des);
+    expect(jointNames(des, open)).toBe('L1 and L4');
+    // (the card's change likewise; and a chain, no loop: the same either way)
+    const lp = loop(), b6 = structuredClone(lp);
+    lp.routes[2].segs[1] = cv(40, 80);
+    expect(jointNames(lp, carryChange(b6, lp, 2, 'far'))).toBe('L2 and L3');
+    const lq = loop(), b8 = structuredClone(lq);
+    lq.routes[2].segs[1] = cv(40, 80);
+    expect(jointNames(lq, carryChange(b8, lq, 2))).toBe('L3 and L4');
+    for (const lo of ['changed', 'far'] as const) {
+      const ch = chain(), b7 = structuredClone(ch);
+      ch.routes[1].segs[1] = st(12);
+      expect(carryChange(b7, ch, 1, lo)).toEqual([]);
+      closeTo(ch.routes[2], follow(ch.routes[1], ch.routes[1].segs));
+    }
+  });
   it('a locked track holds what is joined to it', () => {
     const des = chain();
     des.routes[2].locked = true;

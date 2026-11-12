@@ -526,6 +526,10 @@ route-owned storage, the follow rules and the card section they bring are the pa
   switch templates are) are joined, as a branch off the side is. (3) In a loop the rest stays where it is and the
   joint at the **changed** side opens, rather than the rest swinging round and the joint at the far side opening:
   either way one joint opens, and this way only the track being reshaped moves and the gap is under the pointer.
+  The section-5 way is built too, as a choice (2026-11-11, Aaron's "do it all"): **Loops open at** in the legend beside
+  Clicks pick (with the expert tools; remembered in this browser, not in the design): *the changed end* (default, as
+  above) or *the far side* (the rest of the loop swings round with the change and the joint at the reshaped track's
+  fixed end opens). `connections.ts LoopOpens`, `planCarry(..., loop)`, `carryChange(..., loop)`.
   (4) `apart` is per pair of tracks, not per joint: two tracks that meet twice (an oval of two) are taken apart at
   both. (5) Alt+drag stores nothing: tracks that no longer touch aren't joined; `apart` is only what Take apart
   writes, for tracks that still touch. (6) Alt with the arrow keys isn't a thing (the browser's own keys): take the
