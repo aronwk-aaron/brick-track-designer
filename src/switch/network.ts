@@ -520,7 +520,8 @@ export function networkBody(s: Scad, routes: Route[], sol: Solution, copt: Cross
   });
   // (and the steps round them, on ballast)
   for (const sp of splits) if (sp.stepRect) hollows.push({ P: sp.frame, r: sp.stepRect });
-  const body = crossingPiece(s, routes, copt, sol, grips, { railCuts, innerEnds, adds: adds.filter(ok), cuts: [...cuts, ...(more.cuts ?? [])].filter(ok), ...(more.keeps?.length && { keeps: more.keeps }), gridPose: more.gridPose, hollows, bedAt: more.bedAt,
+  const blades = splits.flatMap((sp) => sp.bladeCuts.map(([, m]) => m)).filter(ok);
+  const body = crossingPiece(s, routes, copt, sol, grips, { railCuts, innerEnds, adds: adds.filter(ok), ...(blades.length && { blades }), cuts: [...cuts, ...(more.cuts ?? [])].filter(ok), ...(more.keeps?.length && { keeps: more.keeps }), gridPose: more.gridPose, hollows, bedAt: more.bedAt,
     ...(splits.some((sp) => sp.studsOn) && { studsOn: (q: [number, number]) => splits.some((sp) => sp.studsOn?.(q)) }) });
   // (sprung blades on track alone: what the sliders rest on, after the underside's cut; on the stud corners of each
   // points set's own frame, so in line with the piece's underside where that frame is on its grid)

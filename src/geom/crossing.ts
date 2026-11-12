@@ -79,6 +79,8 @@ const BED_END = 8;    // the track bed stops here (the connector's base is the r
 export const CHECK_UNHELD = 24;
 /** (mm3) With sleepers, a bit of check rail smaller than this, cut off by other routes' flangeways and over nothing, is taken out: it would be loose. */
 const CHECK_STUB = 80;
+/** (mm) A check rail stops this far short of the points' blades where they swing. */
+const CHECK_CLEAR = 1;
 
 /** Place a shape given in a pose's frame (origin at the pose, +y along the heading). */
 /** (mm) Rows of studs closer than a stud apart less this are one row (a short piece's two ends': crossingPiece). */
@@ -156,6 +158,8 @@ export interface CrossingExtras {
   bedAt?: { p: [number, number]; d: [number, number]; len?: number }[];
   /** where studs stand though something's added there (a throw arm under other track: that track's studs on it) */
   studsOn?: (q: [number, number]) => boolean;
+  /** the points' blades, where each swings (network.ts: what each takes out of the rails it replaces): no check rail comes within CHECK_CLEAR of one */
+  blades?: Man[];
   /** (the ballast alone) the seat to cut, from the bed up, in place of the track's own outline: a bought piece's footprint */
   seat?: Man;
 }
@@ -230,6 +234,30 @@ export function crossingPiece(s: Scad, routes: Route[], o: CrossingOptions = CRO
   if (alone) o = { ...o, supports: false };
   const sol = solution ?? solve(routes, { ...SOLVER_DEFAULTS, gauge: c.trackGauge, flangeway: o.flangeway, checkRailW: o.checkRailW } as SolverOptions);
   const rect = (x0: number, x1: number, z0: number, z1: number) => s.square([x1 - x0, z1 - z0]).translate([x0, z0]);
+  // (a check rail stops CHECK_CLEAR short of a set of points' blades, where they swing (x.blades): it never runs over
+  // or into the moving parts. Cut back from either end; under 12 mm left, none (as the solver drops one so short))
+  const checkRails = !x.blades?.length || !sol.checkRails.length ? sol.checkRails : (() => {
+    // (the blades' outline, once, as plain points: tested in plain sums, no kernel shapes made for each step along a check
+    // rail, which the kernel kept: the memory test's builds grew by 60 MB)
+    const projs = x.blades!.map((m) => m.project()), foot = s.w.CrossSection.union(projs), fb = foot.bounds(), polys = foot.toPolygons() as Vec2[][];
+    for (const cs of [...projs, foot]) cs.delete();
+    const segD = (q: Vec2, a: Vec2, b: Vec2) => { const dx = b[0] - a[0], dy = b[1] - a[1], l2 = dx * dx + dy * dy, t = l2 ? Math.max(0, Math.min(1, ((q[0] - a[0]) * dx + (q[1] - a[1]) * dy) / l2)) : 0; return Math.hypot(q[0] - a[0] - t * dx, q[1] - a[1] - t * dy); };
+    const inside = (q: Vec2) => { let n = 0; for (const pg of polys) for (let k = 0, j = pg.length - 1; k < pg.length; j = k++) { const [xi, yi] = pg[k], [xj, yj] = pg[j]; if ((yi > q[1]) !== (yj > q[1]) && q[0] < ((xj - xi) * (q[1] - yi)) / (yj - yi) + xi) n++; } return n % 2 === 1; };
+    const near = (q: Vec2, r: number) => inside(q) || polys.some((pg) => pg.some((a, k) => segD(q, a, pg[(k + 1) % pg.length]) < r));
+    return sol.checkRails.flatMap((cr) => {
+      const rt = routes[cr.route], L = routeLength(rt), mid = cr.offset + cr.width / 2, r = cr.width / 2 + (o.checkRailFlare ?? 1.5) + CHECK_CLEAR;
+      const blocked = (v: number) => {
+        const q = railPoint(rt, Math.max(0, Math.min(L, v)), mid) as Vec2;
+        if (q[0] < fb.min[0] - r || q[0] > fb.max[0] + r || q[1] < fb.min[1] - r || q[1] > fb.max[1] + r) return false;
+        return near(q, r);
+      };
+      let a = cr.s0, b = cr.s1;
+      while (a < b && blocked(a)) a += 0.5;
+      while (b > a && blocked(b)) b -= 0.5;
+      if (a === cr.s0 && b === cr.s1) return [cr];
+      return b - a >= 12 ? [{ ...cr, s0: a, s1: b }] : [];
+    });
+  })();
 
   // Each route's flangeways: the band just inside each rail, from flangeway
   // depth below the rail top up, swept along the whole route.
@@ -387,7 +415,7 @@ export function crossingPiece(s: Scad, routes: Route[], o: CrossingOptions = CRO
     return Math.abs(lat - mid) < c.postD / 2 + cr.width / 2 + (o.checkRailFlare ?? 1.5) + 0.9 && sq2 >= cr.s0 - c.postD && sq2 <= cr.s1 + c.postD;
   });
   /** (a stud at q too near a check rail: beside it, or beside one of its flared ends) */
-  const byCheckRail = (q: Vec2) => sol.checkRails.some((cr) => {
+  const byCheckRail = (q: Vec2) => checkRails.some((cr) => {
     const rt = routes[cr.route], lat = routeLat(rt, q), mid = cr.offset + cr.width / 2, near = c.postD / 2 + cr.width / 2 + 0.6;
     // (and of its flared ends, which lean away from the rail it guards by the flare: a stud beside one was sliced by it)
     const flared = o.checkRailFlare ?? 1.5, away = -cr.side * (lat - mid);
@@ -460,7 +488,7 @@ export function crossingPiece(s: Scad, routes: Route[], o: CrossingOptions = CRO
       sweepRoute(s, s.polygon(RAIL_PROFILE.map(([px, py]) => [px + x, py + PLATE_H] as Vec2)), rt, 0, Infinity, trackBank(c.sleeperLen)))), endBoxes(END, BUFFER_RAIL_END));
     // (each end flared away from the rail it guards, so a flange coming in is led into the gap, as the switches' are)
     const fl = 4, flare = o.checkRailFlare ?? 1.5;
-    const checks = sol.checkRails.filter((cr) => cr.route === i).flatMap((cr) => {
+    const checks = checkRails.filter((cr) => cr.route === i).flatMap((cr) => {
       const sec = (x: number) => rect(cr.offset + x, cr.offset + cr.width + x, PLATE_H - 0.01, RAIL_TOP), away = -cr.side * flare, bk = trackBank(c.sleeperLen);
       if (!flare || cr.s1 - cr.s0 < 3 * fl) return [sweepRoute(s, sec(0), rt, cr.s0, cr.s1, bk)];
       const slice = (a: number, x: number) => sweepRoute(s, sec(x), rt, a - 0.05, a + 0.05, bk);
@@ -515,7 +543,7 @@ export function crossingPiece(s: Scad, routes: Route[], o: CrossingOptions = CRO
       // (where the gauges of dual-gauge track part (a narrower route out of this piece's wider one's end), a check rail
       // can run over a plain sleeper past the fan: its studs kept clear of it, as the bed's are. Elsewhere as it was)
       const exOk = ex ? (P: Pose) => ex.postOk(P) : undefined;
-      const sleeperPostOk = (P: Pose) => ((hosted.length && sol.checkRails.length) || handCheck ? (p: Vec2) => (exOk?.(P)(p) ?? true) && !byCheckRail(poseToWorld(P, p)) && !(handCheck && byCheckWide(poseToWorld(P, p))) : exOk?.(P));
+      const sleeperPostOk = (P: Pose) => ((hosted.length && checkRails.length) || handCheck ? (p: Vec2) => (exOk?.(P)(p) ?? true) && !byCheckRail(poseToWorld(P, p)) && !(handCheck && byCheckWide(poseToWorld(P, p))) : exOk?.(P));
       // (banked: each sleeper turned by the roll at it)
       // (and each stud clear of the ones there already: an end's row, a sleeper's before it)
       const clearOk = (P: Pose) => { const ok = sleeperPostOk(P); return (p: Vec2) => (ok?.(p) ?? true) && claim(poseToWorld(P, p) as [number, number]); };
@@ -558,7 +586,7 @@ export function crossingPiece(s: Scad, routes: Route[], o: CrossingOptions = CRO
   // (with sleepers: a check rail sits on bed. One that runs further than CHECK_UNHELD over no sleeper, tie or bed (in the
   // gap between two long ties, where another route's ties were left out) has a sleeper put under its middle: it was a loose
   // length of rail in the part)
-  if (sleepered) for (const cr of sol.checkRails) {
+  if (sleepered) for (const cr of checkRails) {
     const i = cr.route, rt = routes[i], L = routeLength(rt), mid = cr.offset + cr.width / 2;
     const held = (q: Vec2) => routes.some((r2, k) => Math.abs(routeLat(r2, q)) <= lenOf[k] / 2 && inZone(k, routeSOf(r2, q)))
       || tiesBuilt.some((tb) => { const [across, along] = worldToPose(tb.P, q); return across >= tb.lo && across <= tb.hi && Math.abs(along) <= cOf[tb.i].sleeperW / 2; });
