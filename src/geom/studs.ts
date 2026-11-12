@@ -41,9 +41,16 @@ const mids = (m: Man, top: number, plate: number, h: number) => {
 export function findStuds(s: Scad, m: Man, r: number, h: number, top: number, plate: number): Stud[] {
   return arena(s.w, () => {
     const full = Math.PI * r * r, out: Stud[] = [];
-    for (const z of mids(m, top, plate, h)) for (const p of m.slice(z).toPolygons() as Pt[][]) {
+    // (each slice let go once read: a yard's piece is big)
+    const outlines = (z: number) => { const sl = m.slice(z), ps = sl.toPolygons() as Pt[][]; sl.delete(); return ps; };
+    for (const z of mids(m, top, plate, h)) for (const p of outlines(z)) {
       if (p.length < 12) continue;
-      const cx = p.reduce((t, q) => t + q[0], 0) / p.length, cy = p.reduce((t, q) => t + q[1], 0) / p.length;
+      // (its middle: the middle of its box. The mean of its outline's points was off where the outline has more points on
+      // one side (a cut or a wall met there): 0.1 mm on the R40 triple crossover's branches' slanted sleepers, over the
+      // 0.08 allowed, so three studs a cut went through weren't found, and were left as rings)
+      let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity;
+      for (const q of p) { x0 = Math.min(x0, q[0]); x1 = Math.max(x1, q[0]); y0 = Math.min(y0, q[1]); y1 = Math.max(y1, q[1]); }
+      const cx = (x0 + x1) / 2, cy = (y0 + y1) / 2;
       if (p.some((q) => Math.abs(Math.hypot(q[0] - cx, q[1] - cy) - r) > 0.08)) continue;
       // (an outline, not a hole: a pin hole the size of a stud isn't one)
       const a = p.reduce((t, q, k) => { const n = p[(k + 1) % p.length]; return t + q[0] * n[1] - n[0] * q[1]; }, 0) / 2;
@@ -64,13 +71,49 @@ export function wholeStuds(s: Scad, studs: Stud[], parts: Man[], r: number, h: n
   const at = (c: Pt, z: number, rr: number, hh: number) => T(s.cylinder(hh, rr, rr, 32), [c[0], c[1], z]);
   // (first each part less the studs it has only part of; the ones whose middle it has noted, to give back whole)
   const mine: { c: Pt; z: number }[][] = parts.map(() => []);
+  // (each part's slice at a stud height looked at first as plain points: only a stud something other than its own whole
+  // outline comes within reach of is measured in the kernel. Measuring every stud there (a circle and its overlap each,
+  // kept till the part was done) took the kernel's memory over its bound once more studs were found)
+  // (inner: inside the kernel's 32-sided circle of that reach wherever round it)
+  const reach = r + 0.05, inner = reach * Math.cos(Math.PI / 32) - 1e-6, CELL = 8;
   const less = parts.map((p, i) => arena(s.w, () => {
-    const bb = p.boundingBox(), cut: Man[] = [], slices = new Map<number, ReturnType<Man['slice']>>();
+    const bb = p.boundingBox(), cut: Man[] = [], seen = new Map<number, { sl: ReturnType<Man['slice']>; polys: Pt[][]; cells: Map<string, number[]> }>();
+    const sliceAt = (z: number) => {
+      let e = seen.get(z);
+      if (!e) {
+        const sl = p.slice(z), polys = sl.toPolygons() as Pt[][], cells = new Map<string, number[]>();
+        polys.forEach((pl, k) => {
+          let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity;
+          for (const q of pl) { x0 = Math.min(x0, q[0]); x1 = Math.max(x1, q[0]); y0 = Math.min(y0, q[1]); y1 = Math.max(y1, q[1]); }
+          for (let a = Math.floor(x0 / CELL); a <= Math.floor(x1 / CELL); a++) for (let b = Math.floor(y0 / CELL); b <= Math.floor(y1 / CELL); b++) {
+            const key = `${a},${b}`, l = cells.get(key); if (l) l.push(k); else cells.set(key, [k]);
+          }
+        });
+        e = { sl, polys, cells }; seen.set(z, e);
+      }
+      return e;
+    };
+    const segD = (c: Pt, a: Pt, b: Pt) => {
+      const dx = b[0] - a[0], dy = b[1] - a[1], l2 = dx * dx + dy * dy, t = l2 ? Math.max(0, Math.min(1, ((c[0] - a[0]) * dx + (c[1] - a[1]) * dy) / l2)) : 0;
+      return Math.hypot(a[0] + t * dx - c[0], a[1] + t * dy - c[1]);
+    };
     for (const st of studs) {
       if (st.c[0] < bb.min[0] - r || st.c[0] > bb.max[0] + r || st.c[1] < bb.min[1] - r || st.c[1] > bb.max[1] + r) continue;
-      let sl = slices.get(st.mid);
-      if (!sl) { sl = p.slice(st.mid); slices.set(st.mid, sl); }
-      const a = sl.intersect(s.w.CrossSection.circle(r + 0.05, 32).translate(st.c)).area();
+      const { sl, polys, cells } = sliceAt(st.mid), c = st.c, near = new Set<number>();
+      for (let a = Math.floor((c[0] - reach) / CELL); a <= Math.floor((c[0] + reach) / CELL); a++) for (let b = Math.floor((c[1] - reach) / CELL); b <= Math.floor((c[1] + reach) / CELL); b++)
+        for (const k of cells.get(`${a},${b}`) ?? []) near.add(k);
+      // (what of the slice comes within the circle measured: none, the part has none of the stud; only its own outline
+      // (every point of it within reach of the middle), the stud whole or not, by that outline's area as the kernel's would be)
+      let own = 0, other = false;
+      for (const k of near) {
+        const pl = polys[k];
+        if (!pl.some((q, j) => segD(c, q, pl[(j + 1) % pl.length]) < reach)) continue;
+        if (pl.every((q) => Math.hypot(q[0] - c[0], q[1] - c[1]) <= inner)) own += pl.reduce((t, q, j) => { const n = pl[(j + 1) % pl.length]; return t + q[0] * n[1] - n[0] * q[1]; }, 0) / 2;
+        else { other = true; break; }
+      }
+      if (!other && (own <= 0.02 * full || own >= 0.97 * full)) continue;
+      const circ = s.w.CrossSection.circle(reach, 32).translate(c), x = sl.intersect(circ), a = x.area();
+      circ.delete(); x.delete();
       if (a <= 0.02 * full || a >= 0.97 * full) continue;
       cut.push(at(st.c, st.mid - h / 2, r + 0.1, h + 1));
       if (sl.intersect(s.w.CrossSection.circle(0.4, 16).translate(st.c)).area() > 0.25) mine[i].push({ c: st.c, z: st.mid - h / 2 });

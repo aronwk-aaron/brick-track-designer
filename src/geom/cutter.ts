@@ -404,8 +404,14 @@ export function cutPiece(s: Scad, t: Track, body: Man, routes: Route[], lines: C
 
 /** A part with nothing loose: the bits under a few mm3 a cut left over dropped. */
 export function tidy(s: Scad, whole: Man): Man {
-  const bits = flat(s.w, whole).decompose(); // (on a flat copy: kernel.ts flat)
-  return bits.length > 1 ? s.union(bits.filter((m) => m.volume() > 5)) : whole;
+  // (on a flat copy: kernel.ts flat. It and the bits not kept let go at once: a big piece's cells each held a copy and
+  // its bits till the whole cut was done, the most the kernel's memory reached on a crossover)
+  const f = flat(s.w, whole), bits = f.decompose();
+  f.delete();
+  if (bits.length < 2) { for (const m of bits) m.delete(); return whole; }
+  const kept = bits.filter((m) => m.volume() > 5);
+  for (const m of bits) if (!kept.includes(m)) m.delete();
+  return s.union(kept);
 }
 
 /** A straight run of a stepped cut: from p along unit d for len mm. */

@@ -726,7 +726,7 @@ route-owned storage, the follow rules and the card section they bring are the pa
   are held by the baseplate (in a section, `bedAt` keeps the bed along the path's runs, as for the app's own cuts).
   Studs on a branch's slanted sleepers follow the track, not the grid, so a path on a grid line can graze one:
   `cutOnPaths` gives every stud it finds in a path's way (`findStuds`) whole to the side its middle is on and takes
-  the cut round it. **Open (geometry, src/geom/studs.ts):** on 'Modular triple crossover R40' the only across line 2 studs clear of both
+  the cut round it. **Put right 2026-11-12 (src/geom/studs.ts: a stud's middle is now its outline's box's; test/studs-found.test.ts). It was:** on 'Modular triple crossover R40' the only across line 2 studs clear of both
   frogs (17 studs along) cuts three studs on the branches' slanted sleepers, at 4.22, 16.74; 7.75, 17.10 and -8.25,
   17.10 (studs): each a whole stud in the piece, its middle 0.8 to 2.1 mm off the line, that `findStuds` doesn't
   list, so `cutOnPaths` doesn't take the cut round it. Why: its outline at mid-height has 50 points, not 48 (two
