@@ -80,6 +80,8 @@ export interface SwitchParams {
   pegOnBallast?: boolean;
   /** (generate_track off) The ballast alone, with a seat this much clear each side (mm) for the track printed apart. */
   ballastOnly?: number;
+  /** No two studs closer than a stud's pitch (geom/studpitch.ts); off: only never touching. */
+  studsFullPitch?: boolean;
 }
 
 /** The switch stand's handle and eccentric (throwStand). */

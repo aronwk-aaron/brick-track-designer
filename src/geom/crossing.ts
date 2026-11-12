@@ -14,7 +14,8 @@ import { connectorKeep, connectorUnderside, hollowGrid, rowUnderside, sleeperUnd
 import { type ExtraBuilt, extraRails } from './extrarails';
 import { laySleepers, localSleepers, shapedSleeper } from './handsleepers';
 import { DEFAULTS, PLATE_H, RAIL_PROFILE, STUD, Track, type TrackOptions } from './track';
-import { StudPlaces, studApart } from './studs';
+import { StudPlaces } from './studs';
+import { pitchRow, studGap } from './studpitch';
 import { BUFFER_DEFAULTS, BUFFER_RAIL_END, type BufferOptions, bufferStop, couplerSupports, endAxleHoles, inBufferPost, trackSeat } from './extras';
 
 export interface CrossingOptions extends TrackOptions {
@@ -64,6 +65,8 @@ export interface CrossingOptions extends TrackOptions {
   ballastEnds?: 'square' | 'stepped';
   /** (generate_track off, generate_ballast on) The ballast alone, with a seat (this much clear each side, mm) the separately printed track drops into. */
   ballastOnly?: number;
+  /** No two studs closer than a stud's pitch (studpitch.ts): the ones that would be left out, and the ballast's rows spaced a pitch or more. Off: only never touching. */
+  studsFullPitch?: boolean;
 }
 
 export const CROSSING_DEFAULTS: CrossingOptions = { ...DEFAULTS, flangeway: 3, flangewayDepth: 3, checkRailW: 1, supports: true, grip: 'edges' };
@@ -401,7 +404,7 @@ export function crossingPiece(s: Scad, routes: Route[], o: CrossingOptions = CRO
   // later one's studs that would stand in the first one's left out); then the sleepers' and ties'; then the bed's.
   // (a piece too short for a row at each end (the two closer than a stud's pitch, run into each other): one whole row, in
   // its middle, where both ends' rows have a stud; the ends without theirs. oneRows: its pose and its studs across it)
-  const taken = new StudPlaces(), apart = studApart(o.studD);
+  const taken = new StudPlaces(), apart = studGap(o.studD, o.studsFullPitch);
   // (an end's stud against another end's: only where they'd run into each other. Two ends side by side, their rows
   // in line, have studs a hair apart, each on its own part once the piece is cut between them)
   const claim = (q: [number, number], d = apart) => { if (taken.near(q, d)) return false; taken.add(q); return true; };
@@ -861,11 +864,13 @@ export function crossingPiece(s: Scad, routes: Route[], o: CrossingOptions = CRO
     const pts: [number, number, number][] = [];
     const row = (i: number, off: number, z: number, hwUp: (j: number, sd: number) => number) => {
       const rt = routes[i], L = routeLength(rt);
-      const rowL = L; // (near enough: studs a little under or over a stud apart on a curve)
-      const n = Math.max(1, Math.round((rowL - 8) / STUD));
-      for (let k = 0; k <= n; k++) {
-        const q = railPoint(rt, 4 + (k * (L - 8)) / n, off);
-        if (clearOthers(i, q, hwUp) && !pts.some((p) => Math.abs(p[2] - z) < 0.1 && Math.hypot(p[0] - q[0], p[1] - q[1]) < 6)) pts.push([q[0], q[1], z]);
+      // (near enough: studs a little under or over a stud apart on a curve. A full pitch apart (studsFullPitch): even along
+      // the row's own line, so none is closer than a pitch on a curve's inside, and none closer than that to another row's)
+      const rowL = L, n = Math.max(1, Math.round((rowL - 8) / STUD)), near = o.studsFullPitch ? apart : 6;
+      const at = o.studsFullPitch ? pitchRow(rt, off, 4, L - 4) : Array.from({ length: n + 1 }, (_, k) => 4 + (k * (L - 8)) / n);
+      for (const sAt of at) {
+        const q = railPoint(rt, sAt, off);
+        if (clearOthers(i, q, hwUp) && !pts.some((p) => Math.abs(p[2] - z) < 0.1 && Math.hypot(p[0] - q[0], p[1] - q[1]) < near)) pts.push([q[0], q[1], z]);
       }
     };
     routes.forEach((_, i) => {

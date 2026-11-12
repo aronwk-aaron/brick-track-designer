@@ -79,6 +79,7 @@ export const SPECS: OptionSpec[] = [
   { key: 'sleeperGapStuds', values: [2, 4], base: D([st(16)], { sleepers: 'sleepers' }), cam: whole },
   { key: 'raisedOn', values: ['printed', 'lego'], base: D(raised, { legoTrack: 'print' }), tint: bought, cam: { dir: '1,-0.9,0.5', dist: 1.9 } },
   { key: 'curveStuds', values: ['grid', 'follow'], base: D(curve, { sleepers: 'bed' }), cam: { dir: '0.25,-0.45,1', dist: 2.0 } },
+  { key: 'studsFullPitch', values: [false, true], base: D(curve, { sleepers: 'bed', ballast: 'ballast' }), cam: { dir: '0.25,-0.45,1', dist: 2.0 } },
   // Ballast
   { key: 'ballast', values: ['none', 'ballast', 'buddy'], base: D([st(16)]), cam: { dir: '1,-1.2,0.6', dist: 2.0 } },
   // (expert, stage 5a: the ballast's reach past the sleepers each side, and its end at a buffer stop)

@@ -15,7 +15,8 @@ import { rectFits } from '../geom/bedfit';
 import { ANTISTUD_FIT, BOTTOM_WALL, connectorKeep, connectorUnderside, hollowGrid, TUBE_ID, TUBE_OD } from '../geom/underside';
 import { DEFAULTS as TRACK_DEFAULTS, scadParity, PLATE_H, RAIL_PROFILE, STUD, tongueLeans, Track } from '../geom/track';
 import { couplerSupports, trackSeat } from '../geom/extras';
-import { StudPlaces, studApart } from '../geom/studs';
+import { StudPlaces } from '../geom/studs';
+import { rowGaps, studGap } from '../geom/studpitch';
 import { support } from '../geom/supports';
 import { type P2, SNAP, snapGeo, type SnapGeo, snapHalf } from './snap';
 import { SPRUNG_SLIDER, type FdbBladeLayout, sprungLow, squareGrid, HEAD_HW, type Notch, pointsSet, type PointsSetValues, STAND, SWITCH_DEFAULTS, type SwitchParams, switchGlobals } from './context';
@@ -990,10 +991,10 @@ function throwStepsData(v: { throwY: number; leverX: number; throwDir: number; t
   return { steps: { ya, yb, xOuter: xo + (g.buddy ? v.throwDir * STUD : 0), rect, buddy: g.buddy } };
 }
 
-/** dedupe(pts, acc): add the points of pts not within a stud (+0.5) of one already taken. */
-function dedupe(pts: Pt[], acc: Pt[] = []): Pt[] {
+/** dedupe(pts, acc): add the points of pts not within a stud (+0.5) of one already taken (gap: or this, studpitch.ts). */
+function dedupe(pts: Pt[], acc: Pt[] = [], gap = TRACK_DEFAULTS.studD + 0.5): Pt[] {
   const out = [...acc];
-  for (const q of pts) if (Math.min(1e9, ...out.map((a) => norm(sub(a, q)))) >= TRACK_DEFAULTS.studD + 0.5) out.push(q);
+  for (const q of pts) if (Math.min(1e9, ...out.map((a) => norm(sub(a, q)))) >= gap) out.push(q);
   return out;
 }
 
@@ -1273,7 +1274,7 @@ export function switchGeometry(s: Scad, plan: SwitchPlan, extraCuts: Man[] = [])
   // before it (two ends side by side at an angle, on a short switch); then the ties' studs, in the order they're built.
   // (Each kind keeps its own from one build to the next: built again, a tie isn't in its own studs' way. Not when
   // matching the OpenSCAD output.)
-  const studsTaken = new StudPlaces(), studsApart = studApart(TRACK_DEFAULTS.studD);
+  const studsTaken = new StudPlaces(), studsApart = studGap(TRACK_DEFAULTS.studD, p.studsFullPitch);
   const claimStud = (q: Pt, src: string, d = studsApart) => { if (scadParity()) return true; if (studsTaken.near(q, d, src)) return false; if (!studsTaken.near(q, 0.01)) studsTaken.add(q, src); return true; };
   let connPosts: { start: number[]; ends: number[][] } | undefined;
   const connStuds = () => (connPosts ??= { start: t.endpointPosts().filter((px) => claimStud([px, 4], 'start')), ends: plan.endPoses.map((e, k) => t.endpointPosts().filter((px) => claimStud(poseToWorld(e, [-px, -4]) as Pt, `end${k}`, tc.postD))) });
@@ -2213,7 +2214,7 @@ export function switchGeometry(s: Scad, plan: SwitchPlan, extraCuts: Man[] = [])
   };
 
   // ---------- ballast (switch.scad's switch_ballast, with generate_ballast) ----------
-  const studD = TRACK_DEFAULTS.studD;
+  const studD = TRACK_DEFAULTS.studD, pitch = p.studsFullPitch, gap = studGap(studD, pitch);
   const routeBallast = (rt: Route) => sweep(W.CrossSection.union([
     sq([g.ballastTopW, g.ballastThickness], [-g.ballastTopW / 2, g.ballastOffsetZ]),
     sq([g.ballastMidW, g.ballastThickness / 2], [-g.ballastMidW / 2, g.ballastOffsetZ]),
@@ -2225,7 +2226,9 @@ export function switchGeometry(s: Scad, plan: SwitchPlan, extraCuts: Man[] = [])
     rt.segments.forEach((sg, si) => {
       const l = sg.kind === 'straight' ? sg.length : (Math.abs(sg.angle) * Math.PI * sg.radius) / 180;
       const rowL = sg.kind === 'straight' ? l : (l * (sg.radius + Math.sign(sg.angle) * o)) / sg.radius;
-      const n = Math.max(1, roundScad(rowL / STUD)), first = si === 0 ? 4 : 0, last = si === rt.segments.length - 1 ? l - 4 : l;
+      const first = si === 0 ? 4 : 0, last = si === rt.segments.length - 1 ? l - 4 : l;
+      // (a full pitch apart: the gaps from the row's own stretch, first to last, never under a pitch)
+      const n = pitch ? rowGaps((rowL * (last - first)) / l, true) : Math.max(1, roundScad(rowL / STUD));
       for (let k = 0; k <= n; k++) {
         const q = railPoint(rt, st[si] + first + (k * (last - first)) / n, o);
         if ((si === 0 || k > 0) && plan.latOthers(i, q) > hwUp + studD / 2 + 0.5) out.push(q);
@@ -2236,7 +2239,7 @@ export function switchGeometry(s: Scad, plan: SwitchPlan, extraCuts: Man[] = [])
   const stepStuds = (o: number, z: number, hwUp: number) => {
     const last = nRoutes - 1;
     const pts = dedupe([...routeRowPts(0, +o, hwUp), ...routeRowPts(last, -o, hwUp),
-      ...routes.flatMap((_, i) => (i === 0 ? [-1] : i === last ? [+1] : [-1, +1]).flatMap((sd) => routeRowPts(i, sd * o, hwUp)))]);
+      ...routes.flatMap((_, i) => (i === 0 ? [-1] : i === last ? [+1] : [-1, +1]).flatMap((sd) => routeRowPts(i, sd * o, hwUp)))], [], gap);
     return s.union(pts.map((q) => T(t.stud(), [q[0], q[1], z - 0.01])));
   };
   const nearLever = (q: Pt, r: number) => {
@@ -2323,14 +2326,14 @@ export function switchGeometry(s: Scad, plan: SwitchPlan, extraCuts: Man[] = [])
     for (const rt of routes) for (const o of offsAll) for (const y of rows) {
       const q: Pt = [plan.railCross(rt, o, y)[0], y]; if (inRouteZone(q, studD + 0.5) < 0 && spotFree(q)) fill.push(q);
     }
-    const main = dedupe([...sqPts, ...fill], dedupe(zonePts));
+    const main = dedupe([...sqPts, ...fill], dedupe(zonePts, [], gap), gap);
     const armPts: Pt[] = [];
     for (const d of plan.setData) for (let x = Math.floor(d.armX0 / 8) * 8 + 4; x <= d.armX1 + 1e-9; x += STUD) for (let y = 12; y <= d.throwY + g.armW / 2 + 1e-9; y += STUD) {
       const r = r0, q: Pt = [x, y];
       if (x - r > d.armX0 && x + r < d.armX1 && Math.abs(y - d.throwY) + r < g.armW / 2 && !nearLever(q, r)
         && Math.abs(routeLat(d.throwStockRt, q) - d.throwDir * G) >= 3.9 + r) armPts.push(q);
     }
-    return dedupe(armPts, main);
+    return dedupe(armPts, main, gap);
   };
   const switchBallast = () => {
     const ballast = s.difference(s.union(routes.map(routeBallast)), [

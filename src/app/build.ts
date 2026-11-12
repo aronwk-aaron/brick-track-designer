@@ -2386,7 +2386,7 @@ function buildOne(w: Wasm, design: Design, report: (what: string, frac: number) 
     studFit: o.studFit, antistudFit: o.antistudFit, sleepers: o.sleepers, undersideGrid: o.ballast === 'none' ? o.undersideGrid : undefined, sleeperWidthStuds: o.sleeperWidthStuds, sleeperGapStuds: o.sleeperGapStuds,
     // (only what's set: the defaults' build, and its cache keys, as before)
     ...(bufs.length && { buffers: bufs, buffer: { postPlates: o.bufferPostPlates ?? 8, beamBottom: o.bufferBeamBottom ?? 2, beamTop: o.bufferBeamTop ?? 12, pinHoles: o.bufferPinHoles !== false, style: o.bufferStyle ?? 'frame' } }),
-    ...(o.axleHoles && { axleHoles: true }), ...(o.pegOnBallast && { pegOnBallast: true }), ...(o.ballastEnds === 'stepped' && o.ballast !== 'none' && { ballastEnds: 'stepped' as const }), ...(alone && { ballastOnly: o.trackFitTol ?? 0.2 }) };
+    ...(o.axleHoles && { axleHoles: true }), ...(o.pegOnBallast && { pegOnBallast: true }), ...(o.ballastEnds === 'stepped' && o.ballast !== 'none' && { ballastEnds: 'stepped' as const }), ...(alone && { ballastOnly: o.trackFitTol ?? 0.2 }), ...(o.studsFullPitch && { studsFullPitch: true }) };
   const tp = params;
   const netKey = JSON.stringify({ routes, tp, copt, tw });
   let net: ReturnType<typeof networkSplits> | undefined;

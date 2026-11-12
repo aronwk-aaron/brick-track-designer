@@ -28,7 +28,7 @@ export const GROUPS: Group[] = [
   { id: 'cuts', title: 'Cutting and joints', keys: ['splitTrack', 'pieceLengthStuds', 'baseplate', 'baseplateX', 'baseplateY', 'studsAtCuts', 'joint', 'axleStuds', 'tongueRails', 'endSupports', 'pegOnBallast', 'axleHoles'],
     subs: { splitTrack: 'Cutting', joint: 'Joints' } },
   { id: 'fits', title: 'Fits and clearances', keys: ['studFit', 'antistudFit', 'trackFitTol'] },
-  { id: 'track', title: 'Track and rails', needs: 'train', keys: ['gaugeStuds', 'raisedOn', 'curveStuds'] },
+  { id: 'track', title: 'Track and rails', needs: 'train', keys: ['gaugeStuds', 'raisedOn', 'curveStuds', 'studsFullPitch'] },
   { id: 'ballast', title: 'Sleepers and ballast', needs: 'train', keys: ['sleepers', 'sleeperWidthStuds', 'sleeperGapStuds', 'ballast', 'ballastLeftStuds', 'ballastRightStuds', 'ballastEnds', 'trackBallast'] },
   { id: 'under', title: 'Underside', keys: ['bottomStyle', 'undersideGrid', 'grip'] },
   { id: 'labels', title: 'Labels', keys: ['labelText', 'labelSize', 'labelGauge', 'labelParts'] },

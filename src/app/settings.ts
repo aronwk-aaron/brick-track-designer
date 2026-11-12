@@ -57,6 +57,8 @@ export function optionForm(d: () => Design): { form: OptSection[] } {
       { key: 'curveStuds', label: 'Studs on the track', choices: [
         { v: 'grid', t: 'On the baseplate grid', tip: 'Every stud lines up with the baseplate. On curves they form a grid, not rows.' },
         { v: 'follow', t: 'In rows along the track', tip: 'Rows across the track, like LEGO track, so tiles fit across curves.', con: 'On curves the studs are off the baseplate grid.' }], help: 'With Sleepers with gaps (no ballast), only where the bed is solid (switches, crossings): the sleepers\' own studs always run along the track.' },
+      { key: 'studsFullPitch', label: 'Studs keep a full stud apart', check: true, def: false, get: () => d().options?.studsFullPitch ?? false, set: (v) => { d().options = { ...d().options, studsFullPitch: v === true }; },
+        help: 'On: no two studs on a part are closer than 8 mm, a stud\'s pitch, so a plate fits on any two side by side. Studs that would be closer are left out; ballast rows on curves are spaced along their own line. Off (default): studs only never touch (5.3 mm apart or more). Drawback: fewer studs where tracks meet at an angle and on the inside of curves.' },
     ] },
     { title: 'Ballast', kind: 'train', fields: [
       { key: 'ballast', label: 'Ballast', choices: [

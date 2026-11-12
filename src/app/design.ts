@@ -239,6 +239,8 @@ export interface PieceOptions {
   monoSupportAntistud?: boolean; monoSupportBaseStuds?: boolean; monoSupportSolid?: boolean;
   /** Banked curves: the shortest ramp from level to the full bank, studs (curves.scad's superelevation_ramp_studs), lengthened to keep the outer rail's climb within 1 in bankClimb; ramps on the straights either side ('straight') or inside the curve ('curve', as curves.scad's pieces). */
   bankRampStuds?: number; bankClimb?: number; bankRampAt?: 'straight' | 'curve';
+  /** No two studs on a part closer than a stud's pitch, 8 mm (geom/studpitch.ts): the ones that would be are left out, the ballast's rows spaced along their own line. Off (default): only never touching. */
+  studsFullPitch?: boolean;
 }
 /**
  * A design saved by an older version, in today's terms (a copy; the design
