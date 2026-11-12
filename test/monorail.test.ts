@@ -226,6 +226,11 @@ describe('monorail', { timeout: 120000 }, () => {
     expect(supports(ramp(900, 16))).toEqual([[32, 5], [48, 15], [64, 27], [80, 30], [96, 30]]);
     // (cut for the bed at its supports: each under a joint, the two ends' pads under the beam (their axle holes just above))
     expect(supports(ramp(256, 32))).toEqual([[32, 3], [64, 25], [96, 30]]);
+    // (Ramp joint over a support: no axle holes in the two ends there, the half pads up in the beam: LEGO's 5 and 27; or
+    // never cut over a support, every pad mid-part: the same)
+    const opt = (d: Design, v: 'noaxles' | 'apart') => ({ ...d, options: { ...d.options, monoRampJoint: v } });
+    expect(supports(opt(ramp(256, 32), 'noaxles'))).toEqual([[32, 5], [64, 27], [96, 30]]);
+    expect(supports(opt(ramp(256, 32), 'apart'))).toEqual([[32, 5], [64, 27], [96, 30]]);
     // (a short steep one, a support every 8 studs)
     expect(supports(ramp(256, 8, 24, 10)).length).toBeGreaterThanOrEqual(4);
     // (a ramp round a curve, raised at both ends: the supports turned with it, clear of the beam)

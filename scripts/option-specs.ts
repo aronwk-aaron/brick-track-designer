@@ -183,4 +183,5 @@ export const SPECS: OptionSpec[] = [
   { key: 'monoSupportAntistud', values: [true, false], base: D([mono(16)], { monoSupportStuds: 16 }), pick: /support/, cam: { dir: '0.7,-0.8,-0.7', dist: 1.6 } },
   { key: 'monoSupportBaseStuds', values: [true, false], base: D([mono(16)], { monoSupportStuds: 16 }), cam: { dir: '1,-0.9,0.6', dist: 1.9 } },
   { key: 'monoSupportSolid', values: [false, true], base: D([mono(16)], { monoSupportStuds: 16 }), cam: { dir: '1,-0.2,0.3', dist: 1.9 } },
+  { key: 'monoRampJoint', values: ['axles', 'noaxles', 'apart'], base: D(TEMPLATES['Monorail ramp (as LEGO\'s)'].routes, { monoSupportStuds: 32, printBedX: 256, printBedY: 256 }), cam: { dir: '1,-0.5,-0.25', r: 120, at: () => [0, 256, 10] } },
 ];

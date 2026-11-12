@@ -45,7 +45,7 @@ describe('settings groups', () => {
     expect(rowKeys({ ...d, options: { ballast: 'ballast', trackBallast: 'together' } }, 'ballast')).toEqual(['sleepers', 'ballast', 'ballastLeftStuds', 'ballastRightStuds', 'ballastEnds', 'trackBallast']);
     expect(rowKeys({ ...d, options: { ballast: 'none', sleepers: 'sleepers' } }, 'ballast')).toEqual(['sleepers', 'sleeperWidthStuds', 'sleeperGapStuds', 'ballast']);
     expect(rowKeys({ ...d, options: { monoSupportStuds: 0 } }, 'monosup')).toEqual(['monoSupportStuds']);
-    expect(rowKeys({ ...d, options: { monoSupportStuds: 32 } }, 'monosup')).toHaveLength(8);
+    expect(rowKeys({ ...d, options: { monoSupportStuds: 32 } }, 'monosup')).toHaveLength(9);
     expect(rowKeys({ ...d, options: { labelText: '' } }, 'labels')).not.toContain('labelSize');
     expect(rowKeys({ ...d, options: { labelText: 'A' } }, 'labels')).toContain('labelSize');
     // (the points' mechanism: only its own settings)

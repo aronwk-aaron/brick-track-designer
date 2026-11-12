@@ -156,11 +156,12 @@ function onStraight(rt: Route, c: number, d = MONO.endLen + 2) {
  * chain's start, on straights where it can, at the supports if there are
  * any, the parts as even as they go and as long as fit.
  */
-export function planCuts(rt: Route, a: number, b: number, X: number, Y: number, grid: number, supportAt: (s: number) => boolean): number[] {
+export function planCuts(rt: Route, a: number, b: number, X: number, Y: number, grid: number, supportAt: (s: number) => boolean, avoid?: (s: number) => boolean): number[] {
   const fits = (p: number, q: number) => fitAngle(footprint(rt, p, q), X, Y) !== undefined;
   if (fits(a, b)) return [];
   const minLen = 4 * MONO.stud;
-  const cands = (p: number) => { const out: number[] = []; for (let c = Math.ceil((p + minLen) / grid) * grid; c < b - minLen + 1e-6; c += grid) out.push(c); return out; };
+  // (avoid: places never cut at, where there's another (a ramp over a support: Ramp joint over a support, Never cut there))
+  const cands = (p: number) => { const out: number[] = []; for (let c = Math.ceil((p + minLen) / grid) * grid; c < b - minLen + 1e-6; c += grid) if (!avoid?.(c)) out.push(c); return out; };
   const reach = (p: number) => { let m: number | undefined; for (const c of cands(p)) { if (fits(p, c)) m = c; else if (m !== undefined && c - m > 64) break; } return m; };
   const score = (c: number, target: number) => -Math.abs(c - target) / MONO.stud + (onStraight(rt, c) ? 6 : 0) + (supportAt(c) ? 4 : 0);
   // greedy, the furthest that fits (with a little give for a better place): how many parts it takes
@@ -451,6 +452,14 @@ export function buildMonorail(w: Wasm, routes: Route[], o: Partial<PieceOptions>
     }
   }
 
+  // (how much higher the beam is y along it from where a support stands, at each of SUP_YS: a ramp's slope changes all
+  // the way, so its underside over a support's top isn't a plane)
+  const SUP_YS = Array.from({ length: 9 }, (_, k) => -10 + 2.5 * k);
+  const levelAt = (ci: number, sv: number) => SUP_YS.every((y) => Math.abs(zAt(ci, sv + y) - zAt(ci, sv)) < 1e-3 * Math.max(1, Math.abs(y)));
+  // (Ramp joint over a support: 'axles', the ends keep their axle holes and the support under a joint stands under the
+  // beam; 'noaxles', the two ends there without them, its pad let up into the beam as mid-part; 'apart', a ramp never cut
+  // within a stud and a half of an end's length of a support, so every one's mid-part)
+  const rampJoint = o.monoRampJoint ?? 'axles';
   // ---- the plain beam: each chain's stretches outside the switches, cut for the bed ----
   type Part = { c: number; a: number; b: number };
   const parts: Part[] = [];
@@ -480,15 +489,12 @@ export function buildMonorail(w: Wasm, routes: Route[], o: Partial<PieceOptions>
     const supAt = (s: number) => supportsAt.some((q) => q.c === ci && (Math.abs(q.s - s) < 1e-6 || (c.closed && Math.abs(q.s + c.L - s) < 1e-6)));
     for (const [a, b] of free) {
       // (the cuts on whole studs from the chain's start)
-      const cuts = planCuts(c.route, a, b, X, Y, grid, supAt);
+      const nearSup = (s: number) => supportsAt.some((q) => q.c === ci && [q.s, q.s + c.L, q.s - c.L].some((x) => Math.abs(x - s) < 1.5 * MONO.endLen + 1e-6) && !levelAt(ci, q.s));
+      const cuts = planCuts(c.route, a, b, X, Y, grid, supAt, rampJoint === 'apart' ? nearSup : undefined);
       const bounds = [a, ...cuts, b];
       for (let k = 0; k + 1 < bounds.length; k++) parts.push({ c: ci, a: bounds[k], b: bounds[k + 1] });
     }
   });
-  // (how much higher the beam is y along it from where a support stands, at each of SUP_YS: a ramp's slope changes all
-  // the way, so its underside over a support's top isn't a plane)
-  const SUP_YS = Array.from({ length: 9 }, (_, k) => -10 + 2.5 * k);
-  const levelAt = (ci: number, sv: number) => SUP_YS.every((y) => Math.abs(zAt(ci, sv + y) - zAt(ci, sv)) < 1e-3 * Math.max(1, Math.abs(y)));
   /**
    * How tall a support under a ramp stands (its top level, whole plates), mid-part or under a joint (end): the highest
    * whole plate that fits. Mid-part as LEGO's ramps' pads: up in the beam, as high as clears the beam all over its top
@@ -502,7 +508,7 @@ export function buildMonorail(w: Wasm, routes: Route[], o: Partial<PieceOptions>
   const padH = (ci: number, sv: number, end: boolean) => {
     let lo = Infinity, hi = -Infinity;
     for (let k = -8; k <= 8; k++) { const u = zAt(ci, sv + (PAD_HW * k) / 8); lo = Math.min(lo, u); hi = Math.max(hi, u); }
-    const allow = end || hi - lo < 0.3 ? 0.3 : MONO.beamTop - PAD_ROOF - PAD_STUDS;
+    const allow = (end && rampJoint !== 'noaxles') || hi - lo < 0.3 ? 0.3 : MONO.beamTop - PAD_ROOF - PAD_STUDS;
     const H = Math.max(0, Math.min(Math.ceil((hi - 1e-6) / 3.2), Math.floor((lo + allow + 1e-6) / 3.2))) * 3.2;
     const half = so.baseYStuds * MONO.stud / 2, base = 3.2 + (so.baseStuds ? 1.8 : 0) + 0.2;
     return H < 6.4 - 1e-6 || [-1, -0.5, 0.5, 1].some((k) => zAt(ci, sv + half * k) < base) ? 0 : H;
@@ -513,6 +519,9 @@ export function buildMonorail(w: Wasm, routes: Route[], o: Partial<PieceOptions>
   const padsOf = new Map<Part, { s: number; H: number; at: 'mid' | 'a' | 'b' }[]>();
   const pad = (p: Part, q: { s: number; H: number; at: 'mid' | 'a' | 'b' }) => padsOf.set(p, [...(padsOf.get(p) ?? []), q]);
   const isRamp = (p: Part) => { const [lo, hi] = zRange(p.c, p.a, p.b); return hi - lo > 0.05; };
+  /** the joints whose ends have no axle holes (where the pad under them is up in the beam) */
+  const bare: { c: number; s: number }[] = [];
+  const bareAt = (p: Part, x: number) => bare.some((q) => q.c === p.c && [q.s, q.s + chains[q.c].L, q.s - chains[q.c].L].some((y) => Math.abs(y - x) < 1e-6));
   for (const sp of supportsAt) {
     const c = chains[sp.c];
     const sIn = (p: Part, s: number) => s >= p.a - 1e-6 && s <= p.b + 1e-6;
@@ -530,6 +539,8 @@ export function buildMonorail(w: Wasm, routes: Route[], o: Partial<PieceOptions>
     // (under a joint on a ramp: half a pad on each ramp part's end there)
     if (levelAt(sp.c, sp.s)) continue;
     const H = padH(sp.c, sp.s, true);
+    // (its pad let up into the beam (Ramp joint over a support: no axle holes): both ends there without their axle holes)
+    if (H > zAt(sp.c, sp.s) + 0.3 + 1e-6) bare.push({ c: sp.c, s: sp.s });
     if (!H) { if (parts.some((q) => q.c === sp.c && isRamp(q) && (Math.abs(q.a - sp.s) < 1e-6 || Math.abs(q.b - sp.s) < 1e-6))) sp.H = 0; continue; }
     for (const q of parts) if (q.c === sp.c && isRamp(q)) for (const x of c.closed ? [sp.s, sp.s + c.L, sp.s - c.L] : [sp.s]) {
       if (Math.abs(q.a - x) < 1e-6) { pad(q, { s: q.a, H, at: 'a' }); sp.H = H; }
@@ -553,17 +564,20 @@ export function buildMonorail(w: Wasm, routes: Route[], o: Partial<PieceOptions>
     const zs = ramp ? Array.from({ length: 33 }, (_, k) => zAt(p.c, p.a + ((p.b - p.a) * k) / 32)) : [];
     // (its pads: a ramp part's only (a level part's underside is the support's top as it is))
     const pq = padsOf.get(p) ?? [];
-    const key = JSON.stringify({ seg: sub.segments, start: sub.start, gaps, sock, lines, mo, elev, zs, pads: pq.length ? pq.map((q) => [q.s - p.a, q.H, q.at]) : undefined });
+    const noAx: [boolean, boolean] = [bareAt(p, p.a), bareAt(p, p.b)], anyBare = noAx[0] || noAx[1];
+    const key = JSON.stringify({ seg: sub.segments, start: sub.start, gaps, sock, lines, mo, elev, zs, pads: pq.length ? pq.map((q) => [q.s - p.a, q.H, q.at]) : undefined, ...(anyBare && { noAx }) });
     const turn = fitAngle(footprint(c.route, p.a, p.b), X, Y);
     const b = cached(`mp:${key}:${turn}${ramp ? `:${X}x${Y}` : ''}`, () => arena(w, () => {
       const label = underLabel(scad, lines, p.b - p.a - 20);
-      const flat = mono.piece(sub, 0, p.b - p.a, gaps, [true, true], sock, label, [pq.some((q) => q.at === 'a'), pq.some((q) => q.at === 'b')]);
+      const flat = mono.piece(sub, 0, p.b - p.a, gaps, [true, true], sock, label, [pq.some((q) => q.at === 'a'), pq.some((q) => q.at === 'b')], noAx);
       if (!ramp) return bake(flat, turn ?? 0, elev);
       const pads = pq.map((q): Pad => {
         if (q.at === 'mid') return { P: routePose(sub, q.s - p.a), y0: -PAD_HW, y1: PAD_HW, H: q.H, n: 2, cy: 0, depth: PAD_STUDS };
         // (an end's frame: the part's body at +y; its anti-studs as a level end's, less what the pad's let up into the beam)
         const P = q.at === 'a' ? routePose(sub, 0) : endFrame(sub);
-        return { P, y0: MONO.endGap, y1: PAD_HW, H: q.H, n: 1, cy: MONO.axleIn, depth: mono.antistudDepth - Math.max(0, q.H - zAt(p.c, q.s)), end: q.at === 'a' ? 0 : 1 };
+        // (let up into the beam, no axle holes there: as deep as a mid-part pad's)
+        const up = q.H - zAt(p.c, q.s);
+        return { P, y0: MONO.endGap, y1: PAD_HW, H: q.H, n: 1, cy: MONO.axleIn, depth: up > 0.3 + 1e-6 ? PAD_STUDS : mono.antistudDepth - Math.max(0, up), end: q.at === 'a' ? 0 : 1 };
       });
       return bakeRamp(scad, mono, flat, sub, (sl) => zAt(p.c, p.a + sl), turn ?? 0, X, Y, pads);
     }, () => []));
