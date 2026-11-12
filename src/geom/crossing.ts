@@ -609,7 +609,10 @@ export function crossingPiece(s: Scad, routes: Route[], o: CrossingOptions = CRO
     if (o.curveStuds === 'follow') for (const [ri, rt] of routes.entries()) {
       const L = routeLength(rt), lats: number[] = [];
       for (let lt = 4; lt <= lenOf[ri] / 2; lt += STUD) lats.push(lt, -lt);
-      for (let sAt = 4; sAt <= L - 4 + 1e-9; sAt += STUD) for (const lt of lats) spots.push(railPoint(rt, sAt, lt) as [number, number]);
+      // (a full pitch apart (studsFullPitch): each row along its own line, evenly, a pitch or more apart, so a curve's inner
+      // rows lose a stud rather than every other one; rows a stud apart across, so never closer than that to the next row's)
+      if (o.studsFullPitch) for (const lt of lats) for (const sAt of pitchRow(rt, lt, 4, L - 4)) spots.push(railPoint(rt, sAt, lt) as [number, number]);
+      else for (let sAt = 4; sAt <= L - 4 + 1e-9; sAt += STUD) for (const lt of lats) spots.push(railPoint(rt, sAt, lt) as [number, number]);
     } else for (let i = -reachS; i <= reachS; i++) for (let j = -reachS; j <= reachS; j++) {
       spots.push(poseToWorld(gp, [4 + i * STUD, 4 + j * STUD]));
     }
