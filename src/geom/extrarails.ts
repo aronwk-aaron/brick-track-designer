@@ -159,7 +159,7 @@ export function extraRails(s: Scad, t: Track, routes: Route[], i: number, inStar
   const L = routeLength(rt), dir = x.to >= x.from ? 1 : -1, lo = Math.min(x.from, x.to), hi = Math.max(x.from, x.to);
   const loc = (d: number) => (d - x.from) * dir;
   const dualOn = dualBuilt(x, gs), duals = dualOn ? dualRails(x, gs) : [];
-  const guardX = c.railOffset - 2 * 1.25 - x.guardGapStuds * STUD;
+  const guardX = c.railOffset - 2 * 1.25 - x.guardGapStuds * STUD, guardXOf = (gap?: number) => (gap === undefined ? guardX : c.railOffset - 2 * 1.25 - gap * STUD);
   // (the stretches, drawn arc lengths)
   const clear = x.clear ?? clearStretches(routes, i, c.sleeperLen).map(([a, b]) => (dir > 0 ? [x.from + a, x.from + b] : [x.from - b, x.from - a]) as [number, number]);
   const near = clear.filter(([a, b]) => b > lo - 1e-6 && a < hi + 1e-6);
@@ -181,7 +181,7 @@ export function extraRails(s: Scad, t: Track, routes: Route[], i: number, inStar
   const clr: { a: Vec2; b: Vec2; r: number }[] = [];
   const xs0: number[] = [], xs1: number[] = [];
   const dualXs0: number[] = [], dualXs1: number[] = [];
-  let guard0 = false, guard1 = false;
+  const guard0: number[] = [], guard1: number[] = [];
   /** A rail at local offset xl along the drawn stretch d0..d1 (within this route), keeping studs r clear. */
   const run = (xl: number, d0: number, d1: number, r: number) => {
     const a = Math.max(0, Math.min(loc(d0), loc(d1))), b = Math.min(L, Math.max(loc(d0), loc(d1)));
@@ -196,49 +196,58 @@ export function extraRails(s: Scad, t: Track, routes: Route[], i: number, inStar
     const dx = p1[0] - p0[0], dy = p1[1] - p0[1], len = Math.hypot(dx, dy) + 0.1;
     return T(R(T(R(prof(0).extrude(len), [90, 0, 0]), [0, len - 0.05, 0]), [0, 0, (Math.atan2(dy, dx) * 180) / Math.PI - 90]), [p0[0], p0[1], 0]);
   };
-  const gr = guardX, guardClr = GUARD_HW + t.o.studD / 2 + 0.3, dualClr = c.railFootHalfW + t.o.studD / 2 + 0.3;
+  const guardClr = GUARD_HW + t.o.studD / 2 + 0.3, dualClr = c.railFootHalfW + t.o.studD / 2 + 0.3;
   const covers = (d: number, d0: number, d1: number) => d >= Math.min(d0, d1) - 1e-6 && d <= Math.max(d0, d1) + 1e-6;
   const tapers: Man[] = [];
-  for (const [A, B] of near) {
-    if (x.guard) {
-      const pS = A <= 1e-3 && endsHas(x.guardEnds, false), pE = B >= x.len - 1e-3 && endsHas(x.guardEnds, true);
-      const n = (pS ? 1 : 0) + (pE ? 1 : 0), Tset = x.guardTaperStuds * STUD;
-      // (guard_taper_for: shortened on a stretch too short for its points at full length)
-      const Tp = n === 0 ? Tset : Math.max(8, Math.min(Tset, (B - A - 2 * V_IN - 4) / n));
-      if (B - A >= (n ? n * (V_IN + 8) + 8 : STUD)) {
-        const y0 = pS ? A + V_IN : A, y1 = pE ? B - V_IN : B;
-        // (the runs go a little into a pointed end's bend, so its outside has no notch)
-        const r0 = pS ? y0 + Tp - 1.5 : y0, r1 = pE ? y1 - Tp + 1.5 : y1;
-        for (const sd of [-1, 1]) run(sd * gr, r0, r1, guardClr);
-        if (covers(x.from, r0, r1)) guard0 = true;
-        if (covers(x.to, r0, r1)) guard1 = true;
-        // the pointed ends (guard_point): each side's bend from the point, cut to a sharp nose and ramped down
-        for (const [on, apexD, sg] of [[pS, y0, 1], [pE, y1, -1]] as const) {
-          if (!on || !(Math.max(apexD, apexD + sg * Tp) > lo - 1e-6 && Math.min(apexD, apexD + sg * Tp) < hi + 1e-6)) continue;
-          const f = (u: number) => (x.guardShape === 'straight' ? u : 1 - (1 - u) * (1 - u));
-          const segs: Man[] = [];
-          for (const sd of [-1, 1]) for (let k = 0; k < TAPER_N; k++) {
-            const p0 = ptAt(loc(apexD + (sg * Tp * k) / TAPER_N), sd * gr * f(k / TAPER_N)), p1 = ptAt(loc(apexD + (sg * Tp * (k + 1)) / TAPER_N), sd * gr * f((k + 1) / TAPER_N));
-            segs.push(seg(p0, p1));
-            clr.push({ a: p0, b: p1, r: guardClr });
-          }
-          const sl = loc(apexD), apex = ptAt(sl, 0), hp = routePose(rt, Math.min(Math.max(sl, 0), L))[2] * (Math.PI / 180), w = sg * dir;
-          const dv: Vec2 = [-Math.sin(hp) * w, Math.cos(hp) * w], pr: Vec2 = [-dv[1], dv[0]];
-          const len = Tp + 2, kk = (4 * gr) / Tp;
-          const wedge = T(s.polygon([apex, [apex[0] + dv[0] * len + pr[0] * kk * len, apex[1] + dv[1] * len + pr[1] * kk * len],
-            [apex[0] + dv[0] * len - pr[0] * kk * len, apex[1] + dv[1] * len - pr[1] * kk * len]]).extrude(30), [0, 0, -1]);
-          let m = s.intersection(s.union(segs), wedge);
-          const ramp = x.guardRampStuds * STUD;
-          if (ramp > 0) {
-            // (the nose: from just above the bed at the point up to the rail top, so anything dragging rides over it)
-            const z0 = PLATE_H + 1, zt = PLATE_H + 6.4;
-            const rp = s.polygon([[-1, -5], [-1, z0], [0, z0], [ramp, zt + 0.01], [ramp, 40], [len + 5, 40], [len + 5, -5]]);
-            m = s.intersection(m, T(R(R(T(rp.extrude(200), [0, 0, -100]), [90, 0, 0]), [0, 0, (Math.atan2(dv[1], dv[0]) * 180) / Math.PI]), [apex[0], apex[1], 0]));
-          }
-          tapers.push(m);
+  /** Guard rails along the drawn stretch A..B, on these sides (local: -1 left, 1 right) at offset gr, pointed at its
+   * ends inside the route where pointS / pointE (at the route's own ends: as guardEnds says). */
+  const grs = new Set<number>();
+  const guardRun = (A: number, B: number, sides: number[], gr: number, pointS?: boolean, pointE?: boolean) => {
+    const pS = A <= 1e-3 ? endsHas(x.guardEnds, false) : !!pointS, pE = B >= x.len - 1e-3 ? endsHas(x.guardEnds, true) : !!pointE;
+    const n = (pS ? 1 : 0) + (pE ? 1 : 0), Tset = x.guardTaperStuds * STUD;
+    // (guard_taper_for: shortened on a stretch too short for its points at full length)
+    const Tp = n === 0 ? Tset : Math.max(8, Math.min(Tset, (B - A - 2 * V_IN - 4) / n));
+    if (B - A >= (n ? n * (V_IN + 8) + 8 : STUD)) {
+      const y0 = pS ? A + V_IN : A, y1 = pE ? B - V_IN : B;
+      // (the runs go a little into a pointed end's bend, so its outside has no notch)
+      const r0 = pS ? y0 + Tp - 1.5 : y0, r1 = pE ? y1 - Tp + 1.5 : y1;
+      for (const sd of sides) run(sd * gr, r0, r1, guardClr);
+      grs.add(gr);
+      if (covers(x.from, r0, r1)) guard0.push(...sides.map((sd) => sd * gr));
+      if (covers(x.to, r0, r1)) guard1.push(...(sides.length > 1 ? [-gr, gr] : sides.map((sd) => -sd * gr)));
+      // the pointed ends (guard_point): each side's bend from the point, cut to a sharp nose and ramped down
+      for (const [on, apexD, sg] of [[pS, y0, 1], [pE, y1, -1]] as const) {
+        if (!on || !(Math.max(apexD, apexD + sg * Tp) > lo - 1e-6 && Math.min(apexD, apexD + sg * Tp) < hi + 1e-6)) continue;
+        const f = (u: number) => (x.guardShape === 'straight' ? u : 1 - (1 - u) * (1 - u));
+        const segs: Man[] = [];
+        for (const sd of sides) for (let k = 0; k < TAPER_N; k++) {
+          const p0 = ptAt(loc(apexD + (sg * Tp * k) / TAPER_N), sd * gr * f(k / TAPER_N)), p1 = ptAt(loc(apexD + (sg * Tp * (k + 1)) / TAPER_N), sd * gr * f((k + 1) / TAPER_N));
+          segs.push(seg(p0, p1));
+          clr.push({ a: p0, b: p1, r: guardClr });
         }
+        const sl = loc(apexD), apex = ptAt(sl, 0), hp = routePose(rt, Math.min(Math.max(sl, 0), L))[2] * (Math.PI / 180), w = sg * dir;
+        const dv: Vec2 = [-Math.sin(hp) * w, Math.cos(hp) * w], pr: Vec2 = [-dv[1], dv[0]];
+        const len = Tp + 2, kk = (4 * gr) / Tp;
+        const wedge = T(s.polygon([apex, [apex[0] + dv[0] * len + pr[0] * kk * len, apex[1] + dv[1] * len + pr[1] * kk * len],
+          [apex[0] + dv[0] * len - pr[0] * kk * len, apex[1] + dv[1] * len - pr[1] * kk * len]]).extrude(30), [0, 0, -1]);
+        let m = s.intersection(s.union(segs), wedge);
+        const ramp = x.guardRampStuds * STUD;
+        if (ramp > 0) {
+          // (the nose: from just above the bed at the point up to the rail top, so anything dragging rides over it)
+          const z0 = PLATE_H + 1, zt = PLATE_H + 6.4;
+          const rp = s.polygon([[-1, -5], [-1, z0], [0, z0], [ramp, zt + 0.01], [ramp, 40], [len + 5, 40], [len + 5, -5]]);
+          m = s.intersection(m, T(R(R(T(rp.extrude(200), [0, 0, -100]), [90, 0, 0]), [0, 0, (Math.atan2(dv[1], dv[0]) * 180) / Math.PI]), [apex[0], apex[1], 0]));
+        }
+        tapers.push(m);
       }
     }
+  };
+  if (x.guard && !x.guardOn) for (const [A, B] of near) guardRun(A, B, [-1, 1], guardX);
+  // (expert: along stretches only, a side or both, each with its own gap; pointed at each stretch's ends. Sides as drawn)
+  if (x.guard && x.guardOn) for (const g of x.guardOn) for (const [A0, B0] of near) {
+    const A = Math.max(A0, g.a), B = Math.min(B0, g.b);
+    if (B - A < 0.1) continue;
+    guardRun(A, B, g.side ? [g.side * dir] : [-1, 1], guardXOf(g.gap), A > A0 + 1e-6, B < B0 - 1e-6);
   }
   for (const [A, B] of nearD) {
     if (dualOn) {
@@ -259,8 +268,8 @@ export function extraRails(s: Scad, t: Track, routes: Route[], i: number, inStar
     }
   }
   // (extra_rails(): the third rail first, then the guard rails)
-  if (!inStart) xs0.push(...dualXs0, ...(guard0 ? [-gr, gr] : []));
-  if (!inEnd) xs1.push(...dualXs1, ...(guard1 ? [-gr, gr] : []));
+  if (!inStart) xs0.push(...dualXs0, ...guard0);
+  if (!inEnd) xs1.push(...dualXs1, ...guard1);
 
   const p0 = routePose(rt, 0), p1 = routePose(rt, L), w = c.sleeperLen + 2 * STUD;
   const atPose = (m: Man, p: [number, number, number]) => T(R(m, [0, 0, p[2]]), [p[0], p[1], 0]);
@@ -268,20 +277,22 @@ export function extraRails(s: Scad, t: Track, routes: Route[], i: number, inStar
   const parts = pieces.map(({ m, c0, c1 }) => s.difference(m, [c0 && cut0, c1 && cut1]));
   // (a point's bend past where this route's stretch ends: cut off there)
   const out0 = lo > 1e-6 || hi < x.len - 1e-6 ? [atPose(T(s.cube([w, 400, 40]), [-w / 2, -400, -5]), p0), atPose(T(s.cube([w, 400, 40]), [-w / 2, 0, -5]), p1)] : [];
-  for (const m of tapers) parts.push(bankAlong(s.difference(m, out0), rt, trackBank(c.sleeperLen)));
+  // (expert, guard rails along stretches: a point that runs over a joint between track pieces is cut back there as the rails are)
+  const back = x.guardOn ? [!inStart && cut0, !inEnd && cut1] : [];
+  for (const m of tapers) parts.push(bankAlong(s.difference(m, [...out0, ...back]), rt, trackBank(c.sleeperLen)));
   const box = clr.length ? clr.reduce((b, { a, b: q }) => [Math.min(b[0], a[0], q[0]), Math.min(b[1], a[1], q[1]), Math.max(b[2], a[0], q[0]), Math.max(b[3], a[1], q[1])], [Infinity, Infinity, -Infinity, -Infinity]) : undefined;
   const pad = Math.max(guardClr, dualClr);
   const out: ExtraBuilt = {
     solid: parts.length ? s.union(parts) : undefined,
     ...(bands.length && { dualBand: s.union(bands) }),
     xfs: [xs0, xs1],
-    guardX: x.guard ? gr : undefined,
+    guardX: x.guard ? guardX : undefined,
     clearOf: (q) => {
       if (!box || q[0] < box[0] - pad || q[0] > box[2] + pad || q[1] < box[1] - pad || q[1] > box[3] + pad) return true;
       return clr.every(({ a, b, r }) => segDist(q, a, b) >= r);
     },
     postOk: (P) => (p) => {
-      if (Math.abs(p[0]) < c.railOffset && ((x.guard && Math.abs(Math.abs(p[0]) - gr) < guardClr) || duals.some(({ xd }) => Math.abs(p[0] - dir * xd) < dualClr))) return false;
+      if (Math.abs(p[0]) < c.railOffset && ((x.guard && [...(x.guardOn ? grs : [guardX])].some((gr) => Math.abs(Math.abs(p[0]) - gr) < guardClr)) || duals.some(({ xd }) => Math.abs(p[0] - dir * xd) < dualClr))) return false;
       return out.clearOf(poseToWorld(P, p));
     },
   };

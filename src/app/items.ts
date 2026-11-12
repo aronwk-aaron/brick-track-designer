@@ -11,6 +11,7 @@ import { follow } from './planner';
 import { cutLength, liveCuts } from './routecuts';
 import { cutSegs, nearestAlong } from './splitmerge';
 import { type Stretch, STRETCH_MIN } from './stretches';
+import { railEditCount } from './railedits';
 import { planSleepers, type SleeperEdit, sleeperEditText, type SleeperLay, sharedOf } from './sleeperedits';
 
 type End = 'start' | 'end';
@@ -244,10 +245,10 @@ export function withStretch(st: Stretch[] | undefined, from: number, to: number)
 
 // ---------- the Expert tools switch ----------
 /** What a track has that only the expert tools show: its hand cuts, its own settings, its stretches. */
-export interface ByHand { cuts: number; only: boolean; own: number; stretches: number; sleepers: number; shared: number }
+export interface ByHand { cuts: number; only: boolean; own: number; stretches: number; sleepers: number; shared: number; rails: number }
 export function byHand(d: Design, r: DRoute): ByHand {
   const i = d.routes.indexOf(r);
-  return { cuts: r.cuts?.length ?? 0, only: r.cutsLocked === true, own: Object.keys(liveOwn(d, r)).length, stretches: r.stretches?.length ?? 0, sleepers: r.sleeperEdits?.length ?? 0, shared: i >= 0 ? sharedOf(d, i).length : 0 };
+  return { cuts: r.cuts?.length ?? 0, only: r.cutsLocked === true, own: Object.keys(liveOwn(d, r)).length, stretches: r.stretches?.length ?? 0, sleepers: r.sleeperEdits?.length ?? 0, shared: i >= 0 ? sharedOf(d, i).length : 0, rails: railEditCount(r.railEdits) };
 }
 const count = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
 /**
@@ -258,7 +259,7 @@ export function byHandNote(d: Design, r: DRoute): string | undefined {
   const h = byHand(d, r);
   const parts = [h.cuts ? `${count(h.cuts, 'cut')} by hand${h.only ? ' (only these)' : ''}` : h.only ? 'no cuts (one part, by hand)' : '',
     h.own ? count(h.own, 'setting of its own', 'settings of its own') : '', h.stretches ? count(h.stretches, 'stretch', 'stretches') : '',
-    h.sleepers ? `${count(h.sleepers, 'sleeper')} edited by hand` : '', h.shared ? 'sleepers shared with the track beside' : ''].filter(Boolean);
+    h.sleepers ? `${count(h.sleepers, 'sleeper')} edited by hand` : '', h.shared ? 'sleepers shared with the track beside' : '', h.rails ? `${count(h.rails, 'rail edit')}` : ''].filter(Boolean);
   return parts.length ? `Has ${parts.join(', ')}` : undefined;
 }
 /** The same for what belongs to no one track: the design's cut paths. */
@@ -267,7 +268,7 @@ export function designByHandNote(d: Design): string | undefined {
   return n ? `This design has ${count(n, 'cut path')}` : undefined;
 }
 /** A route card's sections that only the expert tools show (cardsections.ts ids). */
-export const EXPERT_SECTIONS: readonly string[] = ['bed', 'sleepers', 'cuts'];
+export const EXPERT_SECTIONS: readonly string[] = ['bed', 'sleepers', 'rails', 'cuts'];
 
 // ---------- the Pick list: what a click on the plan takes ----------
 /** What's on the plan to pick, in layers: more come with the later stages (sleepers, rails, ballast). */

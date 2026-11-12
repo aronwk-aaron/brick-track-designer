@@ -6,8 +6,9 @@ import { cutsSummary } from './routecuts';
 import { hasPartOwn, inForce, liveOwn, partGroups, resolveOptions } from './overrides';
 import { PART_KEYS } from './routeown';
 import { sharedOf, sleepersSummary } from './sleeperedits';
+import { railsSummary } from './railedits';
 
-export type SectionId = 'shape' | 'place' | 'ends' | 'guard' | 'dual' | 'bed' | 'sleepers' | 'levers' | 'height' | 'cuts';
+export type SectionId = 'shape' | 'place' | 'ends' | 'guard' | 'dual' | 'bed' | 'sleepers' | 'rails' | 'levers' | 'height' | 'cuts';
 export interface CardSection {
   id: SectionId;
   /** the names the card uses */
@@ -63,6 +64,8 @@ export function cardSections(d: Design, r: DRoute, ctx: CardContext): CardSectio
     out.push({ id: 'bed', title: 'Bed and underside', summary: bedSummary(d, r) });
     // (expert: its sleepers edited by hand, and the ones it shares with the track beside)
     { const i = d.routes.indexOf(r), sh = i >= 0 ? sharedOf(d, i).length : 0; out.push({ id: 'sleepers', title: 'Sleepers', summary: `${sleepersSummary(r)}${sh ? ' · shared with the track beside' : ''}` }); }
+    // (expert: its rails edited by hand)
+    out.push({ id: 'rails', title: 'Rails', summary: railsSummary(r) });
   }
   if (ctx.branches || (r.throwSide !== undefined && r.throwSide !== 'auto')) out.push({ id: 'levers', title: 'Points and levers', summary: `lever on the ${r.throwSide && r.throwSide !== 'auto' ? r.throwSide : (d.options?.throwSide ?? 'auto') === 'auto' ? 'auto side' : d.options?.throwSide}` });
   const h = r.monoHeight, he = r.monoHeightEnd;

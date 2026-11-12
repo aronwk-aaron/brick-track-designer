@@ -73,6 +73,12 @@ export interface RouteHand {
   shared?: HandShared[];
   /** its ballast's reach past the sleepers' ends, mm, on the drawn route's left and right (left out: a stud each) */
   ballast?: { left: number; right: number };
+  /** (stage 5b) gaps cut through its rails: where (mm along the drawn route), which rail (-1 left, 1 right, 0 both), how wide (mm) */
+  gaps?: { at: number; side: -1 | 0 | 1; w: number }[];
+  /** check rails added by hand along a..b inside the rail on side, at flangeway fw (mm) */
+  checks?: { a: number; b: number; side: -1 | 1; fw: number }[];
+  /** its rails' ends at a cut: square, no tongue */
+  square?: boolean;
 }
 /** (mm) A hand edit this far past a stretch's ends still goes with the stretch (a sleeper is found from its place: the nearest). */
 const HAND_REACH = 48;
@@ -81,8 +87,12 @@ export function subHand(h: RouteHand | undefined, s0: number, s1: number): Route
   if (!h) return undefined;
   const d = h.to >= h.from ? 1 : -1, from = h.from + d * s0, to = h.from + d * s1, lo = Math.min(from, to) - HAND_REACH, hi = Math.max(from, to) + HAND_REACH;
   const sleepers = h.sleepers?.filter((e) => e.at >= lo && e.at <= hi), shared = h.shared?.filter((e) => e.b >= lo && e.a <= hi);
-  if (!sleepers?.length && !shared?.length && !h.ballast) return undefined;
-  return { from, to, len: h.len, ...(sleepers?.length && { sleepers }), ...(shared?.length && { shared }), ...(h.ballast && { ballast: h.ballast }) };
+  // (rails: only what is on this stretch itself)
+  const lo0 = Math.min(from, to), hi0 = Math.max(from, to);
+  const gaps = h.gaps?.filter((e) => e.at >= lo0 && e.at <= hi0), checks = h.checks?.filter((e) => e.b > lo0 && e.a < hi0);
+  if (!sleepers?.length && !shared?.length && !h.ballast && !gaps?.length && !checks?.length && !h.square) return undefined;
+  return { from, to, len: h.len, ...(sleepers?.length && { sleepers }), ...(shared?.length && { shared }), ...(h.ballast && { ballast: h.ballast }),
+    ...(gaps?.length && { gaps }), ...(checks?.length && { checks }), ...(h.square && { square: true }) };
 }
 export const reversedHand = (h: RouteHand | undefined): RouteHand | undefined => (h ? { ...h, from: h.to, to: h.from } : undefined);
 /** Does this route run the way it was drawn (its hand edits' sides are its own)? */
@@ -128,6 +138,8 @@ export interface ExtraRails {
   clear?: [number, number][];
   /** where the third rail may run: as clear, and on through where other track crosses it at an angle (geom/extrarails.ts DUAL_CROSS), with flangeways cut both ways */
   clearDual?: [number, number][];
+  /** (expert) guard rails only along these drawn stretches (mm), one side (-1 left, 1 right, as drawn) or both (0), gap: studs from the rail's head (left out: guardGapStuds). Left out: all along */
+  guardOn?: { a: number; b: number; side: -1 | 0 | 1; gap?: number }[];
 }
 
 /** The extra rails of a route's stretch s0..s1 (subRoute), or of it turned round. */

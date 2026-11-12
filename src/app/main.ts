@@ -28,6 +28,7 @@ import { designOptions, hasPartOwn, ignoredOwn, inForce, liveOwn, partGroups } f
 import { isRouteKey, OWN_LABELS, OWN_RANGES, OWN_UNSET, PART_KEYS, type RouteKey } from './routeown';
 import { accepted, pruneAccept, renameAccept, setAccept } from './accept';
 import { curvedAt, followShared, followSleeperEdits, pruneShared, renameShared, setShared, sharedOf, type SleeperEdit, sleeperEditText, SLEEPER_LONG, SLEEPER_MOVE, SPAN_MAX } from './sleeperedits';
+import { cleanRailEdits, FLANGEWAY_MIN, followRailEdits, GAP_DEF, GAP_MAX, GAP_MIN, GAP_RADIUS_MIN, GUARD_GAP_MAX, GUARD_GAP_MIN, RAIL_RUN_MIN, type RailEdits, type RailGap, railProblem, type RailSide, withRailEdit } from './railedits';
 import { byHandNote, designByHandNote, EXPERT_SECTIONS, isPick, itemLabel, jointsOf, jointWhere, PICKS, sleeperEditAt, sleeperEditOf } from './items';
 import { followStretches, liveStretches, lostStretches, type Stretch, STRETCH_KEYS, STRETCH_MIN, stretchProblem } from './stretches';
 import { designOfSelection, listMine, saveMine, type StorageLike } from './mytemplates';
@@ -927,6 +928,78 @@ function sleepersSection(box: HTMLElement, r: DRoute, i: number) {
   box.append(sel);
 }
 /**
+ * (expert, stage 5b) A route card's Rails: gaps cut in a rail, guard rails along stretches of it (a side or both, each
+ * its own gap), check rails added by hand, and square rail ends where it's cut into parts. Each list a row per item
+ * with ✕; Rails as laid takes them all off. What can't be is said and not made (railedits.ts railProblem).
+ */
+function railsSection(box: HTMLElement, r: DRoute) {
+  const L = cutLength(r), Lw = Math.floor(L), e = r.railEdits ?? {};
+  const small = (text: string, warn = false) => { const n = document.createElement('small'); n.className = 'desc'; n.style.color = warn ? 'var(--warn)' : 'var(--muted)'; n.textContent = text; box.append(n); };
+  const head = (text: string) => { const h = document.createElement('div'); h.className = 'rsub'; h.textContent = text; h.style.cssText = 'font-weight:600;margin-top:8px'; box.append(h); };
+  const put = (next: RailEdits | undefined, tag: string) => {
+    const why = next ? railProblem(r, next) : undefined;
+    if (why) { canvas.say(why); soon(render); return; }
+    if (next) r.railEdits = next; else delete r.railEdits;
+    coalesceNext = `rails:${r.name}:${tag}`; changed(true);
+  };
+  const numIn = (v: number, min: number, max: number, step: number, tip: string, set: (n: number) => void) => {
+    const inp = document.createElement('input'); inp.type = 'number'; inp.min = String(min); inp.max = String(max); inp.step = String(step); inp.value = String(v); inp.title = tip; inp.style.cssText = 'flex:1 1 0;min-width:0';
+    inp.addEventListener('change', () => { const n = Number(inp.value); if (inp.value.trim() === '' || !Number.isFinite(n)) { inp.value = String(v); return; } set(Math.min(max, Math.max(min, Math.round(n / step) * step))); });
+    return inp;
+  };
+  const sideSel = (v: string | undefined, both: boolean, set: (v: string) => void) => {
+    const sel = document.createElement('select');
+    if (both) sel.append(new Option('Both rails', 'both'));
+    sel.append(new Option('Left rail', 'left'), new Option('Right rail', 'right')); sel.value = v ?? 'both'; sel.title = 'Facing from the track\'s start';
+    sel.addEventListener('change', () => set(sel.value)); return sel;
+  };
+  const x = (label: string, fn: () => void) => { const b = btn('✕', fn, label); b.style.cssText = 'flex:none;width:auto;padding:2px 8px'; b.setAttribute('aria-label', label); return b; };
+  const rowOf = (label: string, ...els: HTMLElement[]) => { const pair = document.createElement('span'); pair.style.cssText = 'display:flex;gap:4px;align-items:center'; pair.append(...els); const fl = field(label, pair); fl.classList.add('stack'); box.append(fl); };
+  small(`Places in studs from the track's start (0 to ${Lw}); left and right facing from its start. Shown in orange on the plan.`);
+  // (gaps)
+  head('Gaps in a rail');
+  small(`A cut through the rail down to the bed, ${GAP_MIN} to ${GAP_MAX} mm wide (default ${GAP_DEF}). On a curve under R${GAP_RADIUS_MIN} the build warns unless a check rail is opposite.`);
+  (e.gaps ?? []).forEach((g, k) => rowOf(`Gap ${k + 1}: studs along, rail, mm wide`,
+    numIn(g.at, 1, Math.max(1, L - 1), 0.25, `Studs from the track's start. Range 1 to ${+(L - 1).toFixed(2)}.`, (v) => put(withRailEdit(e, 'gaps', k, { ...g, at: v }), `gap${k}at`)),
+    sideSel(g.side, true, (v) => put(withRailEdit(e, 'gaps', k, { ...g, side: v as RailGap['side'] }), `gap${k}side`)),
+    numIn(g.w ?? GAP_DEF, GAP_MIN, GAP_MAX, 0.1, `How wide the gap is, mm. Range ${GAP_MIN} to ${GAP_MAX}, default ${GAP_DEF}.`, (v) => put(withRailEdit(e, 'gaps', k, { ...g, w: v }), `gap${k}w`)),
+    x(`Take gap ${k + 1} out`, () => { if (!railProblem(r, withRailEdit(e, 'gaps', k, undefined) ?? {})) { const n = withRailEdit(e, 'gaps', k, undefined); if (n) r.railEdits = n; else delete r.railEdits; } })));
+  { const b = btn('Add a gap', () => { const at = Math.max(1, Math.round(L / 2)); const n = withRailEdit(e, 'gaps', undefined, { at, side: 'both' }); if (n) r.railEdits = n; }, 'One more gap, in the middle of the track to start with (then set where)'); box.append(b); }
+  // (guard rails along stretches)
+  head('Guard rails along stretches');
+  if (r.guardRails) small('Locked: this track has guard rails all along (Guard rails). Turn those off to have them on stretches only.', true);
+  else if (r.dualGauge) small('Locked: not with dual gauge: guard rails are in the way of the third rail.', true);
+  else {
+    small(`Inside one rail or both, pointed at each end, from and to in whole studs (at least ${RAIL_RUN_MIN} long). Gap from the rail's head: ${GUARD_GAP_MIN} to ${GUARD_GAP_MAX} studs (default ${RAIL_DEFAULTS.guardRailGapStuds}); wheels need ${FLANGEWAY_MIN} mm.`);
+    (e.guards ?? []).forEach((g, k) => rowOf(`Guard rails ${k + 1}: from, to, rails, gap`,
+      numIn(g.from, 0, Lw, 1, `Studs from the track's start. Range 0 to ${Lw}.`, (v) => put(withRailEdit(e, 'guards', k, { ...g, from: v }), `gd${k}from`)),
+      numIn(g.to, 0, Lw, 1, `Studs from the track's start. Range 0 to ${Lw}.`, (v) => put(withRailEdit(e, 'guards', k, { ...g, to: v }), `gd${k}to`)),
+      sideSel(g.side, true, (v) => { const { side: _s, ...rest } = g; put(withRailEdit(e, 'guards', k, { ...rest, ...(v !== 'both' && { side: v as RailSide }) }), `gd${k}side`); }),
+      numIn(g.gap ?? RAIL_DEFAULTS.guardRailGapStuds, GUARD_GAP_MIN, GUARD_GAP_MAX, 0.01, `Studs from the rail's head. Range ${GUARD_GAP_MIN} to ${GUARD_GAP_MAX}, default ${RAIL_DEFAULTS.guardRailGapStuds}.`, (v) => put(withRailEdit(e, 'guards', k, { ...g, gap: v }), `gd${k}gap`)),
+      x(`Take guard rails ${k + 1} out`, () => { const n = withRailEdit(e, 'guards', k, undefined); if (n) r.railEdits = n; else delete r.railEdits; })));
+    const b = btn('Add guard rails', () => { const n = withRailEdit(e, 'guards', undefined, { from: 0, to: Math.max(RAIL_RUN_MIN, Lw) }); if (n) r.railEdits = n; }, 'Guard rails inside both rails along the whole track to start with (then set from and to)'); box.append(b);
+  }
+  // (check rails by hand)
+  head('Check rails added by hand');
+  small(`Inside the rail on its side, the design's flangeway from its head, flared at each end; from and to in whole studs (at least ${RAIL_RUN_MIN} long). The app's own check rails are in the Trackwork panel.`);
+  (e.checks ?? []).forEach((c, k) => rowOf(`Check rail ${k + 1}: from, to, inside`,
+    numIn(c.from, 0, Lw, 1, `Studs from the track's start. Range 0 to ${Lw}.`, (v) => put(withRailEdit(e, 'checks', k, { ...c, from: v }), `ck${k}from`)),
+    numIn(c.to, 0, Lw, 1, `Studs from the track's start. Range 0 to ${Lw}.`, (v) => put(withRailEdit(e, 'checks', k, { ...c, to: v }), `ck${k}to`)),
+    sideSel(c.side, false, (v) => put(withRailEdit(e, 'checks', k, { ...c, side: v as RailSide }), `ck${k}side`)),
+    x(`Take check rail ${k + 1} out`, () => { const n = withRailEdit(e, 'checks', k, undefined); if (n) r.railEdits = n; else delete r.railEdits; })));
+  { const b = btn('Add a check rail', () => { const mid = Math.floor(L / 2); const n = withRailEdit(e, 'checks', undefined, { from: Math.max(0, mid - 2), to: Math.min(Lw, mid + 2), side: 'left' }); if (n) r.railEdits = n; }, 'A check rail 4 studs long in the middle of the track to start with, inside the left rail'); b.disabled = Lw < RAIL_RUN_MIN; box.append(b); }
+  // (rail ends at cuts)
+  head('Rail ends where a part is cut through');
+  {
+    const sel = document.createElement('select');
+    sel.append(new Option(`As the design: ${(design.options?.tongueRails ?? 'all') === 'square' ? 'tongues on large switches only' : 'tongues'}`, ''), new Option('Square, no tongue', 'square'));
+    sel.value = e.ends ?? ''; sel.title = 'The rails\' ends where a part with this track is cut through (Long track cut into: Parts that fill the bed; a cut path; points or a crossing cut to fit the bed). Between track pieces the ends are the pieces\' connectors. Square: easier to print. Drawback: the rails\' ends aren\'t held in line by a tongue.';
+    sel.addEventListener('change', () => { const { ends: _e, ...rest } = e; put(cleanRailEdits({ ...rest, ...(sel.value === 'square' && { ends: 'square' }) }), 'ends'); });
+    const fl = field('Rail ends', sel); fl.classList.add('stack'); box.append(fl);
+  }
+  const auto = btn('Rails as laid', () => { delete r.railEdits; }, 'Take every rail edit on this track off: gaps, guard rail stretches, check rails added, square ends'); auto.disabled = !r.railEdits; box.append(auto);
+}
+/**
  * A route card's Cuts into parts (expert): where its track is cut into parts by hand, a field each (studs from its
  * start), the ones no longer on its track said so; Add a cut (then a click on the track), Only these cuts, Keep the
  * cuts it has now (the app's own made its hand cuts), Automatic cuts (all of it undone).
@@ -1151,6 +1224,7 @@ function makeCard(r: DRoute, i: number): HTMLElement {
     }
     { const hs = part(sec('height')!.title, sec('height')!.summary); hs.append(...hBox.childNodes); }
     if (sec('sleepers')) sleepersSection(part(sec('sleepers')!.title, sec('sleepers')!.summary), r, i);
+    if (sec('rails')) railsSection(part(sec('rails')!.title, sec('rails')!.summary), r);
     if (sec('cuts')) { const cb = part(sec('cuts')!.title, sec('cuts')!.summary); cutsSection(cb, r, i); cb.append(ownRow(r, i, 'legoTrack')); }
     const add = document.createElement('div'); add.className = 'row';
     add.append(
@@ -1323,6 +1397,24 @@ function followSleepers(record: boolean) {
   });
   if (record) noteSleepers();
 }
+/** (stage 5b) Each route with rails edited by hand as it was at the last finished action, and its edits as last moved to follow a reshape since. */
+let railsWere = new Map<DRoute, { segs: string; es: string; moved?: string }>();
+function noteRails() { railsWere = new Map(design.routes.filter((r) => r.railEdits).map((r) => [r, { segs: JSON.stringify(r.segs), es: JSON.stringify(r.railEdits) }])); }
+/** A route's rails edited by hand go with its track when one of its pieces is reshaped, as its sleepers do. */
+function followRails(record: boolean) {
+  for (const r of design.routes) {
+    const was = railsWere.get(r), now = JSON.stringify(r.railEdits ?? null);
+    if (!was || (now !== was.es && now !== was.moved)) continue;
+    const segs = JSON.stringify(r.segs);
+    if (segs === was.segs) { if (now !== was.es) r.railEdits = JSON.parse(was.es) as RailEdits; continue; }
+    const at = alongAfter({ segs: JSON.parse(was.segs) }, r);
+    if (!at) continue;
+    const re = followRailEdits(JSON.parse(was.es) as RailEdits, at);
+    if (re) r.railEdits = re; else delete r.railEdits;
+    was.moved = JSON.stringify(r.railEdits ?? null);
+  }
+  if (record) noteRails();
+}
 /** The routes with stretches noted as they are now (an action finished, or another design opened). */
 function noteStretches() { stretchesWere = new Map(design.routes.filter((r) => r.stretches?.length).map((r) => [r, { segs: JSON.stringify(r.segs), st: JSON.stringify(r.stretches) }])); }
 /** The routes with hand cuts noted as they are now (an action finished, or another design opened). */
@@ -1333,6 +1425,7 @@ function changed(rerender = false, record = true, build = true) {
   followHandCuts(record);
   followOwnStretches(record);
   followSleepers(record);
+  followRails(record);
   followCutPaths(record);
   if (record) {
     // (tracks taken apart that no longer touch: forgotten, so that put together again they're joined as any are)
@@ -1713,7 +1806,7 @@ function updateLegend() {
 }
 /** A different design (a template, a file, undo or redo): the toolbar and the forms show it, nothing selected. */
 function replaced() {
-  canvas.letGo(); canvas.setSelection([]); openCards.clear(); twSig = ''; renderOptions(); noteHandCuts(); noteStretches(); noteSleepers(); noteCutPaths();
+  canvas.letGo(); canvas.setSelection([]); openCards.clear(); twSig = ''; renderOptions(); noteHandCuts(); noteStretches(); noteSleepers(); noteRails(); noteCutPaths();
 }
 
 const download = (blob: Blob, name: string) => {
@@ -2755,7 +2848,7 @@ function drawTrackwork(list: TwItem[]) {
       if (!show(ed)) return;
       let sub: string;
       if (kind === 'throw' && it.lever) { const ls = leverSide(design, it as unknown as OverlayItem, (canvas.overlay?.items ?? [])); sub = `${ls.side} · ${(it.lever.leverOffset / 8).toFixed(2).replace(/\.?0+$/, '')} studs out`; }
-      else sub = [it.len ? `${studsOf(it.len)} studs` : '', it.off ? 'taken out' : '', cur.d0 ? `start ${Number(cur.d0) > 0 ? '+' : ''}${studsOf(Number(cur.d0))}` : '', cur.d1 ? `end ${Number(cur.d1) > 0 ? '+' : ''}${studsOf(Number(cur.d1))}` : '', cur.shift ? `moved in ${cur.shift} mm` : ''].filter(Boolean).join(' · ');
+      else sub = [it.len ? `${studsOf(it.len)} studs` : '', it.off ? 'taken out' : '', cur.d0 ? `start ${Number(cur.d0) > 0 ? '+' : ''}${studsOf(Number(cur.d0))}` : '', cur.d1 ? `end ${Number(cur.d1) > 0 ? '+' : ''}${studsOf(Number(cur.d1))}` : '', cur.shift ? `moved in ${cur.shift} mm` : '', cur.open ? 'open frog' : '', cur.through ? 'the rail runs through' : ''].filter(Boolean).join(' · ');
       // (a three-way's two levers: each its own, by its side; set back, the other's stays)
       const blade = it.lever?.blade;
       const setEach = (v: number | undefined) => { const gg = ((design.trackwork ??= {}).throw ??= {}), e = eachLever(gg[it.key], blade!, v); if (Object.keys(e).length) gg[it.key] = e; else delete gg[it.key]; twSig = ''; changed(true); };
@@ -2770,6 +2863,11 @@ function drawTrackwork(list: TwItem[]) {
         check(row, 'Take it out', !!cur.off, (v) => edit(kind, it.key, { off: v }));
       } else if (kind === 'groove') {
         numField('Longer at the start, studs', 'd0', 0.125, LIMITS.twGrooveEnd, true); numField('Longer at the end, studs', 'd1', 0.125, LIMITS.twGrooveEnd, true);
+        // (expert, stage 5b: an open frog, or the rail run through uncut)
+        if (expertTools) {
+          check(row, 'Open frog: cut down to the bed', !!cur.open, (v) => edit(kind, it.key, { open: v || undefined, ...(v && { through: undefined }) }), 'The rail is cut away to the bed\'s top all along this cut, not just its head to the flangeway\'s depth. Default: off. Drawback: nothing holds the wheel\'s tread over the gap.');
+          check(row, 'The rail runs through: not cut', !!cur.through, (v) => edit(kind, it.key, { through: v || undefined, ...(v && { open: undefined }) }), `${it.routes?.[0] ?? 'This track'}'s rail is left whole here. Default: off. Drawback: wheels on ${it.routes?.[1] ?? 'the other track'} can't pass (the build warns).`);
+        }
       } else if (kind === 'throw' && it.lever) {
         // (drag the lever on the plan, or set it here; Auto: as the route or the options say)
         const lv = it.lever, ls = leverSide(design, it as unknown as OverlayItem, (canvas.overlay?.items ?? []));

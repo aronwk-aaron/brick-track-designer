@@ -1,6 +1,6 @@
 # Expert mode: design and stages
 
-Status: design agreed with nobody yet (S1, S1b, S2, S3, S4, S5a and the editor's side of section 5 are built as section 11 says); decisions are taken here so work doesn't wait (the list for Aaron is in
+Status: design agreed with nobody yet (S1, S1b, S2, S3, S4, S5a, S5b and the editor's side of section 5 are built as section 11 says); decisions are taken here so work doesn't wait (the list for Aaron is in
 section 10). What is built is in section 11 (State), kept current.
 
 What was asked for, in short: the drawing mode of today stays as the simple mode; an expert can place and edit every
@@ -638,6 +638,34 @@ route-owned storage, the follow rules and the card section they bring are the pa
   parts still overlap 7 to 61 mm3 where a branch's curve lies beside the next switch's base, and some track parts come
   in up to six bodies: a geometry fault, for the geometry agent (not accept's to hide). (3) `accept` is per pair of
   tracks, not per place: a set that runs two tracks close twice is accepted at both.
+- **S5b is built: rails, frogs, guard and check rails by hand.** `DRoute.railEdits = { gaps?, guards?, checks?, ends? }`
+  (src/app/railedits.ts; studs from the track's start, left and right facing from it): `gaps[] = { at, side: 'left' |
+  'right' | 'both', w? }` (a cut through the rail down to the bed's top, 0.5 to 3 mm, default 1: `Route.hand.gaps`, cut
+  with the flangeway cuts, `grooveCuts`); `guards[] = { from, to, side?, gap? }` (guard rails along a stretch, inside one
+  rail or both, pointed at each end inside the track, each its own gap 0.32 to 2 studs: `ExtraRails.guardOn`, laid by
+  extrarails.ts; a track with guard rails all along keeps those); `checks[] = { from, to, side }` (a check rail added by
+  hand inside the rail on its side at the design's flangeway: put with the solver's, `handChecks` in build.ts, so it
+  flares as theirs do and is in the Trackwork panel); `ends: 'square'` (the track's rail ends at a cut get no tongue: the
+  cutter's `noTongue`). Frogs, by place in `Design.trackwork.groove` beside the ends that were there: `open` (an open
+  frog: the cut down to the bed all along it) and `through` (that rail runs through, uncut: kept out of the other route's
+  flangeway, `CrossingExtras.keeps`; warned, "wheels on T2 can't pass there"; at points the piece is built as a network
+  piece, whose rails are cut by the bands). The nose and wing lengths are the cut's two ends (`d0`, `d1`, there before).
+  Refused (`railProblem`): a gap off the track or within a stud of its ends, a rail past the track's end, a guard rail's
+  gap under 2.5 mm ("Wheels need 2.5 mm"), guard rails with dual gauge; warned (`railWarnings`): a gap on a curve under
+  R40 with no check rail opposite. The app puts no joint of its own (Long track cut into: Track pieces) inside a guard
+  rail's point or along a hand check rail (2 studs either side: planSections' `busy`), and a point that still runs over
+  a joint is cut back there as the rails are; studs keep a flare's width clear of hand check rails. A long straight
+  built in equal lengths keeps its gaps and check rails. Editor: the card's **Rails** section (a row per gap, guard rail stretch and check
+  rail, with ✕ and Add; Rail ends; Rails as laid), the frog rows' Open frog and The rail runs through (expert tools
+  shown), each edit orange on the plan. Template (Features): 'Rails edited by hand'. Tests: test/railedits.test.ts,
+  test/railedits-build.test.ts.
+  Identical when unused: the S5b and S5c tree against main 922e27b, every part's STL sha1 over the 367 templates and
+  saved designs there: 367 the same, 0 different (S5c's code acts only with its own edits set).
+- **Section 10, as built:** every recommendation taken: (1) no stored mode, one Expert tools switch; (2) connections
+  derived, Alt to move one alone, `expert.apart`; (3) tracks that are one part share the first one's part settings, with
+  a warning; (4) a cut across a track is an ordinary track end; (5) radii under R24 are a geometry job for everyone; (6)
+  gauge where it is, and the design default → this track pattern for the rest (S5c is to put the per-set points
+  settings on the points' own rows, as recommended).
 - **Next, in order:** (1) the double track's budget from CI's log (test/templates.shared.ts); a group's build told of the other groups' track at its ends, so a track joined onto points
   can have its own; (2) S1 more keys (buffer stops per end; labels per part); (3) then S5/S6 (the other kit
   modules as templates: the same three kinds of path cover them; `test/templates-cutpaths.test.ts` `MODULES` is the

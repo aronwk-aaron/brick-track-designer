@@ -2067,6 +2067,24 @@ export class TrackCanvas {
       const pts = trace(r, r.segs, 0.5);
       if (pts.length > 1) line(pts, 'rgba(232,137,43,0.85)', 2);
     });
+    // (expert, stage 5b: each track's rails edited by hand, in orange: a gap a bar across its rail, guard rails along
+    // their stretches, check rails added by hand; drawn whether the tools are shown or not, as hand cuts are)
+    d.routes.forEach((rr) => {
+      const re = rr.railEdits;
+      if (!re || isMono(rr) || !rr.segs.length) return;
+      const L = segsStuds(rr.segs), g0 = gOf(rr), OR = '#e8892b';
+      const along = (from: number, to: number, o: number) => { const a = Math.min(Math.max(0, from), L), b = Math.min(Math.max(a, to), L); if (b - a < 0.05) return; line(offsetPts(placeAlong(rr, a), cutSegs(cutSegs(rr.segs, a)[1], b - a)[0], o), OR, 2.5); };
+      for (const gd of re.guards ?? []) if (!rr.guardRails && !rr.dualGauge) { const o = g0 - 2.5 / MM - (gd.gap ?? 0.8); for (const sd of gd.side === 'left' ? [-1] : gd.side === 'right' ? [1] : [-1, 1]) along(gd.from, gd.to, sd * o); }
+      for (const ck of re.checks ?? []) { const o = g0 - (1.25 + 3 + 0.5) / MM; along(ck.from, ck.to, (ck.side === 'left' ? -1 : 1) * o); }
+      for (const gp of re.gaps ?? []) {
+        const q = placeAlong(rr, Math.min(L, gp.at)), h = (q.heading * Math.PI) / 180, rx = Math.cos(h), ry = Math.sin(h), fx = -Math.sin(h), fy = Math.cos(h);
+        for (const sd of gp.side === 'left' ? [-1] : gp.side === 'right' ? [1] : [-1, 1]) {
+          const cx = q.x + rx * sd * g0, cy = q.y + ry * sd * g0;
+          line([[cx - rx * 0.6, cy - ry * 0.6], [cx + rx * 0.6, cy + ry * 0.6]], OR, 3);
+          line([[cx - fx * 0.12, cy - fy * 0.12], [cx + fx * 0.12, cy + fy * 0.12]], '#fff', 2);
+        }
+      }
+    });
     // (the selected stretch: its band picked out, a bar and a grip at each end to drag; the one being dragged out, Add a stretch, likewise)
     {
       const si = this.selItemNow, sn = this.stretchNew, ri = si?.kind === 'stretch' ? si.route : sn?.route, rr = ri === undefined ? undefined : d.routes[ri];

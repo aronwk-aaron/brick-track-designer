@@ -8,6 +8,7 @@ import { renameApart, splitApart } from './connections';
 import { cutLength, joinCuts, reverseCuts, splitCuts } from './routecuts';
 import { joinStretches, reverseStretches, splitStretches } from './stretches';
 import { renameAccept, splitAccept } from './accept';
+import { joinRailEdits, reverseRailEdits, splitRailEdits } from './railedits';
 import { joinShared, joinSleeperEdits, reverseShared, reverseSleeperEdits, splitShared, splitSleeperEdits } from './sleeperedits';
 import { routeLength } from '../route/route';
 import type { RouteEnds } from '../route/route';
@@ -97,6 +98,7 @@ export function splitRoute(d: Design, i: number, at: number, nameB?: string): { 
   if (r.stretches) { const [ta, tb] = splitStretches(r.stretches, s); if (ta) a.stretches = ta; else delete a.stretches; if (tb) b.stretches = tb; else delete b.stretches; }
   // (its sleepers edited by hand: each on the half it's on)
   if (r.sleeperEdits) { const [ea, eb] = splitSleeperEdits(r.sleeperEdits, s); if (ea) a.sleeperEdits = ea; else delete a.sleeperEdits; if (eb) b.sleeperEdits = eb; else delete b.sleeperEdits; }
+  if (r.railEdits) { const [ea, eb] = splitRailEdits(r.railEdits, s); if (ea) a.railEdits = ea; else delete a.railEdits; if (eb) b.railEdits = eb; else delete b.railEdits; }
   a.segs = sa; delete a.endEnd;
   if (r.endEnd) b.endEnd = r.endEnd;
   for (const k of ['guardRailEnds', 'dualPlainEnds'] as const) {
@@ -160,6 +162,10 @@ function joinWith(d: Design, a: number, b: number, bEnd: 'start' | 'end'): numbe
   renameAccept(d, rb.name || String(b), routes[a].name || String(a));
   // (the sleepers b shares with other tracks: a's now, on from a's end; b's own edits too)
   if (d.expert?.shared) { if (bEnd === 'end') reverseShared(d, rb.name || String(b), cutLength(rb)); joinShared(d, routes[a].name || String(a), rb.name || String(b), cutLength(routes[a])); }
+  if (routes[a].railEdits || rb.railEdits) {
+    const re = joinRailEdits(routes[a].railEdits, bEnd === 'start' ? rb.railEdits : reverseRailEdits(rb.railEdits, cutLength(rb)), cutLength(routes[a]));
+    if (re) routes[a].railEdits = re; else delete routes[a].railEdits;
+  }
   if (routes[a].sleeperEdits || rb.sleeperEdits) {
     const es = joinSleeperEdits(routes[a].sleeperEdits, bEnd === 'start' ? rb.sleeperEdits : reverseSleeperEdits(rb.sleeperEdits, cutLength(rb)), cutLength(routes[a]));
     if (es) routes[a].sleeperEdits = es; else delete routes[a].sleeperEdits;

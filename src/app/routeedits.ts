@@ -6,6 +6,7 @@ import { follow, reversed } from './planner';
 import { cutLength, reverseCuts } from './routecuts';
 import { reverseStretches } from './stretches';
 import { mirrorSleeperEdits, reverseSleeperEdits } from './sleeperedits';
+import { mirrorRailEdits, reverseRailEdits } from './railedits';
 import type { Own } from './routeown';
 
 const otherEnd = <T extends string | undefined>(e: T): T => (e === 'start' ? 'end' : e === 'end' ? 'start' : e) as T;
@@ -33,6 +34,7 @@ export function reversedRoute(r: DRoute): DRoute {
   if (r.stretches) { const st = reverseStretches(r.stretches, cutLength(r)); if (st) out.stretches = st.map((x) => ({ ...x, own: otherSides(x.own) })); else delete out.stretches; }
   // (its sleepers edited by hand: from the new start, their sides swapped; and its ballast's own width each side)
   if (r.sleeperEdits) { const es = reverseSleeperEdits(r.sleeperEdits, cutLength(r)); if (es) out.sleeperEdits = es; else delete out.sleeperEdits; }
+  if (r.railEdits) { const re = reverseRailEdits(r.railEdits, cutLength(r)); if (re) out.railEdits = re; else delete out.railEdits; }
   if (r.own) out.own = otherSides(r.own);
   return out;
 }
@@ -49,6 +51,7 @@ export function mirrorRoute(r: DRoute, px: number) {
   if (r.throwSide) r.throwSide = otherSide(r.throwSide);
   // (its sleepers longer on a side, its ballast wider on a side: the other side now)
   if (r.sleeperEdits) { const es = mirrorSleeperEdits(r.sleeperEdits); if (es) r.sleeperEdits = es; else delete r.sleeperEdits; }
+  if (r.railEdits) { const re = mirrorRailEdits(r.railEdits); if (re) r.railEdits = re; else delete r.railEdits; }
   if (r.own) r.own = otherSides(r.own);
   for (const st of r.stretches ?? []) st.own = otherSides(st.own);
 }

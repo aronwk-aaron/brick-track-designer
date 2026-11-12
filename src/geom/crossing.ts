@@ -146,6 +146,8 @@ export interface CrossingExtras {
   innerEnds?: Set<string>;
   /** added to the piece, and cut from it at the end */
   adds?: Man[]; cuts?: Man[];
+  /** (expert) where a rail runs through another route's flangeway uncut (a frog's "runs through"): no flangeway is cut in a rail inside these */
+  keeps?: Man[];
   /** the stud grid's origin and heading (default: the first route's start), so tiles of one layout share it */
   gridPose?: Pose;
   /** more floor to hollow out underneath with tubes, like the track bed's (the throw arms): rectangles [x0, x1, y0, y1] in frame P */
@@ -377,6 +379,13 @@ export function crossingPiece(s: Scad, routes: Route[], o: CrossingOptions = CRO
       }
     }
   });
+  /** (expert: check rails added by hand, anywhere along a track: every stud kept clear of them, as beside a hosted one's) */
+  const handCheck = routes.some((rt) => !!rt.hand?.checks?.length);
+  /** (a stud at q within a flare and a stud's half width of any check rail, along it and past its ends by a stud: hand check rails run anywhere, on curves too) */
+  const byCheckWide = (q: Vec2) => sol.checkRails.some((cr) => {
+    const rt = routes[cr.route], lat = routeLat(rt, q), mid = cr.offset + cr.width / 2, sq2 = routeSOf(rt, q);
+    return Math.abs(lat - mid) < c.postD / 2 + cr.width / 2 + (o.checkRailFlare ?? 1.5) + 0.9 && sq2 >= cr.s0 - c.postD && sq2 <= cr.s1 + c.postD;
+  });
   /** (a stud at q too near a check rail: beside it, or beside one of its flared ends) */
   const byCheckRail = (q: Vec2) => sol.checkRails.some((cr) => {
     const rt = routes[cr.route], lat = routeLat(rt, q), mid = cr.offset + cr.width / 2, near = c.postD / 2 + cr.width / 2 + 0.6;
@@ -458,7 +467,9 @@ export function crossingPiece(s: Scad, routes: Route[], o: CrossingOptions = CRO
       return [sweepRoute(s, sec(0), rt, cr.s0 + fl, cr.s1 - fl, bk),
         s.w.Manifold.hull([slice(cr.s0 + 0.05, away), slice(cr.s0 + fl, 0)]), s.w.Manifold.hull([slice(cr.s1 - fl, 0), slice(cr.s1 - 0.05, away)])];
     });
-    const railCutsI = [...othersBands(i), ...dualBands(i), ...nearCuts(i, x.railCuts?.get(i) ?? [])];
+    // (expert: a rail kept through another route's flangeway, by hand: that flangeway cut round it)
+    const kept = x.keeps?.length ? nearCuts(i, x.keeps) : [], cutBy = kept.length ? othersBands(i).map((m) => s.difference(m, kept)) : othersBands(i);
+    const railCutsI = [...cutBy, ...dualBands(i), ...nearCuts(i, x.railCuts?.get(i) ?? [])];
     const railsAll = s.difference(s.union([rails, ...checks]), railCutsI);
     if (sleepered && checks.length) { railsAt[i] = parts.length; checksCut[i] = s.difference(s.union(checks), railCutsI); }
     parts.push(hasRoll(rt) ? aboveZ(s, railsAll, 0) : railsAll); // (banked: the rails' feet, run down through the bed, turned, kept above its bottom)
@@ -504,7 +515,7 @@ export function crossingPiece(s: Scad, routes: Route[], o: CrossingOptions = CRO
       // (where the gauges of dual-gauge track part (a narrower route out of this piece's wider one's end), a check rail
       // can run over a plain sleeper past the fan: its studs kept clear of it, as the bed's are. Elsewhere as it was)
       const exOk = ex ? (P: Pose) => ex.postOk(P) : undefined;
-      const sleeperPostOk = (P: Pose) => (hosted.length && sol.checkRails.length ? (p: Vec2) => (exOk?.(P)(p) ?? true) && !byCheckRail(poseToWorld(P, p)) : exOk?.(P));
+      const sleeperPostOk = (P: Pose) => ((hosted.length && sol.checkRails.length) || handCheck ? (p: Vec2) => (exOk?.(P)(p) ?? true) && !byCheckRail(poseToWorld(P, p)) && !(handCheck && byCheckWide(poseToWorld(P, p))) : exOk?.(P));
       // (banked: each sleeper turned by the roll at it)
       // (and each stud clear of the ones there already: an end's row, a sleeper's before it)
       const clearOk = (P: Pose) => { const ok = sleeperPostOk(P); return (p: Vec2) => (ok?.(p) ?? true) && claim(poseToWorld(P, p) as [number, number]); };
@@ -614,6 +625,8 @@ export function crossingPiece(s: Scad, routes: Route[], o: CrossingOptions = CRO
       if (!routes.every((r2, k) => Math.abs(Math.abs(routeLat(r2, q)) - gOf[k]) >= clearR)) continue;
       // (and of the guard rails and third rails)
       if (extras.some((ex) => ex && !ex.clearOf(q))) continue;
+      // (and of check rails added by hand)
+      if (handCheck && byCheckWide(q)) continue;
       // (clear of the end connectors: 8 mm in from each end)
       if (ends.some(({ e, len }) => Math.hypot(q[0] - e[0], q[1] - e[1]) < len && Math.abs(worldToPose(e, q)[1]) < 10)) continue;
       if (addBoxes.some((bb) => q[0] > bb.min[0] - 3 && q[0] < bb.max[0] + 3 && q[1] > bb.min[1] - 3 && q[1] < bb.max[1] + 3) && !x.studsOn?.(q)) continue;

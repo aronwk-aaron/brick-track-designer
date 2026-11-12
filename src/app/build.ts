@@ -13,8 +13,8 @@ import { finishSupports, heldBy, printedWith, type SupportNote } from '../geom/s
 import { stlBytes } from '../geom/stl';
 import { bedFit, type BedFit, END_REACH, longestFit, longestTrack, tightBox } from '../geom/bedfit';
 import { splitSelfCrossing } from '../route/selfcross';
-import { FORCE_ANGLE, FORCE_LAT, solve, type SplitEdits } from '../route/solver';
-import { GRADE_APART, hasRoll, heightAt, hostedEnds, poseToWorld, railOffsetOf, railPoint, routeLat, routeLength, routePose, routeRoll, routeSOf, sleeperLenOf, type Pose, worldToPose } from '../route/route';
+import { FORCE_ANGLE, FORCE_LAT, solve, SOLVER_DEFAULTS, type Solution, type SplitEdits } from '../route/solver';
+import { GRADE_APART, handForward, handS, hasRoll, heightAt, hostedEnds, poseToWorld, railOffsetOf, railPoint, routeLat, routeLength, routePose, routeRoll, routeSOf, sleeperLenOf, type Pose, worldToPose } from '../route/route';
 import { reversedRoute } from '../switch/reverse';
 import { BASE_DEFAULTS, switchGeometry } from '../switch/base';
 import { switchGlobals } from '../switch/context';
@@ -30,6 +30,7 @@ import { type NoCut, pathTracks } from './cutpaths';
 import { hasPartOwn, partGroups, withoutPartOwn } from './overrides';
 import { expandStretches } from './stretches';
 import { sleeperWarnings } from './sleeperedits';
+import { railWarnings } from './railedits';
 import { accepted } from './accept';
 import { ANTISTUD_FIT, BOTTOM_WALL, edgeGrip, rowUnderside, TUBE_ID, TUBE_OD } from '../geom/underside';
 import { cutOnPaths, type HandPath, type HandPathDone, pathSplit, splitOnPath, type Keep } from '../geom/pathsplit';
@@ -983,6 +984,8 @@ function solveTrackwork(w: Wasm, design: Design, o: PieceOptions, step: (what: s
       else bankWarnings.push(`dual gauge isn't built through points (but where the branch leaves on the third rail's side, crossing it at ${DUAL_CROSS}° or more), beside track running alongside, or across track crossing at under ${DUAL_CROSS}°: the third rail of ${rt.id.split(':')[0]} is left out for ${((b - a) / 8).toFixed(0)} studs at ${(q[0] / 8).toFixed(0)}, ${(q[1] / 8).toFixed(0)} (studs), and narrow-gauge trains can't run through there`);
     }
   }
+  // (expert, stage 5b: check rails added by hand, as the solver's are)
+  sol = handChecks(routes, sol, gauge / 2, solverOpts);
   // What the canvas draws over the track, in mm: flangeway cuts, check rails,
   // rail crossings and points.
   const g = gauge / 2, gOf = (i: number) => railOffsetOf(routes[i], g);
@@ -993,7 +996,7 @@ function solveTrackwork(w: Wasm, design: Design, o: PieceOptions, step: (what: s
   const items: TrackworkItem[] = [];
   // Flangeway cuts lengthened by hand: the rail head cut down to the
   // flangeway's depth on along each end.
-  const grooveCuts: Man[] = [];
+  const grooveCuts: Man[] = [], grooveKeeps: Man[] = [], forceWarnings: string[] = [];
   const scad0 = new Scad(w);
   for (const gr of sol.grooves) {
     const g = gOf(gr.route), mid = railPoint(routes[gr.route], (gr.s0 + gr.s1) / 2, gr.side * g), key = keyOf(mid), e = tw.groove?.[key] ?? {};
@@ -1001,9 +1004,28 @@ function solveTrackwork(w: Wasm, design: Design, o: PieceOptions, step: (what: s
     const a0 = Math.max(0, gr.s0 - d0), a1 = Math.min(routeLength(routes[gr.route]), gr.s1 + d1);
     items.push({ kind: 'groove', key, at: mid, len: a1 - a0, pts: along(gr.route, gr.side * g, a0, a1), routes: [routes[gr.route].id, routes[gr.by].id] });
     const head = scad0.square([3.6, o.flangewayDepth + 1]).translate([gr.side * g - 1.8, PLATE_H + 6.4 - o.flangewayDepth]);
+    // (expert, stage 5b: the rail runs through, uncut: kept out of the other route's flangeway; or an open frog, the
+    // cut down to the bed's top all along it)
+    if (e.through) { forceWarnings.push(`at ${(mid[0] / 8).toFixed(0)}, ${(mid[1] / 8).toFixed(0)} (studs) ${routes[gr.route].id.replace(/[~:]\d+$/, '')}'s rail runs through the frog by hand: wheels on ${routes[gr.by].id.replace(/[~:]\d+$/, '')} can't pass there`); grooveKeeps.push(sweepRoute(scad0, scad0.square([3.6, 8]).translate([gr.side * g - 1.8, PLATE_H - 0.5]), routes[gr.route], Math.max(0, gr.s0 - 0.5), Math.min(routeLength(routes[gr.route]), gr.s1 + 0.5))); continue; }
+    if (e.open) { grooveCuts.push(sweepRoute(scad0, scad0.square([3.4, 8]).translate([gr.side * g - 1.7, PLATE_H]), routes[gr.route], a0, a1)); continue; }
     if (d0 > 0) grooveCuts.push(sweepRoute(scad0, head, routes[gr.route], a0, gr.s0));
     if (d1 > 0) grooveCuts.push(sweepRoute(scad0, head, routes[gr.route], gr.s1, a1));
   }
+  // (expert, stage 5b: gaps cut through a rail by hand, down to the bed's top: each one an item on the plan)
+  routes.forEach((rt, ri) => {
+    const h = rt.hand;
+    if (!h?.gaps?.length) return;
+    const L = routeLength(rt), fwd = handForward(h), g = gOf(ri);
+    for (const gp of h.gaps) {
+      const at = handS(h, gp.at);
+      if (at < 0 || at > L) continue;
+      for (const sd of gp.side ? [fwd ? gp.side : -gp.side] : [-1, 1]) {
+        // (the rail's whole width above the bed: 3 mm either side of its line at its foot)
+        const cs = scad0.square([6.4, 8]).translate([sd * g - 3.2, PLATE_H]);
+        grooveCuts.push(sweepRoute(scad0, cs, rt, Math.max(0, at - gp.w / 2), Math.min(L, at + gp.w / 2)));
+      }
+    }
+  });
   // Points moved along by hand, taken out, or forced.
   const splitAt = (sp: typeof sol.splits[number]) => railPoint(routes[sp.routes[0]], sp.merge ? sp.spans[0][1] : sp.spans[0][0], 0);
   const idsOf = (rs: number[]) => rs.map((r) => routes[r].id);
@@ -1013,7 +1035,6 @@ function solveTrackwork(w: Wasm, design: Design, o: PieceOptions, step: (what: s
     items.push({ kind: 'points', key, at, pts: [at], toe: tw.points?.[key]?.toe ?? 0, dir: [-Math.sin(h) * k, Math.cos(h) * k], routes: idsOf(sp.routes), ...(sp.forced && { forced: true }) });
   }
   // (mixed gauges: points between routes of different gauges aren't built; said, with where and which routes)
-  const forceWarnings: string[] = [];
   for (const sp of sol.refused ?? []) {
     const at = splitAt(sp), [ra, rb] = sp.routes.map((ri) => routes[ri]), name = (rt: Route) => `${rt.id.replace(/[:~]\d+$/, '')} (${(rt.gauge ?? gauge) / 8 - 1} studs)`;
     // (a narrow gauge's points on dual-gauge track: built only where the branch leaves on the shared rail's side)
@@ -1034,10 +1055,30 @@ function solveTrackwork(w: Wasm, design: Design, o: PieceOptions, step: (what: s
   // the heel along both its routes and out to the rails; and every rail crossing)
   const bladeLine = (r: number, a: number, b2: number) => { const L = routeLength(routes[r]), s0 = Math.max(0, a), s1 = Math.min(L, b2), n = Math.max(1, Math.ceil((s1 - s0) / 8)); return Array.from({ length: n + 1 }, (_, k) => railPoint(routes[r], s0 + ((s1 - s0) * k) / n, 0)); };
   overlay.cutting = { grid: gridPose, railG: g, no: { blades: sol.splits.flatMap((sp) => sp.routes.map((r, n) => ({ line: bladeLine(r, sp.spans[n][0], sp.spans[n][1]), half: gOf(r) + 4 }))), frogs: sol.crossings.map((c) => c.point) } };
-  return { routes, sol, solverOpts, tw, items, overlay, grooveCuts, forceWarnings, bankWarnings, bought, gridPose };
+  return { routes, sol, solverOpts, tw, items, overlay, grooveCuts, grooveKeeps, forceWarnings, bankWarnings, bought, gridPose };
 }
 
 /** Apply the check rail edits to a solution's check rails (in place), noting each for the Trackwork panel. */
+/**
+ * (expert, stage 5b) The check rails added by hand (Route.hand.checks) put with the solver's: inside the rail on their
+ * side, the design's flangeway from its head, checkRailW wide. No route with any: the solution as it was.
+ */
+function handChecks(routes: Route[], sol: Solution, g: number, so: { flangeway: number; checkRailW: number }): Solution {
+  if (!routes.some((rt) => rt.hand?.checks?.length)) return sol;
+  const more: CheckRail[] = [];
+  routes.forEach((rt, i) => {
+    const h = rt.hand;
+    if (!h?.checks?.length) return;
+    const L = routeLength(rt), fwd = handForward(h), gi = railOffsetOf(rt, g);
+    for (const c of h.checks) {
+      const a = handS(h, c.a), b = handS(h, c.b), s0 = Math.max(0, Math.min(a, b)), s1 = Math.min(L, Math.max(a, b));
+      if (s1 - s0 < 12) continue;
+      const side = (fwd ? c.side : -c.side) as -1 | 1, fw = c.fw ?? so.flangeway;
+      more.push({ route: i, side, s0, s1, offset: side > 0 ? gi - SOLVER_DEFAULTS.headHw - fw - so.checkRailW : -gi + SOLVER_DEFAULTS.headHw + fw, width: so.checkRailW });
+    }
+  });
+  return more.length ? { ...sol, checkRails: [...sol.checkRails, ...more] } : sol;
+}
 function editChecks(items: TrackworkItem[], tw: Trackwork, rs: Route[], checks: CheckRail[], idOf = (rt: Route) => rt.id) {
   const out = checks.flatMap((cr) => {
     const mid = railPoint(rs[cr.route], (cr.s0 + cr.s1) / 2, cr.offset + cr.width / 2), key = keyOf(mid), e = tw.check?.[key] ?? {};
@@ -1213,10 +1254,12 @@ function cutContext(w: Wasm, scad: Scad, o: PieceOptions, track: Track, routes: 
     return { rt, s0, s1, box };
   }));
   // (nor on a banked stretch, the rails there tilted: cut plain)
-  const bankedRts = routes.filter(hasRoll);
+  const bankedRts = routes.filter(hasRoll), squareRts = routes.filter((rt) => rt.hand?.square);
   const noTongue = (q: [number, number]) => zones.some((z) => q[0] >= z.box[0] && q[0] <= z.box[2] && q[1] >= z.box[1] && q[1] <= z.box[3]
     && Math.abs(routeLat(z.rt, q)) < G0 + 6 && ((sa) => sa >= z.s0 && sa <= z.s1)(routeSOf(z.rt, q)))
-    || bankedRts.some((rt) => Math.abs(routeLat(rt, q)) < G0 + 6 && Math.abs(routeRoll(rt, routeSOf(rt, q))) > 1e-9);
+    || bankedRts.some((rt) => Math.abs(routeLat(rt, q)) < G0 + 6 && Math.abs(routeRoll(rt, routeSOf(rt, q))) > 1e-9)
+    // (expert, stage 5b: nor on a track whose rail ends are square by hand)
+    || squareRts.some((rt) => Math.abs(routeLat(rt, q)) < railOffsetOf(rt, G0) + 6 && ((sa) => sa > -1 && sa < routeLength(rt) + 1)(routeSOf(rt, q)));
   /** How every cut joins (Parts join with): Straight cuts + LEGO axles is axle joints with the rails cut flat. */
   const join = { t: track, joint: o.joint === 'flataxle' ? 'axle' as const : o.joint ?? 'lego', flatRails: o.joint === 'flataxle', noTongue };
   // (a part's pieces that don't touch: for the fitter below, and a section's parts (sectioned))
@@ -1388,7 +1431,7 @@ interface PieceBuild {
   /** every route of the trackwork (the bought switches' legs cut out of them): the ground under each one's sleepers is its own track's (trackBeds) */
   trackRoutes: Route[];
   /** flangeway cuts lengthened by hand, and their edits (for the cache keys) */
-  grooveCuts: Man[]; grooveEdits: Trackwork['groove'];
+  grooveCuts: Man[]; grooveKeeps: Man[]; grooveEdits: Trackwork['groove'];
   /** the ends of rts left on other track by points taken out (droppedInner) */
   dropInner: (rts: Route[], more?: Iterable<string>) => Set<string>;
 }
@@ -1781,14 +1824,15 @@ function sectioned(b: PieceBuild, name: string, all: Route[], checks: CheckRail[
     const zs = cx.zones.filter((z) => z.box[2] >= sb[0] && z.box[0] <= sb[2] && z.box[3] >= sb[1] && z.box[1] <= sb[3]).map((z) => [z.rt.id, z.s0, z.s1, z.box]);
     // (the cut paths drawn by hand that reach it (expert): among what it's built from; none, the section and its key as ever)
     const hps = pathsIn(b, sb);
-    const sk = `sec:${JSON.stringify({ rts, cChecks, m: mine.map((x) => [x.key, x.inner, x.bladeCuts.map(([i]) => i)]), copt, g: b.grooveCuts.length ? b.grooveEdits : 0, di: [...secInner],
+    const sk = `sec:${JSON.stringify({ rts, cChecks, m: mine.map((x) => [x.key, x.inner, x.bladeCuts.map(([i]) => i)]), copt, g: b.grooveCuts.length || b.grooveKeeps.length ? b.grooveEdits : 0, di: [...secInner],
       gp: gridPose, bp, bxy: [o.baseplateX, o.baseplateY], joint: o.joint, ...(apart && { seat: o.trackFitTol ?? 0.2, seated, bb: o.boughtBallast }), ...(o.ballast !== 'none' && (b.boughtSw.length || seated) && { sw: groundKey(b, routesBox(rts, bandHalf + 64), seated) }), bed: [o.printBedX, o.printBedY], zs, ...(b.boughtSw.length > 0 && { pt: partingsNear(b, sb) }), ...(b.labelOn && { lab: [o.labelText, o.labelSize, o.labelGauge, o.labelParts, base + si + 1] }), ...(hps.length > 0 && { hps }) })}`;
     let part: { ms: (Baked & { id?: string; lego?: LegoPart[]; seats?: Pose[] })[]; grips: [number, number][]; paths?: HandPathDone[] };
     const cost = rts.reduce((t, rt) => t + routeLength(rt), 0) + 400 * mine.length;
     try { part = b.job(sk, cost, () => arena(w, () => {
       const grips: [number, number][] = [];
       const cuts = b.grooveCuts.filter((m) => { const bb = m.boundingBox(); return rts.some((rt) => { const b2 = routesBox([rt], bandHalf + 8); return bb.max[0] >= b2[0] && bb.min[0] <= b2[2] && bb.max[1] >= b2[1] && bb.min[1] <= b2[3]; }); });
-      const buildBody = (bedAt?: { p: [number, number]; d: [number, number]; len?: number }[]) => { grips.length = 0; return networkBody(scad, rts, { crossings: [], grooves: [], splits: [], checkRails: cChecks }, copt, mine, grips, { cuts, gridPose, innerEnds: secInner, ...(bedAt && { bedAt }) }); };
+      const keeps = b.grooveKeeps.filter((m) => { const bb = m.boundingBox(); return rts.some((rt) => { const b2 = routesBox([rt], bandHalf + 8); return bb.max[0] >= b2[0] && bb.min[0] <= b2[2] && bb.max[1] >= b2[1] && bb.min[1] <= b2[3]; }); });
+      const buildBody = (bedAt?: { p: [number, number]; d: [number, number]; len?: number }[]) => { grips.length = 0; return networkBody(scad, rts, { crossings: [], grooves: [], splits: [], checkRails: cChecks }, copt, mine, grips, { cuts, keeps, gridPose, innerEnds: secInner, ...(bedAt && { bedAt }) }); };
       // (bought pieces: each as bought, track only (LEGO's sleepers, as both make theirs); on ballast, the section's ballast
       // printed alone, seated for them all, cut for the bed if it has to be)
       if (apart) {
@@ -1958,14 +2002,14 @@ function tiled(b: PieceBuild, name: string, all: Route[], checks: CheckRail[], s
       });
       return { ...sp, inner, bladeCuts: sp.bladeCuts.filter(([i]) => cr.map[i] >= 0).map(([i, m]) => [cr.map[i], m] as [number, Man]) };
     });
-    const tileCuts = b.grooveCuts.filter((m) => nearCell(m.boundingBox(), R, MARGIN)), tileInner = b.dropInner(cr.routes, cr.inner);
+    const tileCuts = b.grooveCuts.filter((m) => nearCell(m.boundingBox(), R, MARGIN)), tileKeeps = b.grooveKeeps.filter((m) => nearCell(m.boundingBox(), R, MARGIN)), tileInner = b.dropInner(cr.routes, cr.inner);
     // (on ballast, its ballast clear of a bought switch's beside it, as a section's)
     const kbox = [R[0] - MARGIN, R[1] - MARGIN, R[2] + MARGIN, R[3] + MARGIN], nearSw = o.ballast !== 'none' && b.boughtSw.length > 0;
     // (keyed by what it's built from, not the whole design: an edit rebuilds only the tiles near it (the points near
     // it by what each is made from, network.ts SplitParts key; where no rail-end tongue goes, near it))
     const zs = cx.zones.filter((z) => z.box[2] >= R[0] - MARGIN && z.box[0] <= R[2] + MARGIN && z.box[3] >= R[1] - MARGIN && z.box[1] <= R[3] + MARGIN).map((z) => [z.rt.id, z.s0, z.s1, z.box]);
     const tk = `tile:${JSON.stringify({ r: cr.routes, c: cr.checks, i: [...tileInner], R, lines, near: tileSplits.map((sp) => [sp.key, sp.inner, sp.bladeCuts.map(([i]) => i)]),
-      copt, joint: o.joint, tongueRails: o.tongueRails, g: b.grooveCuts.length ? b.grooveEdits : 0, gp: gridPose, bed: [o.printBedX, o.printBedY], zs, ...(b.boughtSw.length > 0 && { pt: partingsNear(b, kbox) }), ...(nearSw && { sw: groundKey(b, kbox) }), ...(b.labelOn && { lab: [o.labelText, o.labelSize, o.labelGauge, o.labelParts, base + ci + 1] }) })}`;
+      copt, joint: o.joint, tongueRails: o.tongueRails, g: b.grooveCuts.length || b.grooveKeeps.length ? b.grooveEdits : 0, gp: gridPose, bed: [o.printBedX, o.printBedY], zs, ...(b.boughtSw.length > 0 && { pt: partingsNear(b, kbox) }), ...(nearSw && { sw: groundKey(b, kbox) }), ...(b.labelOn && { lab: [o.labelText, o.labelSize, o.labelGauge, o.labelParts, base + ci + 1] }) })}`;
     let part: { ms: (Baked & { id?: string; bought?: boolean })[]; grips: [number, number][] };
     // (how long it takes, about: its track, and points most of all)
     const cost = cr.routes.reduce((t, rt) => t + routeLength(rt), 0) + 400 * near.length;
@@ -1973,7 +2017,7 @@ function tiled(b: PieceBuild, name: string, all: Route[], checks: CheckRail[], s
       const grips: [number, number][] = [];
       // (each step's leftovers let go as it's done, as a section's)
       const step = <T extends Man | Man[]>(f: () => T): T => arena(w, f, (r) => (Array.isArray(r) ? r : [r]));
-      const body0 = step(() => networkBody(scad, cr.routes, { crossings: [], grooves: [], splits: [], checkRails: cr.checks }, copt, tileSplits, grips, { cuts: tileCuts, innerEnds: tileInner, gridPose, ...(b.sleepered && { bedAt: lines }) }));
+      const body0 = step(() => networkBody(scad, cr.routes, { crossings: [], grooves: [], splits: [], checkRails: cr.checks }, copt, tileSplits, grips, { cuts: tileCuts, keeps: tileKeeps, innerEnds: tileInner, gridPose, ...(b.sleepered && { bedAt: lines }) }));
       const body = nearSw ? step(() => yielded(b, body0, switchKeepOut(b, kbox), PLATE_H + 0.01)) : body0;
       const holes: [number, number, number][] = [], taken: [number, number][] = [];
       const got = step(() => cutPiece(scad, track, body, cr.routes, lines, join.joint, join.flatRails, cx.noTongue, holes, cx.fitsBed, taken).filter((m) => {
@@ -2368,7 +2412,7 @@ function buildOne(w: Wasm, design: Design, report: (what: string, frac: number) 
   const t0 = performance.now();
   const prog = progressOf(report);
   const o = { ...OPTION_DEFAULTS, ...design.options };
-  const { routes, sol, solverOpts, tw, items, overlay, grooveCuts, forceWarnings, bankWarnings, bought, gridPose } = solveTrackwork(w, design, o, prog.step);
+  const { routes, sol, solverOpts, tw, items, overlay, grooveCuts, grooveKeeps, forceWarnings, bankWarnings, bought, gridPose } = solveTrackwork(w, design, o, prog.step);
   const dropInner = (rts: Route[], more: Iterable<string> = []) => droppedInner(routes, sol.dropped ?? [], rts, more);
   const toeShift = (q: [number, number]) => tw.points?.[keyOf(q)]?.toe ?? 0;
   // (with the points' own choice of moving blade, a single-point switch's, and their blades lengthened: Trackwork.points single, heel)
@@ -2393,11 +2437,12 @@ function buildOne(w: Wasm, design: Design, report: (what: string, frac: number) 
   // one piece; a switch built on its own has none, and the track's connector there had extra rail ends that met nothing)
   const extraOnSwitch = pc.switches.some((sw) => sw.covers.some(([ri]) => !!routes[ri].extra));
   // (points on routes with a gauge of their own, mixed gauges: a network piece, each points set built at its routes' gauge)
-  // (expert: sleepers edited by hand or a ballast width of its own on a switch's routes: a network piece, which lays them (a switch built on its own has its own bed))
+  // (expert: sleepers edited by hand or a ballast width of its own on a switch's routes: a network piece, which lays them (a switch built on its own has its own bed);
+  // and a rail run through a frog by hand: the network's rails are cut by the other routes' flangeways, which can be kept off it)
   const handOnSwitch = pc.switches.some((sw) => sw.covers.some(([ri]) => !!routes[ri].hand));
   const ownGaugeSwitch = sol.splits.some((sp) => sp.routes.some((ri) => routes[ri].gauge !== undefined));
   const network = sol.splits.length > 0 && (sol.splits.some((sp) => sp.merge) || pc.warnings.some((w2) => !/print bed/.test(w2))
-    || sol.crossings.some((c) => groupOf(c.a.route) !== groupOf(c.b.route)) || bufOnSwitch || extraOnSwitch || ownGaugeSwitch || handOnSwitch);
+    || sol.crossings.some((c) => groupOf(c.a.route) !== groupOf(c.b.route)) || bufOnSwitch || extraOnSwitch || ownGaugeSwitch || handOnSwitch || grooveKeeps.length > 0);
   const bedWarnings = new Set<string>();
   const track = new Track(scad, { ...TRACK_DEFAULTS, gaugeStuds: design.gaugeStuds, studFit: o.studFit, antistudFit: o.antistudFit, sleeperWidthStuds: o.sleeperWidthStuds, axleStuds: o.axleStuds, flangewayDepth: o.flangewayDepth, ...(o.tongueRails === 'square' && { tongueMaxAngle: 12 }) });
   {
@@ -2436,9 +2481,10 @@ function buildOne(w: Wasm, design: Design, report: (what: string, frac: number) 
   const sleepered = o.sleepers === 'sleepers' && o.ballast === 'none';
   // (expert: the sleepers edited by hand that can't be made as they're asked for: said)
   for (const wn of sleeperWarnings(design, o)) bedWarnings.add(wn);
+  for (const wn of railWarnings(design)) bedWarnings.add(wn);
   const labelOn = o.ballast !== 'none' && o.bottomStyle === 'float' && !!o.labelText?.trim();
   const b: PieceBuild = { w, scad, o, gaugeStuds: design.gaugeStuds, track, cut, prog, pieces: [], volume: 0, bedWarnings, overlay, job,
-    labelOn, ...(opts.mark && { mark: opts.mark, markBoth: opts.markBoth }), num: { part: 0, sec: 0 }, alongTrack, gridPose, sleepered, bufs, grooveCuts, grooveEdits: tw.groove, dropInner, tables: design.tables ?? [], boughtSw: bought, trackRoutes: routes, ...(handCuts && { handCuts }), ...(cutPaths?.cut.length && inLengths && { cutPaths: cutPaths.cut }) };
+    labelOn, ...(opts.mark && { mark: opts.mark, markBoth: opts.markBoth }), num: { part: 0, sec: 0 }, alongTrack, gridPose, sleepered, bufs, grooveCuts, grooveKeeps, grooveEdits: tw.groove, dropInner, tables: design.tables ?? [], boughtSw: bought, trackRoutes: routes, ...(handCuts && { handCuts }), ...(cutPaths?.cut.length && inLengths && { cutPaths: cutPaths.cut }) };
   const copt = { ...CROSSING_DEFAULTS, gaugeStuds: design.gaugeStuds, grip: o.grip ?? 'edges', flangeway: o.flangeway, flangewayDepth: o.flangewayDepth, checkRailW: o.checkRailW, checkRailFlare: o.checkRailFlare,
     ballast: o.ballast, bottomStyle: o.bottomStyle, supports: o.endSupports !== false, curveStuds: o.curveStuds,
     studFit: o.studFit, antistudFit: o.antistudFit, sleepers: o.sleepers, undersideGrid: o.ballast === 'none' ? o.undersideGrid : undefined, sleeperWidthStuds: o.sleeperWidthStuds, sleeperGapStuds: o.sleeperGapStuds,
@@ -2456,7 +2502,7 @@ function buildOne(w: Wasm, design: Design, report: (what: string, frac: number) 
     for (const sp of net.levers) lever(keyOf(sp.toe), sp.frame, sp.set);
   }
   const rest = network ? [] : pc.rest;
-  const restSol = rest.length ? solve(rest, solverOpts) : undefined;
+  const restSol = rest.length ? handChecks(rest, solve(rest, solverOpts), solverOpts.gauge / 2, solverOpts) : undefined;
   // (the track that's left, each stretch named for its route and which stretch of it (pieces.ts): the route's own id)
   if (restSol) editChecks(items, tw, rest, restSol.checkRails, (rt) => rt.id.replace(/:\d+$/, ''));
   if (!network) pc.switches.forEach((sw) => {
@@ -2486,7 +2532,7 @@ function buildOne(w: Wasm, design: Design, report: (what: string, frac: number) 
     if (inLengths) sectioned(b, 'track', routes, sol.checkRails, net.splits, sol.splits, copt, netKey);
     else if (!tiled(b, 'track', routes, sol.checkRails, net.splits, copt)) {
       if (plan) throw PLANNED; // (built whole: nothing to share out)
-      const whole = cached(`net:${netKey}`, () => { const grips: [number, number][] = []; return { body: networkBody(scad, routes, sol, copt, net.splits, grips, { cuts: grooveCuts, innerEnds: dropInner(routes) }), grips }; }, true);
+      const whole = cached(`net:${netKey}`, () => { const grips: [number, number][] = []; return { body: networkBody(scad, routes, sol, copt, net.splits, grips, { cuts: grooveCuts, keeps: grooveKeeps, innerEnds: dropInner(routes) }), grips }; }, true);
       overlay.grips.push(...whole.grips);
       if (layered) {
         // (prototype) in two layers: the lower one and the deck, each cut for the bed on its own
@@ -2496,7 +2542,7 @@ function buildOne(w: Wasm, design: Design, report: (what: string, frac: number) 
         // (each lid its own part)
         const lidParts = ls.deck.decompose().filter((m) => m.volume() > 20);
         lidParts.forEach((m, k) => add(b, `points${lidParts.length > 1 ? k + 1 : ''}-lid`, TRACK_COLOR, m, m));
-      } else addTrack(b, 'track', whole.body, routes, undefined, sleepered ? (ls) => cached(`netcut:${netKey}:${JSON.stringify(ls)}`, () => networkBody(scad, routes, sol, copt, net.splits, [], { cuts: grooveCuts, innerEnds: dropInner(routes), bedAt: ls }), true) : undefined);
+      } else addTrack(b, 'track', whole.body, routes, undefined, sleepered ? (ls) => cached(`netcut:${netKey}:${JSON.stringify(ls)}`, () => networkBody(scad, routes, sol, copt, net.splits, [], { cuts: grooveCuts, keeps: grooveKeeps, innerEnds: dropInner(routes), bedAt: ls }), true) : undefined);
     }
     if (plan) { boughtSwitches(b, bought, copt, gridPose); throw PLANNED; }
     // (each points set's moving parts baked, by what they're made from: an edit bakes only the ones it changes)
@@ -2516,14 +2562,14 @@ function buildOne(w: Wasm, design: Design, report: (what: string, frac: number) 
   if (restSol) {
     prog.step('Building the track');
     const restKey = JSON.stringify({ rest, copt, solverOpts, tw, gridPose });
-    const whole = () => cached(`cx:${restKey}`, () => { const grips: [number, number][] = []; return { m: crossingPiece(scad, rest, copt, restSol, grips, { cuts: grooveCuts, innerEnds: dropInner(rest), gridPose }), grips }; }, true);
+    const whole = () => cached(`cx:${restKey}`, () => { const grips: [number, number][] = []; return { m: crossingPiece(scad, rest, copt, restSol, grips, { cuts: grooveCuts, keeps: grooveKeeps, innerEnds: dropInner(rest), gridPose }), grips }; }, true);
     if (inLengths) sectioned(b, 'track', rest, restSol.checkRails, [], [], copt, restKey);
     else if (pc.rest.length > 1 && tiled(b, 'track', rest, restSol.checkRails, [], copt)) { /* built in tiles */ }
     else if (plan) throw PLANNED;
     // (cut at the baseplate edges: there, as addTrack cuts it, however long; the equal lengths below took no notice of them)
     else if (pc.rest.length > 1 || cut.bp || cut.fitsBed(whole().m)) {
       overlay.grips.push(...whole().grips);
-      addTrack(b, 'track', whole().m, rest, sizeOf(rest), sleepered ? (ls) => cached(`cxcut:${restKey}:${JSON.stringify(ls)}`, () => crossingPiece(scad, rest, copt, restSol, [], { cuts: grooveCuts, innerEnds: dropInner(rest), bedAt: ls, gridPose }), true) : undefined);
+      addTrack(b, 'track', whole().m, rest, sizeOf(rest), sleepered ? (ls) => cached(`cxcut:${restKey}:${JSON.stringify(ls)}`, () => crossingPiece(scad, rest, copt, restSol, [], { cuts: grooveCuts, keeps: grooveKeeps, innerEnds: dropInner(rest), bedAt: ls, gridPose }), true) : undefined);
     } else {
       // A plain track longer than the bed: in equal lengths, joined like
       // LEGO track pieces (rail-end tongues, peg and clip), each fitting it.
@@ -2542,7 +2588,11 @@ function buildOne(w: Wasm, design: Design, report: (what: string, frac: number) 
           return !bedFit(pts, o.printBedX, o.printBedY).fits;
         };
         if (n < 20 && subs.some(over)) continue;
-        const bits = subs.map((sub) => cached(`cx1:${JSON.stringify({ sub, copt, gridPose })}`, () => crossingPiece(scad, [sub], copt, undefined, undefined, { gridPose }), true));
+        // (expert: a length's gaps, frogs kept and check rails added by hand, as the whole track's; its key has them, by its route's hand edits)
+        const mineOf = (ms: Man[], sub: Route) => { const bx = routesBox([sub], track.c.sleeperLen); return ms.filter((m) => { const bb = m.boundingBox(); return bb.max[0] >= bx[0] && bb.min[0] <= bx[2] && bb.max[1] >= bx[1] && bb.min[1] <= bx[3]; }); };
+        const handOf = (sub: Route) => { const cs = mineOf(grooveCuts, sub), ks = mineOf(grooveKeeps, sub); return { ...(cs.length && { cuts: cs }), ...(ks.length && { keeps: ks }) }; };
+        const solOf = (sub: Route) => (sub.hand?.checks?.length ? handChecks([sub], solve([sub], solverOpts), solverOpts.gauge / 2, solverOpts) : undefined);
+        const bits = subs.map((sub) => cached(`cx1:${JSON.stringify({ sub, copt, gridPose })}`, () => crossingPiece(scad, [sub], copt, solOf(sub), undefined, { gridPose, ...(sub.hand && handOf(sub)) }), true));
         // (still over the bed in 20 lengths: it's the track's width that doesn't fit; said, not left to be found on the printer)
         if (n === 20 && !bits.every(cut.fitsBed)) bedWarnings.add(`the track doesn't fit the ${o.printBedX} x ${o.printBedY} print bed however short it's cut: the bed is narrower than the track`);
         if (bits.every(cut.fitsBed) || n === 20) { bits.forEach((m, k) => { const lm = labelled(b, m, [subs[k]], sizeOf([subs[k]]), `${k + 1}`); add(b, `track${k + 1}`, TRACK_COLOR, lm, lm); }); break; }

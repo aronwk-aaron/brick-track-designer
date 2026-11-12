@@ -57,6 +57,20 @@ export function planSections(routes: Route[], splits: Split[], half: number, roo
   // the points' stretches (and a connector's length past them), where no cut goes
   const busy = routes.map(() => [] as [number, number][]);
   for (const sp of splits) sp.routes.forEach((ri, k) => busy[ri].push([sp.spans[k][0] - 24, sp.spans[k][1] + 24]));
+  // (expert: check rails added by hand: no joint of the app's along one, nor within 2 studs of its ends, where the end
+  // connector's row of studs would stand beside it)
+  routes.forEach((rt, i) => {
+    const h = rt.hand;
+    for (const c of h?.checks ?? []) { const a = handS(h!, c.a), b = handS(h!, c.b); busy[i].push([Math.min(a, b) - 16, Math.max(a, b) + 16]); }
+  });
+  // (expert: guard rails along a stretch come to a point at its ends, 8 studs long: no joint of the app's in a point,
+  // whose nose would lie over the next piece's end connector)
+  routes.forEach((rt, i) => {
+    const x = rt.extra;
+    if (!x?.guard || !x.guardOn) return;
+    const d = x.to >= x.from ? 1 : -1, loc = (v: number) => (v - x.from) * d, T = x.guardTaperStuds * 8 + 10 + 8;
+    for (const g of x.guardOn) for (const e of [g.a, g.b]) { if (e <= 1e-3 || e >= x.len - 1e-3) continue; const s = loc(e), inward = (e === g.a ? 1 : -1) * d; busy[i].push([Math.min(s, s + inward * T) - 8, Math.max(s, s + inward * T) + 8]); }
+  });
   // (expert: sleepers shared with the tracks beside (Route.hand.shared): no cut of the app's along there on any of
   // them, and they're one section: [route, from, to] of each)
   const held: [number, number, number][] = [];
