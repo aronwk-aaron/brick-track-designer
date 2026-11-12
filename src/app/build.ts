@@ -8,7 +8,7 @@ import { DEFAULTS as TRACK_DEFAULTS, PLATE_H, STUD, Track } from '../geom/track'
 import { CROSSING_DEFAULTS, crossingPiece, joinedEnds, ownSleeperSpots, ROW_CLEAR } from '../geom/crossing';
 import { trackSeat } from '../geom/extras';
 import { DUAL_CROSS, dualBuilt, markClear } from '../geom/extrarails';
-import { arena, flat, kernelBroke, made, supportsOf, type Wasm } from '../geom/kernel';
+import { arena, bodyCount, flat, kernelBroke, made, supportsOf, type Wasm } from '../geom/kernel';
 import { finishSupports, heldBy, printedWith, type SupportNote } from '../geom/supports';
 import { stlBytes } from '../geom/stl';
 import { bedFit, type BedFit, END_REACH, longestFit, longestTrack, tightBox } from '../geom/bedfit';
@@ -1344,7 +1344,8 @@ function cutContext(w: Wasm, scad: Scad, o: PieceOptions, track: Track, routes: 
     const bodiesOf = (x: Man) => flat(w, x).decompose().filter((y) => y.volume() > 0.01).sort((p2, q2) => q2.volume() - p2.volume());
     const out = [...ps], loose: { from: number; chip: Man }[] = [];
     out.forEach((p2, i) => {
-      if (one.has(p2)) return;
+      // (looked at from its mesh first: decomposing every part, most of them one body, moved every file's triangles)
+      if (one.has(p2) || bodyCount(p2) < 2) return;
       const bs = bodiesOf(p2), chips = bs.slice(1).filter((y) => y.volume() < LOOSE_BIT);
       if (!chips.length) return;
       for (const c of chips) loose.push({ from: i, chip: c });

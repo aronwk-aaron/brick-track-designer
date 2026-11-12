@@ -7,6 +7,7 @@
 //
 // Units: mm and degrees, switch.scad's frame (the routes start at the origin
 // heading +y). Routes are right to left, as switch.scad's `routes`.
+import { bodyCount } from '../geom/kernel';
 import type { Pose, Pt, Route } from '../route/route';
 import { poseToWorld, railOffsetOf, railPoint, routeLat, routeLength, routePose, routeSOf, segStarts, worldToPose } from '../route/route';
 import { M, R, T, type CS, type Man, type Scad, type Vec2, type Vec3 } from '../geom/scad';
@@ -69,6 +70,8 @@ export interface SetOver { leverOffset?: number; springLength?: number; throwShi
 // heel, so no part of the blade swings out past it into the stock rail, and
 // far enough inside the rail line for its disc to clear the fixed rail's
 // foot that carries on from the heel.
+/** (mm3) A body of the base smaller than this, not one with the rest, is a loose bit: left out (base). */
+const LOOSE_BIT = 600;
 export const DISC2_R = 4.5;
 const pivotIn = (c: number) => 3.9 + c + DISC2_R + 0.2;
 
@@ -1301,7 +1304,6 @@ export function switchGeometry(s: Scad, plan: SwitchPlan, extraCuts: Man[] = [])
     return Math.abs(Math.abs(routeLat(rt, q)) - G) >= tc.postD / 2 + HEAD_HW + 0.6;
   });
   const connStuds = () => (connPosts ??= { start: t.endpointPosts().filter((px) => railFree([px, 4]) && claimStud([px, 4], 'start')), ends: plan.endPoses.map((e, k) => t.endpointPosts().filter((px) => { const q = poseToWorld(e, [-px, -4]) as Pt; return railFree(q, k) && claimStud(q, `end${k}`, tc.postD); })) });
-  let tieBands: CS | undefined;
   const turnoutTies = () => {
     connStuds();
     const railClear = 3.9 + TRACK_DEFAULTS.studD / 2 + 0.3, out: Man[] = [];
@@ -1331,25 +1333,9 @@ export function switchGeometry(s: Scad, plan: SwitchPlan, extraCuts: Man[] = [])
       const spots = scadParity() ? dedupe(fill, grid) : grid;
       // (with ballast, kept within its top layer: the ends don't stick out over the step below)
       const tie = cube([xr - xl, sleeperW, PLATE_H], [xl, y - sleeperW / 2, 0]);
-      let cutTie = s.difference(g.ballast ? s.intersection(tie, s.union(routes.map((rt) => sweep(sq([g.ballastTopW, PLATE_H + 2], [-g.ballastTopW / 2, -1]), rt)))) : tie,
-        [endKeepout()]);
-      // (a long tie the end connectors' room cuts in two, its tip past a route's end beyond it, under no track: that tip
-      // left out, and its studs. Left, it lay loose in the base: 262 mm3 of an R104 90 degree curved switch's)
-      let onTie = (_q: Pt) => true;
-      if (!scadParity()) {
-        const bits = cutTie.decompose();
-        if (bits.length > 1) {
-          tieBands ??= W.CrossSection.union(routes.map((rt) => { const L = routeLength(rt), n = Math.max(2, Math.ceil(L / 4)), side = (o: number) => Array.from({ length: n + 1 }, (_, k) => railPoint(rt, (L * k) / n, o) as Pt); return W.CrossSection.ofPolygons([[...side(-sleeperLen / 2), ...side(sleeperLen / 2).reverse()]]); }));
-          const keep = bits.filter((m) => m.project().intersect(tieBands!).area() > 1);
-          if (keep.length < bits.length) {
-            const foot = keep.length ? W.CrossSection.union(keep.map((m) => m.project())) : undefined;
-            cutTie = keep.length ? s.union(keep) : s.union([]);
-            onTie = (q) => !!foot && W.CrossSection.circle(tc.postD / 2, 16).translate(q).subtract(foot).area() < 0.01;
-          }
-        }
-      }
-      out.push(cutTie);
-      for (const q of spots) if (onTie(q) && claimStud(q, 'turnout')) out.push(T(t.stud(tc.postD, tc.postH), [q[0], q[1], PLATE_H - 0.2]));
+      out.push(s.difference(g.ballast ? s.intersection(tie, s.union(routes.map((rt) => sweep(sq([g.ballastTopW, PLATE_H + 2], [-g.ballastTopW / 2, -1]), rt)))) : tie,
+        [endKeepout()]));
+      for (const q of spots) if (claimStud(q, 'turnout')) out.push(T(t.stud(tc.postD, tc.postH), [q[0], q[1], PLATE_H - 0.2]));
     }
     return s.union(out);
   };
@@ -2449,7 +2435,11 @@ export function switchGeometry(s: Scad, plan: SwitchPlan, extraCuts: Man[] = [])
   // stands in any of it has that much cut away, hollowGrid)
   const us = underside(solid0.slice(p.studH + 0.26).subtract(low), s.difference(s.union([track, ...sets.map(throwArm)]), cuts0).slice((p.studH + 0.21) / 2));
   grips.push(...us.grips);
-  const body = s.difference(s.union([track, ...sets.map(throwArm)]), [...cuts0, us.cut, connUnder()]);
+  const body0 = s.difference(s.union([track, ...sets.map(throwArm)]), [...cuts0, us.cut, connUnder()]);
+  // (nothing loose in it: a bit under LOOSE_BIT that isn't one with the rest left out. A long tie, square to the base,
+  // reaching past the branch's end, was cut in two by the end connector's room and its tip lay loose: 262 + 24 mm3 on
+  // the R104 90 degree curved switch, 3.6 on the R40. Looked at from its mesh first, no solid made: kernel.ts bodyCount)
+  const body = !scadParity() && bodyCount(body0) > 1 ? (() => { const bs = body0.decompose(), big = Math.max(...bs.map((m) => m.volume())); return s.union(bs.filter((m) => m.volume() >= Math.min(LOOSE_BIT, big))); })() : body0;
   const supportZ = pieceBottomZ - 0.02;
   // (and what the slider's bar rests on, with sprung blades on track alone)
   const rests = sets.map(fdbRests).filter((m): m is Man => !!m);

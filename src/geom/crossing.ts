@@ -509,7 +509,10 @@ export function crossingPiece(s: Scad, routes: Route[], o: CrossingOptions = CRO
     const kept = x.keeps?.length ? nearCuts(i, x.keeps) : [], cutBy = kept.length ? othersBands(i).map((m) => s.difference(m, kept)) : othersBands(i);
     const railCutsI = [...cutBy, ...dualBands(i), ...nearCuts(i, x.railCuts?.get(i) ?? [])];
     const railsAll = s.difference(s.union([rails, ...checks]), railCutsI);
-    if (sleepered && checks.length) { railsAt[i] = parts.length; checksCut[i] = s.difference(s.union(checks), railCutsI); }
+    // (only where one of its check rails runs into another route's flangeway or rail, which can cut a bit off it: looked at
+    // along its line first, no solid made (geom/kernel.ts bodyCount, why))
+    const bitable = (cr: (typeof checkRails)[number]) => { const mid = cr.offset + cr.width / 2; for (let v = Math.max(0, cr.s0); v <= Math.min(L, cr.s1); v += 0.5) { const q = railPoint(rt, v, mid) as Vec2; if (routes.some((r2, j) => { if (j === i) return false; const sj = routeSOf(r2, q); if (sj < 0 || sj > routeLength(r2)) return false; const l = Math.abs(routeLat(r2, q)); return l >= gOf[j] - HEAD_HW - o.flangeway - cr.width - 1 && l <= gOf[j] + HEAD_HW + cr.width + 1; })) return true; } return false; };
+    if (sleepered && checks.length) { railsAt[i] = parts.length; if (checkRails.some((cr) => cr.route === i && bitable(cr))) checksCut[i] = s.difference(s.union(checks), railCutsI); }
     parts.push(hasRoll(rt) ? aboveZ(s, railsAll, 0) : railsAll); // (banked: the rails' feet, run down through the bed, turned, kept above its bottom)
     const banked = hasRoll(rt), roll0 = banked ? routeRoll(rt, 0) : 0, roll1 = banked ? routeRoll(rt, L) : 0;
     const bedAlong = (a = 0, b = Infinity) => (banked ? bankedBed(s, rt, trackBank(c.sleeperLen), c.sleeperLen / 2, onBallast ? -1 : 0, a, b) : sweepRoute(s, rect(-c.sleeperLen / 2, c.sleeperLen / 2, 0, PLATE_H), rt, a, b));

@@ -180,6 +180,20 @@ export function free(hs: Iterable<Handle>) { for (const h of hs) if (!h.isDelete
  * on such a part it took most of a gigabyte, and a few of them ran the
  * kernel out of memory (it aborts).
  */
+/**
+ * How many bodies a solid is in, from its own mesh (its triangles joined where they share a vertex), with no solid made:
+ * a decompose() to find out made new solids, and every solid made shifts the ids the kernel numbers them by, which
+ * changes how later booleans triangulate their results (the same shapes, other triangles: every file's bytes moved).
+ */
+export function bodyCount(m: { getMesh(): { triVerts: Uint32Array; numVert?: number; vertProperties: Float32Array; numProp: number } }): number {
+  const g = m.getMesh(), n = g.vertProperties.length / g.numProp, up = new Int32Array(n).map((_, i) => i);
+  const find = (i: number): number => { while (up[i] !== i) { up[i] = up[up[i]]; i = up[i]; } return i; };
+  const tv = g.triVerts;
+  for (let t = 0; t < tv.length; t += 3) { const a = find(tv[t]), b = find(tv[t + 1]), c = find(tv[t + 2]); up[b] = a; up[find(c)] = a; }
+  const roots = new Set<number>();
+  for (let t = 0; t < tv.length; t += 3) roots.add(find(tv[t]));
+  return roots.size;
+}
 export function flat<M>(w: Wasm, m: M, supports = true): M {
   const g = (m as unknown as { getMesh(): { numProp: number; vertProperties: Float32Array; triVerts: Uint32Array; mergeFromVert: Uint32Array; mergeToVert: Uint32Array } }).getMesh();
   const mesh = new w.Mesh({ numProp: g.numProp, vertProperties: g.vertProperties, triVerts: g.triVerts, mergeFromVert: g.mergeFromVert, mergeToVert: g.mergeToVert });
