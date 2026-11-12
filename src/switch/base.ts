@@ -1278,6 +1278,7 @@ export function switchGeometry(s: Scad, plan: SwitchPlan, extraCuts: Man[] = [])
   const claimStud = (q: Pt, src: string, d = studsApart) => { if (scadParity()) return true; if (studsTaken.near(q, d, src)) return false; if (!studsTaken.near(q, 0.01)) studsTaken.add(q, src); return true; };
   let connPosts: { start: number[]; ends: number[][] } | undefined;
   const connStuds = () => (connPosts ??= { start: t.endpointPosts().filter((px) => claimStud([px, 4], 'start')), ends: plan.endPoses.map((e, k) => t.endpointPosts().filter((px) => claimStud(poseToWorld(e, [-px, -4]) as Pt, `end${k}`, tc.postD))) });
+  let tieBands: CS | undefined;
   const turnoutTies = () => {
     connStuds();
     const railClear = 3.9 + TRACK_DEFAULTS.studD / 2 + 0.3, out: Man[] = [];
@@ -1307,9 +1308,25 @@ export function switchGeometry(s: Scad, plan: SwitchPlan, extraCuts: Man[] = [])
       const spots = scadParity() ? dedupe(fill, grid) : grid;
       // (with ballast, kept within its top layer: the ends don't stick out over the step below)
       const tie = cube([xr - xl, sleeperW, PLATE_H], [xl, y - sleeperW / 2, 0]);
-      out.push(s.difference(g.ballast ? s.intersection(tie, s.union(routes.map((rt) => sweep(sq([g.ballastTopW, PLATE_H + 2], [-g.ballastTopW / 2, -1]), rt)))) : tie,
-        [endKeepout()]));
-      for (const q of spots) if (claimStud(q, 'turnout')) out.push(T(t.stud(tc.postD, tc.postH), [q[0], q[1], PLATE_H - 0.2]));
+      let cutTie = s.difference(g.ballast ? s.intersection(tie, s.union(routes.map((rt) => sweep(sq([g.ballastTopW, PLATE_H + 2], [-g.ballastTopW / 2, -1]), rt)))) : tie,
+        [endKeepout()]);
+      // (a long tie the end connectors' room cuts in two, its tip past a route's end beyond it, under no track: that tip
+      // left out, and its studs. Left, it lay loose in the base: 262 mm3 of an R104 90 degree curved switch's)
+      let onTie = (_q: Pt) => true;
+      if (!scadParity()) {
+        const bits = cutTie.decompose();
+        if (bits.length > 1) {
+          tieBands ??= W.CrossSection.union(routes.map((rt) => { const L = routeLength(rt), n = Math.max(2, Math.ceil(L / 4)), side = (o: number) => Array.from({ length: n + 1 }, (_, k) => railPoint(rt, (L * k) / n, o) as Pt); return W.CrossSection.ofPolygons([[...side(-sleeperLen / 2), ...side(sleeperLen / 2).reverse()]]); }));
+          const keep = bits.filter((m) => m.project().intersect(tieBands!).area() > 1);
+          if (keep.length < bits.length) {
+            const foot = keep.length ? W.CrossSection.union(keep.map((m) => m.project())) : undefined;
+            cutTie = keep.length ? s.union(keep) : s.union([]);
+            onTie = (q) => !!foot && W.CrossSection.circle(tc.postD / 2, 16).translate(q).subtract(foot).area() < 0.01;
+          }
+        }
+      }
+      out.push(cutTie);
+      for (const q of spots) if (onTie(q) && claimStud(q, 'turnout')) out.push(T(t.stud(tc.postD, tc.postH), [q[0], q[1], PLATE_H - 0.2]));
     }
     return s.union(out);
   };

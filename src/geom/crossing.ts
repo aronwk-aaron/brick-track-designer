@@ -75,6 +75,10 @@ const RAIL_TOP = PLATE_H + 6.4;
 const HEAD_HW = 1.25;
 const END = 4;        // rails stop this far from a route end (the connector takes over)
 const BED_END = 8;    // the track bed stops here (the connector's base is the rest)
+/** (mm) With sleepers, a check rail may run this far over no sleeper, tie or bed (a gap between sleepers crossed at a slant); further, it gets bed under it. */
+export const CHECK_UNHELD = 24;
+/** (mm3) With sleepers, a bit of check rail smaller than this, cut off by other routes' flangeways and over nothing, is taken out: it would be loose. */
+const CHECK_STUB = 80;
 
 /** Place a shape given in a pose's frame (origin at the pose, +y along the heading). */
 /** (mm) Rows of studs closer than a stud apart less this are one row (a short piece's two ends': crossingPiece). */
@@ -395,6 +399,8 @@ export function crossingPiece(s: Scad, routes: Route[], o: CrossingOptions = CRO
     }
     return out;
   };
+  // (with sleepers: each route's rails' solid's place in parts, and its check rails as cut, for the stubs taken out after)
+  const railsAt: number[] = [], checksCut: Man[] = [];
   const extras = routes.map((_, i) => extraRails(s, tOf[i], routes, i, !!x.innerEnds?.has(`${i}:start`), !!x.innerEnds?.has(`${i}:end`), { w: o.flangeway, depth: o.flangewayDepth }));
   // (a third rail through a crossing: its own flangeway (the narrow gauge's wheels') cut through the other routes' rails
   // and third rails, as each route's flangeways are; and theirs through it)
@@ -452,7 +458,9 @@ export function crossingPiece(s: Scad, routes: Route[], o: CrossingOptions = CRO
       return [sweepRoute(s, sec(0), rt, cr.s0 + fl, cr.s1 - fl, bk),
         s.w.Manifold.hull([slice(cr.s0 + 0.05, away), slice(cr.s0 + fl, 0)]), s.w.Manifold.hull([slice(cr.s1 - fl, 0), slice(cr.s1 - 0.05, away)])];
     });
-    const railsAll = s.difference(s.union([rails, ...checks]), [...othersBands(i), ...dualBands(i), ...nearCuts(i, x.railCuts?.get(i) ?? [])]);
+    const railCutsI = [...othersBands(i), ...dualBands(i), ...nearCuts(i, x.railCuts?.get(i) ?? [])];
+    const railsAll = s.difference(s.union([rails, ...checks]), railCutsI);
+    if (sleepered && checks.length) { railsAt[i] = parts.length; checksCut[i] = s.difference(s.union(checks), railCutsI); }
     parts.push(hasRoll(rt) ? aboveZ(s, railsAll, 0) : railsAll); // (banked: the rails' feet, run down through the bed, turned, kept above its bottom)
     const banked = hasRoll(rt), roll0 = banked ? routeRoll(rt, 0) : 0, roll1 = banked ? routeRoll(rt, L) : 0;
     const bedAlong = (a = 0, b = Infinity) => (banked ? bankedBed(s, rt, trackBank(c.sleeperLen), c.sleeperLen / 2, onBallast ? -1 : 0, a, b) : sweepRoute(s, rect(-c.sleeperLen / 2, c.sleeperLen / 2, 0, PLATE_H), rt, a, b));
@@ -535,6 +543,43 @@ export function crossingPiece(s: Scad, routes: Route[], o: CrossingOptions = CRO
     const exCuts = ex?.solid && (ex.dualBand || dualBands(i).length) ? [...othersBands(i), ...dualBands(i)] : [];
     const exSolid = ex?.solid && exCuts.length ? s.difference(ex.solid, exCuts) : ex?.solid;
     if (exSolid) parts.push(banked ? aboveZ(s, exSolid, 0) : exSolid); // (banked: turned with the track, kept above the bed's bottom)
+  });
+  // (with sleepers: a check rail sits on bed. One that runs further than CHECK_UNHELD over no sleeper, tie or bed (in the
+  // gap between two long ties, where another route's ties were left out) has a sleeper put under its middle: it was a loose
+  // length of rail in the part)
+  if (sleepered) for (const cr of sol.checkRails) {
+    const i = cr.route, rt = routes[i], L = routeLength(rt), mid = cr.offset + cr.width / 2;
+    const held = (q: Vec2) => routes.some((r2, k) => Math.abs(routeLat(r2, q)) <= lenOf[k] / 2 && inZone(k, routeSOf(r2, q)))
+      || tiesBuilt.some((tb) => { const [across, along] = worldToPose(tb.P, q); return across >= tb.lo && across <= tb.hi && Math.abs(along) <= cOf[tb.i].sleeperW / 2; });
+    let run = 0, worst = 0;
+    for (let v = Math.max(0, cr.s0); v <= Math.min(L, cr.s1) + 1e-9; v += 1) { run = held(railPoint(rt, v, mid) as Vec2) ? 0 : run + 1; worst = Math.max(worst, run); }
+    if (worst <= CHECK_UNHELD) continue;
+    // (and only one held by nothing at all, which would be loose: a slab just under it, in none of the piece's sleepers,
+    // ties, bed or points. One held somewhere along it is left as it is: a detachable section's branch, its check rail
+    // over the gap to the straight's module, got a sleeper that joined the two modules into one part)
+    const s0c = Math.max(0, cr.s0), s1c = Math.min(L, cr.s1), slab = sweepRoute(s, rect(cr.offset - 0.5, cr.offset + cr.width + 0.5, PLATE_H - 0.05, PLATE_H + 0.01), rt, s0c, s1c), sb = slab.boundingBox();
+    const meets = (m: Man) => { const q = m.boundingBox(); return [0, 1, 2].every((k) => q.min[k] <= sb.max[k] && sb.min[k] <= q.max[k]) && slab.intersect(m).volume() > 1e-4; };
+    if ([...parts.filter((_, k) => k !== railsAt[i]), ...(x.adds ?? [])].some(meets)) continue;
+    // (a sleeper of its own track under its middle, as the others are made, its studs clear of it: not a stretch of bed
+    // as wide as the track, which beside another track's part (a detachable section's branch by its straight) joined the
+    // two into one; nor one near an end, where the connector holds it)
+    const v = Math.min(Math.max((Math.max(0, cr.s0) + Math.min(L, cr.s1)) / 2, BED_END + c.sleeperW), L - BED_END - c.sleeperW), P = routePose(rt, v), half = lenOf[i] / 2;
+    if (Array.from({ length: 9 }, (_, k) => -half + (k * half) / 4).some((o2) => inEndBox(P, o2))) continue;
+    const okPost = (p: Vec2) => { const q = poseToWorld(P, p) as [number, number]; return !byCheckRail(q) && claim(q); };
+    const sl = tOf[i].sleeper(okPost);
+    tiesBuilt.push({ i, P, lo: -half, hi: half }); sleeperAt.push({ i, v, lo: -half, hi: half });
+    parts.push(atPose(hasRoll(rt) ? bankedSleeper(s, sl, trackBank(lenOf[i]), routeRoll(rt, v), lenOf[i], cOf[i].sleeperW) : sl, P));
+  }
+  // (and a bit of check rail the other routes' flangeways or rails cut off, smaller than CHECK_STUB mm3, over no sleeper,
+  // tie or bed: taken out. Left, it stood loose on nothing (stubs of 15 to 52 mm3, the yards', the wye with a crossover's))
+  if (sleepered) checksCut.forEach((cc, i) => {
+    if (!cc) return;
+    const bits = cc.decompose().filter((m) => m.volume() < CHECK_STUB);
+    if (!bits.length) return;
+    const heldAt = (q: Vec2) => routes.some((r2, k) => Math.abs(routeLat(r2, q)) <= lenOf[k] / 2 && inZone(k, routeSOf(r2, q)))
+      || tiesBuilt.some((tb) => { const [across, along] = worldToPose(tb.P, q); return across >= tb.lo && across <= tb.hi && Math.abs(along) <= cOf[tb.i].sleeperW / 2; });
+    const loose = bits.filter((m) => { const b = m.boundingBox(); return ![[0.5, 0.5], [0.1, 0.1], [0.9, 0.9], [0.1, 0.9], [0.9, 0.1]].some(([u, v]) => heldAt([b.min[0] + (b.max[0] - b.min[0]) * u, b.min[1] + (b.max[1] - b.min[1]) * v])); });
+    if (loose.length) parts[railsAt[i]] = s.difference(parts[railsAt[i]], loose);
   });
   // Studs on the bed, as on LEGO track's sleepers: on the stud grid (of the
   // grid pose), between and beside the rails, wherever they're clear of

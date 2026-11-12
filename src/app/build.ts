@@ -1160,6 +1160,10 @@ function cornersOf(m: Man): Float32Array {
   return out;
 }
 /** The cut context for a build: its points kept clear, its joints, and the cutters (fitter, bedCut, whole). fdbPoints: the plate-style blades. */
+/** (mm3) A body of a cut part smaller than this, not one with the rest, is a bit a cut left loose (cutContext rehome); bigger, a part of its own (bodies: 600). */
+const LOOSE_BIT = 600;
+/** (mm3) A loose body of a part smaller than this is a chip, dropped from the part (viewOf): nothing to print. */
+const CHIP_DROP = 2;
 function cutContext(w: Wasm, scad: Scad, o: PieceOptions, track: Track, routes: Route[], splits: Split[], crossings: [number, number][], fdbPoints: boolean) {
   // (a part fits the bed if it does turned any way, corner to corner too (geom/bedfit.ts): its file is its own, and
   // it's laid on the bed however it goes. Its box as it lies in the design first: most parts fit so, and need no more)
@@ -1285,21 +1289,57 @@ function cutContext(w: Wasm, scad: Scad, o: PieceOptions, track: Track, routes: 
     };
     return fitAll;
   };
+  /**
+   * The parts cut from a piece with nothing a cut left loose in them: each bit of a part smaller than LOOSE_BIT that isn't
+   * one with its body (a corner of bed cut off where two cuts meet, a sliver of a slip's points bed cut off by the stepped
+   * middle cut) put back on the part across the cut that it was one with, joined to it there; one no part takes left
+   * where it was (the checks find it), or with dropLoose left out. Parts with nothing loose are as they were.
+   */
+  /** dropLoose: a bit no part takes (a cut left a gap between them) left out, not left loose. */
+  const rehome = (ps: Man[], dropLoose = false): Man[] => {
+    if (ps.length < 2) return ps;
+    const bodiesOf = (x: Man) => flat(w, x).decompose().filter((y) => y.volume() > 0.01).sort((p2, q2) => q2.volume() - p2.volume());
+    const out = [...ps], loose: { from: number; chip: Man }[] = [];
+    out.forEach((p2, i) => {
+      if (one.has(p2)) return;
+      const bs = bodiesOf(p2), chips = bs.slice(1).filter((y) => y.volume() < LOOSE_BIT);
+      if (!chips.length) return;
+      for (const c of chips) loose.push({ from: i, chip: c });
+      out[i] = scad.union(bs.filter((y) => !chips.includes(y)));
+    });
+    if (!loose.length) return ps;
+    const near = (a: Man, bb: { min: number[]; max: number[] }) => { const x = a.boundingBox(); return [0, 1, 2].every((k) => x.max[k] >= bb.min[k] - 0.5 && x.min[k] <= bb.max[k] + 0.5); };
+    for (const { from, chip } of loose) {
+      const cb = chip.boundingBox();
+      let to = -1;
+      for (let i = 0; i < out.length && to < 0; i++) {
+        if (i === from || !near(out[i], cb)) continue;
+        const u = scad.union([out[i], chip]);
+        if (bodiesOf(u).length === bodiesOf(out[i]).length) { out[i] = u; to = i; }
+      }
+      // (one no part takes, a cut's gap between them (a stepped path's 0.1 mm), is left out: the bed's a hair short
+      // there. Bridged across the gap, the part's file had 31 edges more shared by more than two triangles)
+      if (to < 0 && !dropLoose) out[from] = scad.union([out[from], chip]);
+    }
+    return out;
+  };
   /** The parts cut from body, with the studs a cut went through as set (Studs a cut goes through: never half a stud on a part unless asked; geom/studs.ts). */
   const whole = (body: Man, parts: Man[]) => ((o.studsAtCuts ?? 'off') === 'split' ? parts
     : wholeStuds(scad, findStuds(scad, body, track.c.postD / 2, track.o.studH, PLATE_H, PLATE_H), parts, track.c.postD / 2, track.o.studH, o.studsAtCuts === 'whole', fitsBed));
   /** A part too big for the bed cut as the parts filling it are: straight across where it can (tiles.ts planCuts), then along stepped paths (fitter). */
   /** taken: the rail-end tongue joints earlier cuts of the piece m is a part of made (cutter.ts jointsNear). */
-  const bedCut = (m: Man, pieceRoutes: Route[], taken: [number, number][] = []): Man[] => {
+  /** keep: more places no cut goes (a section's own track ends inside it: endKeeps). */
+  const bedCut = (m: Man, pieceRoutes: Route[], taken: [number, number][] = [], keep: Keep[] = []): Man[] => {
     if (fitsBed(m)) return [m];
-    const bb = m.boundingBox(), plan = planCuts([bb.min[0], bb.min[1], bb.max[0], bb.max[1]], o.printBedX, o.printBedY, 0, 0, 0, pointsAvoid, pieceRoutes, bandHalf, jointRoom, track.c.railOffset, crossings);
+    const avoid = keep.length ? [...pointsAvoid, ...keep] : pointsAvoid;
+    const bb = m.boundingBox(), plan = planCuts([bb.min[0], bb.min[1], bb.max[0], bb.max[1]], o.printBedX, o.printBedY, 0, 0, 0, avoid, pieceRoutes, bandHalf, jointRoom, track.c.railOffset, crossings);
     const lines: CutLine[] = [...plan.xs.map((x): CutLine => ({ p: [x, 0], d: [0, 1] })), ...plan.ys.map((y): CutLine => ({ p: [0, y], d: [1, 0] }))];
     const holes: Keep[] = [], cells = lines.length ? cutPiece(scad, track, m, pieceRoutes, lines, join.joint, join.flatRails, noTongue, holes as [number, number, number][], fitsBed, taken) : [m];
-    const fit = fitter(pieceRoutes, holes, taken);
+    const fit = fitter(pieceRoutes, keep.length ? [...keep, ...holes] : holes, taken);
     return cells.filter((c2) => c2.numTri() > 0).flatMap((c2) => fit(c2));
   };
   // (pointsAvoid: the plate-style levers' keep-outs are added as each is placed (leverItem); crossings: the overlay's, no straight cut through them)
-  return { fitsBed, turnOf, tightOf, pointsAvoid, zones, noTongue, join, jointRoom, bandHalf, bandHalf0, bp, crossings, fitter, bedCut, whole, bodies };
+  return { fitsBed, turnOf, tightOf, pointsAvoid, zones, noTongue, join, jointRoom, bandHalf, bandHalf0, bp, crossings, fitter, bedCut, whole, bodies, rehome };
 }
 /** How cutting a part to fit goes: the bed, where no cut goes, how cuts join, and the cutters. */
 type CutContext = ReturnType<typeof cutContext>;
@@ -1372,7 +1412,8 @@ function bedIssue(b: PieceBuild, bb: { min: number[]; max: number[] }, tight: nu
 // the part read back from them, as the checks read it, came out another shape, 250 mm3 of its bed gone. While
 // supports were bodies of the part, a part with any was drawn from its bodies already.)
 function viewOf(w: Wasm, m: Man, notes?: SupportNote[]): { positions: Float32Array; supports?: Float32Array; clean: Man; file: Man; volume: number } {
-  const all = flat(w, m, false).decompose(), bits = all.filter((b) => b.volume() >= 0.5);
+  // (and a chip of a few mm3 loose in it dropped: a stub of a sleeper's wall cut off where a stud stands across it, 0.7 to 0.9 mm3)
+  const all = flat(w, m, false).decompose(), bits = all.filter((b) => b.volume() >= CHIP_DROP || all.length === 1);
   const clean = !bits.length ? m : bits.length === 1 ? bits[0] : w.Manifold.compose(bits);
   const own = finishSupports(w, m, notes), file = own ? w.Manifold.compose([clean, own]) : clean, volume = m.volume() + (own?.volume() ?? 0);
   // (tests: the loose bits that were once taken for supports, much smaller than the part: listed)
@@ -1495,7 +1536,7 @@ function addTrack(b: PieceBuild, name: string, world0: Man, pieceRoutes: Route[]
     // (and each part gripping along its cut edges too)
     const parts0 = cells.flatMap((m) => arena(w, () => fitAll(m), (r2) => r2)); // (each cell's leftovers freed as it goes)
     if (parts0.length < 2) return parts0;
-    const parts = cx.whole(world, parts0);
+    const parts = cx.rehome(cx.whole(world, parts0));
     const gp = routePose(pieceRoutes[0], 0), bottom = world.boundingBox().min[2] + 0.02;
     return parts.map((m) => arena(w, () => (b.alongTrack ? m : edgeGrip(scad, track, m, gp, bottom)), (r2) => [r2]));
   });
@@ -1633,7 +1674,7 @@ function sectioned(b: PieceBuild, name: string, all: Route[], checks: CheckRail[
    * (a stud-grid path for splitOnPath); with sleepers, the lines of its runs, for the bed kept across them. Only for
    * tracks square to the grid; undefined when it's not two tracks wide.
    */
-  const middleCut = (m: Man, sec: number[]) => {
+  const middleCut = (m: Man, sec: number[], keeps: Keep[] = []) => {
     const h = routePose(all[sec.length ? plan.pieces[sec[0]][0] : 0], 0)[2], q = ((h % 90) + 90) % 90;
     if (Math.min(q, 90 - q) > 0.5) return undefined;
     // (along: the axis the tracks run on; the cut runs across them, along the other)
@@ -1642,8 +1683,9 @@ function sectioned(b: PieceBuild, name: string, all: Route[], checks: CheckRail[
     if (hi[ac] - lo[ac] < 2 * track.c.sleeperLen) return undefined;
     const cMid = Math.round((lo[ac] + hi[ac]) / 2 / 8) * 8, aMid = (lo[al] + hi[al]) / 2;
     // (the plain track's joints beside it, each side of the middle)
+    // (not where one of its own pieces ends inside it: keeps, the section's endKeeps)
     const joints = plan.pieces.flatMap(([pi, a, b2], k) => (sec.includes(k) ? [] : [a, b2].map((sv) => routePose(all[pi], sv))))
-      .filter((jp) => jp[al] > lo[al] + 48 && jp[al] < hi[al] - 48 && jp[ac] > lo[ac] - 8 && jp[ac] < hi[ac] + 8);
+      .filter((jp) => jp[al] > lo[al] + 48 && jp[al] < hi[al] - 48 && jp[ac] > lo[ac] - 8 && jp[ac] < hi[ac] + 8 && !keeps.some((q) => Math.abs(q[al] - jp[al]) <= (q[3] ?? 0)));
     const nearest = (side: number) => joints.filter((jp) => Math.sign(jp[ac] - cMid) === side).map((jp) => jp[al]).sort((u, v) => Math.abs(u - aMid) - Math.abs(v - aMid))[0];
     const j0 = nearest(-1) ?? nearest(1) ?? Math.round(aMid / 8) * 8, j1 = nearest(1) ?? j0;
     // (the path in (across, along), a stud a step: from beyond one side at j0 to the middle, along to j1, on beyond the other)
@@ -1701,6 +1743,20 @@ function sectioned(b: PieceBuild, name: string, all: Route[], checks: CheckRail[
         bladeCuts: sp.bladeCuts.flatMap(([i, m]) => ps.flatMap(([pi], k) => (pi === i ? [[k, m] as [number, Man]] : []))) }];
     });
     const secInner = b.dropInner(rts);
+    // (where its pieces end inside it, at a joint with the track on from them: a track's end running into the track
+    // beside or across it. No cut through that end's connector: cut there, its rail-end tongues and its peg and clip,
+    // which stand out past the end, were left loose in the part past the cut (endKeeps))
+    const ownEnds = rts.flatMap((rt, k) => [!secInner.has(`${k}:start`) && { P: routePose(rt, 0), into: 1, rt }, !secInner.has(`${k}:end`) && { P: routePose(rt, routeLength(rt)), into: -1, rt }])
+      .filter((e): e is { P: Pose; into: number; rt: Route } => !!e && !b.bufs.some((bq) => Math.hypot(bq[0] - e.P[0], bq[1] - e.P[1]) < 1));
+    /** The ends of its pieces well inside m (not at its edges, where a part's ends are): points across each connector, kept out of every cut. */
+    const endKeeps = (m: Man): Keep[] => {
+      const bb = m.boundingBox(), inside = (q: Pose) => q[0] > bb.min[0] + 24 && q[0] < bb.max[0] - 24 && q[1] > bb.min[1] + 24 && q[1] < bb.max[1] - 24;
+      return ownEnds.filter((e) => inside(e.P)).flatMap((e) => {
+        const hw = sleeperLenOf(e.rt, track.c.sleeperLen) / 2, out: Keep[] = [];
+        for (let x = -hw; x <= hw + 1e-9; x += 8) { const q = poseToWorld(e.P, [x, e.into * 2]); out.push([q[0], q[1], 10, 8]); }
+        return out;
+      });
+    };
     // (each of its pieces a bought track piece, if it is one, ordinary ends both sides: a 16-stud straight LEGO's (53401),
     // BrickTracks' 1/2, 1/4 and 1/10 straights, LEGO's R40 curves and BrickTracks' R56 to R120 ones; none crossing another)
     const plainSec = bought && !mine.length && !cChecks.length && !secInner.size
@@ -1803,7 +1859,7 @@ function sectioned(b: PieceBuild, name: string, all: Route[], checks: CheckRail[
       if (hps.length) {
         const whole0 = body, bottom = body.boundingBox().min[2] + 0.02;
         const cutUp = step(() => { const got = cutOnPaths(scad, whole0, rts, hps, join, taken, (m) => flat(w, m)); pathsDone = got.done; return got.parts; });
-        if (cutUp.length > 1) parts2 = step(() => cx.whole(whole0, cutUp.flatMap((m) => step(() => cx.bedCut(m, rts, taken)))).map((m) => (b.alongTrack ? m : edgeGrip(scad, track, m, gridPose, bottom))));
+        if (cutUp.length > 1) parts2 = step(() => cx.whole(whole0, cutUp.flatMap((m) => step(() => cx.bedCut(m, rts, taken, endKeeps(m))))).map((m) => (b.alongTrack ? m : edgeGrip(scad, track, m, gridPose, bottom))));
       }
       const byHand = parts2.length > 1;
       if (byHand) { /* (cut already) */ } else if (bp && (mine.length || rts.length > 1)) {
@@ -1820,20 +1876,22 @@ function sectioned(b: PieceBuild, name: string, all: Route[], checks: CheckRail[
       if (byHand) { /* (cut already) */ } else if (!bp && !fitsBed(body)) {
         // (wider than a crossover, a throat fanning out to three tracks or more: cut in two down its middle, along the
         // tracks, as plate-style monster switches are; a crossover across its middle)
-        const whole0 = body, mc = arena(w, () => lengthwiseCut(whole0, rts) ?? middleCut(whole0, sec), () => []);
+        const whole0 = body, mc = arena(w, () => lengthwiseCut(whole0, rts) ?? middleCut(whole0, sec, endKeeps(whole0)), () => []);
         if (mc && b.sleepered) body = step(() => buildBody(mc.bedAt));
         // (each half a solid of its own (kernel.ts flat): cut again with its record of what it was cut from, a half of a
         // big piece took many minutes)
         const whole1 = body, halves = mc ? step(() => { const sp = splitOnPath(scad, whole1, rts, mc.path, mc.axis, join); taken.push(...sp.tongueAt); return sp.parts.map((h) => flat(w, h)); }) : [body];
         const bottom = body.boundingBox().min[2] + 0.02;
-        parts2 = step(() => cx.whole(whole1, halves.flatMap((m) => step(() => cx.bedCut(m, rts, taken)))).map((m) => (b.alongTrack ? m : edgeGrip(scad, track, m, gridPose, bottom))));
+        parts2 = step(() => cx.whole(whole1, halves.flatMap((m) => step(() => cx.bedCut(m, rts, taken, endKeeps(m))))).map((m) => (b.alongTrack ? m : edgeGrip(scad, track, m, gridPose, bottom))));
       } else if (parts2.some((m) => !fitsBed(m))) {
         // (cut at the baseplate edges, and a part still too big for the bed: cut as the parts filling the bed are)
         const bottom = body.boundingBox().min[2] + 0.02;
-        parts2 = parts2.flatMap((m) => (fitsBed(m) ? [m] : step(() => cx.whole(m, step(() => cx.bedCut(flat(w, m), rts, taken))).map((m2) => (b.alongTrack ? m2 : edgeGrip(scad, track, m2, gridPose, bottom))))));
+        parts2 = parts2.flatMap((m) => (fitsBed(m) ? [m] : step(() => cx.whole(m, step(() => cx.bedCut(flat(w, m), rts, taken, endKeeps(m)))).map((m2) => (b.alongTrack ? m2 : edgeGrip(scad, track, m2, gridPose, bottom))))));
       }
       // (the track on from each far end of a bought switch a part of its own: partedAtSwitches)
       // (pieces of it that don't touch, each a part of its own: a file held two or three loose ones (past a three-way's frogs, the middle track and each branch's end))
+      // (a bit a cut left loose: back on the part across the cut, cutContext rehome)
+      parts2 = parts2.length > 1 ? step(() => cx.rehome(parts2, true)) : parts2;
       const kept = parts2.filter((m) => m.numTri() > 0).flatMap((m) => partedAtSwitches(b, m)).flatMap((m) => cx.bodies(m, 600)), id = (k: number) => (kept.length > 1 ? `${base + si + 1}-${k + 1}` : `${base + si + 1}`);
       return { ms: kept.map((m, k) => arena(w, () => ({ ...bake(b, labelled(b, m, rts, kept.length > 1 ? undefined : sizeOf(rts), id(k))), ...(b.labelOn && { id: id(k) }) }), () => [])), grips, ...(pathsDone && { paths: pathsDone }) };
     }, () => []), { ms: [], grips: [] }); } catch (err) {
@@ -1927,7 +1985,7 @@ function tiled(b: PieceBuild, name: string, all: Route[], checks: CheckRail[], s
       // (and a part still too big, or in pieces that don't touch, fitted as addTrack's are: the straight cuts can't
       // always get round a curvy track without running along it)
       // (and the track on from each far end of a bought switch a part of its own: partedAtSwitches)
-      const fit = cx.fitter(cr.routes, holes, taken), parts = step(() => cx.whole(body, got.filter((m) => m.numTri() > 0).flatMap((m) => step(() => fit(m))))).flatMap((m) => partedAtSwitches(b, m));
+      const fit = cx.fitter(cr.routes, holes, taken), parts = step(() => cx.rehome(cx.whole(body, got.filter((m) => m.numTri() > 0).flatMap((m) => step(() => fit(m)))))).flatMap((m) => partedAtSwitches(b, m));
       return { ms: parts.map((m, k) => arena(w, () => ({ ...bake(b, labelled(b, b.alongTrack ? m : edgeGrip(scad, track, m, gridPose, bottom), cr.routes, undefined, `${base + ci + 1}-${k + 1}`)), ...(b.labelOn && { id: `${base + ci + 1}-${k + 1}` }) }), () => [])),
         grips: grips.filter((q) => q[0] > R[0] && q[0] <= R[2] && q[1] > R[1] && q[1] <= R[3]) };
     }, () => []), { ms: [], grips: [] }); } catch (err) {
@@ -1977,7 +2035,7 @@ function buildSwitches(b: PieceBuild, switches: ReturnType<typeof planPieces>['s
     const grid: Pose | undefined = b.alongTrack ? undefined : [...worldToPose(sw.pose, [b.gridPose[0], b.gridPose[1]]), b.gridPose[2] - sw.pose[2]] as Pose;
     const gm = cached(`sw:${JSON.stringify({ routes: sw.routes, sets: sw.sets, params, cl, tw: b.grooveEdits, grid })}`, () => {
       const g = switchGeometry(scad, grid ? { ...sw.plan, p: { ...sw.plan.p, grid } } : sw.plan, frameCuts);
-      return { bases: g.basePieces(), whole: g.base(), grips: g.grips, sets: sw.sets.map((_, k) => ({ thr: g.throwPart(k), thrPrint: g.throwPrint(k), thp: g.throwPostsPart(k), thpPrint: g.throwPostsPrint(k), pp: g.pointsParts(k), print: g.leverPrint(k), lever: g.leverPart(k), bracket: params.throwModule ? g.bracketPart(k) : undefined,
+      return { bases: cx.rehome(g.basePieces()), whole: g.base(), grips: g.grips, sets: sw.sets.map((_, k) => ({ thr: g.throwPart(k), thrPrint: g.throwPrint(k), thp: g.throwPostsPart(k), thpPrint: g.throwPostsPrint(k), pp: g.pointsParts(k), print: g.leverPrint(k), lever: g.leverPart(k), bracket: params.throwModule ? g.bracketPart(k) : undefined,
         spring: g.springPart(k), springPrint: g.springPrint(k), turns: g.pointsTurns(k), move: g.throwMove(k) })), nail: sw.sets.map((_, k) => g.isNail(k)) };
     });
     const bases = gm.bases;

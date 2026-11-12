@@ -15,7 +15,7 @@ import { Scad } from '../src/geom/scad';
 import { sweepRoute } from '../src/geom/sweep';
 import type { Route } from '../src/route/route';
 import { BASE_DEFAULTS, type BaseParams, type SetSpec, switchGeometry, switchPlan } from '../src/switch/base';
-import { assembledProblems, LOOSE } from './assembled.shared';
+import { assembledProblems } from './assembled.shared';
 
 const APP = (globalThis as { APP_DEFAULTS?: PieceOptions }).APP_DEFAULTS!;
 
@@ -112,10 +112,8 @@ describe('a three-way with a lever to each blade goes together', { timeout: 9000
       expect(b.pieces.filter((q) => /lever/.test(q.name))).toHaveLength(2);
       expect(b.info.warnings.filter((q) => !says?.test(q))).toEqual([]);
       if (says) expect(b.info.warnings.some((q) => says.test(q))).toBe(true);
-      // (but for the loose bit known of it, which must still be found: assembled.shared.ts LOOSE)
-      const loose = name === 'at 30° to the stud grid' ? LOOSE['a three-way with two levers, at 30° to the stud grid'].parts : undefined, problems = assembledProblems(w, b.pieces, { ...APP, ...d.options });
-      expect(problems.filter((q) => !loose?.test(q)).join('; ')).toBe('');
-      if (loose) expect(problems.some((q) => loose.test(q)), `${loose} is no longer found: take it off the list`).toBe(true);
+      // (at 30 degrees to the grid its check rail stood over no sleeper, loose, till a check rail had bed under it: crossing.ts CHECK_UNHELD)
+      expect(assembledProblems(w, b.pieces, { ...APP, ...d.options }).join('; ')).toBe('');
     } finally { Object.assign(OPTION_DEFAULTS, saved); clearBuildCache(); }
   });
   it('a track alongside 8 studs over, where the lever on that side has no room: said, with what to do', async () => {

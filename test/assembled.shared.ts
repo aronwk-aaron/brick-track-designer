@@ -553,35 +553,11 @@ export const KNOWN: Record<string, Known> = {
  * mm), and each must still be found.
  */
 export const LOOSE: Record<string, { parts: RegExp; why: string }> = {
-  'Double slip (22.5°)': { parts: /^track[12] is in 2 pieces/, why: 'a bit of bed beside each part, 159 and 204 mm3 (19.5 x 7, z 0 to 3.9) at -51, -4 and 51, 4' },
-  'Narrow gauge beside and across standard track': { parts: /^track3 is in 7 pieces|^track5 is in 2 pieces/,
-    why: 'track3, where its end at 0, 449 runs into the track across it: two rail-end tongue heads (42 and 46 mm3, z to 9.6) and three chips of bed (7 to 18 mm3) loose, and 1 mm3 of a sleeper\'s wall at 118, 519 (z 0 to 2), a chip cut off where a stud stands across the wall, now the sleepers are hollow underneath; track5: 83 mm3 of bed (10 x 5) at -49, 293' },
-  'Double crossover (R56)': { parts: /^track3 is in 3 pieces/, why: 'a length of check rail with no bed under it (194 mm3, 2.5 x 30, z 3.2 to 9.6) at 143, 400, as the rail check says, and 77 mm3 of bed (8 x 4) at 156, 478' },
-  'Yard ladder (R40)': { parts: /^track1 is in 2 pieces|^track2 is in 2 pieces|^track13 is in 5 pieces|^track15 is in 3 pieces/,
-    why: 'eight loose bits where track ends run into other track: rail-end tongue heads of 42 and 46 mm3 (z to 9.6) at 150, 566 and 108, 566, a stub of rail (15 mm3) at 186, 472, and chips of bed of 5 to 17 mm3 at 45, 240; 136, 565; 178, 563; 236, 565 (the last new with the hollow sleepers: 4.7 x 1.7, z 0 to 3.2, cut off where a stud stands across a sleeper\'s end). And the bit of bed at 56, 245 with track1: 561 mm3 now it\'s hollow underneath, it was 608 and a part of its own (track2: a bit of 600 mm3 or more is one, pathsplit.ts BIT), so the parts after it are one lower than they were (track2, track13, track15 were track3, track14, track16)' },
-  'Wye with a crossover': { parts: /^track6 is in 2 pieces|^track15 is in 2 pieces|^track20 is in 2 pieces/, why: 'slivers of rail standing on the bed: 52 mm3 (1 x 8, z 3.2 to 9.6) at 143, 767 and 6 mm3 (1.3 x 1.3) at 58, 658 (the nub the rail check finds); and 0.7 mm3 of wall (0.7 x 1.4, z 0 to 2) at 18, 1234 on track20, a chip cut off where a stud stands across the wall' },
   'Banked curve': { parts: /^track7 is in 2 pieces/, why: 'a sliver thinner than paper (0.6 x 3.9, z 0 to 2, under 0.05 mm3) at -421, 760, at the low end of a banked sleeper, 1 mm thick there: the stub of its end wall between two studs\' places is taken out with them (it stood loose, 4 mm3: underside.ts hollowGrid, stubs), and the cut part\'s rim comes back along its edge' },
-  'Curved switch R40 90° left': { parts: /^switch-base2 is in 2 pieces/, why: 'a chip of bed, 3.6 mm3 (1.5 x 1.5, z 0 to 3.2) at -119, 201' },
-  'Curved switch R40 90° right': { parts: /^switch-base2 is in 2 pieces/, why: 'as the left: at 119, 201' },
-  'Curved switch R104 90° left': { parts: /^switch-base3 is in 3 pieces/, why: 'two bits of bed loose from the base\'s third part: 313 mm3 (19 x 13, z 0 to 3.2) at -159, 474 and 21 mm3 at -165, 435' },
-  'Curved switch R104 90° right': { parts: /^switch-base3 is in 3 pieces/, why: 'as the left: at 159, 474 and 165, 435' },
-  'Pass-through crossing R120 left': { parts: /^track[12] is in 2 pieces/, why: 'a length of check rail on each part with no bed under it (191 and 197 mm3, z 3.2 to 9.6) at -42, 50 and 56, -69, as the rail check says' },
-  'Pass-through crossing R120 right': { parts: /^track[12] is in 2 pieces/, why: 'as the left: at 42, 50 and -56, -69' },
-  'Double crossover R40': { parts: /^track[12] is in 2 pieces/, why: 'a length of check rail on each part with no bed under it (194 mm3, 2.5 x 30, z 3.2 to 9.6) at -79, 32 and -79, -32, as the rail check says' },
-  'Narrow-gauge double crossover R36': { parts: /^track[12] is in 2 pieces/, why: 'as the R40 double crossover: at -55, 41 and -55, -41' },
-  'Modular double crossover R40, levers inside': { parts: /^track[12] is in 2 pieces/, why: 'as the R40 double crossover: at -79, 32 and -79, -32' },
-  'Modular double crossover R40, levers outside': { parts: /^track[12] is in 2 pieces/, why: 'as the R40 double crossover: at -79, 32 and -79, -32' },
   'X yard (6 tracks, single slips)': { parts: /^track1[38] is in 2 pieces/, why: 'a bit of ballast loose under each of two parts: 31 mm3 (2.8 x 6.8, z -3.2 to 0) at 306, 1292 and 34 mm3 (3 x 7.2, z -3.2 to 1.8) at 334, 1012' },
-  'Yard (R56)': { parts: /^track(3|42) is in 3 pieces|^track(8|39) is in 2 pieces|^track38 is in 6 pieces/,
-    why: 'eleven loose bits: the double crossover\'s length of check rail with no bed (194 mm3) at -143, -480 and its bit of bed (77 mm3) at -156, -402; where a track\'s end runs into the next at 108 to 150, 617, two rail-end tongue heads (33 and 42 mm3) and three chips of bed (7 to 18 mm3); stubs of rail of 22 to 38 mm3 (z 3.2 to 9.6) at 48, 164; 369, 1104; 441, 1114; a chip of bed (13 mm3) at 299, 878' },
   // (saved designs)
-  'return-loop-turning-left.btd.json': { parts: /^track2 is in 2 pieces/, why: 'a bit of bed loose beside the part, 153 mm3 (17.3 x 6, z 0 to 3.2) at -55, 513' },
   'monster-switch-6-tracks.btd.json': { parts: /^track1[38] is in 2 pieces/, why: 'as the X yard (it is that layout): a bit of ballast loose under each of two parts, 31 mm3 at 306, 1292 and 34 mm3 at 334, 1012' },
   'monster-switch-6-tracks-double-slips.btd.json': { parts: /^track1[47] is in 2 pieces/, why: 'a bit of ballast loose under each of two parts: 101 mm3 (4.3 x 15.7, z -3.2 to 1.8) at 334, 1296 and 95 mm3 (4.2 x 15.2) at 306, 1008' },
-  // (three-way-levers.test.ts's three-way with a lever to each blade, turned 30 degrees to the stud grid)
-  'a three-way with two levers, at 30° to the stud grid': { parts: /^track1 is in 2 pieces/, why: 'a length of rail with no bed under it, 185 mm3 (z 3.2 to 9.6) at -28, 150' },
-  // (nail-switch.test.ts's three tracks side by side, the middle one's points boxed in)
-  'points boxed in, as a nail switch': { parts: /^track[24] is in 6 pieces/, why: 'five loose bits on each of two parts where the tracks end side by side at y 110: bits of rail end and of bed (two of them the nubs the rail check finds on track4, 0.9 x 3.9, at -52.5, 110 and -92.5, 110)' },
 };
 
 /** The kinds of rail fault (railFaults) a design may be known for. */
@@ -595,7 +571,7 @@ const RAIL_KINDS = { nub: /has a nub of rail/, stud: /stud at .* is run into|mor
  * check rail with no bed or sleeper under it for 26 mm (the R72 pass-through crossings', at 64, -52).
  * ('the double slip as nail switches': nail-switch.test.ts's, the 22.5 degree double slip.)
  */
-export const RAIL_KNOWN: Record<string, (keyof typeof RAIL_KINDS)[]> = { 'Double crossover (R56)': ['stud', 'check'], 'Double slip (22.5°)': ['nub'], 'the double slip as nail switches': ['nub'], 'Double slip (45°, R40)': ['nub', 'stud'], 'Double slip R40 45°': ['nub'], 'Dual gauge crossing 45°': ['nub'], 'Narrow-gauge wye R36': ['stud'], 'Pass-through crossing R72 (A) left': ['check'], 'Pass-through crossing R72 (A) right': ['check'], 'Single slip R40 45°': ['nub'], 'Wye R40': ['stud'], 'Wye R40 left, R56 right': ['stud'], 'Wye R40, 8-stud spacing': ['stud'], 'Wye R56 left, R40 right': ['stud'], 'X yard (6 tracks, single slips)': ['nub'], 'Yard (R56)': ['nub', 'stud', 'sliver', 'check'], 'Yard ladder (R40)': ['nub', 'sliver'], 'monster-switch-6-tracks-double-slips.btd.json': ['nub'], 'monster-switch-6-tracks.btd.json': ['nub'], 'return-loop-turning-left.btd.json': ['nub'], 'return-loop-turning-right.btd.json': ['nub'], 'Pass-through crossing R120 left': ['check'], 'Pass-through crossing R120 right': ['check'], 'Double crossover R40': ['check'], 'Narrow-gauge double crossover R36': ['check'], 'Modular double crossover R40, levers inside': ['check'], 'Modular double crossover R40, levers outside': ['check'], 'Wye with a crossover': ['nub'], 'points boxed in, as a nail switch': ['nub'] };
+export const RAIL_KNOWN: Record<string, (keyof typeof RAIL_KINDS)[]> = { 'Double crossover (R56)': ['stud'], 'Double slip (22.5°)': ['nub'], 'the double slip as nail switches': ['nub'], 'Double slip (45°, R40)': ['nub', 'stud'], 'Double slip R40 45°': ['nub'], 'Dual gauge crossing 45°': ['nub'], 'Narrow-gauge wye R36': ['stud'], 'Pass-through crossing R72 (A) left': ['check'], 'Pass-through crossing R72 (A) right': ['check'], 'Single slip R40 45°': ['nub'], 'Wye R40': ['stud'], 'Wye R40 left, R56 right': ['stud'], 'Wye R40, 8-stud spacing': ['stud'], 'Wye R56 left, R40 right': ['stud'], 'X yard (6 tracks, single slips)': ['nub'], 'Yard (R56)': ['nub', 'stud', 'sliver'], 'Yard ladder (R40)': ['nub'], 'monster-switch-6-tracks-double-slips.btd.json': ['nub'], 'monster-switch-6-tracks.btd.json': ['nub'], 'return-loop-turning-left.btd.json': ['nub'], 'return-loop-turning-right.btd.json': ['nub'] };
 
 /**
  * 7. Edges shared by more than two triangles in the printed parts' files (assembly.shared.ts sharedEdges), a template's
@@ -627,6 +603,12 @@ export const EDGES: Record<string, number> = { 'Modular wye R40, lever on the le
   // (and in a support cut back from the part, layer by layer (supports.ts cutBack), where two layers' outlines meet along
   // a line: the test prints' end supports, beside their points' sleepers, 6 more in print 4 and 11 in print 7 (8 before))
   'Test print 4: points three ways': 12,
+  // (the long tie past the branch's end cut back to what's under track (switch/base.ts turnoutTies: its tip lay loose):
+  // 7 on the base's underside where the tie now ends on the end connector's room)
+  'Curved switch R40 90° left': 8, 'Curved switch R40 90° right': 8,
+  // (the double crossover's check rails, held by nothing, each got a sleeper of its own under its middle (crossing.ts
+  // CHECK_UNHELD): 2 more on track1, where its rail meets it; the 2 each in points3-a and points4-b as they were)
+  'Modular double crossover R40, levers inside': 6, 'Modular double crossover R40, levers outside': 6,
   // (its lever's arm, 3 studs past the sleepers' ends on the straight's side as the reference's is: 6 where the arm's sides meet the base's, at 5.4, -35.1, 1.1 in its file; the other three R104 switches have 2 to 4 there)
   'Switch R104 right, lever on the straight side': 7,
   // (expert, section 4c: the left-hand R40 yard and the three-way to parallel tracks, their curves accepted beside the
