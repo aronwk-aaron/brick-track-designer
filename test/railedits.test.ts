@@ -105,9 +105,12 @@ describe('rail edits: they go with their track', () => {
   });
 });
 
-describe('frog edits a design file keeps (stage 5b)', () => {
-  it('only the values they take; the rest left out, so as worked out', () => {
-    const d = readDesign({ version: 1, gaugeStuds: 4, routes: [straight()], trackwork: { groove: { '1,2': { open: true, through: 'yes', d0: 8 } } } });
-    expect(d.trackwork).toEqual({ groove: { '1,2': { open: true, d0: 8 } } });
+describe('frog and points edits a design file keeps (stages 5b and 5c)', () => {
+  it('only the values they take; the rest left out, so the design\'s', () => {
+    const d = readDesign({ version: 1, gaugeStuds: 4, routes: [straight()], trackwork: {
+      groove: { '1,2': { open: true, through: 'yes', d0: 8 } },
+      points: { '0,64': { mech: 'tines', bladeStyle: 'bendy', blades: 1 }, '0,0': { mech: 'magic', blades: 3 } },
+      throw: { '128,448': { throwShift: 2.4 }, '9,9': { throwShift: 40, side: 'left' }, '8,8': { throwShift: 'x' } } } });
+    expect(d.trackwork).toEqual({ groove: { '1,2': { open: true, d0: 8 } }, points: { '0,64': { blades: 1 }, '0,0': {} }, throw: { '128,448': { throwShift: 2 }, '9,9': { throwShift: 5, side: 'left' }, '8,8': {} } });
   });
 });

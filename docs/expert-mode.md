@@ -1,6 +1,6 @@
 # Expert mode: design and stages
 
-Status: design agreed with nobody yet (S1, S1b, S2, S3, S4, S5a, S5b and the editor's side of section 5 are built as section 11 says); decisions are taken here so work doesn't wait (the list for Aaron is in
+Status: design agreed with nobody yet (S1, S1b, S2, S3, S4, S5a, S5b, S5c and the editor's side of section 5 are built as section 11 says); decisions are taken here so work doesn't wait (the list for Aaron is in
 section 10). What is built is in section 11 (State), kept current.
 
 What was asked for, in short: the drawing mode of today stays as the simple mode; an expert can place and edit every
@@ -661,11 +661,25 @@ route-owned storage, the follow rules and the card section they bring are the pa
   test/railedits-build.test.ts.
   Identical when unused: the S5b and S5c tree against main 922e27b, every part's STL sha1 over the 367 templates and
   saved designs there: 367 the same, 0 different (S5c's code acts only with its own edits set).
+- **S5c is built: points of their own.** Per points set, by its toe in `Design.trackwork.points`: `bladeStyle` and
+  `blades` (1 or 2) over the design's, with blades on top (such points are built as a network piece, which plans each
+  set with its own: network.ts `p0`); per lever in `trackwork.throw`: `throwShift` (the throw bar moved along, whole
+  studs, -5 to 5; set by hand, the app no longer moves it to clear other track). Blade length and heel are "Blades
+  lengthened" (`heel`, there before: the blades can't be shorter than worked out, their heels where the rails are just
+  far enough apart); lever side and place are the lever's edits (there before). readDesign keeps only the values these
+  take. Editor: the Trackwork panel's points rows (Blade shape, Moving blades, each "As the design: …" first, greyed
+  with why) and lever rows (Throw bar moved along), with the expert tools shown. Template (Features): 'Crossover with
+  points of their own'. Test: test/pointsown-build.test.ts.
+- **How S5c differs from section 2:** a set's own **mechanism** (tines among blades on top) is not offered: tried, a
+  set on tines in a crossover whose other set is on top built a throw that can't slide into its tunnel, sits 1 mm in
+  the track and isn't floored (assembled-features on CI). The design's Mechanism stays design-wide; a set's blade
+  shape and moving blades are its own. For Aaron: wanted per set? It's the network's tines-in-a-plates-design path (the
+  double slip's fallback), which needs a geometry look first.
 - **Section 10, as built:** every recommendation taken: (1) no stored mode, one Expert tools switch; (2) connections
   derived, Alt to move one alone, `expert.apart`; (3) tracks that are one part share the first one's part settings, with
   a warning; (4) a cut across a track is an ordinary track end; (5) radii under R24 are a geometry job for everyone; (6)
-  gauge where it is, and the design default → this track pattern for the rest (S5c is to put the per-set points
-  settings on the points' own rows, as recommended).
+  gauge where it is, and the design default → this track pattern for the rest (S5c puts the per-set points settings on
+  the points' own rows, as recommended).
 - **Next, in order:** (1) the double track's budget from CI's log (test/templates.shared.ts); a group's build told of the other groups' track at its ends, so a track joined onto points
   can have its own; (2) S1 more keys (buffer stops per end; labels per part); (3) then S5/S6 (the other kit
   modules as templates: the same three kinds of path cover them; `test/templates-cutpaths.test.ts` `MODULES` is the

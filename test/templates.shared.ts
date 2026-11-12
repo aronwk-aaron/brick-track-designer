@@ -66,8 +66,8 @@ Object.assign(BUDGET, { 'Double track, one on sleepers, one on ballast': 25 });
 /** (expert stage 5a's: four times what each took on a laptop, till CI's own times are in) */
 Object.assign(BUDGET, { 'Switch R40 left to a parallel track': 12, 'Switch R40 right to a parallel track': 12, 'Yard R40, two tracks, left': 16, 'Three-way R40 to three parallel tracks': 20,
   'Sleepers edited by hand': 12, 'Double track on shared sleepers': 8, 'Siding on ballast wider on one side, stepped round its buffer stop': 8 });
-/** (expert stage 5b: four times a laptop's, till CI's own times are in) */
-Object.assign(BUDGET, { 'Rails edited by hand': 12 });
+/** (expert stages 5b and 5c: four times a laptop's, till CI's own times are in) */
+Object.assign(BUDGET, { 'Rails edited by hand': 12, 'Crossover with points of their own': 40 });
 // (the modular kits, cut by hand paths: 2.5 times CI's first green run with them, 617dda1: 8.8, 9.2, 8.8 and 27.8 s; the three-track crossover 27.4 s there, 59 before its paths' plan was looked at only beside them)
 Object.assign(BUDGET, { 'Double crossover R104, bases and detachable modules': 70, 'Double slip R104 left, middle and detachable sections': 23, 'Double slip R104 right, middle and detachable sections': 23, 'Three-way R104, base and detachable modules': 22 });
 const BUDGET_SMALL = 10; // (a template with no time of its own yet)

@@ -195,7 +195,7 @@ export function networkSplits(s: Scad, routes: Route[], sol: Solution, p: BasePa
     if (blade !== undefined && !three) return undefined;
     const own = blade === undefined ? own0 : blade === 0 ? 'left' : 'right';
     const tside = own === 'left' ? -1 : own === 'right' ? 1 : three ? 1 : bRight ? -1 : 1;
-    const over: SetOver = { ...(ed?.leverOffset !== undefined && { leverOffset: ed.leverOffset }), ...(ed?.springLength !== undefined && { springLength: ed.springLength }), ...(ed?.single && { single: ed.single }), ...(ed?.heel && { heelShift: ed.heel }) };
+    const over: SetOver = { ...(ed?.leverOffset !== undefined && { leverOffset: ed.leverOffset }), ...(ed?.springLength !== undefined && { springLength: ed.springLength }), ...(ed?.single && { single: ed.single }), ...(ed?.heel && { heelShift: ed.heel }), ...(ed?.throwShift && { throwShift: ed.throwShift }) };
     const specOf = (o: SetOver, ts: number): SetSpec => (three ? [0, 2, 2 + toeShift([P[0], P[1]]), ts, 1, o, blade] : [0, 1, 2 + lead + toeShift([P[0], P[1]]), ts, undefined, o]);
     const spec = (o: SetOver) => specOf(o, tside);
     // (the other track near the points, in their frame; with two branches one side not built as a three-way, the other branch too)
@@ -213,18 +213,20 @@ export function networkSplits(s: Scad, routes: Route[], sol: Solution, p: BasePa
     // (points on routes with a gauge of their own, mixed gauges: built at that gauge; under 4 studs, one moving blade,
     // as a narrow-gauge design's)
     const gsOwn = A.gauge !== undefined ? A.gauge / 8 - 1 : p.gaugeStuds;
-    const p0 = gsOwn === p.gaugeStuds ? p : { ...p, gaugeStuds: gsOwn, ...(gsOwn < 4 && { pointBlades: 1 as const }) };
+    const p00 = gsOwn === p.gaugeStuds ? p : { ...p, gaugeStuds: gsOwn, ...(gsOwn < 4 && { pointBlades: 1 as const }) };
+    // (expert, stage 5c: this set's own blade shape and moving blades, over the design's)
+    const p0 = ed?.bladeStyle || ed?.blades ? { ...p00, ...(ed.bladeStyle && { bladeStyle: ed.bladeStyle }), ...(ed.blades && { pointBlades: ed.blades }) } : p00;
     const pg = sprungOnGrid(gw ? { ...p0, grid: gridIn(P, gw) } : p0);
     const choose = (keep: Pt[][]) => {
       let pp = pg.p, plan = switchPlan(rts, [used], pp, 1, foreign, keep), how: 'rigid' | 'tines' | 'angled' | undefined = pg.angled ? 'angled' : undefined;
       // (and where a dual-gauge track's third rail runs between the stock rails: a sprung plate cut back clear of it has no
       // room for its spring's pocket and the lip over its front)
       const third = rts.some((rt) => thirdRailAt(rt, plan.sets[0].sHeel, pg.p.gaugeStuds) !== undefined);
-      if (fdb && !three && (blockedOf(plan) || third) && p.bladeStyle && p.bladeStyle !== 'simple') {
+      if (pg.p.mechStyle === 'plates' && !three && (blockedOf(plan) || third) && pg.p.bladeStyle && pg.p.bladeStyle !== 'simple') {
         const p1 = { ...pg.p, bladeStyle: 'simple' as const }, plan1 = switchPlan(rts, [used], p1, 1, foreign, keep);
         if (blockedOf(plan1) === false || (third && !blockedOf(plan1))) { pp = p1; plan = plan1; how = 'rigid'; }
       }
-      if (fdb && !three && !tandem && blockedOf(plan)) {
+      if (pg.p.mechStyle === 'plates' && !three && !tandem && blockedOf(plan)) {
         const p2 = { ...pg.p, mechStyle: 'tines' as const }, plan2 = switchPlan(rts, [used], p2, 1, foreign, keep);
         if (blockedOf(plan2) === false) { pp = p2; plan = plan2; how = 'tines'; }
       }
@@ -243,7 +245,7 @@ export function networkSplits(s: Scad, routes: Route[], sol: Solution, p: BasePa
   // other's share, a keep-out for its plates (fdbLayout cuts them clear by the clearance, moves the pin and the post,
   // or says it can't). Both planned against the other's first outline, so neither is left the less for going second;
   // that grown by 1, for a plate whose pin moves (it turns about another point))
-  if (fdb) {
+  if (fdb || preps.some((q) => q.st.pp.mechStyle === 'plates')) {
     const W = s.w, c = p.pointClearance, foot = preps.map((q) => {
       if (q.st.pp.mechStyle !== 'plates') return undefined;
       const f = fdbFootprint(q.st.plan), wd = (r: Pt[]) => r.map((pt) => poseToWorld(q.P, pt) as [number, number]);
@@ -289,7 +291,7 @@ export function networkSplits(s: Scad, routes: Route[], sol: Solution, p: BasePa
   const room = (q: (typeof preps)[number]) => {
     const { own, rts, foreign, P, blockedOf, specOf, st, keep } = q;
     if (blockedOf(st.plan)) return Infinity;
-    const sides = own === 'left' || own === 'right' ? [st.tside] : [st.tside, -st.tside], shifts = st.pp.mechStyle === 'plates' ? [0, 1, -1, 2, -2, 3, -3, 4, -4, 5, -5] : [0];
+    const sides = own === 'left' || own === 'right' ? [st.tside] : [st.tside, -st.tside], shifts = st.pp.mechStyle === 'plates' && q.ed?.throwShift === undefined ? [0, 1, -1, 2, -2, 3, -3, 4, -4, 5, -5] : [0];
     let k = 0;
     for (const sh of shifts) for (const sd of sides) { const pl = switchPlan(rts, [specOf({ ...st.over, ...(sh && { throwShift: sh }) }, sd)], st.pp, 1, foreign, keep); if (!blockedOf(pl) && inWay(pl, foreign, P) !== 'train') k++; }
     return k;
@@ -305,7 +307,7 @@ export function networkSplits(s: Scad, routes: Route[], sol: Solution, p: BasePa
     // (not for points already said to be blocked: moving their lever won't help them)
     const why0 = blockedOf(st.plan) ? undefined : inWay(st.plan, foreign, P);
     if (why0) {
-      const sides = own === 'left' || own === 'right' ? [st.tside] : [st.tside, -st.tside], shifts = st.pp.mechStyle === 'plates' ? [0, 1, -1, 2, -2, 3, -3, 4, -4, 5, -5] : [0];
+      const sides = own === 'left' || own === 'right' ? [st.tside] : [st.tside, -st.tside], shifts = st.pp.mechStyle === 'plates' && ed?.throwShift === undefined ? [0, 1, -1, 2, -2, 3, -3, 4, -4, 5, -5] : [0];
       const t0 = st.tside, base = st.over, out0 = base.leverOffset ?? st.pp.leverOffset;
       const outs = ed?.leverOffset !== undefined ? [0] : Array.from({ length: 11 }, (_, k) => k * 8);
       let found = false;
@@ -335,7 +337,7 @@ export function networkSplits(s: Scad, routes: Route[], sol: Solution, p: BasePa
   // (blades on top: two points' throws that run into each other, as a double slip's middle points' sliders cross under
   // its crossing, can't both move: no room for a throw there. Nail switches (Points with no room for a throw), their
   // sliders only under their own points; else said)
-  if (fdb) {
+  if (fdb || preps.some((q) => q.st.pp.mechStyle === 'plates')) {
     // (only sets with another's points near theirs; their geometry kept for building them, below)
     const near2 = (a: Pose, b: Pose) => Math.hypot(a[0] - b[0], a[1] - b[1]) < 300;
     const throwOf = (q: (typeof preps)[number]) => {
@@ -356,7 +358,7 @@ export function networkSplits(s: Scad, routes: Route[], sol: Solution, p: BasePa
       if (!meets(a, b)) continue;
       const tryMove = (k: number) => {
         const q = preps[k], ed = q.ed;
-        if (ed?.springLength !== undefined) return false;
+        if (ed?.springLength !== undefined || ed?.throwShift !== undefined) return false;
         const cur = (q.st.used[5] ?? {}) as SetOver, others = preps.flatMap((o, m) => (m === k ? [] : [armOf(o.st.plan, o.P)]));
         for (const sh of [1, -1, 2, -2, 3, -3, 4, -4, 5, -5]) {
           const o2: SetOver = { ...cur, throwShift: (cur.throwShift ?? 0) + sh }, used = q.specOf(o2, q.st.tside), pl = switchPlan(q.rts, [used], q.st.pp, 1, q.foreign, q.keep);
