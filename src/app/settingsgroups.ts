@@ -40,7 +40,7 @@ export const GROUPS: Group[] = [
   { id: 'buffer', title: 'Buffer stops', needs: 'buffers', keys: ['bufferStyle', 'bufferPostPlates', 'bufferBeamBottom', 'bufferBeamTop', 'bufferPinHoles'] },
   { id: 'bought', title: 'Bought track', needs: 'train', keys: ['legoTrack', 'boughtBallast'] },
   { id: 'mono', title: 'Monorail', needs: 'mono', subs: { monoSwitchFit: 'Points' }, keys: ['monoEndStuds', 'monoAxleHoles', 'monoAxleLengthStuds', 'monoHoleFit', 'monoLegoAntistud', 'monoLabels', 'monoSwitchFit'] },
-  { id: 'monosup', title: 'Monorail supports', needs: 'mono', keys: ['monoSupportStuds', 'monoSupportBricks', 'monoSupportPlates', 'monoSupportBaseXStuds', 'monoSupportBaseYStuds', 'monoSupportAntistud', 'monoSupportBaseStuds', 'monoSupportSolid'] },
+  { id: 'monosup', title: 'Monorail supports', needs: 'mono', keys: ['monoSupportStuds', 'monoSupportBricks', 'monoSupportPlates', 'monoSupportBaseXStuds', 'monoSupportBaseYStuds', 'monoSupportAntistud', 'monoSupportBaseStuds', 'monoSupportSolid', 'monoRampJoint'] },
 ];
 
 const UNUSED: Record<NonNullable<Group['needs']>, string> = {
@@ -72,7 +72,7 @@ const HIDDEN_WHEN: Record<string, (c: OptCtx) => boolean> = {
   monoAxleLengthStuds: (c) => c.o.monoAxleHoles === false,
   monoSupportBricks: (c) => !((c.o.monoSupportStuds ?? 0) > 0), monoSupportPlates: (c) => !((c.o.monoSupportStuds ?? 0) > 0), monoSupportBaseXStuds: (c) => !((c.o.monoSupportStuds ?? 0) > 0),
   monoSupportBaseYStuds: (c) => !((c.o.monoSupportStuds ?? 0) > 0), monoSupportAntistud: (c) => !((c.o.monoSupportStuds ?? 0) > 0),
-  monoSupportBaseStuds: (c) => !((c.o.monoSupportStuds ?? 0) > 0), monoSupportSolid: (c) => !((c.o.monoSupportStuds ?? 0) > 0),
+  monoSupportBaseStuds: (c) => !((c.o.monoSupportStuds ?? 0) > 0), monoSupportSolid: (c) => !((c.o.monoSupportStuds ?? 0) > 0), monoRampJoint: (c) => !((c.o.monoSupportStuds ?? 0) > 0),
 };
 
 export interface Row { f: OptField; /** heading over it */ sub?: string; /** why it can't be changed now */ off?: string; /** a feature that's off: listed only when searched for */ hidden: boolean; changed: boolean }

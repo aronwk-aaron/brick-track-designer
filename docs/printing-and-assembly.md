@@ -253,7 +253,7 @@ own: its base grips the baseplate and the beam sits on top. Parts are cut over a
 A support is always a plain column: whole bricks and plates tall, its top level, its studs straight up. Under a **ramp**
 the beam carries a level pad over each one, its stud holes straight down: mid-part the pad is set up into the beam (as
 LEGO's ramp pieces have it: 5 plates up under the lower one's middle, a brick below the top under the upper one's);
-under a joint between two parts half of it is on each part's end and hangs a little below the beam. Ramp parts print
+under a joint between two parts half of it is on each part's end and hangs a little below the beam. (Settings › Monorail supports › Ramp joint over a support: with No axle holes there, those two ends have no axle holes and the half pads sit up in the beam as mid-part, the support LEGO's height; with Never cut over a support, ramps are cut clear of their supports, so every pad is mid-part.) Ramp parts print
 tilted on thin ribs that break away (0.25 mm clear of the part); a pad has ribs of its own, pull them out of it too.
 
 **Monorail points** are LEGO's own points (2889 right, 2890 left): 32 studs straight, the branch ending 20 studs on and

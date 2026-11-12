@@ -347,5 +347,10 @@
  "monoSupportSolid": [
   "false",
   "true"
+ ],
+ "monoRampJoint": [
+  "axles",
+  "noaxles",
+  "apart"
  ]
 }

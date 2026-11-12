@@ -264,6 +264,11 @@ export function optionForm(d: () => Design): { form: OptSection[] } {
       { key: 'monoSupportAntistud', label: 'Support grips the baseplate', check: true, off: noSupports, help: 'Hollow under the base with LEGO tubes.' },
       { key: 'monoSupportBaseStuds', label: 'Studs round the support base', check: true, off: noSupports, help: 'Studs along the base\'s edges to build onto, like LEGO\'s supports.' },
       { key: 'monoSupportSolid', label: 'Support frame closed', check: true, off: noSupports, help: 'A full web between the legs, no openings. Stiffer; more to print.' },
+      { key: 'monoRampJoint', label: 'Ramp joint over a support', off: noSupports, def: 'axles', get: () => d().options?.monoRampJoint ?? 'axles', set: (v) => { d().options = { ...d().options, monoRampJoint: v as 'axles' | 'noaxles' | 'apart' }; },
+        help: 'Where a ramp is cut over a support. LEGO\'s ramp has its supports 5 and 27 plates tall.', choices: [
+        { v: 'axles', t: 'Ends keep their axle holes', tip: 'The support under the joint stands under the beam, clear of the axle holes.', con: 'That support is a plate or two shorter than LEGO\'s (3 and 25 plates on the ramp template, not 5 and 27).' },
+        { v: 'noaxles', t: 'No axle holes there', tip: 'The two ends over the support have no axle holes, so its top sits up in the beam as mid-part: LEGO\'s height.', con: 'That joint is held only by the support\'s studs and the ends\' tab and notch, no axles.' },
+        { v: 'apart', t: 'Never cut over a support', tip: 'A ramp is never cut over a support: the cut moves to the nearest place clear of one, so every support is mid-part, at LEGO\'s height.', con: 'The parts are less even in length, and those joints have no support under them.' }] },
     ] },
   ];
   function noSupports(c: OptCtx) { return ((c.o.monoSupportStuds ?? 0) > 0 ? undefined : 'Support every is 0'); }

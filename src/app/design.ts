@@ -241,6 +241,8 @@ export interface PieceOptions {
   /** Monorail supports (monorail_support.scad): one every this many studs along the beam (0: none); their height in bricks and plates; base size (studs); anti-stud underside; studs round the base; closed frame. */
   monoSupportStuds?: number; monoSupportBricks?: number; monoSupportPlates?: number; monoSupportBaseXStuds?: number; monoSupportBaseYStuds?: number;
   monoSupportAntistud?: boolean; monoSupportBaseStuds?: boolean; monoSupportSolid?: boolean;
+  /** A ramp's joint over a support: 'axles' (default), the ends keep their axle holes, the support stands under the beam (a plate or two short of LEGO's); 'noaxles', those two ends without axle holes, the support's pad up in the beam, LEGO's height; 'apart', ramps never cut over a support (the cut moved off it), every support mid-part. */
+  monoRampJoint?: 'axles' | 'noaxles' | 'apart';
   /** Banked curves: the shortest ramp from level to the full bank, studs (curves.scad's superelevation_ramp_studs), lengthened to keep the outer rail's climb within 1 in bankClimb; ramps on the straights either side ('straight') or inside the curve ('curve', as curves.scad's pieces). */
   bankRampStuds?: number; bankClimb?: number; bankRampAt?: 'straight' | 'curve';
   /** No two studs on a part closer than a stud's pitch, 8 mm (geom/studpitch.ts): the ones that would be are left out, the ballast's rows spaced along their own line. Off (default): only never touching. */

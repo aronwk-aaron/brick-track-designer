@@ -148,12 +148,13 @@ export class Mono {
   }
   /**
    * end_cuts: the anti-studs, the axle holes, the top recesses, the end's gap (keeping the tab) and the notch.
-   * studs false: without the anti-studs (a ramp's end over a support: they're cut in its level pad instead).
+   * studs false: without the anti-studs (a ramp's end over a support: they're cut in its level pad instead). axles
+   * false: without the axle holes (a ramp's end over a support whose pad is let up into the beam: Ramp joint over a support).
    */
-  endCuts(studs = true): Man {
+  endCuts(studs = true, axles = true): Man {
     const s = this.s, parts: Man[] = [];
     if (studs) parts.push(T(this.antistuds(1), [0, MONO.axleIn, 0]));
-    if (this.o.axleHoles) for (const sg of [-1, 1]) parts.push(T(this.axleHole(), [sg * this.axleX, 0, this.axleZ]));
+    if (this.o.axleHoles && axles) for (const sg of [-1, 1]) parts.push(T(this.axleHole(), [sg * this.axleX, 0, this.axleZ]));
     if (this.o.endStuds === 'top') parts.push(this.topRecessCut());
     parts.push(s.difference(T(s.cube([100, 10 + MONO.endGap, 50]), [-50, -10, -1]), [this.endTab()]));
     parts.push(T(s.cube([MONO.notchX[1] - MONO.notchX[0], 1 + MONO.notchIn, 50]), [MONO.notchX[0], -1, -1]));
@@ -196,9 +197,9 @@ export class Mono {
    * narrow ends (end_len each) and the full beam between, the ridge with its
    * rack, and an end's features at a (ends[0]) and at b (ends[1]). sockets:
    * where a support's studs press in mid-piece (s along rt). padEnds: the
-   * ends (at a, at b) without their anti-studs (a ramp's, cut in its pad).
+   * ends (at a, at b) without their anti-studs (a ramp's, cut in its pad). noAxles: the ends without their axle holes.
    */
-  piece(rt: Route, a: number, b: number, gaps: RackGap[], ends: [boolean, boolean] = [true, true], sockets: number[] = [], label?: Man, padEnds: [boolean, boolean] = [false, false]): Man {
+  piece(rt: Route, a: number, b: number, gaps: RackGap[], ends: [boolean, boolean] = [true, true], sockets: number[] = [], label?: Man, padEnds: [boolean, boolean] = [false, false], noAxles: [boolean, boolean] = [false, false]): Man {
     const s = this.s, L = b - a;
     const sub = subOf(rt, a, b);
     const body: Man[] = [];
@@ -210,7 +211,7 @@ export class Mono {
     const P0 = routePose(rt, a), P1e = routePose(rt, b), P1: Pose = [P1e[0], P1e[1], P1e[2] + 180];
     const endP = [ends[0] && P0, ends[1] && P1].filter((p): p is Pose => !!p);
     for (const P of endP) body.push(placeAt(this.endAdds(), P));
-    const cuts: Man[] = endP.map((P) => placeAt(this.endCuts(!padEnds[P === P0 ? 0 : 1]), P));
+    const cuts: Man[] = endP.map((P) => { const k = P === P0 ? 0 : 1; return placeAt(this.endCuts(!padEnds[k], !noAxles[k]), P); });
     for (const q of sockets) cuts.push(placeAt(this.supportSockets(), routePose(rt, q)));
     if (label) cuts.push(placeAt(label, routePose(rt, (a + b) / 2)));
     return s.difference(s.union(body), cuts);
