@@ -208,19 +208,30 @@ export function splitApart(d: Design, name: string, second: string) {
 export interface Carry { route: number; fixed: End; before: Placed; groups: { at: number; routes: { i: number; x: number; y: number; heading: number }[] }[]; watch: Joint[] }
 
 /**
+ * Where a loop that can't stay closed opens, when a track in it is reshaped (the setting Loops open at): 'changed'
+ * (default), the rest of the loop stays and the joint at the changed side opens, under the pointer; 'far', the rest
+ * swings round with the change, as what's joined past it does elsewhere, and the joint at the track's fixed end opens.
+ */
+export type LoopOpens = 'changed' | 'far';
+export const LOOP_OPENS_DEFAULT: LoopOpens = 'changed';
+
+/**
  * Before route is reshaped: what will go with it. fixed: the end of it that stays; s0: how far from that end (studs)
  * it stays as it is (-1: none of it: the track is moved or turned as a whole). What's joined to it within that
  * stays; what's joined to it further on goes with its joint, the far end's first; tracks reached both ways (a loop)
- * stay with the part that doesn't move, so the joint at the far side opens. Tracks joined to a locked one stay too.
+ * stay with the part that doesn't move, so the joint at the changed side opens (loop 'far': they go with the change,
+ * and the joint at the fixed side opens). Tracks joined to a locked one stay too.
  */
-export function planCarry(d: Design, route: number, fixed: End, s0: number, js: Joint[] = joints(d)): Carry {
+export function planCarry(d: Design, route: number, fixed: End, s0: number, js: Joint[] = joints(d), loop: LoopOpens = LOOP_OPENS_DEFAULT): Carry {
   const r = d.routes[route], before: Placed = { x: r.x, y: r.y, heading: r.heading, segs: structuredClone(r.segs) }, L = lengthOf(r.segs);
   const live = js.filter((j) => !j.apart), adj = linked(d.routes.length, live, route);
   const mine = live.filter((j) => j.a === route || j.b === route).map((j) => {
     const t = j.a === route ? (j.aEnd === 'start' ? 0 : L) : j.s;
     return { other: j.a === route ? j.b : j.a, at: fixed === 'start' ? t : L - t };
   });
-  const stay = new Set(reach(adj, mine.filter((m) => m.at <= s0 + JOIN_POS).map((m) => m.other)));
+  const before0 = mine.filter((m) => m.at <= s0 + JOIN_POS).map((m) => m.other);
+  // (loop 'far': nothing kept back for being joined before the change too; the carried groups worked out first)
+  const stay = new Set(loop === 'far' ? [] : reach(adj, before0));
   const groups: Carry['groups'] = [];
   for (const m of mine.filter((q) => q.at > s0 + JOIN_POS).sort((p, q) => q.at - p.at)) {
     if (stay.has(m.other)) continue;
@@ -229,6 +240,7 @@ export function planCarry(d: Design, route: number, fixed: End, s0: number, js: 
     if (comp.some((i) => d.routes[i].locked)) continue;
     groups.push({ at: m.at, routes: comp.map((i) => ({ i, x: d.routes[i].x, y: d.routes[i].y, heading: d.routes[i].heading })) });
   }
+  if (loop === 'far') for (const i of reach(adj, before0)) stay.add(i);
   const set = new Set([route, ...stay]);
   return { route, fixed, before, groups, watch: live.filter((j) => set.has(j.a) || set.has(j.b)) };
 }
@@ -283,7 +295,7 @@ export const openedBy = (c: { watch: Joint[] }, d: Design): Joint[] => c.watch.f
  * the change, as a handle dragged carries it. (Both ends moved and its shape changed, as a track turned end for end:
  * nothing.) Returns the joints that opened.
  */
-export function carryChange(before: Design, d: Design, i: number): Joint[] {
+export function carryChange(before: Design, d: Design, i: number, loop: LoopOpens = LOOP_OPENS_DEFAULT): Joint[] {
   const o = before.routes[i], n = d.routes[i];
   if (!o || !n || before.routes.length !== d.routes.length || !o.segs.length || !n.segs.length) return [];
   const samePose = (p: Pose, q: Pose) => Math.abs(p.x - q.x) < 1e-6 && Math.abs(p.y - q.y) < 1e-6 && Math.abs(norm180(p.heading - q.heading)) < 1e-6;
@@ -292,9 +304,9 @@ export function carryChange(before: Design, d: Design, i: number): Joint[] {
   if (start && end) return [];
   const common = (a: DSeg[], b: DSeg[]) => { let s = 0; for (let k = 0; k < a.length && k < b.length && sameSeg(a[k], b[k]); k++) s += segLen(a[k]); return s; };
   let c: Carry;
-  if (sameShape) c = planCarry(before, i, 'start', -1);
-  else if (start) c = planCarry(before, i, 'start', common(o.segs, n.segs));
-  else if (end) c = planCarry(before, i, 'end', common(reversed(o).segs, reversed(n).segs));
+  if (sameShape) c = planCarry(before, i, 'start', -1, undefined, loop);
+  else if (start) c = planCarry(before, i, 'start', common(o.segs, n.segs), undefined, loop);
+  else if (end) c = planCarry(before, i, 'end', common(reversed(o).segs, reversed(n).segs), undefined, loop);
   else return [];
   applyCarry(c, d);
   return openedBy(c, d);

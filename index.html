@@ -251,7 +251,7 @@
     #legend .lhead b { flex: 1; }
     #legend .lhead button { margin: 0; padding: 0 6px; line-height: 16px; }
     /* (the Pick list, with the expert tools shown: what a click takes; there with the legend folded too) */
-    #pick-row { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--ink); white-space: nowrap; margin: 2px 0; } #pick-row select { flex: 1; min-width: 0; height: 24px; font-size: 12px; padding: 0 4px; }
+    #pick-row, #loop-row { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--ink); white-space: nowrap; margin: 2px 0; } #pick-row select, #loop-row select { flex: 1; min-width: 0; height: 24px; font-size: 12px; padding: 0 4px; }
     #legend-rows { display: flex; flex-direction: column; gap: 2px; }
     #legend-rows [hidden] { display: none; }
     #legend.folded #legend-rows { display: none; }
@@ -385,7 +385,7 @@
       aside, #settings { position: fixed; top: var(--head-h, 52px); bottom: 0; z-index: 20; width: min(92vw, 400px); max-height: none; box-shadow: var(--shadow); }
       aside { left: 0; border-right: 1px solid var(--line); } #settings { right: 0; grid-column: auto; grid-row: auto; }
       body.nopanel aside { display: none; }
-      #legend #legend-rows, #legend .lhead, #legend #pick-row { display: none; } /* (just its Help button: the plan's too small for the rest) */
+      #legend #legend-rows, #legend .lhead, #legend #pick-row, #legend #loop-row { display: none; } /* (just its Help button: the plan's too small for the rest) */
       #views .sep { display: none; } #views .explode input { width: 60px; }
       #selbar { max-width: calc(100% - 20px); }
       #help { width: calc(100vw - 20px); padding: 16px; font-size: 14px; }
@@ -593,6 +593,7 @@
       <div id="legend" class="chip">
         <div class="lhead"><b>Legend</b><button id="legend-fold" type="button" title="Fold the legend away (or open it)">–</button></div>
         <label id="pick-row" hidden title="What a click on the plan takes, in Select. Everything: whatever is under the pointer. One kind: only that, so it can be reached under the others (a joint under its points, a cut on a stretch) and the rest is left alone.">Clicks pick <select id="pick" aria-label="What a click on the plan takes"></select></label>
+        <label id="loop-row" hidden title="A track in a closed loop reshaped: the loop can't stay closed, so one joint opens. The changed end (default): the rest stays put and the joint under the pointer opens. The far side: the rest swings round with the change and the joint at the track's other end opens.">Loops open at <select id="loop-opens" aria-label="Where a loop opens when a track in it is reshaped"></select></label>
         <div id="legend-rows">
           <span id="legend-grooves" data-layer="grooves"><i style="background:#e0452b"></i>flangeway cut</span>
           <span id="legend-checks" data-layer="checks"><i style="background:#2b6fe0"></i>check rail</span>

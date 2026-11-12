@@ -24,7 +24,7 @@ import { isEdit, reverseAnchors } from './twfollow';
 import { type End, openEnds, type Placed, type Placement, placeTemplate, transformed } from './addtemplate';
 import { lockedWhy } from './lock';
 import { type MeasurePoint, measureBetween, measurePoint } from './measure';
-import { applyCarry, type Carry, connectedSet, holds, type Joint, jointNames, joints, openedBy, planCarry, poseAt, setApart, tidyExpert } from './connections';
+import { applyCarry, type Carry, connectedSet, holds, type Joint, jointNames, joints, LOOP_OPENS_DEFAULT, type LoopOpens, openedBy, planCarry, poseAt, setApart, tidyExpert } from './connections';
 import { alongBeyond, dragStretchEnd, dragStretchWhole, hitItems, type Hit, type Item, jointsOf, sleeperEditAt, sleeperEditOf, type Layer, newStretchAt, type OwnItem, type PickId, PICKS, picks, placeAlong, sameItem, takesFirst, withStretch } from './items';
 import type { Stretch } from './stretches';
 import { COMMON_RADII, type GuideEnd, type GuideResult, type GuideStraight, guidePoint } from './guides';
@@ -205,7 +205,7 @@ export class TrackCanvas {
   }
   /** A track being reshaped (an end or a handle dragged): what it carries, and the joints open now that were closed when it began. */
   private carrying(route: number, fixed: 'start' | 'end', s0: number): { plan: Carry; skip: Set<number>; open: Joint[] } {
-    const plan = planCarry(this.host.design(), route, fixed, s0, this.joints());
+    const plan = planCarry(this.host.design(), route, fixed, s0, this.joints(), this.loopOpens);
     return { plan, skip: new Set(plan.groups.flatMap((g) => g.routes.map((o) => o.i))), open: [] };
   }
   /** The carried tracks put where the reshaped one takes them now (alone, Alt: left where they were). True if any moved. */
@@ -238,6 +238,8 @@ export class TrackCanvas {
   }
   /** Expert tools shown (main.ts: remembered per browser): cuts, cut paths and stretches can be picked on the plan. */
   expert = true;
+  /** Where a loop that can't stay closed opens when a track in it is reshaped (connections.ts LoopOpens; the expert tools' Loops open at). */
+  loopOpens: LoopOpens = LOOP_OPENS_DEFAULT;
   /** The expert tools hidden: whatever of theirs is being drawn, dragged or waited for is let go of, and a selected cut, cut path or stretch too. */
   stopExpert() {
     this.cutArmed = false; this.stretchArmed = false; this.stretchNew = undefined; this.pathDraw = undefined; this.cutDrag = undefined; this.stretchDrag = undefined; this.sleeperDrag = undefined; this.sleeperArmed = false;
