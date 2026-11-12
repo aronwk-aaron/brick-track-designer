@@ -189,7 +189,8 @@ describe('search and filters', () => {
   it('filters by kind, gauge, track and radius, and combines them', () => {
     expect(names({ kinds: new Set(['wye']) }).every((n) => /wye/i.test(n))).toBe(true);
     expect(names({ kinds: new Set(['wye', 'three-way']) }).length).toBeGreaterThan(names({ kinds: new Set(['wye']) }).length);
-    expect(names({ gauges: new Set(['narrow']) }).every((n) => /^Narrow-gauge/.test(n))).toBe(true);
+    // (and the LEGO tolerance coupons, narrow-gauge straights to be small)
+    expect(names({ gauges: new Set(['narrow']) }).every((n) => /^Narrow-gauge|^Test print 10/.test(n))).toBe(true);
     expect(names({ systems: new Set(['monorail']) }).length).toBe(30); // (the Monorail group's three, the Monorail trackwork group's cards (hands paired), and the monorail hole-fit coupons)
     const r104 = names({ radii: new Set([104]) });
     expect(r104.length).toBeGreaterThan(3);

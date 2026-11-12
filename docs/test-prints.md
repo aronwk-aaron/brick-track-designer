@@ -1,7 +1,7 @@
 # Test prints: what to print, and what to report
 
 Nothing in the switch has been printed since it was last changed, and the fit numbers come from one straight printed
-in October. This kit is nine templates (Templates › Test prints): five that check the whole, and four fit ladders. Print them, try them with real track and wheels,
+in October. This kit is ten templates (Templates › Test prints): five that check the whole, and five fit ladders. Print them, try them with real track and wheels,
 fill in the form at the bottom and send it back: each answer changes one setting's default.
 
 ## What to print
@@ -17,12 +17,24 @@ fill in the form at the bottom and send it back: each answer changes one setting
 | **7: clearance round the points** (ladder) | 3 points coupons as in 4, Clearance 0.2, 0.3, 0.4 mm | 73 cm³, 90 g | 5 h | Which clearance lets the moving parts move without slop: Clearance |
 | **8: flangeway width** (ladder) | 3 small 90° crossings, Flangeway width 2.5, 3, 3.5 mm | 39 cm³, 48 g | 2½ h | Which width lets your wheels through a crossing: Flangeway width |
 | **9: monorail hole fit** (ladder) | 5 four-stud monorail straights, Hole fit 0, 0.05, 0.1, 0.15, 0.2 mm | 40 cm³, 49 g | 2½ h | Which hole fit takes a LEGO axle and anti-studs right: Hole fit |
+| **10: LEGO tolerance** (two ladders) | 14 narrow-gauge four-stud straights (6 × 4 studs): 7 with Stud fit 0.03 to 0.33 mm, 7 with Anti-stud fit 0.21 to -0.09 mm, the other fit as today | 63 cm³, 78 g (5.6 g each) | 4¼ h | Which stud fit and which anti-stud fit are right with real LEGO, each on its own: Stud fit, Anti-stud fit |
 
 The first five: 196 cm³ in all, about 245 g of PLA and 13 hours (grams are the parts' solid volume, so an upper figure; hours a guess
 at 15 cm³ an hour). Three plates on a 256 mm bed: **plate 1** = templates 1, 2 and 5; **plate 2** = template 3;
 **plate 3** = template 4. If there's one evening: plates 1 and 2. Coupon C of template 4 matters least.
 
-**Reading a ladder.** In 1, 6, 7 and 8 each part has ribs (small upright ribs on the side of a sleeper's end, or of the ballast's): the rung's number, 1 to 3 or 5, the first rung one rib. The middle rung is today's setting. The part's file name says the value too (`seat2-fit0.2-…`) and the zip's README.txt lists each. Template 9 has no ribs (a monorail beam has no room): its value is engraved underneath, `H0.1`. Try every rung, and report the rung that is right. If it is the first or the last, the right value may be past it: say so.
+**Template 10 or template 1?** Both are about how the printed parts hold real LEGO. Template 1 is five coupons that
+move both fits together, and its coupons (2-stud straights) have only single rows underneath: channels with pins, no
+tubes. Template 10 moves one fit at a time and has every kind of grip on each coupon: a 2 × 4 of studs between the
+rails, a single row with its pins at each end, and a sleeper's hollow with a whole tube in it. Its 14 coupons fit one
+256 mm bed as they come (217 × 190 mm with their break-out supports). If you print one of the two, print 10.
+
+**Why seven rungs, 0.05 mm apart.** A 0.4 mm nozzle on a well-kept printer repeats to about 0.05 mm: a finer step
+can't be told apart in the hand, and two prints of the same file differ by about as much. Three rungs each side of
+today's setting reach 0.15 mm, which is about as far as printers and plastics differ (PLA against PETG, a little over-
+or under-extrusion). If the first or last rung is still the best, the right value is past it: say so.
+
+**Reading a ladder.** In 1, 6, 7, 8 and 10 each part has ribs (small upright ribs on the side of a sleeper's end, or of the ballast's): the rung's number, 1 to 3, 5 or 7, the first rung one rib. In 10, ribs on one side only are the stud ladder, ribs on both sides the anti-stud ladder. The middle rung is today's setting. The part's file name says the value too (`seat2-fit0.2-…`) and the zip's README.txt lists each. Template 9 has no ribs (a monorail beam has no room): its value is engraved underneath, `H0.1`. Try every rung, and report the rung that is right. If it is the first or the last, the right value may be past it: say so.
 
 For each: pick the template, wait for it to build, press STL. The zip's files are named for the coupon and its values,
 and its README.txt lists them.
@@ -55,6 +67,7 @@ on purpose: leave them in.
    | Anti-stud fit, mm | 0.16 | 0.11 | 0.06 | 0.01 | -0.04 |
 
    Underside: press each on a baseplate. Top: press a 2 × 4 brick on each one's studs. The two are judged apart.
+   (These undersides are single rows: channels with a pin between each two studs. For the tubes, print 10.)
 2. **Joints.** Clip `clip1` to `clip2`, then a bought LEGO straight to either. Press one `dovetail` half down into the
    other. Try each joint in the hand (pull, twist), then on a baseplate.
 3. **Switch.** Join the two track parts, press them on a baseplate. Slider down through the lever's opening and along
@@ -66,6 +79,19 @@ on purpose: leave them in.
 6. **Clearance** (7). As the switch. Move each lever by hand: the blades should go over and close freely, with no slop.
 7. **Flangeways** (8). Roll a wheelset through each crossing, both ways, along each track.
 8. **Monorail** (9). Push a LEGO axle into the holes in an end, and press the end down on two studs side by side (its underside there is a 1 × 2 plate's: a channel with a pin between the studs): each should go in without force and hold.
+9. **LEGO tolerance** (10). Count the ribs on a sleeper's end, 1 (loosest) to 7 (tightest); 4 is today's setting.
+   Ribs on one side only: the stud ladder. Ribs on both sides: the anti-stud ladder.
+
+   | Ribs | 1 | 2 | 3 | 4 | 5 | 6 | 7 |
+   |---|---|---|---|---|---|---|---|
+   | Stud fit, mm (ribs on one side) | 0.03 | 0.08 | 0.13 | 0.18 | 0.23 | 0.28 | 0.33 |
+   | Anti-stud fit, mm (ribs on both sides) | 0.21 | 0.16 | 0.11 | 0.06 | 0.01 | -0.04 | -0.09 |
+
+   The anti-stud ladder: press each on a baseplate, then pull it off. Right is LEGO's own grip: it goes on with a
+   thumb and stays on when the plate is turned over and shaken. Try it twice: once square on the plate, so the tube
+   and the pins all hold, and once with only one end's row on the plate's edge, so only the pins of a single row do.
+   The stud ladder: press a 2 × 4 brick on each one's studs, lengthways between the rails, then pull it off. Right is
+   the same: on with a thumb, stays on turned over.
 
 Then, for 3 and 4: roll a wheelset (and a bogie, and your longest-wheelbase loco) by hand through every route, both
 ways, points set each way. For trailing: set the points against the wheels and push through from the heel end.
@@ -129,6 +155,15 @@ Printer: ________  Material: ________  Layer: ____ mm
 9. MONORAIL HOLES (template 9; engraved H0 .. H0.2; H0.1 = today)
    Right fit is: [ ]H0 [ ]H0.05 [ ]H0.1 [ ]H0.15 [ ]H0.2   [ ] none (all too tight / all too loose)
 
+10. LEGO TOLERANCE (template 10; ribs 1 loosest .. 7 tightest; 4 = today)
+   Stud ladder (ribs on one side), a 2 x 4 brick on its studs, right grip is ribs:
+                                      [ ]1 [ ]2 [ ]3 [ ]4 [ ]5 [ ]6 [ ]7   [ ] none (all too loose / all too tight)
+   Anti-stud ladder (ribs on both sides), on a baseplate, right grip is ribs:
+                                      [ ]1 [ ]2 [ ]3 [ ]4 [ ]5 [ ]6 [ ]7   [ ] none (all too loose / all too tight)
+   Anti-stud ladder, one end's single row only on the plate's edge (the pins), right grip is ribs:
+                                      [ ]1 [ ]2 [ ]3 [ ]4 [ ]5 [ ]6 [ ]7   [ ] none (all too loose / all too tight)
+   Measured stud diameter on stud coupon 4: ____ mm (drawn 4.98)
+
 Anything else: ________________
 ```
 
@@ -149,6 +184,8 @@ Anything else: ________________
 | 7 | Clearance, mm (ribs 1 to 3 = 0.2, 0.3, 0.4) | 0.3 |
 | 8 | Flangeway width, mm (ribs 1 to 3 = 2.5, 3, 3.5) | 3 |
 | 9 | Hole fit, mm (the monorail section) | 0.1 |
+| 10, stud ladder | Stud fit, mm (ribs 1 to 7 = 0.03, 0.08, 0.13, 0.18, 0.23, 0.28, 0.33) | 0.18 |
+| 10, anti-stud ladder | Anti-stud fit, mm (ribs 1 to 7 = 0.21, 0.16, 0.11, 0.06, 0.01, -0.04, -0.09) | 0.06 |
 | 6 | Supports under rail ends; the sprung blades' gaps | on |
 
 ## Round two (not in this kit)

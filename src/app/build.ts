@@ -409,8 +409,8 @@ export function uniqueNames<T extends { name: string }>(pieces: T[]): T[] {
 }
 /** opts.plan: only list the jobs it'd do (buildJobs), stopping there. */
 /** opts.planOnly: only the plan's trackwork (the 3D view hidden, or Auto off): sent to early, then PLAN_ONLY thrown, nothing built. */
-/** opts.mark: (a test-print kit's coupon) its number, marked on its track parts as ribs (marked). */
-export interface BuildOpts { plan?: BuildJob[]; planOnly?: boolean; mark?: number }
+/** opts.mark: (a test-print kit's coupon) its number, marked on its track parts as ribs (marked); markBoth: on both its sides. */
+export interface BuildOpts { plan?: BuildJob[]; planOnly?: boolean; mark?: number; /** the ribs on both its sides (KitPart.markBoth) */ markBoth?: boolean }
 export function buildDesign(w: Wasm, design: Design, report: (what: string, frac: number) => void = () => {}, early?: (overlay: unknown) => void, opts: BuildOpts = {}) {
   // (the build owns the solids it makes, and deletes them as it ends: solidcache.ts; a plan's are kept for its jobs)
   const run = () => buildScope(() => buildAll(w, design, report, early, opts), !!opts.plan);
@@ -486,7 +486,7 @@ function buildKit(w: Wasm, design: Design, report: (what: string, frac: number) 
     // (a coupon has no cut paths: they're drawn across the design's own track, not a test print's)
     const sub: Design = { ...plain, routes: g.routes, ...(g.k?.options && { options: { ...plain.options, ...g.k.options } }), ...(g.k && { expert: undefined }) };
     try {
-      const r = buildAll(w, sub, (what, f) => report(g.k ? `${g.k.name}: ${what}` : what, (i + f) / groups.length), (ov) => { earlies[i] = ov as Record<string, unknown[]>; early?.(merged()); }, { ...opts, mark: g.k?.mark });
+      const r = buildAll(w, sub, (what, f) => report(g.k ? `${g.k.name}: ${what}` : what, (i + f) / groups.length), (ov) => { earlies[i] = ov as Record<string, unknown[]>; early?.(merged()); }, { ...opts, mark: g.k?.mark, markBoth: g.k?.markBoth });
       built.push(g.k ? { ...r, pieces: r.pieces.map((p) => ({ ...p, name: `${g.k!.name}-${p.name}`, kit: g.k!.name })), info: { ...r.info, warnings: r.info.warnings.map((wn) => `${g.k!.name}: ${wn}`) } } : r);
     } catch (e) { if (e !== PLAN_ONLY) throw e; }
   });
@@ -548,7 +548,7 @@ function buildWhole(w: Wasm, design: Design, report: (what: string, frac: number
 }
 
 /** The build's settings key (settingsKey): every option, the gauge, a kit coupon's number. */
-const keyOfSettings = (design: Design, opts: BuildOpts) => `${JSON.stringify([{ ...OPTION_DEFAULTS, ...design.options }, design.gaugeStuds])}${opts.mark ? `#${opts.mark}` : ''}|`;
+const keyOfSettings = (design: Design, opts: BuildOpts) => `${JSON.stringify([{ ...OPTION_DEFAULTS, ...design.options }, design.gaugeStuds])}${opts.mark ? `#${opts.mark}${opts.markBoth ? 'b' : ''}` : ''}|`;
 /** The train track's build: in one go, as ever, or (tracks with part settings of their own) in groups. */
 function trainBuild(w: Wasm, design: Design, report: (what: string, frac: number) => void, early: ((overlay: unknown) => void) | undefined, opts: BuildOpts): ReturnType<typeof buildTrain> {
   return hasPartOwn(design) ? buildGroups(w, design, report, early, opts) : buildTrain(w, design, report, early, opts);
@@ -1319,8 +1319,8 @@ interface PieceBuild {
   job: <T>(key: string, cost: number, f: () => T, none: T) => T;
   /** labels engraved under the parts (name, label_*) */
   labelOn: boolean;
-  /** (a test-print kit's coupon) its number, marked on its track parts (marked) */
-  mark?: number;
+  /** (a test-print kit's coupon) its number, marked on its track parts (marked); markBoth: on both its sides */
+  mark?: number; markBoth?: boolean;
   /**
    * The track parts' numbers, one run for the whole build: part, the last part numbered; sec, the sections and blocks
    * numbered so far (labelled parts are named by theirs). (Each way of cutting counted from 1 on its own: the X yard had
@@ -1411,22 +1411,29 @@ function bake(b: PieceBuild, m: Man): Baked {
   }, () => []);
 }
 
+/** The most ribs a test-print coupon is numbered with (marked): a ladder's rungs, 1 to 7. */
+export const MARK_MAX = 7;
 /**
  * A test-print coupon's number (BuildOpts.mark), to tell it by once it's off the bed: that many upright ribs (1.5 wide,
  * 0.55 proud, 2.4 high, 3 apart) on its side at its +x edge, about its middle: a sleeper's end, on a short straight
  * laid along y (the kit's); on a curve's or a crossing's end where its wall is. Left off where they wouldn't all be part of it.
+ * markBoth: the same on its -x edge too (a kit with two ladders: the second one's coupons have ribs on both sides).
  */
-function marked(b: PieceBuild, m: Man): Man {
-  const bb = m.boundingBox(), cy = (bb.min[1] + bb.max[1]) / 2, n = Math.min(5, Math.round(b.mark!));
-  // (each rib on the part's outline where it is at its own y, 1.2 up: on a straight's sleeper end that is the bounding box's
-  // +x edge; on a curve's end or a crossing's arm it's where the wall is. Tried at the middle, then each side of it along y)
-  const sl = m.slice(bb.min[2] + 1.2), wide = bb.max[0] - bb.min[0] + 2, parts = m.decompose().length;
-  const xAt = (y: number) => { const row = b.w.CrossSection.square([wide, 0.2]).translate([bb.min[0] - 1, y - 0.1]).intersect(sl); return row.isEmpty() ? undefined : row.bounds().max[0]; };
-  for (let k = 0; k < 40; k++) {
-    const y0 = cy + (k % 2 ? 1 : -1) * Math.ceil(k / 2) * 1.5, ys = Array.from({ length: n }, (_, i) => y0 + (i - (n - 1) / 2) * 3), xs = ys.map(xAt);
-    if (xs.some((x) => x === undefined)) continue;
-    const out = b.scad.union([m, ...ys.map((y, i) => b.scad.cylinder(2.4, 0.75).translate([xs[i]! - 0.2, y, bb.min[2]]))]);
-    if (out.decompose().length === parts) return out;
+function marked(b: PieceBuild, m0: Man): Man {
+  const n = Math.min(MARK_MAX, Math.round(b.mark!));
+  let m = m0;
+  for (const side of b.markBoth ? [1, -1] : [1]) {
+    const bb = m.boundingBox(), cy = (bb.min[1] + bb.max[1]) / 2;
+    // (each rib on the part's outline where it is at its own y, 1.2 up: on a straight's sleeper end that is the bounding box's
+    // +x edge; on a curve's end or a crossing's arm it's where the wall is. Tried at the middle, then each side of it along y)
+    const sl = m.slice(bb.min[2] + 1.2), wide = bb.max[0] - bb.min[0] + 2, parts = m.decompose().length;
+    const xAt = (y: number) => { const row = b.w.CrossSection.square([wide, 0.2]).translate([bb.min[0] - 1, y - 0.1]).intersect(sl); return row.isEmpty() ? undefined : side > 0 ? row.bounds().max[0] : row.bounds().min[0]; };
+    for (let k = 0; k < 40; k++) {
+      const y0 = cy + (k % 2 ? 1 : -1) * Math.ceil(k / 2) * 1.5, ys = Array.from({ length: n }, (_, i) => y0 + (i - (n - 1) / 2) * 3), xs = ys.map(xAt);
+      if (xs.some((x) => x === undefined)) continue;
+      const out = b.scad.union([m, ...ys.map((y, i) => b.scad.cylinder(2.4, 0.75).translate([xs[i]! - side * 0.2, y, bb.min[2]]))]);
+      if (out.decompose().length === parts) { m = out; break; }
+    }
   }
   return m;
 }
@@ -2359,7 +2366,7 @@ function buildOne(w: Wasm, design: Design, report: (what: string, frac: number) 
   const sleepered = o.sleepers === 'sleepers' && o.ballast === 'none';
   const labelOn = o.ballast !== 'none' && o.bottomStyle === 'float' && !!o.labelText?.trim();
   const b: PieceBuild = { w, scad, o, gaugeStuds: design.gaugeStuds, track, cut, prog, pieces: [], volume: 0, bedWarnings, overlay, job,
-    labelOn, ...(opts.mark && { mark: opts.mark }), num: { part: 0, sec: 0 }, alongTrack, gridPose, sleepered, bufs, grooveCuts, grooveEdits: tw.groove, dropInner, tables: design.tables ?? [], boughtSw: bought, trackRoutes: routes, ...(handCuts && { handCuts }), ...(cutPaths?.cut.length && inLengths && { cutPaths: cutPaths.cut }) };
+    labelOn, ...(opts.mark && { mark: opts.mark, markBoth: opts.markBoth }), num: { part: 0, sec: 0 }, alongTrack, gridPose, sleepered, bufs, grooveCuts, grooveEdits: tw.groove, dropInner, tables: design.tables ?? [], boughtSw: bought, trackRoutes: routes, ...(handCuts && { handCuts }), ...(cutPaths?.cut.length && inLengths && { cutPaths: cutPaths.cut }) };
   const copt = { ...CROSSING_DEFAULTS, gaugeStuds: design.gaugeStuds, grip: o.grip ?? 'edges', flangeway: o.flangeway, flangewayDepth: o.flangewayDepth, checkRailW: o.checkRailW, checkRailFlare: o.checkRailFlare,
     ballast: o.ballast, bottomStyle: o.bottomStyle, supports: o.endSupports !== false, curveStuds: o.curveStuds,
     studFit: o.studFit, antistudFit: o.antistudFit, sleepers: o.sleepers, undersideGrid: o.ballast === 'none' ? o.undersideGrid : undefined, sleeperWidthStuds: o.sleeperWidthStuds, sleeperGapStuds: o.sleeperGapStuds,

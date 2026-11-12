@@ -53,6 +53,7 @@ describe('no underside has a stud socket', { timeout: 600000 }, () => {
     ['LEGO\'s switch with the lever on a bracket', T('Left switch (LEGO)', { throwStyle: 'bracket' })],
     ['straights\' ends (the joints kit)', T('Test print 2: track joints')],
     ['the fit coupons', T('Test print 1: stud and anti-stud fits')],
+    ['the LEGO tolerance coupons', T('Test print 10: LEGO tolerance')],
     ['an oval on sleepers, in lengths', T('Oval (LEGO R40)', { sleepers: 'sleepers', splitTrack: 'lengths' })],
     ['track on sleepers one stud wide, lined up with the track', T('Oval (LEGO R40)', { sleepers: 'sleepers', sleeperWidthStuds: 1, sleeperGapStuds: 1, undersideGrid: 'track' })],
     ['track on sleepers one stud wide, on the baseplate\'s grid', T('Oval (LEGO R40)', { sleepers: 'sleepers', sleeperWidthStuds: 1, sleeperGapStuds: 1 })],

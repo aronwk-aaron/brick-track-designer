@@ -104,9 +104,10 @@ export interface Design {
 /**
  * A test-print kit's coupon: the routes it's made of (by name; a route renamed is no longer its), the settings it's
  * built with over the design's (a fit, a blade shape), the number marked on its track parts (ribs on a short
- * straight's side, 1 to 5), and what it is, for the README in the STL zip. Its parts' names start with its name.
+ * straight's side, 1 to 7; markBoth: on both its sides, a kit's second ladder), and what it is, for the README in the
+ * STL zip. Its parts' names start with its name.
  */
-export interface KitPart { name: string; routes: string[]; options?: Partial<PieceOptions>; mark?: number; note?: string }
+export interface KitPart { name: string; routes: string[]; options?: Partial<PieceOptions>; mark?: number; markBoth?: boolean; note?: string }
 
 /** Hand edits (each also says where on its route it is, on: twfollow.ts): check rails lengthened (+) or shortened (-) at each end, moved, or taken out; flangeway cuts lengthened; points moved along, taken out or forced; levers moved. */
 export interface Trackwork {
@@ -290,7 +291,7 @@ export function readDesign(v: unknown): Design {
   else delete d.options;
   // (a kit's coupons: the ones with a name and their routes' names; their settings as the design's)
   const kit = (Array.isArray(d.kit) ? d.kit : []).filter((k: unknown): k is Record<string, unknown> => obj(k) && typeof k.name === 'string' && !!k.name && Array.isArray(k.routes) && k.routes.every((n) => typeof n === 'string'))
-    .map((k): KitPart => ({ name: k.name as string, routes: k.routes as string[], ...(obj(k.options) && { options: opts(k.options) }), ...(fin(k.mark) && { mark: Math.min(5, Math.max(0, Math.round(k.mark))) }), ...(typeof k.note === 'string' && { note: k.note }) }));
+    .map((k): KitPart => ({ name: k.name as string, routes: k.routes as string[], ...(obj(k.options) && { options: opts(k.options) }), ...(fin(k.mark) && { mark: Math.min(7, Math.max(0, Math.round(k.mark))) }), ...(k.markBoth === true && { markBoth: true }), ...(typeof k.note === 'string' && { note: k.note }) }));
   if (kit.length) d.kit = kit; else delete d.kit;
   // (each edit's place on its route, where it isn't one, left out: it's worked out again from where the edit is)
   const anchor = (a: unknown) => Array.isArray(a) && a.length === 4 && typeof a[0] === 'string' && (a[1] === 's' || a[1] === 'e') && fin(a[2]) && fin(a[3]);
@@ -655,7 +656,7 @@ export const TEMPLATE_GROUPS: [string, string[]][] = [
   ['Layouts', ['Oval (LEGO R40)', 'Crossover (R40)', 'Double crossover (R56)', 'Yard ladder (R40)', 'Yard (R56)', 'X yard (6 tracks, single slips)', 'Wye with a crossover', 'Double-track return loop (turning right)', 'Double-track return loop (turning left)']],
   ['Features', ['Grade up at 2.5%', 'Helix (R104, two turns)', 'Siding ending in a buffer stop', 'Bridge with guard rails', 'Straight cut into parts by hand', 'Curve and straights cut into parts by hand', 'Double track, one on sleepers, one on ballast', 'Station track on a solid bed, the line beyond on sleepers', 'Track on sleepers, a stretch of it on a solid bed', 'Dual gauge track', 'Dual gauge crossing 90°', 'Dual gauge crossing 45°', 'Dual gauge track, narrow gauge centred', 'Dual gauge crossing 90°, narrow gauge centred', ...Object.keys(GAUGE_SPLITS), ...Object.keys(DUAL_BRANCHES), 'Narrow gauge beside and across standard track', 'Banked curve', 'Crossing on sleepers']],
   ['Monorail', ['Monorail oval on supports', 'Monorail siding (points and a short curve)', 'Monorail level crossing (experimental)']],
-  ['Test prints', ['Test print 1: stud and anti-stud fits', 'Test print 2: track joints', 'Test print 3: switch as built', 'Test print 4: points three ways', 'Test print 5: seat for a LEGO curve', 'Test print 6: seat fits', 'Test print 7: clearance round the points', 'Test print 8: flangeway width', 'Test print 9: monorail hole fit']],
+  ['Test prints', ['Test print 1: stud and anti-stud fits', 'Test print 2: track joints', 'Test print 3: switch as built', 'Test print 4: points three ways', 'Test print 5: seat for a LEGO curve', 'Test print 6: seat fits', 'Test print 7: clearance round the points', 'Test print 8: flangeway width', 'Test print 9: monorail hole fit', 'Test print 10: LEGO tolerance']],
   ['TrixBrix trackwork', ['Switch R40 left', 'Switch R40 right', 'Switch R40 left, 28-stud straight', 'Switch R40 right, 28-stud straight', 'Yard switch R40 left', 'Yard switch R40 right', 'Switch R56 left', 'Switch R56 right', 'Switch R72 left', 'Switch R72 right', 'Switch R104 left', 'Switch R104 right', 'Switch R104 left, lever on the straight side', 'Switch R104 right, lever on the straight side', 'Switch R120 left', 'Switch R120 right', 'Switch R148 left', 'Switch R148 right', 'Switch R148 left, lever on the straight side', 'Switch R148 right, lever on the straight side', 'Curved switch R40 45° left', 'Curved switch R40 45° right', 'Curved switch R40 90° left', 'Curved switch R40 90° right', 'Curved switch R56 90° left', 'Curved switch R56 90° right', 'Curved switch R104 90° left', 'Curved switch R104 90° right', 'Wye R40', 'Wye R40, 8-stud spacing', 'Wye R104', 'Wye R40 left, R56 right', 'Wye R56 left, R40 right', 'Wye R104 left, R120 right', 'Wye R120 left, R104 right', 'Three-way R40', 'Three-way R104', 'Switch to the next track, no gap, left', 'Switch to the next track, no gap, right', 'Switch, 2-stud gap, left', 'Switch, 2-stud gap, right', 'Switch, 4-stud gap, left', 'Switch, 4-stud gap, right', 'Three-way, no gap', 'Three-way, 2-stud gap', 'Three-way, 4-stud gap', 'Crossing 90°, 8 studs', 'Crossing 45° left', 'Crossing 45° right', 'Crossing 45°, 27 studs', 'Crossing 22.5° left', 'Crossing 22.5° right', 'Star crossing 22.5°', 'Curved crossing R24', 'Curved crossing R40', 'Curved crossing R56', 'Curved crossing R72', 'Curved crossing R88', 'Curved crossing R104', 'Crossing of two R120 curves', 'Pass-through crossing R56 left', 'Pass-through crossing R72 (A) left', 'Pass-through crossing R72 (B) left', 'Pass-through crossing R120 left', 'Pass-through crossing R56 right', 'Pass-through crossing R72 (A) right', 'Pass-through crossing R72 (B) right', 'Pass-through crossing R120 right', 'T-junction core R56', 'Double slip R40 45°', 'Single slip R40 45°', 'Double slip R104 left', 'Double slip R104 right', 'Double crossover R40', 'Crossover, 4-stud gap, left', 'Crossover, 4-stud gap, right', 'Buffer stop', 'Narrow-gauge crossing 90°', 'Narrow-gauge crossing of standard track 90°', 'Narrow-gauge crossing of standard track 45° left', 'Narrow-gauge crossing of standard track 45° right', 'Narrow-gauge buffer stop', 'Narrow-gauge switch R36 left', 'Narrow-gauge switch R36 right', 'Narrow-gauge switch R48 left', 'Narrow-gauge switch R48 right', 'Narrow-gauge switch R84 left', 'Narrow-gauge switch R84 right', 'Narrow-gauge wye R36', 'Narrow-gauge switch R36 left, lever on the branch side', 'Narrow-gauge switch R36 right, lever on the branch side', 'Narrow-gauge double crossover R36', 'Narrow-gauge crossing 22.5° left', 'Narrow-gauge crossing 22.5° right', 'Narrow-gauge crossing 33.75° left', 'Narrow-gauge crossing 33.75° right', 'Wye R104, 8-stud gap', 'Dual gauge switch R40 left', 'Dual gauge switch R40 right', 'Dual gauge turnout R36 left', 'Dual gauge turnout R36 right', 'Dual gauge slide, centre to left', 'Dual gauge slide, centre to right', 'Dual gauge switch R36, narrow gauge branch, left', 'Dual gauge switch R36, narrow gauge branch, right', 'Crossover, three tracks, R104', 'Switch R104 left, base and detachable modules', 'Switch R104 right, base and detachable modules', 'Three-way R104, base and detachable modules', 'Double slip R104 left, middle and detachable sections', 'Double slip R104 right, middle and detachable sections', ...Object.keys(REF_KITS), ...Object.keys(REF1_PLAIN), ...Object.keys(REF1_SETS)]],
   ['4DBrix trackwork', Object.keys(RANGE2)],
   ['BrickTracks trackwork', ['Left switch (BrickTracks R104)', 'Right switch (BrickTracks R104)', ...Object.keys(BRICKTRACKS_PARTS), ...Object.keys(BRICKTRACKS_SETS)]],
@@ -669,6 +670,16 @@ const pointsCoupon = (id: string, x: number): Design['routes'] => [
 ];
 /** The fit ladder (Test print 1): stud fit and anti-stud fit, loosest to tightest, the default in the middle. */
 export const FIT_LADDER: [stud: number, antistud: number][] = [[0.08, 0.16], [0.13, 0.11], [0.18, 0.06], [0.23, 0.01], [0.28, -0.04]];
+/**
+ * The LEGO tolerance ladders (Test print 10): the stud fit alone, then the anti-stud fit alone, each loosest to tightest
+ * with the default in the middle and the other fit left at its default. Seven rungs 0.05 mm apart: a 0.4 mm nozzle on a
+ * well-kept printer repeats to about 0.05 mm, so a finer step can't be told apart in the hand, and three rungs each side
+ * reach the 0.15 mm that printers and plastics differ by (PLA against PETG, a little over- or under-extrusion).
+ */
+export const STUD_LADDER = [0.03, 0.08, 0.13, 0.18, 0.23, 0.28, 0.33];
+export const ANTISTUD_LADDER = [0.21, 0.16, 0.11, 0.06, 0.01, -0.04, -0.09];
+/** A tolerance coupon's place (Test print 10): four across, 7 studs apart, the rows 6 apart; the anti-stud ladder two rows down. */
+const tolAt = (ladder: number, k: number) => ({ x: 7 * (k % 4), y: -6 * (2 * ladder + Math.floor(k / 4)) });
 /** The seat ladder (Test print 6): Track fit in the seat, mm, tightest to loosest, the default (0.2) in the middle. */
 export const SEAT_LADDER = [0.1, 0.2, 0.3];
 /** The clearance ladder (Test print 7): Clearance round the moving parts, mm, the default (0.3) in the middle. */
@@ -734,6 +745,21 @@ export const TEMPLATES: Record<string, Design> = {
   'Test print 9: monorail hole fit': { version: 1, gaugeStuds: 4, name: 'test-9-hole-fit', options: { monoLabels: 'name' },
     routes: HOLE_LADDER.map((_, k) => ({ name: `Hole ${k + 1}`, x: 8 * k, y: 0, heading: 0, system: 'monorail' as const, segs: [{ kind: 'straight' as const, studs: 4 }] })),
     kit: HOLE_LADDER.map((monoHoleFit, k) => ({ name: `hole${k + 1}-${monoHoleFit}`, routes: [`Hole ${k + 1}`], options: { monoHoleFit, labelText: `H${monoHoleFit}` }, note: `${k + 1} of ${HOLE_LADDER.length}: hole fit ${monoHoleFit} mm, engraved H${monoHoleFit} underneath${k === 2 ? " (today's setting)" : ''}` })) },
+  // (LEGO tolerance: two ladders of seven, the stud fit alone and the anti-stud fit alone. Each coupon the smallest piece
+  // of track with all three things to try: a 4-stud straight on sleepers at the narrow gauge (6 studs wide): a 2 x 4 of
+  // studs between its rails, an end connector's single row with its pins at each end, and a sleeper's hollow with a
+  // whole tube in the middle. Ribs on one side: the stud ladder; on both: the anti-stud ladder)
+  'Test print 10: LEGO tolerance': { version: 1, gaugeStuds: 2, name: 'test-10-lego-tolerance', options: { legoTrack: 'print', sleepers: 'sleepers', sleeperWidthStuds: 2, sleeperGapStuds: 2, undersideGrid: 'baseplate' },
+    routes: [
+      ...STUD_LADDER.map((_, k) => ({ name: `Stud ${k + 1}`, ...tolAt(0, k), heading: 0, segs: [{ kind: 'straight' as const, studs: 4 }] })),
+      ...ANTISTUD_LADDER.map((_, k) => ({ name: `Tube ${k + 1}`, ...tolAt(1, k), heading: 0, segs: [{ kind: 'straight' as const, studs: 4 }] })),
+    ],
+    kit: [
+      ...STUD_LADDER.map((studFit, k) => ({ name: `stud${k + 1}-fit${studFit}`, routes: [`Stud ${k + 1}`], options: { studFit }, mark: k + 1,
+        note: `${k + 1} rib${k ? 's' : ''} on one side: stud fit ${studFit} mm${k === 3 ? " (today's setting)" : k === 0 ? ' (loosest)' : k === 6 ? ' (tightest)' : ''}; anti-stud fit as today` })),
+      ...ANTISTUD_LADDER.map((antistudFit, k) => ({ name: `tube${k + 1}-fit${antistudFit}`, routes: [`Tube ${k + 1}`], options: { antistudFit }, mark: k + 1, markBoth: true,
+        note: `${k + 1} rib${k ? 's' : ''} on both sides: anti-stud fit ${antistudFit} mm${k === 3 ? " (today's setting)" : k === 0 ? ' (loosest)' : k === 6 ? ' (tightest)' : ''}; stud fit as today` })),
+    ] },
   '90° crossing': { version: 1, gaugeStuds: 4, routes: [
     { name: 'A', x: 0, y: -8, heading: 0, segs: [{ kind: 'straight', studs: 16 }] },
     { name: 'B', x: 8, y: 0, heading: 90, segs: [{ kind: 'straight', studs: 16 }] },
