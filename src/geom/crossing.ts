@@ -77,6 +77,8 @@ const END = 4;        // rails stop this far from a route end (the connector tak
 const BED_END = 8;    // the track bed stops here (the connector's base is the rest)
 /** (mm) With sleepers, a check rail may run this far over no sleeper, tie or bed (a gap between sleepers crossed at a slant); further, it gets bed under it. */
 export const CHECK_UNHELD = 24;
+/** (mm) A long tie crosses a gap wider than this to the next track beside (sleeper end to sleeper end: two studs) only if it gets to it. */
+const TIE_GAP = 16;
 /** (mm3) With sleepers, a bit of check rail smaller than this, cut off by other routes' flangeways and over nothing, is taken out: it would be loose. */
 const CHECK_STUB = 80;
 /** (mm) A check rail stops this far short of the points' blades where they swing. */
@@ -342,7 +344,7 @@ export function crossingPiece(s: Scad, routes: Route[], o: CrossingOptions = CRO
     return [lo2, hi2];
   };
   /** (a long tie on route i at v: its reach across, from the left of every track it runs under to the right) */
-  const longTie = (i: number, v: number): [number, number] => {
+  const longTie = (i: number, v: number, beside: [number, number][] = []): [number, number] => {
     const rt = routes[i], P = routePose(rt, v), q = [P[0], P[1]] as Vec2, half = lenOf[i] / 2;
     let lo = -half, hi = half;
     for (const [k, r2] of routes.entries()) {
@@ -353,8 +355,31 @@ export function crossingPiece(s: Scad, routes: Route[], o: CrossingOptions = CRO
       if (Math.abs(lat) > 2 * lenOf[i] || dh > 35) continue;
       const off = -lat / Math.cos((dh * Math.PI) / 180);
       lo = Math.min(lo, off - lenOf[k] / 2); hi = Math.max(hi, off + lenOf[k] / 2);
+      beside.push([off - lenOf[k] / 2, off + lenOf[k] / 2]);
     }
     return [Math.max(lo, -2 * lenOf[i]), Math.min(hi, 2 * lenOf[i])];
+  };
+  /**
+   * (a long tie's span as cleared (tieClear), on route i: across a gap wider than TIE_GAP to the next track beside, only
+   * if it gets there, a stud or more under that track's sleeper; else it stops where the last track it got to does, in
+   * whole studs from its own sleeper's ends: cut short of the next track by an end connector or another route's tie, it
+   * would hang over the gap. Ties that run across a wide gap to the next track are kept: a crossover's (the kits' modules
+   * are cut along the line between the tracks, through them). One that ends part way under that track: underServed)
+   */
+  const tieLanded = (i: number, span: [number, number], beside: [number, number][]): [number, number] => {
+    const half = lenOf[i] / 2;
+    const reach = (end: number, dir: 1 | -1) => {
+      // (the tracks out on that side, nearest first, as distances out from the sleeper's middle)
+      const out = beside.map(([a, b]): [number, number] => (dir > 0 ? [a, b] : [-b, -a])).filter(([, b]) => b > half + 1e-6).sort((x, y) => x[0] - y[0]);
+      let got = half;
+      for (const [a, b] of out) {
+        if (a > got + TIE_GAP && end < a + STUD - 1e-6) return Math.min(end, half + Math.floor((got - half) / STUD + 1e-9) * STUD);
+        if (end < a) break;
+        got = Math.max(got, b);
+      }
+      return end;
+    };
+    return [-reach(-span[0], -1), reach(span[1], 1)];
   };
   const tieStuds: Vec2[] = [];
   /** (expert) A sleeper built as a tie on route i: at P, from lo to hi across it, with its rows of studs unless bare; v: where along the route. */
@@ -535,11 +560,16 @@ export function crossingPiece(s: Scad, routes: Route[], o: CrossingOptions = CRO
       }
       const atAll = spotsAll.filter((v) => !inTie(i, v));
       // (long ties: square to this route, out under the tracks beside it; clear of every end connector)
+      const underServed: number[] = [];
       for (const v of spotsAll.filter((v2) => inTie(i, v2))) {
         const P = routePose(rt, v);
-        if (served(i, [P[0], P[1]])) continue;
-        const span = tieClear(i, P, ...longTie(i, v));
-        if (!span) continue;
+        // (served by another route's tie; but one that stops part way under this track, a rail of it off the tie's
+        // end (the R40 double crossover's straights' ties reach the other straight's middle), gets its own sleeper
+        // there too: its far rail had nothing under it)
+        if (served(i, [P[0], P[1]])) { if ([-gOf[i], gOf[i]].some((o2) => !onOtherTie(i, P, o2))) underServed.push(v); continue; }
+        const beside: [number, number][] = [], span0 = tieClear(i, P, ...longTie(i, v, beside));
+        if (!span0) continue;
+        const span = tieLanded(i, span0, beside);
         tiesBuilt.push({ i, P, lo: span[0], hi: span[1] });
         sleeperAt.push({ i, v, lo: span[0], hi: span[1] });
         parts.push(atPose(T(s.cube([span[1] - span[0], c.sleeperW, PLATE_H]), [span[0], -c.sleeperW / 2, 0]), P));
@@ -551,7 +581,7 @@ export function crossingPiece(s: Scad, routes: Route[], o: CrossingOptions = CRO
         }
       }
       // (its own sleepers, but none on another route's tie or sleeper)
-      const half = c.sleeperLen / 2, at = atAll.filter((v) => { const P = routePose(rt, v); return !Array.from({ length: 17 }, (_, k) => -half + (k * half) / 8).some((o2) => onOtherTie(i, P, o2)); });
+      const half = c.sleeperLen / 2, at = [...atAll.filter((v) => { const P = routePose(rt, v); return !Array.from({ length: 17 }, (_, k) => -half + (k * half) / 8).some((o2) => onOtherTie(i, P, o2)); }), ...underServed];
       for (const v of at) { tiesBuilt.push({ i, P: routePose(rt, v), lo: -half, hi: half }); sleeperAt.push({ i, v, lo: -half, hi: half }); }
       // (where the gauges of dual-gauge track part (a narrower route out of this piece's wider one's end), a check rail
       // can run over a plain sleeper past the fan: its studs kept clear of it, as the bed's are. Elsewhere as it was)
@@ -560,7 +590,9 @@ export function crossingPiece(s: Scad, routes: Route[], o: CrossingOptions = CRO
       // (banked: each sleeper turned by the roll at it)
       // (and each stud clear of the ones there already: an end's row, a sleeper's before it)
       const clearOk = (P: Pose) => { const ok = sleeperPostOk(P); return (p: Vec2) => (ok?.(p) ?? true) && claim(poseToWorld(P, p) as [number, number]); };
-      if (at.length) parts.push(s.union(at.map((v) => { const P = routePose(rt, v), sl = t.sleeper(bareAt.has(v) ? () => false : clearOk(P)); return atPose(banked ? bankedSleeper(s, sl, trackBank(c.sleeperLen), routeRoll(rt, v), c.sleeperLen, c.sleeperW) : sl, P); })));
+      // (one under another route's tie's end (underServed): bare, the ties' studs about it; with its own, they stood
+      // against the tie's beside them)
+      if (at.length) parts.push(s.union(at.map((v) => { const P = routePose(rt, v), sl = t.sleeper(bareAt.has(v) || underServed.includes(v) ? () => false : clearOk(P)); return atPose(banked ? bankedSleeper(s, sl, trackBank(c.sleeperLen), routeRoll(rt, v), c.sleeperLen, c.sleeperW) : sl, P); })));
     }
     // End connectors and breakaway supports, at both ends.
     // (on ballast: no peg and clip, as the switches')

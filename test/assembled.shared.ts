@@ -566,10 +566,11 @@ const RAIL_KINDS = { nub: /has a nub of rail/, stud: /stud at .* is run into|mor
  * single slips, 0.2 to 5.7 mm2; a 45 degree crossing cut across its middle, 5.7); stud: a stud with a rail's foot or
  * a wing rail within 0.25 mm of its side (the wyes' two studs at the toe, 0.2 to 0.4 mm2; the slips' and the R56
  * crossovers', 0.7 to 1.3); sliver: a part of track under 1000 mm3 (the yards' ladders: 608 to 884 mm3); check: a
- * check rail with no bed or sleeper under it for 26 mm (the R72 pass-through crossings', at 64, -52).
+ * check rail with no bed or sleeper under it for more than 24 mm (none now: the R72 pass-through crossings' got a sleeper
+ * under the track their long ties stop part way under).
  * ('the double slip as nail switches': nail-switch.test.ts's, the 22.5 degree double slip.)
  */
-export const RAIL_KNOWN: Record<string, (keyof typeof RAIL_KINDS)[]> = { 'Double slip (22.5°)': ['nub'], 'the double slip as nail switches': ['nub'], 'Double slip (45°, R40)': ['nub', 'stud'], 'Double slip R40 45°': ['nub'], 'Dual gauge crossing 45°': ['nub'], 'Narrow-gauge wye R36': ['stud'], 'Pass-through crossing R72 (A) left': ['check'], 'Pass-through crossing R72 (A) right': ['check'], 'Single slip R40 45°': ['nub'], 'Wye R40': ['stud'], 'Wye R40 left, R56 right': ['stud'], 'Wye R40, 8-stud spacing': ['stud'], 'Wye R56 left, R40 right': ['stud'], 'X yard (6 tracks, single slips)': ['nub'], 'Yard (R56)': ['nub', 'sliver'], 'Yard ladder (R40)': ['nub'], 'monster-switch-6-tracks-double-slips.btd.json': ['nub'], 'monster-switch-6-tracks.btd.json': ['nub'], 'return-loop-turning-left.btd.json': ['nub'], 'return-loop-turning-right.btd.json': ['nub'] };
+export const RAIL_KNOWN: Record<string, (keyof typeof RAIL_KINDS)[]> = { 'Double slip (22.5°)': ['nub'], 'the double slip as nail switches': ['nub'], 'Double slip (45°, R40)': ['nub', 'stud'], 'Double slip R40 45°': ['nub'], 'Dual gauge crossing 45°': ['nub'], 'Narrow-gauge wye R36': ['stud'], 'Single slip R40 45°': ['nub'], 'Wye R40': ['stud'], 'Wye R40 left, R56 right': ['stud'], 'Wye R40, 8-stud spacing': ['stud'], 'Wye R56 left, R40 right': ['stud'], 'X yard (6 tracks, single slips)': ['nub'], 'Yard (R56)': ['nub', 'sliver'], 'Yard ladder (R40)': ['nub'], 'monster-switch-6-tracks-double-slips.btd.json': ['nub'], 'monster-switch-6-tracks.btd.json': ['nub'], 'return-loop-turning-left.btd.json': ['nub'], 'return-loop-turning-right.btd.json': ['nub'] };
 
 /**
  * 7. Edges shared by more than two triangles in the printed parts' files (assembly.shared.ts sharedEdges), a template's
