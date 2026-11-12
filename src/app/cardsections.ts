@@ -5,8 +5,9 @@ import { type Design, isMono, RAIL_DEFAULTS, routeGaugeStuds, type DRoute } from
 import { cutsSummary } from './routecuts';
 import { hasPartOwn, inForce, liveOwn, partGroups, resolveOptions } from './overrides';
 import { PART_KEYS } from './routeown';
+import { sharedOf, sleepersSummary } from './sleeperedits';
 
-export type SectionId = 'shape' | 'place' | 'ends' | 'guard' | 'dual' | 'bed' | 'levers' | 'height' | 'cuts';
+export type SectionId = 'shape' | 'place' | 'ends' | 'guard' | 'dual' | 'bed' | 'sleepers' | 'levers' | 'height' | 'cuts';
 export interface CardSection {
   id: SectionId;
   /** the names the card uses */
@@ -60,6 +61,8 @@ export function cardSections(d: Design, r: DRoute, ctx: CardContext): CardSectio
       { id: 'dual', title: 'Dual gauge', summary: dualSummary(d, r), on: !!r.dualGauge, ...(r.guardRails && !r.dualGauge && { locked: 'not with guard rails: they are in the way of the third rail' }), ...(both && { note: clash }) });
     // (expert: its bed, sleepers, ballast and underside, the design's unless it has its own)
     out.push({ id: 'bed', title: 'Bed and underside', summary: bedSummary(d, r) });
+    // (expert: its sleepers edited by hand, and the ones it shares with the track beside)
+    { const i = d.routes.indexOf(r), sh = i >= 0 ? sharedOf(d, i).length : 0; out.push({ id: 'sleepers', title: 'Sleepers', summary: `${sleepersSummary(r)}${sh ? ' · shared with the track beside' : ''}` }); }
   }
   if (ctx.branches || (r.throwSide !== undefined && r.throwSide !== 'auto')) out.push({ id: 'levers', title: 'Points and levers', summary: `lever on the ${r.throwSide && r.throwSide !== 'auto' ? r.throwSide : (d.options?.throwSide ?? 'auto') === 'auto' ? 'auto side' : d.options?.throwSide}` });
   const h = r.monoHeight, he = r.monoHeightEnd;

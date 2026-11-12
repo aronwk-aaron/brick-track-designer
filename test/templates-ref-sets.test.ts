@@ -11,4 +11,9 @@ describe('templates: TrixBrix sets', { timeout: 1800000 }, () => templatesBuild(
   'Wye R40, 8-stud spacing, to two parallel tracks',
   'Wye R104 with its adapter curves',
   'Wye R104, 8-stud gap, with its curves',
+  'Switch R40 left to a parallel track',
+  'Switch R40 right to a parallel track',
+  'Yard R40, two tracks, left',
+  'Yard R40, two tracks, right',
+  'Three-way R40 to three parallel tracks',
 ]));

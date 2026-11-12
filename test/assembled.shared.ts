@@ -628,7 +628,10 @@ export const EDGES: Record<string, number> = { 'Modular wye R40, lever on the le
   // a line: the test prints' end supports, beside their points' sleepers, 6 more in print 4 and 11 in print 7 (8 before))
   'Test print 4: points three ways': 12,
   // (its lever's arm, 3 studs past the sleepers' ends on the straight's side as the reference's is: 6 where the arm's sides meet the base's, at 5.4, -35.1, 1.1 in its file; the other three R104 switches have 2 to 4 there)
-  'Switch R104 right, lever on the straight side': 7 };
+  'Switch R104 right, lever on the straight side': 7,
+  // (expert, section 4c: the left-hand R40 yard and the three-way to parallel tracks, their curves accepted beside the
+  // switch's branch: all in track1, the first at -23.7, -59.3, 3.2 and -64.3, -76.5, 0.0 in its file, on CI)
+  'Yard R40, two tracks, left': 13, 'Three-way R40 to three parallel tracks': 6 };
 /** (edges) A template not in EDGES may have this many: one or two come and go with a corner's last digit. */
 export const EDGES_FEW = 4;
 

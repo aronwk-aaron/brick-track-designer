@@ -226,7 +226,7 @@ describe('the Expert tools switch', () => {
     expect(byHandNote(des, des.routes[1])).toBe('Has 2 cuts by hand (only these)');
     expect(byHandNote(des, des.routes[2])).toBe('Has 1 setting of its own, 1 stretch');   // (sleepers: 'sleepers' is the design's: none of its own)
     expect(byHandNote(des, des.routes[3])).toBe('Has no cuts (one part, by hand)');
-    expect(byHand(des, des.routes[1])).toEqual({ cuts: 2, only: true, own: 0, stretches: 0 });
+    expect(byHand(des, des.routes[1])).toEqual({ cuts: 2, only: true, own: 0, stretches: 0, sleepers: 0, shared: 0 });
   });
   it('a setting of its own that is the design\'s is none: no note', () => {
     const same = d([r('A', 0, 0, 0, [st(8)], { own: { ballast: 'ballast' } })], { options: { ballast: 'ballast' } });

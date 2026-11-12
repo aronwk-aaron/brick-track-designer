@@ -63,6 +63,14 @@ export function optionForm(d: () => Design): { form: OptSection[] } {
         { v: 'none', t: 'None', tip: 'Track only, like LEGO track.' },
         { v: 'ballast', t: 'Ballast', tip: 'The track sits on a stepped ballast shoulder.' },
         { v: 'buddy', t: 'Ballast + buddy layer', tip: 'Ballast with a wider bottom layer.' }] },
+      { key: 'ballastLeftStuds', label: 'Ballast past the sleepers, left, studs', step: 1, min: 0, max: 8, def: 1, get: () => d().options?.ballastLeftStuds ?? 1, set: (v) => { d().options = { ...d().options, ballastLeftStuds: Math.round(Number(v)) }; },
+        off: (c) => (c.ballast ? undefined : 'only with ballast'), help: 'How far the ballast reaches past the sleepers\' ends on the left of each track, facing from its start. 0: no wider than the sleepers (the ballast can\'t be narrower than them). A track or a stretch can have its own (its card › Bed and underside).' },
+      { key: 'ballastRightStuds', label: 'Ballast past the sleepers, right, studs', step: 1, min: 0, max: 8, def: 1, get: () => d().options?.ballastRightStuds ?? 1, set: (v) => { d().options = { ...d().options, ballastRightStuds: Math.round(Number(v)) }; },
+        off: (c) => (c.ballast ? undefined : 'only with ballast'), help: 'The same on the right of each track.' },
+      { key: 'ballastEnds', label: 'Ballast at a buffer stop', def: 'square', get: () => d().options?.ballastEnds ?? 'square', set: (v) => { d().options = { ...d().options, ballastEnds: v as 'square' | 'stepped' }; },
+        off: (c) => (c.ballast ? undefined : 'only with ballast'), choices: [
+        { v: 'square', t: 'Square with the track\'s end', tip: 'The ballast stops where the track does.' },
+        { v: 'stepped', t: 'Stepped round the end', tip: 'The ballast\'s steps carry on round the end, as along its sides.', con: 'The part is 1 stud longer past the buffer (2 with the buddy layer).' }] },
       { key: 'trackBallast', label: 'Track and ballast printed', off: (c) => (c.ballast ? undefined : 'only with ballast'), choices: [
         { v: 'together', t: 'In one part', tip: 'Track and ballast print as one part.' },
         { v: 'apart', t: 'Apart, the track seated in the ballast', tip: 'Track and ballast print as separate parts (…-track, …-ballast). The track drops into a seat in the ballast.',

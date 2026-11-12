@@ -712,7 +712,7 @@ try {
     const kinds = () => page.evaluate(() => (window as unknown as { btdCanvas: { items(): { kind: string }[] } }).btdCanvas.items().map((i) => i.kind).join());
     const points = () => page.evaluate(() => (window as unknown as { btdCanvas: { overlay?: { items?: { kind: string; off?: boolean; cand?: unknown }[] } } }).btdCanvas.overlay?.items?.filter((it) => it.kind === 'points' && !it.off && !it.cand).length ?? 0);
     for (let k = 0; k < 100 && await points() === 0; k++) await page.waitForTimeout(200);
-    check(await page.locator('#pick-row').isVisible() && await page.locator('#pick').inputValue() === 'all' && await page.locator('#pick option').count() === 6, 'with the expert tools shown the legend has the Pick list, on Everything');
+    check(await page.locator('#pick-row').isVisible() && await page.locator('#pick').inputValue() === 'all' && await page.locator('#pick option').count() === 7, 'with the expert tools shown the legend has the Pick list, on Everything');
     const [jx, jy] = await scr(0, 8), [ax, ay] = await scr(0.5, 26), [cx, cy] = await scr(0.5, 20);
     await page.selectOption('#pick', 'joint'); await page.mouse.click(jx, jy); await page.waitForTimeout(250);
     check(await bar() === 'Joint between S and A' && await kinds() === 'joint' && await points() === 1, `picking joints, a click on a branch's joint selects it, under its points, which stay as they are (${await bar()}; ${await kinds()})`);

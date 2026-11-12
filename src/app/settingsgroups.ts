@@ -29,7 +29,7 @@ export const GROUPS: Group[] = [
     subs: { splitTrack: 'Cutting', joint: 'Joints' } },
   { id: 'fits', title: 'Fits and clearances', keys: ['studFit', 'antistudFit', 'trackFitTol'] },
   { id: 'track', title: 'Track and rails', needs: 'train', keys: ['gaugeStuds', 'raisedOn', 'curveStuds'] },
-  { id: 'ballast', title: 'Sleepers and ballast', needs: 'train', keys: ['sleepers', 'sleeperWidthStuds', 'sleeperGapStuds', 'ballast', 'trackBallast'] },
+  { id: 'ballast', title: 'Sleepers and ballast', needs: 'train', keys: ['sleepers', 'sleeperWidthStuds', 'sleeperGapStuds', 'ballast', 'ballastLeftStuds', 'ballastRightStuds', 'ballastEnds', 'trackBallast'] },
   { id: 'under', title: 'Underside', keys: ['bottomStyle', 'undersideGrid', 'grip'] },
   { id: 'labels', title: 'Labels', keys: ['labelText', 'labelSize', 'labelGauge', 'labelParts'] },
   { id: 'points', title: 'Points and levers', needs: 'switches', subs: { mechStyle: 'Points', pointsPieces: 'Spring tines', throwStyle: 'Levers and throws' },
@@ -57,6 +57,7 @@ export function unusedWhy(g: Group, f: Facts): string | undefined {
 /** A feature that's off: the settings only it uses aren't listed (searching still finds them, locked). */
 const HIDDEN_WHEN: Record<string, (c: OptCtx) => boolean> = {
   sleeperWidthStuds: (c) => c.ballast || c.o.sleepers !== 'sleepers', sleeperGapStuds: (c) => c.ballast || c.o.sleepers !== 'sleepers',
+  ballastLeftStuds: (c) => !c.ballast, ballastRightStuds: (c) => !c.ballast, ballastEnds: (c) => !c.ballast,
   trackBallast: (c) => !c.ballast, trackFitTol: (c) => !c.ballast || c.o.trackBallast !== 'apart',
   bottomStyle: (c) => !c.ballast, undersideGrid: (c) => c.ballast,
   labelSize: (c) => !c.o.labelText, labelGauge: (c) => !c.o.labelText, labelParts: (c) => !c.o.labelText,

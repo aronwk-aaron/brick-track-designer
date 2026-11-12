@@ -25,8 +25,10 @@ import { lockedWhy, setLocked } from './lock';
 import { addTemplate, openEnds } from './addtemplate';
 import { cardSections, type SectionId } from './cardsections';
 import { designOptions, hasPartOwn, ignoredOwn, inForce, liveOwn, partGroups } from './overrides';
-import { isRouteKey, OWN_LABELS, OWN_RANGES, PART_KEYS, type RouteKey } from './routeown';
-import { byHandNote, designByHandNote, EXPERT_SECTIONS, isPick, itemLabel, jointsOf, jointWhere, PICKS } from './items';
+import { isRouteKey, OWN_LABELS, OWN_RANGES, OWN_UNSET, PART_KEYS, type RouteKey } from './routeown';
+import { accepted, pruneAccept, renameAccept, setAccept } from './accept';
+import { curvedAt, followShared, followSleeperEdits, pruneShared, renameShared, setShared, sharedOf, type SleeperEdit, sleeperEditText, SLEEPER_LONG, SLEEPER_MOVE, SPAN_MAX } from './sleeperedits';
+import { byHandNote, designByHandNote, EXPERT_SECTIONS, isPick, itemLabel, jointsOf, jointWhere, PICKS, sleeperEditAt, sleeperEditOf } from './items';
 import { followStretches, liveStretches, lostStretches, type Stretch, STRETCH_KEYS, STRETCH_MIN, stretchProblem } from './stretches';
 import { designOfSelection, listMine, saveMine, type StorageLike } from './mytemplates';
 import { openMineStore } from './minestore';
@@ -599,6 +601,9 @@ function renderItemCard() {
     const not = canvas.overlay?.pathsNot?.find((n) => n.id === it.id);
     if (not) small(`Not made: ${not.why}.`, true);
     row.append(del);
+  } else if (it.kind === 'sleeper') {
+    sleeperControls(box, it, true);
+    row.append(showCard(it.route, 'Sleepers'));
   } else if (it.kind === 'joint') {
     const sj = canvas.jointSelected();
     for (const j of jointsOf(it, js)) small(`${jointWhere(design, j)}, at ${+j.at[0].toFixed(1)}, ${+j.at[1].toFixed(1)} (studs): ${j.apart ? 'taken apart (each moves on its own)' : 'joined (they move together)'}.`);
@@ -688,7 +693,8 @@ function overrideRow(o: { label: string; cur: number | undefined; def: number; d
 function ownRow(r: DRoute, i: number, key: RouteKey): HTMLElement {
   const f = OPTION_FORM.flatMap((sec) => sec.fields).find((x) => x.key === key)!;
   const where = `Settings › ${OPTION_FORM.find((sec) => sec.fields.includes(f))!.title}`;
-  const dop = designOptions(design), o = inForce(design, i), cur = r.own?.[key];
+  // (a setting neither the design nor the defaults say, OWN_UNSET: what it is then)
+  const dop = { ...OWN_UNSET, ...designOptions(design) } as PieceOptions, o = { ...OWN_UNSET, ...inForce(design, i) } as PieceOptions, cur = r.own?.[key];
   const from = (PART_KEYS as readonly string[]).includes(key) && hasPartOwn(design) ? partGroups(design).takes[i] : undefined;
   const c: OptCtx = { o, ballast: o.ballast !== 'none', fdb: o.mechStyle !== 'tines', switches: switchesNow() };
   // (taken from another track (one part): said once, at the top of the section, not on every row)
@@ -740,7 +746,7 @@ function bedSection(box: HTMLElement, r: DRoute, i: number) {
   const mine = pg ? pg.takes.flatMap((t, j) => (t === i ? [design.routes[j].name] : [])) : [];
   if (mine.length) small(`${mine.join(', ')} ${mine.length > 1 ? 'are' : 'is'} one part with this track and take${mine.length > 1 ? '' : 's'} its settings here.`);
   for (const q of ignoredOwn(r)) small(`Its own ${q.key} isn't used: ${q.why}.`, true);
-  for (const key of ['ballast', 'sleepers', 'sleeperWidthStuds', 'sleeperGapStuds', 'curveStuds', 'bottomStyle', 'undersideGrid', 'grip'] as const) box.append(ownRow(r, i, key));
+  for (const key of ['ballast', 'ballastLeftStuds', 'ballastRightStuds', 'ballastEnds', 'sleepers', 'sleeperWidthStuds', 'sleeperGapStuds', 'curveStuds', 'bottomStyle', 'undersideGrid', 'grip'] as const) box.append(ownRow(r, i, key));
   stretchList(box, r, i);
 }
 /**
@@ -749,7 +755,7 @@ function bedSection(box: HTMLElement, r: DRoute, i: number) {
  */
 function stretchRow(r: DRoute, i: number, st: Stretch, k: number, key: RouteKey): HTMLElement {
   const f = OPTION_FORM.flatMap((sec) => sec.fields).find((x) => x.key === key)!;
-  const tr = inForce(design, i), o = { ...tr, ...st.own }, cur = st.own[key];
+  const tr = { ...OWN_UNSET, ...inForce(design, i) } as PieceOptions, o = { ...tr, ...st.own }, cur = st.own[key];
   const c: OptCtx = { o, ballast: o.ballast !== 'none', fdb: o.mechStyle !== 'tines', switches: switchesNow() };
   const locked = f.off?.(c);
   const set = (v: string | number | undefined) => {
@@ -822,6 +828,103 @@ function stretchList(box: HTMLElement, r: DRoute, i: number) {
   add.title = 'Then press on this track on the plan where the stretch starts and drag along it to where it ends (whole studs; Esc cancels). After that, set what it has here.';
   add.addEventListener('click', () => { canvas.setSelection([i]); canvas.stretchHere(); add.blur(); });
   box.append(add);
+}
+/**
+ * (expert) One sleeper's controls (its card, and its row in its track's Sleepers section): moved along, longer each
+ * side, square to the grid on a curve, its studs, taken out; Reset puts it back as the app lays it. Each change is
+ * checked (sleeperedits.ts sleeperProblem): what can't be is said and not made.
+ */
+function sleeperControls(box: HTMLElement, item: { route: number; at: number; add?: true }, selected = false) {
+  const r = design.routes[item.route], lay = canvas.sleeperLay(item.route), e = sleeperEditOf(r, item), has = sleeperEditAt(r, item) >= 0;
+  const small = (text: string, warn = false) => { const n = document.createElement('small'); n.className = 'desc'; n.style.color = warn ? 'var(--warn)' : 'var(--muted)'; n.textContent = text; box.append(n); };
+  const apply = (next: SleeperEdit | undefined, tag: string) => {
+    const why = canvas.setSleeper(item, next);
+    if (why) { canvas.say(why); soon(render); soon(drawItemCard); return; }
+    // (an added one reset is gone: nothing of it left to select)
+    if (!next && item.add && canvas.selItem?.kind === 'sleeper') canvas.selectItem(undefined);
+    coalesceNext = `sleeper:${item.route}:${item.at}:${tag}`; changed(true); soon(drawItemCard);
+  };
+  if (!lay) { small('Locked: this track has no separate sleepers here (it is on ballast or a solid bed: its card › Bed and underside).', true); return; }
+  const num = (label: string, key: 'move' | 'left' | 'right', min: number, max: number, step: number, tip: string) => {
+    const inp = document.createElement('input'); inp.type = 'number'; inp.step = String(step); inp.min = String(min); inp.max = String(max); inp.value = String(e[key] ?? 0); inp.disabled = !!e.off;
+    inp.title = `${tip} Range ${min} to ${max}, default 0.`; inp.setAttribute('aria-label', `Sleeper at ${item.at}: ${label}`);
+    inp.addEventListener('change', () => {
+      const n = Number(inp.value), v = Number.isFinite(n) ? Math.min(max, Math.max(min, Math.round(n / step) * step)) : 0, { [key]: _was, ...rest } = e;
+      apply({ ...rest, ...(v && { [key]: v }) }, key);
+    });
+    box.append(field(label, inp));
+  };
+  num('Moved along, studs', 'move', -SLEEPER_MOVE, SLEEPER_MOVE, lay.whole ? 1 : 0.25, lay.whole ? 'Towards the track\'s end (+) or start (−), whole studs: the underside is lined up with the baseplate.' : 'Towards the track\'s end (+) or start (−), any quarter stud: the underside is lined up with the track.');
+  num('Longer on the left, studs', 'left', 0, SLEEPER_LONG, 1, 'Whole studs past the sleeper\'s end, on the left facing from the track\'s start.');
+  num('Longer on the right, studs', 'right', 0, SLEEPER_LONG, 1, 'Whole studs past the sleeper\'s end, on the right facing from the track\'s start.');
+  {
+    const sel = document.createElement('select'), curve = curvedAt(r, item.at);
+    sel.append(new Option('Square to the track (a fan round the curve)', ''), new Option('Square to the stud grid', 'square'));
+    sel.value = e.turn ?? ''; sel.disabled = !!e.off || (!curve && !e.turn);
+    sel.title = curve ? 'How the sleeper lies on the curve. Square to the stud grid: turned to the grid\'s nearest way and put on its lines, so its studs line up with the baseplate. Drawback: the rails cross it at a slant.' : 'The track is straight here: its sleepers are square to it';
+    sel.addEventListener('change', () => { const { turn: _t, ...rest } = e; apply({ ...rest, ...(sel.value === 'square' && { turn: 'square' as const }) }, 'turn'); });
+    const fl = field('On a curve', sel); fl.classList.add('stack'); box.append(fl);
+    if (!curve && !e.turn) small('Locked: the track is straight here.');
+  }
+  const check = (label: string, on: boolean, tip: string, set: (v: boolean) => void, off = false) => {
+    const l = document.createElement('label'); l.className = 'lockrow'; const cb = document.createElement('input'); cb.type = 'checkbox'; cb.checked = on; cb.disabled = off; l.title = tip;
+    cb.addEventListener('change', () => set(cb.checked)); l.append(cb, ` ${label}`); box.append(l);
+  };
+  check('Studs on it', e.studs !== false, 'Off: the sleeper is bare, no studs on top.', (v) => { const { studs: _s, ...rest } = e; apply({ ...rest, ...(!v && { studs: false as const }) }, 'studs'); }, !!e.off);
+  if (!item.add) check('Taken out', !!e.off, `No sleeper here. The rails span at most ${SPAN_MAX} studs.`, (v) => { const { off: _o, ...rest } = e; apply(v ? { at: item.at, off: true } : rest, 'off'); });
+  if (has || selected) {
+    const b = document.createElement('button'); b.type = 'button'; b.className = 'rreset'; b.textContent = item.add ? 'Remove this sleeper' : 'Reset this sleeper'; b.disabled = !has;
+    b.title = !has ? 'As the app lays it already' : item.add ? 'Take this added sleeper out again' : 'Take this edit off: the sleeper as the app lays it again';
+    b.addEventListener('click', () => apply(undefined, 'reset')); box.append(b);
+  }
+}
+/**
+ * (expert) A route card's Sleepers: its sleepers edited by hand (each with its controls and Reset), Add a sleeper,
+ * Automatic sleepers; and the stretches it shares its sleepers along with the track beside.
+ */
+function sleepersSection(box: HTMLElement, r: DRoute, i: number) {
+  const L = cutLength(r), lay = canvas?.sleeperLay(i), small = (text: string, warn = false) => { const n = document.createElement('small'); n.className = 'desc'; n.style.color = warn ? 'var(--warn)' : 'var(--muted)'; n.textContent = text; box.append(n); };
+  small(`Each sleeper can be moved along, taken out, made longer on a side, laid square to the stud grid on a curve, or left without studs; and more added. On the plan: set Clicks pick to Sleepers, then click one and drag it, or press Delete. The rails span at most ${SPAN_MAX} studs.`);
+  if (!lay) small('Locked: this track has no separate sleepers (it is on ballast or a solid bed: Bed and underside). Edits kept here aren\'t made.', true);
+  const si = canvas?.selItem;
+  (r.sleeperEdits ?? []).forEach((e, k) => {
+    const head = document.createElement('div'); head.className = 'rsub'; head.style.cssText = `font-weight:600;margin-top:8px${si?.kind === 'sleeper' && si.route === i && sleeperEditAt(r, si) === k ? ';box-shadow:-3px 0 0 #e8892b;padding-left:6px' : ''}`;
+    head.textContent = `Sleeper ${+e.at.toFixed(2)} studs along: ${sleeperEditText(e)}`; box.append(head);
+    sleeperControls(box, { route: i, at: e.at, ...(e.add && { add: true as const }) });
+  });
+  const row = document.createElement('div'); row.className = 'row';
+  const addB = document.createElement('button'); addB.type = 'button'; addB.textContent = 'Add a sleeper…'; addB.disabled = !lay;
+  addB.title = lay ? 'Then click on this track where one more sleeper goes (Esc cancels).' : 'This track has no separate sleepers';
+  addB.addEventListener('click', () => { canvas.setSelection([i]); canvas.sleeperHere(); addB.blur(); });
+  const auto = btn('Automatic sleepers', () => { delete r.sleeperEdits; if (canvas.selItem?.kind === 'sleeper') canvas.selectItem(undefined); }, 'Take off every sleeper edit on this track: laid by the app again');
+  auto.disabled = !r.sleeperEdits?.length; if (auto.disabled) auto.title = 'Automatic already: no sleeper of this track is edited';
+  row.append(addB, auto); box.append(row);
+  // (shared with the track beside)
+  const head = document.createElement('div'); head.className = 'rsub'; head.textContent = 'Shared with the track beside'; head.style.cssText = 'font-weight:600;margin-top:8px'; box.append(head);
+  small(`This track's sleepers carried across the track beside it, from and to in whole studs from this track's start (0 to ${Math.floor(L)}). The tracks are one printed part there, and the other has none of its own.`);
+  const name = r.name || String(i), all = design.expert?.shared ?? [];
+  sharedOf(design, i).forEach((sh) => {
+    const num = (which: 'from' | 'to') => {
+      const inp = document.createElement('input'); inp.type = 'number'; inp.step = '1'; inp.min = '0'; inp.max = String(Math.floor(L)); inp.value = String(sh[which]); inp.style.cssText = 'flex:1 1 0;min-width:0';
+      inp.title = `Where the shared sleepers ${which === 'from' ? 'start' : 'end'}, studs from this track's start. Range 0 to ${Math.floor(L)}.`; inp.setAttribute('aria-label', `Shared with ${sh.routes.slice(1).join(', ')}: ${which}`);
+      inp.addEventListener('change', () => {
+        const n = Math.round(Number(inp.value)), from = which === 'from' ? n : sh.from, to = which === 'to' ? n : sh.to;
+        if (inp.value.trim() === '' || !Number.isFinite(n) || from < 0 || to - from < 1) { canvas.say('From and to in whole studs, at least 1 apart'); inp.value = String(sh[which]); return; }
+        sh.from = from; sh.to = to; coalesceNext = `shared:${name}:${which}`; changed(); soon(render);
+      });
+      return inp;
+    };
+    const pair = document.createElement('span'); pair.style.cssText = 'display:flex;gap:4px;align-items:center';
+    const out = btn('✕', () => setShared(design, all.filter((x) => x !== sh)), 'Stop sharing: each track its own sleepers again'); out.style.cssText = 'flex:none;width:auto;padding:2px 8px'; out.setAttribute('aria-label', `Stop sharing sleepers with ${sh.routes.slice(1).join(', ')}`);
+    pair.append(num('from'), ' to ', num('to'), out);
+    const fl = field(`With ${sh.routes.slice(1).join(', ')}, studs from the start`, pair); fl.classList.add('stack'); box.append(fl);
+  });
+  for (const sh of all) if (sh.routes.slice(1).includes(name)) small(`${sh.routes[0]} carries its sleepers under this track, ${sh.from} to ${sh.to} studs along ${sh.routes[0]} (set on ${sh.routes[0]}'s card).`);
+  const others = design.routes.flatMap((q, j) => (j !== i && !isMono(q) && q.segs.length ? [q.name || String(j)] : []));
+  const sel = document.createElement('select'); sel.append(new Option('Share its sleepers with…', ''), ...others.map((n) => new Option(n, n)));
+  sel.disabled = !lay || !others.length; sel.title = !lay ? 'Only tracks on sleepers with gaps (no ballast) share sleepers' : !others.length ? 'There is no other track' : 'Pick the track beside this one: this track\'s sleepers are carried under it, along the whole of this track to start with';
+  sel.addEventListener('change', () => { if (!sel.value) return; setShared(design, [...all, { routes: [name, sel.value], from: 0, to: Math.max(1, Math.floor(L)) }]); changed(true); });
+  box.append(sel);
 }
 /**
  * A route card's Cuts into parts (expert): where its track is cut into parts by hand, a field each (studs from its
@@ -942,6 +1045,8 @@ function makeCard(r: DRoute, i: number): HTMLElement {
       if (openCards.delete(cardId(r, i))) openCards.add(v);
       renameAnchors(design, cardId(r, i), v);
       renameApart(design, cardId(r, i), v);
+      renameShared(design, cardId(r, i), v);
+      renameAccept(design, cardId(r, i), v);
       r.name = v;
       for (const e of Object.values(design.trackwork?.points ?? {})) if (e.drop) e.drop = e.drop.map((id) => (id === was ? v : id));
       changed(false, true, false); soon(render);
@@ -1045,6 +1150,7 @@ function makeCard(r: DRoute, i: number): HTMLElement {
       }
     }
     { const hs = part(sec('height')!.title, sec('height')!.summary); hs.append(...hBox.childNodes); }
+    if (sec('sleepers')) sleepersSection(part(sec('sleepers')!.title, sec('sleepers')!.summary), r, i);
     if (sec('cuts')) { const cb = part(sec('cuts')!.title, sec('cuts')!.summary); cutsSection(cb, r, i); cb.append(ownRow(r, i, 'legoTrack')); }
     const add = document.createElement('div'); add.className = 'row';
     add.append(
@@ -1195,6 +1301,28 @@ function followOwnStretches(record: boolean) {
   }
   if (record) noteStretches();
 }
+/** Each route with sleepers edited by hand or shared as it was at the last finished action, and its edits as last moved to follow a reshape since. */
+let sleepersWere = new Map<DRoute, { segs: string; es: string; moved?: string }>();
+function noteSleepers() { sleepersWere = new Map(design.routes.filter((r, i) => r.sleeperEdits?.length || sharedOf(design, i).length).map((r) => [r, { segs: JSON.stringify(r.segs), es: JSON.stringify(r.sleeperEdits ?? []) }])); }
+/**
+ * A route's sleepers edited by hand go with its track when one of its pieces is reshaped, as its hand cuts do
+ * (followHandCuts); the stretches it shares its sleepers along too, once the reshape is finished.
+ */
+function followSleepers(record: boolean) {
+  design.routes.forEach((r, i) => {
+    const was = sleepersWere.get(r), now = JSON.stringify(r.sleeperEdits ?? []);
+    if (!was || (now !== was.es && now !== was.moved)) return;
+    const segs = JSON.stringify(r.segs);
+    if (segs === was.segs) { if (now !== was.es) { const es = JSON.parse(was.es) as SleeperEdit[]; if (es.length) r.sleeperEdits = es; else delete r.sleeperEdits; } return; }
+    const at = alongAfter({ segs: JSON.parse(was.segs) }, r);
+    if (!at) return;
+    const es = followSleeperEdits(JSON.parse(was.es), at);
+    if (es) r.sleeperEdits = es; else delete r.sleeperEdits;
+    was.moved = JSON.stringify(r.sleeperEdits ?? []);
+    if (record) followShared(design, r.name || String(i), at);
+  });
+  if (record) noteSleepers();
+}
 /** The routes with stretches noted as they are now (an action finished, or another design opened). */
 function noteStretches() { stretchesWere = new Map(design.routes.filter((r) => r.stretches?.length).map((r) => [r, { segs: JSON.stringify(r.segs), st: JSON.stringify(r.stretches) }])); }
 /** The routes with hand cuts noted as they are now (an action finished, or another design opened). */
@@ -1204,10 +1332,14 @@ function changed(rerender = false, record = true, build = true) {
   followTrackwork(design, canvas?.overlay?.items ?? []);
   followHandCuts(record);
   followOwnStretches(record);
+  followSleepers(record);
   followCutPaths(record);
   if (record) {
     // (tracks taken apart that no longer touch: forgotten, so that put together again they're joined as any are)
     pruneApart(design);
+    // (sleepers shared with a track that's gone: not shared any more)
+    pruneShared(design);
+    pruneAccept(design);
     history.record(JSON.stringify(design), coalesceNext);
     coalesceNext = undefined;
     settleFrom = runner.id + 1; // (the next build is of the design as let go of)
@@ -1581,7 +1713,7 @@ function updateLegend() {
 }
 /** A different design (a template, a file, undo or redo): the toolbar and the forms show it, nothing selected. */
 function replaced() {
-  canvas.letGo(); canvas.setSelection([]); openCards.clear(); twSig = ''; renderOptions(); noteHandCuts(); noteStretches(); noteCutPaths();
+  canvas.letGo(); canvas.setSelection([]); openCards.clear(); twSig = ''; renderOptions(); noteHandCuts(); noteStretches(); noteSleepers(); noteCutPaths();
 }
 
 const download = (blob: Blob, name: string) => {
@@ -2425,7 +2557,9 @@ function renderTrackwork(list: TwItem[]) {
   const sig = JSON.stringify([list.map((it) => [it.kind, it.key, it.off, Math.round((it.len ?? 0) * 10), it.toe, it.routes, it.forced, it.cand, it.lever && [it.lever.side, it.lever.leverOffset, it.lever.springLength]]),
     design.trackwork, design.options?.throwSide, design.options?.mechStyle, design.routes.map((r) => [r.name, r.throwSide]), monoToes(), twOnlyEdited,
     // (the joints between tracks: worked out from the design as it is now, not from the build)
-    canvas.jointList().map((j) => [j.a, j.aEnd, j.b, j.bEnd, Math.round(j.s * 10), j.at, j.apart]), canvas.selItem?.kind === 'joint' && canvas.selItem]);
+    canvas.jointList().map((j) => [j.a, j.aEnd, j.b, j.bEnd, Math.round(j.s * 10), j.at, j.apart]), canvas.selItem?.kind === 'joint' && canvas.selItem,
+    // (expert: where tracks run over each other, and the pairs accepted)
+    design.expert?.accept, canvas.overlay?.over]);
   if (sig === twSig) return; // (don't rebuild the form under the user's fingers)
   twList = list;
   if (midEdit($('trackwork'))) { drawWhenTyped.add(twLater); return; }
@@ -2538,6 +2672,29 @@ function drawTrackwork(list: TwItem[]) {
         flip.title = j.apart ? `Join ${name(j.a)} and ${name(j.b)} again: they move together` : `Take ${name(j.a)} and ${name(j.b)} apart here: they still touch, but each moves and is reshaped on its own`;
         flip.addEventListener('click', () => { takeJointApart(j, !j.apart); });
         bar.append(flip); row.append(n, bar);
+      }
+    }
+  }
+  // Tracks that run over each other (closer than their sleepers, nearly parallel): each pair the build found, warned of
+  // or accepted ("I mean this", accept.ts: a maker's set has a curve beside a switch so); and the pairs accepted before
+  {
+    const pairs = new Map<string, { a: string; b: string; at?: [number, number]; ok: boolean }>(), keyOf = (a: string, b: string) => [a, b].sort().join('\n');
+    for (const o of canvas.overlay?.over ?? []) if (!pairs.has(keyOf(...o.routes))) pairs.set(keyOf(...o.routes), { a: o.routes[0], b: o.routes[1], at: o.at, ok: accepted(design, o.routes[0], o.routes[1]) });
+    for (const x of design.expert?.accept ?? []) if (!pairs.has(keyOf(...x.routes))) pairs.set(keyOf(...x.routes), { a: x.routes[0], b: x.routes[1], ok: true });
+    const mine = [...pairs.values()].filter((p) => show(p.ok));
+    if (mine.length) {
+      const nOk = mine.filter((p) => p.ok).length, g = group('close', 'Tracks that run over each other', mine.length, nOk);
+      for (const p of mine) {
+        const row = item(g, `close:${p.a}:${p.b}`, p.a === p.b ? `${p.a} over itself` : `${p.a} and ${p.b}`, p.ok ? 'accepted: no warning' : 'warned of', p.ok);
+        const sm = (row.parentElement as HTMLDetailsElement).querySelector('summary')!;
+        if (p.at) { const at: [number, number] = [p.at[0] / 8, p.at[1] / 8]; sm.addEventListener('mouseenter', () => { canvas.highlightAt = at; canvas.draw(); }); sm.addEventListener('mouseleave', () => { canvas.highlightAt = undefined; canvas.draw(); }); }
+        const n = document.createElement('div'); n.className = 'none'; n.style.marginBottom = '6px';
+        n.textContent = `${p.at ? `Closer than their sleepers, nearly parallel, at ${+(p.at[0] / 8).toFixed(1)}, ${+(p.at[1] / 8).toFixed(1)} (studs). ` : 'They don\'t run over each other now. '}${p.ok ? 'Accepted: you mean them to, so the build doesn\'t warn; the place is marked on the plan. Trains on both at once would still hit.' : 'The build warns that trains on them would hit. If they are meant to (a curve beside a switch, as a maker\'s set has them), accept it.'}`;
+        const bar = document.createElement('div'); bar.className = 'row';
+        const b = document.createElement('button'); b.type = 'button'; b.textContent = p.ok ? 'Warn of it again' : 'I mean this: don\'t warn';
+        b.title = p.ok ? `Take the mark off: the build warns where ${p.a} and ${p.b} run over each other` : `${p.a} and ${p.b} run this close on purpose: no warning for the two, a mark on the plan instead`;
+        b.addEventListener('click', () => { setAccept(design, p.a, p.b, !p.ok); changed(true); });
+        bar.append(b); row.append(n, bar);
       }
     }
   }

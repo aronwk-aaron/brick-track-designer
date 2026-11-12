@@ -40,7 +40,55 @@ export interface Route {
   grade?: [number, number];
   /** (mixed gauges) its own gauge, rail centre to rail centre, mm, where it's not the design's (left out: the design's, as the piece is built at) */
   gauge?: number;
+  /** (expert) what's edited by hand along it: sleepers moved, added, taken out, lengthened, shared with the track beside; its ballast's width each side (left out: none, the track as the app lays it) */
+  hand?: RouteHand;
 }
+
+/** (expert) One sleeper edited by hand, by where it is along the drawn route (mm from its start; sides as the drawn route's). */
+export interface HandSleeper {
+  /** where the sleeper the app lays is (the nearest one, within half the sleepers' spacing), or where an added one goes */
+  at: number;
+  /** one more, here */
+  add?: boolean;
+  /** taken out */
+  off?: boolean;
+  /** moved along, mm (+: towards the drawn route's end) */
+  move?: number;
+  /** longer on the drawn route's left, right: mm */
+  left?: number; right?: number;
+  /** square to the stud grid (on a curve), not to the track */
+  square?: boolean;
+  /** without its studs */
+  bare?: boolean;
+}
+/** (expert) Sleepers shared with the tracks beside: along the drawn route from a to b (mm), each sleeper carried across the routes named (their ids), which have none of their own there. */
+export interface HandShared { a: number; b: number; with: string[] }
+/**
+ * (expert) A route's hand edits, and which stretch of the route as drawn this route is (as ExtraRails: from, to, len),
+ * so a route cut up or turned round still has them where they were, and "left" / "right" still mean the drawn route's.
+ */
+export interface RouteHand {
+  from: number; to: number; len: number;
+  sleepers?: HandSleeper[];
+  shared?: HandShared[];
+  /** its ballast's reach past the sleepers' ends, mm, on the drawn route's left and right (left out: a stud each) */
+  ballast?: { left: number; right: number };
+}
+/** (mm) A hand edit this far past a stretch's ends still goes with the stretch (a sleeper is found from its place: the nearest). */
+const HAND_REACH = 48;
+/** The hand edits of a route's stretch s0..s1 (subRoute): the ones along it. Nothing left: undefined. */
+export function subHand(h: RouteHand | undefined, s0: number, s1: number): RouteHand | undefined {
+  if (!h) return undefined;
+  const d = h.to >= h.from ? 1 : -1, from = h.from + d * s0, to = h.from + d * s1, lo = Math.min(from, to) - HAND_REACH, hi = Math.max(from, to) + HAND_REACH;
+  const sleepers = h.sleepers?.filter((e) => e.at >= lo && e.at <= hi), shared = h.shared?.filter((e) => e.b >= lo && e.a <= hi);
+  if (!sleepers?.length && !shared?.length && !h.ballast) return undefined;
+  return { from, to, len: h.len, ...(sleepers?.length && { sleepers }), ...(shared?.length && { shared }), ...(h.ballast && { ballast: h.ballast }) };
+}
+export const reversedHand = (h: RouteHand | undefined): RouteHand | undefined => (h ? { ...h, from: h.to, to: h.from } : undefined);
+/** Does this route run the way it was drawn (its hand edits' sides are its own)? */
+export const handForward = (h: RouteHand) => h.to >= h.from;
+/** A place along the drawn route (mm), along this route (its stretch of it, either way round). */
+export const handS = (h: RouteHand, at: number) => (h.to >= h.from ? at - h.from : h.from - at);
 
 /** A route's rails' offset from its centre line (mm): its own gauge's (Route.gauge), else def, the design's. */
 export const railOffsetOf = (rt: Route, def: number) => (rt.gauge !== undefined ? rt.gauge / 2 : def);

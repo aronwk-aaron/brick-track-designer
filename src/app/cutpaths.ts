@@ -6,6 +6,8 @@
 // built, and how they go with the tracks they lie between when those are moved. (Cuts across one track on its own
 // are routecuts.ts's: ordinary track ends.)
 import type { Route } from '../route/route';
+import type { SharedSleepers } from './sleeperedits';
+import type { Accept } from './accept';
 import { railOffsetOf, routeLat, routeLength, routePose, routeSOf, routesBox } from '../route/route';
 
 export type Pt = [number, number];
@@ -15,7 +17,7 @@ export type PathJoint = typeof PATH_JOINTS[number];
 /** A cut path: its corners (studs, on the plan), and its own joint (left out: the design's). */
 export interface CutPath { id: string; pts: Pt[]; joint?: PathJoint }
 /** What belongs to two routes or more (expert mode): the cut paths; the pairs of routes (by name) that touch but were taken apart (connections.ts). */
-export interface Expert { cutPaths?: CutPath[]; apart?: [string, string][] }
+export interface Expert { cutPaths?: CutPath[]; apart?: [string, string][]; /** sleepers shared by tracks side by side (sleeperedits.ts) */ shared?: SharedSleepers[]; /** pairs of tracks that run over each other on purpose (accept.ts) */ accept?: Accept[] }
 /** The stud grid in force: a corner between four studs and the way its lines run (studs; degrees, 0 = up the plan). */
 export type Grid = [x: number, y: number, heading: number];
 
