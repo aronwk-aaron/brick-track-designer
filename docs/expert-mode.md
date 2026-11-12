@@ -674,11 +674,15 @@ route-owned storage, the follow rules and the card section they bring are the pa
   take. Editor: the Trackwork panel's points rows (Blade shape, Moving blades, each "As the design: …" first, greyed
   with why) and lever rows (Throw bar moved along), with the expert tools shown. Template (Features): 'Crossover with
   points of their own'. Test: test/points-own-build.test.ts.
-- **How S5c differs from section 2:** a set's own **mechanism** (tines among blades on top) is not offered: tried, a
-  set on tines in a crossover whose other set is on top built a throw that can't slide into its tunnel, sits 1 mm in
-  the track and isn't floored (assembled-features on CI). The design's Mechanism stays design-wide; a set's blade
-  shape and moving blades are its own. For Aaron: wanted per set? It's the network's tines-in-a-plates-design path (the
-  double slip's fallback), which needs a geometry look first.
+- **A set's own mechanism (2026-11-12):** `trackwork.points[key].mech` ('tines' | 'plates'; not a three-way's):
+  the Trackwork panel's "Mechanism, these points" ("As the design: …" first; the blade choices go by the set's own
+  mechanism). Such a design is a network piece; the set is planned and built with its own mechanism (network.ts
+  `p0`), so its bed, pockets, arm, channel and the hollow under its arm are that mechanism's, the region round it the
+  same as in a design all of that mechanism. The cuts keep clear of each set by its own mechanism (build.ts: a set on
+  tines among blades on top, the whole set; one with blades on top in a tines design, its tunnel, arm and pins as
+  well as the tines design's whole-set keep-out). What S5c found on CI (a tines throw "can't slide into its tunnel,
+  sits 1 mm in the track, isn't floored") was the assembled check judging every set by the design's mechanism;
+  putTogether now judges each set by its own (its blades turn on pins: blades on top). Test: test/set-mech.test.ts.
 - **Section 10, as built:** every recommendation taken: (1) no stored mode, one Expert tools switch; (2) connections
   derived, Alt to move one alone, `expert.apart`; (3) tracks that are one part share the first one's part settings, with
   a warning; (4) a cut across a track is an ordinary track end; (5) radii under R24 are a geometry job for everyone; (6)

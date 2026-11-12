@@ -89,9 +89,16 @@ export function putTogether(w: Awaited<ReturnType<typeof kernel>>, pieces: Piece
       holds: (q: Solid) => { const c = q.boundingBox(); return [0, 1].every((j) => c.min[j] >= lo[j] && c.max[j] <= hi[j]) && c.min[2] > -1000 && c.max[2] < 1000; } };
   };
   const moving = pieces.filter((q) => /points|throw/.test(q.name)).map(man); // (the lever goes in after the lid)
-  const { fromTop, bladesTop } = how;
+  const { fromTop } = how;
+  // (each points set by its own mechanism: blades on top where its blades turn on pins (they're said how: turn), on tines
+  // where they don't; a set with no blades to go by (a nail switch's bare slider), the design's)
+  const setOf = (name: string) => name.replace(/-(a|b|throw(-posts)?|lever|bracket|spring)$/, '');
+  const topSets = new Map<string, boolean>();
+  for (const q of pieces) if (/points/.test(q.name) && !/throw|lever|bracket|spring/.test(q.name)) topSets.set(setOf(q.name), (topSets.get(setOf(q.name)) ?? false) || !!q.turn);
+  const onTop = (name: string) => topSets.get(setOf(name)) ?? how.bladesTop;
   const problems: string[] = [];
   for (const p of pieces.filter((q) => /points|throw|lever|bracket/.test(q.name) && mine(q))) {
+    const bladesTop = onTop(p.name);
     // (each moving part one piece, but for break-out supports inside it: the sprung blades', in the spring pocket)
     const m = man(p), bodies = m.decompose().sort((x, y) => y.volume() - x.volume()), bb = bodies[0].boundingBox();
     const round = trackBox(m), track = (q: typeof m) => (round.holds(q) ? round.cut : trackNear(m));
@@ -169,7 +176,7 @@ export function putTogether(w: Awaited<ReturnType<typeof kernel>>, pieces: Piece
   // steeper than 45 degrees, above the first layer with nothing under it. Held: the part's own break-out supports
   // within 0.45 below (the sprung blades' spring pocket), a slope of 45 degrees or less, a bridge (held both sides, 10 or
   // less across). Sampled over each face, not just its middle)
-  if (bladesTop) for (const p of pieces.filter((q) => /points|throw/.test(q.name) && !/lever|bracket/.test(q.name) && mine(q))) {
+  for (const p of pieces.filter((q) => /points|throw/.test(q.name) && !/lever|bracket/.test(q.name) && mine(q) && onTop(q.name))) {
     const area = hanging(w, man({ positions: stlPositions(p.stl) }));
     if (area > 1) problems.push(`${p.name} has ${area.toFixed(1)} mm2 hanging as printed`);
   }
@@ -206,7 +213,7 @@ export function putTogether(w: Awaited<ReturnType<typeof kernel>>, pieces: Piece
     // (a peg in its hole: moved 1 mm any way across, it's in the bar)
     if ([[1, 0], [-1, 0], [0, 1], [0, -1]].some(([dx, dy]) => m.translate([dx, dy, 0]).intersect(mb).volume() < 0.05)) problems.push(`${p.name} isn't pegged to its bar`);
   }
-  if (bladesTop) for (const p of pieces.filter((q) => /throw/.test(q.name) && !/posts/.test(q.name) && mine(q))) {
+  for (const p of pieces.filter((q) => /throw/.test(q.name) && !/posts/.test(q.name) && mine(q) && onTop(q.name))) {
     // (along its own throw, whichever way that lies in the design: turned to lie along x, and the track with it)
     const ang = p.slide ? (Math.atan2(p.slide.dir[1], p.slide.dir[0]) * 180) / Math.PI : 0;
     const m = man(p).rotate([0, 0, -ang]), bb = m.boundingBox(), len = bb.max[0] - bb.min[0];

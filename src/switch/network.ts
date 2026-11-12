@@ -215,7 +215,8 @@ export function networkSplits(s: Scad, routes: Route[], sol: Solution, p: BasePa
     const gsOwn = A.gauge !== undefined ? A.gauge / 8 - 1 : p.gaugeStuds;
     const p00 = gsOwn === p.gaugeStuds ? p : { ...p, gaugeStuds: gsOwn, ...(gsOwn < 4 && { pointBlades: 1 as const }) };
     // (expert, stage 5c: this set's own blade shape and moving blades, over the design's)
-    const p0 = ed?.bladeStyle || ed?.blades ? { ...p00, ...(ed.bladeStyle && { bladeStyle: ed.bladeStyle }), ...(ed.blades && { pointBlades: ed.blades }) } : p00;
+    // (and its own mechanism: tines under the bed or blades on top, over the design's; not a three-way's, whose levers go by the design's)
+    const p0 = ed?.bladeStyle || ed?.blades || (ed?.mech && !C && ed.mech !== p00.mechStyle) ? { ...p00, ...(ed.mech && !C && { mechStyle: ed.mech }), ...(ed.bladeStyle && { bladeStyle: ed.bladeStyle }), ...(ed.blades && { pointBlades: ed.blades }) } : p00;
     const pg = sprungOnGrid(gw ? { ...p0, grid: gridIn(P, gw) } : p0);
     const choose = (keep: Pt[][]) => {
       let pp = pg.p, plan = switchPlan(rts, [used], pp, 1, foreign, keep), how: 'rigid' | 'tines' | 'angled' | undefined = pg.angled ? 'angled' : undefined;

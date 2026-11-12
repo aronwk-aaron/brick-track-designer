@@ -1240,11 +1240,14 @@ function cutContext(w: Wasm, scad: Scad, o: PieceOptions, track: Track, routes: 
   // slider's tunnel and arm (kept clear as each lever's placed: leverItem))
   const pointsAvoid: Keep[] = [];
   // (the plate-style keep-outs are their parts' own (leverItem): the tines' points keep the whole set clear)
-  if (!fdbPoints) for (const sp of splits) {
+  const keepSet = (sp: Split) => {
     const rt = routes[sp.routes[0]], [a0, a1] = sp.spans[0];
     const [s0, s1] = [a0 - 8, a1 + 8];
     for (let s2 = s0; s2 <= s1 + 1e-9; s2 += 12) { const q = railPoint(rt, Math.max(0, Math.min(routeLength(rt), s2)), 0); pointsAvoid.push([q[0], q[1]]); }
-  }
+  };
+  if (!fdbPoints) splits.forEach(keepSet);
+  /** (a set on tines of its own among blades on top, a double slip's or set by hand: the whole set kept clear, as the tines' are) at: its toe */
+  const keepTines = (at: [number, number]) => { for (const sp of splits) { const rt = routes[sp.routes[0]], q = routePose(rt, sp.merge ? sp.spans[0][1] : sp.spans[0][0]); if (Math.hypot(q[0] - at[0], q[1] - at[1]) < 1) keepSet(sp); } };
   // (and no rail-end tongue beside the blades, from before the toe to past the heels, where a cut may go under them:
   // a tongue's head beside a stock rail is where a closed blade lies)
   const G0 = track.c.railOffset, zones = splits.flatMap((sp) => sp.routes.map((r, n) => {
@@ -1383,7 +1386,7 @@ function cutContext(w: Wasm, scad: Scad, o: PieceOptions, track: Track, routes: 
     return cells.filter((c2) => c2.numTri() > 0).flatMap((c2) => fit(c2));
   };
   // (pointsAvoid: the plate-style levers' keep-outs are added as each is placed (leverItem); crossings: the overlay's, no straight cut through them)
-  return { fitsBed, turnOf, tightOf, pointsAvoid, zones, noTongue, join, jointRoom, bandHalf, bandHalf0, bp, crossings, fitter, bedCut, whole, bodies, rehome };
+  return { fitsBed, turnOf, tightOf, pointsAvoid, keepTines, zones, noTongue, join, jointRoom, bandHalf, bandHalf0, bp, crossings, fitter, bedCut, whole, bodies, rehome };
 }
 /** How cutting a part to fit goes: the bed, where no cut goes, how cuts join, and the cutters. */
 type CutContext = ReturnType<typeof cutContext>;
@@ -2418,8 +2421,8 @@ function buildOne(w: Wasm, design: Design, report: (what: string, frac: number) 
   const toeShift = (q: [number, number]) => tw.points?.[keyOf(q)]?.toe ?? 0;
   // (with the points' own choice of moving blade, a single-point switch's, and their blades lengthened: Trackwork.points single, heel)
   const throwEdit = (q: [number, number]) => {
-    const k = keyOf(q), pt = tw.points?.[k], single = pt?.single, heel = pt?.heel, bladeStyle = pt?.bladeStyle, blades = pt?.blades;
-    return single || heel || bladeStyle || blades ? { ...tw.throw?.[k], ...(single && { single }), ...(heel && { heel }), ...(bladeStyle && { bladeStyle }), ...(blades && { blades }) } : tw.throw?.[k];
+    const k = keyOf(q), pt = tw.points?.[k], single = pt?.single, heel = pt?.heel, bladeStyle = pt?.bladeStyle, blades = pt?.blades, mech = pt?.mech;
+    return single || heel || bladeStyle || blades || mech ? { ...tw.throw?.[k], ...(single && { single }), ...(heel && { heel }), ...(bladeStyle && { bladeStyle }), ...(blades && { blades }), ...(mech && { mech }) } : tw.throw?.[k];
   };
   // Pieces: a switch wherever routes split, the rest as fixed trackwork.
   const scad = new Scad(w);
@@ -2448,7 +2451,7 @@ function buildOne(w: Wasm, design: Design, report: (what: string, frac: number) 
   const network = sol.splits.length > 0 && (sol.splits.some((sp) => sp.merge) || pc.warnings.some((w2) => !/print bed/.test(w2))
     || sol.crossings.some((c) => groupOf(c.a.route) !== groupOf(c.b.route)) || bufOnSwitch || extraOnSwitch || ownGaugeSwitch || handOnSwitch || grooveKeeps.length > 0
     // (expert, stage 5c: a points set with its own blade shape or moving blades: a network piece, which plans each set with its own)
-    || Object.values(tw.points ?? {}).some((e) => !!(e.bladeStyle || e.blades)));
+    || Object.values(tw.points ?? {}).some((e) => !!(e.bladeStyle || e.blades || (e.mech && e.mech !== (params.mechStyle ?? 'plates')))));
   const bedWarnings = new Set<string>();
   const track = new Track(scad, { ...TRACK_DEFAULTS, gaugeStuds: design.gaugeStuds, studFit: o.studFit, antistudFit: o.antistudFit, sleeperWidthStuds: o.sleeperWidthStuds, axleStuds: o.axleStuds, flangewayDepth: o.flangewayDepth, ...(o.tongueRails === 'square' && { tongueMaxAngle: 12 }) });
   {
@@ -2468,7 +2471,12 @@ function buildOne(w: Wasm, design: Design, report: (what: string, frac: number) 
   }
   const fdbPoints = params.mechStyle === 'plates';
   const cut = cutContext(w, scad, o, track, routes, sol.splits, overlay.crossings, fdbPoints);
-  const lever = (key: string, P: Pose, v: LeverPlan) => leverItem(items, tw, fdbPoints ? cut.pointsAvoid : undefined, track.c.railOffset, key, P, v);
+  // (each set's keep-outs by its own mechanism: a plate-style set's tunnel, arm and pins; a set on tines among blades on
+  // top, the whole set, as a tines design's are (cutContext); a set with blades on top in a tines design, its tunnel and arm too)
+  const lever = (key: string, P: Pose, v: LeverPlan) => {
+    if (fdbPoints && !v.fdb) cut.keepTines(poseToWorld(P, [0, 0]) as [number, number]);
+    leverItem(items, tw, fdbPoints || v.fdb ? cut.pointsAvoid : undefined, track.c.railOffset, key, P, v);
+  };
   const layered = (o.pointsModule ?? 'built-in') === 'layers' && o.ballast !== 'none';
   if ((o.pointsModule ?? 'built-in') === 'layers' && o.ballast === 'none') bedWarnings.add('layered points need ballast (the track alone is too thin to split): built in one piece, the moving parts going in from below');
   // ---- the trackwork first (what the plan shows and the hand edits work
