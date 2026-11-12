@@ -11,6 +11,7 @@ import { follow } from './planner';
 import { cutLength, liveCuts } from './routecuts';
 import { cutSegs, nearestAlong } from './splitmerge';
 import { type Stretch, STRETCH_MIN } from './stretches';
+import { planSleepers, type SleeperEdit, sleeperEditText, type SleeperLay, sharedOf } from './sleeperedits';
 
 type End = 'start' | 'end';
 /**
@@ -24,7 +25,9 @@ export type Item =
   | { kind: 'cut'; route: number; k: number }
   | { kind: 'cutpath'; id: string }
   | { kind: 'stretch'; route: number; k: number }
-  | { kind: 'joint'; route: number; end?: End; other?: number };
+  | { kind: 'joint'; route: number; end?: End; other?: number }
+  /** a sleeper of a track: by its edit's place (`at`, studs along; an added one: `add`), or, not edited yet, by where the app lays it */
+  | { kind: 'sleeper'; route: number; at: number; add?: true };
 export type ItemKind = Item['kind'];
 /** The kinds that are selected one at a time, beside the tracks and tables. */
 export type OwnItem = Exclude<Item, { kind: 'route' | 'table' }>;
@@ -52,8 +55,10 @@ export interface HitCtx {
   stretchesOf?: readonly number[];
   /** the item selected now: its corners and ends come first */
   selected?: Item;
+  /** the tracks whose sleepers can be picked, and how each one's are laid (undefined: it has no separate sleepers) */
+  sleepersOf?: readonly number[]; layOf?: (i: number) => SleeperLay | undefined;
 }
-const RANK = { corner: 0, selEnd: 1, cut: 2, path: 3, joint: 4, end: 5, stretch: 6 };
+const RANK = { corner: 0, selEnd: 1, cut: 2, path: 3, joint: 4, end: 5, sleeper: 5.5, stretch: 6 };
 /** Is a hit on the selected item's own corner or end? A press takes those before a track's end under them. */
 export const takesFirst = (h: Hit) => h.rank <= RANK.selEnd;
 /** Half the width of a track's band on the plan (its sleepers), studs: where a click picks the track. */
@@ -109,8 +114,27 @@ export function hitItems(d: Design, w: [number, number], c: HitCtx): Hit[] {
       else if (n.s >= st.from && n.s <= to) out.push({ item, part: 'body', d: n.dist, rank: RANK.stretch });
     });
   }
+  if (want('sleeper')) for (const i of c.sleepersOf ?? []) {
+    const r = d.routes[i], lay = c.layOf?.(i);
+    if (!r || !lay || r.locked || isMono(r)) continue;
+    if (Math.hypot(w[0] - r.x, w[1] - r.y) > cutLength(r) + 8 + 24) continue;
+    const n = nearestAlong(r, w), half = bandHalf(d, r) + 0.25;
+    if (n.dist > half + 24) continue;
+    for (const q of planSleepers(r, lay).laid) {
+      const dd = Math.abs(n.s - q.at);
+      if (dd <= lay.w / 2 + 0.1 && n.dist <= half + Math.max(q.e?.left ?? 0, q.e?.right ?? 0)) out.push({ item: { kind: 'sleeper', route: i, at: q.e ? q.e.at : q.from!, ...(q.e?.add && { add: true as const }) }, part: 'body', d: dd, rank: RANK.sleeper });
+    }
+    // (one taken out: still there to click, where it was, to put it back)
+    for (const e of r.sleeperEdits ?? []) if (e.off && Math.abs(n.s - e.at) <= lay.w / 2 + 0.1 && n.dist <= half) out.push({ item: { kind: 'sleeper', route: i, at: e.at, ...(e.add && { add: true as const }) }, part: 'body', d: Math.abs(n.s - e.at), rank: RANK.sleeper });
+  }
   return out.sort((a, b) => a.rank - b.rank || a.d - b.d);
 }
+/** The edit a selected sleeper has (its place in its track's list; -1: none yet, it's as the app lays it). */
+export function sleeperEditAt(r: Pick<DRoute, 'sleeperEdits'> | undefined, item: { at: number; add?: true }): number {
+  return (r?.sleeperEdits ?? []).findIndex((e) => Math.abs(e.at - item.at) < 0.005 && !!e.add === !!item.add);
+}
+/** A selected sleeper's edit as it is (none yet: just its place). */
+export const sleeperEditOf = (r: Pick<DRoute, 'sleeperEdits'> | undefined, item: { at: number; add?: true }): SleeperEdit => r?.sleeperEdits?.[sleeperEditAt(r, item)] ?? { at: item.at, ...(item.add && { add: true as const }) };
 
 /**
  * How far along a route a point is (studs from its start), carried on past its ends: a point beyond the end is
@@ -146,6 +170,7 @@ export function itemLabel(d: Design, item: Item, js: readonly Joint[] = []): str
     case 'cut': { const at = d.routes[item.route]?.cuts?.[item.k]; return at === undefined ? undefined : `Cut across ${nameOf(d, item.route)}, ${+at.toFixed(2)} studs from its start`; }
     case 'cutpath': { const k = (d.expert?.cutPaths ?? []).findIndex((p) => p.id === item.id); return k < 0 ? undefined : `Cut path ${k + 1}`; }
     case 'stretch': { const st = d.routes[item.route]?.stretches?.[item.k]; return st ? `Stretch ${item.k + 1} of ${nameOf(d, item.route)}, ${st.from} to ${st.to} studs` : undefined; }
+    case 'sleeper': { const r = d.routes[item.route]; if (!r) return undefined; const e = r.sleeperEdits?.[sleeperEditAt(r, item)], txt = e ? sleeperEditText(e) : ''; return `Sleeper of ${nameOf(d, item.route)}, ${+item.at.toFixed(2)} studs from its start${txt ? `: ${txt}` : ''}`; }
     case 'joint': {
       const mine = jointsOf(item, js), names = [...new Set(mine.flatMap((j) => [j.a, j.b]))].map((i) => nameOf(d, i));
       if (!mine.length) return undefined;
@@ -219,9 +244,10 @@ export function withStretch(st: Stretch[] | undefined, from: number, to: number)
 
 // ---------- the Expert tools switch ----------
 /** What a track has that only the expert tools show: its hand cuts, its own settings, its stretches. */
-export interface ByHand { cuts: number; only: boolean; own: number; stretches: number }
+export interface ByHand { cuts: number; only: boolean; own: number; stretches: number; sleepers: number; shared: number }
 export function byHand(d: Design, r: DRoute): ByHand {
-  return { cuts: r.cuts?.length ?? 0, only: r.cutsLocked === true, own: Object.keys(liveOwn(d, r)).length, stretches: r.stretches?.length ?? 0 };
+  const i = d.routes.indexOf(r);
+  return { cuts: r.cuts?.length ?? 0, only: r.cutsLocked === true, own: Object.keys(liveOwn(d, r)).length, stretches: r.stretches?.length ?? 0, sleepers: r.sleeperEdits?.length ?? 0, shared: i >= 0 ? sharedOf(d, i).length : 0 };
 }
 const count = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
 /**
@@ -231,7 +257,8 @@ const count = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? on
 export function byHandNote(d: Design, r: DRoute): string | undefined {
   const h = byHand(d, r);
   const parts = [h.cuts ? `${count(h.cuts, 'cut')} by hand${h.only ? ' (only these)' : ''}` : h.only ? 'no cuts (one part, by hand)' : '',
-    h.own ? count(h.own, 'setting of its own', 'settings of its own') : '', h.stretches ? count(h.stretches, 'stretch', 'stretches') : ''].filter(Boolean);
+    h.own ? count(h.own, 'setting of its own', 'settings of its own') : '', h.stretches ? count(h.stretches, 'stretch', 'stretches') : '',
+    h.sleepers ? `${count(h.sleepers, 'sleeper')} edited by hand` : '', h.shared ? 'sleepers shared with the track beside' : ''].filter(Boolean);
   return parts.length ? `Has ${parts.join(', ')}` : undefined;
 }
 /** The same for what belongs to no one track: the design's cut paths. */
@@ -240,16 +267,17 @@ export function designByHandNote(d: Design): string | undefined {
   return n ? `This design has ${count(n, 'cut path')}` : undefined;
 }
 /** A route card's sections that only the expert tools show (cardsections.ts ids). */
-export const EXPERT_SECTIONS: readonly string[] = ['bed', 'cuts'];
+export const EXPERT_SECTIONS: readonly string[] = ['bed', 'sleepers', 'cuts'];
 
 // ---------- the Pick list: what a click on the plan takes ----------
 /** What's on the plan to pick, in layers: more come with the later stages (sleepers, rails, ballast). */
-export type Layer = 'track' | 'cut' | 'stretch' | 'joint' | 'mark';
+export type Layer = 'track' | 'cut' | 'stretch' | 'sleeper' | 'joint' | 'mark';
 export const PICKS = [
   { id: 'all', label: 'Everything', tip: 'A click takes whatever is under it: a track, a cut, a stretch, points or a lever' },
   { id: 'track', label: 'Tracks and tables', tip: 'Only tracks, their ends and handles, and tables' },
   { id: 'cut', label: 'Cuts and cut paths', tip: 'Only cuts across a track and cut paths' },
   { id: 'stretch', label: 'Stretches', tip: 'Only stretches with their own settings, on any track' },
+  { id: 'sleeper', label: 'Sleepers', tip: 'Only sleepers, on any track on sleepers with gaps: click one to move it, take it out, lengthen or turn it (Everything doesn\'t take them: they lie all along a track)' },
   { id: 'joint', label: 'Joints', tip: 'Only the joints between tracks: a click selects one, to take apart or join' },
   { id: 'mark', label: 'Points, levers, check rails', tip: 'Only the trackwork the app works out: points, levers, check rail and flangeway cut ends' },
 ] as const;
@@ -261,4 +289,4 @@ export const layerOf = (kind: ItemKind): Layer => (kind === 'route' || kind === 
  * May a click take something of this layer? With the expert tools hidden: tracks, the app's trackwork and joints, as
  * ever, and no cut or stretch; with them shown, what the Pick list says.
  */
-export const picks = (pick: PickId, layer: Layer, expert: boolean): boolean => (expert ? pick === 'all' || pick === layer : layer === 'track' || layer === 'mark' || layer === 'joint');
+export const picks = (pick: PickId, layer: Layer, expert: boolean): boolean => (expert ? (pick === 'all' && layer !== 'sleeper') || pick === layer : layer === 'track' || layer === 'mark' || layer === 'joint');

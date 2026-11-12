@@ -81,6 +81,10 @@ export const SPECS: OptionSpec[] = [
   { key: 'curveStuds', values: ['grid', 'follow'], base: D(curve, { sleepers: 'bed' }), cam: { dir: '0.25,-0.45,1', dist: 2.0 } },
   // Ballast
   { key: 'ballast', values: ['none', 'ballast', 'buddy'], base: D([st(16)]), cam: { dir: '1,-1.2,0.6', dist: 2.0 } },
+  // (expert, stage 5a: the ballast's reach past the sleepers each side, and its end at a buffer stop)
+  { key: 'ballastLeftStuds', values: [1, 3], base: D([st(16)], { ballast: 'ballast' }), cam: { dir: '1,-1.2,0.6', dist: 2.0 } },
+  { key: 'ballastRightStuds', values: [1, 0], base: D([st(16)], { ballast: 'ballast' }), cam: { dir: '1,-1.2,0.6', dist: 2.0 } },
+  { key: 'ballastEnds', values: ['square', 'stepped'], base: D([st(16, { endEnd: 'buffer' })], { ballast: 'buddy' }), cam: { dir: '1,-1.2,0.6', dist: 2.0 } },
   { key: 'trackBallast', values: ['together', 'apart'], base: D([st(16)], { ballast: 'ballast', legoTrack: 'print' }), lift: -14, cam: { dir: '1,-1.2,0.6', dist: 2.0 } },
   { key: 'trackFitTol', values: [0.2, 1], base: D([st(8)], { ballast: 'ballast', trackBallast: 'apart', legoTrack: 'print' }), clip: (ps) => { const b = box(ps); return [0, (b[1] + b[4]) / 2 + 4, 0, 0, -1, 0]; }, cam: { dir: '0.25,-1,0.35', r: 90, at: (ps) => { const b = box(ps); return [b[0] + 20, (b[1] + b[4]) / 2, 5]; } } },
   // Underside

@@ -7,6 +7,8 @@ import { joinAnchors, reverseAnchors, splitAnchors } from './twfollow';
 import { renameApart, splitApart } from './connections';
 import { cutLength, joinCuts, reverseCuts, splitCuts } from './routecuts';
 import { joinStretches, reverseStretches, splitStretches } from './stretches';
+import { renameAccept, splitAccept } from './accept';
+import { joinShared, joinSleeperEdits, reverseShared, reverseSleeperEdits, splitShared, splitSleeperEdits } from './sleeperedits';
 import { routeLength } from '../route/route';
 import type { RouteEnds } from '../route/route';
 
@@ -85,12 +87,16 @@ export function splitRoute(d: Design, i: number, at: number, nameB?: string): { 
   const [sa, sb] = cutSegs(r.segs, s), cut = follow(r, sa);
   splitAnchors(d, name, nb, s * 8, routeLength(rt), rt);
   splitApart(d, name, nb);
+  splitShared(d, name, nb, s);
+  splitAccept(d, name, nb);
   const b: DRoute = { ...structuredClone(r), name: nb, x: r6(cut.x), y: r6(cut.y), heading: r6(norm180(cut.heading)), segs: sb };
   delete b.startEnd; delete b.throwSide;
   const a = r;
   // (its hand cuts: each half its own, the second's from its own start)
   if (r.cuts) { const [ca, cb] = splitCuts(r.cuts, s); if (ca) a.cuts = ca; else delete a.cuts; if (cb) b.cuts = cb; else delete b.cuts; }
   if (r.stretches) { const [ta, tb] = splitStretches(r.stretches, s); if (ta) a.stretches = ta; else delete a.stretches; if (tb) b.stretches = tb; else delete b.stretches; }
+  // (its sleepers edited by hand: each on the half it's on)
+  if (r.sleeperEdits) { const [ea, eb] = splitSleeperEdits(r.sleeperEdits, s); if (ea) a.sleeperEdits = ea; else delete a.sleeperEdits; if (eb) b.sleeperEdits = eb; else delete b.sleeperEdits; }
   a.segs = sa; delete a.endEnd;
   if (r.endEnd) b.endEnd = r.endEnd;
   for (const k of ['guardRailEnds', 'dualPlainEnds'] as const) {
@@ -151,6 +157,13 @@ function joinWith(d: Design, a: number, b: number, bEnd: 'start' | 'end'): numbe
   joinAnchors(d, routes[a].name || String(a), rb.name || String(b), routeLength(rts[a]), routeLength(rts[b]), bEnd === 'end');
   // (what b was taken apart from, the joined track is: connections.ts)
   renameApart(d, rb.name || String(b), routes[a].name || String(a));
+  renameAccept(d, rb.name || String(b), routes[a].name || String(a));
+  // (the sleepers b shares with other tracks: a's now, on from a's end; b's own edits too)
+  if (d.expert?.shared) { if (bEnd === 'end') reverseShared(d, rb.name || String(b), cutLength(rb)); joinShared(d, routes[a].name || String(a), rb.name || String(b), cutLength(routes[a])); }
+  if (routes[a].sleeperEdits || rb.sleeperEdits) {
+    const es = joinSleeperEdits(routes[a].sleeperEdits, bEnd === 'start' ? rb.sleeperEdits : reverseSleeperEdits(rb.sleeperEdits, cutLength(rb)), cutLength(routes[a]));
+    if (es) routes[a].sleeperEdits = es; else delete routes[a].sleeperEdits;
+  }
   const more = bEnd === 'start' ? rb.segs.map((sg) => ({ ...sg })) : reversedRoute(rb).segs;
   // (their hand cuts: b's on from a's end; both cut by hand only: still two parts where they met, and still by hand only)
   if (routes[a].cuts || rb.cuts || routes[a].cutsLocked || rb.cutsLocked) {
@@ -190,7 +203,7 @@ export function mergeRoutes(d: Design, i: number, j: number): { index: number } 
   const problem = mergeProblem(d, i, j);
   if (problem) return { problem };
   const [ea, eb] = meeting(d, i, j)!;
-  if (ea === 'start') { d.routes[i] = reversedRoute(d.routes[i]); reverseAnchors(d, d.routes[i].name || String(i)); }
+  if (ea === 'start') { reverseShared(d, d.routes[i].name || String(i), cutLength(d.routes[i])); d.routes[i] = reversedRoute(d.routes[i]); reverseAnchors(d, d.routes[i].name || String(i)); }
   const a = d.routes[i], b = d.routes[j];
   const ha = a.monoHeight, hb = eb === 'start' ? b.monoHeightEnd ?? b.monoHeight : b.monoHeight;
   const idx = joinWith(d, i, j, eb);

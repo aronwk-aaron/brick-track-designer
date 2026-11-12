@@ -1,6 +1,6 @@
 # Expert mode: design and stages
 
-Status: design agreed with nobody yet (S1, S1b, S2, S3, S4 and the editor's side of section 5 are built as section 11 says); decisions are taken here so work doesn't wait (the list for Aaron is in
+Status: design agreed with nobody yet (S1, S1b, S2, S3, S4, S5a and the editor's side of section 5 are built as section 11 says); decisions are taken here so work doesn't wait (the list for Aaron is in
 section 10). What is built is in section 11 (State), kept current.
 
 What was asked for, in short: the drawing mode of today stays as the simple mode; an expert can place and edit every
@@ -605,13 +605,43 @@ route-owned storage, the follow rules and the card section they bring are the pa
   track's end and a table's name under the pointer, which the pointer's shape didn't go by before; with nothing
   near, a track is looked for once); while dragging a track 0.2 to 0.4 ms before, 0.2 to 0.3 after; a redraw 5 to 7
   ms before and after (the machine was busy: the redraw alone read 4 to 11 ms from run to run).
+- **S5a is built: sleepers and ballast by hand, sleepers shared across tracks, tracks accepted as running over each
+  other.** `DRoute.sleeperEdits[] = { at, add?, off?, move?, left?, right?, turn?: 'square', studs?: false }` (studs
+  from the track's start; an edit is of the sleeper the app lays nearest `at`, within half the spacing). Pure part
+  `src/app/sleeperedits.ts`: `cleanSleeperEdits` (readDesign), `planSleepers` (the sleepers as laid, the plan's and the
+  build's: `geom/handsleepers.ts laySleepers`), `sleeperProblem` (the doc's refusals: whole studs on a baseplate-lined
+  underside, between the end connectors, not on each other, not under a blade's moving length, "The rails would span 9
+  studs here: 6 at most", `SPAN_MAX`), reverse / mirror / split / join / follow a reshape, `sleeperWarnings` (edits on
+  ballast or a solid bed aren't made: said; an edit no sleeper is near: said). `Design.expert.shared[] = { routes, from,
+  to }`: the first track's sleepers carried across the others from `from` to `to` (whole studs along it), which have
+  none of their own there; the tracks are one part (`partsOf`). Ballast: `ballastLeftStuds` / `ballastRightStuds` (0 to
+  8, default 1: 0 is no wider than the sleepers, so never narrower) and `ballastEnds` ('square' | 'stepped' round a
+  buffer stop), design-wide and per track or stretch (`PART_KEYS`); "none under a stretch" is S1b's stretch with
+  Ballast: None. `Design.expert.accept[] = { routes: [a, b], what: 'over' }` (accept.ts): a pair of tracks meant to run
+  closer than their sleepers (section 4c), not warned of, marked on the plan and listed in the Trackwork panel
+  ("I mean this: don't warn" / "Warn of it again"). Build: `Route.hand` (route.ts: the edits in mm along the drawn route,
+  `subHand` for a piece of it), laid in `crossingPiece` (a sleeper with a shape of its own is built as a tie); a switch
+  whose routes have any is built as a network piece. Editor: the card's **Sleepers** section (each edit's controls and
+  Reset this sleeper, Add a sleeper… then a click, Automatic sleepers, Shared with the track beside), Clicks pick:
+  Sleepers (click one, drag it along, Delete; Everything doesn't take them: they lie all along a track), the edited ones
+  orange on the plan; the ballast rows in Bed and underside. Templates (Features): 'Sleepers edited by hand', 'Double
+  track on shared sleepers', 'Siding on ballast wider on one side, stepped round its buffer stop'; (TrixBrix sets, the
+  section 4c pieces) 'Switch R40 left|right to a parallel track', 'Yard R40, two tracks, left|right', 'Three-way R40
+  to three parallel tracks' (the left-hand ones and the three-way with Track 2 and Track 3 accepted: the maker's set lays
+  the parallel curve 0.7 studs over the end of the switch's branch). Tests: test/sleeperedits.test.ts (pure),
+  test/sleeperedits-build.test.ts (each edit where it says in the part, reset byte-identical, made twice = once,
+  lengths, a curve's square sleeper, shared sleepers one part, ballast each side and stepped ends).
+- **How S5a differs from sections 2 and 4:** (1) studs on or off per sleeper is an edit of the sleeper (`studs:
+  false`), not a setting. (2) The compact R40 corner (section 4c) is not a template: built with its pairs accepted its
+  parts still overlap 7 to 61 mm3 where a branch's curve lies beside the next switch's base, and some track parts come
+  in up to six bodies: a geometry fault, for the geometry agent (not accept's to hide). (3) `accept` is per pair of
+  tracks, not per place: a set that runs two tracks close twice is accepted at both.
 - **Next, in order:** (1) the double track's budget from CI's log (test/templates.shared.ts); a group's build told of the other groups' track at its ends, so a track joined onto points
   can have its own; (2) S1 more keys (buffer stops per end; labels per part); (3) then S5/S6 (the other kit
   modules as templates: the same three kinds of path cover them; `test/templates-cutpaths.test.ts` `MODULES` is the
   pattern for checking a module against the library's ends). Left from S3: the keep-outs are drawn only while a path
   is being drawn. Left from the editor's side: "Show what's overridden"; several items selected at once (a box round
-  cuts); the Pick list's kinds for S5 (sleepers, rails, ballast: add to `PICKS` and `Layer`, and a kind to
-  `hitItems`).
+  cuts); the Pick list's kinds for S5b (rails: add to `PICKS` and `Layer`, and a kind to `hitItems`; sleepers are in).
 - **Traps.** The editor: an item goes by its track's and its own place in their lists, so whatever changes those lists
   without `setSelection` (which lets go of it) must let go of it itself (`canvas.selectItem(undefined)`: the card's ✕
   on a cut or a stretch, Delete on a card). `updateSelbar` and `renderTrackwork` are set up after the first `render()`

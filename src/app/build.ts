@@ -29,6 +29,8 @@ import { type DesignCuts, designCuts, designPaths, handCutsFor } from './handcut
 import { type NoCut, pathTracks } from './cutpaths';
 import { hasPartOwn, partGroups, withoutPartOwn } from './overrides';
 import { expandStretches } from './stretches';
+import { sleeperWarnings } from './sleeperedits';
+import { accepted } from './accept';
 import { ANTISTUD_FIT, BOTTOM_WALL, edgeGrip, rowUnderside, TUBE_ID, TUBE_OD } from '../geom/underside';
 import { cutOnPaths, type HandPath, type HandPathDone, pathSplit, splitOnPath, type Keep } from '../geom/pathsplit';
 import { findStuds, wholeStuds } from '../geom/studs';
@@ -127,7 +129,7 @@ export const BT_STRAIGHTS: [number, string, string][] = [[8 * 8, 'BrickTracks S0
 /** A plain piece of track that is a bought track piece: LEGO's straight (53401), a BrickTracks short straight, LEGO's R40 curve or a BrickTracks curve (legoOnly: LEGO's only). */
 export function stdPiece(rt: Route, legoOnly: boolean): LegoPart[] | undefined {
   const sg = rt.segments;
-  if (sg.some((g) => g.roll) || rt.extra) return undefined;
+  if (sg.some((g) => g.roll) || rt.extra || rt.hand) return undefined;
   // (BrickTracks' R104B "siding" curve: its short straight, then an R104 curve of 11.25 degrees, either way round)
   if (sg.length === 2 && !legoOnly) {
     const [l, c] = sg[0].kind === 'straight' ? [sg[0], sg[1]] : [sg[1], sg[0]];
@@ -579,7 +581,9 @@ function buildGroups(w: Wasm, design: Design, report: (what: string, frac: numbe
   const built: ReturnType<typeof buildTrain>[] = [];
   pg.groups.forEach((g, i) => {
     const mine = paths.filter((_, k) => near[k].some((r) => g.routes.includes(r)) || (i === 0 && !near[k].length));
-    const sub: Design = { ...design, routes: g.routes.map((r) => withoutPartOwn(design.routes[r])), options: g.options, ...(design.expert && { expert: mine.length ? { ...design.expert, cutPaths: mine } : undefined }) };
+    // (what else is between tracks goes by their names, with every group: the sleepers they share, the pairs that run close on purpose)
+    const { cutPaths: _cp, apart: _ap, ...between } = design.expert ?? {}, exp = { ...between, ...(mine.length && { cutPaths: mine }) };
+    const sub: Design = { ...design, routes: g.routes.map((r) => withoutPartOwn(design.routes[r])), options: g.options, ...(design.expert && { expert: Object.keys(exp).length ? exp : undefined }) };
     settingsKey = keyOfSettings(sub, opts);
     try {
       built.push(buildTrain(w, sub, (what, f) => report(what, (i + f) / pg.groups.length), (ov) => { earlies[i] = ov as Record<string, unknown>; early?.(merged()); }, opts));
@@ -897,6 +901,8 @@ export interface Overlay {
   cutting?: { grid: Pose; railG: number; no: NoCut };
   /** the cut paths that weren't made (by id), and why */
   pathsNot?: { id: string; why: string }[];
+  /** (expert) where tracks run over each other (mm), which two (by name), and whether that pair is accepted (accept.ts: no warning then, a mark on the plan) */
+  over?: { at: [number, number]; routes: [string, string]; ok: boolean }[];
 }
 
 /** A hand edit's key: where the item is (its middle, mm, "x,y"). */
@@ -1138,7 +1144,7 @@ function tracksOverEachOther(routes: Route[], sol: { splits: Split[]; dropped?: 
     if (Math.abs(heightAt(routes[p[4]], p[3]) - heightAt(routes[q[4]], q[3])) >= GRADE_APART) continue; // (one over the other, on a grade)
     if (parting(p, q)) continue;
     if (Math.abs(Math.cos(((p[2] - q[2]) * Math.PI) / 180)) < cos15) continue; // (crossing at an angle: a crossing)
-    if (!near(p, spots, 4 * gap)) spots.push(p);
+    if (!near(p, spots, 4 * gap)) spots.push([...p, q[4]]);
   }
   return spots;
 }
@@ -2329,13 +2335,19 @@ function buildOne(w: Wasm, design: Design, report: (what: string, frac: number) 
   // one piece; a switch built on its own has none, and the track's connector there had extra rail ends that met nothing)
   const extraOnSwitch = pc.switches.some((sw) => sw.covers.some(([ri]) => !!routes[ri].extra));
   // (points on routes with a gauge of their own, mixed gauges: a network piece, each points set built at its routes' gauge)
+  // (expert: sleepers edited by hand or a ballast width of its own on a switch's routes: a network piece, which lays them (a switch built on its own has its own bed))
+  const handOnSwitch = pc.switches.some((sw) => sw.covers.some(([ri]) => !!routes[ri].hand));
   const ownGaugeSwitch = sol.splits.some((sp) => sp.routes.some((ri) => routes[ri].gauge !== undefined));
   const network = sol.splits.length > 0 && (sol.splits.some((sp) => sp.merge) || pc.warnings.some((w2) => !/print bed/.test(w2))
-    || sol.crossings.some((c) => groupOf(c.a.route) !== groupOf(c.b.route)) || bufOnSwitch || extraOnSwitch || ownGaugeSwitch);
+    || sol.crossings.some((c) => groupOf(c.a.route) !== groupOf(c.b.route)) || bufOnSwitch || extraOnSwitch || ownGaugeSwitch || handOnSwitch);
   const bedWarnings = new Set<string>();
   const track = new Track(scad, { ...TRACK_DEFAULTS, gaugeStuds: design.gaugeStuds, studFit: o.studFit, antistudFit: o.antistudFit, sleeperWidthStuds: o.sleeperWidthStuds, axleStuds: o.axleStuds, flangewayDepth: o.flangewayDepth, ...(o.tongueRails === 'square' && { tongueMaxAngle: 12 }) });
   {
-    const spots = tracksOverEachOther(routes, sol, track.c.sleeperLen), gap = track.c.sleeperLen;
+    // (expert: a pair of tracks that run this close on purpose, accept.ts: marked on the plan, not warned of)
+    const idOf = (k: number) => routes[k].id.replace(/[~:]\d+$/, ''), all = tracksOverEachOther(routes, sol, track.c.sleeperLen), gap = track.c.sleeperLen;
+    const over = all.map((q) => ({ at: [q[0], q[1]] as [number, number], routes: [idOf(q[4]), idOf(q[5])] as [string, string], ok: accepted(design, idOf(q[4]), idOf(q[5])) }));
+    if (over.length) overlay.over = over;
+    const spots = all.filter((_, k) => !over[k].ok);
     for (const q of spots) overlay.issues.push({ at: [q[0], q[1]], r: 2 * gap, text: 'Tracks run over each other here: trains on them would hit' });
     if (spots.length) bedWarnings.add(`tracks run over each other (closer than their sleepers, nearly parallel) at ${spots.slice(0, 4).map((q) => `${(q[0] / 8).toFixed(0)}, ${(q[1] / 8).toFixed(0)}`).join('; ')}${spots.length > 4 ? ' …' : ''} (studs): trains on them would hit; move them apart, or cross at a steeper angle`);
   }
@@ -2364,6 +2376,8 @@ function buildOne(w: Wasm, design: Design, report: (what: string, frac: number) 
   const cutPaths = overlay.cutting && designPaths(design, gridPose, routes, track.c.railOffset, overlay.cutting.no);
   if (cutPaths && !inLengths) bedWarnings.add('the cut paths are made only with Long track cut into: Track pieces');
   const sleepered = o.sleepers === 'sleepers' && o.ballast === 'none';
+  // (expert: the sleepers edited by hand that can't be made as they're asked for: said)
+  for (const wn of sleeperWarnings(design, o)) bedWarnings.add(wn);
   const labelOn = o.ballast !== 'none' && o.bottomStyle === 'float' && !!o.labelText?.trim();
   const b: PieceBuild = { w, scad, o, gaugeStuds: design.gaugeStuds, track, cut, prog, pieces: [], volume: 0, bedWarnings, overlay, job,
     labelOn, ...(opts.mark && { mark: opts.mark, markBoth: opts.markBoth }), num: { part: 0, sec: 0 }, alongTrack, gridPose, sleepered, bufs, grooveCuts, grooveEdits: tw.groove, dropInner, tables: design.tables ?? [], boughtSw: bought, trackRoutes: routes, ...(handCuts && { handCuts }), ...(cutPaths?.cut.length && inLengths && { cutPaths: cutPaths.cut }) };
@@ -2372,7 +2386,7 @@ function buildOne(w: Wasm, design: Design, report: (what: string, frac: number) 
     studFit: o.studFit, antistudFit: o.antistudFit, sleepers: o.sleepers, undersideGrid: o.ballast === 'none' ? o.undersideGrid : undefined, sleeperWidthStuds: o.sleeperWidthStuds, sleeperGapStuds: o.sleeperGapStuds,
     // (only what's set: the defaults' build, and its cache keys, as before)
     ...(bufs.length && { buffers: bufs, buffer: { postPlates: o.bufferPostPlates ?? 8, beamBottom: o.bufferBeamBottom ?? 2, beamTop: o.bufferBeamTop ?? 12, pinHoles: o.bufferPinHoles !== false, style: o.bufferStyle ?? 'frame' } }),
-    ...(o.axleHoles && { axleHoles: true }), ...(o.pegOnBallast && { pegOnBallast: true }), ...(alone && { ballastOnly: o.trackFitTol ?? 0.2 }) };
+    ...(o.axleHoles && { axleHoles: true }), ...(o.pegOnBallast && { pegOnBallast: true }), ...(o.ballastEnds === 'stepped' && o.ballast !== 'none' && { ballastEnds: 'stepped' as const }), ...(alone && { ballastOnly: o.trackFitTol ?? 0.2 }) };
   const tp = params;
   const netKey = JSON.stringify({ routes, tp, copt, tw });
   let net: ReturnType<typeof networkSplits> | undefined;

@@ -51,6 +51,8 @@ export function carriedOn(routes: Route[], gauge: number): { routes: Route[]; wa
       const more = { kind: 'straight' as const, length: by };
       out[i] = end === 'end' ? { ...out[i], segments: [...out[i].segments, more] }
         : { ...out[i], start: [out[i].start[0] + by * Math.sin((out[i].start[2] * Math.PI) / 180), out[i].start[1] - by * Math.cos((out[i].start[2] * Math.PI) / 180), out[i].start[2]], segments: [more, ...out[i].segments] };
+      // (expert: its hand edits stay where they are on the ground: the stretch of the drawn route this now is, that much longer)
+      { const h = out[i].hand; if (h) { const d = h.to >= h.from ? 1 : -1; out[i] = { ...out[i], hand: end === 'end' ? { ...h, to: h.to + d * by } : { ...h, from: h.from - d * by } }; } }
       const studs = (mm: number) => (mm / 8).toFixed(1).replace(/\.0$/, '');
       warnings.push(`${a.id} ${end === 'end' ? 'ends' : 'starts'} ${studs(far)} studs short of where ${routes[who].id} joins it at ${(at[0] / 8).toFixed(0)}, ${(at[1] / 8).toFixed(0)} (studs): it's built ${studs(by)} studs longer, past the points there; lengthen ${a.id} by ${studs(by)} studs`);
     }

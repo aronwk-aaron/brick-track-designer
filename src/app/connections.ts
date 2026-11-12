@@ -155,6 +155,8 @@ export function tidyExpert(d: Design) {
   if (!e) return;
   if (!e.apart?.length) delete e.apart;
   if (!e.cutPaths?.length) delete e.cutPaths;
+  if (!e.shared?.length) delete e.shared;
+  if (!e.accept?.length) delete e.accept;
   if (!Object.keys(e).length) delete d.expert;
 }
 

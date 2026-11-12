@@ -42,7 +42,7 @@ describe('settings groups', () => {
   it('a feature that is off is its switch alone', () => {
     const d = base();
     expect(rowKeys({ ...d, options: { ballast: 'none' } }, 'ballast')).toEqual(['sleepers', 'ballast']);
-    expect(rowKeys({ ...d, options: { ballast: 'ballast', trackBallast: 'together' } }, 'ballast')).toEqual(['sleepers', 'ballast', 'trackBallast']);
+    expect(rowKeys({ ...d, options: { ballast: 'ballast', trackBallast: 'together' } }, 'ballast')).toEqual(['sleepers', 'ballast', 'ballastLeftStuds', 'ballastRightStuds', 'ballastEnds', 'trackBallast']);
     expect(rowKeys({ ...d, options: { ballast: 'none', sleepers: 'sleepers' } }, 'ballast')).toEqual(['sleepers', 'sleeperWidthStuds', 'sleeperGapStuds', 'ballast']);
     expect(rowKeys({ ...d, options: { monoSupportStuds: 0 } }, 'monosup')).toEqual(['monoSupportStuds']);
     expect(rowKeys({ ...d, options: { monoSupportStuds: 32 } }, 'monosup')).toHaveLength(8);

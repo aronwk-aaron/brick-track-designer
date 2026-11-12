@@ -5,7 +5,7 @@
 // Pure: the build and the route card both go by it.
 import { type Design, type DRoute, isMono, OPTION_DEFAULTS, type PieceOptions, routeGaugeStuds, toRoutes } from './design';
 import { routeLength, routePose } from '../route/route';
-import { BANK_KEYS, isRouteKey, type Own, OWN_LABELS, PART_KEYS, ROUTE_KEYS, type RouteKey } from './routeown';
+import { BANK_KEYS, isRouteKey, type Own, OWN_LABELS, OWN_UNSET, PART_KEYS, ROUTE_KEYS, type RouteKey } from './routeown';
 
 /** Where a value in force comes from, for the card. */
 export type Source = 'default' | 'design' | 'route' | 'feature';
@@ -21,7 +21,7 @@ export function ownOf(r: DRoute): Own {
 /** A track's own settings that differ from the design's (the rest change nothing). */
 export function liveOwn(d: Design, r: DRoute, keys: readonly RouteKey[] = ROUTE_KEYS): Own {
   const o = designOptions(d), own = ownOf(r);
-  return Object.fromEntries(keys.filter((k) => own[k] !== undefined && own[k] !== o[k]).map((k) => [k, own[k]])) as Own;
+  return Object.fromEntries(keys.filter((k) => own[k] !== undefined && own[k] !== (o[k] ?? OWN_UNSET[k])).map((k) => [k, own[k]])) as Own;
 }
 /** Has any track its own part settings (else the design builds as it always has, in one go)? */
 export const hasPartOwn = (d: Design) => d.routes.some((r) => !!r.own && Object.keys(liveOwn(d, r, PART_KEYS)).length > 0);
@@ -58,7 +58,8 @@ export const PART_MARGIN = 16;
  * the build can only do with that track in the points' own group (switch/network.ts nearby: the same reach). */
 export const LEVER_REACH = 32;
 /** A track's bed's half width (mm), with its ballast. */
-const halfBed = (d: Design, r: DRoute, o: PieceOptions) => ((routeGaugeStuds(d, r) + 1) * 8 + 24) / 2 + (o.ballast === 'buddy' ? 16 : o.ballast === 'ballast' ? 8 : 0);
+const halfBed = (d: Design, r: DRoute, o: PieceOptions) => ((routeGaugeStuds(d, r) + 1) * 8 + 24) / 2 + (o.ballast === 'buddy' ? 16 : o.ballast === 'ballast' ? 8 : 0)
+  + (o.ballast !== 'none' ? Math.max(0, Math.max(o.ballastLeftStuds ?? 1, o.ballastRightStuds ?? 1) - 1) * 8 : 0);
 
 export interface PartGroups {
   /** the tracks built together (indices into d.routes, train track only), and the settings they're built with */
@@ -84,6 +85,11 @@ export function partsOf(d: Design): number[] {
   const join = (a: number, b: number) => { const x = find(a), y = find(b); if (x !== y) parent[Math.max(x, y)] = Math.min(x, y); };
   const train = d.routes.map((r, i) => !isMono(r) && r.segs.length > 0 && !!rts[i]?.segments.length);
   const half = d.routes.map((r, i) => halfBed(d, r, resolveOptions(d, i)));
+  // (tracks that share sleepers are one part: sleeperedits.ts)
+  for (const sh of d.expert?.shared ?? []) {
+    const ix = sh.routes.map((nm) => d.routes.findIndex((r, i) => (r.name || String(i)) === nm)).filter((i) => i >= 0 && train[i]);
+    for (const i of ix.slice(1)) join(ix[0], i);
+  }
   // (each end, and the way the track leaves it)
   const ends = rts.map((rt, i) => { if (!train[i]) return []; const e = routePose(rt, routeLength(rt)); return [[rt.start[0], rt.start[1], rt.start[2]], [e[0], e[1], e[2] + 180]] as [number, number, number][]; });
   const dAng = (a: number, b: number) => Math.abs(((((a - b) % 360) + 540) % 360) - 180);

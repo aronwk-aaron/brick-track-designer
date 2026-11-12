@@ -4,7 +4,7 @@
 // base is clear of every other track's (never through points, frogs or
 // crossings), plain stretches in lengths that fit the print bed.
 import type { Route } from '../route/route';
-import { GRADE_APART, heightAt, routeLat, routeLength, routePose, routeSOf, routesBox, railPoint } from '../route/route';
+import { GRADE_APART, handS, heightAt, routeLat, routeLength, routePose, routeSOf, routesBox, railPoint } from '../route/route';
 import type { Split } from '../route/solver';
 
 /** A piece of one route: [route, from, to] (arc lengths). */
@@ -57,10 +57,29 @@ export function planSections(routes: Route[], splits: Split[], half: number, roo
   // the points' stretches (and a connector's length past them), where no cut goes
   const busy = routes.map(() => [] as [number, number][]);
   for (const sp of splits) sp.routes.forEach((ri, k) => busy[ri].push([sp.spans[k][0] - 24, sp.spans[k][1] + 24]));
+  // (expert: sleepers shared with the tracks beside (Route.hand.shared): no cut of the app's along there on any of
+  // them, and they're one section: [route, from, to] of each)
+  const held: [number, number, number][] = [];
+  routes.forEach((rt, i) => {
+    const h = rt.hand;
+    for (const sh of h?.shared ?? []) {
+      const a = Math.max(0, Math.min(handS(h!, sh.a), handS(h!, sh.b))), b = Math.min(routeLength(rt), Math.max(handS(h!, sh.a), handS(h!, sh.b)));
+      if (b <= a) continue;
+      const mates: [number, number, number][] = [];
+      routes.forEach((r2, k) => {
+        if (k === i || !sh.with.includes(r2.id.replace(/[~:]\d+$/, ''))) return;
+        const pa = routePose(rt, a), pb = routePose(rt, b), sa = routeSOf(r2, [pa[0], pa[1]]), sb = routeSOf(r2, [pb[0], pb[1]]);
+        // (beside it there: within three sleepers' lengths of it)
+        if (Math.abs(routeLat(r2, [pa[0], pa[1]])) < 6 * halves[i] || Math.abs(routeLat(r2, [pb[0], pb[1]])) < 6 * halves[i]) mates.push([k, Math.min(sa, sb), Math.max(sa, sb)]);
+      });
+      if (mates.length) held.push([i, a, b], ...mates);
+    }
+  });
+  const isHeld = (i: number, s: number) => held.some(([k, a, b]) => k === i && s >= a - 8 && s <= b + 8);
   /** Can route i be cut square at s: its base there (and a connector's depth either side) clear of every other track's base? */
   const free = (i: number, s: number) => {
     const L = routeLength(routes[i]);
-    if (s < minPart || s > L - minPart || busy[i].some(([a, b]) => s >= a && s <= b)) return false;
+    if (s < minPart || s > L - minPart || busy[i].some(([a, b]) => s >= a && s <= b) || isHeld(i, s)) return false;
     return clear(i, s);
   };
   /** Is route i's base at s (and a connector's depth either side) clear of every other track's base? */
@@ -168,7 +187,7 @@ export function planSections(routes: Route[], splits: Split[], half: number, roo
       k = e + 1;
     }
     // (and its pieces' joints beside other track too, clear of the points and of track crossing it)
-    for (const c2 of nat) if (!busy[i].some(([a, b]) => c2 >= a && c2 <= b) && !nearCross(i, c2)) cuts.push(c2);
+    for (const c2 of nat) if (!busy[i].some(([a, b]) => c2 >= a && c2 <= b) && !nearCross(i, c2) && !isHeld(i, c2)) cuts.push(c2);
     // (and where it crosses a table's seam: there exactly (on its pieces' joint, if that's within 3 mm: tables don't meet
     // that exactly, nor bought track lie on them so), unless
     // that's in points or a crossing; the pieces either side may be short, as a joint's can)
@@ -196,7 +215,7 @@ export function planSections(routes: Route[], splits: Split[], half: number, roo
     for (const c2 of hd?.cuts ?? []) {
       if (!(c2 > 1 && c2 < L - 1)) continue;
       if (busy[i].some(([a, b]) => c2 >= a && c2 <= b)) blocked.push({ route: i, s: c2, why: 'points' });
-      else if (!clear(i, c2)) blocked.push({ route: i, s: c2, why: 'beside' });
+      else if (!clear(i, c2) || isHeld(i, c2)) blocked.push({ route: i, s: c2, why: 'beside' });
       else { mine.push(c2); nat.add(c2); seamAt.add(c2); }
     }
     // (and no joint of the app's own within two studs of one: the hand cut is the joint there)
@@ -240,6 +259,24 @@ export function planSections(routes: Route[], splits: Split[], half: number, roo
     const p = routePose(routes[e.i], e.s), q = routePose(routes[f.i], f.s);
     if (Math.hypot(p[0] - q[0], p[1] - q[1]) < 1 && Math.abs(Math.sin(((p[2] - q[2]) * Math.PI) / 180)) < 0.02 && !over(e.i, e.s, f.i, [q[0], q[1]])) parent[find(e.k)] = find(f.k);
   }
+  // (expert: tracks that share sleepers are one section there; and a sleeper made longer by hand that reaches onto
+  // another track's base is built with it)
+  for (let n = 0; n < held.length; n++) for (let m = n + 1; m < held.length; m++) {
+    const [i, a, b] = held[n], [j, c, e] = held[m];
+    if (i === j) continue;
+    pieces.forEach(([pi, pa, pb], p) => { if (pi !== i || pb < a || pa > b) return; pieces.forEach(([ri, ra, rb], r) => { if (ri === j && rb >= c && ra <= e && find(p) !== find(r)) parent[find(p)] = find(r); }); });
+  }
+  pieces.forEach(([i, a, b], p) => {
+    const h = routes[i].hand;
+    for (const sl of h?.sleepers ?? []) {
+      const fwd = h!.to >= h!.from, v = handS(h!, sl.at) + (fwd ? 1 : -1) * (sl.move ?? 0);
+      if (v < a || v > b || sl.off) continue;
+      for (const [len, sd] of [[fwd ? sl.left : sl.right, -1], [fwd ? sl.right : sl.left, 1]] as [number | undefined, number][]) for (let o = 4; o <= (len ?? 0); o += 4) {
+        const q = railPoint(routes[i], v, sd * (halves[i] + o));
+        pieces.forEach(([ri, ra, rb], r) => { if (ri !== i && find(p) !== find(r) && inBox(ri, q) && Math.abs(routeLat(routes[ri], q)) < halves[ri] && (() => { const s = sAt(ri, q); return s >= ra - 1 && s <= rb + 1; })()) parent[find(p)] = find(r); });
+      }
+    }
+  });
   const groups = new Map<number, number[]>();
   pieces.forEach((_, k) => { const g = find(k); if (!groups.has(g)) groups.set(g, []); groups.get(g)!.push(k); });
   return { pieces, sections: [...groups.values()], seams, blocked };

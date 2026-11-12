@@ -5,6 +5,8 @@ import { type BankRamps, type Design, type DRoute, dualRailOffsets, isMono, RAIL
 import { follow, reversed } from './planner';
 import { cutLength, reverseCuts } from './routecuts';
 import { reverseStretches } from './stretches';
+import { mirrorSleeperEdits, reverseSleeperEdits } from './sleeperedits';
+import type { Own } from './routeown';
 
 const otherEnd = <T extends string | undefined>(e: T): T => (e === 'start' ? 'end' : e === 'end' ? 'start' : e) as T;
 const otherSide = <T extends string | undefined>(s: T): T => (s === 'left' ? 'right' : s === 'right' ? 'left' : s) as T;
@@ -28,7 +30,10 @@ export function reversedRoute(r: DRoute): DRoute {
   if (r.monoHeight !== undefined && r.monoHeightEnd !== undefined) { out.monoHeight = r.monoHeightEnd; out.monoHeightEnd = r.monoHeight; }
   // (its hand cuts: each as far from the new start as it was from the old end)
   if (r.cuts) { const cuts = reverseCuts(r.cuts, cutLength(r)); if (cuts) out.cuts = cuts; else delete out.cuts; }
-  if (r.stretches) { const st = reverseStretches(r.stretches, cutLength(r)); if (st) out.stretches = st; else delete out.stretches; }
+  if (r.stretches) { const st = reverseStretches(r.stretches, cutLength(r)); if (st) out.stretches = st.map((x) => ({ ...x, own: otherSides(x.own) })); else delete out.stretches; }
+  // (its sleepers edited by hand: from the new start, their sides swapped; and its ballast's own width each side)
+  if (r.sleeperEdits) { const es = reverseSleeperEdits(r.sleeperEdits, cutLength(r)); if (es) out.sleeperEdits = es; else delete out.sleeperEdits; }
+  if (r.own) out.own = otherSides(r.own);
   return out;
 }
 
@@ -42,6 +47,16 @@ export function mirrorRoute(r: DRoute, px: number) {
   for (const sg of r.segs) if (sg.kind === 'curve') sg.angle = -sg.angle;
   if (r.dualGauge || r.dualShared) r.dualShared = otherSide(r.dualShared ?? 'right');
   if (r.throwSide) r.throwSide = otherSide(r.throwSide);
+  // (its sleepers longer on a side, its ballast wider on a side: the other side now)
+  if (r.sleeperEdits) { const es = mirrorSleeperEdits(r.sleeperEdits); if (es) r.sleeperEdits = es; else delete r.sleeperEdits; }
+  if (r.own) r.own = otherSides(r.own);
+  for (const st of r.stretches ?? []) st.own = otherSides(st.own);
+}
+/** A track's own settings with what's said by its sides swapped (its ballast's width on the left and on the right). */
+function otherSides(own: Own): Own {
+  if (own.ballastLeftStuds === undefined && own.ballastRightStuds === undefined) return own;
+  const { ballastLeftStuds: l, ballastRightStuds: r, ...rest } = own;
+  return { ...rest, ...(r !== undefined && { ballastLeftStuds: r }), ...(l !== undefined && { ballastRightStuds: l }) };
 }
 
 /**

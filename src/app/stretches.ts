@@ -108,8 +108,9 @@ let memo: { key: string; v: Stretched } | undefined;
  */
 export function expandStretches(d: Design): Stretched {
   if (!hasStretches(d)) return { design: d, of: d.routes.map((_, i) => i), stretch: d.routes.map(() => false), names: new Map() };
-  const key = JSON.stringify([d.routes, d.trackwork, d.gaugeStuds]);
-  if (memo?.key === key) return { ...memo.v, design: { ...d, routes: memo.v.design.routes, ...(memo.v.design.trackwork && { trackwork: memo.v.design.trackwork }) } };
+  // (the sleepers shared across tracks go by the tracks' names: the pieces' own, where a track is cut)
+  const key = JSON.stringify([d.routes, d.trackwork, d.gaugeStuds, d.expert?.shared, d.expert?.accept]);
+  if (memo?.key === key) return { ...memo.v, design: { ...d, routes: memo.v.design.routes, ...(memo.v.design.trackwork && { trackwork: memo.v.design.trackwork }), ...((d.expert?.shared || d.expert?.accept) && memo.v.design.expert && { expert: { ...d.expert, ...(memo.v.design.expert.shared && { shared: memo.v.design.expert.shared }), ...(memo.v.design.expert.accept && { accept: memo.v.design.expert.accept }) } }) } };
   const out = structuredClone(d), of: number[] = [], stretch: boolean[] = [], names = new Map<string, string>();
   // (a track with no name goes by its place in the list, which the pieces put in would change: named by it first)
   out.routes.forEach((r, i) => { if (!r.name) r.name = String(i); });
