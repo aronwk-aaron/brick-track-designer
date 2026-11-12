@@ -638,9 +638,11 @@ route-owned storage, the follow rules and the card section they bring are the pa
   unused: every part's STL sha1 over all 329 templates and the 38 saved designs (test/fixtures/designs and complex)
   against main 922e27b: 367 the same, 0 different (2026-11-11).
 - **How S5a differs from sections 2 and 4:** (1) studs on or off per sleeper is an edit of the sleeper (`studs:
-  false`), not a setting. (2) The compact R40 corner (section 4c) is not a template: built with its pairs accepted its
-  parts still overlap 7 to 61 mm3 where a branch's curve lies beside the next switch's base, and some track parts come
-  in up to six bodies: a geometry fault, for the geometry agent (not accept's to hide). (3) `accept` is per pair of
+  false`), not a setting. (2) The compact R40 corner (section 4c): its faults (parts 7 to 61 mm3 in each other, rail nubs, studs run into)
+  were in the composed design, not the build: each piece was placed 0.4 to 0.95 studs off the end it joins, so ends
+  that should meet lay over each other. Placed on from the end it joins, every joint exact (the switches then on whole
+  studs), it goes together as plain trackwork, with no pairs to accept: templates 'Compact corner R40 left|right'
+  (2026-11-12, templates-ref1.ts). (3) `accept` is per pair of
   tracks, not per place: a set that runs two tracks close twice is accepted at both.
 - **S5b is built: rails, frogs, guard and check rails by hand.** `DRoute.railEdits = { gaps?, guards?, checks?, ends? }`
   (src/app/railedits.ts; studs from the track's start, left and right facing from it): `gaps[] = { at, side: 'left' |

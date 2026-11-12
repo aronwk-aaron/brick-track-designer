@@ -16,4 +16,6 @@ describe('templates: TrixBrix sets', { timeout: 1800000 }, () => templatesBuild(
   'Yard R40, two tracks, left',
   'Yard R40, two tracks, right',
   'Three-way R40 to three parallel tracks',
+  'Compact corner R40 left',
+  'Compact corner R40 right',
 ]));

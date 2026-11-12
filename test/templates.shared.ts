@@ -64,7 +64,7 @@ Object.assign(BUDGET, { 'Switch, 2-stud gap, left, with its R51 curve': 12, 'Swi
 // (a track's own settings, expert: built in two groups. Not from CI's log yet: 4 to 11 s on a busy desk machine; to be set by the rule above from the first green runs)
 Object.assign(BUDGET, { 'Double track, one on sleepers, one on ballast': 25 });
 /** (expert stage 5a's: four times what each took on a laptop, till CI's own times are in) */
-Object.assign(BUDGET, { 'Switch R40 left to a parallel track': 12, 'Switch R40 right to a parallel track': 12, 'Yard R40, two tracks, left': 16, 'Three-way R40 to three parallel tracks': 20,
+Object.assign(BUDGET, { 'Compact corner R40 left': 20, 'Compact corner R40 right': 20, 'Switch R40 left to a parallel track': 12, 'Switch R40 right to a parallel track': 12, 'Yard R40, two tracks, left': 16, 'Three-way R40 to three parallel tracks': 20,
   'Sleepers edited by hand': 12, 'Double track on shared sleepers': 8, 'Siding on ballast wider on one side, stepped round its buffer stop': 8 });
 /** (expert stages 5b and 5c: four times a laptop's, till CI's own times are in) */
 Object.assign(BUDGET, { 'Rails edited by hand': 12, 'Crossover with points of their own': 40 });

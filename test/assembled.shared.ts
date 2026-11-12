@@ -612,7 +612,10 @@ export const EDGES: Record<string, number> = { 'Modular wye R40, lever on the le
   'Switch R104 right, lever on the straight side': 7,
   // (expert, section 4c: the left-hand R40 yard and the three-way to parallel tracks, their curves accepted beside the
   // switch's branch: all in track1, the first at -23.7, -59.3, 3.2 and -64.3, -76.5, 0.0 in its file, on CI)
-  'Yard R40, two tracks, left': 13, 'Three-way R40 to three parallel tracks': 6 };
+  'Yard R40, two tracks, left': 13, 'Three-way R40 to three parallel tracks': 6,
+  // (the compact R40 corners, 2026-11-12: 30 and 22 found, in most of their parts, 1 to 7 each: the switch bases' 7 at
+  // 43.7, 67.5, 0.0 in their files as the R40 switches' are, the curves' 1 to 4 on rail tops and sleepers' ends)
+  'Compact corner R40 left': 33, 'Compact corner R40 right': 25 };
 /** (edges) A template not in EDGES may have this many: one or two come and go with a corner's last digit. */
 export const EDGES_FEW = 4;
 
