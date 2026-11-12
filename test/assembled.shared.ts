@@ -533,8 +533,6 @@ export interface Known { problems: RegExp[]; warning?: RegExp; why: string }
  * design limit the build says itself has a warning: nail-switch.test.ts has one, a double slip's middle points as nail switches.)
  */
 export const KNOWN: Record<string, Known> = {
-  'Banked curve': { problems: [/^track6 and track7 overlap: 7\.\d+ mm3 at -269\.\d, 751\.\d/],
-    why: 'its R56 curve is cut every 22.5 degrees now (as the bought R56 piece is), and at the joint 67.5 degrees round, at the full bank, the outer rail\'s end joint of one piece is 7 mm3 into the next piece (7.4 x 4.4 x 5.4 mm, at rail height); in 11.25 degree pieces the same joint was clear. An open fault in the banked end joints (geom/crossing.ts bankedEnd) on long pieces' },
   'Modular triple crossover R40': { problems: [/^track[12] is 3\d\d x 2\d\d at its tightest: over the 256 x 256 print bed/], warning: /sections don't fit the 256 x 256 print bed/,
     why: 'cut across only, its two sections three tracks wide (352 and 368 mm). Cut paths (expert) as the three-track R104 crossover has them don\'t fit it yet: between its frogs (14.4 and 19.4 studs along) only the line at 17 studs is 2 studs clear of both, and that line goes through three studs on the branches\' slanted sleepers that the stud finder misses (geom/studs.ts findStuds takes a stud\'s middle as the mean of its outline\'s points: two extra points on one side put it 0.1 mm off, over its 0.08 mm; docs/expert-mode.md, State, has the way to see it), found by the check that no stud is cut (cutpaths.shared.ts); and across alone leaves it 320 and 352 mm wide' },
   'Monorail ramp (as LEGO\'s)': { problems: [/^monorail-Low\+Ramp\+High-[123]'s file holds \d+ bodies: its part is 1 and the build made 0 supports/],

@@ -74,6 +74,8 @@ export function bankPoint(b: Bank, roll: number, x: number, z: number): [number,
  * 2 mm where the roll changes, each cut's vertices placed at their place on
  * the route, turned.
  */
+/** (mm) A banked sweep's first and last this much sampled every mm. */
+const END_FINE = 12;
 function sweepRolled(cs: CS, rt: Route, a: number, b: number, bank: Bank): Man {
   const st = segStarts(rt), at = new Set<number>([a, b]);
   rt.segments.forEach((sg, i) => {
@@ -93,6 +95,10 @@ function sweepRolled(cs: CS, rt: Route, a: number, b: number, bank: Bank): Man {
       }
     }
   });
+  // (and every mm of its first and last END_FINE: an arc's chords there followed it as far off its end's heading as half a
+  // chord turns, and a piece whose roll changes, sampled every 2 mm, met one held level at a different slant: the joint's
+  // rail-end tongue of one stood 7 mm3 into the next's rail (the banked curve's 22.5 degree pieces))
+  for (let d = 1; d < END_FINE; d += 1) { if (a + d < b) at.add(a + d); if (b - d > a) at.add(b - d); }
   const sl = [...at].sort((p, q) => p - q).filter((v, k, arr) => k === 0 || v - arr[k - 1] > 1e-4);
   const N = sl.length - 1;
   return cs.extrude(1, N - 1).warp((v) => {
