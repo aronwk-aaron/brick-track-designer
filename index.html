@@ -206,7 +206,9 @@
     /* plan and 3D */
     main { display: grid; grid-template-rows: var(--plan, 3fr) 6px var(--view, 2fr); min-height: 0; min-width: 0; }
     main.no3d { grid-template-rows: 1fr 0 0; } main.no3d #view3d, main.no3d #splitter { display: none; }
-    #splitter { cursor: row-resize; background: var(--line); }
+    #splitter { cursor: row-resize; background: var(--line); touch-action: none; position: relative; z-index: 5; }
+    /* (a finger's reach: the bar stays thin, the place to grab it is wider) */
+    #splitter::before { content: ''; position: absolute; left: 0; right: 0; top: -6px; bottom: -6px; }
     #splitter:hover, #splitter.dragging { background: var(--accent); }
     #plan { min-height: 0; min-width: 0; position: relative; overflow: hidden; }
     canvas#track { display: block; cursor: default; position: absolute; left: 0; top: 0; }
@@ -397,6 +399,8 @@
       input[type=number], input[type=text], input[type=search] { height: 36px; font-size: 16px; } /* (16px: no zoom on focus in iOS) */
       select { font-size: 16px; }
       #views button, #selbar button { height: 34px; }
+      main { grid-template-rows: var(--plan, 3fr) 12px var(--view, 2fr); }
+      #splitter::before { top: -14px; bottom: -14px; }
     }
     /* phones: the toolbar's lists show their whole text (the bar scrolls sideways), and the selection bar is one slim row that scrolls
        sideways too, clear of the legend's Help button, instead of wrapping over a fifth of the plan */

@@ -2266,8 +2266,11 @@ splitter.addEventListener('pointerdown', (e) => {
     const f = setSplit((ev.clientY - box.top) / box.height);
     try { localStorage.setItem('btd-split', String(f)); } catch { /* fine */ }
   };
+  // (a finger's drag can end in a cancel, not an up: either ends it)
+  const end = () => { splitter.removeEventListener('pointermove', mv); splitter.removeEventListener('pointerup', end); splitter.removeEventListener('pointercancel', end); splitter.classList.remove('dragging'); };
   splitter.addEventListener('pointermove', mv);
-  splitter.addEventListener('pointerup', () => { splitter.removeEventListener('pointermove', mv); splitter.classList.remove('dragging'); }, { once: true });
+  splitter.addEventListener('pointerup', end); splitter.addEventListener('pointercancel', end);
+  e.preventDefault();
 });
 splitter.addEventListener('dblclick', () => { mainEl.style.removeProperty('--plan'); mainEl.style.removeProperty('--view'); try { localStorage.removeItem('btd-split'); } catch { /* fine */ } });
 // (an empty plan: straight on to drawing)
