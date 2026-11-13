@@ -114,7 +114,10 @@ export const STAND = {
 /** The cross-bar lever housing (leverHousing 'crossbar'): its half length, and the lever's place in its end block (the
  * reference's clip-on lever unit's tab is 7 studs out; the lever's housing reaches 10 mm past it, so 54 keeps the bar
  * at 16 studs) */
-export const CROSSBAR = { halfLen: 8 * 8, leverX: 54 };
+export const CROSSBAR = { halfLen: 8 * 8, leverX: 54,
+  /** blades' pivots this far in from the end (mm) or further: the bar 4 studs in from the end, not 3 (from the end, not the
+   * toe: the reference's tabs are placed from the part's end, and a toe set further in doesn't make its blades longer) */
+  longBlade: 64 };
 
 export const SWITCH_DEFAULTS: SwitchParams = {
   gaugeStuds: 4, pointThrow: 3, pointClearance: 0.3, springPreload: 1, springThickness: 0.9,
@@ -291,7 +294,13 @@ export function pointsSet(routes: Route[], ps: PointsSet, p: SwitchParams, defau
   // (sprung blades on track alone: between two stud lines, where the slider's groove clears a baseplate's studs)
   // (on the design's grid, where it's square to the frame and off its stud lines: one of its corner lines, gl mod 8)
   const low = sprungLow(p), half = low ? 0 : 4, gl = low ? gridLineY(p.grid) : 0;
-  const fdbY0 = (p.bladeStyle === 'prototype' || p.bladeStyle === 'sprung') && p.mechStyle === 'plates'
+  // (the cross-bar housing, as the reference's: the bar 3 studs in from the end, clear of the end connector's row with the
+  // bar's own depth; 4 where the blades' pivots are 8 studs in from the end or more, as the reference's long switches have it (their lever
+  // tabs 3.4 to 3.5 studs in on the short ones, 4.5 on the long))
+  const crossbar0 = p.leverHousing === 'crossbar' && p.mechStyle === 'plates' && !p.throwModule && !p.throwStand && !p.throwNail && p.leverAt === undefined;
+  const crossbarY = Math.ceil((Math.max(toeY + 8, 8 + g.armW / 2, fdbPivotY >= CROSSBAR.longBlade ? 4 * 8 : 3 * 8,
+    p.throwAction === 'overcentre' ? 8 + 12 + 4 : p.throwAction === 'snap' && p.bladeStyle === 'prototype' ? 8 + 15 : 0) - half - gl) / 8 - 1e-6) * 8 + half + gl;
+  const fdbY0 = crossbar0 ? Math.min(crossbarY, Math.max(toeY + 8, fdbPivotY - 8)) : (p.bladeStyle === 'prototype' || p.bladeStyle === 'sprung') && p.mechStyle === 'plates'
     // (and with Peco's spring, room for its pin on the toe's side, past the plates' start)
     ? Math.min(low ? Math.max(toeY + 8, Math.min(fdbPivotY - 8, Math.round((fdbPivotY - 0.6 * (fdbPivotY - toeY) - gl) / 8) * 8 + gl)) : fdbYSimple,
       // (the snap clamp, with prototype blades: room for its half toward the toe, on the points' bed (switch/snap.ts: 14 and its pocket))
