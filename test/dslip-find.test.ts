@@ -1,7 +1,7 @@
 // Double slips found in plain routes (switch/dslip.ts), and their points, levers and check rails worked out as the
 // reference R104 double slip's: the same as they were once set by hand in its template.
 import { describe, expect, it } from 'vitest';
-import { type Design, OPTION_DEFAULTS, slipXYard, TEMPLATES, toRoutes } from '../src/app/design';
+import { type Design, OPTION_DEFAULTS, slipCrossover, slipXYard, TEMPLATES, toRoutes } from '../src/app/design';
 import { solve } from '../src/route/solver';
 import { findDoubleSlips, slipTrackwork, underHand } from '../src/switch/dslip';
 
@@ -48,7 +48,7 @@ describe('double slips found in plain routes', () => {
     expect(Object.keys(tw.points)).toHaveLength(23);
   });
   it('the double slip crossover: four double slips, each with its inner end where the diagonals cross', () => {
-    const { ds } = found(TEMPLATES['Double slip crossover R104']);
+    const { ds } = found(slipCrossover());
     expect(ds).toHaveLength(4);
     expect(ds.map((x) => x.centre.map((v) => Math.round(v / 8)).join(',')).sort()).toEqual(['0,0', '0,40', '16,0', '16,40']);
     expect(ds.every((x) => x.sets.filter((st) => st.inner).length === 2)).toBe(true);
