@@ -321,7 +321,8 @@ export function networkSplits(s: Scad, routes: Route[], sol: Solution, p: BasePa
     if (why0) {
       const sides = own === 'left' || own === 'right' ? [st.tside] : [st.tside, -st.tside], shifts = st.pp.mechStyle === 'plates' && ed?.throwShift === undefined ? [0, 1, -1, 2, -2, 3, -3, 4, -4, 5, -5] : [0];
       const t0 = st.tside, base = st.over, out0 = base.leverOffset ?? st.pp.leverOffset;
-      const outs = ed?.leverOffset !== undefined ? [0] : Array.from({ length: 11 }, (_, k) => k * 8);
+      // (a lever in a housing at a corner may go further, past the track beside it, its tie-rod under that track (switch/base.ts rodUnder): 16 studs)
+      const outs = ed?.leverOffset !== undefined ? [0] : Array.from({ length: base.leverAt !== undefined ? 17 : 11 }, (_, k) => k * 8);
       let found = false;
       // (a lever in a housing at a corner (leverAt) that's in the way there, where nothing clears it: beside its throw
       // bar instead, as without it (a yard's slips, end to end, their diagonal's ends between two tracks))

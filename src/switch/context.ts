@@ -351,6 +351,11 @@ export function pointsSet(routes: Route[], ps: PointsSet, p: SwitchParams, defau
     under: false, underOk: false,
     /** no room for a throw (it would run under other track) and p.boxedThrow 'nail': a nail switch (no lever; switch/base.ts) */
     nail: false,
+    /** (the lever's housing at a corner, out past the track beside it: a yard's slips, a diagonal's end between two
+     * tracks) the slider stays this side, ending just past its own sleepers; the tie-rod runs low, under that track in a
+     * channel cut up into its underside, out to the housing past it: the rod's leg along the track here (x, its
+     * middle, as modelled): filled in by switchPlan (switch/base.ts rodUnderX) */
+    rodUnder: undefined as number | undefined,
     /** (throwAction 'snap') the snap clamp, where there's room for it, between the blades (bed) or on the lever's arm: where the slider's post for it is, as modelled (along the slider): filled in by switchPlan */
     snap: undefined as { kx: number; on: 'bed' | 'arm' } | undefined,
   };

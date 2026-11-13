@@ -229,6 +229,24 @@ function fdbPostsOf(v: SetLike, p: BaseParams, all = false): Pt[] {
 /** (the slider in two parts) the pegs' size, how far the posts' piece reaches past a post, its least length, the pegs' offset across the bar (their teardrop's tip toward -y) */
 const SPLIT = { pegD: 1.4, past: 0.4, minLen: 6, pegY: 0.2 };
 /**
+ * (the lever's housing at a corner, out past the track beside it: rodUnder, a yard's slips, a diagonal's end between two
+ * tracks 16 apart, where no housing fits) The tie-rod runs low: on a baseplate's studs (its bottom over theirs by the
+ * clearance), flat, in a channel cut up into the underside of the track it passes under, so that track's rails and
+ * sleepers stay whole over it; it goes in from below, after the slider, whose end reaches over it (a finger) with a tab
+ * down into its hole. legW: its leg along the track; t: its thickness; finger: the least the slider's finger over it may be.
+ */
+const ROD_LEG_W = 4, ROD_UNDER = { t: 1.6, finger: 1.2 };
+/** (rodUnder) The low tie-rod's bottom and top. */
+function rodUnderZ(p: BaseParams): [number, number] {
+  const z0 = switchGlobals(p).pieceBottomZ + p.studH + p.pointClearance;
+  return [z0, z0 + ROD_UNDER.t];
+}
+/** (rodUnder) The low tie-rod's leg along the track: its middle (x), as modelled, just past the set's own sleepers' ends all its travel. */
+function rodUnderX(v: SetLike, p: BaseParams) {
+  const c = p.pointClearance, half = switchGlobals(p).sleeperLen / 2;
+  return v.throwDir * (half + 1 + ROD_LEG_W / 2 + c) - (v.throwDir < 0 ? v.leverTravel : 0);
+}
+/**
  * (blades on top, the throw arm under other track: network.ts moves a boxed-in
  * lever out past it) The slider in two parts, so nothing of it need pass under
  * that track but a plain bar in a closed tunnel. The bar, with the fork, goes in
@@ -942,6 +960,16 @@ export function switchPlan(routes: Route[], specs: SetSpec[], p: BaseParams = BA
     // track's trains run over it (a double slip's, in its middle): a nail switch instead, unless asked for the slider)
     // (the lever on other track's sleepers, or its arm across that track's four-foot, between or over its rails)
     const lat = (q: Pt) => Math.min(...foreign.map((rt) => Math.abs(routeLat(rt, q))));
+    // (the lever's housing at a corner, out past the track beside it (network.ts placeLever: a yard's slips, a
+    // diagonal's end between two tracks): the slider stays this side, ending just past its own sleepers, the tie-rod
+    // low under that track (rodUnderZ) to the housing. Only where the slider and its end's opening, open at the top,
+    // are clear of that track (its rails and sleepers), and there's room for the slider's finger over the rod)
+    if (v.corner && v.under && p.mechStyle === 'plates' && !v.three && !p.throwNail && (p.boxedThrow ?? 'slider') === 'slider'
+      && g.layerTop - (rodUnderZ(p)[1] + p.pointClearance) >= ROD_UNDER.finger - 1e-6) {
+      const xr = rodUnderX(v, p), e0 = xr - ROD_LEG_W / 2 - 2 * p.pointClearance - 0.5, e1 = xr + ROD_LEG_W / 2 + 2 * p.pointClearance + 0.5 + v.leverTravel;
+      const mouthClear = [e0, e1].every((x) => [v.throwY - 4, v.throwY + 4].every((y) => lat([x, y]) >= sleeperLen / 2 + 1));
+      if (mouthClear && !railIn(fRails, Math.min(xIn, e0, e1), Math.max(xIn, e0, e1), v.throwY - 3, v.throwY + 3)) { v.rodUnder = xr; v.under = false; }
+    }
     let onOther = foreign.length > 0 && Math.min(lat([v.leverX, v.throwY]), lat([v.leverX, v.leverY])) < sleeperLen / 2 + 2;
     for (let x = xIn; foreign.length && !onOther && v.throwDir * (x - v.leverX) <= 0; x += v.throwDir * 2) if (lat([x, v.throwY]) < G + HEAD_HW + 1) onOther = true;
     if ((p.throwNail || ((v.under || onOther) && (p.boxedThrow ?? 'slider') === 'nail')) && p.mechStyle === 'plates' && !v.three) { v.nail = true; v.under = false; v.stand = false; continue; }
@@ -1446,11 +1474,13 @@ export function switchGeometry(s: Scad, plan: SwitchPlan, extraCuts: Man[] = [])
     // (the lever's housing at a corner: cornerRects, the run up over the tie-rod)
     if (v.corner) {
       const rs = cornerRects(v);
-      rs.forEach((a, k) => parts.push(cube([a[1] - a[0], a[3] - a[2], (k === 2 ? rodTop() : bedTop) - pieceBottomZ], [a[0], a[2], pieceBottomZ])));
+      const tops = cornerTops(v);
+      rs.forEach((a, k) => parts.push(cube([a[1] - a[0], a[3] - a[2], tops[k] - pieceBottomZ], [a[0], a[2], pieceBottomZ])));
     } else parts.push(cube([Math.abs(xOut - xIn), g.armW, bedTop - pieceBottomZ], [Math.min(xIn, xOut), v.throwY - g.armW / 2, pieceBottomZ]));
     if (p.throwModule) parts.push(...bracketStuds(v).map(([x, y]) => T(t.stud(), [x, y, bedTop - 0.01])));
     // (raised with the lever at a corner, standing in the run under its top: on ballast its bed is lower, the run's top under PLATE_H + the raise)
-    else parts.push(...ears(v, v.corner && g.ballast ? Math.min(PLATE_H, rodTop() - cornerDz(v) - 0.2) : PLATE_H).map((m) => T(m, [0, 0, cornerDz(v)])));
+    // (rodUnder: the lever lower, its ears standing on the arm round it, down to its top)
+    else parts.push(...ears(v, v.rodUnder !== undefined ? PLATE_H - cornerDz(v) : v.corner && g.ballast ? Math.min(PLATE_H, rodTop() - cornerDz(v) - 0.2) : PLATE_H).map((m) => T(m, [0, 0, cornerDz(v)])));
     return s.union(parts);
   };
   /** (the plate-style throw) the bracket: a 3 x 3 stud plate on the arm's studs, slotted for the lever, with the ears on it. */
@@ -1735,6 +1765,8 @@ export function switchGeometry(s: Scad, plan: SwitchPlan, extraCuts: Man[] = [])
   /** The lever's opening through the arm, in x: over the fork's travel, and on toward the arm's end, short of it. */
   const fdbMouth = (v: SetV, at = fx(v)) => {
     const f0 = Math.min(at - forkHw, at + v.leverTravel + forkHw) - c - 1, f1 = Math.max(at - forkHw, at + v.leverTravel + forkHw) + c + 1;
+    // (rodUnder: over the slider's finger, the rod's leg and its travel, clear of the sleepers' ends)
+    if (v.corner && v.rodUnder !== undefined) { const a = rodX(v) - ROD.legW / 2 - 2 * c - 0.5, b = rodX(v) + ROD.legW / 2 + 2 * c + 0.5 + v.leverTravel; return [a, b]; }
     // (the lever's housing at a corner: at the throw bar only the tab's travel, the run's walls round it)
     if (v.corner) return [f0, f1];
     const xOut = v.throwDir * Math.ceil((v.throwDir * (v.leverX + v.throwDir * 10)) / STUD - 1e-6) * STUD, wall = xOut - v.throwDir * 2.4;
@@ -1785,17 +1817,17 @@ export function switchGeometry(s: Scad, plan: SwitchPlan, extraCuts: Man[] = [])
       return s.union([cube([Math.max(...xn) - Math.min(...xn) + 6, rodW, z1 - z0], [Math.min(...xn) - 3, v.throwY - rodW / 2, z0]), ...posts, ...fdbSliderExtra(v)]);
     }
     // (the bar as far as the over-centre spring's post, or the snap clamp's: with one moving blade it's past that blade's)
-    const xs = [...fdbPostAt(v).map((q) => q[0]), ...snapXs(v), ...(ocOn(v) ? [ocGeo(v).P[0]] : []), fx(v)], x0 = Math.min(...xs) - 3;
+    const xs = [...fdbPostAt(v).map((q) => q[0]), ...snapXs(v), ...(ocOn(v) ? [ocGeo(v).P[0]] : []), fx(v)], x0 = Math.min(...xs) - (v.rodUnder !== undefined && v.throwDir < 0 ? ROD.legW / 2 + c : 3);
     // (a switch stand's lever on the left: the bar's far end is past the far post, not the yoke: 3 past it as its other
     // end is, not the yoke's half-width (5), which ran 1 mm into the tunnel's end at the travel's end)
-    const x1 = Math.max(...xs) + (p.throwStand && v.throwDir < 0 ? 3 : v.corner ? ROD.tabW / 2 + 1 : forkHw);
+    const x1 = Math.max(...xs) + (p.throwStand && v.throwDir < 0 ? 3 : v.rodUnder !== undefined ? ROD.legW / 2 + c : v.corner ? ROD.tabW / 2 + 1 : forkHw);
     const slotW = g.leverTipD + 2 * c, m = v.forkMouthHw;
     // (the posts up into the blades, to just under the plates' tops; no wider than the bar, which prints on its side:
     // a teardrop's tip past a narrow bar's side (the sprung blades' on track alone) would leave the bar hanging over the bed)
     const band = sq([1000, rodW], [-500, v.throwY - rodW / 2]);
     const posts = fdbPostAt(v).map((q) => T(s.extrude(fdbPost2d(q, 0).intersect(band), postTop - z1 + 0.01), [0, 0, z1 - 0.01]));
     // (the lever's housing at a corner: no fork, a tab up into the tie-rod's hole instead)
-    const fork = v.corner ? cube([ROD.tabW, rodW, rodZ(v)[1] - 0.2 - z0], [fx(v) - ROD.tabW / 2, v.throwY - rodW / 2, z0])
+    const fork = v.rodUnder !== undefined ? s.union([]) : v.corner ? cube([ROD.tabW, rodW, rodZ(v)[1] - 0.2 - z0], [fx(v) - ROD.tabW / 2, v.throwY - rodW / 2, z0])
       : cube([2 * forkHw, rodW, v.forkTop - z0], [v.forkX - forkHw, v.throwY - rodW / 2, z0]);
     let body: Man;
     if (split(v)) {
@@ -1809,6 +1841,12 @@ export function switchGeometry(s: Scad, plan: SwitchPlan, extraCuts: Man[] = [])
       // (the stand's yoke: a slot as wide as its eccentric, open at the top for it to go in, down past where it's lowest)
       const sw2 = STAND.eccD / 2 + c, bot = v.standZ - v.standE * sind(STAND.overDeg) - STAND.eccD / 2 - c;
       return s.difference(body, [cube([2 * sw2, 2 * rodW, v.forkTop - bot + 1], [v.forkX - sw2, v.throwY - rodW, bot])]);
+    }
+    // (rodUnder: the bar's end a finger over the low rod's leg, a tab down into its hole)
+    if (v.rodUnder !== undefined) {
+      const [r0, r1] = rodZ(v), xr = rodX(v), e0 = v.throwDir > 0 ? xr - ROD.legW / 2 - c : x0 - 1, e1 = v.throwDir > 0 ? x1 + 1 : xr + ROD.legW / 2 + c;
+      return s.union([s.difference(body, [cube([e1 - e0 + 0.02, rodW + 2, r1 + c - z0 + 1], [e0 - 0.01, v.throwY - rodW / 2 - 1, z0 - 1])]),
+        cube([ROD.tabW, rodW, r1 + c - r0 - 0.2 + 0.01], [xr - ROD.tabW / 2, v.throwY - rodW / 2, r0 + 0.2])]);
     }
     if (v.corner) return body;
     const slot2d = W.CrossSection.union([
@@ -1837,15 +1875,15 @@ export function switchGeometry(s: Scad, plan: SwitchPlan, extraCuts: Man[] = [])
   // above, its hole over the tab; the lever last. Printed flat: the fork's prongs stand up (the slider's, beside a throw
   // bar, print on its side for its posts: the rod has none), nothing hangs under it.
   /** the rod's thickness, its long leg's width (x), its wall past the tab's hole, the slider's tab's width (x) */
-  const ROD = { t: 2.5, legW: 4, wall: 1.2, tabW: 3 };
-  /** The rod's bottom and top: on the slider's bar's top, by the clearance. */
-  const rodZ = (_v: SetV): [number, number] => [g.layerTop + c, g.layerTop + c + ROD.t];
-  /** (the lever's housing at a corner) how much higher the lever is than beside a throw bar: its fork is on the rod, not the slider. */
-  const cornerDz = (v: SetV) => (v.corner ? g.layerTop + c - g.layerZ0 : 0);
+  const ROD = { t: 2.5, legW: ROD_LEG_W, wall: 1.2, tabW: 3 };
+  /** The rod's bottom and top: on the slider's bar's top, by the clearance (rodUnder: low, on a baseplate's studs). */
+  const rodZ = (v: SetV): [number, number] => (v.rodUnder !== undefined ? rodUnderZ(p) : [g.layerTop + c, g.layerTop + c + ROD.t]);
+  /** (the lever's housing at a corner) how much higher the lever is than beside a throw bar: its fork is on the rod, not the slider (rodUnder: lower). */
+  const cornerDz = (v: SetV) => (v.corner ? rodZ(v)[0] - g.layerZ0 : 0);
   /** The run's top, over the rod's. */
   const rodTop = () => g.layerTop + c + ROD.t + 0.2;
   /** The rod's long leg's middle (x): on the track's side of the lever's ears (4 each side of it), clear of them all its travel (+x). */
-  const rodX = (v: SetV) => v.leverX - v.throwDir * (4 + 2 * c + ROD.legW / 2) - (v.throwDir > 0 ? v.leverTravel : 0);
+  const rodX = (v: SetV) => v.rodUnder ?? v.leverX - v.throwDir * (4 + 2 * c + ROD.legW / 2) - (v.throwDir > 0 ? v.leverTravel : 0);
   /** Where the slider's end is, for its tab and the opening the tab's in (fdbMouth): beside a throw bar, its fork, for the lever's tip. */
   const fx = (v: SetV) => (v.corner ? rodX(v) : v.forkX);
   /** The rod's long leg's ends (y): at the lever, the short leg's far side; at the throw bar, its wall past the tab's hole. */
@@ -1870,11 +1908,23 @@ export function switchGeometry(s: Scad, plan: SwitchPlan, extraCuts: Man[] = [])
   const cornerRects = (v: SetV): [number, number, number, number][] => {
     const xIn = v.throwStockX, r = rodRun(v), hw = rodW / 2 + c + ROD.wall + c + 2, xr = v.throwDir > 0 ? r.x0 : r.x1;
     const lo = (x: number) => Math.min(xIn, x), hi = (x: number) => Math.max(xIn, x);
+    // (the rod low under the track beside it, rodUnder: at the throw bar the arm out to the rod's leg along the track,
+    // and round it; a low bridge over the rod along to the lever (cornerTops), past that track; the arm round the lever)
+    if (v.rodUnder !== undefined) {
+      const xo = v.throwDir > 0 ? r.b + 2 : r.a - 2, hb = rodW / 2 + c + 2;
+      const xOut = v.throwDir * Math.ceil((v.throwDir * (v.leverX + v.throwDir * 10)) / STUD - 1e-6) * STUD, xl = v.leverX - v.throwDir * 12;
+      return [[lo(xo), hi(xo), v.throwY - hw, v.throwY + hw], [r.a - 2, r.b + 2, Math.min(r.gy0, v.leverY - hb) - 2, Math.max(r.gy1, v.leverY + hb) + 2],
+        [Math.min(xo, xl), Math.max(xo, xl), v.leverY - hb, v.leverY + hb], [Math.min(xl, xOut), Math.max(xl, xOut), v.leverY - g.armW / 2, v.leverY + g.armW / 2]];
+    }
     return [[lo(xr), hi(xr), v.throwY - hw, v.throwY + hw], [lo(xr), hi(xr), v.leverY - g.armW / 2, v.leverY + g.armW / 2], [r.x0, r.x1, Math.min(r.y0, v.throwY - hw), Math.max(r.y1, v.throwY + hw)]];
   };
+  /** (the lever's housing at a corner) cornerRects' tops: the run's raised over the rod; rodUnder's bridge low over it, under the track it passes. */
+  const cornerTops = (v: SetV) => (v.rodUnder !== undefined ? [bedTop, bedTop, rodZ(v)[1] + c + 1.2, bedTop] : [bedTop, bedTop, rodTop()]);
   const rodGroove = (v: SetV) => {
     const r = rodRun(v), z = rodZ(v)[0] - c;
-    return s.union([cube([r.b - r.a, r.gy1 - r.gy0, 30], [r.a, r.gy0, z]), cube([r.sb - r.sa, rodW + 2 * c, 30], [r.sa, v.leverY - rodW / 2 - c, z])]);
+    // (rodUnder: a channel cut up from the underside to over the rod, open below, where it goes in)
+    const [za, h] = v.rodUnder !== undefined ? [pieceBottomZ - 1, rodZ(v)[1] + c - pieceBottomZ + 1] : [z, 30];
+    return s.union([cube([r.b - r.a, r.gy1 - r.gy0, h], [r.a, r.gy0, za]), cube([r.sb - r.sa, rodW + 2 * c, h], [r.sa, v.leverY - rodW / 2 - c, za])]);
   };
   /** The fork for the lever's tip, the slider's beside a throw bar, at y, dz higher, and its slot (to cut from it and what it's on). */
   const forkSolid = (v: SetV, y: number, dz: number) => {

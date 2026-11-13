@@ -1094,7 +1094,7 @@ function editChecks(items: TrackworkItem[], tw: Trackwork, rs: Route[], checks: 
 
 /** A points set's lever, as planned (switch/base.ts): what its item and keep-outs are made from. */
 interface LeverPlan {
-  throwDir: number; leverX: number; throwY: number; leverY?: number; corner?: boolean; forkX?: number; throwStockX: number; throwEdgeX: number; leverMinD: number; tineLen: number; pivotPt: [number, number];
+  throwDir: number; leverX: number; throwY: number; leverY?: number; corner?: boolean; forkX?: number; /** (switch/base.ts) the low tie-rod's leg, under the track beside it */ rodUnder?: number; throwStockX: number; throwEdgeX: number; leverMinD: number; tineLen: number; pivotPt: [number, number];
   ra: Route; rb: Route; sHeel: number; leverTravel: number; fixed?: number; three?: { S: Route; own?: boolean }; fdb?: { pivot: [number, number]; post: [number, number] }[];
 }
 /** A points set's lever on the plan (it can be dragged there). avoid: (the plate-style) where no cut goes, its parts' keep-outs added; G: the rails' offset. */
@@ -1122,7 +1122,7 @@ function leverItem(items: TrackworkItem[], tw: Trackwork, avoid: Keep[] | undefi
     // (the lever in a housing at a corner: nor the run along to it with the tie-rod, nor the arm round the lever there)
     if (v.corner && v.leverY !== undefined && v.forkX !== undefined) {
       const ly = v.leverY, dy = Math.sign(ly - v.throwY);
-      for (let y = v.throwY; dy * (y - ly) <= 0; y += dy * 4) avoid.push(keep(wd(v.forkX, y), 13));
+      for (let y = v.throwY; dy * (y - ly) <= 0; y += dy * 4) avoid.push(keep(wd(v.rodUnder ?? v.forkX, y), 13));
       for (let x = v.throwStockX; v.throwDir * x <= v.throwDir * xOut + 1e-9; x += v.throwDir * 4) avoid.push(keep(wd(x, ly), hw + 1));
     }
   }
