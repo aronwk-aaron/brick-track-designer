@@ -139,6 +139,8 @@ const num = (v: number, set: (n: number) => void, step = 1, label = '', range?: 
   return i;
 };
 /** A small line under fields saying what they take. */
+/** A touch screen (the words for a finger, not a mouse). */
+const finger = () => matchMedia('(pointer: coarse)').matches;
 const rangeNote = (text: string) => { const n = document.createElement('small'); n.className = 'desc'; n.style.color = 'var(--muted)'; n.textContent = text; return n; };
 const btn = (text: string, fn: () => void, title = '') => {
   const b = document.createElement('button'); b.type = 'button'; b.textContent = text; b.title = title;
@@ -396,7 +398,7 @@ function renderPalette() {
     canvas.setSelection([next]);
   };
   const note = (t: string, warn = false) => { const p = document.createElement('div'); p.className = 'tnote'; if (warn) p.style.color = 'var(--warn, #c0392b)'; p.textContent = t; body.append(p); };
-  note(at !== undefined ? `Laid on the end of ${design.routes[at].name || `route ${at + 1}`}.` : sel.length > 1 ? 'Several routes selected: a part follows the pointer and snaps to open ends; click to put it down. Select one route to lay parts on its end.' : 'Nothing selected: a part follows the pointer and its ends snap to open ends near them (hold Alt to place freely); click to put it down. The next go on its end.');
+  note(at !== undefined ? `Laid on the end of ${design.routes[at].name || `route ${at + 1}`}.` : sel.length > 1 ? (finger() ? 'Several routes selected: drag the part into place, its ends snap to open ends; Put down lays it. Select one route to lay parts on its end.' : 'Several routes selected: a part follows the pointer and snaps to open ends; click to put it down. Select one route to lay parts on its end.') : finger() ? 'Nothing selected: drag the part into place, its ends snap to open ends near them (Snap off places freely); Put down lays it. The next go on its end.' : 'Nothing selected: a part follows the pointer and its ends snap to open ends near them (hold Alt to place freely); click to put it down. The next go on its end.');
   if (at !== undefined) {
     const f = document.createElement('label'); f.className = 'pfrom'; f.title = 'Switches: which end of the switch goes on the end of the selected route. The route goes on through the switch to its toe; the other way out of the toe is a new route.';
     const sp = document.createElement('span'); sp.textContent = 'Switch laid from its';
@@ -1944,6 +1946,7 @@ systemSel.append(new Option('Track: train', 'train'), new Option('Track: monorai
 try { const v = localStorage.getItem('btd-system'); if (v === 'monorail') systemSel.value = v; } catch { /* fine */ }
 systemSel.addEventListener('change', () => { try { localStorage.setItem('btd-system', systemSel.value); } catch { /* fine */ } });
 radiusSel.after(systemSel);
+let touchbarReady = false;
 const canvas = new TrackCanvas($<HTMLCanvasElement>('track'), {
   design: () => design,
   changed: (commit) => changed(commit, commit), // (one undo step per finished action, none for each mouse move)
@@ -1976,8 +1979,28 @@ const canvas = new TrackCanvas($<HTMLCanvasElement>('track'), {
   status: (hint, at) => {
     if (hintEl.textContent !== hint) { hintEl.textContent = hint; $('plan').style.setProperty('--hint-h', `${hintEl.offsetHeight}px`); }
     coordsEl.textContent = at ? `x ${at[0]}, y ${at[1]} studs` : '';
+    // (not from the first draw, inside the constructor: the bar's made further down)
+    if (touchbarReady) renderTouchbar();
   },
 });
+// The touch bar: on a touch screen, buttons for what keys do while placing a part, drawing, drawing a cut path or using a tool.
+const touchbarEl = $('touchbar');
+let touchbarSig = '';
+function renderTouchbar() {
+  const tools = canvas.touchTools(), sig = JSON.stringify(tools);
+  if (sig === touchbarSig) return;
+  touchbarSig = sig;
+  touchbarEl.replaceChildren(...tools.map((t) => {
+    const b = document.createElement('button'); b.type = 'button'; b.dataset.act = t.id; b.textContent = t.label; b.title = t.title; b.setAttribute('aria-label', t.title);
+    if (t.on !== undefined) b.setAttribute('aria-pressed', String(t.on));
+    if (t.primary) b.className = 'primary';
+    b.disabled = !!t.off;
+    return b;
+  }));
+  touchbarEl.hidden = !tools.length;
+}
+touchbarReady = true;
+touchbarEl.addEventListener('click', (e) => { const b = (e.target as HTMLElement).closest<HTMLButtonElement>('button[data-act]'); if (b && !b.disabled) canvas.touchDo(b.dataset.act!); });
 // Plan layers on and off: click one in the legend (remembered).
 // (the anti-stud tubes off to start with: a ring at every one cluttered the plan)
 canvas.hidden.add('grips');
@@ -2992,6 +3015,8 @@ for (const menu of document.querySelectorAll<HTMLElement>('header .menu')) {
     (menu.querySelector<HTMLElement>('button:not(:disabled), a'))?.focus();
   });
   menu.addEventListener('click', (e) => { if ((e.target as Element).closest('button, a')) menu.hidePopover(); });
+  // (a finger on the plan or the 3D view, which take the touch for themselves, didn't shut it: any press outside it and its button does)
+  addEventListener('pointerdown', (e) => { if (menu.matches(':popover-open') && !menu.contains(e.target as Node) && !btn.contains(e.target as Node)) menu.hidePopover(); }, true);
   // (up and down move between the items)
   menu.addEventListener('keydown', (e) => {
     if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return;

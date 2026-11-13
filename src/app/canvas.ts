@@ -71,6 +71,8 @@ export interface OverlayItem { kind: string; key: string; at: [number, number]; 
   off?: boolean; forced?: boolean; cand?: { ok: boolean; why: string }; routes?: string[];
   lever?: { frame: [number, number, number]; side: number; stockX: number; edge: number; minD: number; pivotY: number; maxTine: number; leverOffset: number; springLength: number; blade?: 'left' | 'right' } }
 
+/** A button on the touch bar (canvas touchTools): id, the key it stands for (or alt, joined); on: a toggle that's on; off: can't now. */
+export type TouchTool = { id: string; label: string; title: string; on?: boolean; off?: boolean; primary?: boolean; group?: number };
 export interface CanvasHost {
   design(): Design;
   /** The design changed (commit = an action finished, worth an undo step). */
@@ -823,14 +825,7 @@ export class TrackCanvas {
     el.addEventListener('mouseleave', () => { if (this.hoverRoute !== undefined) { this.hoverRoute = undefined; this.drawSoon(); } });
     el.addEventListener('mousedown', (e) => { this.touching = false; this.down(e); });
     // (a double click on a track, in Select: it and every track joined to it selected)
-    el.addEventListener('dblclick', (e) => {
-      if (this.mode !== 'select' || this.active || this.placing || this.pathDraw || this.splitArmed || this.cutArmed || this.stretchArmed || this.sleeperArmed || !this.picks('track')) return;
-      const w = this.evWorld(e), hit = this.nearTrack(w, this.reach(18)) ?? this.onBand(w);
-      if (!hit) return;
-      const all = this.withJoined([hit.route]), name = this.host.design().routes[hit.route].name || `Route ${hit.route + 1}`;
-      this.setSelection(all);
-      this.say(all.length > 1 ? `${name} and the ${all.length - 1} joined to it selected` : `${name} isn't joined to another track`, 2500);
-    });
+    el.addEventListener('dblclick', (e) => { this.selectJoinedAt(this.evWorld(e), 18); });
     addEventListener('mousemove', (e) => this.move(e));
     addEventListener('mouseup', (e) => this.up(e));
     el.addEventListener('wheel', (e) => this.wheel(e), { passive: false });
@@ -987,55 +982,150 @@ export class TrackCanvas {
     return best && { route: best.route, pose: best.pose, end: best.end };
   }
 
+  /** (select) Every track joined to the one at w selected (a double click, a double tap, or Select joined): false when there's none there. */
+  private selectJoinedAt(w: [number, number] | undefined, px = 18): boolean {
+    if (!w || this.mode !== 'select' || this.active || this.placing || this.pathDraw || this.splitArmed || this.cutArmed || this.stretchArmed || this.sleeperArmed || !this.picks('track')) return false;
+    const hit = this.nearTrack(w, this.reach(px)) ?? this.onBand(w);
+    if (!hit) return false;
+    this.selectJoined([hit.route]);
+    return true;
+  }
+  private selectJoined(routes: number[]) {
+    if (!routes.length) return;
+    const all = this.withJoined(routes), name = this.host.design().routes[routes[0]].name || `Route ${routes[0] + 1}`;
+    this.setSelection(all);
+    this.say(all.length > routes.length ? (routes.length > 1 ? `${all.length} joined tracks selected` : `${name} and the ${all.length - 1} joined to it selected`) : `${routes.length > 1 ? 'They aren\'t' : `${name} isn't`} joined to another track`, 2500);
+  }
+
+  // ---------- touch: the bar of buttons for what only keys do (placing a part, drawing, a cut path, a tool waiting for a tap) ----------
+  /** The touch bar's Alt: no snapping (placing, drawing, an end dragged), or (moving tracks) the selected ones alone. */
+  private touchAlt = false;
+  private touchKind = '';
+  /** The buttons for the touch bar now (none with a mouse): what keys do for what's going on. */
+  touchTools(): TouchTool[] {
+    if (!this.touching && !matchMedia('(pointer: coarse)').matches) return [];
+    const armed = this.splitArmed || this.cutArmed || this.stretchArmed || this.sleeperArmed;
+    const kind = this.placing ? 'place' : this.pathDraw ? 'path' : armed ? 'armed' : this.mode === 'measure' ? 'measure' : this.active ? 'draw' : this.mode === 'select' && this.selection().length && !this.selItemNow ? 'select' : '';
+    if (kind !== this.touchKind) { this.touchKind = kind; this.touchAlt = false; this.alt = false; }
+    const cancel: TouchTool = { id: 'Escape', label: 'Cancel', title: 'Stop without changing anything (Esc)' };
+    const snap: TouchTool = { id: 'alt', label: 'Snap', title: 'Snapping onto track ends and guides: tap to place freely (Alt)', on: !this.touchAlt };
+    switch (kind) {
+      case 'place': return [
+        { id: 'R', label: '⟲', title: 'Turn it left 22.5° (Shift+R)', group: 1 }, { id: 'r', label: '⟳', title: 'Turn it right 22.5° (R)', group: 1 }, { id: 'm', label: 'Mirror', title: 'Mirror it (M)', group: 1 },
+        { id: 'ArrowLeft', label: '←', title: 'Move it a stud left (arrow keys)', group: 2 }, { id: 'ArrowUp', label: '↑', title: 'Move it a stud up', group: 2 }, { id: 'ArrowDown', label: '↓', title: 'Move it a stud down', group: 2 }, { id: 'ArrowRight', label: '→', title: 'Move it a stud right', group: 2 },
+        snap, { id: 'Enter', label: 'Put down', title: 'Put it down where it is (Enter)', primary: true }, cancel];
+      case 'path': return [
+        { id: 'Backspace', label: 'Undo corner', title: 'Take the last corner back (Backspace)', off: !this.pathDraw!.length },
+        { id: 'Enter', label: 'Done', title: 'End the cut path here (Enter)', primary: true, off: this.pathDraw!.length < 2 }, cancel];
+      case 'armed': return [cancel];
+      case 'measure': return this.meas.a ? [{ id: 'Escape', label: 'Clear', title: 'Clear the measurement (Esc)' }] : [];
+      case 'draw': return [snap, { id: 'Escape', label: 'Stop', title: 'Stop laying this track (Esc, or hold a finger still)', primary: true }];
+      case 'select': {
+        const sel = this.selection(), joined = this.withJoined(sel).length > sel.length;
+        return joined ? [{ id: 'joined', label: 'Select joined', title: 'Select every track joined to these (double-tap a track)' },
+          { id: 'alt', label: 'Move alone', title: 'Dragged, the selected tracks leave the tracks joined to them behind (Alt)', on: this.touchAlt }] : [];
+      }
+    }
+    return [];
+  }
+  /** A touch bar button pressed: what its key does. */
+  touchDo(id: string) {
+    if (id === 'alt') { this.touchAlt = !this.touchAlt; this.alt = this.touchAlt && this.touchKind !== 'select'; this.guideKey = ''; return this.draw(); }
+    if (id === 'joined') { this.selectJoined(this.selection()); return this.draw(); }
+    const key = id.length === 1 ? id.toLowerCase() : id;
+    this.key({ key, code: '', shiftKey: id === 'R', ctrlKey: false, metaKey: false, altKey: false, target: this.el, preventDefault() {} } as unknown as KeyboardEvent, true);
+    this.draw();
+  }
+
   // ---------- input ----------
   /**
    * Touch: one finger is the mouse's left button (select, drag, draw), but on
-   * empty ground in Select it pans (as the middle button); two fingers pinch
-   * to zoom and drag to pan.
+   * empty ground in Select it pans (as the middle button), and held still
+   * there first, it drags out a box to select; two fingers pinch to zoom and
+   * drag to pan. A part being placed is dragged about (a tap moves it there;
+   * the touch bar puts it down). Drawing, the track follows the finger and
+   * is laid where it's lifted; a finger held still stops (a right click).
+   * A double tap on a track selects what's joined to it.
+   * (touch events, not pointer events: a pen on a tablet sends them too, and
+   * the pinch needs both fingers at once)
    */
   private touch() {
     const el = this.el;
     const fake = (t: { clientX: number; clientY: number }, button = 0) =>
-      ({ clientX: t.clientX, clientY: t.clientY, button, buttons: 1, shiftKey: false, ctrlKey: false, metaKey: false, altKey: false, preventDefault() {}, stopPropagation() {} }) as unknown as MouseEvent;
-    let pinch: { d: number; scale: number; world: [number, number] } | undefined, last: { clientX: number; clientY: number } | undefined, oneButton = 0, start: [number, number] = [0, 0];
-    // (a finger held still on a track in Select: it's added to the selection, or taken out, as Shift+click with a mouse)
-    let hold: number | undefined, held = false;
+      ({ clientX: t.clientX, clientY: t.clientY, button, buttons: 1, shiftKey: false, ctrlKey: false, metaKey: false, altKey: this.touchAlt, target: el, preventDefault() {}, stopPropagation() {} }) as unknown as MouseEvent;
+    let pinch: { d: number; scale: number; world: [number, number] } | undefined, last: { clientX: number; clientY: number } | undefined, oneButton = 0, start: [number, number] = [0, 0], t0 = 0;
+    // (a finger held still on a track in Select: it's added to the selection, or taken out, as Shift+click with a mouse;
+    // on empty ground: a box dragged out from there; drawing: the track stopped)
+    let hold: number | undefined, held = false, boxing = false, moved = false;
+    // (a part being placed, dragged: where the finger took it, from where it was; drawing: laid where the finger's lifted)
+    let grab: [number, number] | undefined, drawing = false, lastTap: { t: number; x: number; y: number } | undefined;
     const noHold = () => { clearTimeout(hold); hold = undefined; };
+    // (a hold's timer, and what it does: run when the finger lifts too, if it was down long enough and the timer hadn't had its
+    // turn yet (a busy page runs the lift's event first))
+    let holdDo: (() => void) | undefined, holdMs = 0;
+    const arm = (ms: number, f: () => void) => { holdDo = f; holdMs = ms; hold = window.setTimeout(() => { hold = undefined; f(); }, ms); };
+    const worldOf = (t: { clientX: number; clientY: number }) => { const r = el.getBoundingClientRect(); return this.toWorld(t.clientX - r.left, t.clientY - r.top); };
     const mid = (e: TouchEvent): [number, number] => { const r = el.getBoundingClientRect(), [a, b] = [e.touches[0], e.touches[1]]; return [(a.clientX + b.clientX) / 2 - r.left, (a.clientY + b.clientY) / 2 - r.top]; };
     const spread = (e: TouchEvent) => Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY);
     el.addEventListener('touchstart', (e) => {
       e.preventDefault();
       this.touching = true;
-      if (e.touches.length === 1 && !pinch) {
-        const t = e.touches[0], r = el.getBoundingClientRect(), w = this.toWorld(t.clientX - r.left, t.clientY - r.top);
+      // (one finger down alone: a pinch before it is over, even one whose last finger was lifted off a chip, not the plan)
+      if (e.touches.length === 1) pinch = undefined;
+      if (e.touches.length === 1) {
+        const t = e.touches[0], w = worldOf(t);
+        last = t; start = [t.clientX, t.clientY]; t0 = e.timeStamp; held = false; boxing = false; moved = false; grab = undefined; drawing = false;
+        noHold();
+        if (this.placing) {
+          const at = this.mouse ?? this.toWorld(el.clientWidth / 2, el.clientHeight / 2);
+          grab = [at[0] - w[0], at[1] - w[1]];
+          return;
+        }
+        if (this.mode === 'draw' && this.active) {
+          drawing = true; this.mouse = w; this.aimEither(); this.drawSoon();
+          arm(550, () => { held = true; drawing = false; this.stopDrawing(); navigator.vibrate?.(15); });
+          return;
+        }
         // (on empty ground in Select: pan, as the middle button; on track, a lever or points: as the left button)
         const onSomething = !!(this.handleAt(w) || this.leverAt(w) || this.itemAt(w) || this.nearTrack(w, this.reach(24)) || this.onBand(w));
         oneButton = this.mode === 'select' && !onSomething ? 1 : 0;
-        last = t; start = [t.clientX, t.clientY]; this.mouse = w; held = false;
+        this.mouse = w;
         const before = this.selection();
         this.down(fake(t, oneButton));
-        noHold();
         const on = this.mode === 'select' && !this.handleDrag && !this.leverDrag && !this.itemDrag && !this.drag && !this.tableDrag ? this.nearTrack(w, this.reach(24)) ?? this.onBand(w) : undefined;
-        if (on) hold = window.setTimeout(() => {
-          hold = undefined; held = true;
+        if (on) arm(500, () => {
+          held = true;
           // (the press itself selected it alone, ready to drag: put back as it was, then this one added or taken out)
           this.moving = undefined; this.selected = before[0]; this.extra = new Set(before.slice(1));
           this.toggleSelected(on.route);
           navigator.vibrate?.(15);
           this.host.select(this.selected); this.draw();
-        }, 500);
+        });
+        // (held still on empty ground: the pan let go of, and a box dragged out from there selects what it touches)
+        else if (oneButton === 1 && this.picks('track')) arm(450, () => {
+          boxing = true;
+          this.up(fake({ clientX: start[0], clientY: start[1] }, 1));
+          this.box = { x0: w[0], y0: w[1], x1: w[0], y1: w[1], add: false };
+          navigator.vibrate?.(15);
+          this.say('Drag out a box: what it touches is selected', 2500); this.draw();
+        });
         return;
       }
       noHold();
-      if (e.touches.length === 2) {
-        // (a second finger: whatever the first began ends where it is, and the two pinch and pan)
-        if (last && !pinch) this.up(fake(last, oneButton));
-        const m = mid(e);
-        pinch = { d: spread(e), scale: this.scale, world: this.toWorld(m[0], m[1]) };
-      }
+      if (e.touches.length === 2) startPinch(e);
     }, { passive: false });
+    // (a second finger: whatever the first began ends where it is, and the two pinch and pan; the second can come down on a chip over
+    // the plan, the legend or the hint, and the plan hears of it only as the first finger moves)
+    const startPinch = (e: TouchEvent) => {
+      noHold(); held = false;
+      if (last && !pinch && !grab && !drawing) this.up(fake(last, oneButton));
+      grab = undefined; drawing = false; boxing = false; this.box = undefined;
+      const m = mid(e);
+      pinch = { d: spread(e), scale: this.scale, world: this.toWorld(m[0], m[1]) };
+    };
     el.addEventListener('touchmove', (e) => {
       e.preventDefault();
+      if (!pinch && e.touches.length >= 2) startPinch(e);
       if (pinch && e.touches.length >= 2) {
         const m = mid(e);
         this.scale = Math.min(80, Math.max(0.5, (pinch.scale * spread(e)) / Math.max(1, pinch.d)));
@@ -1045,19 +1135,39 @@ export class TrackCanvas {
       }
       if (!pinch && e.touches.length === 1) {
         if (held) return;
-        if (Math.hypot(e.touches[0].clientX - start[0], e.touches[0].clientY - start[1]) >= 8) noHold();
-        last = e.touches[0]; this.move(fake(last, oneButton));
+        const t = e.touches[0];
+        if (Math.hypot(t.clientX - start[0], t.clientY - start[1]) >= 8) { noHold(); moved = true; }
+        last = t;
+        if (grab && this.placing) {
+          if (!moved) return;
+          const w = worldOf(t); this.mouse = [w[0] + grab[0], w[1] + grab[1]];
+          this.placing.moved = true; this.placingMoved(t.clientX, t.clientY); this.drawSoon();
+          return;
+        }
+        if (drawing) { this.mouse = worldOf(t); this.aimEither(); this.drawSoon(); return; }
+        this.move(fake(last, oneButton));
       }
     }, { passive: false });
     const end = (e: TouchEvent) => {
       e.preventDefault();
+      if (hold !== undefined && !moved && !pinch && e.type === 'touchend' && e.timeStamp - t0 >= holdMs) { noHold(); holdDo?.(); }
       noHold();
       if (pinch) { if (e.touches.length === 0) pinch = undefined; last = undefined; return; }
       if (held) { held = false; last = undefined; return; }
-      const t = e.changedTouches[0] ?? last;
+      const t = e.changedTouches[0] ?? last, tap = !moved && e.timeStamp - t0 < 350;
+      // (a part being placed: a tap moves it there; dragged, it stays where it's let go of, for the touch bar's Put down)
+      if (grab) { grab = undefined; if (tap && this.placing && e.type === 'touchend') { this.mouse = worldOf(t); this.placing.moved = true; this.draw(); } last = undefined; return; }
+      // (drawing: laid where the finger's lifted)
+      if (drawing) { drawing = false; if (e.type === 'touchend') this.down(fake(t)); last = undefined; return; }
       if (last) this.up(fake(t, oneButton));
+      if (boxing) { boxing = false; last = undefined; this.draw(); return; }
       // (a tap on empty ground: nothing selected, as a click there)
-      if (last && oneButton === 1 && Math.hypot(t.clientX - start[0], t.clientY - start[1]) < 8) { this.setSelection([]); this.draw(); }
+      if (last && oneButton === 1 && !moved) { this.setSelection([]); this.draw(); }
+      // (two taps on a track, quickly: what's joined to it selected, as a double click)
+      if (last && tap && oneButton === 0 && this.mode === 'select') {
+        if (lastTap && performance.now() - lastTap.t < 400 && Math.hypot(t.clientX - lastTap.x, t.clientY - lastTap.y) < 24) { lastTap = undefined; this.selectJoinedAt(worldOf(t), 24); }
+        else lastTap = { t: performance.now(), x: t.clientX, y: t.clientY };
+      } else lastTap = undefined;
       last = undefined;
     };
     el.addEventListener('touchend', end, { passive: false });
@@ -1866,7 +1976,7 @@ export class TrackCanvas {
       }
 
       if (this.selected !== undefined && this.selection().length === 1 && this.host.design().routes[this.selected]?.locked) return `${this.host.design().routes[this.selected].name || 'The route'} is locked · unlock it on its card to move or change it · copy still works`;
-      if (this.selected !== undefined) return `${this.selection().length > 1 ? `${this.selection().length} tracks` : this.host.design().routes[this.selected]?.name ?? ''} selected · drag to move · ${matchMedia('(pointer: coarse)').matches ? 'hold a finger on a track to add it or take it out' : 'Shift+click adds more · double-click selects all that is joined to it · Delete removes · [ ] pick another · Tab its handles · Enter lays track on'}`;
+      if (this.selected !== undefined) return `${this.selection().length > 1 ? `${this.selection().length} tracks` : this.host.design().routes[this.selected]?.name ?? ''} selected · drag to move · ${matchMedia('(pointer: coarse)').matches ? 'hold a finger on a track to add it or take it out · double-tap selects what is joined to it' : 'Shift+click adds more · double-click selects all that is joined to it · Delete removes · [ ] pick another · Tab its handles · Enter lays track on'}`;
       if (!this.host.design().routes.length) return 'No track yet: press D (or ✎ Draw) to lay some';
       return 'Click a track to select it, drag it to move it (joined tracks come along) · drag an end to reshape it · D to draw';
     }

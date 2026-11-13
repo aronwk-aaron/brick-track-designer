@@ -85,7 +85,7 @@ jobs:
     # a bad file, Auto off; under a minute, stopped at 6 by the script itself)
     name: Browser smoke test
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 14
     steps:
       - uses: actions/checkout@v7
       - uses: pnpm/action-setup@v6
@@ -99,6 +99,10 @@ jobs:
       - run: npx tsx scripts/browser-smoke.mts
         env:
           SMOKE_MINUTES: 6
+      # (the same on a tablet's touch screen, fingers only, landscape and portrait)
+      - run: npx tsx scripts/touch-smoke.mts
+        env:
+          SMOKE_MINUTES: 4
 
   osv-scan:
     name: OSV-Scanner (deps + actions)
