@@ -181,6 +181,8 @@ export interface PieceOptions {
   curveStuds?: 'grid' | 'follow';
   /** The throw: 'bracket' (the plate-style: the lever on its own 3 x 3 stud bracket, on studs on the arm), 'built-in' (the ears part of the arm) or 'stand' (a switch stand, a ground throw as Caboose Industries': a handle swung over on an eccentric, locked at each end; plate-style points). */
   throwStyle?: 'bracket' | 'built-in' | 'stand' | 'nail';
+  /** (blades on top, the lever built in) The lever's housing: the arm out to the lever ('arm', default), or a cross-bar 16 studs long with a 4 x 3 stud block at each end, the lever in the block on its side ('crossbar', as the reference range's). */
+  leverHousing?: 'arm' | 'crossbar';
   /** Points with no room for a throw (its arm across other track, a double slip's in its middle): a nail switch ('nail') or the slider under that track to a lever past it ('slider', default). */
   boxedThrow?: 'nail' | 'slider';
   /** (plate-style points) What holds the points, and what a train trailing through them does: 'detent' (the lever's click), 'overcentre' (Peco's V spring: they snap over and stay), 'snap' (the snap clamp: a toggle on knife edges). (the sprung blades spring back on their own.) */
@@ -357,7 +359,7 @@ export function readDesign(v: unknown): Design {
 export const OPTION_DEFAULTS: PieceOptions = {
   throwSide: 'auto', threeWayLevers: 2, leverOffset: 8, pointThrow: 3, pointClearance: 0.3, springPreload: 1, springThickness: 0.9, springLength: 40,
   flangeway: 3, flangewayDepth: 3, checkRailLen: 30, checkRailW: 1, checkRailFlare: 1.5, printBedX: 256, printBedY: 256, baseplate: 0, baseplateX: 0, baseplateY: 0, ballast: 'none', bottomStyle: 'antistud', joint: 'lego', pointsModule: 'built-in', endSupports: true, tongueRails: 'all', grip: 'edges', pointsPieces: 1, pointBlades: 2, throwStyle: 'built-in', mechStyle: 'plates', curveStuds: 'follow',
-  throwAction: 'detent', bladeStyle: 'sprung', bladeLip: 'pin', sleepers: 'sleepers', undersideGrid: 'baseplate', splitTrack: 'lengths', pieceLengthStuds: 16, studsAtCuts: 'off', legoTrack: 'lego', axleStuds: 2, sleeperWidthStuds: 2, sleeperGapStuds: 2, studFit: 0.18, antistudFit: 0.06,
+  throwAction: 'detent', leverHousing: 'arm', bladeStyle: 'sprung', bladeLip: 'pin', sleepers: 'sleepers', undersideGrid: 'baseplate', splitTrack: 'lengths', pieceLengthStuds: 16, studsAtCuts: 'off', legoTrack: 'lego', axleStuds: 2, sleeperWidthStuds: 2, sleeperGapStuds: 2, studFit: 0.18, antistudFit: 0.06,
   bladeDiscD: 14, throwBallast: false, axleHoles: false, pegOnBallast: false,
   bufferStyle: 'frame', bufferPostPlates: 8, bufferBeamBottom: 2, bufferBeamTop: 12, bufferPinHoles: true,
   trackBallast: 'together', trackFitTol: 0.2, labelText: '', labelSize: true, labelGauge: false, labelParts: true,
@@ -1400,3 +1402,10 @@ export const TEMPLATES: Record<string, Design> = {
   // (the second maker's range: templates-4dbrix.ts)
   ...RANGE2,
 };
+// (the TrixBrix trackwork group copies the reference range: its switches' lever housing the reference's cross-bar, 16 studs
+// with a 4 x 3 stud block at each end. Not where two tracks run side by side at the throw (the crossovers, the slips: the
+// bar would reach the other track), nor narrow or dual gauge (the reference's bar there not checked))
+for (const n of TEMPLATE_GROUPS.find(([g]) => g === 'TrixBrix trackwork')![1]) {
+  const d = TEMPLATES[n];
+  if (d && !/slip|crossover|narrow-gauge|dual gauge/i.test(n) && d.options?.leverHousing === undefined) TEMPLATES[n] = { ...d, options: { ...d.options, leverHousing: 'crossbar' } };
+}

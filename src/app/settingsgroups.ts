@@ -34,7 +34,7 @@ export const GROUPS: Group[] = [
   { id: 'labels', title: 'Labels', keys: ['labelText', 'labelSize', 'labelGauge', 'labelParts'] },
   { id: 'points', title: 'Points and levers', needs: 'switches', subs: { mechStyle: 'Points', pointsPieces: 'Spring tines', throwStyle: 'Levers and throws' },
     keys: ['mechStyle', 'pointBlades', 'bladeStyle', 'bladeRelief', 'bladeLip', 'pointThrow', 'pointClearance', 'springPreload', 'pointsPieces', 'pointsModule', 'springThickness', 'springLength', 'bladeDiscD',
-      'throwStyle', 'threeWayLevers', 'boxedThrow', 'throwAction', 'throwSide', 'leverOffset', 'throwBallast'] },
+      'throwStyle', 'leverHousing', 'threeWayLevers', 'boxedThrow', 'throwAction', 'throwSide', 'leverOffset', 'throwBallast'] },
   { id: 'check', title: 'Check rails and flangeways', needs: 'train', keys: ['checkRailLen', 'checkRailW', 'checkRailFlare', 'flangeway', 'flangewayDepth'] },
   { id: 'bank', title: 'Banked curves', needs: 'banked', keys: ['bankRampAt', 'bankRampStuds', 'bankClimb'] },
   { id: 'buffer', title: 'Buffer stops', needs: 'buffers', keys: ['bufferStyle', 'bufferPostPlates', 'bufferBeamBottom', 'bufferBeamTop', 'bufferPinHoles'] },
@@ -64,7 +64,7 @@ const HIDDEN_WHEN: Record<string, (c: OptCtx) => boolean> = {
   pieceLengthStuds: (c) => c.o.splitTrack !== 'lengths', baseplateX: (c) => !((c.o.baseplate ?? 0) > 0), baseplateY: (c) => !((c.o.baseplate ?? 0) > 0),
   axleStuds: (c) => c.o.joint !== 'axle' && c.o.joint !== 'flataxle', pegOnBallast: (c) => !c.ballast, axleHoles: (c) => c.o.ballast !== 'buddy',
   // (the blades-on-top mechanism's settings, and the tines')
-  pointBlades: (c) => !c.fdb, bladeStyle: (c) => !c.fdb, bladeRelief: (c) => !c.fdb, bladeLip: (c) => !c.fdb, throwAction: (c) => !c.fdb, boxedThrow: (c) => !c.fdb,
+  pointBlades: (c) => !c.fdb, bladeStyle: (c) => !c.fdb, bladeRelief: (c) => !c.fdb, bladeLip: (c) => !c.fdb, throwAction: (c) => !c.fdb, leverHousing: (c) => !c.fdb || (c.o.throwStyle ?? 'built-in') !== 'built-in', boxedThrow: (c) => !c.fdb,
   pointsPieces: (c) => c.fdb, pointsModule: (c) => c.fdb, springThickness: (c) => c.fdb, springLength: (c) => c.fdb, bladeDiscD: (c) => c.fdb,
   throwBallast: (c) => !c.ballast,
   bufferPostPlates: (c) => c.o.bufferStyle !== 'blocks', bufferPinHoles: (c) => c.o.bufferStyle !== 'blocks',

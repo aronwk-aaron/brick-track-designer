@@ -27,6 +27,12 @@ export interface SwitchParams {
   ballastBuddy?: boolean;
   /** With ballast: the underside, anti-stud (hollow with tubes) or float (flat). */
   bottomStyle?: 'antistud' | 'float';
+  /**
+   * (plate-style points, the lever built in) The lever's housing: 'arm' (default: the arm out from the stock rail to just
+   * past the lever) or 'crossbar' (as the reference range's switches: a bar 16 studs long across the track at the throw,
+   * 3 studs deep, with a 4 x 3 stud block at each end; the lever in the block on its side, studs on the rest).
+   */
+  leverHousing?: 'arm' | 'crossbar';
   /** The lever's driver length beyond its least (10): longer swings it less for the same travel (a three-way's). */
   leverReach?: number;
   /** A solid floor this thick (mm) under the moving parts, over the underside's hollow: the pockets stop on it instead of going through to the bottom (unset: switch.scad's, through). */
@@ -104,6 +110,11 @@ export const STAND = {
   /** the hub's disc under the eccentric, on the handle's side */
   rootR: 5.2,
 };
+
+/** The cross-bar lever housing (leverHousing 'crossbar'): its half length, and the lever's place in its end block (the
+ * reference's clip-on lever unit's tab is 7 studs out; the lever's housing reaches 10 mm past it, so 54 keeps the bar
+ * at 16 studs) */
+export const CROSSBAR = { halfLen: 8 * 8, leverX: 54 };
 
 export const SWITCH_DEFAULTS: SwitchParams = {
   gaugeStuds: 4, pointThrow: 3, pointClearance: 0.3, springPreload: 1, springThickness: 0.9,
@@ -322,7 +333,9 @@ export function pointsSet(routes: Route[], ps: PointsSet, p: SwitchParams, defau
     // (the snap clamp with sprung blades lies on the arm (switch/base.ts snapOnArm): room for it between the stock rail's foot and the fork's opening)
     p.throwAction === 'snap' && low && !p.throwModule && !stand && !p.throwNail
       ? throwDir * throwFaceX + snapGeo(leverTravel, p.pointClearance).back + snapGeo(leverTravel, p.pointClearance).front + leverTravel / 2 + g.leverTipD / 2 + g.forkWall + 4 * p.pointClearance + 1 : 0);
-  const leverX = throwDir * Math.max(throwDir * throwEdgeX + p.leverOffset, leverMinD);
+  // (the cross-bar housing: the lever in its end block, a 4 x 3 stud block on the bar's other end too)
+  const crossbar = p.leverHousing === 'crossbar' && p.mechStyle === 'plates' && !p.throwModule && !stand && !p.throwNail && !corner;
+  const leverX = throwDir * Math.max(throwDir * throwEdgeX + p.leverOffset, leverMinD, crossbar ? CROSSBAR.leverX : 0);
   const forkX = leverX - leverTravel / 2;
   const forkLipZ = leverTipZ + g.leverTipD / 2 + p.pointClearance;
   // (the stand's yoke: up past the eccentric's centre at its highest)
@@ -334,6 +347,11 @@ export function pointsSet(routes: Route[], ps: PointsSet, p: SwitchParams, defau
   const stepYb = Math.ceil((leverY + g.armW / 2) / STUD) * STUD + STUD;
   const stepXo = throwDir * (Math.ceil((throwDir * (leverX + throwDir * 10)) / STUD) * STUD + STUD);
   const armRect = [Math.min(throwStockX, leverX + throwDir * 10), Math.max(throwStockX, leverX + throwDir * 10), leverY - g.armW / 2, leverY + g.armW / 2];
+  // (the cross-bar's other half: from the other stock rail out as far as the lever's side goes, on the stud line)
+  const farStockRt = throwDir > 0 ? rb : ra;
+  const farStockX = railPoint(farStockRt, sOf(farStockRt, [0, throwY]), -throwDir * G)[0];
+  const farOut = -throwDir * Math.max(CROSSBAR.halfLen, Math.ceil((throwDir * leverX + 10) / STUD - 1e-6) * STUD);
+  const farRect: [number, number, number, number] | undefined = crossbar ? [Math.min(farStockX, farOut), Math.max(farStockX, farOut), throwY - g.armW / 2, throwY + g.armW / 2] : undefined;
   const warnings: string[] = [];
   if (tipGap - HEAD_HW - p.pointClearance < p.springThickness + g.tineGap / 2 + leverTravel + p.springPreload + 0.5)
     warnings.push('not enough room between the blades for the spring tines; lower point_throw or spring_preload');
@@ -341,7 +359,7 @@ export function pointsSet(routes: Route[], ps: PointsSet, p: SwitchParams, defau
   return {
     ra, rb, sToe, sHeel, toeY, sBpiv, pivotPt, throwAng, tineLen, yS, tineTip, throwTravel, leverTravel, postX, fdbTravel,
     swingRange, pointsEndY, tipGap, throwDir, throwY, throwStockRt, throwStockX, throwFaceX, leverAng, leverTipZ,
-    throwEdgeX, leverMinD, leverX, forkX, corner, leverY, forkLipZ, forkTop, forkMouthHw, stepYa, stepYb, stepXo, armRect, stand, standE, standZ,
+    throwEdgeX, leverMinD, leverX, forkX, corner, leverY, forkLipZ, forkTop, forkMouthHw, stepYa, stepYb, stepXo, armRect, farRect, farStockRt, stand, standE, standZ,
     bladeMidAt, warnings,
     /** (the plate-style points) each blade's layout: filled in by switchPlan */
     fdb: undefined as FdbBladeLayout[] | undefined,

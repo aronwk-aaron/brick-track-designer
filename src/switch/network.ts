@@ -543,6 +543,8 @@ export function networkBody(s: Scad, routes: Route[], sol: Solution, copt: Cross
   });
   // (the lever in a housing at a corner: the arm there too, and the run between, out from the sleepers' ends)
   for (const sp of splits) for (const r of sp.armRects ?? []) hollows.push({ P: sp.frame, r });
+  // (the cross-bar housing's far block)
+  for (const sp of splits) if (!sp.armRects && sp.set.farRect) hollows.push({ P: sp.frame, r: sp.set.farRect });
   // (and the steps round them, on ballast)
   for (const sp of splits) if (sp.stepRect) hollows.push({ P: sp.frame, r: sp.stepRect });
   const blades = splits.flatMap((sp) => sp.bladeCuts.map(([, m]) => m)).filter(ok);

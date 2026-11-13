@@ -110,6 +110,8 @@ export const SPECS: OptionSpec[] = [
   { key: 'bladeDiscD', values: [14, 22], base: D(sw, { mechStyle: 'tines' }), cam: tinesUnder },
   // Switches: throw
   { key: 'throwStyle', values: ['built-in', 'bracket', 'stand', 'nail'], base: D(sw), cam: throwCam },
+  // (the cross-bar: from above the throw, both ends of the bar in view)
+  { key: 'leverHousing', values: ['arm', 'crossbar'], base: D(sw), cam: { dir: '0.1,-0.6,1', r: 190, at: () => [0, 26, 6] } },
   // (each lever set by hand how far along it is: its slider not moved along to clear the next set's, so each pair's meet)
   { key: 'threeWayLevers', values: ['1', '2'], base: D(TEMPLATES['Three-way switch (one throw)'].routes), cam: { dir: '0.25,-0.9,1.1', r: 210, at: () => [0, 40, 6] } },
   // (three tracks 9 studs apart, a crossover from the middle one to the left one: the middle track's points have a track

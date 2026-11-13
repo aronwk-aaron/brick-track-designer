@@ -668,6 +668,12 @@ export function switchPlan(routes: Route[], specs: SetSpec[], p: BaseParams = BA
     ? pointsSet(routes, { ra: ps[0], rb: ps[1], sToe: ps[2], tside: ps[3] }, { ...p, ...ps[5] }, defaultThrowDir)
     : threeWaySet(routes, ps, p, defaultThrowDir)));
   if (p.pointBlades === 1 && p.mechStyle === 'plates') sets.forEach((v, k) => { if (!('three' in v)) singlePoint(v, G, p.flangeway, specs[k][5]?.single); });
+  // (the cross-bar housing's far block: none where other track runs beside, outside its stock rail, within the block's
+  // reach (a crossover's other track): only the lever's side then, as the arm)
+  for (const v of sets) if (v.farRect) {
+    const f = v.farRect, dir = -v.throwDir, uIn = Math.min(dir * f[0], dir * f[1]), uOut = Math.max(dir * f[0], dir * f[1]), m = g.sleeperLen / 2;
+    if ([...routes, ...foreign].some((rt) => { const L = routeLength(rt); for (let k = 0; k <= 80; k++) { const q = routePose(rt, (L * k) / 80), u = dir * q[0]; if (Math.abs(q[1] - (f[2] + f[3]) / 2) < (f[3] - f[2]) / 2 + m && u > uIn + G && u < uOut + m) return true; } return false; })) v.farRect = undefined;
+  }
   const set0 = sets[0];
   const others = (i: number) => routes.map((_, j) => j).filter((j) => j !== i);
   const latOthers = (i: number, q: Pt) => Math.min(...others(i).map((j) => Math.abs(routeLat(routes[j], q))));
@@ -726,7 +732,7 @@ export function switchPlan(routes: Route[], specs: SetSpec[], p: BaseParams = BA
   const setData = sets.map((v) => ({
     leverX: v.leverX, throwY: v.throwY, leverY: v.leverY, leverTravel: v.leverTravel, toeY: v.toeY, pointsEndY: v.pointsEndY,
     armX0: Math.min(v.throwStockX, v.leverX + v.throwDir * 10), armX1: Math.max(v.throwStockX, v.leverX + v.throwDir * 10),
-    throwDir: v.throwDir, throwStockX: v.throwStockX, throwStockRt: v.throwStockRt,
+    throwDir: v.throwDir, throwStockX: v.throwStockX, throwStockRt: v.throwStockRt, farRect: v.farRect, farStockRt: v.farStockRt,
     // (throw_ballast: the steps round the arm, their outer x and their y span: switch.scad's set_data[9..11])
     ...throwStepsData({ ...v, throwY: v.leverY }, g, !!p.throwBallast && g.ballast),
   }));
@@ -748,6 +754,7 @@ export function switchPlan(routes: Route[], specs: SetSpec[], p: BaseParams = BA
       if (q[1] >= y0 && q[1] <= y1) xs.push(q[0]);
     }
     for (const d of setData) for (const y of new Set([d.throwY, d.leverY])) if (y + g.armW / 2 >= y0 && y - g.armW / 2 <= y1) xs.push(d.leverX + d.throwDir * 10, d.throwStockX);
+    for (const d of setData) if (d.farRect && d.farRect[3] >= y0 && d.farRect[2] <= y1) xs.push(d.farRect[0], d.farRect[1]);
     for (const d of setData) if (d.steps && d.steps.ya - STUD <= y1 && d.steps.yb + STUD >= y0) xs.push(d.steps.xOuter);
     return [Math.min(...xs), Math.max(...xs)];
   };
@@ -1448,6 +1455,22 @@ export function switchGeometry(s: Scad, plan: SwitchPlan, extraCuts: Man[] = [])
       const rs = cornerRects(v);
       rs.forEach((a, k) => parts.push(cube([a[1] - a[0], a[3] - a[2], (k === 2 ? rodTop() : bedTop) - pieceBottomZ], [a[0], a[2], pieceBottomZ])));
     } else parts.push(cube([Math.abs(xOut - xIn), g.armW, bedTop - pieceBottomZ], [Math.min(xIn, xOut), v.throwY - g.armW / 2, pieceBottomZ]));
+    // (the cross-bar housing's other half, the far side's block)
+    if (v.farRect) parts.push(cube([v.farRect[1] - v.farRect[0], v.farRect[3] - v.farRect[2], bedTop - pieceBottomZ], [v.farRect[0], v.farRect[2], pieceBottomZ]));
+    // (its studs, track only (on ballast: the ballast's, topStudPts): three rows on the stud grid, all along it but by
+    // any track's rails, the lever's ears and fork, and the slider's channel in the middle row on the lever's side; on
+    // the far block's middle row too where another set's lever is that side (a three-way's two levers))
+    if (v.farRect && !g.ballast) {
+      const r = TRACK_DEFAULTS.studD / 2 + 0.3, f = v.farRect, x0 = Math.min(xIn, xOut, f[0]), x1 = Math.max(xIn, xOut, f[1]);
+      const otherLever = sets.some((u) => u !== v && !(u as SetLike).nail && u.throwDir === -v.throwDir);
+      for (let x = Math.floor(x0 / STUD) * STUD + 4; x <= x1 + 1e-9; x += STUD) for (const dy of [-STUD, 0, STUD]) {
+        const q: Pt = [x, v.throwY + dy];
+        // (and off the toe's end row: its studs at 4 in, the bar's lowest row too close to them where the throw's near the toe, a wye's)
+        if (q[1] <= 8 + r || x - r < x0 || x + r > x1 || routes.some((rt) => Math.abs(routeLat(rt, q)) < G + 3.9 + r) || nearLever(q, r)) continue;
+        if (dy === 0 && (v.throwDir * (x - xIn) > 0 || otherLever)) continue;
+        parts.push(T(t.stud(), [x, q[1], bedTop - 0.01]));
+      }
+    }
     if (p.throwModule) parts.push(...bracketStuds(v).map(([x, y]) => T(t.stud(), [x, y, bedTop - 0.01])));
     // (raised with the lever at a corner, standing in the run under its top: on ballast its bed is lower, the run's top under PLATE_H + the raise)
     else parts.push(...ears(v, v.corner && g.ballast ? Math.min(PLATE_H, rodTop() - cornerDz(v) - 0.2) : PLATE_H).map((m) => T(m, [0, 0, cornerDz(v)])));
@@ -2439,6 +2462,12 @@ export function switchGeometry(s: Scad, plan: SwitchPlan, extraCuts: Man[] = [])
       const r = r0, q: Pt = [x, y];
       if (x - r > d.armX0 && x + r < d.armX1 && Math.abs(y - d.leverY) + r < g.armW / 2 && !nearLever(q, r)
         && Math.abs(routeLat(d.throwStockRt, q) - d.throwDir * G) >= 3.9 + r) armPts.push(q);
+    }
+    // (the cross-bar housing's far block, clear of that side's stock rail)
+    for (const d of plan.setData) if (d.farRect) for (let x = Math.floor(d.farRect[0] / 8) * 8 + 4; x <= d.farRect[1] + 1e-9; x += STUD) for (let y = 12; y <= d.farRect[3] + 1e-9; y += STUD) {
+      const r = r0, q: Pt = [x, y], f = d.farRect;
+      if (x - r > f[0] && x + r < f[1] && y - r > f[2] && y + r < f[3] && !nearLever(q, r)
+        && Math.abs(routeLat(d.farStockRt, q) + d.throwDir * G) >= 3.9 + r) armPts.push(q);
     }
     return dedupe(armPts, main, gap);
   };
