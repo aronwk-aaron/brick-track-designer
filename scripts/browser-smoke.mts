@@ -473,6 +473,31 @@ try {
     await page.keyboard.press('Escape'); await page.waitForTimeout(100);
     check(await placing() === 'none' && await routes() === 1, 'Esc cancels placing'); }
 
+  // A part from the palette with nothing selected: an R40 curve follows the pointer, near the straight's open end it snaps on
+  // (its end exactly on that end, heading on along it), Alt places it freely, a click puts it down and it stays selected
+  at = 'add a part, snapping';
+  await page.evaluate(() => localStorage.setItem('btd-design', JSON.stringify({ version: 1, gaugeStuds: 4, routes: [{ name: 'R1', x: 0, y: 0, heading: 0, segs: [{ kind: 'straight', studs: 16 }] }] })));
+  await page.reload(); await page.waitForSelector('#track'); await page.click('#mode-select'); await page.click('#fit'); await page.waitForTimeout(300);
+  { const placing = () => page.locator('#track').evaluate((e) => (e as HTMLElement).dataset.placing ?? 'none');
+    await page.evaluate(() => { (window as unknown as { btdCanvas: { setSelection(r: number[]): void } }).btdCanvas.setSelection([]); (document.getElementById('palette') as HTMLDetailsElement).open = true; });
+    await page.waitForTimeout(150);
+    await page.locator('#palette-body button[title*="53400"][title$="Turning left"]').click(); await page.waitForTimeout(150);
+    const [fx, fy] = await scr(30, 40); await page.mouse.move(fx, fy, { steps: 4 }); await page.waitForTimeout(200);
+    check(await placing() === 'free', `a palette part follows the pointer, not snapped far from any end (${await placing()})`);
+    const [px, py] = await scr(0.4, 16.3); await page.mouse.move(px, py, { steps: 8 }); await page.waitForTimeout(250);
+    check(await placing() === 'snapped R1', `near the straight's end it snaps on (${await placing()})`);
+    await page.keyboard.down('Alt'); await page.mouse.move(px + 1, py); await page.waitForTimeout(150);
+    check(await placing() === 'free', 'holding Alt places it freely');
+    await page.keyboard.up('Alt'); await page.mouse.move(px, py); await page.waitForTimeout(250);
+    await page.mouse.click(px, py); await page.waitForTimeout(300);
+    const rs = await page.evaluate(() => JSON.parse(localStorage.getItem('btd-design')!).routes as { x: number; y: number; heading: number; segs: { kind: string; radius?: number; angle?: number }[] }[]);
+    const c = rs[1];
+    check(rs.length === 2 && Math.abs(c.x) < 1e-6 && Math.abs(c.y - 16) < 1e-6 && Math.abs(c.heading) < 1e-6 && c.segs[0].radius === 40 && Math.abs(c.segs[0].angle!) === 22.5,
+      `the curve starts exactly on the end, heading on along it (${JSON.stringify(c)})`);
+    check(await page.evaluate(() => (window as unknown as { btdCanvas: { selection(): number[] } }).btdCanvas.selection().join()) === '1', 'and stays selected, for the next part to go on its end');
+    await page.click('#undo'); await page.waitForTimeout(150);
+    check(await routes() === 1, 'one Undo takes it back'); }
+
   // My templates: the design saved as a template survives a reload, is listed, adds to a design, and is deleted (asking first)
   at = 'my templates';
   await page.evaluate(() => localStorage.setItem('btd-design', JSON.stringify({ version: 1, gaugeStuds: 4, routes: [{ name: 'R1', x: 0, y: 0, heading: 0, segs: [{ kind: 'straight', studs: 16 }] }] })));

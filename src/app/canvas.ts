@@ -22,6 +22,7 @@ import { type CutPath, type Grid, gridPath, type NoCut, moveCorner, newPathId, P
 import { dragResult, END_INSET_PX, guidedHandle, type Handle, type HandleKind, handleLabel, segmentHandles, visibleHandles, withValue } from './handles';
 import { isEdit, reverseAnchors } from './twfollow';
 import { type End, openEnds, type Placed, type Placement, placeTemplate, transformed } from './addtemplate';
+import { reachStuds, SETTLE_MS, SnapSession, SPEED_WINDOW_MS } from './snapfeel';
 import { lockedWhy } from './lock';
 import { type MeasurePoint, measureBetween, measurePoint } from './measure';
 import { applyCarry, type Carry, connectedSet, holds, type Joint, jointNames, joints, LOOP_OPENS_DEFAULT, type LoopOpens, openedBy, planCarry, poseAt, setApart, tidyExpert } from './connections';
@@ -379,20 +380,29 @@ export class TrackCanvas {
     this.kbDraw = true; this.aimEither(); this.draw();
   }
   /** A template being placed on the design (Add to design): the group follows the pointer, a click puts it down. */
-  private placing: { tpl: Design; turn: number; mirror: boolean; onto?: End; theirs: End[]; moved: boolean } | undefined;
+  private placing: { tpl: Design; turn: number; mirror: boolean; onto?: End; theirs: End[]; moved: boolean; session: SnapSession; settle?: number } | undefined;
   get isPlacing() { return !!this.placing; }
   /** Start placing a copy of a template: onto, the design end it starts on (before the pointer moves). */
   startPlacing(tpl: Design, onto?: End) {
     this.letGoSome();
-    this.placing = { tpl, turn: 0, mirror: false, onto, theirs: openEnds(this.host.design().routes), moved: false };
+    this.placing = { tpl, turn: 0, mirror: false, onto, theirs: openEnds(this.host.design().routes), moved: false, session: new SnapSession() };
     this.draw();
   }
   private letGoSome() { this.splitArmed = false; this.cutArmed = false; this.stretchArmed = false; this.sleeperArmed = false; this.sleeperDrag = undefined; this.stretchNew = undefined; this.stretchDrag = undefined; this.pathDraw = undefined; this.cutDrag = undefined; this.meas = {}; this.active = undefined; }
-  private placedNow(): Placed | undefined {
+  /** Where the template being placed goes now (final: the click that puts it down, which snaps whatever the pointer's speed). */
+  private placedNow(final = false): Placed | undefined {
     const p = this.placing;
     if (!p) return undefined;
     const at: [number, number] = this.mouse ?? this.toWorld(this.el.clientWidth / 2, this.el.clientHeight / 2);
-    return placeTemplate(this.host.design(), p.tpl, at, p.turn, p.mirror, this.reach(this.touching ? 28 : 18), p.moved || this.alt ? undefined : p.onto, this.alt ? [] : p.theirs);
+    // (the reach and feel are the layout designer's: snapfeel.ts; Alt: no snapping)
+    return placeTemplate(this.host.design(), p.tpl, at, p.turn, p.mirror, reachStuds(this.scale, this.touching), p.moved || this.alt ? undefined : p.onto, this.alt ? [] : p.theirs, { session: p.session, final });
+  }
+  /** The pointer moved while placing: its speed noted (a fast move starts no snap), and a redraw once it has stood still a moment. */
+  private placingMoved(sx: number, sy: number) {
+    const p = this.placing!;
+    p.session.meter.sample(sx, sy, performance.now());
+    clearTimeout(p.settle);
+    if (p.session.meter.isFast()) p.settle = window.setTimeout(() => { if (this.placing !== p) return; p.session.meter.sample(sx, sy, performance.now() + SPEED_WINDOW_MS); this.drawSoon(); }, SETTLE_MS);
   }
   /** Split: the next click on the selected route cuts it there (from the selection bar's button). */
   splitArmed = false;
@@ -1072,8 +1082,9 @@ export class TrackCanvas {
     if (this.selItemNow?.kind === 'joint') this.setItem(undefined);
     // a template being placed: the click puts it down
     if (this.placing && e.button === 0) {
-      const pl = this.placedNow()!, tpl = this.placing.tpl;
-      this.placing = undefined; this.host.place?.(tpl, pl.placement); this.draw(); return;
+      this.mouse = w; this.placing.moved = true;
+      const pl = this.placedNow(true)!, tpl = this.placing.tpl;
+      clearTimeout(this.placing.settle); this.placing = undefined; this.host.place?.(tpl, pl.placement); this.draw(); return;
     }
     // Measure: the first click starts, the second ends, the next starts again
     if (this.mode === 'measure' && e.button === 0) {
@@ -1320,7 +1331,7 @@ export class TrackCanvas {
     if (e.target !== this.el) return;
     this.alt = e.altKey;
     this.mouse = this.evWorld(e);
-    if (this.placing) this.placing.moved = true;
+    if (this.placing) { this.placing.moved = true; this.placingMoved(e.clientX, e.clientY); }
     this.kbDraw = false;
     this.aimEither();
     this.cursor();
@@ -1609,7 +1620,18 @@ export class TrackCanvas {
     }
     if (this.placing) {
       const k = e.key.toLowerCase(), p = this.placing;
-      if (e.key === 'Escape') { this.placing = undefined; this.draw(); return; }
+      if (e.key === 'Escape') { clearTimeout(p.settle); this.placing = undefined; this.draw(); return; }
+      // (by keyboard: the arrows move it a stud (Shift: 8), Enter puts it down where it is)
+      if (e.key.startsWith('Arrow') && !e.ctrlKey && !e.metaKey) {
+        e.preventDefault();
+        const n = e.shiftKey ? 8 : 1, m = this.mouse ?? this.toWorld(this.el.clientWidth / 2, this.el.clientHeight / 2);
+        this.mouse = [Math.round(m[0]) + (e.key === 'ArrowLeft' ? -n : e.key === 'ArrowRight' ? n : 0), Math.round(m[1]) + (e.key === 'ArrowUp' ? n : e.key === 'ArrowDown' ? -n : 0)];
+        p.moved = true; p.session.meter.reset(); this.draw(); return;
+      }
+      if (e.key === 'Enter' && (e.target === document.body || e.target === this.el)) {
+        e.preventDefault();
+        const pl = this.placedNow(true)!; clearTimeout(p.settle); this.placing = undefined; this.host.place?.(p.tpl, pl.placement); this.draw(); return;
+      }
       if (k === 'r' && !e.ctrlKey && !e.metaKey) { p.turn = norm180(p.turn + (e.shiftKey ? 22.5 : -22.5)); p.moved = true; this.draw(); return; }
       if (k === 'm' && !e.ctrlKey && !e.metaKey) { p.mirror = !p.mirror; p.moved = true; this.draw(); return; }
     }
@@ -1768,7 +1790,7 @@ export class TrackCanvas {
     return this.touching || matchMedia('(pointer: coarse)').matches ? forFingers(h) : h;
   }
   private hintText(): string {
-    if (this.placing) { const pl = this.placedNow(); return `Click to put it down${pl?.snapped ? `, joining ${pl.snapped.design.route}` : ''}${pl?.why ? ` (${pl.why})` : ''} · R / Shift+R turn it · M mirrors it · hold Alt for no snapping · Esc cancels`; }
+    if (this.placing) { const pl = this.placedNow(); return `Click (or Enter) to put it down${pl?.snapped ? `, joining ${pl.snapped.design.route}` : this.alt ? ', not snapping (Alt)' : ''}${pl?.why ? ` (${pl.why})` : ''} · arrows move it · R / Shift+R turn it · M mirrors it · hold Alt for no snapping · Esc cancels`; }
     // (a drag opening a joint: said before anything else, while it can still be put back)
     {
       const d = this.host.design(), m = this.moving, cy = (this.drag?.moved ? this.drag : this.handleDrag?.moved ? this.handleDrag : undefined)?.carry;
@@ -2337,8 +2359,17 @@ export class TrackCanvas {
     if (this.placing) {
       const pl = this.placedNow()!, tt = transformed(this.placing.tpl, pl.placement);
       for (const tb of tt.tables ?? []) { const pts = tableOutline(tb); if (pts.length < 3) continue; c.beginPath(); pts.forEach(([x, y], i) => { const [sx, sy] = this.toScreen(x, y); if (i) c.lineTo(sx, sy); else c.moveTo(sx, sy); }); c.closePath(); c.globalAlpha = 0.3; c.fillStyle = '#4fb3e8'; c.fill(); c.globalAlpha = 1; c.strokeStyle = '#2b6fe0'; c.lineWidth = 1.5; c.stroke(); }
-      for (const r of tt.routes) { const pts = traceRaw(r, r.segs, 0.5); line(pts, 'rgba(43,111,224,0.28)', (2 * (r.system === 'monorail' ? 1 : (d.gaugeStuds + 1) / 2) + 3) * this.scale); line(pts, '#2b6fe0', 1.5, [6, 4]); }
-      if (pl.snapped) { const [sx, sy] = this.toScreen(pl.snapped.design.pose.x, pl.snapped.design.pose.y); c.fillStyle = '#2b9e4a'; c.beginPath(); c.arc(sx, sy, 6, 0, 2 * Math.PI); c.fill(); tag(sx, sy + 30, `joins ${pl.snapped.design.route}`, '#1d7a38'); }
+      // (snapped: the group green, a green ring on the end it joins, an amber dot where its own end was: the layout designer's marks)
+      const on = !!pl.snapped;
+      for (const r of tt.routes) { const pts = traceRaw(r, r.segs, 0.5); line(pts, on ? 'rgba(80,255,120,0.353)' : 'rgba(43,111,224,0.28)', (2 * (r.system === 'monorail' ? 1 : (d.gaugeStuds + 1) / 2) + 3) * this.scale); line(pts, on ? 'rgb(22,163,74)' : '#2b6fe0', 1.5, [6, 4]); }
+      if (pl.snapped) {
+        const [mx, my] = this.toScreen(pl.snapped.movingAt[0], pl.snapped.movingAt[1]);
+        c.beginPath(); c.arc(mx, my, 4, 0, 2 * Math.PI); c.fillStyle = 'rgb(245,158,11)'; c.fill(); c.strokeStyle = 'rgba(255,255,255,0.8)'; c.lineWidth = 1.5; c.stroke();
+        const [sx, sy] = this.toScreen(pl.snapped.design.pose.x, pl.snapped.design.pose.y);
+        c.beginPath(); c.arc(sx, sy, 11.5, 0, 2 * Math.PI); c.strokeStyle = 'rgba(255,255,255,0.8)'; c.lineWidth = 1.5; c.stroke();
+        c.beginPath(); c.arc(sx, sy, 9, 0, 2 * Math.PI); c.fillStyle = 'rgba(34,197,94,0.2)'; c.fill(); c.strokeStyle = 'rgb(22,163,74)'; c.lineWidth = 2.5; c.stroke();
+        tag(sx, sy + 30, `joins ${pl.snapped.design.route}`, '#1d7a38');
+      }
       this.el.dataset.placing = pl.snapped ? `snapped ${pl.snapped.design.route}` : 'free';
     } else delete this.el.dataset.placing;
     // a small padlock on each locked route, in the middle of it

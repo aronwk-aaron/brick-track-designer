@@ -73,6 +73,18 @@ export function placePart(d: Design, id: string, at: number | undefined, turn = 
   return { next: at, added };
 }
 
+/**
+ * One part as a small design of its own, to be placed on the plan like a template (Add to design): its track from the origin
+ * heading 0, a switch's branch a second track from the same start; the design's gauge.
+ */
+export function partDesign(d: Design, id: string, turn = 1): Design {
+  const p = PALETTE.find((q) => q.id === id);
+  if (!p) throw new Error(`no part ${id}`);
+  const routes: Design['routes'] = [{ name: 'R1', x: 0, y: 0, heading: 0, segs: structuredClone(p.segs(turn)) }];
+  if (p.branch) routes.push({ name: 'R2', x: 0, y: 0, heading: 0, segs: structuredClone(p.branch) });
+  return { version: 1, gaugeStuds: d.gaugeStuds, routes };
+}
+
 /** Which end of a switch sits on the selected route's end: its toe (where the blades are), the end of its straight, or the end of its branch. */
 export type LaidFrom = 'toe' | 'straight' | 'branch';
 

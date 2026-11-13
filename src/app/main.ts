@@ -10,12 +10,12 @@ import { BRICKTRACKS_COLOR, gradeOf, LEGO_COLOR, type LegoPart, legoParts, type 
 import { mirroredTable, movedTable, TABLE_COLORS, type Table, tableAt, tableMiddle, tableOutline, turnedTable } from './tables';
 import { zip } from '../geom/zip';
 import { layoutParts } from './layoutparts';
-import { freeStart, type LaidFrom, PALETTE, placePart } from './palette';
+import { freeStart, type LaidFrom, PALETTE, partDesign, placePart } from './palette';
 import { BuildRunner, dropsBuild, planOnlyFor, type WorkerPort } from './buildrun';
 import { History, loadHistory, saveHistory } from './history';
 import { fileBase as fileBaseOf, partsDownload, plainKind, printedKinds, stlDownload, turnedText } from './exports';
 import { clamp, LIMITS, radiusRange, type Range, rangeText } from './limits';
-import { dualEndMismatches, mirrorRoute, reseatOnDual } from './routeedits';
+import { dualEndMismatches, mirrorRoute, reseatOnDual, reversedRoute } from './routeedits';
 import { TabStore, unsaved } from './session';
 import { addCircle, cleanPieces, cleanRadius, defaultPieces, pieceFit, piecesText, PIECES } from './circle';
 import { APP_VERSION, type BuiltEntry, pngBytes, pushBuilt, readBuilt, readReportZip, type Report, reportName, type ReportInput, reportZip } from './report';
@@ -389,11 +389,14 @@ function renderPalette() {
   body.replaceChildren();
   const sel = canvas.selection().filter((i) => i < design.routes.length), at = sel.length === 1 ? sel[0] : undefined;
   const lay = (id: string, turn = 1) => {
+    // (nothing selected: the part follows the pointer, its ends snapping onto open ends of the design, a click puts it down;
+    // the track it is then stays selected, so the next part goes on its end: as the layout designer chains parts)
+    if (at === undefined) { placingPart = true; setMode('select'); canvas.startPlacing(partDesign(design, id, turn)); return; }
     const { next } = placePart(design, id, at, turn, paletteFrom);
     canvas.setSelection([next]);
   };
   const note = (t: string, warn = false) => { const p = document.createElement('div'); p.className = 'tnote'; if (warn) p.style.color = 'var(--warn, #c0392b)'; p.textContent = t; body.append(p); };
-  note(at !== undefined ? `Laid on the end of ${design.routes[at].name || `route ${at + 1}`}.` : sel.length > 1 ? 'Several routes selected: each part starts a new route. Select one to lay parts on its end.' : 'Nothing selected: the first part starts a new route; the next go on its end.');
+  note(at !== undefined ? `Laid on the end of ${design.routes[at].name || `route ${at + 1}`}.` : sel.length > 1 ? 'Several routes selected: a part follows the pointer and snaps to open ends; click to put it down. Select one route to lay parts on its end.' : 'Nothing selected: a part follows the pointer and its ends snap to open ends near them (hold Alt to place freely); click to put it down. The next go on its end.');
   if (at !== undefined) {
     const f = document.createElement('label'); f.className = 'pfrom'; f.title = 'Switches: which end of the switch goes on the end of the selected route. The route goes on through the switch to its toe; the other way out of the toe is a new route.';
     const sp = document.createElement('span'); sp.textContent = 'Switch laid from its';
@@ -425,6 +428,8 @@ function renderPalette() {
 // ---------- a full circle ----------
 /** Switches: which end sits on the selected route's end (the toe, the end of the straight, or of the branch). */
 let paletteFrom: LaidFrom = 'toe';
+/** The group being placed is one part from the palette (not a template): once put down, its track is selected to lay the next on. */
+let placingPart = false;
 let circleR = 40, circleN = 16, circleNEdited = false;
 /** Full circle: a radius and a number of pieces; says what a piece is (its size, and whether it fits the bed) before it's added. */
 function renderCircle() {
@@ -1773,7 +1778,7 @@ initTemplateBrowser(async (name) => {
   const sel = selected();
   const onto = sel.length === 1 ? openEnds([design.routes[sel[0]]]).sort((a, b) => Number(b.end === 'end') - Number(a.end === 'end'))[0] : undefined;
   const mine = onto && openEnds(design.routes).find((e) => e.route === onto.route && e.end === onto.end);
-  setMode('select'); canvas.startPlacing(structuredClone(t), mine);
+  placingPart = false; setMode('select'); canvas.startPlacing(structuredClone(t), mine);
   return true;
 }, {
   storage: mineStore, ready: mineReady,
@@ -1954,6 +1959,16 @@ const canvas = new TrackCanvas($<HTMLCanvasElement>('track'), {
   enterDraw: () => setMode('draw'),
   place: (tpl, pl) => {
     const res = addTemplate(design, tpl, pl);
+    if (placingPart) {
+      // (a part: its track selected to lay the next part on, turned round first if its end is the one that joined and its start is free)
+      placingPart = false;
+      const i = res.routes[0], name = design.routes[i].name;
+      const open = openEnds(design.routes).filter((e) => e.route === name);
+      if (!open.some((e) => e.end === 'end') && open.some((e) => e.end === 'start') && res.routes.length === 1) design.routes[i] = { ...reversedRoute(design.routes[i]), name };
+      canvas.setSelection([i]); openCards.clear(); changed(true);
+      canvas.say(`Laid ${name}: the next part goes on its end`, 3500);
+      return;
+    }
     canvas.setSelection(res.routes, res.tables); openCards.clear(); changed(true);
     const labels = (k: string) => OPTION_FORM.flatMap((s) => s.fields).find((f) => f.key === k)?.label ?? k;
     canvas.say(res.differing.length ? `Added with this design's settings; the template alone uses: ${res.differing.map(labels).join(', ')}` : `Added ${res.routes.length} route${res.routes.length === 1 ? '' : 's'}`, res.differing.length ? 10000 : 3500);

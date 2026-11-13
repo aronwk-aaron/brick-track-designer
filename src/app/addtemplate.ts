@@ -6,6 +6,7 @@ import { follow, type Pose } from './planner';
 import { gaugeMeet, joinProblem, mirrorRoute } from './routeedits';
 import { nearestAlong, routeStuds } from './splitmerge';
 import { mirroredTable, movedTable, type Table, tableMiddle, turnedTable } from './tables';
+import { type Candidate, holdReach, pick, type SnapSession } from './snapfeel';
 import { copyEdits, mirrorAnchors, moveEdits, pasteEdits } from './twfollow';
 
 export type Pt = [number, number];
@@ -72,32 +73,47 @@ function hold(tt: Design): Pt {
 /** A template route as it'd be among the design's (its own gauge where the template's differs from the design's), for the join test. */
 const asAdded = (d: Design, t: Design, r: DRoute): DRoute => (t.gaugeStuds !== d.gaugeStuds && r.gaugeStuds === undefined && !isMono(r) ? { ...r, gaugeStuds: t.gaugeStuds } : r);
 
-export interface Placed { placement: Placement; /** the ends that meet, if snapped */ snapped?: { design: End; template: End }; /** an end near enough that couldn't be snapped to, and why */ why?: string }
+export interface Placed {
+  placement: Placement;
+  /** the ends that meet, if snapped; movingAt: where the template's end was before the snap (studs) */
+  snapped?: { design: End; template: End; movingAt: Pt };
+  /** an end near enough that couldn't be snapped to, and why */ why?: string;
+}
+/** A placing's snap state (snapfeel.ts: the held join, the pointer's speed), and whether this is the click that puts it down. */
+export interface SnapOpts { session?: SnapSession; final?: boolean }
 
 /**
  * Where a template goes with the pointer at `at` (studs): held by its first route's start on the stud grid, unless one of its open ends
  * is within reach (studs) of an open end of the design that it can be joined to (joinProblem): then the group is turned and moved so the
- * two ends meet, heading into each other. `onto`: start with its first open end on that design end (no reach needed).
+ * two ends meet, heading into each other. Which join, when several are in reach, as the layout designer picks (snapfeel.ts: the nearest;
+ * level ones by the smaller turn, then the end nearer the pointer; held once made). `onto`: start with its first open end on that
+ * design end (no reach needed).
  */
-export function placeTemplate(d: Design, t: Design, at: Pt, turn: number, mirror: boolean, reach: number, onto?: End, theirs: End[] = openEnds(d.routes)): Placed {
+export function placeTemplate(d: Design, t: Design, at: Pt, turn: number, mirror: boolean, reach: number, onto?: End, theirs: End[] = openEnds(d.routes), opts: SnapOpts = {}): Placed {
   const t0 = transformed(t, { turn, dx: 0, dy: 0, mirror }), h = hold(t0);
   const free: Placement = { turn, mirror, dx: 0, dy: 0 };
   free.dx = r3(Math.round(at[0]) - h[0]); free.dy = r3(Math.round(at[1]) - h[1]);
   const mine = openEnds(t0.routes);
-  let best: { dist: number; a: End; b: End } | undefined, why: string | undefined;
+  let best: { a: End; b: End } | undefined, why: string | undefined;
   const byName = (rs: readonly DRoute[], n: string) => rs.find((r, i) => (r.name || String(i)) === n)!;
-  if (onto) { const a = mine[0]; if (a) best = { dist: 0, a, b: onto }; }
-  else for (const a of mine) for (const b of theirs) {
-    const dist = Math.hypot(a.pose.x + free.dx - b.pose.x, a.pose.y + free.dy - b.pose.y);
-    if (dist > reach || (best && dist >= best.dist)) continue;
-    const theirs1 = byName(d.routes, b.route), mine1 = asAdded(d, t, byName(t0.routes, a.route)), problem = joinProblem(d, theirs1, mine1);
-    // (dual-gauge track and its standard gauge carrying on alone: not one track, but their ends meet on the same middle: routeedits.ts gaugeMeet)
-    if (problem && gaugeMeet(d, theirs1, mine1)?.off !== 0) { why = `can't join ${b.route}: ${problem}`; continue; }
-    best = { dist, a, b };
+  if (onto) { const a = mine[0]; if (a) best = { a, b: onto }; }
+  else {
+    const cands: Candidate[] = [], pairs: { a: End; b: End }[] = [], lim = holdReach(reach);
+    for (const a of mine) for (const b of theirs) {
+      const ax = a.pose.x + free.dx, ay = a.pose.y + free.dy, dist = Math.hypot(ax - b.pose.x, ay - b.pose.y);
+      if (dist > lim) continue;
+      const theirs1 = byName(d.routes, b.route), mine1 = asAdded(d, t, byName(t0.routes, a.route)), problem = joinProblem(d, theirs1, mine1);
+      // (dual-gauge track and its standard gauge carrying on alone: not one track, but their ends meet on the same middle: routeedits.ts gaugeMeet)
+      if (problem && gaugeMeet(d, theirs1, mine1)?.off !== 0) { if (dist <= reach) why = `can't join ${b.route}: ${problem}`; continue; }
+      cands.push({ movingKey: `${a.route}#${a.end}`, targetKey: `${b.route}#${b.end}`, dist, mouseDist: Math.hypot(ax - at[0], ay - at[1]), turn: Math.abs(norm180(b.pose.heading + 180 - a.pose.heading)) });
+      pairs.push({ a, b });
+    }
+    const i = opts.session ? opts.session.step(cands, reach, false, opts.final) : pick(cands, undefined, reach);
+    if (i >= 0) best = pairs[i];
   }
   if (!best) return { placement: free, ...(why && { why }) };
   const delta = norm180(best.b.pose.heading + 180 - best.a.pose.heading), q = rot([best.a.pose.x, best.a.pose.y], delta);
-  return { placement: { turn: r3(norm180(turn + delta)), mirror, dx: r3(best.b.pose.x - q[0]), dy: r3(best.b.pose.y - q[1]) }, snapped: { design: best.b, template: best.a } };
+  return { placement: { turn: r3(norm180(turn + delta)), mirror, dx: r3(best.b.pose.x - q[0]), dy: r3(best.b.pose.y - q[1]) }, snapped: { design: best.b, template: best.a, movingAt: [best.a.pose.x + free.dx, best.a.pose.y + free.dy] } };
 }
 
 /**
