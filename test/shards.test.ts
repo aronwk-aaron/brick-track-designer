@@ -10,6 +10,12 @@ import { describe, expect, it } from 'vitest';
 /** The files that take minutes: the big layouts put together, and built; the X yard built shared out among helpers (two files of it); the saved monster switches (designs.shared.ts). */
 const SLOW = ['assembled-xyard', 'assembled-loop-left', 'assembled-loop-right', 'assembled-yard', 'templates-xyard', 'templates-heavy', 'parallel', 'build-workers', 'designs-monster-plain', 'designs-monster-double-slips'];
 
+/** The double slip's print test (one test of every printed part, near its 15-minute limit on a loaded runner): in a shard
+ * with none of the files that take five minutes or so (the combo sets' builds, the tables, the crossover sweeps...), so its
+ * runner has its two workers to spare. */
+const ALONE = 'printed-double-slip';
+const MEDIUM = ['templates-ref-combos1', 'templates-ref-combos2', 'templates-ref-combos3', 'templates-ref-combos4', 'templates-heavy', 'tables', 'printable-crossings', 'printable-track', 'crossover-sweep-8', 'crossover-sweep-9', 'crossover-sweep-16', 'bought-switches', 'designs-saved', 'assembled-features', 'assembled-ref3'];
+
 /** The shards as vitest deals them (its BaseSequencer.shard): n runs of the files sorted by their paths' hashes, the first ones a file longer where they don't divide. */
 export function shards(files: string[], n: number): string[][] {
   const sorted = files.map((f) => ({ f, h: createHash('sha1').update(`/test/${f}`).digest('hex') })).sort((a, b) => (a.h < b.h ? -1 : a.h > b.h ? 1 : 0)).map((x) => x.f);
@@ -25,5 +31,12 @@ describe('the CI shards', () => {
     for (const s of SLOW) expect(files, `${s}.test.ts is gone or renamed: bring SLOW up to date`).toContain(`${s}.test.ts`);
     const crowded = shards(files, n).map((sh, k) => ({ k: k + 1, slow: sh.filter((f) => SLOW.includes(f.replace(/\.test\.ts$/, ''))) })).filter((x) => x.slow.length > 1);
     expect(crowded.map((x) => `shard ${x.k}: ${x.slow.join(', ')}`).join('; ')).toBe('');
+  });
+  it("the double slip's print test is dealt with light files", () => {
+    const dir = new URL('.', import.meta.url).pathname, files = readdirSync(dir).filter((f) => /\.test\.ts$/.test(f));
+    const n = /shard: \[([\d, ]+)\]/.exec(readFileSync(`${dir}../.github/workflows/ci.yml`, 'utf8'))![1].split(',').length;
+    for (const m of [ALONE, ...MEDIUM]) expect(files, `${m}.test.ts is gone or renamed: bring ALONE / MEDIUM up to date`).toContain(`${m}.test.ts`);
+    const sh = shards(files, n).find((x) => x.includes(`${ALONE}.test.ts`))!;
+    expect(sh.filter((f) => MEDIUM.includes(f.replace(/\.test\.ts$/, ''))).join(', ')).toBe('');
   });
 });

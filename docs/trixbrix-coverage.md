@@ -23,7 +23,7 @@ Match: **exact** (ends, and lever or section where it has one), **close** (a tem
 **missing** (no template or setting makes it), **in progress elsewhere** (the double slips and their crossovers, being
 rebuilt separately).
 
-Counts: close 115, exact 144, in progress elsewhere 15, missing 60, n/a 1 (of 335).
+Counts: close 121, exact 144, in progress elsewhere 15, missing 54, n/a 1 (of 335).
 
 ## Parts
 
@@ -299,8 +299,8 @@ Counts: close 115, exact 144, in progress elsewhere 15, missing 60, n/a 1 (of 33
 | tb combo r104y 2T | Wye R104 to two parallel tracks | exact | ends within 0.16 studs: the library's own placing of the set's pieces; 1 lever tab(s): lever place not checked (template not in the build batch) |
 | tb combo r120 pt1 left | - | missing | no template for the arrangement; its pieces (23, 10 kinds): all made by BTD (exact or close), so it is only a template to add |
 | tb combo r120 pt1 right | - | missing | no template for the arrangement; its pieces (23, 10 kinds): all made by BTD (exact or close), so it is only a template to add |
-| tb combo r120 siding left | - | missing | no template for the arrangement; its pieces (6, 4 kinds): all made by BTD (exact or close), so it is only a template to add |
-| tb combo r120 siding right | - | missing | no template for the arrangement; its pieces (6, 4 kinds): all made by BTD (exact or close), so it is only a template to add |
+| tb combo r120 siding left | Switch R120 left with its siding curves | close | ends within 0.09 studs: the library's own placing of the set's pieces; lever 2.5 studs from the part's lever tab; housing: BTD builds its lever into a housing with no studs; the reference has 4 x 3 studs there for its clip-on lever unit (Throw: Lever on a bracket is the nearest) |
+| tb combo r120 siding right | Switch R120 right with its siding curves | close | ends within 0.09 studs: the library's own placing of the set's pieces; lever 2.5 studs from the part's lever tab; housing: BTD builds its lever into a housing with no studs; the reference has 4 x 3 studs there for its clip-on lever unit (Throw: Lever on a bracket is the nearest) |
 | tb combo r120 turnout left | Switch R120 left with its turnout curve | exact | 1 lever tab(s): lever place not checked (template not in the build batch) |
 | tb combo r120 turnout right | Switch R120 right with its turnout curve | exact | 1 lever tab(s): lever place not checked (template not in the build batch) |
 | tb combo r148 railyard 3T left | Yard R148, three tracks, left | exact | ends within 0.27 studs: the library's own placing of the set's pieces; 2 lever tab(s): lever place not checked (template not in the build batch) |
@@ -315,10 +315,10 @@ Counts: close 115, exact 144, in progress elsewhere 15, missing 60, n/a 1 (of 33
 | tb combo r40 perpendicular 3T right | - | missing | no template for the arrangement; its pieces (11, 5 kinds): not exact: tb switch r40 comp perpendicular right (missing) |
 | tb combo r40 railyard 2T left | - | missing | no template for the arrangement; its pieces (4, 4 kinds): not exact: tb connector r40 left (missing) |
 | tb combo r40 railyard 2T right | Yard R40, two tracks, right | close | ends within 0.07 studs: the library's own placing of the set's pieces; lever 2.7 studs from the part's lever tab; housing: BTD builds its lever into a housing with no studs; the reference has 4 x 3 studs there for its clip-on lever unit (Throw: Lever on a bracket is the nearest) |
-| tb combo r40 railyard 3T left | - | missing | no template for the arrangement; its pieces (6, 6 kinds): not exact: tb connector r40 left (missing) |
-| tb combo r40 railyard 3T right | - | missing | no template for the arrangement; its pieces (6, 6 kinds): not exact: tb connector r40 right (missing) |
-| tb combo r40 railyard 4T left | - | missing | no template for the arrangement; its pieces (7, 6 kinds): not exact: tb connector r40 left (missing) |
-| tb combo r40 railyard 4T right | - | missing | no template for the arrangement; its pieces (7, 6 kinds): not exact: tb connector r40 right (missing) |
+| tb combo r40 railyard 3T left | Yard R40, three tracks, left | close | ends within 0.14 studs: the library's own placing of the set's pieces (its R40 connectors as a 4.36-stud straight, as the set lays them); lever 2.5 studs from the part's lever tab; housing: BTD builds its lever into a housing with no studs; the reference has 4 x 3 studs there for its clip-on lever unit (Throw: Lever on a bracket is the nearest) |
+| tb combo r40 railyard 3T right | Yard R40, three tracks, right | close | ends within 0.11 studs: the library's own placing of the set's pieces (its R40 connectors as a 4.36-stud straight, as the set lays them); lever 2.5 studs from the part's lever tab; housing: BTD builds its lever into a housing with no studs; the reference has 4 x 3 studs there for its clip-on lever unit (Throw: Lever on a bracket is the nearest) |
+| tb combo r40 railyard 4T left | Yard R40, four tracks, left | close | ends within 0.13 studs: the library's own placing of the set's pieces (its R40 connectors as a 4.36-stud straight, as the set lays them); lever 2.5 studs from the part's lever tab; housing: BTD builds its lever into a housing with no studs; the reference has 4 x 3 studs there for its clip-on lever unit (Throw: Lever on a bracket is the nearest) |
+| tb combo r40 railyard 4T right | Yard R40, four tracks, right | close | ends within 0.11 studs: the library's own placing of the set's pieces (its R40 connectors as a 4.36-stud straight, as the set lays them); lever 2.5 studs from the part's lever tab; housing: BTD builds its lever into a housing with no studs; the reference has 4 x 3 studs there for its clip-on lever unit (Throw: Lever on a bracket is the nearest) |
 | tb combo r56 siding left | Switch R56 left with its siding curves | exact | ends within 0.18 studs: the library's own placing of the set's pieces; 1 lever tab(s): lever place not checked (template not in the build batch) |
 | tb combo r56 siding right | Switch R56 right with its siding curves | exact | 1 lever tab(s): lever place not checked (template not in the build batch) |
 | tb combo r56 turnout left | Switch R56 left with its turnout curve | exact | 1 lever tab(s): lever place not checked (template not in the build batch) |
