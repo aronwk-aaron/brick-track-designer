@@ -26,12 +26,16 @@ export interface SlipSet {
   merge: boolean;
   /** along its points' frame from where the routes part (mm): the acute frog (where the other track's rail crosses this one's), the length its routes share first */
   frogS: number; lead: number;
+  /** the other track's centre line by the acute frog (mm, the design's frame): what its lever keeps away from */
+  away: Pt;
   /** the solver's points span (mm, from where the routes part) */
   span: number;
   /** the side of its track away from the other track, in its points' own frame (looking the way the routes part) */
   outside: 'left' | 'right';
   /** its end of the slip meets another slip's on another diagonal (an X centre) */
   inner: boolean;
+  /** (inner) its toe is where the diagonals cross: the diagonal's inner set there */
+  atX: boolean;
 }
 export interface DoubleSlip {
   /** the two tracks (route indices), the first the one its first road leaves */
@@ -120,9 +124,10 @@ export function findDoubleSlips(routes: Route[], sol: Solution): DoubleSlip[] {
       // (outside: away from the other track, where its centre line is at the frog)
       const oq = frog ? railPoint(routes[other], Math.max(0, Math.min(routeLength(routes[other]), nearestS(routes[other], [frog[0], frog[1]]))), 0) : [cx[0][0], cx[0][1]] as Pt;
       const outside = worldToPose(P, oq)[0] > 0 ? 'left' : 'right';
+      const away: Pt = [oq[0], oq[1]];
       const fr = (rt: Route): Route => ({ ...rt, start: toFrame(P, rt.start) });
       const A = fr(subRoute(dirOf(track), sa, Math.min(routeLength(dirOf(track)), sa + 400), 'A')), B = fr(subRoute(dirOf(road), 0, Math.min(routeLength(dirOf(road)), 400), 'B'));
-      return { split: k, key: keyOf(toeOf(routes, sp)), track, other, road, merge: !!sp.merge, frogS, lead: sharedLead(A, B), span: sp.spans[0][1] - sp.spans[0][0], outside, inner: false };
+      return { split: k, key: keyOf(toeOf(routes, sp)), track, other, road, merge: !!sp.merge, frogS, away, lead: sharedLead(A, B), span: sp.spans[0][1] - sp.spans[0][0], outside, inner: false, atX: false };
     });
     const bis = ha + (Math.abs(dh) < 90 ? dh / 2 : (dh - Math.sign(dh) * 180) / 2);
     out.push({ tracks: [a, b], roads, centre: cx[0], angle: Math.abs(Math.abs(dh) < 90 ? dh : 180 - Math.abs(dh)), radius, bisector: bis, sets });
@@ -132,8 +137,9 @@ export function findDoubleSlips(routes: Route[], sol: Solution): DoubleSlip[] {
   const toeAt = (st: SlipSet) => toeOf(routes, sol.splits[st.split]);
   const endOf = (ds: DoubleSlip, st: SlipSet) => { const q = toeAt(st), h = (ds.bisector * Math.PI) / 180; return Math.sign(-(q[0] - ds.centre[0]) * Math.sin(h) + (q[1] - ds.centre[1]) * Math.cos(h)); };
   for (const ds of out) {
-    const xEnds = new Set(ds.sets.filter((st) => out.some((o) => o !== ds && o.sets.some((s2) => s2.track !== st.track && !ds.tracks.includes(s2.track)
-      && Math.hypot(toeAt(s2)[0] - toeAt(st)[0], toeAt(s2)[1] - toeAt(st)[1]) < 4))).map((st) => endOf(ds, st)));
+    for (const st of ds.sets) st.atX = out.some((o) => o !== ds && o.sets.some((s2) => s2.track !== st.track && !ds.tracks.includes(s2.track)
+      && Math.hypot(toeAt(s2)[0] - toeAt(st)[0], toeAt(s2)[1] - toeAt(st)[1]) < 4));
+    const xEnds = new Set(ds.sets.filter((st) => st.atX).map((st) => endOf(ds, st)));
     for (const st of ds.sets) st.inner = xEnds.has(endOf(ds, st));
   }
   return out;
@@ -178,7 +184,14 @@ export function slipTrackwork(routes: Route[], sol: Solution, slips: DoubleSlip[
     if (!inside) { tw.throw[st.key] = { side: st.outside, leverOffset: SLIP_LEVER_OFFSET }; continue; }
     const toe = Math.round(st.frogS + PAST_FROG - 2 - st.lead);
     tw.points[st.key] = { toe, heel: SLIP_HEEL, single: 'straight' };
-    tw.throw[st.key] = { side: st.outside, leverOffset: SLIP_LEVER_OFFSET, leverAt: SLIP_LEVER_AT };
+    // (at an X centre, the diagonal's inner set thrown by hand, as the reference's (no room for a lever between the
+    // diagonals): the set on the track there has its lever outside, as the others)
+    // (two sets at one toe, facing each way (two slips end to end, one road joining the track where the next one's leaves):
+    // one key for both. Where they want their levers on the same side of the track, the words differ (each in its own
+    // frame): the lever then kept away from the other track by where it is, for both)
+    const was = tw.throw[st.key] as { side?: string; nail?: boolean } | undefined;
+    tw.throw[st.key] = st.atX || was?.nail ? { nail: true } : was?.side && was.side !== st.outside ? { awayFrom: [Math.round(st.away[0]), Math.round(st.away[1])], leverOffset: SLIP_LEVER_OFFSET, leverAt: SLIP_LEVER_AT }
+      : { side: st.outside, leverOffset: SLIP_LEVER_OFFSET, leverAt: SLIP_LEVER_AT };
     // (the check rail on this track that would run on into the blade: ended short of its toe)
     const sp = sol.splits[st.split], L = routeLength(routes[st.track]), sa = sp.merge ? L - sp.spans[0][1] : sp.spans[0][0], toeS = sa + 2 + st.lead + toe;
     for (const cr of sol.checkRails) {

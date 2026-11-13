@@ -201,7 +201,7 @@ export function networkSplits(s: Scad, routes: Route[], sol: Solution, p: BasePa
     const rts = three ? local : pair;
     // (the lever: as moved by hand, else the branch's own setting, else the options', else the main route's side)
     const ed = bladeEdit(throwEdit([P[0], P[1]]), blade);
-    const ownR = ed?.side ?? routes[j].throwSide;
+    const ownR = ed?.side ?? (ed?.awayFrom ? (worldToPose(P, ed.awayFrom)[0] > 0 ? 'left' : 'right') : undefined) ?? routes[j].throwSide;
     const own0 = ownR && ownR !== 'auto' ? ownR : p.throwSide;
     if (blade !== undefined && !three) return undefined;
     const own = blade === undefined ? own0 : blade === 0 ? 'left' : 'right';
@@ -227,7 +227,9 @@ export function networkSplits(s: Scad, routes: Route[], sol: Solution, p: BasePa
     const p00 = gsOwn === p.gaugeStuds ? p : { ...p, gaugeStuds: gsOwn, ...(gsOwn < 4 && { pointBlades: 1 as const }) };
     // (expert, stage 5c: this set's own blade shape and moving blades, over the design's)
     // (and its own mechanism: tines under the bed or blades on top, over the design's; not a three-way's, whose levers go by the design's)
-    const p0 = ed?.bladeStyle || ed?.blades || (ed?.mech && !C && ed.mech !== p00.mechStyle) ? { ...p00, ...(ed.mech && !C && { mechStyle: ed.mech }), ...(ed.bladeStyle && { bladeStyle: ed.bladeStyle }), ...(ed.blades && { pointBlades: ed.blades }) } : p00;
+    const p1 = ed?.bladeStyle || ed?.blades || (ed?.mech && !C && ed.mech !== p00.mechStyle) ? { ...p00, ...(ed.mech && !C && { mechStyle: ed.mech }), ...(ed.bladeStyle && { bladeStyle: ed.bladeStyle }), ...(ed.blades && { pointBlades: ed.blades }) } : p00;
+    // (thrown by hand, no lever: a nail switch, this set alone)
+    const p0 = ed?.nail && !C ? { ...p1, throwNail: true } : p1;
     const pg = sprungOnGrid(gw ? { ...p0, grid: gridIn(P, gw) } : p0);
     const choose = (keep: Pt[][]) => {
       let pp = pg.p, plan = switchPlan(rts, [used], pp, 1, foreign, keep), how: 'rigid' | 'tines' | 'angled' | undefined = pg.angled ? 'angled' : undefined;

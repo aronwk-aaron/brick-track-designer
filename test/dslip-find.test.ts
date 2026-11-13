@@ -35,19 +35,23 @@ describe('double slips found in plain routes', () => {
     expect(tw.points).toEqual({});
     expect(tw.throw).toEqual({ '0,-133': { side: 'left', leverOffset: 24 }, '-94,94': { side: 'right', leverOffset: 24 }, '94,-94': { side: 'right', leverOffset: 24 }, '0,133': { side: 'left', leverOffset: 24 } });
   });
-  it('the X yard: a slip at each slip road, double where both roads are drawn; the points as the hand-set ones', () => {
-    const d = TEMPLATES['X yard (6 tracks, single slips)'], { ds, tw } = found(d);
+  it('the X yard: a full double slip at each of the eight places a diagonal crosses a track; the four by its centre with an inner end there', () => {
+    const { ds, tw } = found(TEMPLATES['X yard (6 tracks, double slips)']);
     expect(ds).toHaveLength(8);
-    expect(ds.filter((x) => x.roads.length === 2)).toHaveLength(2);
-    expect(tw.points).toEqual(d.trackwork!.points);
-    // (its hand-set check rails shorten those at the acute frogs at the slips' ends without points too: the worked-out ones, by
-    // points only, among them; keyed a few mm along from where the hand-set ones were)
-    const hand = Object.entries(d.trackwork!.check!).map(([k, v]) => [k.split(',').map(Number), v] as const);
-    for (const [k, v] of Object.entries(tw.check)) {
-      const q = k.split(',').map(Number), h = hand.find(([p]) => Math.hypot(p[0] - q[0], p[1] - q[1]) < 5);
-      expect(h?.[1], k).toEqual(v);
-    }
-    expect(Object.keys(tw.check).length).toBeGreaterThanOrEqual(14);
+    expect(ds.every((x) => x.roads.length === 2 && x.sets.length === 4)).toBe(true);
+    // (the diagonals cross between the third and fourth tracks, at (40, 144) studs: the slips on those tracks have their inner end there)
+    const inner = ds.filter((x) => x.sets.some((st) => st.inner));
+    expect(inner.map((x) => x.centre.map((v) => Math.round(v / 8)).join(',')).sort()).toEqual(['32,124', '32,164', '48,124', '48,164']);
+    expect(inner.every((x) => x.sets.filter((st) => st.inner).length === 2)).toBe(true);
+    // (32 sets; where two slips meet end to end along a diagonal, its two sets there share a toe, and so one hand edit's key)
+    expect(ds.flatMap((x) => x.sets)).toHaveLength(32);
+    expect(Object.keys(tw.points)).toHaveLength(23);
+  });
+  it('the double slip crossover: four double slips, each with its inner end where the diagonals cross', () => {
+    const { ds } = found(TEMPLATES['Double slip crossover R104']);
+    expect(ds).toHaveLength(4);
+    expect(ds.map((x) => x.centre.map((v) => Math.round(v / 8)).join(',')).sort()).toEqual(['0,0', '0,40', '16,0', '16,40']);
+    expect(ds.every((x) => x.sets.filter((st) => st.inner).length === 2)).toBe(true);
   });
   it('hand edits win, field by field', () => {
     const { tw } = found(TEMPLATES['Double slip R104 left']);
