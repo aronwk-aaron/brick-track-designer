@@ -51,7 +51,7 @@ describe('double slips found in plain routes', () => {
   });
   it('hand edits win, field by field', () => {
     const { tw } = found(TEMPLATES['Double slip R104 left']);
-    const m = underHand({ throw: { '0,-160': { side: 'right' as const } }, points: { '0,160': { toe: 60 } } }, tw);
+    const m = underHand<Parameters<typeof underHand>[0]>({ throw: { '0,-160': { side: 'right' } }, points: { '0,160': { toe: 60 } } }, tw);
     expect(m.throw!['0,-160']).toEqual({ side: 'right', leverOffset: 24, leverAt: 5.5 });
     expect(m.points!['0,160']).toEqual({ toe: 60, heel: 18, single: 'straight' });
     expect(m.check).toEqual(tw.check);
