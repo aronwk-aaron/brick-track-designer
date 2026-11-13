@@ -43,6 +43,7 @@ import { carryChange, type Joint, jointNames, pruneApart, renameApart, setApart,
 import { type CopiedEdit, copyEdits, followTrackwork, isEdit, leftOver, mirrorAnchors, pasteEdits, reconcileTrackwork, renameAnchors } from './twfollow';
 import { type OptChoice, optionForm, type OptCtx, type OptField } from './settings';
 import { designFacts, GROUPS, groupFields, groupView, resetFields } from './settingsgroups';
+import { touchTips } from './tips';
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 const routesEl = $('routes'), infoEl = $('info'), errEl = $('error');
@@ -1990,16 +1991,24 @@ function renderTouchbar() {
   const tools = canvas.touchTools(), sig = JSON.stringify(tools);
   if (sig === touchbarSig) return;
   touchbarSig = sig;
-  touchbarEl.replaceChildren(...tools.map((t) => {
+  // (in groups that wrap as a whole: turn and mirror, the four arrows, the rest)
+  const groups = new Map<number, HTMLElement>();
+  for (const t of tools) {
     const b = document.createElement('button'); b.type = 'button'; b.dataset.act = t.id; b.textContent = t.label; b.title = t.title; b.setAttribute('aria-label', t.title);
     if (t.on !== undefined) b.setAttribute('aria-pressed', String(t.on));
     if (t.primary) b.className = 'primary';
     b.disabled = !!t.off;
-    return b;
-  }));
+    const k = t.group ?? 0;
+    if (!groups.has(k)) { const g = document.createElement('div'); g.className = 'tbgroup'; groups.set(k, g); }
+    groups.get(k)!.append(b);
+  }
+  touchbarEl.replaceChildren(...[...groups.entries()].sort((a, b) => (a[0] || 99) - (b[0] || 99)).map((e) => e[1]));
   touchbarEl.hidden = !tools.length;
 }
 touchbarReady = true;
+touchTips();
+// (the legend's line for a finger: there's no hover)
+if (finger()) $('legend-hint').textContent = 'Tap a row to hide it; the line at the foot says what a tap does.';
 touchbarEl.addEventListener('click', (e) => { const b = (e.target as HTMLElement).closest<HTMLButtonElement>('button[data-act]'); if (b && !b.disabled) canvas.touchDo(b.dataset.act!); });
 // Plan layers on and off: click one in the legend (remembered).
 // (the anti-stud tubes off to start with: a ring at every one cluttered the plan)

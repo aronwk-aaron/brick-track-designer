@@ -1,7 +1,7 @@
 // The app on a tablet's touch screen (CI's smoke job, after browser-smoke): the built site served by vite preview, at a
 // landscape and a portrait tablet size with a touch screen (no mouse), everything done with fingers: a template opened from
 // the browser, the plan panned, pinched, a track tapped, double-tapped, held, box-selected, dragged and undone; a part from
-// the palette placed with the touch bar; a track drawn; the menus, the settings, the 3D view turned. The page
+// the palette placed with the touch bar; a track drawn; the menus, the settings, a tip held for, the 3D view turned. The page
 // itself never scrolls or zooms. Any error on the page fails it. SMOKE_MINUTES (default 4) stops it.
 //   pnpm build && npx tsx scripts/touch-smoke.mts      (CHROME: the browser to use; PORT: preview's; SHOTS: a folder for screenshots)
 import { spawn } from 'node:child_process';
@@ -188,6 +188,13 @@ async function tablet(width: number, height: number, tag: string) {
     const b = (await page.locator('#track').boundingBox())!; await f.tap(e2 ?? [b.x + b.width / 2, b.y + b.height / 2]); await sleep(150);
     check(!(await open()), `[${tag}] and closes on a tap on the plan`);
   }
+
+  at = `${tag}: a tip`;
+  await f.hold(await centre('#fit'), 800);
+  check(await page.locator('#touchtip').isVisible() && /Fit the track/.test(await page.locator('#touchtip').innerText()), `[${tag}] a finger held on a button shows its tip`);
+  await shot('tip');
+  await f.tap(e2 ?? [10, 10]); await sleep(100);
+  check(await page.locator('#touchtip').isHidden(), `[${tag}] and the next tap hides it`);
 
   at = `${tag}: settings`;
   await tapOn('#settings-open'); await sleep(300);

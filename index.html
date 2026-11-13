@@ -218,9 +218,10 @@
     #hint { left: 10px; bottom: 10px; max-width: calc(100% - 140px); pointer-events: none; }
     #coords:empty, #hint:empty { display: none; }
     /* (a touch screen: what keys do while placing a part, drawing or using a tool, as buttons over the plan's foot) */
-    #touchbar { left: 50%; transform: translateX(-50%); bottom: calc(var(--hint-h, 24px) + 18px); display: flex; flex-wrap: wrap; justify-content: center; gap: 6px; padding: 6px; z-index: 2; max-width: calc(100% - 20px); touch-action: manipulation; }
+    #touchbar { left: 10px; right: 10px; width: fit-content; margin: 0 auto; bottom: calc(var(--hint-h, 24px) + 18px); display: flex; flex-wrap: wrap; justify-content: center; gap: 6px; padding: 6px; z-index: 2; touch-action: manipulation; }
     #touchbar[hidden] { display: none; }
-    #touchbar button { height: 44px; min-width: 44px; padding: 0 12px; font-size: 15px; }
+    #touchbar .tbgroup { display: flex; gap: 4px; } #touchbar .tbgroup + .tbgroup { margin-left: 6px; }
+    #touchbar button { height: 44px; min-width: 44px; padding: 0 10px; font-size: 15px; }
     #touchbar button[aria-pressed="true"] { background: var(--accent-soft); color: var(--accent); border-color: var(--accent); }
     #coords { right: 10px; bottom: 10px; color: var(--muted); font-variant-numeric: tabular-nums; pointer-events: none; }
     #selbar { left: 10px; top: 10px; display: flex; gap: 4px; align-items: center; padding: 4px 6px; z-index: 1; flex-wrap: wrap; max-width: calc(100% - 280px); } /* (clear of the legend, which is about 250px wide open) */
@@ -420,6 +421,7 @@
       #views .explode input, #explode { width: 120px; height: 32px; }
       /* (a template card's other actions: shown, not waiting for a hover) */
       #tpl-body .tcard .tact { opacity: 1; height: 38px; }
+      dialog button, #legend button, #settings-close { min-width: 38px; }
       /* (held for its tip, a button doesn't select its text or open the system's callout) */
       button, summary, [role=button], .tcard, #legend-rows > span { -webkit-touch-callout: none; -webkit-user-select: none; user-select: none; }
     }
@@ -710,7 +712,7 @@
         <ul>
           <li>Each track is a route, with a card in the Routes panel (click its line to open it): its Shape (straights and curves, each to change, remove or add to), its Place (name, start, heading, height, and its own gauge where it isn't the design's), its Ends (an end connector or a buffer stop; a branch's lever side), and Guard rails and dual gauge. + Route adds one by numbers.</li>
           <li>Mixed gauges: Settings › Track › Gauge is the design's gauge; a route's own Gauge (its card › Place; empty: the design's) makes that one track narrower or wider, a narrow-gauge line in a standard-gauge layout, say. Tracks of different gauges cross (each one's flangeways cut through the other's rails) and run side by side; points between them aren't built (the build says where). Only track at 4 studs is ever bought LEGO or BrickTracks track.</li>
-          <li>Each number's range is in its tip (hover it) and under the card's fields; a number outside it is held to it.</li>
+          <li>Each number's range is in its tip (hover it, or hold a finger on it) and under the card's fields; a number outside it is held to it.</li>
         </ul>
         <h3>Switches</h3>
         <ul>
@@ -750,7 +752,10 @@
         <h3>On a touch screen</h3>
         <ul>
           <li>One finger does what the mouse's left button does: tap a track to select it, drag it to move it, drag an end, a lever or points; in Draw, tap to lay track. In Select, a finger on empty ground moves the plan. Two fingers pinch to zoom and move it.</li>
-          <li>Hold a finger still on a track to add it to the selection, or take it out. The selection's bar has Copy, Paste, Mirror, Turn and Delete; the routes and settings panels slide over the plan from the toolbar's buttons.</li>
+          <li>Hold a finger still on a track to add it to the selection, or take it out. Double-tap a track to select everything joined to it. Hold a finger still on empty ground, then drag, to select with a box. The selection's bar has Copy, Paste, Mirror, Turn and Delete; the routes and settings panels slide over the plan from the toolbar's buttons.</li>
+          <li>Drawing: the track follows your finger and is laid where you lift it. Hold a finger still, or tap Stop, to end the track.</li>
+          <li>The bar at the plan's foot has what keys do: placing a part (turn, mirror, move a stud, Snap, Put down, Cancel), drawing (Snap, Stop), a cut path (Undo corner, Done), a tool waiting for a tap (Cancel), and Move alone for joined tracks. Drag a part into place, then tap Put down.</li>
+          <li>Hold a finger on a button or a name to see its tip.</li>
         </ul>
         <h3>Layout parts (for the layout designer)</h3>
         <ul>
