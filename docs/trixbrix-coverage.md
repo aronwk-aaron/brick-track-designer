@@ -23,7 +23,7 @@ Match: **exact** (ends, and lever or section where it has one), **close** (a tem
 **missing** (no template or setting makes it), **in progress elsewhere** (the double slips and their crossovers, being
 rebuilt separately).
 
-Counts: close 58, exact 208, in progress elsewhere 15, missing 53, n/a 1 (of 335).
+Counts: close 67, exact 208, in progress elsewhere 15, missing 44, n/a 1 (of 335).
 
 ## Parts
 
@@ -297,8 +297,8 @@ Counts: close 58, exact 208, in progress elsewhere 15, missing 53, n/a 1 (of 335
 | tb combo r104 railyard 4T right | Yard R104, four tracks, right | exact | ends within 0.17 studs: the library's own placing of the set's pieces; 3 lever tab(s): lever place not checked (template not in the build batch) |
 | tb combo r104t 3T | Three-way R104 to three parallel tracks | exact | ends within 0.18 studs: the library's own placing of the set's pieces; 2 lever tab(s): lever place not checked (template not in the build batch) |
 | tb combo r104y 2T | Wye R104 to two parallel tracks | exact | ends within 0.16 studs: the library's own placing of the set's pieces; 1 lever tab(s): lever place not checked (template not in the build batch) |
-| tb combo r120 pt1 left | - | missing | no template for the arrangement; its pieces (23, 10 kinds): all made by BTD (exact or close), so it is only a template to add |
-| tb combo r120 pt1 right | - | missing | no template for the arrangement; its pieces (23, 10 kinds): all made by BTD (exact or close), so it is only a template to add |
+| tb combo r120 pt1 left | Double turnout R104 and R120, left | close | the right one's mirror image (as the range's left and right sets are): the library's own left placing gave a section too big for a 256 mm bed |
+| tb combo r120 pt1 right | Double turnout R104 and R120, right | close | its pieces joined end to end; the library's 'ct r120 sixth' (an R120 1.875-degree curve) turned so the loop closes (the library turns one 3.75 degrees the wrong way): 6 ends to the library's 8 |
 | tb combo r120 siding left | Switch R120 left with its siding curves | exact | ends within 0.09 studs: the library's own placing of the set's pieces; 1 lever tab(s): lever place not checked (template not in the build batch) |
 | tb combo r120 siding right | Switch R120 right with its siding curves | exact | ends within 0.09 studs: the library's own placing of the set's pieces; 1 lever tab(s): lever place not checked (template not in the build batch) |
 | tb combo r120 turnout left | Switch R120 left with its turnout curve | exact | 1 lever tab(s): lever place not checked (template not in the build batch) |
@@ -331,10 +331,10 @@ Counts: close 58, exact 208, in progress elsewhere 15, missing 53, n/a 1 (of 335
 | tb combo r72 pt3 right | Double pass-through turnout R72 right | exact | ends within 0.26 studs: the library's own placing of the set's pieces; 1 lever tab(s): lever place not checked (template not in the build batch) |
 | tb combo r72 pt4 left | Double pass-through turnout R72 and R40, left | close | ends 0.31 studs / 0.0° off; 2 lever tab(s): lever place not checked (template not in the build batch) |
 | tb combo r72 pt4 right | Double pass-through turnout R72 and R40, right | exact | ends within 0.22 studs: the library's own placing of the set's pieces; 2 lever tab(s): lever place not checked (template not in the build batch) |
-| tb combo r72 pt5 left | - | missing | made by chaining its pieces (ends within the library's slack), but some of its sections don't fit a 256 mm bed: left out of the templates for now |
-| tb combo r72 pt5 right | - | missing | no template for the arrangement; its pieces (19, 12 kinds): all made by BTD (exact or close), so it is only a template to add |
-| tb combo r72 pt6 left | - | missing | made by chaining its pieces (ends within the library's slack), but some of its sections don't fit a 256 mm bed: left out of the templates for now |
-| tb combo r72 pt6 right | - | missing | no template for the arrangement; its pieces (20, 15 kinds): all made by BTD (exact or close), so it is only a template to add |
+| tb combo r72 pt5 left | Double pass-through turnout R72 and R56, left | close | the right one's mirror image: chained from the library's left placing, a section was too big for a 256 mm bed |
+| tb combo r72 pt5 right | Double pass-through turnout R72 and R56, right | close | its pieces joined end to end; 0.06 studs open as the library places them: two R72 curves R72.29 and R71.19 (under 1.2%) so the loop closes |
+| tb combo r72 pt6 left | Triple pass-through turnout R72, R56 and R40, left | close | the right one's mirror image: chained from the library's left placing, a section was too big for a 256 mm bed |
+| tb combo r72 pt6 right | Triple pass-through turnout R72, R56 and R40, right | close | its pieces joined end to end; two R72 curves R72.29 and R71.19 so the loop closes, as the double one |
 | tb combo r72 siding left | Switch R72 left with its siding curves | close | ends 0.31 studs / 0.0° off; 1 lever tab(s): lever place not checked (template not in the build batch) |
 | tb combo r72 siding right | Switch R72 right with its siding curves | exact | ends within 0.26 studs: the library's own placing of the set's pieces; 1 lever tab(s): lever place not checked (template not in the build batch) |
 | tb combo r72 turnout left | Switch R72 left with its turnout curve | exact | ends within 0.23 studs: the library's own placing of the set's pieces; 1 lever tab(s): lever place not checked (template not in the build batch) |
@@ -344,9 +344,9 @@ Counts: close 58, exact 208, in progress elsewhere 15, missing 53, n/a 1 (of 335
 | tb combo switch r40 parallel triple | Three-way R40 to three parallel tracks | exact | ends within 0.16 studs: the library's own placing of the set's pieces; lever within 0.45 studs of the part's tab; housing: the reference's cross-bar, 16 studs with a 4 x 3 stud block at each end (Lever housing: Cross-bar); the lever built in where the clip-on lever unit goes |
 | tb combo switch r40 parallel wye 8sg | Wye R40, 8-stud spacing, to two parallel tracks | exact | ends within 0.18 studs: the library's own placing of the set's pieces; lever within 0.64 studs of the part's tab; housing: the reference's cross-bar, 16 studs with a 4 x 3 stud block at each end (Lever housing: Cross-bar); the lever built in where the clip-on lever unit goes |
 | tb combo switch r40 parallel wye | Modular wye R40 with parallel-track adapters | exact | ends within 0.16 studs: the library's own placing of the set's pieces; 1 lever tab(s): lever place not checked (template not in the build batch); from the 4DBrix trackwork group |
-| tb combo wide switched curve section - 2 tracks - 2 ends | - | missing | no template for the arrangement; its pieces (28, 9 kinds): all made by BTD (exact or close), so it is only a template to add |
-| tb combo wide switched curve section - 2 tracks - 3 ends | - | missing | no template for the arrangement; its pieces (40, 11 kinds): all made by BTD (exact or close), so it is only a template to add |
-| tb combo wide switched curve section - 3 tracks - 3 ends | - | missing | no template for the arrangement; its pieces (48, 11 kinds): all made by BTD (exact or close), so it is only a template to add |
+| tb combo wide switched curve section - 2 tracks - 2 ends | Wide switched parallel curve section | close | its pieces joined end to end; the library leaves a 0.4-stud gap open between two curves, joined here: 4 ends to its 6 |
+| tb combo wide switched curve section - 2 tracks - 3 ends | Wide switched parallel curve section with three ends | close | its pieces joined end to end; 0.17 studs open as the library places them: four R120 curves R120.23 / R120.21 so the loop closes |
+| tb combo wide switched curve section - 3 tracks - 3 ends | Wide switched triple parallel curve section | close | its pieces joined end to end; 0.17 and 0.11 studs open as placed: R120 curves R120.23 / R120.21 and R119.98 / R120.31 so the loops close |
 | tb dg crossing x45 1mt left | - | missing | no template for the arrangement; its pieces (9, 5 kinds): not exact: tb ng ct x45 left (missing) |
 | tb dg crossing x45 1mt right | - | missing | no template for the arrangement; its pieces (9, 5 kinds): not exact: tb ng ct x45 right (missing) |
 | tb dg crossing x45 2mt left | - | missing | no template for the arrangement; its pieces (15, 6 kinds): not exact: tb ng ct x45 left (missing) |
@@ -354,8 +354,8 @@ Counts: close 58, exact 208, in progress elsewhere 15, missing 53, n/a 1 (of 335
 | tb dg crossing x45 2mt star | - | missing | no template for the arrangement; its pieces (21, 8 kinds): not exact: tb ng ct x45 left (missing), tb ng ct x45 right (missing) |
 | tb dg crossing x45 rhombus left | - | missing | no template for the arrangement; its pieces (26, 8 kinds): not exact: tb ng ct x45 left (missing) |
 | tb dg crossing x45 rhombus right | - | missing | no template for the arrangement; its pieces (26, 8 kinds): not exact: tb ng ct x45 right (missing) |
-| tb dome crossing r104 r120 | - | missing | no template for the arrangement; its pieces (29, 14 kinds): all made by BTD (exact or close), so it is only a template to add |
-| tb double dome crossing r104 r120 | - | missing | no template for the arrangement; its pieces (54, 14 kinds): all made by BTD (exact or close), so it is only a template to add |
+| tb dome crossing r104 r120 | - | missing | chained and closed (R104 curves as R103.48), but a section of it doesn't fit a 256 mm bed (no cut found): left out of the templates for now |
+| tb double dome crossing r104 r120 | - | missing | chained and closed (R104 curves as R103.48), but a section of it doesn't fit a 256 mm bed (no cut found): left out of the templates for now |
 | tb ng combo r48 ry2 left | Narrow-gauge switch R48 left to a parallel track | exact | ends within 0.09 studs: the library's own placing of the set's pieces; 1 lever tab(s): lever place not checked (template not in the build batch) |
 | tb ng combo r48 ry2 right | Narrow-gauge switch R48 right to a parallel track | exact | ends within 0.09 studs: the library's own placing of the set's pieces; 1 lever tab(s): lever place not checked (template not in the build batch) |
 | tb ng combo r48 to left | Narrow-gauge switch R48 left with its turnout curve | exact | ends within 0.09 studs: the library's own placing of the set's pieces; 1 lever tab(s): lever place not checked (template not in the build batch) |
@@ -366,7 +366,7 @@ Counts: close 58, exact 208, in progress elsewhere 15, missing 53, n/a 1 (of 335
 | tb ng combo x22 right | - | missing | no template for the arrangement; its pieces (5, 3 kinds): not exact: tb ng crossing x22.5 right (missing) |
 | tb switch r104 wye 8sg | Wye R104, 8-stud gap, with its curves | exact | ends within 0.09 studs: the library's own placing of the set's pieces; lever within 0.64 studs of the part's tab; housing: the reference's cross-bar, 16 studs with a 4 x 3 stud block at each end (Lever housing: Cross-bar); the lever built in where the clip-on lever unit goes |
 | tb switch r104 wye | Wye R104 with its adapter curves | exact | ends within 0.09 studs: the library's own placing of the set's pieces; lever within 0.56 studs of the part's tab; housing: the reference's cross-bar, 16 studs with a 4 x 3 stud block at each end (Lever housing: Cross-bar); the lever built in where the clip-on lever unit goes |
-| tb t-junction r104 r120 | - | missing | no template for the arrangement; its pieces (40, 16 kinds): all made by BTD (exact or close), so it is only a template to add |
+| tb t-junction r104 r120 | - | missing | chained and closed (curves R103.17 to R107.11), but a section of it doesn't fit a 256 mm bed (no cut found): left out of the templates for now |
 | tb t-junction r40 r56 | - | missing | no template for the arrangement; its pieces (19, 12 kinds): all made by BTD (exact or close), so it is only a template to add |
 | tb w-junction r104 r120 | W-junction R104 and R120 | exact | ends within 0.22 studs: the library's own placing of the set's pieces; 2 lever tab(s): lever place not checked (template not in the build batch) |
 

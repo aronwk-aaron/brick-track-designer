@@ -167,7 +167,7 @@ describe('search and filters', () => {
     expect(names({ query: 'switch r104' }).length).toBeGreaterThan(1);
     expect(names({ query: 'SWITCH r104 straight' })).toEqual(['Switch R104 left, lever on the straight side']);
     expect(names({ query: 'wye' }).length).toBeGreaterThan(5);
-    expect(names({ query: 'pass-through' }).length).toBe(7);
+    expect(names({ query: 'pass-through' }).length).toBe(9);
     expect(names({ query: 'curved crossing' }).length).toBeGreaterThan(5);
     expect(names({ query: 'zzzz' })).toEqual([]);
     expect(names({ query: 'switch zzzz' })).toEqual([]);
