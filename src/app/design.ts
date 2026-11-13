@@ -354,7 +354,7 @@ export function readDesign(v: unknown): Design {
   return upgradeDesign(clampDesign(d as unknown as Design));
 }
 export const OPTION_DEFAULTS: PieceOptions = {
-  throwSide: 'auto', leverOffset: 8, pointThrow: 3, pointClearance: 0.3, springPreload: 1, springThickness: 0.9, springLength: 40,
+  throwSide: 'auto', threeWayLevers: 2, leverOffset: 8, pointThrow: 3, pointClearance: 0.3, springPreload: 1, springThickness: 0.9, springLength: 40,
   flangeway: 3, flangewayDepth: 3, checkRailLen: 30, checkRailW: 1, checkRailFlare: 1.5, printBedX: 256, printBedY: 256, baseplate: 0, baseplateX: 0, baseplateY: 0, ballast: 'none', bottomStyle: 'antistud', joint: 'lego', pointsModule: 'built-in', endSupports: true, tongueRails: 'all', grip: 'edges', pointsPieces: 1, pointBlades: 2, throwStyle: 'built-in', mechStyle: 'plates', curveStuds: 'follow',
   throwAction: 'detent', bladeStyle: 'sprung', bladeLip: 'pin', sleepers: 'sleepers', undersideGrid: 'baseplate', splitTrack: 'lengths', pieceLengthStuds: 16, studsAtCuts: 'off', legoTrack: 'lego', axleStuds: 2, sleeperWidthStuds: 2, sleeperGapStuds: 2, studFit: 0.18, antistudFit: 0.06,
   bladeDiscD: 14, throwBallast: false, axleHoles: false, pegOnBallast: false,
@@ -714,7 +714,7 @@ export const TEMPLATE_SETS = new Set<string>([...Object.keys(REF1_SETS), ...Obje
 /** The Templates list's groups (in order), each its templates by name. */
 export const TEMPLATE_GROUPS: [string, string[]][] = [
   ['Crossings', ['90° crossing', '22.5° crossing', 'Double slip (22.5°)', 'Double slip (45°, R40)', 'Crossing on a curve']],
-  ['Switches', ['Left switch (LEGO)', 'Right switch (LEGO)', 'Wye switch', 'Three-way switch (one throw)', 'Three-way switch (tandem, two throws)']],
+  ['Switches', ['Left switch (LEGO)', 'Right switch (LEGO)', 'Wye switch', 'Three-way switch', 'Three-way switch (one throw)', 'Three-way switch (tandem, two throws)']],
   ['Layouts', ['Oval (LEGO R40)', 'Crossover (R40)', 'Double crossover (R56)', 'Yard ladder (R40)', 'Yard (R56)', 'X yard (6 tracks, single slips)', 'Wye with a crossover', 'Double-track return loop (turning right)', 'Double-track return loop (turning left)']],
   ['Features', ['Grade up at 2.5%', 'Helix (R104, two turns)', 'Siding ending in a buffer stop', 'Bridge with guard rails', 'Straight cut into parts by hand', 'Curve and straights cut into parts by hand', 'Double track, one on sleepers, one on ballast', 'Station track on a solid bed, the line beyond on sleepers', 'Track on sleepers, a stretch of it on a solid bed', 'Sleepers edited by hand', 'Double track on shared sleepers', 'Siding on ballast wider on one side, stepped round its buffer stop', 'Rails edited by hand', 'Crossover with points of their own', 'Dual gauge track', 'Dual gauge crossing 90°', 'Dual gauge crossing 45°', 'Dual gauge track, narrow gauge centred', 'Dual gauge crossing 90°, narrow gauge centred', ...Object.keys(GAUGE_SPLITS), ...Object.keys(DUAL_BRANCHES), 'Narrow gauge beside and across standard track', 'Banked curve', 'Crossing on sleepers']],
   ['Monorail', ['Monorail oval on supports', 'Monorail siding (points and a short curve)', 'Monorail level crossing (experimental)']],
@@ -887,7 +887,14 @@ export const TEMPLATES: Record<string, Design> = {
     { name: 'Left', x: 0, y: 0, heading: 0, segs: [{ kind: 'curve', radius: 40, angle: 22.5 }, { kind: 'straight', studs: 16 }] },
     { name: 'Right', x: 0, y: 0, heading: 0, segs: [{ kind: 'curve', radius: 40, angle: -22.5 }, { kind: 'straight', studs: 16 }] },
   ] },
-  'Three-way switch (one throw)': { version: 1, gaugeStuds: 4, routes: [
+  // (a lever to each side's blade at the two ends of one cross-bar, as the reference's triple switches: the default)
+  'Three-way switch': { version: 1, gaugeStuds: 4, routes: [
+    { name: 'Straight', x: 0, y: 0, heading: 0, segs: [{ kind: 'straight', studs: 28 }] },
+    { name: 'Left', x: 0, y: 0, heading: 0, segs: [{ kind: 'curve', radius: 40, angle: 22.5 }, { kind: 'straight', studs: 14 }] },
+    { name: 'Right', x: 0, y: 0, heading: 0, segs: [{ kind: 'curve', radius: 40, angle: -22.5 }, { kind: 'straight', studs: 14 }] },
+  ] },
+  // (the same, worked by one lever with three positions)
+  'Three-way switch (one throw)': { version: 1, gaugeStuds: 4, options: { threeWayLevers: 1 }, routes: [
     { name: 'Straight', x: 0, y: 0, heading: 0, segs: [{ kind: 'straight', studs: 28 }] },
     { name: 'Left', x: 0, y: 0, heading: 0, segs: [{ kind: 'curve', radius: 40, angle: 22.5 }, { kind: 'straight', studs: 14 }] },
     { name: 'Right', x: 0, y: 0, heading: 0, segs: [{ kind: 'curve', radius: 40, angle: -22.5 }, { kind: 'straight', studs: 14 }] },

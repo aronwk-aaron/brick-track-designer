@@ -140,9 +140,10 @@ export function optionForm(d: () => Design): { form: OptSection[] } {
           no: (c) => (c.fdb ? undefined : 'only with Mechanism: Blades on top, on pins') },
         { v: 'nail', t: 'Nail switch (by hand, no lever)', tip: 'As on the reference double slips\' inner points: no lever, no arm. The slider stays under the points, held at either end by an over-centre spring; push the blade over with a fingernail in the notch on its plate. Trains can trail through. A three-way\'s two blades are each pushed over on their own (no spring there: they stay by friction).',
           con: 'Nothing to work it from beside the track, nor to motorise.', no: (c) => (c.fdb ? undefined : 'only with Mechanism: Blades on top, on pins') }] },
-      { key: 'threeWayLevers', label: 'Three-way switches worked by', numeric: true, off: (c) => (c.fdb && c.o.throwStyle === 'nail' ? 'Throw is Nail switch: no levers, each blade is pushed over by hand' : undefined), get: () => d().options?.threeWayLevers ?? 1, set: (v) => { d().options = { ...d().options, threeWayLevers: Number(v) === 2 ? 2 : 1 }; }, def: 1,
+      { key: 'threeWayLevers', label: 'Three-way switches worked by', numeric: true, off: (c) => (c.fdb && c.o.throwStyle === 'nail' ? 'Throw is Nail switch: no levers, each blade is pushed over by hand' : undefined), get: () => d().options?.threeWayLevers ?? 2, set: (v) => { d().options = { ...d().options, threeWayLevers: Number(v) === 1 ? 1 : 2 }; }, def: 2,
         help: 'For three-way switches (two branches leaving one track at the same place, one each side). Other switches have one lever.', choices: [
-        { v: '1', t: 'One lever, three positions', tip: 'One slider under both blades. The lever clicks at left, straight and right.' },
+        { v: '1', t: 'One lever, three positions', tip: 'One slider under both blades. The lever clicks at left, straight and right.',
+          con: 'The middle position isn\'t locked: a train trailing through can push the lever over. Neither side can be set on its own.' },
         { v: '2', t: 'Two levers, one each side', tip: 'Each blade has its own slider and lever, with two positions, as the reference triple switches. Both blades closed: straight. One open: the branch on its side.',
           con: 'Both levers thrown at once set no route: a train derails there. It takes a lever\'s room on both sides (Lever side doesn\'t apply). The levers click; no over-centre spring or snap clamp.',
           no: (c) => (c.fdb ? undefined : 'only with Mechanism: Blades on top, on pins') }] },

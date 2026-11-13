@@ -3,7 +3,8 @@
 // both blades closed, straight; the left one open, left; the right one open, right. Checked here: each route set, a
 // wheel's flange passes (the sweep of flange-clearance.test.ts, along both rails of the route, the blades and sliders
 // where that route has them); the blades clear of each other wherever each is (both open too, which sets no route);
-// what's built (a slider and a lever a side, two detent dimples each); and that a three-way with one lever is as it was.
+// what's built (a slider and a lever a side, two detent dimples each; the default for every three-way, the generic
+// template too); and that a three-way with one lever is as it was.
 import { describe, expect, it } from 'vitest';
 import { buildDesign, clearBuildCache, type TrackworkItem } from '../src/app/build';
 import { eachLever } from '../src/app/canvas';
@@ -72,7 +73,7 @@ describe('a three-way with a lever to each blade', { timeout: 600000 }, () => {
       expect(thr[0].translate([plan.sets[0].leverTravel, 0, 0]).intersect(thr[1]).volume()).toBe(0);
     });
 
-  it('as built: a blade, a slider and a lever each side, one switch; with one lever (the default) as it was', async () => {
+  it('as built: a blade, a slider and a lever each side, one switch; with one lever as it was', async () => {
     const w = await kernel();
     for (const name of ['Three-way switch (one throw)', 'Three-way R40']) {
       const d = TEMPLATES[name], one = buildDesign(w, { ...d, options: { ...d.options, threeWayLevers: 1 } }), two = buildDesign(w, { ...d, options: { ...d.options, threeWayLevers: 2 } });
@@ -82,6 +83,10 @@ describe('a three-way with a lever to each blade', { timeout: 600000 }, () => {
       expect(two.info.switches).toBe(1);
       expect(two.info.warnings).toEqual([]);
     }
+    // (the default, every three-way: the generic template, with nothing set, has a lever each side; its one-throw twin one)
+    const names = (b: ReturnType<typeof buildDesign>) => b.pieces.map((q) => q.name).filter((n) => /points|throw|lever/.test(n)).map((n) => n.replace(/^switch-/, ''));
+    expect(names(buildDesign(w, structuredClone(TEMPLATES['Three-way switch'])))).toEqual(['points1', 'throw1', 'lever1', 'points2', 'throw2', 'lever2']);
+    expect(names(buildDesign(w, structuredClone(TEMPLATES['Three-way switch (one throw)'])))).toEqual(['points-a', 'points-b', 'throw', 'lever']);
     // (on tines under the bed there's one slider: the choice is left as one lever)
     const d = TEMPLATES['Three-way switch (one throw)'], tines = (n: 1 | 2) => buildDesign(w, { ...d, options: { ...d.options, mechStyle: 'tines', threeWayLevers: n } });
     expect(tines(2).pieces.map((q) => q.name)).toEqual(tines(1).pieces.map((q) => q.name));

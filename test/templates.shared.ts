@@ -38,7 +38,7 @@ const BUDGET: Record<string, number> = {
   'Yard (R56)': 139, 'Double-track return loop (turning right)': 390, 'Double-track return loop (turning left)': 283, 'Yard ladder (R40)': 71,
   'Wye with a crossover': 58, '90° crossing': 3, '22.5° crossing': 14, 'Double slip (22.5°)': 16, 'Double slip (45°, R40)': 23,
   'Crossing on a curve': 3, 'Left switch (LEGO)': 7, 'Right switch (LEGO)': 7, 'Left switch (BrickTracks R104)': 7,
-  'Right switch (BrickTracks R104)': 8, 'Wye switch': 8, 'Three-way switch (one throw)': 8, 'Three-way switch (tandem, two throws)': 23,
+  'Right switch (BrickTracks R104)': 8, 'Wye switch': 8, 'Three-way switch': 11, 'Three-way switch (one throw)': 8, 'Three-way switch (tandem, two throws)': 23,
   'Test print 1: stud and anti-stud fits': 3, 'Test print 2: track joints': 3, 'Test print 3: switch as built': 8,
   'Test print 4: points three ways': 8, 'Test print 5: seat for a LEGO curve': 3, 'Curved switch R40 45° left': 8, 'Curved switch R40 45° right': 7,
   'Curved switch R40 90° left': 7, 'Curved switch R40 90° right': 7, 'Curved switch R56 90° left': 9, 'Curved switch R56 90° right': 8,
