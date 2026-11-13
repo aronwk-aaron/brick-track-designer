@@ -11,11 +11,11 @@ describe('warnings: points', { timeout: 600000 }, () => {
   });
   it('the over-centre spring, left out on tines and on a three-way', async () => {
     await fires(/the over-centre spring, the switch stand and the prototype blades are only built with blades on top: left out/, D(SWITCH(), { mechStyle: 'tines', throwAction: 'overcentre' }), D(SWITCH(), { throwAction: 'overcentre' }));
-    await fires(/a three-way's points have three positions: the over-centre spring has two/, D(THREE_WAY(), { throwAction: 'overcentre' }), D(THREE_WAY()));
+    await fires(/a three-way's points have three positions: the over-centre spring has two/, D(THREE_WAY(), { throwAction: 'overcentre', threeWayLevers: 1 }), D(THREE_WAY(), { threeWayLevers: 1 }));
   });
   it('a switch stand: the over-centre spring left out, and a three-way\'s middle not locked', async () => {
     await fires(/a switch stand locks the points at each end, so a train can't push them over: the over-centre spring is left out/, D(SWITCH(), { throwAction: 'overcentre', throwStyle: 'stand' }), D(SWITCH(), { throwStyle: 'stand' }));
-    await fires(/a switch stand locks at its two ends: a three-way's middle \(straight\) position is with the handle upright, not locked/, D(THREE_WAY(), { throwStyle: 'stand' }), D(SWITCH(), { throwStyle: 'stand' }));
+    await fires(/a switch stand locks at its two ends: a three-way's middle \(straight\) position is with the handle upright, not locked/, D(THREE_WAY(), { throwStyle: 'stand', threeWayLevers: 1 }), D(SWITCH(), { throwStyle: 'stand' }));
   });
   it('rigid blades: no lip over the front', async () => {
     await fires(/rigid blades have no lip over the front/, D(SWITCH(), { ballast: 'none', bladeStyle: 'simple', bladeLip: 'front' }), D(SWITCH(), { ballast: 'none', bladeStyle: 'prototype', bladeLip: 'front' }));

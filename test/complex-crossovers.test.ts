@@ -7,5 +7,5 @@ complexSuite([
   ['double crossover, R56, a track and both crossovers drawn backwards', fixture('double-crossover-r56-reversed')],
   ['double crossover, R56, on ballast with the buddy layer', fixture('double-crossover-r56-buddy')],
   ['double crossover, R104, points on tines', fixture('double-crossover-r104'), [], { mechStyle: 'tines' }],
-  ['three-ways in a network on buddy ballast: on stands, prototype blades', fixture('threeway-net-split-merge'), [/switch stand locks/], { throwStyle: 'stand', bladeStyle: 'prototype', ballast: 'buddy' }],
+  ['three-ways in a network on buddy ballast: on stands, prototype blades', fixture('threeway-net-split-merge'), [/switch stand locks/], { throwStyle: 'stand', bladeStyle: 'prototype', ballast: 'buddy', threeWayLevers: 1 }],
 ]);

@@ -58,9 +58,13 @@ function check(w: Awaited<ReturnType<typeof kernel>>, d: Design, expectWarn: Reg
         }
         // (a lever for every toe the solver finds points at: a three-way's splits share one)
         const rs = orient(toRoutes(d).filter((r) => r.segments.length)), sol = solve(rs, { gauge: (d.gaugeStuds + 1) * 8, step: 0.5 });
-        const toes = new Set(sol.splits.map((sp) => { const q = routePose(rs[sp.routes[0]], sp.merge ? sp.spans[0][1] : sp.spans[0][0]); return `${Math.round(q[0])},${Math.round(q[1])}`; }));
+        const atToe = new Map<string, number>();
+        for (const sp of sol.splits) { const q = routePose(rs[sp.routes[0]], sp.merge ? sp.spans[0][1] : sp.spans[0][0]), k = `${Math.round(q[0])},${Math.round(q[1])}`; atToe.set(k, (atToe.get(k) ?? 0) + 1); }
+        // (a three-way, two splits at one toe, has a lever to each blade unless it's set to one lever, or on tines)
+        const o = d.options ?? {}, twoEach = o.threeWayLevers !== 1 && o.mechStyle !== 'tines';
+        const want = [...atToe.values()].reduce((n, k) => n + (k > 1 && twoEach ? 2 : 1), 0);
         const levers = b.pieces.filter((p) => /lever/.test(p.name)).length;
-        if (levers !== toes.size) problems.push(`${levers} levers for points at ${toes.size} toes`);
+        if (levers !== want) problems.push(`${levers} levers for points at ${atToe.size} toes`);
         const warns = b.info.warnings;
         for (const re of expectWarn) if (!warns.some((x) => re.test(x))) problems.push(`no warning ${re}`);
         for (const x of warns) if (!expectWarn.some((re) => re.test(x))) problems.push(`warning: ${x}`);
