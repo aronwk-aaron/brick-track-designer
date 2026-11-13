@@ -47,10 +47,10 @@ const REF: Record<string, SlipRef> = {
     sets: [r104(0, -1, false), r104(1, -1, false), r104(2, 1, true), r104(3, 1, true)] },
 };
 
-/** The R104 double slip with its points' hand edits changed (each set's). */
-const edited = (change: (e: NonNullable<NonNullable<Design['trackwork']>['points']>[string]) => void): Design => {
+/** The R104 double slip with each set's points edited by hand, over what's worked out for them (switch/dslip.ts). */
+const edited = (over: NonNullable<NonNullable<Design['trackwork']>['points']>[string]): Design => {
   const d = structuredClone(TEMPLATES['Double slip R104 left']);
-  for (const e of Object.values(d.trackwork!.points!)) change(e);
+  d.trackwork = { points: Object.fromEntries(['0,-160', '64,-160', '-64,160', '0,160'].map((k) => [k, { ...over }])) };
   return d;
 };
 const built = async (d: Design) => {
@@ -62,7 +62,7 @@ const built = async (d: Design) => {
 describe('points set by hand: which blade moves (a single point), and blades lengthened', { timeout: 600000 }, () => {
   // (what the choice is for: the default, the curved road's blade, lies where the other track's rails cross in)
   it('the R104 double slip with the curved road\'s blade moving (the default): every set is said to have the other track\'s rail in it', async () => {
-    const b = await built(edited((e) => { delete e.single; }));
+    const b = await built(edited({ single: 'curved' }));
     expect(b.info.warnings.filter((x) => /have another track's rail between their stock rails/.test(x))).toHaveLength(4);
   });
   it('the straighter road\'s blade moving: none is; the blade is the one by the slip road\'s own stock rail', async () => {
@@ -74,7 +74,7 @@ describe('points set by hand: which blade moves (a single point), and blades len
     expect(blade[0].turn!.at[0]).toBeLessThan(-8);
   });
   it('blades lengthened by 2.25 studs: their pivots that much further on, their swing smaller', async () => {
-    const [short, long] = [await built(edited((e) => { delete e.heel; })), await built(TEMPLATES['Double slip R104 left'])];
+    const [short, long] = [await built(edited({ heel: 0 })), await built(TEMPLATES['Double slip R104 left'])];
     const blade = (b: typeof short) => b.pieces.find((p) => p.turn && p.turn.at[1] < 0 && Math.abs(p.turn.at[0]) < 24)!.turn!;
     expect(blade(long).at[1] - blade(short).at[1]).toBeCloseTo(18, 0);
     expect(Math.abs(blade(long).swing!)).toBeLessThan(Math.abs(blade(short).swing!) - 1);

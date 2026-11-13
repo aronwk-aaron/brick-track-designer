@@ -207,16 +207,18 @@ export function slipTrackwork(routes: Route[], sol: Solution, slips: DoubleSlip[
   }
   return tw;
 }
-/** Hand edits over what's worked out: each item's own fields over the worked-out ones. */
+/** Hand edits over what's worked out: each item's own fields over the worked-out ones; but a lever set by hand at all is
+ * as it's set, none of the worked-out lever's fields under it (a lever's side and offset left out by hand are left to the
+ * build's own placing, which the worked-out ones would stop: the X yard's hand-set levers, two of its parts overlapping) */
 export function underHand<T extends Tw>(hand: T, auto: Required<Tw>): T {
-  const merge = (h: Record<string, object> | undefined, a: Record<string, object>) => {
+  const merge = (h: Record<string, object> | undefined, a: Record<string, object>, whole = false) => {
     if (!Object.keys(a).length) return h;
     const o: Record<string, object> = { ...a };
-    for (const [k, v] of Object.entries(h ?? {})) o[k] = { ...(a[k] ?? {}), ...v };
+    for (const [k, v] of Object.entries(h ?? {})) o[k] = whole ? v : { ...(a[k] ?? {}), ...v };
     return o;
   };
   const out = { ...hand } as T & Tw;
-  const p = merge(hand.points, auto.points), t = merge(hand.throw, auto.throw), c = merge(hand.check, auto.check);
+  const p = merge(hand.points, auto.points), t = merge(hand.throw, auto.throw, true), c = merge(hand.check, auto.check);
   if (p) out.points = p; if (t) out.throw = t; if (c) out.check = c;
   return out;
 }

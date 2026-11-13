@@ -53,10 +53,11 @@ describe('double slips found in plain routes', () => {
     expect(ds.map((x) => x.centre.map((v) => Math.round(v / 8)).join(',')).sort()).toEqual(['0,0', '0,40', '16,0', '16,40']);
     expect(ds.every((x) => x.sets.filter((st) => st.inner).length === 2)).toBe(true);
   });
-  it('hand edits win, field by field', () => {
+  it('hand edits win: the points\' and check rails\' field by field, a lever\'s whole', () => {
     const { tw } = found(TEMPLATES['Double slip R104 left']);
     const m = underHand<Parameters<typeof underHand>[0]>({ throw: { '0,-160': { side: 'right' } }, points: { '0,160': { toe: 60 } } }, tw);
-    expect(m.throw!['0,-160']).toEqual({ side: 'right', leverOffset: 24, leverAt: 5.5 });
+    expect(m.throw!['0,-160']).toEqual({ side: 'right' });
+    expect(m.throw!['0,160']).toEqual(tw.throw['0,160']);
     expect(m.points!['0,160']).toEqual({ toe: 60, heel: 18, single: 'straight' });
     expect(m.check).toEqual(tw.check);
   });
