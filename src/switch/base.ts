@@ -2021,7 +2021,7 @@ export function switchGeometry(s: Scad, plan: SwitchPlan, extraCuts: Man[] = [])
   // their pins than it's squeezed, and squeezed harder its own bending and the rings' friction would outdo its push
   // (switch/snap.ts). Left as it is, loose and harmless, for the designs that chose it and for nail switches; the
   // settings say so.)
-  const ocOn = (v: SetV) => fdb && (p.throwAction === 'overcentre' || v.nail) && !v.three && !v.stand && !v.snap;
+  const ocOn = (v: SetV) => fdb && (p.throwAction === 'overcentre' || (v.nail && !p.nailNoSpring)) && !v.three && !v.stand && !v.snap;
   /** (a nail switch) where along the throw its slider has things on it: its posts, and the over-centre spring's. */
   const nailXs = (v: SetV) => [...fdbPostAt(v).map((q) => q[0]), ...(ocOn(v) ? [ocGeo(v).P[0]] : []), ...snapXs(v)];
   /** The post's hole in the middle ring: round its teardrop, which turns a little in it. */

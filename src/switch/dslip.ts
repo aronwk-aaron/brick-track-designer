@@ -166,7 +166,38 @@ export const SLIP_LEVER_OFFSET = 24, SLIP_LEVER_AT = 5.5;
 /** A check rail opposite an acute frog that runs on into the blade ends this much (mm) short of the blade's toe, at least 9 shorter, as the reference's does at its tongue's toe. */
 const CHECK_BEFORE_TOE = 1, CHECK_SHORTER = 9;
 
+/** How far out the reference's lever housing reaches from its track's centre line (mm: its tab to 7.9 studs), and how
+ * far another track's bed reaches from its centre line (mm: 5 studs, ballast at the 4-stud gauge). */
+const HOUSING_REACH = 64, BED_HALF = 40;
+
 type Tw = { points?: Record<string, object>; throw?: Record<string, object>; check?: Record<string, object> };
+/** Points out along a set's outer side, the length of its points, at offsets from its track's centre line (mm): where its lever's housing would be. */
+function outerPts(routes: Route[], sol: Solution, st: SlipSet, offs: number[]): Pt[] {
+  const sp = sol.splits[st.split], rt = routes[st.track], [s0, s1] = sp.spans[0];
+  const pts: Pt[] = [];
+  for (let s = s0; s <= s1 + 1e-9; s += 8) {
+    const p = routePose(rt, Math.min(s, s1)), c = Math.cos((p[2] * Math.PI) / 180), sn = Math.sin((p[2] * Math.PI) / 180);
+    // (the outer side: the one away from the other track)
+    const sg = Math.hypot(p[0] + c - st.away[0], p[1] + sn - st.away[1]) > Math.hypot(p[0] - c - st.away[0], p[1] - sn - st.away[1]) ? 1 : -1;
+    for (const o of offs) pts.push([p[0] + sg * o * c, p[1] + sg * o * sn]);
+  }
+  return pts;
+}
+/**
+ * Whether a set's lever housing, out at the reference's offset on its outer side along its points, would reach into
+ * another track's bed (a track beside it, not one of its slip's: the next track of an X yard, where the diagonal's
+ * outer sets face it). Those keep the build's own offset, nearer their track, as the hand-set X yard's did.
+ */
+function housingHits(routes: Route[], sol: Solution, ds: DoubleSlip, st: SlipSet, lines: (r: number) => Pt[]): boolean {
+  const mine = new Set([...ds.tracks, ...ds.roads]), pts = outerPts(routes, sol, st, [BED_HALF, (BED_HALF + HOUSING_REACH) / 2, HOUSING_REACH]);
+  return routes.some((_, r) => !mine.has(r) && lines(r).some((q) => pts.some((p) => Math.hypot(p[0] - q[0], p[1] - q[1]) < BED_HALF)));
+}
+/** (mm) Two sets' housings on different tracks, facing each other between them, nearer than this are pulled in: else they'd
+ * join into one block and no cut could pass between the tracks (an X yard's neighbouring slips, a part across six tracks). */
+const HOUSING_GAP = 16;
+/** (mm) Their levers' offset: the build's own (8), but set, so the build doesn't move them out again (left to it, the X yard's
+ * blades below its X ran into the track; at 16, a cut still couldn't pass between the housings, its parts over the bed). */
+const FACING_LEVER_OFFSET = 8;
 /**
  * The points', levers' and check rails' settings the reference's double slips have, for the slips found (findDoubleSlips),
  * keyed as the hand edits are. Where the other track's rail crosses in within the points (a slip at a shallow angle, as
@@ -177,6 +208,16 @@ type Tw = { points?: Record<string, object>; throw?: Record<string, object>; che
  */
 export function slipTrackwork(routes: Route[], sol: Solution, slips: DoubleSlip[]): Required<Tw> {
   const tw: Required<Tw> = { points: {}, throw: {}, check: {} };
+  // (each route's centre line, every 4 mm, made when first asked for)
+  const lineOf = new Map<number, Pt[]>();
+  const lines = (r: number) => {
+    let l = lineOf.get(r);
+    if (!l) { const L = routeLength(routes[r]); l = []; for (let s = 0; s <= L + 1e-9; s += 4) { const p = routePose(routes[r], Math.min(s, L)); l.push([p[0], p[1]]); } lineOf.set(r, l); }
+    return l;
+  };
+  // (each lever's housing's outer edge, for the sets that have one: what's near another's)
+  const levered = slips.flatMap((ds) => ds.sets.filter((st) => st.frogS < st.span - 2 && !st.atX).map((st) => ({ st, pts: outerPts(routes, sol, st, [HOUSING_REACH]) })));
+  const facing = (st: SlipSet) => { const me = levered.find((x) => x.st === st); return !!me && levered.some((o) => o.st.track !== st.track && o.pts.some((q) => me.pts.some((p) => Math.hypot(p[0] - q[0], p[1] - q[1]) < HOUSING_GAP))); };
   for (const ds of slips) for (const st of ds.sets) {
     // (the frog within the points' span, a little in from its end: a slip at 22.5 degrees on R40, its frog just at the
     // span's end (59.7 of 59 to 60 mm), keeps its points at its ends)
@@ -191,9 +232,13 @@ export function slipTrackwork(routes: Route[], sol: Solution, slips: DoubleSlip[
     // (two sets at one toe, facing each way (two slips end to end, one road joining the track where the next one's leaves):
     // one key for both. Where they want their levers on the same side of the track, the words differ (each in its own
     // frame): the lever then kept away from the other track by where it is, for both)
-    const was = tw.throw[st.key] as { side?: string; nail?: boolean } | undefined;
-    tw.throw[st.key] = st.atX || was?.nail ? { nail: true } : was?.side && was.side !== st.outside ? { awayFrom: [Math.round(st.away[0]), Math.round(st.away[1])], leverOffset: SLIP_LEVER_OFFSET, leverAt: SLIP_LEVER_AT }
-      : { side: st.outside, leverOffset: SLIP_LEVER_OFFSET, leverAt: SLIP_LEVER_AT };
+    // (the lever's housing out at the reference's offset only where that's clear of the track beside it, and of its lever's)
+    const was = tw.throw[st.key] as { side?: string; nail?: boolean; leverOffset?: number } | undefined;
+    const lo = (was && !was.nail && was.leverOffset === undefined) || housingHits(routes, sol, ds, st, lines) ? undefined
+      : Math.min(facing(st) ? FACING_LEVER_OFFSET : SLIP_LEVER_OFFSET, (was?.leverOffset as number | undefined) ?? Infinity);
+    const off = lo === undefined ? {} : { leverOffset: lo };
+    tw.throw[st.key] = st.atX || was?.nail ? { nail: true } : was?.side && was.side !== st.outside ? { awayFrom: [Math.round(st.away[0]), Math.round(st.away[1])], ...off, leverAt: SLIP_LEVER_AT }
+      : { side: st.outside, ...off, leverAt: SLIP_LEVER_AT };
     // (the check rail on this track that would run on into the blade: ended short of its toe)
     const sp = sol.splits[st.split], L = routeLength(routes[st.track]), sa = sp.merge ? L - sp.spans[0][1] : sp.spans[0][0], toeS = sa + 2 + st.lead + toe;
     for (const cr of sol.checkRails) {

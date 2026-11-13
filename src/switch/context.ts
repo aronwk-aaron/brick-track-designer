@@ -84,6 +84,9 @@ export interface SwitchParams {
   boxedThrow?: 'nail' | 'slider';
   /** (the plate-style points) Every points set a nail switch (Throw: Nail switch): no levers at all. */
   throwNail?: boolean;
+  /** (a set made a nail switch by its own edit, Trackwork.throw nail: a double slip's diagonal's inner set at an X centre)
+   * No over-centre spring: as drawn it doesn't hold (base.ts ocOn), and there its pocket lies in the one blade's plate. */
+  nailNoSpring?: boolean;
   /** (clip_and_peg_on_ballast) On ballast: the end connectors keep their snap peg and C-clip. */
   pegOnBallast?: boolean;
   /** (generate_track off) The ballast alone, with a seat this much clear each side (mm) for the track printed apart. */

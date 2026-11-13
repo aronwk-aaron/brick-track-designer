@@ -229,7 +229,7 @@ export function networkSplits(s: Scad, routes: Route[], sol: Solution, p: BasePa
     // (and its own mechanism: tines under the bed or blades on top, over the design's; not a three-way's, whose levers go by the design's)
     const p1 = ed?.bladeStyle || ed?.blades || (ed?.mech && !C && ed.mech !== p00.mechStyle) ? { ...p00, ...(ed.mech && !C && { mechStyle: ed.mech }), ...(ed.bladeStyle && { bladeStyle: ed.bladeStyle }), ...(ed.blades && { pointBlades: ed.blades }) } : p00;
     // (thrown by hand, no lever: a nail switch, this set alone)
-    const p0 = ed?.nail && !C ? { ...p1, throwNail: true } : p1;
+    const p0 = ed?.nail && !C ? { ...p1, throwNail: true, nailNoSpring: true } : p1;
     const pg = sprungOnGrid(gw ? { ...p0, grid: gridIn(P, gw) } : p0);
     const choose = (keep: Pt[][]) => {
       let pp = pg.p, plan = switchPlan(rts, [used], pp, 1, foreign, keep), how: 'rigid' | 'tines' | 'angled' | undefined = pg.angled ? 'angled' : undefined;
