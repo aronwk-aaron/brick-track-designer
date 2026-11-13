@@ -58,7 +58,21 @@ export function planCuts(b: Rect, bedX: number, bedY: number, bp: number, ox: nu
   };
   // (clear of the points' keep-outs (32 mm unless they say); of a crossing's rail crossings by 12, so a crossover's middle can still be cut evenly)
   const clearOf = (v: number, axis: 0 | 1) => avoid.every((q) => Math.abs(q[axis] - v) > (q[3] ?? 32));
-  const ok = (v: number, axis: 0 | 1) => along(v, axis) <= 8 && clearOf(v, axis) && crossings.every((q) => Math.abs(q[axis] - v) > 12);
+  // (nor where two tracks' rails come within 7 mm of each other across the cut, as where two tracks part past
+  // points: the two rails' end joints there would run into each other. Rails one over the other, where two routes
+  // run as one, or nearer than a rail's width, as just past a crossover's points, are one rail: those cut as one)
+  const rails = routes.flatMap((rt, r) => {
+    const L = routeLength(rt), n = Math.max(1, Math.ceil(L / 2)), g = railOffsetOf(rt, railG);
+    return Array.from({ length: n + 1 }, (_, k) => {
+      const q = routePose(rt, (L * k) / n), h = (q[2] * Math.PI) / 180;
+      return [-1, 1].map((sd) => [q[0] + sd * g * Math.cos(h), q[1] + sd * g * Math.sin(h), r] as [number, number, number]);
+    }).flat();
+  });
+  const railsNear = (v: number, axis: 0 | 1) => {
+    const on = rails.filter((q) => Math.abs(q[axis] - v) < 1.5);
+    return on.some((a) => on.some((b) => b[2] > a[2] && Math.abs(b[1 - axis] - a[1 - axis]) >= 2.5 && Math.abs(b[1 - axis] - a[1 - axis]) < 7));
+  };
+  const ok = (v: number, axis: 0 | 1) => along(v, axis) <= 8 && clearOf(v, axis) && crossings.every((q) => Math.abs(q[axis] - v) > 12) && !railsNear(v, axis);
   /** Can a finger cut go along the track at v: no rail running along within 12 mm of it, clear of points and crossings? */
   /** How close (mm) the nearest rail running along comes to a finger cut at v (and whether it's clear of points and crossings). */
   const railClear = (v: number, axis: 0 | 1) => {

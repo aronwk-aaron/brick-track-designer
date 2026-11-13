@@ -117,7 +117,7 @@ export function networkSplits(s: Scad, routes: Route[], sol: Solution, p: BasePa
     return Math.min(segDist(a[0], b[0], b[1]), segDist(a[1], b[0], b[1]), segDist(b[0], a[0], a[1]), segDist(b[1], a[0], a[1]));
   };
   /** Whether a points set's lever (standing up past the rails, its knob some 8 across) is where a train on other track (foreign, in the points' frame) would hit it, or its arm too near another's. The arm under it is low, as sleepers are: trains pass over that. */
-  const inWay = (pl: SwitchPlan, foreign: Route[], P: Pose): 'train' | 'lever' | undefined => {
+  const inWay = (pl: SwitchPlan, foreign: Route[], P: Pose, sleepers = false): 'train' | 'lever' | undefined => {
     const d = pl.setData[0], lever: [number, number] = [d.leverX, d.leverY], arm = armOf(pl, P);
     if (foreign.some((rt) => {
       for (let t = 0; t <= routeLength(rt); t += 2) {
@@ -126,6 +126,15 @@ export function networkSplits(s: Scad, routes: Route[], sol: Solution, p: BasePa
       }
       return false;
     })) return 'train';
+    // (nor its housing on other track's sleepers: a yard's slips, their diagonal's ends midway between two tracks 16
+    // apart. Its ballast is fine to stand on, as long as its sleepers are kept clear. Then it goes further out
+    // (placeLever), its slider under that track to a lever past it, or beside its throw bar)
+    // (not another gauge's track: dual gauge track shares its sleepers, and the lever stands on them as on its own)
+    // (only for a lever whose housing was set at a corner by hand (leverAt): elsewhere as before)
+    const sl = (2 * G + 24) / 2 + 1, xo = d.throwDir * Math.ceil((d.throwDir * (d.leverX + d.throwDir * 10)) / 8 - 1e-6) * 8;
+    if (sleepers) for (let k = 0; k <= 8; k++) for (const y of [d.leverY - 12, d.leverY, d.leverY + 12])
+      for (const x of [d.leverX - d.throwDir * 12 + ((xo - d.leverX + d.throwDir * 12) * k) / 8])
+      if (foreign.some((rt) => { if ((rt.gauge ?? 0) !== (pl.routes[0].gauge ?? 0)) return false; const sq = routeSOf(rt, [x, y]); return sq > 0 && sq < routeLength(rt) && Math.abs(routeLat(rt, [x, y])) < sl; })) return 'train';
     return arms.some((q) => segGap(q, arm) < ARM_GAP) ? 'lever' : undefined;
   };
   const studsAt = (k: number) => { const q = toeOf(sol.splits[k]); return `${(q[0] / 8).toFixed(0)}, ${(q[1] / 8).toFixed(0)} (studs)`; };
@@ -296,7 +305,7 @@ export function networkSplits(s: Scad, routes: Route[], sol: Solution, p: BasePa
     if (blockedOf(st.plan)) return Infinity;
     const sides = own === 'left' || own === 'right' ? [st.tside] : [st.tside, -st.tside], shifts = st.pp.mechStyle === 'plates' && q.ed?.throwShift === undefined ? [0, 1, -1, 2, -2, 3, -3, 4, -4, 5, -5] : [0];
     let k = 0;
-    for (const sh of shifts) for (const sd of sides) { const pl = switchPlan(rts, [specOf({ ...st.over, ...(sh && { throwShift: sh }) }, sd)], st.pp, 1, foreign, keep); if (!blockedOf(pl) && inWay(pl, foreign, P) !== 'train') k++; }
+    for (const sh of shifts) for (const sd of sides) { const pl = switchPlan(rts, [specOf({ ...st.over, ...(sh && { throwShift: sh }) }, sd)], st.pp, 1, foreign, keep); if (!blockedOf(pl) && inWay(pl, foreign, P, q.ed?.leverAt !== undefined) !== 'train') k++; }
     return k;
   };
   const placeLever = (q: (typeof preps)[number]) => {
@@ -308,7 +317,7 @@ export function networkSplits(s: Scad, routes: Route[], sol: Solution, p: BasePa
     // the slider under that track (base.ts: in two parts, with blades on top); not where the lever was moved by hand,
     // nor where the slider can't go under it)
     // (not for points already said to be blocked: moving their lever won't help them)
-    const why0 = blockedOf(st.plan) ? undefined : inWay(st.plan, foreign, P);
+    const why0 = blockedOf(st.plan) ? undefined : inWay(st.plan, foreign, P, ed?.leverAt !== undefined);
     if (why0) {
       const sides = own === 'left' || own === 'right' ? [st.tside] : [st.tside, -st.tside], shifts = st.pp.mechStyle === 'plates' && ed?.throwShift === undefined ? [0, 1, -1, 2, -2, 3, -3, 4, -4, 5, -5] : [0];
       const t0 = st.tside, base = st.over, out0 = base.leverOffset ?? st.pp.leverOffset;
@@ -322,7 +331,7 @@ export function networkSplits(s: Scad, routes: Route[], sol: Solution, p: BasePa
         const { leverAt: _la, ...rest } = base;
         const o2 = { ...(cn ? base : rest), ...(sh && { throwShift: sh }), ...(ex && { leverOffset: out0 + ex }) }, pl = switchPlan(rts, [specOf(o2, sd)], st.pp, 1, foreign, keep);
         if (ex && pl.sets[0].under && !pl.sets[0].underOk) continue;
-        if (!blockedOf(pl) && !inWay(pl, foreign, P)) { st.tside = sd; st.over = o2; st.used = specOf(o2, sd); st.plan = pl; found = true; }
+        if (!blockedOf(pl) && !inWay(pl, foreign, P, ed?.leverAt !== undefined)) { st.tside = sd; st.over = o2; st.used = specOf(o2, sd); st.plan = pl; found = true; }
       }
       if (!found) {
         // (a three-way's two levers, one each side: its side isn't a choice)
@@ -339,7 +348,7 @@ export function networkSplits(s: Scad, routes: Route[], sol: Solution, p: BasePa
     arms.push(armOf(st.plan, P));
   };
   // (only where some are in another's way does the order matter: then the ones with the fewest clear places first)
-  const rooms = preps.map((q) => (inWay(q.st.plan, q.foreign, q.P) ? room(q) : Infinity));
+  const rooms = preps.map((q) => (inWay(q.st.plan, q.foreign, q.P, q.ed?.leverAt !== undefined) ? room(q) : Infinity));
   preps.map((_, k) => k).sort((a, b) => rooms[a] - rooms[b]).forEach((k) => placeLever(preps[k]));
   // (blades on top: two points' throws that run into each other, as a double slip's middle points' sliders cross under
   // its crossing, can't both move: no room for a throw there. Nail switches (Points with no room for a throw), their
@@ -371,7 +380,7 @@ export function networkSplits(s: Scad, routes: Route[], sol: Solution, p: BasePa
           const o2: SetOver = { ...cur, throwShift: (cur.throwShift ?? 0) + sh }, used = q.specOf(o2, q.st.tside), pl = switchPlan(q.rts, [used], q.st.pp, 1, q.foreign, q.keep);
           if (q.blockedOf(pl) || pl.setData[0].throwY === q.st.plan.setData[0].throwY) continue;
           const arm = armOf(pl, q.P);
-          if (inWay(pl, q.foreign, q.P) === 'train' || others.some((o) => segGap(o, arm) < ARM_GAP)) continue;
+          if (inWay(pl, q.foreign, q.P, ed?.leverAt !== undefined) === 'train' || others.some((o) => segGap(o, arm) < ARM_GAP)) continue;
           const gm = switchGeometry(s, pl), th = place(gm.throwPart(0), q.P), was = [ths[k], bbs[k]] as const;
           ths[k] = th; bbs[k] = th.boundingBox();
           if (preps.every((_, m) => m === k || !meets(k, m))) { q.st.over = o2; q.st.used = used; q.st.plan = pl; q.gm = { plan: pl, gm }; return true; }

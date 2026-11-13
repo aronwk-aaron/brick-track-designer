@@ -1449,7 +1449,8 @@ export function switchGeometry(s: Scad, plan: SwitchPlan, extraCuts: Man[] = [])
       rs.forEach((a, k) => parts.push(cube([a[1] - a[0], a[3] - a[2], (k === 2 ? rodTop() : bedTop) - pieceBottomZ], [a[0], a[2], pieceBottomZ])));
     } else parts.push(cube([Math.abs(xOut - xIn), g.armW, bedTop - pieceBottomZ], [Math.min(xIn, xOut), v.throwY - g.armW / 2, pieceBottomZ]));
     if (p.throwModule) parts.push(...bracketStuds(v).map(([x, y]) => T(t.stud(), [x, y, bedTop - 0.01])));
-    else parts.push(...ears(v, PLATE_H).map((m) => T(m, [0, 0, cornerDz(v)])));
+    // (raised with the lever at a corner, standing in the run under its top: on ballast its bed is lower, the run's top under PLATE_H + the raise)
+    else parts.push(...ears(v, v.corner && g.ballast ? Math.min(PLATE_H, rodTop() - cornerDz(v) - 0.2) : PLATE_H).map((m) => T(m, [0, 0, cornerDz(v)])));
     return s.union(parts);
   };
   /** (the plate-style throw) the bracket: a 3 x 3 stud plate on the arm's studs, slotted for the lever, with the ears on it. */

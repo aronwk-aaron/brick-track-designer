@@ -556,7 +556,6 @@ export const KNOWN: Record<string, Known> = {
  */
 export const LOOSE: Record<string, { parts: RegExp; why: string }> = {
   'Banked curve': { parts: /^track7 is in 2 pieces/, why: 'a sliver thinner than paper (0.6 x 3.9, z 0 to 2, under 0.05 mm3) at -421, 760, at the low end of a banked sleeper, 1 mm thick there: the stub of its end wall between two studs\' places is taken out with them (it stood loose, 4 mm3: underside.ts hollowGrid, stubs), and the cut part\'s rim comes back along its edge' },
-  'X yard (6 tracks, single slips)': { parts: /^track1[38] is in 2 pieces/, why: 'a bit of ballast loose under each of two parts: 31 mm3 (2.8 x 6.8, z -3.2 to 0) at 306, 1292 and 34 mm3 (3 x 7.2, z -3.2 to 1.8) at 334, 1012' },
   // (saved designs)
   'monster-switch-6-tracks.btd.json': { parts: /^track1[38] is in 2 pieces/, why: 'as the X yard (it is that layout): a bit of ballast loose under each of two parts, 31 mm3 at 306, 1292 and 34 mm3 at 334, 1012' },
   'monster-switch-6-tracks-double-slips.btd.json': { parts: /^track1[47] is in 2 pieces/, why: 'a bit of ballast loose under each of two parts: 101 mm3 (4.3 x 15.7, z -3.2 to 1.8) at 334, 1296 and 95 mm3 (4.2 x 15.2) at 306, 1008' },
