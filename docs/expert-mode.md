@@ -676,6 +676,15 @@ route-owned storage, the follow rules and the card section they bring are the pa
   take. Editor: the Trackwork panel's points rows (Blade shape, Moving blades, each "As the design: …" first, greyed
   with why) and lever rows (Throw bar moved along), with the expert tools shown. Template (Features): 'Crossover with
   points of their own'. Test: test/points-own-build.test.ts.
+- **Levers in housings at the corners (2026-11-12):** `trackwork.throw[key].leverAt` (studs along the points from
+  where the routes part; less than the throw bar's, back toward the track's end): the lever in a housing there, not
+  beside the throw bar (blades on top; not with a bracket or a switch stand). The slider's end has a tab in place of
+  its fork; a flat tie-rod (part `…-throw-rod`) runs from it along outside the sleepers' ends in a raised run, inside
+  the lever's ears, then across between them to the slider's old fork for the lever's tip. The rod goes in after the
+  slider, from above, and prints flat. Where the lever would be in a train's way there and nothing clears it, it goes
+  beside its throw bar after all (network.ts placeLever). Templates: 'Double slip R104 left/right' (and their kits) and
+  'Double slip (22.5°)', as Aaron's reference photo has them; not offered in the editor yet. Shape check: only those
+  five templates change.
 - **A set's own mechanism (2026-11-12):** `trackwork.points[key].mech` ('tines' | 'plates'; not a three-way's):
   the Trackwork panel's "Mechanism, these points" ("As the design: …" first; the blade choices go by the set's own
   mechanism). Such a design is a network piece; the set is planned and built with its own mechanism (network.ts

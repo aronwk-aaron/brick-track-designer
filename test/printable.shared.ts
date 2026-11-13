@@ -151,8 +151,9 @@ export const PINNED: Record<string, Record<string, Pin>> = {
     'fit5-stud0.28-tube-0.04-track1': { hang: { area: 62, where: '-23.2..22.7 -11.4..11.2 2.0..3.5' }, why: 'unheld by height (mm2 at z): 29 at 2.4, 25 at 3.5, 7 at 2.0' },
   },
   'double slip': {
-    'track1': { hang: { area: 1657, where: '-74.3..78.6 -87.2..82.6 2.0..21.5' }, islands: { count: 2, area: 1.23, where: '-28.0..62.7 -83.6..-58.3 21.5..21.5' }, why: 'unheld by height (mm2 at z): 1550 at 2.0, 43 at 6.0, 29 at 2.4' },
-    'track2': { hang: { area: 1988, where: '-78.4..73.9 -82.3..89.2 2.0..21.5' }, islands: { count: 2, area: 1.23, where: '-55.2..27.1 56.4..81.7 21.5..21.5' }, why: 'unheld by height (mm2 at z): 1879 at 2.0, 40 at 6.0, 32 at 2.4' },
+    // (2026-11-12: the levers in housings at the corners, hollow underneath as the arms: more anti-stud roof at 2.0; no islands now)
+    'track1': { hang: { area: 2901, where: '-85.6..81.3 -87.4..82.4 2.0..22.8' }, why: 'unheld by height (mm2 at z): 2804 at 2.0, 49 at 6.0, 25 at 3.5' },
+    'track2': { hang: { area: 2825, where: '-81.3..85.6 -82.4..87.4 2.0..22.8' }, why: 'unheld by height (mm2 at z): 2722 at 2.0, 49 at 6.0, 28 at 3.5' },
   },
 
 };

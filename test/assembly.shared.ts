@@ -92,7 +92,7 @@ export function putTogether(w: Awaited<ReturnType<typeof kernel>>, pieces: Piece
   const { fromTop } = how;
   // (each points set by its own mechanism: blades on top where its blades turn on pins (they're said how: turn), on tines
   // where they don't; a set with no blades to go by (a nail switch's bare slider), the design's)
-  const setOf = (name: string) => name.replace(/-(a|b|throw(-posts)?|lever|bracket|spring)$/, '');
+  const setOf = (name: string) => name.replace(/-(a|b|throw(-posts|-rod)?|lever|bracket|spring)$/, '');
   const topSets = new Map<string, boolean>();
   for (const q of pieces) if (/points/.test(q.name) && !/throw|lever|bracket|spring/.test(q.name)) topSets.set(setOf(q.name), (topSets.get(setOf(q.name)) ?? false) || !!q.turn);
   const onTop = (name: string) => topSets.get(setOf(name)) ?? how.bladesTop;

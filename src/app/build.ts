@@ -1094,7 +1094,7 @@ function editChecks(items: TrackworkItem[], tw: Trackwork, rs: Route[], checks: 
 
 /** A points set's lever, as planned (switch/base.ts): what its item and keep-outs are made from. */
 interface LeverPlan {
-  throwDir: number; leverX: number; throwY: number; throwStockX: number; throwEdgeX: number; leverMinD: number; tineLen: number; pivotPt: [number, number];
+  throwDir: number; leverX: number; throwY: number; leverY?: number; corner?: boolean; forkX?: number; throwStockX: number; throwEdgeX: number; leverMinD: number; tineLen: number; pivotPt: [number, number];
   ra: Route; rb: Route; sHeel: number; leverTravel: number; fixed?: number; three?: { S: Route; own?: boolean }; fdb?: { pivot: [number, number]; post: [number, number] }[];
 }
 /** A points set's lever on the plan (it can be dragged there). avoid: (the plate-style) where no cut goes, its parts' keep-outs added; G: the rails' offset. */
@@ -1119,8 +1119,18 @@ function leverItem(items: TrackworkItem[], tw: Trackwork, avoid: Keep[] | undefi
     for (let x = v.throwStockX; v.throwDir * x <= v.throwDir * xOut + 1e-9; x += v.throwDir * 4) avoid.push(keep(wd(x, v.throwY), hw + 1));
     // (where the plan put them: moved, clear of other track running past)
     for (const b of [0, 1]) if (b !== v.fixed) { const q = v.fdb?.[b].pivot ?? railPoint(v.three ? v.three.S : b === 0 ? v.ra : v.rb, v.sHeel - 4, (b === 0 ? 1 : -1) * (7 - G)); avoid.push(keep(wd(q[0], q[1]), 6)); }
+    // (the lever in a housing at a corner: nor the run along to it with the tie-rod, nor the arm round the lever there)
+    if (v.corner && v.leverY !== undefined && v.forkX !== undefined) {
+      const ly = v.leverY, dy = Math.sign(ly - v.throwY);
+      for (let y = v.throwY; dy * (y - ly) <= 0; y += dy * 4) avoid.push(keep(wd(v.forkX, y), 13));
+      for (let x = v.throwStockX; v.throwDir * x <= v.throwDir * xOut + 1e-9; x += v.throwDir * 4) avoid.push(keep(wd(x, ly), hw + 1));
+    }
   }
-  items.push({ kind: 'throw', key, at: wd(v.leverX, v.throwY), pts: [wd(v.throwStockX, v.throwY - hw), wd(xOut, v.throwY - hw), wd(xOut, v.throwY + hw), wd(v.throwStockX, v.throwY + hw)],
+  // (the lever in a housing at a corner: the arm's outline an L, along the run to the lever)
+  const ly = v.corner && v.leverY !== undefined ? v.leverY : v.throwY, xr = v.forkX !== undefined ? v.forkX - v.throwDir * 12 : v.throwStockX;
+  const pts: [number, number][] = ly === v.throwY ? [wd(v.throwStockX, v.throwY - hw), wd(xOut, v.throwY - hw), wd(xOut, v.throwY + hw), wd(v.throwStockX, v.throwY + hw)]
+    : (() => { const s = Math.sign(ly - v.throwY); return [wd(v.throwStockX, v.throwY - s * hw), wd(xOut, v.throwY - s * hw), wd(xOut, ly + s * hw), wd(v.throwStockX, ly + s * hw), wd(v.throwStockX, ly - s * hw), wd(xr, ly - s * hw), wd(xr, v.throwY + s * hw), wd(v.throwStockX, v.throwY + s * hw)]; })();
+  items.push({ kind: 'throw', key, at: wd(v.leverX, ly), pts,
     lever: { frame: P, side: v.throwDir, stockX: Math.abs(v.throwStockX), edge: Math.abs(v.throwEdgeX), minD: Math.abs(v.leverMinD), pivotY: v.pivotPt[1], maxTine: v.pivotPt[1] - 12.5,
       leverOffset: Math.round((Math.abs(v.leverX) - Math.abs(v.throwEdgeX)) * 100) / 100, springLength: Math.round(v.tineLen * 100) / 100, edited: !!ed, ...(blade && { blade }) } });
 }
@@ -2083,7 +2093,7 @@ function buildSwitches(b: PieceBuild, switches: ReturnType<typeof planPieces>['s
     const grid: Pose | undefined = b.alongTrack ? undefined : [...worldToPose(sw.pose, [b.gridPose[0], b.gridPose[1]]), b.gridPose[2] - sw.pose[2]] as Pose;
     const gm = cached(`sw:${JSON.stringify({ routes: sw.routes, sets: sw.sets, params, cl, tw: b.grooveEdits, grid })}`, () => {
       const g = switchGeometry(scad, grid ? { ...sw.plan, p: { ...sw.plan.p, grid } } : sw.plan, frameCuts);
-      return { bases: cx.rehome(g.basePieces()), whole: g.base(), grips: g.grips, sets: sw.sets.map((_, k) => ({ thr: g.throwPart(k), thrPrint: g.throwPrint(k), thp: g.throwPostsPart(k), thpPrint: g.throwPostsPrint(k), pp: g.pointsParts(k), print: g.leverPrint(k), lever: g.leverPart(k), bracket: params.throwModule ? g.bracketPart(k) : undefined,
+      return { bases: cx.rehome(g.basePieces()), whole: g.base(), grips: g.grips, sets: sw.sets.map((_, k) => ({ thr: g.throwPart(k), thrPrint: g.throwPrint(k), thp: g.throwPostsPart(k), thpPrint: g.throwPostsPrint(k), rod: g.throwRodPart(k), rodPrint: g.throwRodPrint(k), pp: g.pointsParts(k), print: g.leverPrint(k), lever: g.leverPart(k), bracket: params.throwModule ? g.bracketPart(k) : undefined,
         spring: g.springPart(k), springPrint: g.springPrint(k), turns: g.pointsTurns(k), move: g.throwMove(k) })), nail: sw.sets.map((_, k) => g.isNail(k)) };
     });
     const bases = gm.bases;
@@ -2100,7 +2110,7 @@ function buildSwitches(b: PieceBuild, switches: ReturnType<typeof planPieces>['s
       const lm = labelled(b, m, sw.plan.routes, bases.length > 1 ? undefined : switchSize(sw.plan.routes), bases.length > 1 ? `${j + 1}` : undefined);
       add(b, bases.length > 1 ? `${tag}-base${j + 1}` : `${tag}-base`, TRACK_COLOR, lm, place(lm, sw.pose));
     });
-    gm.sets.forEach(({ thr, thrPrint, thp, thpPrint, pp, print, lever, bracket, spring, springPrint, turns, move }, k) => {
+    gm.sets.forEach(({ thr, thrPrint, thp, thpPrint, rod, rodPrint, pp, print, lever, bracket, spring, springPrint, turns, move }, k) => {
       const mv = throwMoves(move, sw.pose);
       const sfx = sw.sets.length > 1 ? `${k + 1}` : '';
       if (bracket && !gm.nail[k]) add(b, `${tag}-bracket${sfx}`, 0x8a8f99, bracket, place(bracket, sw.pose));
@@ -2110,6 +2120,8 @@ function buildSwitches(b: PieceBuild, switches: ReturnType<typeof planPieces>['s
       if (spring && springPrint) add(b, `${tag}-points${sfx}-spring`, 0xc0392b, springPrint, place(spring, sw.pose));
       add(b, `${tag}-throw${sfx}`, 0xe8892b, thrPrint, place(thr, sw.pose), undefined, { slide: mv.slide });
       if (thp && thpPrint) add(b, `${tag}-throw${sfx}-posts`, 0xe8892b, thpPrint, place(thp, sw.pose), undefined, { slide: mv.slide });
+      // (the lever in a housing at a corner: the tie-rod out to it)
+      if (rod && rodPrint) add(b, `${tag}-throw${sfx}-rod`, 0xe8892b, rodPrint, place(rod, sw.pose), undefined, { slide: mv.slide });
       if (!gm.nail[k]) add(b, `${tag}-lever${sfx}`, 0xd4af37, print, place(lever, sw.pose), undefined, mv.hinge && { hinge: mv.hinge });
     });
   });

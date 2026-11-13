@@ -132,7 +132,7 @@ export interface Trackwork {
     mech?: 'tines' | 'plates'; on?: TwAnchor; is?: TwIdent }>;
   /** each points set's lever, moved on the plan: its side, how far out (lever offset, mm), and how far along (its tines' length, mm);
    * each: a three-way's two levers (threeWayLevers 2), the left one's and the right one's own, where they differ (each is on its own side) */
-  throw?: Record<string, { side?: 'left' | 'right'; leverOffset?: number; springLength?: number; /** (expert, stage 5c) its throw bar moved along the points, whole studs (+: towards the heel; blades on top) */ throwShift?: number; each?: { left?: { leverOffset?: number }; right?: { leverOffset?: number } }; on?: TwAnchor; is?: TwIdent }>;
+  throw?: Record<string, { side?: 'left' | 'right'; leverOffset?: number; springLength?: number; /** (expert, stage 5c) its throw bar moved along the points, whole studs (+: towards the heel; blades on top) */ throwShift?: number; /** (blades on top) its lever in a housing at a corner, this many studs along from where the routes part (less than the throw bar's: back toward the track's end), a tie-rod out to it from the slider; unset, beside the throw bar */ leverAt?: number; each?: { left?: { leverOffset?: number }; right?: { leverOffset?: number } }; on?: TwAnchor; is?: TwIdent }>;
 }
 /** Where on the track a hand edit is, so it follows its track when that's moved (twfollow.ts): the route by name, from its start or end, mm along, mm to the right of its centre line. The build goes by the edit's key alone. */
 export type TwAnchor = [route: string, from: 's' | 'e', along: number, right: number];
@@ -329,6 +329,7 @@ export function readDesign(v: unknown): Design {
     }
     for (const e of Object.values(tw.throw ?? {}) as Record<string, unknown>[]) {
       if ('throwShift' in e) { const v = e.throwShift; if (typeof v === 'number' && Number.isFinite(v) && Math.round(v) !== 0) e.throwShift = Math.max(-5, Math.min(5, Math.round(v))); else delete e.throwShift; }
+      if ('leverAt' in e) { const v = e.leverAt; if (typeof v === 'number' && Number.isFinite(v)) e.leverAt = Math.max(-40, Math.min(40, v)); else delete e.leverAt; }
     }
   }
   if (Array.isArray(d.tables)) {
@@ -554,12 +555,20 @@ const tan = (d: number) => sin(d) / cos(d);
 /** (a double slip's R40 slip road at 22.5 degrees, tangent to both tracks) how far before the crossing it leaves one track, studs */
 const SLIP_LEAD = 40 * sin(22.5) - (40 * (1 - cos(22.5))) / tan(22.5);
 /** Levers set by hand (Design.trackwork.throw), each by its points' toe (studs) and its side, in the points' own frame (looking the way the routes part). */
-const leversAt = (sets: [number, number, 'left' | 'right'][]): NonNullable<Trackwork['throw']> =>
-  Object.fromEntries(sets.map(([x, y, side]) => [`${Math.round(x * STUD)},${Math.round(y * STUD)}`, { side }]));
+const leversAt = (sets: [number, number, 'left' | 'right'][], more: Omit<NonNullable<Trackwork['throw']>[string], 'side'> = {}): NonNullable<Trackwork['throw']> =>
+  Object.fromEntries(sets.map(([x, y, side]) => [`${Math.round(x * STUD)},${Math.round(y * STUD)}`, { side, ...more }]));
+/**
+ * (a double slip as Aaron's reference photo has it) Where each set's lever's housing is, studs along its points from
+ * where its routes part: at its own outer corner, 5.5 studs in from its track's end (the reference's housings are 3.5
+ * to 8 in), beyond its points, a tie-rod out to it from the slider (switch/base.ts rodPart). from: how far the routes
+ * part from the track's end (studs).
+ */
+const CORNER_LEVER = 5.5;
+const cornerLever = (from: number) => CORNER_LEVER - from;
 /** A reference slip's points and levers set by hand (Design.trackwork): each set by its toe's key (mm), with its lever's side (in the points' own frame, looking the way the routes part): the lever 7 studs from its track's centre line (3 past the sleepers' ends), as the reference's; and the points' own edits (toe, heel, single). */
-const slipWork = (sets: Record<string, 'left' | 'right'>, points: (key: string) => NonNullable<Trackwork['points']>[string]): Trackwork => ({
+const slipWork = (sets: Record<string, 'left' | 'right'>, points: (key: string) => NonNullable<Trackwork['points']>[string], leverAt?: number): Trackwork => ({
   points: Object.fromEntries(Object.keys(sets).map((k) => [k, points(k)])),
-  throw: Object.fromEntries(Object.entries(sets).map(([k, side]) => [k, { side, leverOffset: 24 }])) });
+  throw: Object.fromEntries(Object.entries(sets).map(([k, side]) => [k, { side, leverOffset: 24, ...(leverAt !== undefined && { leverAt }) }])) });
 /**
  * The R104 switch's points and lever set by hand (Design.trackwork) as the reference's base has them: the blades from 3.4
  * studs in (toe: 16 mm on from where the rails part; the reference's tongues start 3.1 to 3.5 in), the lever 7 studs
@@ -580,7 +589,7 @@ function r104Slip(hand: 1 | -1): Design {
     // (and the check rail opposite each acute frog, which would run on into the points' blade, ends 9 mm sooner, as the
     // reference's does at its tongue's toe: each by its middle, shortened at its end nearer the crossing)
     trackwork: { ...slipWork({ '0,-160': side('left'), [`${64 * hand},-160`]: side('right'), [`${-64 * hand},160`]: side('right'), '0,160': side('left') },
-      (k) => ({ toe: /^0,/.test(k) ? 67 : 78, heel: 18, single: 'straight' })),
+      (k) => ({ toe: /^0,/.test(k) ? 67 : 78, heel: 18, single: 'straight' }), cornerLever(0)),
       check: { [`${-15 * hand},-101`]: { d1: -9 }, [`${15 * hand},101`]: { d0: -9 }, [`${52 * hand},-88`]: { d1: -9 }, [`${-52 * hand},88`]: { d0: -9 } } } };
 }
 /** The R104 double slip cut into its kit's three sections (TEMPLATES): r104Slip, with track cut into pieces and the two cut paths. */
@@ -831,7 +840,11 @@ export const TEMPLATES: Record<string, Design> = {
   // both near the crossing's end, are staggered, one nearer its toes (network.ts). Not nail switches, as it was: the
   // middle points are too close for their springs, each set's lying where the next set's blade plate is)
   'Double slip (22.5°)': { version: 1, gaugeStuds: 4, options: { pointBlades: 1 },
-    trackwork: { throw: leversAt([[0, -SLIP_LEAD, 'left'], [SLIP_LEAD * sin(22.5), -SLIP_LEAD * cos(22.5), 'right'], [0, SLIP_LEAD, 'left'], [-SLIP_LEAD * sin(22.5), SLIP_LEAD * cos(22.5), 'right']]) }, routes: [
+    // (each set's lever in a housing at its own outer corner, as Aaron's reference photo has them: a tie-rod out to it
+    // from the slider (Trackwork.throw leverAt), 2 studs past the sleepers' ends: further, the diagonal track's arms,
+    // sloping, reach across its middle, where it's cut in two for the print bed)
+    trackwork: { throw: leversAt([[0, -SLIP_LEAD, 'left'], [SLIP_LEAD * sin(22.5), -SLIP_LEAD * cos(22.5), 'right'], [0, SLIP_LEAD, 'left'], [-SLIP_LEAD * sin(22.5), SLIP_LEAD * cos(22.5), 'right']],
+      { leverOffset: 16, leverAt: cornerLever(20 - SLIP_LEAD) }) }, routes: [
       { name: 'A', x: 0, y: -20, heading: 0, segs: [{ kind: 'straight', studs: 40 }] },
       { name: 'B', x: 20 * tan(22.5), y: -20, heading: 22.5, segs: [{ kind: 'straight', studs: 40 / cos(22.5) }] },
       { name: 'A to B', x: 0, y: -SLIP_LEAD, heading: 0, segs: [{ kind: 'curve', radius: 40, angle: 22.5 }] },
@@ -1204,8 +1217,9 @@ export const TEMPLATES: Record<string, Design> = {
   // four sets of points as the reference's, set by hand (slipWork): one moving blade each (single point), the one by the
   // slip road's own stock rail (single 'straight': the other blade would lie where the other track's rails cross in),
   // its toe 11 studs from the crossing, where the reference's tongue starts (toe: the roads have parted 3 mm there),
-  // and as long as that tongue (heel); each lever outside, beside its own points on the slip road's side, 10 studs
-  // from the crossing and 7 from its track's centre line)
+  // and as long as that tongue (heel); each lever outside, 7 studs from its track's centre line, in a housing at its
+  // own outer corner, 5.5 studs in from the end, as Aaron's reference photo has them, a tie-rod out to it from the
+  // slider (leverAt))
   // (the diagonal track bends 0.75 degrees each way at its ends (R208): the reference's ends are at the R104 switch's
   // 22.5 degrees, a straight line between them at 21.8)
   'Double slip R104 left': r104Slip(1),

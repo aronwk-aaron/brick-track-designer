@@ -65,6 +65,14 @@ export interface SwitchParams {
   throwShift?: number;
   /** (set by hand for a points set, SetOver) the blades lengthened: their heels this much (mm) past where the rails are far enough apart */
   heelShift?: number;
+  /**
+   * (the plate-style points, set by hand for a points set, SetOver) The lever's housing at a corner: its lever this far
+   * along the points' frame (mm from where the routes part; less than the throw bar's: back toward the track's end),
+   * not beside the throw bar. A tie-rod (switch/base.ts rodPart) runs along outside the sleepers' ends from the slider's
+   * end to the lever, sliding across with it. Unset: the lever beside the throw bar, as before. Not with a bracket or
+   * a switch stand.
+   */
+  leverAt?: number;
   /** (switch.scad's throw_ballast) On ballast: the ballast's steps carried on round the lever's arm, with studs. */
   throwBallast?: boolean;
   /**
@@ -287,7 +295,13 @@ export function pointsSet(routes: Route[], ps: PointsSet, p: SwitchParams, defau
   const throwY = p.mechStyle === 'plates' ? fdbY : yS;
   const throwStockRt = throwDir > 0 ? ra : rb;
   const throwStockX = railPoint(throwStockRt, sOf(throwStockRt, [0, throwY]), throwDir * G)[0];
-  const throwFaceX = throwStockX + throwDir * 3.9;
+  // (the lever's housing at a corner (leverAt): the lever there, a tie-rod from the slider's end out to it; the arm
+  // round the lever there, a run along outside the sleepers' ends from the throw bar to it. The lever clear of the
+  // stock rail there too)
+  const corner = p.leverAt !== undefined && p.mechStyle === 'plates' && !p.throwStand && !p.throwModule && Math.abs(p.leverAt - throwY) > g.armW / 2;
+  const leverY = corner ? p.leverAt! : throwY;
+  const stockAtLever = corner ? railPoint(throwStockRt, sOf(throwStockRt, [0, leverY]), throwDir * G)[0] : throwStockX;
+  const throwFaceX = (throwDir * stockAtLever > throwDir * throwStockX ? stockAtLever : throwStockX) + throwDir * 3.9;
   const leverAng = deg(Math.asin(Math.min(0.9, leverTravel / 2 / g.leverDa)));
   // The switch stand (throwStand): its eccentric's offset, so that it moves the slider by the travel between
   // its two rests, each the over angle past dead centre; the hub as low as lets the handle lie on the arm's top
@@ -311,10 +325,12 @@ export function pointsSet(routes: Route[], ps: PointsSet, p: SwitchParams, defau
   // (the stand's yoke: up past the eccentric's centre at its highest)
   const forkTop = stand ? standZ + standE + 0.4 : forkLipZ + 0.8;
   const forkMouthHw = g.leverDrvW / 2 + (forkTop - leverTipZ) * Math.tan(rad(leverAng)) + p.pointClearance;
-  const stepYa = Math.max(0, Math.floor((throwY - g.armW / 2) / STUD) * STUD - STUD);
-  const stepYb = Math.ceil((throwY + g.armW / 2) / STUD) * STUD + STUD;
+  // (the lever's housing at a corner (leverAt): the lever there, a tie-rod from the slider's end out to it; the arm
+  // round the lever there, a run along outside the sleepers' ends from the throw bar to it)
+  const stepYa = Math.max(0, Math.floor((leverY - g.armW / 2) / STUD) * STUD - STUD);
+  const stepYb = Math.ceil((leverY + g.armW / 2) / STUD) * STUD + STUD;
   const stepXo = throwDir * (Math.ceil((throwDir * (leverX + throwDir * 10)) / STUD) * STUD + STUD);
-  const armRect = [Math.min(throwStockX, leverX + throwDir * 10), Math.max(throwStockX, leverX + throwDir * 10), throwY - g.armW / 2, throwY + g.armW / 2];
+  const armRect = [Math.min(throwStockX, leverX + throwDir * 10), Math.max(throwStockX, leverX + throwDir * 10), leverY - g.armW / 2, leverY + g.armW / 2];
   const warnings: string[] = [];
   if (tipGap - HEAD_HW - p.pointClearance < p.springThickness + g.tineGap / 2 + leverTravel + p.springPreload + 0.5)
     warnings.push('not enough room between the blades for the spring tines; lower point_throw or spring_preload');
@@ -322,7 +338,7 @@ export function pointsSet(routes: Route[], ps: PointsSet, p: SwitchParams, defau
   return {
     ra, rb, sToe, sHeel, toeY, sBpiv, pivotPt, throwAng, tineLen, yS, tineTip, throwTravel, leverTravel, postX, fdbTravel,
     swingRange, pointsEndY, tipGap, throwDir, throwY, throwStockRt, throwStockX, throwFaceX, leverAng, leverTipZ,
-    throwEdgeX, leverMinD, leverX, forkX, forkLipZ, forkTop, forkMouthHw, stepYa, stepYb, stepXo, armRect, stand, standE, standZ,
+    throwEdgeX, leverMinD, leverX, forkX, corner, leverY, forkLipZ, forkTop, forkMouthHw, stepYa, stepYb, stepXo, armRect, stand, standE, standZ,
     bladeMidAt, warnings,
     /** (the plate-style points) each blade's layout: filled in by switchPlan */
     fdb: undefined as FdbBladeLayout[] | undefined,

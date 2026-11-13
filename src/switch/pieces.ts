@@ -64,7 +64,9 @@ export interface SwitchPiece {
  * studs: the lever offset and tine length that put it there, nearest where
  * it would be, in frame P. keep: the settings already chosen by hand.
  */
-export function gridLever(P: Pose, v: { leverX: number; throwY: number; throwEdgeX: number; leverMinD: number; throwDir: number; pivotPt: [number, number] }, keep: ThrowEdit = {}): SetOver {
+export function gridLever(P: Pose, v0: { leverX: number; throwY: number; leverY?: number; throwEdgeX: number; leverMinD: number; throwDir: number; pivotPt: [number, number] }, keep: ThrowEdit = {}): SetOver {
+  // (a lever in a housing at a corner: where it is, not the throw bar)
+  const v = { ...v0, throwY: v0.leverY ?? v0.throwY };
   const toW = (x: number, y: number) => poseToWorld(P, [x, y]);
   const toL = (q: [number, number]) => worldToPose(P, q);
   const snap = (q: [number, number]): [number, number] => [Math.round((q[0] - 4) / 8) * 8 + 4, Math.round((q[1] - 4) / 8) * 8 + 4];
@@ -87,7 +89,7 @@ export function gridLever(P: Pose, v: { leverX: number; throwY: number; throwEdg
 /** A points set's lever, as moved by hand: which side, how far out, and (by its tines' length) how far along. */
 export interface ThrowEdit { side?: 'left' | 'right'; leverOffset?: number; springLength?: number; /** (the points' own hand edits, Trackwork.points single and heel: a single-point switch's moving blade; the blades lengthened, mm) */ single?: 'curved' | 'straight'; heel?: number;
   /** (expert, stage 5c) the throw bar moved along, whole studs (+: towards the heel); this set's own blade style and moving blades */
-  throwShift?: number; bladeStyle?: 'simple' | 'prototype' | 'sprung'; blades?: 1 | 2; /** (expert) this set's own mechanism */ mech?: 'tines' | 'plates'; each?: { left?: { leverOffset?: number }; right?: { leverOffset?: number } } }
+  throwShift?: number; /** (blades on top) the lever in a housing at a corner, studs along the points (Trackwork.throw leverAt) */ leverAt?: number; bladeStyle?: 'simple' | 'prototype' | 'sprung'; blades?: 1 | 2; /** (expert) this set's own mechanism */ mech?: 'tines' | 'plates'; each?: { left?: { leverOffset?: number }; right?: { leverOffset?: number } } }
 /** A lever's hand edit: the points' own; for one of a three-way's two levers (blade 0 the left one's, 1 the right's) with its own over it (each). */
 export const bladeEdit = (ed: ThrowEdit | undefined, blade: number | undefined): ThrowEdit | undefined => {
   const own = blade === undefined ? undefined : ed?.each?.[blade === 0 ? 'left' : 'right'];
@@ -185,7 +187,7 @@ export function planPieces(routes: Route[], splits: Split[], p: BaseParams = BAS
         const own = ed?.side ?? routes[kids[Math.min(n, kids.length - 1)].child].throwSide;
         const side = own && own !== 'auto' ? own : p.throwSide;
         if ((side === 'left' || side === 'right') && st[6] === undefined) st[3] = side === 'right' ? 1 : -1;
-        if (ed && (ed.leverOffset !== undefined || ed.springLength !== undefined || ed.single || ed.heel || ed.throwShift)) st[5] = { ...(ed.leverOffset !== undefined && { leverOffset: ed.leverOffset }), ...(ed.springLength !== undefined && { springLength: ed.springLength }), ...(ed.single && { single: ed.single }), ...(ed.heel && { heelShift: ed.heel }), ...(ed.throwShift && { throwShift: ed.throwShift }) };
+        if (ed && (ed.leverOffset !== undefined || ed.springLength !== undefined || ed.single || ed.heel || ed.throwShift || ed.leverAt !== undefined)) st[5] = { ...(ed.leverOffset !== undefined && { leverOffset: ed.leverOffset }), ...(ed.springLength !== undefined && { springLength: ed.springLength }), ...(ed.single && { single: ed.single }), ...(ed.heel && { heelShift: ed.heel }), ...(ed.throwShift && { throwShift: ed.throwShift }), ...(ed.leverAt !== undefined && { leverAt: ed.leverAt * 8 }) };
       });
       const sorted = order.map((k) => frameRoutes[k]);
       // Long enough for the frog and its check rails, and for the ends to be

@@ -67,7 +67,7 @@ export function parts(w: Wasm, pieces: Piece[]) {
 /** (mm3) Less than this isn't material: a solid made again from its triangles touches itself along edges, and two of them share such slivers. */
 const SLIVER = 0.01;
 /** A part's set of points ('points2', 'switch'), and what it is there. */
-const setOf = (name: string) => name.replace(/-(a|b|throw\d*|throw\d*-posts|lever\d*|spring|bracket\d*|lid)$/, '').replace(/-points(\d*)$/, '$1') + (/-(?:throw|lever|bracket)(\d+)/.exec(name)?.[1] ?? '');
+const setOf = (name: string) => name.replace(/-(a|b|throw\d*|throw\d*-posts|throw\d*-rod|lever\d*|spring|bracket\d*|lid)$/, '').replace(/-points(\d*)$/, '$1') + (/-(?:throw|lever|bracket)(\d+)/.exec(name)?.[1] ?? '');
 const isMoving = (name: string) => /points|throw|lever|bracket|spring/.test(name) && !/lid$|^monorail/.test(name);
 /**
  * What two parts may share as assembled, a body of it at a time (b: its box's size, v its volume); else nothing over a sliver.
@@ -135,6 +135,10 @@ export function moves(w: Wasm, ps: Part[], o: PieceOptions, seen?: Seen) {
   for (const [, mine] of sets) if (!seen || mine.some((q) => seen.own(q.p))) arena(w, () => {
     const others = ps.filter((q) => !mine.includes(q)), blades = mine.filter((q) => q.p.turn?.swing), throws = mine.filter((q) => q.p.slide);
     const lever = mine.find((q) => q.p.hinge), bar = throws.find((q) => /throw\d*$/.test(q.p.name));
+    // (the lever in a housing at a corner: it works the tie-rod, the rod the slider (its tab in the rod's hole): left
+    // behind as the slider goes over, the rod's in its tab)
+    const rod = throws.find((q) => /throw\d*-rod$/.test(q.p.name)), driven = rod ?? bar;
+    if (rod && bar && !STEPS.some((f) => shared(rod.m, slid(bar.m, bar.p.slide!, bar.p.slide!.by * f)) > OVERLAP)) out.push(`${rod.p.name} doesn't move its slider: left where it is, the slider's clear of it all the way over`);
     const hits = (m: Man, name: string, what: string, against: Part[]) => {
       for (const q of against) { const v = shared(m, q.m); if (v > OVERLAP) { out.push(`${name} ${what}: ${v.toFixed(2)} mm3 in ${q.p.name}`); return; } }
     };
@@ -144,10 +148,10 @@ export function moves(w: Wasm, ps: Part[], o: PieceOptions, seen?: Seen) {
       for (const q of throws) hits(slid(q.m, q.p.slide!, q.p.slide!.by * f), q.p.name, `slid ${(q.p.slide!.by * f).toFixed(1)} mm`, [...others, ...mine.filter((r) => /bracket/.test(r.p.name))]);
       if (lever) hits(hinged(lever.m, lever.p.hinge!, lever.p.hinge!.by * f), lever.p.name, `swung ${(lever.p.hinge!.by * f).toFixed(1)} degrees`, [...others, ...mine.filter((r) => /bracket/.test(r.p.name))]);
     }
-    if (lever && bar) {
-      const h = lever.p.hinge!, sl = bar.p.slide!, a0 = (-h.by / 2) * (Math.PI / 180), at = (f: number) => (sl.by * (Math.sin(a0) - Math.sin(a0 + (h.by * f * Math.PI) / 180))) / (2 * Math.sin(a0));
-      for (const f of [0, ...STEPS]) { const v = shared(hinged(lever.m, h, h.by * f), slid(bar.m, sl, at(f))); if (v > OVERLAP) { out.push(`${lever.p.name} swung ${(h.by * f).toFixed(1)} degrees: ${v.toFixed(2)} mm3 in its slider there`); break; } }
-      if (!STEPS.some((f) => shared(hinged(lever.m, h, h.by * f), bar.m) > OVERLAP)) out.push(`${lever.p.name} doesn't move its slider: swung over, it's clear of it where it was, all the way`);
+    if (lever && driven) {
+      const h = lever.p.hinge!, sl = driven.p.slide!, a0 = (-h.by / 2) * (Math.PI / 180), at = (f: number) => (sl.by * (Math.sin(a0) - Math.sin(a0 + (h.by * f * Math.PI) / 180))) / (2 * Math.sin(a0));
+      for (const f of [0, ...STEPS]) { const v = shared(hinged(lever.m, h, h.by * f), slid(driven.m, sl, at(f))); if (v > OVERLAP) { out.push(`${lever.p.name} swung ${(h.by * f).toFixed(1)} degrees: ${v.toFixed(2)} mm3 in its ${rod ? 'tie-rod' : 'slider'} there`); break; } }
+      if (!STEPS.some((f) => shared(hinged(lever.m, h, h.by * f), driven.m) > OVERLAP)) out.push(`${lever.p.name} doesn't move its ${rod ? 'tie-rod' : 'slider'}: swung over, it's clear of it where it was, all the way`);
     }
     if (bar) for (const q of blades) {
       // (no more in the slider than the set's closed blade is as assembled: its post pressed into the spring by the preload; each blade's so at its closed end)

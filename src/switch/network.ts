@@ -40,6 +40,8 @@ export interface SplitParts {
   adds: Man[]; cuts: Man[];
   /** (sprung blades on track alone) added after the underside's cut: what the slider rests on over the hollow */
   rests?: Man;
+  /** (the lever in a housing at a corner) the arm there and the run out to it, as rectangles [x0, x1, y0, y1] in the frame: hollow underneath */
+  armRects?: [number, number, number, number][];
   /** cut from every route's rails (the planed stock feet) */
   stock: Man;
   /** cut from one route's rails (by route index): the rails the blades replace */
@@ -106,7 +108,7 @@ export function networkSplits(s: Scad, routes: Route[], sol: Solution, p: BasePa
   const arms: [[number, number], [number, number]][] = [];
   const ARM_GAP = 12 + 12 + 4;
   const armOf = (pl: SwitchPlan, P: Pose): [[number, number], [number, number]] => {
-    const d = pl.setData[0], h = (P[2] * Math.PI) / 180, w2 = (x: number): [number, number] => [P[0] + x * Math.cos(h) - d.throwY * Math.sin(h), P[1] + x * Math.sin(h) + d.throwY * Math.cos(h)];
+    const d = pl.setData[0], h = (P[2] * Math.PI) / 180, w2 = (x: number): [number, number] => [P[0] + x * Math.cos(h) - d.leverY * Math.sin(h), P[1] + x * Math.sin(h) + d.leverY * Math.cos(h)];
     return [w2(d.armX0), w2(d.armX1)];
   };
   const segGap = (a: [[number, number], [number, number]], b: [[number, number], [number, number]]) => {
@@ -116,7 +118,7 @@ export function networkSplits(s: Scad, routes: Route[], sol: Solution, p: BasePa
   };
   /** Whether a points set's lever (standing up past the rails, its knob some 8 across) is where a train on other track (foreign, in the points' frame) would hit it, or its arm too near another's. The arm under it is low, as sleepers are: trains pass over that. */
   const inWay = (pl: SwitchPlan, foreign: Route[], P: Pose): 'train' | 'lever' | undefined => {
-    const d = pl.setData[0], lever: [number, number] = [d.leverX, d.throwY], arm = armOf(pl, P);
+    const d = pl.setData[0], lever: [number, number] = [d.leverX, d.leverY], arm = armOf(pl, P);
     if (foreign.some((rt) => {
       for (let t = 0; t <= routeLength(rt); t += 2) {
         const q = routePose(rt, t);
@@ -195,7 +197,7 @@ export function networkSplits(s: Scad, routes: Route[], sol: Solution, p: BasePa
     if (blade !== undefined && !three) return undefined;
     const own = blade === undefined ? own0 : blade === 0 ? 'left' : 'right';
     const tside = own === 'left' ? -1 : own === 'right' ? 1 : three ? 1 : bRight ? -1 : 1;
-    const over: SetOver = { ...(ed?.leverOffset !== undefined && { leverOffset: ed.leverOffset }), ...(ed?.springLength !== undefined && { springLength: ed.springLength }), ...(ed?.single && { single: ed.single }), ...(ed?.heel && { heelShift: ed.heel }), ...(ed?.throwShift && { throwShift: ed.throwShift }) };
+    const over: SetOver = { ...(ed?.leverOffset !== undefined && { leverOffset: ed.leverOffset }), ...(ed?.springLength !== undefined && { springLength: ed.springLength }), ...(ed?.single && { single: ed.single }), ...(ed?.heel && { heelShift: ed.heel }), ...(ed?.throwShift && { throwShift: ed.throwShift }), ...(ed?.leverAt !== undefined && { leverAt: ed.leverAt * 8 }) };
     const specOf = (o: SetOver, ts: number): SetSpec => (three ? [0, 2, 2 + toeShift([P[0], P[1]]), ts, 1, o, blade] : [0, 1, 2 + lead + toeShift([P[0], P[1]]), ts, undefined, o]);
     const spec = (o: SetOver) => specOf(o, tside);
     // (the other track near the points, in their frame; with two branches one side not built as a three-way, the other branch too)
@@ -312,9 +314,13 @@ export function networkSplits(s: Scad, routes: Route[], sol: Solution, p: BasePa
       const t0 = st.tside, base = st.over, out0 = base.leverOffset ?? st.pp.leverOffset;
       const outs = ed?.leverOffset !== undefined ? [0] : Array.from({ length: 11 }, (_, k) => k * 8);
       let found = false;
-      for (const ex of outs) for (const sh of shifts) for (const sd of sides) {
-        if (found || (ex === 0 && sh === 0 && sd === t0)) continue;
-        const o2 = { ...base, ...(sh && { throwShift: sh }), ...(ex && { leverOffset: out0 + ex }) }, pl = switchPlan(rts, [specOf(o2, sd)], st.pp, 1, foreign, keep);
+      // (a lever in a housing at a corner (leverAt) that's in the way there, where nothing clears it: beside its throw
+      // bar instead, as without it (a yard's slips, end to end, their diagonal's ends between two tracks))
+      const corners = base.leverAt !== undefined ? [true, false] : [true];
+      for (const cn of corners) for (const ex of outs) for (const sh of shifts) for (const sd of sides) {
+        if (found || (cn && ex === 0 && sh === 0 && sd === t0)) continue;
+        const { leverAt: _la, ...rest } = base;
+        const o2 = { ...(cn ? base : rest), ...(sh && { throwShift: sh }), ...(ex && { leverOffset: out0 + ex }) }, pl = switchPlan(rts, [specOf(o2, sd)], st.pp, 1, foreign, keep);
         if (ex && pl.sets[0].under && !pl.sets[0].underOk) continue;
         if (!blockedOf(pl) && !inWay(pl, foreign, P)) { st.tside = sd; st.over = o2; st.used = specOf(o2, sd); st.plan = pl; found = true; }
       }
@@ -458,6 +464,9 @@ export function networkSplits(s: Scad, routes: Route[], sol: Solution, p: BasePa
     // (the slider in two parts, its arm under other track: the piece with the posts, in after the bar)
     const thp = gm.throwPostsPart(0), thpP = gm.throwPostsPrint(0);
     if (thp && thpP) moving.push({ name: `${tag}-throw-posts`, color: 0xe8892b, local: thpP, world: place(thp, P), slide: mv.slide });
+    // (the lever in a housing at a corner: the tie-rod out to it, on after the slider)
+    const thr2 = gm.throwRodPart(0), thr2P = gm.throwRodPrint(0);
+    if (thr2 && thr2P) moving.push({ name: `${tag}-throw-rod`, color: 0xe8892b, local: thr2P, world: place(thr2, P), slide: mv.slide });
     if (!gm.isNail(0)) moving.push({ name: `${tag}-lever`, color: 0xd4af37, local: gm.leverPrint(0), world: place(gm.leverPart(0), P), ...(mv.hinge && { hinge: mv.hinge }) });
     if (p.throwModule && !gm.isNail(0)) { const br = gm.bracketPart(0); moving.push({ name: `${tag}-bracket`, color: 0x8a8f99, local: br, world: place(br, P) }); }
     const end = sp.merge ? 'end' : 'start';
@@ -477,6 +486,7 @@ export function networkSplits(s: Scad, routes: Route[], sol: Solution, p: BasePa
       adds: [bed.bed, place(mech.arm, P), ...mech.steps.map((m) => place(m, P))], cuts: [place(mech.pockets, P), place(mech.channel, P)],
       ...(mech.rests && { rests: place(mech.rests, P) }),
       ...(mech.stepRect && { stepRect: mech.stepRect }),
+      ...(mech.armRects.length && { armRects: mech.armRects }),
       ...(studsOn && { studsOn }),
       stock: place(mech.stockCut, P),
       bladeCuts: mech.bladeRails.map(([rt, cut]) => [worldOf(rt), place(cut, P)] as [number, Man]),
@@ -515,10 +525,13 @@ export function networkBody(s: Scad, routes: Route[], sol: Solution, copt: Cross
   const ok = (m: Man) => m.status() === 'NoError';
   for (const [i, ms] of railCuts) railCuts.set(i, ms.filter(ok));
   // (the throw arms hollow underneath with tubes, like the bed: out to the stud line past the lever)
-  const hollows = splits.map((sp) => {
+  // (the lever in a housing at a corner: its own, armRects, below)
+  const hollows = splits.filter((sp) => !sp.armRects).map((sp) => {
     const v = sp.set, xEnd = v.leverX + v.throwDir * 10, xOut = v.throwDir * Math.ceil((v.throwDir * xEnd) / 8 - 1e-6) * 8, hw = (v.armRect[3] - v.armRect[2]) / 2;
     return { P: sp.frame, r: [Math.min(v.throwStockX, xOut), Math.max(v.throwStockX, xOut), v.throwY - hw, v.throwY + hw] as [number, number, number, number] };
   });
+  // (the lever in a housing at a corner: the arm there too, and the run between, out from the sleepers' ends)
+  for (const sp of splits) for (const r of sp.armRects ?? []) hollows.push({ P: sp.frame, r });
   // (and the steps round them, on ballast)
   for (const sp of splits) if (sp.stepRect) hollows.push({ P: sp.frame, r: sp.stepRect });
   const blades = splits.flatMap((sp) => sp.bladeCuts.map(([, m]) => m)).filter(ok);
