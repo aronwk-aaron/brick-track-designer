@@ -577,6 +577,13 @@ const slipWork = (sets: Record<string, 'left' | 'right'>, points: (key: string) 
  */
 const r104Work = (side?: 'left' | 'right'): Trackwork => ({ points: { '0,0': { toe: 16 } }, throw: { '0,0': { ...(side && { side }), leverOffset: 24 } } });
 /** The R104 double slip (TEMPLATES), left (1) or right (-1): the diagonal track crossing the straight one (which runs up) to its left, or to its right. */
+/** The 22.5-degree crossings' diagonal, as the R104 double slip's: from its end at 22.5 degrees to the straight, 40 studs on and
+ * 16 over, bending 0.75 degrees (R208) just in from each end so both ends are at 22.5 and on whole studs. turn: the way the
+ * first bend turns (+1 left). */
+function r104Diagonal(turn: 1 | -1): DSeg[] {
+  const lead = 0.218121;
+  return [{ kind: 'straight', studs: lead }, { kind: 'curve', radius: 208, angle: 0.754152 * turn }, { kind: 'straight', studs: 37.169679 }, { kind: 'curve', radius: 208, angle: -0.754152 * turn }, { kind: 'straight', studs: lead }];
+}
 function r104Slip(hand: 1 | -1): Design {
   // (the R104 switch's branch: 22.5 degrees of R104 and 0.218 studs straight end 40 on and 8 over)
   const lead = 0.218121, side = (s: 'left' | 'right'): 'left' | 'right' => (hand === 1 ? s : s === 'left' ? 'right' : 'left');
@@ -1182,12 +1189,14 @@ export const TEMPLATES: Record<string, Design> = {
   'Crossing 45° right': { version: 1, gaugeStuds: 4, options: { legoTrack: 'print' }, routes: [{ name: 'A', x: 0, y: 8, heading: -180, segs: [{ kind: 'straight', studs: 16 }] }, { name: 'B', x: 6.585786, y: 6.585786, heading: 135, segs: [{ kind: 'straight', studs: 18.627417 }] }] },
   // (two 27.08-stud straights crossing at 45 degrees at their middles (to go between R104 curves))
   'Crossing 45°, 27 studs': { version: 1, gaugeStuds: 4, options: { legoTrack: 'print' }, routes: [{ name: 'A', x: -12.510345, y: -5.181955, heading: -67.5, segs: [{ kind: 'straight', studs: 27.0822 }] }, { name: 'B', x: -12.510345, y: 5.181955, heading: -112.5, segs: [{ kind: 'straight', studs: 27.0822 }] }] },
-  // (a 40-stud straight crossed at its middle at 22.5 degrees, the other track's ends level with its ends, 8.28 studs over (to go with R104 switches))
-  'Crossing 22.5° left': { version: 1, gaugeStuds: 4, options: { legoTrack: 'print' }, routes: [{ name: 'A', x: -20, y: 0, heading: -90, segs: [{ kind: 'straight', studs: 40 }] }, { name: 'B', x: -20, y: -8.284271, heading: -67.5, segs: [{ kind: 'straight', studs: 43.295688 }] }] },
+  // (a 40-stud straight crossed at its middle at 22.5 degrees, the other track's ends level with its ends, 8 studs over (to go
+  // with R104 switches: the diagonal bends 0.75 degrees at each end, as the R104 double slip's, so its ends are at the
+  // switch's 22.5 degrees and on whole studs, where the reference's are)
+  'Crossing 22.5° left': { version: 1, gaugeStuds: 4, options: { legoTrack: 'print' }, routes: [{ name: 'A', x: -20, y: 0, heading: -90, segs: [{ kind: 'straight', studs: 40 }] }, { name: 'B', x: -20, y: -8, heading: -67.5, segs: r104Diagonal(-1) }] },
   // (its mirror image)
-  'Crossing 22.5° right': { version: 1, gaugeStuds: 4, options: { legoTrack: 'print' }, routes: [{ name: 'A', x: -20, y: 0, heading: -90, segs: [{ kind: 'straight', studs: 40 }] }, { name: 'B', x: -20, y: 8.284271, heading: -112.5, segs: [{ kind: 'straight', studs: 43.295688 }] }] },
+  'Crossing 22.5° right': { version: 1, gaugeStuds: 4, options: { legoTrack: 'print' }, routes: [{ name: 'A', x: -20, y: 0, heading: -90, segs: [{ kind: 'straight', studs: 40 }] }, { name: 'B', x: -20, y: 8, heading: -112.5, segs: r104Diagonal(1) }] },
   // (three tracks crossing at their middles: a 40-stud straight, and one each way at 22.5 degrees, their ends level with its ends)
-  'Star crossing 22.5°': { version: 1, gaugeStuds: 4, options: { legoTrack: 'print' }, routes: [{ name: 'A', x: -20, y: 0, heading: -90, segs: [{ kind: 'straight', studs: 40 }] }, { name: 'B', x: -20, y: -8.284271, heading: -67.5, segs: [{ kind: 'straight', studs: 43.295688 }] }, { name: 'C', x: -20, y: 8.284271, heading: -112.5, segs: [{ kind: 'straight', studs: 43.295688 }] }] },
+  'Star crossing 22.5°': { version: 1, gaugeStuds: 4, options: { legoTrack: 'print' }, routes: [{ name: 'A', x: -20, y: 0, heading: -90, segs: [{ kind: 'straight', studs: 40 }] }, { name: 'B', x: -20, y: -8, heading: -67.5, segs: r104Diagonal(-1) }, { name: 'C', x: -20, y: 8, heading: -112.5, segs: r104Diagonal(1) }] },
   // (an R24 curve of 22.5 degrees crossed square at its middle by a 16-stud straight)
   'Curved crossing R24': { version: 1, gaugeStuds: 4, options: { legoTrack: 'print' }, routes: [{ name: 'Curve', x: -4.682168, y: -0.461153, heading: -78.75, segs: [{ kind: 'curve', radius: 24, angle: -22.5 }] }, { name: 'Straight', x: 0, y: 8, heading: -180, segs: [{ kind: 'straight', studs: 16 }] }] },
   // (an R40 curve of 22.5 degrees crossed square at its middle by a 16-stud straight)
