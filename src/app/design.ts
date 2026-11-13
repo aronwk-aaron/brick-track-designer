@@ -586,18 +586,16 @@ function r104Diagonal(turn: 1 | -1): DSeg[] {
 }
 function r104Slip(hand: 1 | -1): Design {
   // (the R104 switch's branch: 22.5 degrees of R104 and 0.218 studs straight end 40 on and 8 over)
-  const lead = 0.218121, side = (s: 'left' | 'right'): 'left' | 'right' => (hand === 1 ? s : s === 'left' ? 'right' : 'left');
+  const lead = 0.218121;
   return { version: 1, gaugeStuds: 4, options: { legoTrack: 'print', pointBlades: 1 }, routes: [
     { name: 'Straight', x: 0, y: -20, heading: 0, segs: [{ kind: 'straight', studs: 40 }] },
     { name: 'Diagonal', x: 8 * hand, y: -20, heading: 22.5 * hand, segs: [{ kind: 'straight', studs: lead }, { kind: 'curve', radius: 208, angle: -0.754152 * hand }, { kind: 'straight', studs: 37.169679 }, { kind: 'curve', radius: 208, angle: 0.754152 * hand }, { kind: 'straight', studs: lead }] },
     { name: 'Slip A', x: 0, y: -20, heading: 0, segs: [{ kind: 'curve', radius: 104, angle: 22.5 * hand }, { kind: 'straight', studs: lead }] },
-    { name: 'Slip B', x: 8 * hand, y: -20, heading: 22.5 * hand, segs: [{ kind: 'straight', studs: lead }, { kind: 'curve', radius: 104, angle: -22.5 * hand }] }],
-    // (the straight track's points 67 mm on from its ends, the diagonal's 78: its arms are 1.5 studs longer)
-    // (and the check rail opposite each acute frog, which would run on into the points' blade, ends 9 mm sooner, as the
-    // reference's does at its tongue's toe: each by its middle, shortened at its end nearer the crossing)
-    trackwork: { ...slipWork({ '0,-160': side('left'), [`${64 * hand},-160`]: side('right'), [`${-64 * hand},160`]: side('right'), '0,160': side('left') },
-      (k) => ({ toe: /^0,/.test(k) ? 67 : 78, heel: 18, single: 'straight' }), cornerLever(0)),
-      check: { [`${-15 * hand},-101`]: { d1: -9 }, [`${15 * hand},101`]: { d0: -9 }, [`${52 * hand},-88`]: { d1: -9 }, [`${-52 * hand},88`]: { d0: -9 } } } };
+    { name: 'Slip B', x: 8 * hand, y: -20, heading: 22.5 * hand, segs: [{ kind: 'straight', studs: lead }, { kind: 'curve', radius: 104, angle: -22.5 * hand }] },
+    // (its points, levers and check rails worked out from the routes as the reference's (switch/dslip.ts): the straight
+    // track's points 67 mm on from its ends, the diagonal's 78 (each 13.5 past the acute frog), one moving blade a set,
+    // each lever outside at its corner, and the check rail opposite each acute frog ended short of the blade)
+  ] };
 }
 /** The R104 double slip cut into its kit's three sections (TEMPLATES): r104Slip, with track cut into pieces and the two cut paths. */
 function r104SlipKit(hand: 1 | -1): Design {

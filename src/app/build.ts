@@ -20,6 +20,7 @@ import { BASE_DEFAULTS, switchGeometry } from '../switch/base';
 import { switchGlobals } from '../switch/context';
 import { planPieces, subRoute, toFrame } from '../switch/pieces';
 import { networkBody, networkSplits, type SplitParts, throwMoves } from '../switch/network';
+import { findDoubleSlips, slipTrackwork, underHand } from '../switch/dslip';
 import { blocks as tileBlocks, cropRoutes, nearCell, planCuts, routesBox, type Rect } from './tiles';
 import type { CheckRail, Split } from '../route/solver';
 import { planSections } from './sections';
@@ -986,6 +987,9 @@ function solveTrackwork(w: Wasm, design: Design, o: PieceOptions, step: (what: s
   }
   // (expert, stage 5b: check rails added by hand, as the solver's are)
   sol = handChecks(routes, sol, gauge / 2, solverOpts);
+  // (double and single slips, found in the routes: their points, levers and check rails as the reference's are, worked
+  // out from the crossing and the slip roads (switch/dslip.ts), the hand edits over them)
+  { const slips = findDoubleSlips(routes, sol); if (slips.length) Object.assign(tw, underHand(tw, slipTrackwork(routes, sol, slips))); }
   // What the canvas draws over the track, in mm: flangeway cuts, check rails,
   // rail crossings and points.
   const g = gauge / 2, gOf = (i: number) => railOffsetOf(routes[i], g);
