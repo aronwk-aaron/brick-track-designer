@@ -47,7 +47,7 @@ export interface TemplateInfo {
 /** The kinds the names don't say (or say wrongly): checked first. */
 export const KIND_OVERRIDES: Record<string, Kind> = {
   'Wye with a crossover': 'layout',
-  'X yard (6 tracks, double slips)': 'layout',
+  'X yard (6 tracks, single slips)': 'layout',
   'Double slip crossover R104': 'layout',
   'T-junction core R56': 'feature',
 };

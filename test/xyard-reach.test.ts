@@ -1,10 +1,9 @@
 // The X yard's track graph: a train can go from any of its six tracks to any other, either way along the yard,
 // through its centre too, without reversing (every crossing of a diagonal and a track a full double slip).
 import { describe, expect, it } from 'vitest';
-import { TEMPLATES, toRoutes } from '../src/app/design';
+import { slipXYard, toRoutes } from '../src/app/design';
 import { type Route, routeLat, routeLength, routePose, routeSOf } from '../src/route/route';
 
-const NAME = 'X yard (6 tracks, double slips)';
 
 /** Where a route's end lies on another route, tangent to it: [route, s, other route, its end's s]. */
 function junctions(rts: Route[]) {
@@ -49,7 +48,7 @@ function reach(rts: Route[], js: ReturnType<typeof junctions>, a: number, d: 1 |
 }
 
 describe('the X yard: every track to every other', () => {
-  const rts = toRoutes(structuredClone(TEMPLATES[NAME])), js = junctions(rts);
+  const rts = toRoutes(slipXYard()), js = junctions(rts);
   const tracks = rts.flatMap((rt, i) => (/^T\d$/.test(rt.id) ? [i] : []));
   it('has its six tracks', () => expect(tracks.length).toBe(6));
   for (const d of [1, -1] as const) it(`from each track to each other, ${d > 0 ? 'up' : 'down'} the yard`, () => {

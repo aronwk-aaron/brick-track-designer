@@ -1,7 +1,7 @@
 // Double slips found in plain routes (switch/dslip.ts), and their points, levers and check rails worked out as the
 // reference R104 double slip's: the same as they were once set by hand in its template.
 import { describe, expect, it } from 'vitest';
-import { type Design, OPTION_DEFAULTS, TEMPLATES, toRoutes } from '../src/app/design';
+import { type Design, OPTION_DEFAULTS, slipXYard, TEMPLATES, toRoutes } from '../src/app/design';
 import { solve } from '../src/route/solver';
 import { findDoubleSlips, slipTrackwork, underHand } from '../src/switch/dslip';
 
@@ -28,15 +28,15 @@ describe('double slips found in plain routes', () => {
     expect(ds[0].sets.every((s) => !s.inner)).toBe(true);
     expect(tw).toEqual(handR104(hand));
   });
-  it('a 45-degree R40 double slip: its points at its ends, before the frogs; only its levers worked out (outside)', () => {
+  it('a 45-degree R40 double slip: its points at its ends, before the frogs; nothing worked out (the build places its levers)', () => {
     const { ds, tw } = found(TEMPLATES['Double slip (45°, R40)']);
     expect(ds).toHaveLength(1);
     expect(ds[0].angle).toBeCloseTo(45, 3);
     expect(tw.points).toEqual({});
-    expect(tw.throw).toEqual({ '0,-133': { side: 'left', leverOffset: 24 }, '-94,94': { side: 'right', leverOffset: 24 }, '94,-94': { side: 'right', leverOffset: 24 }, '0,133': { side: 'left', leverOffset: 24 } });
+    expect(tw.throw).toEqual({});
   });
   it('the X yard: a full double slip at each of the eight places a diagonal crosses a track; the four by its centre with an inner end there', () => {
-    const { ds, tw } = found(TEMPLATES['X yard (6 tracks, double slips)']);
+    const { ds, tw } = found(slipXYard());
     expect(ds).toHaveLength(8);
     expect(ds.every((x) => x.roads.length === 2 && x.sets.length === 4)).toBe(true);
     // (the diagonals cross between the third and fourth tracks, at (40, 144) studs: the slips on those tracks have their inner end there)

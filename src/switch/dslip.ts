@@ -173,7 +173,7 @@ type Tw = { points?: Record<string, object>; throw?: Record<string, object>; che
  * the R104 one at 22.5 degrees), the points as the reference's: past the acute frog, one moving blade a set (the one by
  * the slip road's own stock rail: the other would lie where the other track's rails cross in), lengthened at the heel, the
  * lever outside in a housing at the corner, and the check rail there ended short of the blade. Elsewhere (a 45-degree
- * slip, its points at its ends before the frogs) only the lever: outside, 7 studs from its track's centre line.
+ * slip, its points at its ends before the frogs) nothing: the build places their levers itself.
  */
 export function slipTrackwork(routes: Route[], sol: Solution, slips: DoubleSlip[]): Required<Tw> {
   const tw: Required<Tw> = { points: {}, throw: {}, check: {} };
@@ -181,7 +181,9 @@ export function slipTrackwork(routes: Route[], sol: Solution, slips: DoubleSlip[
     // (the frog within the points' span, a little in from its end: a slip at 22.5 degrees on R40, its frog just at the
     // span's end (59.7 of 59 to 60 mm), keeps its points at its ends)
     const inside = st.frogS < st.span - 2;
-    if (!inside) { tw.throw[st.key] = { side: st.outside, leverOffset: SLIP_LEVER_OFFSET }; continue; }
+    // (a hand-set side is kept to; worked out, it would keep the lever from going to the other side where it's in the way.
+    // So these are left to the build's own lever placing, which puts them outside where it can)
+    if (!inside) continue;
     const toe = Math.round(st.frogS + PAST_FROG - 2 - st.lead);
     tw.points[st.key] = { toe, heel: SLIP_HEEL, single: 'straight' };
     // (at an X centre, the diagonal's inner set thrown by hand, as the reference's (no room for a lever between the

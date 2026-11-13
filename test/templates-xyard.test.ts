@@ -2,4 +2,4 @@
 import { describe } from 'vitest';
 import { templatesBuild } from './templates.shared';
 
-describe('templates: the X yard', { timeout: 1200000 }, () => templatesBuild(['Layouts'], ['X yard (6 tracks, double slips)']));
+describe('templates: the X yard', { timeout: 1200000 }, () => templatesBuild(['Layouts'], ['X yard (6 tracks, single slips)']));
