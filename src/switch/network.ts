@@ -571,10 +571,13 @@ export function studsOffOf(s: Scad, P: Pose, rts: Route[], G: number, bedTop: nu
     if (polys) return polys;
     const W = s.w, cs = (m: Man) => m.project();
     const parts = fixed.filter((m) => !m.isEmpty()).map(cs);
-    for (const m of sliding) if (!m.isEmpty()) { const c = cs(m); parts.push(c.translate([-slide, 0]), c, c.translate([slide, 0])); parts.push(W.CrossSection.hull([c.translate([-slide, 0]), c.translate([slide, 0])])); }
-    if (lever && !lever.isEmpty()) { const c = cs(lever); parts.push(W.CrossSection.hull([c.translate([-slide - 4, 0]), c.translate([slide + 4, 0])])); }
+    const hullOf = (c: InstanceType<typeof W.CrossSection>, d: number) => { const a = c.translate([-d, 0]), b = c.translate([d, 0]), h = W.CrossSection.hull([a, b]); a.delete(); b.delete(); c.delete(); return h; };
+    for (const m of sliding) if (!m.isEmpty()) parts.push(hullOf(cs(m), slide));
+    if (lever && !lever.isEmpty()) parts.push(hullOf(cs(lever), slide + 4));
     for (const q of rects) parts.push(W.CrossSection.square([q[1] - q[0], q[3] - q[2]]).translate([q[0], q[2]]));
-    polys = parts.length ? (W.CrossSection.union(parts).offset(r, 'Round', 2, 24).toPolygons() as [number, number][][]) : [];
+    // (each let go once read: kept by the cache with the split, they held the kernel's memory)
+    if (parts.length) { const u = W.CrossSection.union(parts), o = u.offset(r, 'Round', 2, 24); polys = o.toPolygons() as [number, number][][]; o.delete(); u.delete(); } else polys = [];
+    for (const c of parts) c.delete();
     return polys;
   };
   return (q: [number, number]) => {

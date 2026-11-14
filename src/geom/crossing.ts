@@ -698,7 +698,11 @@ export function crossingPiece(s: Scad, routes: Route[], o: CrossingOptions = CRO
     // (nor where the piece is cut (another set's pockets, a slip's grooves): a stud there was left in part)
     let cutPolys: [number, number][][] | undefined;
     const inCuts = (q: [number, number]) => {
-      cutPolys ??= (x.cuts ?? []).length ? (s.w.CrossSection.union(x.cuts!.filter((m) => !m.isEmpty()).map((m) => m.project())).offset(c.postD / 2 + 0.3, 'Round', 2, 24).toPolygons() as [number, number][][]) : [];
+      if (!cutPolys) {
+        const ps = (x.cuts ?? []).filter((m) => !m.isEmpty()).map((m) => m.project()), u = s.w.CrossSection.union(ps), o = u.offset(c.postD / 2 + 0.3, 'Round', 2, 24);
+        cutPolys = o.toPolygons() as [number, number][][];
+        for (const q of [...ps, u, o]) q.delete();
+      }
       let inside = false;
       for (const ring of cutPolys) for (let a = 0, b = ring.length - 1; a < ring.length; b = a++) {
         const [xa, ya] = ring[a], [xb, yb] = ring[b];
