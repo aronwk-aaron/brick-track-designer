@@ -169,7 +169,7 @@ export const SLIP_LEVER_OFFSET = 24, SLIP_LEVER_AT = 5.5;
  * out exactly as its switch-motor points: (7, 10) from the crossing by the straight track, (10.5, 6.5) by the diagonal. */
 export const REF_LEVER_PAST_FROG = 24, REF_LEVER_OUT = 56, REF_LEVER_GRID = 4;
 /** The build's options slipTrackwork follows: the levers as the reference's (the sleepers' half length, mm: where leverOffset is measured from). */
-export interface SlipOpts { reference?: { edge: number } }
+export interface SlipOpts { reference?: { edge: number }; /** both blades a set moving, the other track's rail cut out where they sweep it (slipBlades 'two') */ twoBlades?: boolean }
 /** A check rail opposite an acute frog that runs on into the blade ends this much (mm) short of the blade's toe, at least 9 shorter, as the reference's does at its tongue's toe. */
 const CHECK_BEFORE_TOE = 1, CHECK_SHORTER = 9;
 
@@ -233,7 +233,8 @@ export function slipTrackwork(routes: Route[], sol: Solution, slips: DoubleSlip[
     // So these are left to the build's own lever placing, which puts them outside where it can)
     if (!inside) continue;
     const toe = Math.round(st.frogS + PAST_FROG - 2 - st.lead);
-    tw.points[st.key] = { toe, heel: SLIP_HEEL, single: 'straight' };
+    // (both blades moving (slipBlades 'two'): the other track's rail cut out where a blade sweeps over it, as a real slip's)
+    tw.points[st.key] = opts.twoBlades ? { toe, heel: SLIP_HEEL, blades: 2, gapOthers: true } : { toe, heel: SLIP_HEEL, single: 'straight' };
     // (at an X centre, the diagonal's inner set thrown by hand, as the reference's (no room for a lever between the
     // diagonals): the set on the track there has its lever outside, as the others)
     // (two sets at one toe, facing each way (two slips end to end, one road joining the track where the next one's leaves):
