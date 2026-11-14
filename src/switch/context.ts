@@ -65,6 +65,8 @@ export interface SwitchParams {
   bladeLip?: 'pin' | 'front';
   /** (the plate-style points) Blades per set: 2 (both move), or 1 (a single-point switch, as a tram's: only the blade on the more curved route moves; the other side's rail is fixed, from where it's a flangeway clear of its stock rail). A three-way keeps both. */
   pointBlades?: 1 | 2;
+  /** (blades on top, a double slip's points: slipBlades 'two') other track's rails cut out where the blades sweep over them, not in their way (fdbLayout) */
+  gapOthers?: boolean;
   /** (the plate-style points) A three-way's levers: 1 (one slider under both blades, three positions), or 2 (as the reference's triple switches: a slider and a lever to each blade, one each side, each with two positions; the routes set by the two together). */
   threeWayLevers?: 1 | 2;
   /** (the plate-style points) The slider moved along this many studs from where it'd be (toward the heel: +), to keep its lever out of the way of other track or another lever. */
@@ -226,10 +228,13 @@ export type SwitchGlobals = ReturnType<typeof switchGlobals>;
  * route's rail); the other routes' rails it keeps clear of, as polylines, and
  * their half-width at the plate; and why it can't, if it can't.
  */
+export interface RailGap { rt: Route; o: number; s0: number; s1: number }
 export interface FdbBladeLayout {
   pivot: Pt; tip: Pt; ang: number; post: Pt; open: number;
   pivotIn: number; postIn: number; shift: number;
   keep: Pt[][]; hw: number; stockKeep?: Pt[]; stockHw?: number; blocked?: string;
+  /** (gapOthers: a double slip's, both blades moving) the other track's rails cut out where the blades sweep over them: which rail (a route of the plan's, its offset) and the stretch (s, along it), the same on each blade's layout */
+  gaps?: RailGap[];
   /** Another track's rails crossing the blade near its pin, where it hardly moves (a double slip's obtuse crossing): the blade notched there for their flanges, as a frog. */
   notches?: Notch[];
   /** (sprung blades) the spring's beams' length, where shorter than the full 34.5 (other track running past) */

@@ -210,7 +210,7 @@ export function networkSplits(s: Scad, routes: Route[], sol: Solution, p: BasePa
     const specOf = (o: SetOver, ts: number): SetSpec => (three ? [0, 2, 2 + toeShift([P[0], P[1]]), ts, 1, o, blade] : [0, 1, 2 + lead + toeShift([P[0], P[1]]), ts, undefined, o]);
     const spec = (o: SetOver) => specOf(o, tside);
     // (the other track near the points, in their frame; with two branches one side not built as a three-way, the other branch too)
-    const foreign = [...nearby(gr), ...(C && !three ? [j2] : [])].map((r) => ({ ...routes[r], start: toFrame(P, routes[r].start) }));
+    const foreignIdx = [...nearby(gr), ...(C && !three ? [j2] : [])], foreign = foreignIdx.map((r) => ({ ...routes[r], start: toFrame(P, routes[r].start) }));
     const used = spec(over);
     const blockedOf = (pl: SwitchPlan) => (pl.p.mechStyle === 'plates' ? !!pl.sets[0].fdb?.some((f, b) => f.blocked && b !== pl.sets[0].fixed) : three ? undefined : pl.sets[0].crossBlocked);
     // (a double slip's points: other track's rails cross the blades' plates near the heels. Under the bed, on tines,
@@ -227,7 +227,7 @@ export function networkSplits(s: Scad, routes: Route[], sol: Solution, p: BasePa
     const p00 = gsOwn === p.gaugeStuds ? p : { ...p, gaugeStuds: gsOwn, ...(gsOwn < 4 && { pointBlades: 1 as const }) };
     // (expert, stage 5c: this set's own blade shape and moving blades, over the design's)
     // (and its own mechanism: tines under the bed or blades on top, over the design's; not a three-way's, whose levers go by the design's)
-    const p1 = ed?.bladeStyle || ed?.blades || (ed?.mech && !C && ed.mech !== p00.mechStyle) ? { ...p00, ...(ed.mech && !C && { mechStyle: ed.mech }), ...(ed.bladeStyle && { bladeStyle: ed.bladeStyle }), ...(ed.blades && { pointBlades: ed.blades }) } : p00;
+    const p1 = ed?.bladeStyle || ed?.blades || ed?.gapOthers || (ed?.mech && !C && ed.mech !== p00.mechStyle) ? { ...p00, ...(ed.mech && !C && { mechStyle: ed.mech }), ...(ed.bladeStyle && { bladeStyle: ed.bladeStyle }), ...(ed.blades && { pointBlades: ed.blades }), ...(ed.gapOthers && { gapOthers: true }) } : p00;
     // (thrown by hand, no lever: a nail switch, this set alone)
     const p0 = ed?.nail && !C ? { ...p1, throwNail: true, nailNoSpring: true } : p1;
     const pg = sprungOnGrid(gw ? { ...p0, grid: gridIn(P, gw) } : p0);
@@ -247,7 +247,7 @@ export function networkSplits(s: Scad, routes: Route[], sol: Solution, p: BasePa
       return { pp, plan, how };
     };
     const c0 = choose([]);
-    return { gr, blade, sp, i, j, j2, P, A, B, rts, three, own, ed, foreign, blockedOf, specOf, choose, keep: [] as Pt[][], how: c0.how, gm: undefined as { plan: SwitchPlan; gm: ReturnType<typeof switchGeometry> } | undefined, alone: !blockedOf(c0.plan), st: { tside, over, used, plan: c0.plan, pp: c0.pp } };
+    return { gr, blade, sp, i, j, j2, P, A, B, rts, three, own, ed, foreign, foreignIdx, blockedOf, specOf, choose, keep: [] as Pt[][], how: c0.how, gm: undefined as { plan: SwitchPlan; gm: ReturnType<typeof switchGeometry> } | undefined, alone: !blockedOf(c0.plan), st: { tside, over, used, plan: c0.plan, pp: c0.pp } };
   };
   const preps = groups.flatMap((gr) => {
     const halves = twoLevers(p) && gr.kids.length ? [prepOf(gr, 0), prepOf(gr, 1)] : [];
@@ -454,6 +454,14 @@ export function networkSplits(s: Scad, routes: Route[], sol: Solution, p: BasePa
     });
     return { bed: cuts.length ? s.difference(bed, cuts) : bed, by };
   };
+  /** (gapOthers) Which design route a route of a set's plan is that isn't its own: other track near it (its frame's copy), else the switch's own third route. */
+  const otherOf = (q: typeof preps[number], rt: Route): number | undefined => {
+    const k = q.foreign.indexOf(rt as typeof q.foreign[number]);
+    if (k >= 0) return q.foreignIdx[k];
+    const same = q.foreign.findIndex((f) => JSON.stringify([f.start, f.segments]) === JSON.stringify([rt.start, rt.segments]));
+    if (same >= 0) return q.foreignIdx[same];
+    return rt === q.A ? q.i : rt === q.B ? q.j : q.j2 >= 0 ? q.j2 : undefined;
+  };
   for (const [n, q] of preps.entries()) {
     const { gr, sp, i, j, j2, P, A, B, rts, blockedOf } = q, { used, plan, pp } = q.st;
     if (q.blade !== 1) throughWarnings(gr, blockedOf(plan));
@@ -500,7 +508,9 @@ export function networkSplits(s: Scad, routes: Route[], sol: Solution, p: BasePa
       ...(mech.armRects.length && { armRects: mech.armRects }),
       ...(studsOn && { studsOn }),
       stock: place(mech.stockCut, P),
-      bladeCuts: mech.bladeRails.map(([rt, cut]) => [worldOf(rt), place(cut, P)] as [number, Man]),
+      bladeCuts: [...mech.bladeRails.map(([rt, cut]) => [worldOf(rt), place(cut, P)] as [number, Man]),
+        // (gapOthers: the other track's rails where the blades sweep over them, by the design route each is)
+        ...mech.gapRails.flatMap(([rt, cut]) => { const r = otherOf(q, rt); return r === undefined ? [] : [[r, place(cut, P)] as [number, Man]]; })],
       inner: [`${j}:${end}`, ...(j2 >= 0 ? [`${j2}:${end}`] : [])],
       moving,
     });

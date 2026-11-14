@@ -991,7 +991,7 @@ function solveTrackwork(w: Wasm, design: Design, o: PieceOptions, step: (what: s
   // (double and single slips, found in the routes: their points, levers and check rails as the reference's are, worked
   // out from the crossing and the slip roads (switch/dslip.ts), the hand edits over them)
   // (slipLevers 'reference': each lever where the reference's is, measured past the sleepers' ends, half their length)
-  { const slips = findDoubleSlips(routes, sol); if (slips.length) Object.assign(tw, underHand(tw, slipTrackwork(routes, sol, slips, o.slipLevers === 'reference' ? { reference: { edge: gauge / 2 + 12 } } : {}))); }
+  { const slips = findDoubleSlips(routes, sol); if (slips.length) Object.assign(tw, underHand(tw, slipTrackwork(routes, sol, slips, { ...(o.slipLevers === 'reference' && { reference: { edge: gauge / 2 + 12 } }), ...(o.slipBlades === 'two' && { twoBlades: true }) }))); }
   // What the canvas draws over the track, in mm: flangeway cuts, check rails,
   // rail crossings and points.
   const g = gauge / 2, gOf = (i: number) => railOffsetOf(routes[i], g);
@@ -2439,8 +2439,8 @@ function buildOne(w: Wasm, design: Design, report: (what: string, frac: number) 
   const toeShift = (q: [number, number]) => tw.points?.[keyOf(q)]?.toe ?? 0;
   // (with the points' own choice of moving blade, a single-point switch's, and their blades lengthened: Trackwork.points single, heel)
   const throwEdit = (q: [number, number]) => {
-    const k = keyOf(q), pt = tw.points?.[k], single = pt?.single, heel = pt?.heel, bladeStyle = pt?.bladeStyle, blades = pt?.blades, mech = pt?.mech;
-    return single || heel || bladeStyle || blades || mech ? { ...tw.throw?.[k], ...(single && { single }), ...(heel && { heel }), ...(bladeStyle && { bladeStyle }), ...(blades && { blades }), ...(mech && { mech }) } : tw.throw?.[k];
+    const k = keyOf(q), pt = tw.points?.[k], single = pt?.single, heel = pt?.heel, bladeStyle = pt?.bladeStyle, blades = pt?.blades, mech = pt?.mech, gapOthers = pt?.gapOthers;
+    return single || heel || bladeStyle || blades || mech || gapOthers ? { ...tw.throw?.[k], ...(single && { single }), ...(heel && { heel }), ...(bladeStyle && { bladeStyle }), ...(blades && { blades }), ...(mech && { mech }), ...(gapOthers && { gapOthers }) } : tw.throw?.[k];
   };
   // Pieces: a switch wherever routes split, the rest as fixed trackwork.
   const scad = new Scad(w);

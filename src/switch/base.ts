@@ -20,7 +20,7 @@ import { StudPlaces } from '../geom/studs';
 import { rowGaps, studGap } from '../geom/studpitch';
 import { support } from '../geom/supports';
 import { type P2, SNAP, snapGeo, type SnapGeo, snapHalf } from './snap';
-import { SPRUNG_SLIDER, type FdbBladeLayout, sprungLow, squareGrid, HEAD_HW, type Notch, pointsSet, type PointsSetValues, STAND, SWITCH_DEFAULTS, type SwitchParams, switchGlobals } from './context';
+import { SPRUNG_SLIDER, type FdbBladeLayout, type RailGap, sprungLow, squareGrid, HEAD_HW, type Notch, pointsSet, type PointsSetValues, STAND, SWITCH_DEFAULTS, type SwitchParams, switchGlobals } from './context';
 
 export interface BaseParams extends SwitchParams {
   flangeway: number;        // 3
@@ -106,6 +106,8 @@ const frags = (r: number) => Math.ceil(Math.max(Math.min(360 / 12, (r * 2 * Math
 // ---------- the plate-style blades: where their pins and posts go ----------
 // (the plate's sizes; see switchGeometry's plate-style section)
 const FDB = { plateT: 1.6, plateW: 10, pivotIn: 7, pinD: 4, discR: 5, postD: 2.2, rodW: 4 };
+/** (gapOthers) How far past a blade's sweep another track's rail is cut out, each end (mm along it). */
+const GAP_PAST = 1;
 /**
  * the sprung blades (bladeStyle 'sprung'): the plate 3 mm
  * thick with a flat, closed top, turning on a LEGO stud (a blind hole
@@ -275,16 +277,36 @@ function fdbLayout(v: SetLike, p: BaseParams, rails: [Route, number, number][], 
   const own = v.three ? [v.three.S, v.three.L, v.three.R] : [v.ra, v.rb];
   // (the other rails near the points, as runs of points 0.5 apart; not where one runs along one of the set's own rails)
   const y0 = v.toeY - 12, y1 = v.pointsEndY + 12, keep: Pt[][] = [];
+  // (gapOthers: a double slip's points with both blades moving, as a real slip's (slipBlades 'two'): where a blade sweeps
+  // over another track's rail (past the acute frog, its rail between this track's stock rails), that rail is cut out, a
+  // little past the sweep each end, and isn't in the blades' way. The sweep as each blade's swings, about its pin as first
+  // placed (as barOk looks), its head's half-width and the clearance round it)
+  const gaps: RailGap[] = [];
+  const swept = !p.gapOthers || v.three ? undefined : [0, 1].map((b) => {
+    const rt = b === 0 ? v.ra : v.rb, o = b === 0 ? -G : +G, side = b === 0 ? 1 : -1, dir = b === 0 ? 1 : -1;
+    const pivot = railPoint(rt, v.sHeel - 4, o + side * FDB.pivotIn), tip = railPoint(rt, v.sToe, o);
+    const ang = (p.pointThrow / norm(sub(tip, pivot))) * (180 / Math.PI), n = swingsOf(v);
+    return (q: Pt) => Array.from({ length: 9 }, (_, k) => (dir * n * ang * k) / 8).some((a) => {
+      const q2 = rotAbout(q, pivot, -a), sq = sOf(rt, q2);
+      return Math.abs(routeLat(rt, q2) - o) < HEAD_HW + hwBar + c && sq >= v.sToe - c && sq <= v.sHeel;
+    });
+  });
   for (const [rt, o, s0] of rails) {
-    let run: Pt[] = [];
+    let run: Pt[] = [], gap: number[] = [];
     const L = routeLength(rt), flush = () => { if (run.length > 1) keep.push(run); run = []; };
+    const flushGap = () => { if (gap.length) gaps.push({ rt, o, s0: Math.max(0, gap[0] - GAP_PAST), s1: Math.min(L, gap[gap.length - 1] + GAP_PAST) }); gap = []; };
     for (let s = Math.max(0, s0); s <= L + 1e-9; s += 0.5) {
       const q = railPoint(rt, s, o);
-      if (q[1] < y0 || q[1] > y1 || Math.abs(q[0]) > 3 * G + 40 || own.some((r) => [-G, G].some((oo) => Math.abs(routeLat(r, q) - oo) < 0.6))) { flush(); continue; }
+      if (q[1] < y0 || q[1] > y1 || Math.abs(q[0]) > 3 * G + 40 || own.some((r) => [-G, G].some((oo) => Math.abs(routeLat(r, q) - oo) < 0.6))) { flush(); flushGap(); continue; }
+      if (swept?.some((f) => f(q))) { flush(); gap.push(s); continue; }
+      flushGap();
       run.push(q);
     }
-    flush();
+    flush(); flushGap();
   }
+  // (the rail's cut ends a little past the gap: the points next to them, within GAP_PAST, are no longer rail either)
+  if (gaps.length) for (let k = 0; k < keep.length; k++) keep[k] = keep[k].filter((q) => !gaps.some((gp) => { const s = routeSOf(gp.rt, q); return s > gp.s0 - 0.01 && s < gp.s1 + 0.01 && Math.abs(routeLat(gp.rt, q) - gp.o) < 0.3; }));
+  for (let k = keep.length - 1; k >= 0; k--) if (keep[k].length < 2) keep.splice(k, 1);
   // (other points' blade plates beside these (a slip's, the next set's): where they may be, swept over their swing and the
   // room shared out between them (network.ts); the plate cut clear of it by the clearance as of a rail, its edges as points
   // 0.5 apart, each its own half-width: c)
@@ -323,7 +345,7 @@ function fdbLayout(v: SetLike, p: BaseParams, rails: [Route, number, number][], 
       const ang = shift === 0 && pin === FDB.pivotIn ? (p.pointThrow / norm(sub(tip, pivot))) * (180 / Math.PI)
         : ((v.fdbTravel - pre) / Math.max(1, Math.abs(pivot[1] - post[1]))) * (180 / Math.PI);
       // (a three-way's other blade is open twice as far: the middle has both open by the throw)
-      return { pivot, tip, ang, post, open: b === 0 ? 0 : -n3 * ang, pivotIn: pin, postIn, shift, keep, hw, ...(notches.length && { notches }), ...(plates.length && { plates }) };
+      return { pivot, tip, ang, post, open: b === 0 ? 0 : -n3 * ang, pivotIn: pin, postIn, shift, keep, hw, ...(notches.length && { notches }), ...(plates.length && { plates }), ...(gaps.length && { gaps }) };
     };
     const notches = v.notches?.[b] ?? [];
     let rootNow = SPRUNG.root;
@@ -2642,6 +2664,8 @@ export function switchGeometry(s: Scad, plan: SwitchPlan, extraCuts: Man[] = [])
         // (a three-way's branches' inner rails too: they start at the heels, the blades in their place before)
         ...(v.three ? [[v.three.L, +G], [v.three.R, -G]].map(([rt, o]) => [rt, sweep(sq([9, 30], [(o as number) - 4.5, -5]), rt as Route, 0, v.sHeel + c)] as [Route, Man]) : []),
       ],
+      // (gapOthers: the other track's rails cut out where the blades sweep over them)
+      gapRails: (v.fdb?.[0]?.gaps ?? []).map((gp) => [gp.rt, sweep(sq([9, 30], [gp.o - 4.5, -5]), gp.rt, gp.s0, gp.s1)] as [Route, Man]),
     };
   };
   return {

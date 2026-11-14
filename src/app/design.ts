@@ -129,7 +129,7 @@ export interface Trackwork {
    * heel: the blades lengthened, their heels this far (mm) past where they're worked out (not a three-way's) */
   points?: Record<string, { toe?: number; off?: boolean; drop?: string[]; force?: boolean; single?: 'curved' | 'straight'; heel?: number;
     /** (expert, stage 5c) this set's own blade shape and moving blades, over the design's (Settings › Points; blades on top) */
-    bladeStyle?: 'simple' | 'prototype' | 'sprung'; blades?: 1 | 2;
+    bladeStyle?: 'simple' | 'prototype' | 'sprung'; blades?: 1 | 2; /** (worked out, a double slip's, slipBlades 'two') other track's rails cut out where these points' blades sweep over them */ gapOthers?: boolean;
     /** (expert) this set's own mechanism, over the design's: its bed, the floor under its throw and its moving parts as that mechanism's */
     mech?: 'tines' | 'plates'; on?: TwAnchor; is?: TwIdent }>;
   /** each points set's lever, moved on the plan: its side, how far out (lever offset, mm), and how far along (its tines' length, mm);
@@ -186,6 +186,8 @@ export interface PieceOptions {
   leverHousing?: 'arm' | 'crossbar';
   /** (blades on top) A double slip's levers, where they're worked out: in a housing at each corner, 5.5 studs in from where the roads part ('corner', default), or where the reference's are ('reference': 3 studs past the acute frog, 7 studs out, on the nearest half stud). */
   slipLevers?: 'corner' | 'reference';
+  /** (blades on top) A double slip's points, where they're past the frogs: one moving blade a set ('one', default: the one by the slip road's own stock rail), or both ('two', as a real slip's: the other track's rail cut out where a blade sweeps over it). */
+  slipBlades?: 'one' | 'two';
   /** (track cut into pieces) A double slip's sections, where its points are past the frogs: as the design's own cuts make them ('none', default), or as the reference's ('reference': its middle, 8 studs on the bisector, cut out on the stud grid). */
   slipCuts?: 'none' | 'reference';
   /** Points with no room for a throw (its arm across other track, a double slip's in its middle): a nail switch ('nail') or the slider under that track to a lever past it ('slider', default). */
@@ -366,7 +368,7 @@ export function readDesign(v: unknown): Design {
 export const OPTION_DEFAULTS: PieceOptions = {
   throwSide: 'auto', threeWayLevers: 2, leverOffset: 8, pointThrow: 3, pointClearance: 0.3, springPreload: 1, springThickness: 0.9, springLength: 40,
   flangeway: 3, flangewayDepth: 3, checkRailLen: 30, checkRailW: 1, checkRailFlare: 1.5, printBedX: 256, printBedY: 256, baseplate: 0, baseplateX: 0, baseplateY: 0, ballast: 'none', bottomStyle: 'antistud', joint: 'lego', pointsModule: 'built-in', endSupports: true, tongueRails: 'all', grip: 'edges', pointsPieces: 1, pointBlades: 2, throwStyle: 'built-in', mechStyle: 'plates', curveStuds: 'follow',
-  throwAction: 'detent', leverHousing: 'arm', slipLevers: 'corner', slipCuts: 'none', bladeStyle: 'sprung', bladeLip: 'pin', sleepers: 'sleepers', undersideGrid: 'baseplate', splitTrack: 'lengths', pieceLengthStuds: 16, studsAtCuts: 'off', legoTrack: 'lego', axleStuds: 2, sleeperWidthStuds: 2, sleeperGapStuds: 2, studFit: 0.18, antistudFit: 0.06,
+  throwAction: 'detent', leverHousing: 'arm', slipLevers: 'corner', slipBlades: 'one', slipCuts: 'none', bladeStyle: 'sprung', bladeLip: 'pin', sleepers: 'sleepers', undersideGrid: 'baseplate', splitTrack: 'lengths', pieceLengthStuds: 16, studsAtCuts: 'off', legoTrack: 'lego', axleStuds: 2, sleeperWidthStuds: 2, sleeperGapStuds: 2, studFit: 0.18, antistudFit: 0.06,
   bladeDiscD: 14, throwBallast: false, pathSquare: false, axleHoles: false, pegOnBallast: false,
   bufferStyle: 'frame', bufferPostPlates: 8, bufferBeamBottom: 2, bufferBeamTop: 12, bufferPinHoles: true,
   trackBallast: 'together', trackFitTol: 0.2, labelText: '', labelSize: true, labelGauge: false, labelParts: true,
