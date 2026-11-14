@@ -211,6 +211,11 @@ export function optionForm(d: () => Design): { form: OptSection[] } {
         { v: 'split', t: 'Cut in half', tip: 'Cut straight through with the rest.', con: 'Half studs either side of the joint: a brick won\'t sit on them.' }] },
       { key: 'pathSquare', label: 'Cut path ends square to a branch', check: true, off: () => (d().expert?.cutPaths?.length ? undefined : 'only with cut paths (Expert)'),
         help: 'Where a cut path\'s end crosses a switch\'s branch at a slant, that end turns square to the branch, as a modular kit\'s sections are joined. No stud is cut: one in its way stays whole on one side. Off: along the stud grid, as drawn.' },
+      { key: 'slipCuts', label: 'Double slip middle section', off: (c) => (c.o.splitTrack !== 'lengths' ? 'only with Long track cut into: Track pieces' : undefined),
+        help: 'Only for double slips at a shallow angle (their points past the frogs).', choices: [
+        { v: 'none', t: 'Cut as the rest of the track', tip: 'The slip is cut where its track pieces end and where cut paths are drawn.' },
+        { v: 'reference', t: 'As the reference: 8 studs on the bisector', tip: 'A middle section 8 studs long, between the two tracks\' directions, cut out on the stud grid: a cut each side of the crossing, 4 studs out, with one step in it. No stud is cut.',
+          con: 'Two more joints. Where a cut can\'t be made there (another cut, a frog, moving points), it\'s left out.' }] },
     ] },
     { title: 'Bought track', kind: 'train', fields: [
       { key: 'legoTrack', label: 'Bought track', help: 'Track bought, not printed, wherever it\'s exactly a piece LEGO or BrickTracks sell. Bought parts are in the parts list (toolbar), not the STL download. In the 3D view and the pictures: LEGO\'s green, BrickTracks\' purple.', off: (c) => (c.o.splitTrack !== 'lengths' ? 'only with Long track cut into: Track pieces' : d().gaugeStuds !== 4 ? 'LEGO track is 4 studs between the rails: the gauge isn\'t 4' : undefined), choices: [

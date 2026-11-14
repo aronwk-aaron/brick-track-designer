@@ -21,13 +21,14 @@ import { switchGlobals } from '../switch/context';
 import { planPieces, subRoute, toFrame } from '../switch/pieces';
 import { networkBody, networkSplits, type SplitParts, throwMoves } from '../switch/network';
 import { findDoubleSlips, slipTrackwork, underHand } from '../switch/dslip';
+import { slipCutPaths } from './slipcuts';
 import { blocks as tileBlocks, cropRoutes, nearCell, planCuts, routesBox, type Rect } from './tiles';
 import type { CheckRail, Split } from '../route/solver';
 import { planSections } from './sections';
 import type { Route } from '../route/route';
 import { cutPiece, type CutLine, tidy } from '../geom/cutter';
 import { type DesignCuts, designCuts, designPaths, handCutsFor } from './handcuts';
-import { type NoCut, pathTracks } from './cutpaths';
+import { type NoCut, gridPath, pathTracks } from './cutpaths';
 import { hasPartOwn, partGroups, withoutPartOwn } from './overrides';
 import { expandStretches } from './stretches';
 import { sleeperWarnings } from './sleeperedits';
@@ -2507,7 +2508,10 @@ function buildOne(w: Wasm, design: Design, report: (what: string, frac: number) 
   const handCuts = designCuts(design);
   if (handCuts && !inLengths) bedWarnings.add('the hand cuts across tracks are made only with Long track cut into: Track pieces');
   // (the cut paths drawn along and between tracks (expert): on the stud grid, the impossible ones left out and said)
-  const cutPaths = overlay.cutting && designPaths(design, gridPose, routes, track.c.railOffset, overlay.cutting.no, !!o.pathSquare);
+  // (slipCuts 'reference': the double slips' sections as the reference's, cut paths worked out from the slips (slipcuts.ts) beside the design's own)
+  const slipPaths = o.slipCuts === 'reference' && overlay.cutting ? slipCutPaths(routes, sol, [gridPose[0] / 8, gridPose[1] / 8, gridPose[2]],
+    track.c.railOffset, overlay.cutting.no, (design.expert?.cutPaths ?? []).map((p) => gridPath([gridPose[0] / 8, gridPose[1] / 8, gridPose[2]], p.pts))) : [];
+  const cutPaths = overlay.cutting && designPaths(slipPaths.length ? { ...design, expert: { ...design.expert, cutPaths: [...(design.expert?.cutPaths ?? []), ...slipPaths] } } : design, gridPose, routes, track.c.railOffset, overlay.cutting.no, !!o.pathSquare);
   if (cutPaths && !inLengths) bedWarnings.add('the cut paths are made only with Long track cut into: Track pieces');
   const sleepered = o.sleepers === 'sleepers' && o.ballast === 'none';
   // (expert: the sleepers edited by hand that can't be made as they're asked for: said)

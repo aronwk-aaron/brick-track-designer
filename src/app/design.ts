@@ -186,6 +186,8 @@ export interface PieceOptions {
   leverHousing?: 'arm' | 'crossbar';
   /** (blades on top) A double slip's levers, where they're worked out: in a housing at each corner, 5.5 studs in from where the roads part ('corner', default), or where the reference's are ('reference': 3 studs past the acute frog, 7 studs out, on the nearest half stud). */
   slipLevers?: 'corner' | 'reference';
+  /** (track cut into pieces) A double slip's sections, where its points are past the frogs: as the design's own cuts make them ('none', default), or as the reference's ('reference': its middle, 8 studs on the bisector, cut out on the stud grid). */
+  slipCuts?: 'none' | 'reference';
   /** Points with no room for a throw (its arm across other track, a double slip's in its middle): a nail switch ('nail') or the slider under that track to a lever past it ('slider', default). */
   boxedThrow?: 'nail' | 'slider';
   /** (plate-style points) What holds the points, and what a train trailing through them does: 'detent' (the lever's click), 'overcentre' (Peco's V spring: they snap over and stay), 'snap' (the snap clamp: a toggle on knife edges). (the sprung blades spring back on their own.) */
@@ -364,7 +366,7 @@ export function readDesign(v: unknown): Design {
 export const OPTION_DEFAULTS: PieceOptions = {
   throwSide: 'auto', threeWayLevers: 2, leverOffset: 8, pointThrow: 3, pointClearance: 0.3, springPreload: 1, springThickness: 0.9, springLength: 40,
   flangeway: 3, flangewayDepth: 3, checkRailLen: 30, checkRailW: 1, checkRailFlare: 1.5, printBedX: 256, printBedY: 256, baseplate: 0, baseplateX: 0, baseplateY: 0, ballast: 'none', bottomStyle: 'antistud', joint: 'lego', pointsModule: 'built-in', endSupports: true, tongueRails: 'all', grip: 'edges', pointsPieces: 1, pointBlades: 2, throwStyle: 'built-in', mechStyle: 'plates', curveStuds: 'follow',
-  throwAction: 'detent', leverHousing: 'arm', slipLevers: 'corner', bladeStyle: 'sprung', bladeLip: 'pin', sleepers: 'sleepers', undersideGrid: 'baseplate', splitTrack: 'lengths', pieceLengthStuds: 16, studsAtCuts: 'off', legoTrack: 'lego', axleStuds: 2, sleeperWidthStuds: 2, sleeperGapStuds: 2, studFit: 0.18, antistudFit: 0.06,
+  throwAction: 'detent', leverHousing: 'arm', slipLevers: 'corner', slipCuts: 'none', bladeStyle: 'sprung', bladeLip: 'pin', sleepers: 'sleepers', undersideGrid: 'baseplate', splitTrack: 'lengths', pieceLengthStuds: 16, studsAtCuts: 'off', legoTrack: 'lego', axleStuds: 2, sleeperWidthStuds: 2, sleeperGapStuds: 2, studFit: 0.18, antistudFit: 0.06,
   bladeDiscD: 14, throwBallast: false, pathSquare: false, axleHoles: false, pegOnBallast: false,
   bufferStyle: 'frame', bufferPostPlates: 8, bufferBeamBottom: 2, bufferBeamTop: 12, bufferPinHoles: true,
   trackBallast: 'together', trackFitTol: 0.2, labelText: '', labelSize: true, labelGauge: false, labelParts: true,
@@ -595,7 +597,7 @@ function r104Diagonal(turn: 1 | -1): DSeg[] {
 function r104Slip(hand: 1 | -1): Design {
   // (the R104 switch's branch: 22.5 degrees of R104 and 0.218 studs straight end 40 on and 8 over)
   const lead = 0.218121;
-  return { version: 1, gaugeStuds: 4, options: { legoTrack: 'print', pointBlades: 1, slipLevers: 'reference' }, routes: [
+  return { version: 1, gaugeStuds: 4, options: { legoTrack: 'print', pointBlades: 1, slipLevers: 'reference', slipCuts: 'reference' }, routes: [
     { name: 'Straight', x: 0, y: -20, heading: 0, segs: [{ kind: 'straight', studs: 40 }] },
     { name: 'Diagonal', x: 8 * hand, y: -20, heading: 22.5 * hand, segs: [{ kind: 'straight', studs: lead }, { kind: 'curve', radius: 208, angle: -0.754152 * hand }, { kind: 'straight', studs: 37.169679 }, { kind: 'curve', radius: 208, angle: 0.754152 * hand }, { kind: 'straight', studs: lead }] },
     { name: 'Slip A', x: 0, y: -20, heading: 0, segs: [{ kind: 'curve', radius: 104, angle: 22.5 * hand }, { kind: 'straight', studs: lead }] },
@@ -686,7 +688,9 @@ export function slipXYard(): Design {
 /** The R104 double slip cut into its kit's three sections (TEMPLATES): r104Slip, with track cut into pieces and the two cut paths. */
 function r104SlipKit(hand: 1 | -1): Design {
   const d = r104Slip(hand);
-  return { ...d, options: { ...d.options, splitTrack: 'lengths' }, expert: { cutPaths: [{ id: 'c1', pts: [[-12 * hand, -4], [12 * hand, -4]] }, { id: 'c2', pts: [[-12 * hand, 4], [12 * hand, 4]] }] } };
+  // (its sections worked out as the reference's (slipCuts 'reference', app/slipcuts.ts): the middle across the bisector,
+  // in place of the two cut paths square across the straight track it had)
+  return { ...d, options: { ...d.options, splitTrack: 'lengths' } };
 }
 /** The short straight on BrickTracks' R104 switch's branch and their R104B curve, studs (boughtswitch.ts BT_LEAD). */
 const BT_LEAD_STUDS = (8 - 104 * (1 - cos(22.5))) / sin(22.5);

@@ -150,6 +150,7 @@ export const SPECS: OptionSpec[] = [
   { key: 'baseplateY', values: [0, 8], base: D(bend, { splitTrack: 'bed', baseplate: 32 }), cam: { dir: '0.1,-0.25,1', dist: 1.9 } },
   { key: 'studsAtCuts', values: ['off', 'whole', 'split'], base: D(curve, { splitTrack: 'bed', baseplate: 16, sleepers: 'bed', curveStuds: 'grid' }), explode: -10, cam: { dir: '0.2,-0.4,1', dist: 1.2 } },
   // (the R104 switch cut as its kit: the base's cut across the branch along the grid, or square to the branch)
+  { key: 'slipCuts', values: ['none', 'reference'], base: D(TEMPLATES['Double slip R104 left'].routes, { pointBlades: 1, printBedX: 256, printBedY: 256 }), cam: above },
   { key: 'pathSquare', values: [false, true], base: { ...TEMPLATES['Switch R104 left, base and detachable modules'], options: { ...TEMPLATES['Switch R104 left, base and detachable modules'].options, pathSquare: false } }, explode: 10, cam: { dir: '0,-0.2,1', dist: 1.6 } },
   // Bought track (printed blue, LEGO's green, BrickTracks' purple, as the 3D view)
   { key: 'legoTrack', values: ['lego', 'lego-only', 'print'], base: D([{ name: 'A', x: 0, y: 0, heading: 0, segs: [{ kind: 'straight', studs: 16 }, { kind: 'curve', radius: 40, angle: 22.5 }, { kind: 'curve', radius: 104, angle: 11.25 }] },
