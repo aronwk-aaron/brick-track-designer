@@ -4,7 +4,7 @@
 // outside of the rails where the switches are". The bed's studs stopped along the points: crossingPiece kept every stud
 // out of the box round what the points add (their bed, out to the sleepers' ends, and the arm), so the row outside
 // each stock rail broke off from the toe to the heel. Now it runs on, off only round the throw's arm (network.ts
-// studsOffOf), on the stud grid (crossing.ts); none overlap or touch, none is cut.
+// studsOffOf), along the curve too; none overlap or touch, none is cut.
 import { describe, expect, it } from 'vitest';
 import fs from 'node:fs';
 import { kernel } from '../src/geom/kernel';
@@ -47,12 +47,33 @@ describe('studs outside the rails along the points (196s R568)', { timeout: 6000
       for (const x of [-92, 92]) for (let y = 44; y <= 244; y += 8) if (!near(x, y)) missing.push(`${x}, ${y}`);
       expect(missing, 'outside the straights\' stock rails').toEqual([]);
       for (const x of [-92, 92]) for (const y of [20, 28, 36]) expect(near(x, y), `none on the arm at ${x}, ${y}`).toBe(false);
-      // (and on the branch's side, the straight's row there (28 in, on the grid) on along the points until the branch's rail
-      // comes too near; off the grid, along the branch, none: the bed's cuts run on the grid's lines)
-      const branch: string[] = [];
-      for (const x of [-36, 36]) for (let y = 44; y <= 116; y += 8) if (!near(x, y)) branch.push(`${x}, ${y}`);
-      expect(branch, 'beside the branches\' stock rails').toEqual([]);
+      // (and outside each branch's stock rail, on the side between the tracks: a row along the curve, 28 in from its middle)
+      for (const cx of arcs) {
+        const row = top.filter((q) => q[1] > 40 && q[1] < 250 && Math.abs(Math.abs(Math.hypot(q[0] - cx, q[1] - 8) - R) - 28) < 0.6);
+        expect(row.length, `outside the branch's stock rail (round ${cx.toFixed(1)})`).toBeGreaterThanOrEqual(25);
+      }
       expect(studFaults(w, b.pieces, () => o), 'studs that touch').toEqual([]);
+    } finally { Object.assign(OPTION_DEFAULTS, saved); clearBuildCache(); }
+  });
+
+  // (the whole design, built in sections: each route cut into pieces, the next piece of a points' own straight isn't
+  // another track running through them (network.ts), and the rows run on along all four points)
+  it('the whole design: the rows outside the straights\' stock rails along all four points', async () => {
+    const saved = { ...OPTION_DEFAULTS };
+    Object.assign(OPTION_DEFAULTS, APP);
+    try {
+      const w = await kernel();
+      clearBuildCache();
+      const full: Design = JSON.parse(fs.readFileSync(new URL('./fixtures/196s-r568.btd.json', import.meta.url), 'utf8'));
+      const b = buildDesign(w, full);
+      const o = { studD: 4.8, studFit: 0.18 };
+      const all: Pt[] = b.pieces.filter((p) => /^track/.test(p.name)).flatMap((p) => studsOf(w, p, o).studs.flat());
+      expect(studFaults(w, b.pieces, () => o), 'studs that touch').toEqual([]);
+      // (the points from 16 to 250 mm in from each end, their arms 16 to 40 in: 20 or more of each row's studs past the arm)
+      for (const x of [-92, 92]) for (const [y0, y1] of [[44, 250], [1286, 1492]]) {
+        const n = all.filter((q) => Math.abs(q[0] - x) < 0.3 && q[1] > y0 && q[1] < y1).length;
+        expect(n, `outside the stock rail at x = ${x}, y ${y0} to ${y1}`).toBeGreaterThanOrEqual(20);
+      }
     } finally { Object.assign(OPTION_DEFAULTS, saved); clearBuildCache(); }
   });
 });

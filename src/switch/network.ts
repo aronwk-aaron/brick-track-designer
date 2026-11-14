@@ -505,8 +505,10 @@ export function networkSplits(s: Scad, routes: Route[], sol: Solution, p: BasePa
     // other track's own rows are the bed's, and studs added round them moved what the cuts left; as before, none)
     const gl = switchGlobals(pp), bbL = mech.bed.boundingBox(), reach = gl.sleeperLen / 2 + 8;
     const crossed = routes.some((rt, k) => ![i, j, j2].includes(k) && Array.from({ length: 41 }, (_, t) => routePose(rt, (routeLength(rt) * t) / 40)).some((q) => {
-      const l = worldToPose(P, [q[0], q[1]]);
-      return l[0] > bbL.min[0] - reach && l[0] < bbL.max[0] + reach && l[1] > bbL.min[1] - 8 && l[1] < bbL.max[1] + 8;
+      const l = worldToPose(P, [q[0], q[1]]) as Pt;
+      // (a piece of its own track on from it, the routes cut into sections: on one of its routes' lines, not across them)
+      return l[0] > bbL.min[0] - reach && l[0] < bbL.max[0] + reach && l[1] > bbL.min[1] - 8 && l[1] < bbL.max[1] + 8
+        && !plan.routes.some((rt) => Math.abs(routeLat(rt, l)) < 0.5);
     }));
     const wb = crossed ? [bed.bed, place(mech.arm, P), ...mech.steps.map((m) => place(m, P))].filter((m) => !m.isEmpty()).map((m) => m.boundingBox()) : [];
     const studsOff = crossed ? (q: [number, number]) => wb.some((bb) => q[0] > bb.min[0] - 3 && q[0] < bb.max[0] + 3 && q[1] > bb.min[1] - 3 && q[1] < bb.max[1] + 3) : studsOffOf(s, P, plan.routes, gl.G, gl.bedTop, mech.bed, [mech.pockets, mech.channel, mech.arm, ...mech.steps, ...(mech.rests ? [mech.rests] : []), ...(spr ? [spr] : []), ...(br ? [br] : [])],
