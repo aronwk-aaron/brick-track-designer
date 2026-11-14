@@ -238,6 +238,10 @@
   "whole",
   "split"
  ],
+ "pathSquare": [
+  "false",
+  "true"
+ ],
  "legoTrack": [
   "lego",
   "lego-only",
