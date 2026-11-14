@@ -14,7 +14,7 @@ const SLOW = ['assembled-xyard', 'assembled-loop-left', 'assembled-loop-right', 
  * with none of the files that take five minutes or so (the combo sets' builds, the tables, the crossover sweeps...), so its
  * runner has its two workers to spare. */
 const ALONE = 'printed-double-slip';
-const MEDIUM = ['templates-ref-combos1', 'templates-ref-combos2', 'templates-ref-combos3', 'templates-ref-combos4', 'templates-ref-loops1', 'templates-ref-loops2', 'templates-heavy', 'tables', 'printable-crossings', 'printable-track', 'crossover-sweep-8', 'crossover-sweep-9', 'crossover-sweep-16', 'bought-switches', 'designs-saved', 'assembled-features', 'assembled-ref3'];
+const MEDIUM = ['templates-ref-combos1', 'templates-ref-combos2', 'templates-ref-combos3', 'templates-ref-combos4', 'templates-ref-loops1', 'templates-ref-loops2', 'templates-ref-loops3', 'templates-heavy', 'tables', 'printable-crossings', 'printable-track', 'crossover-sweep-8', 'crossover-sweep-9', 'crossover-sweep-16', 'bought-switches', 'designs-saved', 'assembled-features', 'assembled-ref3'];
 
 /** The shards as vitest deals them (its BaseSequencer.shard): n runs of the files sorted by their paths' hashes, the first ones a file longer where they don't divide. */
 export function shards(files: string[], n: number): string[][] {

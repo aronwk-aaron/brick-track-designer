@@ -23,7 +23,7 @@ Match: **exact** (ends, and lever or section where it has one), **close** (a tem
 **missing** (no template or setting makes it), **in progress elsewhere** (the double slips and their crossovers, being
 rebuilt separately).
 
-Counts: close 72, exact 209, in progress elsewhere 13, missing 40, n/a 1 (of 335).
+Counts: close 75, exact 209, in progress elsewhere 13, missing 37, n/a 1 (of 335).
 
 ## Parts
 
@@ -354,8 +354,8 @@ Counts: close 72, exact 209, in progress elsewhere 13, missing 40, n/a 1 (of 335
 | tb dg crossing x45 2mt star | - | missing | no template for the arrangement; its pieces (21, 8 kinds): not exact: tb ng ct x45 left (missing), tb ng ct x45 right (missing) |
 | tb dg crossing x45 rhombus left | - | missing | no template for the arrangement; its pieces (26, 8 kinds): not exact: tb ng ct x45 left (missing) |
 | tb dg crossing x45 rhombus right | - | missing | no template for the arrangement; its pieces (26, 8 kinds): not exact: tb ng ct x45 right (missing) |
-| tb dome crossing r104 r120 | - | missing | chained and closed (R104 curves as R103.48), but a section of it doesn't fit a 256 mm bed (no cut found): left out of the templates for now |
-| tb double dome crossing r104 r120 | - | missing | chained and closed (R104 curves as R103.48), but a section of it doesn't fit a 256 mm bed (no cut found): left out of the templates for now |
+| tb dome crossing r104 r120 | Dome crossing R104 and R120 | close | its pieces joined end to end; the library's 'ct r120 sixth' turned so the loop closes, the R104 run's four 11.25-degree curves R103.48; one section cut across at x 80 (a cut path) to fit a 256 mm bed |
+| tb double dome crossing r104 r120 | Double dome crossing R104 and R120 | close | two domes, closed as the single one (R103.48 on the R104 runs); the first dome's section cut as the single one's, the second fits whole |
 | tb ng combo r48 ry2 left | Narrow-gauge switch R48 left to a parallel track | exact | ends within 0.09 studs: the library's own placing of the set's pieces; 1 lever tab(s): lever place not checked (template not in the build batch) |
 | tb ng combo r48 ry2 right | Narrow-gauge switch R48 right to a parallel track | exact | ends within 0.09 studs: the library's own placing of the set's pieces; 1 lever tab(s): lever place not checked (template not in the build batch) |
 | tb ng combo r48 to left | Narrow-gauge switch R48 left with its turnout curve | exact | ends within 0.09 studs: the library's own placing of the set's pieces; 1 lever tab(s): lever place not checked (template not in the build batch) |
@@ -366,7 +366,7 @@ Counts: close 72, exact 209, in progress elsewhere 13, missing 40, n/a 1 (of 335
 | tb ng combo x22 right | - | missing | no template for the arrangement; its pieces (5, 3 kinds): not exact: tb ng crossing x22.5 right (missing) |
 | tb switch r104 wye 8sg | Wye R104, 8-stud gap, with its curves | exact | ends within 0.09 studs: the library's own placing of the set's pieces; lever within 0.64 studs of the part's tab; housing: the reference's cross-bar, 16 studs with a 4 x 3 stud block at each end (Lever housing: Cross-bar); the lever built in where the clip-on lever unit goes |
 | tb switch r104 wye | Wye R104 with its adapter curves | exact | ends within 0.09 studs: the library's own placing of the set's pieces; lever within 0.56 studs of the part's tab; housing: the reference's cross-bar, 16 studs with a 4 x 3 stud block at each end (Lever housing: Cross-bar); the lever built in where the clip-on lever unit goes |
-| tb t-junction r104 r120 | - | missing | chained and closed (curves R103.17 to R107.11), but a section of it doesn't fit a 256 mm bed (no cut found): left out of the templates for now |
+| tb t-junction r104 r120 | T-junction R104 and R120 | close | its pieces joined end to end; the R104 runs' curves R103.17 to R107.11 so the loop closes; one section cut across at y 186 (a cut path) to fit a 256 mm bed |
 | tb t-junction r40 r56 | - | missing | no template for the arrangement; its pieces (19, 12 kinds): all made by BTD (exact or close), so it is only a template to add |
 | tb w-junction r104 r120 | W-junction R104 and R120 | exact | ends within 0.22 studs: the library's own placing of the set's pieces; 2 lever tab(s): lever place not checked (template not in the build batch) |
 
