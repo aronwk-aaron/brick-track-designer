@@ -23,7 +23,7 @@ Match: **exact** (ends, and lever or section where it has one), **close** (a tem
 **missing** (no template or setting makes it), **in progress elsewhere** (the double slips and their crossovers, being
 rebuilt separately).
 
-Counts: close 70, exact 208, in progress elsewhere 13, missing 43, n/a 1 (of 335).
+Counts: close 72, exact 209, in progress elsewhere 13, missing 40, n/a 1 (of 335).
 
 ## Parts
 
@@ -280,7 +280,7 @@ Counts: close 70, exact 208, in progress elsewhere 13, missing 43, n/a 1 (of 335
 | tb combo pass-through double crossover r40 right | - | missing | no template for the arrangement; its pieces (23, 6 kinds): not exact: tb pass-though connector R40 (missing) |
 | tb combo pass-through single crossover r40 left | - | missing | no template for the arrangement; its pieces (13, 5 kinds): not exact: tb pass-though connector R40 (missing) |
 | tb combo pass-through single crossover r40 right | - | missing | no template for the arrangement; its pieces (13, 5 kinds): not exact: tb pass-though connector R40 (missing) |
-| tb combo r104 crossing 45d | - | missing | no template for the arrangement; its pieces (5, 2 kinds): all made by BTD (exact or close), so it is only a template to add |
+| tb combo r104 crossing 45d | Crossing 45°, 27 studs, with its four 8-stud straights | close | its 5 pieces joined end to end; ends 0.53 studs off: the library has the crossing's ends on whole studs at 45 degrees, which no straight can be (as tb crossing x45 r104) |
 | tb combo r104 double crossover | Double crossover R104, bases and detachable modules | close | lever 14.0 studs from the part's lever tab; housing: BTD builds its lever into a housing with no studs; the reference has 4 x 3 studs there for its clip-on lever unit (Throw: Lever on a bracket is the nearest) |
 | tb combo r104 double slip crossover 2 ds para | Double slip templates | in progress elsewhere | the double slips and their crossovers are being rebuilt separately |
 | tb combo r104 double slip crossover 2 ds side | Double slip templates | in progress elsewhere | the double slips and their crossovers are being rebuilt separately |
@@ -360,8 +360,8 @@ Counts: close 70, exact 208, in progress elsewhere 13, missing 43, n/a 1 (of 335
 | tb ng combo r48 ry2 right | Narrow-gauge switch R48 right to a parallel track | exact | ends within 0.09 studs: the library's own placing of the set's pieces; 1 lever tab(s): lever place not checked (template not in the build batch) |
 | tb ng combo r48 to left | Narrow-gauge switch R48 left with its turnout curve | exact | ends within 0.09 studs: the library's own placing of the set's pieces; 1 lever tab(s): lever place not checked (template not in the build batch) |
 | tb ng combo r48 to right | Narrow-gauge switch R48 right with its turnout curve | exact | ends within 0.09 studs: the library's own placing of the set's pieces; 1 lever tab(s): lever place not checked (template not in the build batch) |
-| tb ng combo r84 left | - | missing | no template for the arrangement; its pieces (3, 3 kinds): all made by BTD (exact or close), so it is only a template to add |
-| tb ng combo r84 right | - | missing | no template for the arrangement; its pieces (3, 3 kinds): all made by BTD (exact or close), so it is only a template to add |
+| tb ng combo r84 left | Narrow-gauge switch R84 left to a parallel track | exact | ends within 0.09 studs: the library's own placing of the set's pieces; 1 lever tab(s): lever place not checked |
+| tb ng combo r84 right | Narrow-gauge switch R84 right to a parallel track | close | the left one's mirror image: the library places its right set's R84 'bc' curve 0.42 studs off, so it chains no other way |
 | tb ng combo x22 left | - | missing | no template for the arrangement; its pieces (5, 3 kinds): not exact: tb ng crossing x22.5 left (missing) |
 | tb ng combo x22 right | - | missing | no template for the arrangement; its pieces (5, 3 kinds): not exact: tb ng crossing x22.5 right (missing) |
 | tb switch r104 wye 8sg | Wye R104, 8-stud gap, with its curves | exact | ends within 0.09 studs: the library's own placing of the set's pieces; lever within 0.64 studs of the part's tab; housing: the reference's cross-bar, 16 studs with a 4 x 3 stud block at each end (Lever housing: Cross-bar); the lever built in where the clip-on lever unit goes |
