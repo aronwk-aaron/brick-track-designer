@@ -571,9 +571,10 @@ const RAIL_KINDS = { nub: /has a nub of rail/, stud: /stud at .* is run into|mor
  * crossovers', 0.7 to 1.3); sliver: a part of track under 1000 mm3 (the yards' ladders: 608 to 884 mm3); check: a
  * check rail with no bed or sleeper under it for more than 24 mm (none now: the R72 pass-through crossings' got a sleeper
  * under the track their long ties stop part way under).
- * ('the double slip as nail switches': nail-switch.test.ts's, the 22.5 degree double slip.)
+ * ('the double slip as nail switches': nail-switch.test.ts's, the 22.5 degree double slip. The double slip monster
+ * crossover: a stud at each three-way's toe, 0.61 mm2, as the wyes'.)
  */
-export const RAIL_KNOWN: Record<string, (keyof typeof RAIL_KINDS)[]> = { 'Double slip (22.5°)': ['nub'], 'the double slip as nail switches': ['nub'], 'Double slip (45°, R40)': ['nub', 'stud'], 'Double slip R40 45°': ['nub'], 'Dual gauge crossing 45°': ['nub'], 'Narrow-gauge wye R36': ['stud'], 'Single slip R40 45°': ['nub'], 'Wye R40': ['stud'], 'Wye R40, 8-stud spacing': ['stud'], 'Yard (R56)': ['nub', 'sliver'], 'Yard ladder (R40)': ['nub'], 'monster-switch-6-tracks-double-slips.btd.json': ['nub'], 'monster-switch-6-tracks.btd.json': ['nub'], 'return-loop-turning-left.btd.json': ['nub'], 'return-loop-turning-right.btd.json': ['nub'] };
+export const RAIL_KNOWN: Record<string, (keyof typeof RAIL_KINDS)[]> = { 'Double slip monster crossover R104': ['stud'], 'Double slip (22.5°)': ['nub'], 'the double slip as nail switches': ['nub'], 'Double slip (45°, R40)': ['nub', 'stud'], 'Double slip R40 45°': ['nub'], 'Dual gauge crossing 45°': ['nub'], 'Narrow-gauge wye R36': ['stud'], 'Single slip R40 45°': ['nub'], 'Wye R40': ['stud'], 'Wye R40, 8-stud spacing': ['stud'], 'Yard (R56)': ['nub', 'sliver'], 'Yard ladder (R40)': ['nub'], 'monster-switch-6-tracks-double-slips.btd.json': ['nub'], 'monster-switch-6-tracks.btd.json': ['nub'], 'return-loop-turning-left.btd.json': ['nub'], 'return-loop-turning-right.btd.json': ['nub'] };
 
 /**
  * 7. Edges shared by more than two triangles in the printed parts' files (assembly.shared.ts sharedEdges), a template's
@@ -616,6 +617,8 @@ export const EDGES: Record<string, number> = { 'Modular wye R40, lever on the le
   // (the double slip crossover: 142 found on CI, the X yard's kind at its four R104 double slips (it has eight: 472),
   // on blades' and rails' tops and up the cuts' joints: track1 45, track5 54, track6 33 and a few in the others)
   'Double slip crossover R104': 150,
+  // (the double slip monster crossover: 7 found (track3 1, track7 2, track8 4; the first at 53.3, -72.8, 5.3 in track3's file))
+  'Double slip monster crossover R104': 9,
   // (the compact R40 corners, 2026-11-12: 30 and 22 found, in most of their parts, 1 to 7 each: the switch bases' 7 at
   // 43.7, 67.5, 0.0 in their files as the R40 switches' are, the curves' 1 to 4 on rail tops and sleepers' ends)
   'Compact corner R40 left': 33, 'Compact corner R40 right': 25 };

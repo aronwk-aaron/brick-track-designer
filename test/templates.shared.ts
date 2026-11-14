@@ -52,7 +52,7 @@ const BUDGET: Record<string, number> = {
   'Narrow-gauge switch R48 left': 5, 'Narrow-gauge switch R48 right': 6, 'Narrow-gauge switch R84 left': 6, 'Narrow-gauge switch R84 right': 5,
   'Narrow-gauge wye R36': 3, 'Narrow-gauge switch R36 left, lever on the branch side': 3,
   'Narrow-gauge switch R36 right, lever on the branch side': 3, 'Wye R104, 8-stud gap': 9, 'Dual gauge switch R40 left': 4,
-  'Dual gauge switch R40 right': 4, 'X yard (6 tracks, double slips)': 415, 'Double slip crossover R104': 100, 'Crossover, three tracks, R104': 70, 'Modular triple crossover R40': 150, 'Modular double crossover R40, levers inside': 70, 'Modular double crossover R40, levers outside': 70,
+  'Dual gauge switch R40 right': 4, 'X yard (6 tracks, double slips)': 415, 'Double slip crossover R104': 100, 'Double slip monster crossover R104': 100, 'Crossover, three tracks, R104': 70, 'Modular triple crossover R40': 150, 'Modular double crossover R40, levers inside': 70, 'Modular double crossover R40, levers outside': 70,
   'Modular crossover R40 left': 45, 'Modular crossover R40 right': 45, 'Modular three-way R40 with parallel-track adapters': 25, 'Modular three-way R40 with continuous-curve adapters': 35,
   'Modular wye R40 with parallel-track adapters': 20, 'Modular wye R40 with continuous-curve adapters': 20, 'Modular three-way R40': 15, 'Oval (LEGO R40)': 20, 'Crossover (R40)': 33,
   'Double crossover (R56)': 55, 'Switch R40 left': 9, 'Switch R40 right': 7, 'Switch R40 left, 28-stud straight': 4,
@@ -107,7 +107,8 @@ export function templatesBuild(groups: string[], only?: string[]) {
       expect(ms2, `${name}: built again unchanged in ${(ms2 / 1000).toFixed(2)} s`).toBeLessThan(limit);
       expect(again.pieces.length).toBe(b.pieces.length);
       expect(b.pieces.length).toBeGreaterThan(0);
-      const extra = b.info.warnings.filter((w) => !/experimental/.test(w) && !/at an angle to the baseplate grid/.test(w) && !(/Double slip/.test(name) && /blades are rigid/.test(w)) && !(/Helix/.test(name) && /stands over other track/.test(w)) && !(/triple crossover/.test(name) && /sections don't fit the \d+ x \d+ print bed/.test(w)) && !(/X yard/.test(name) && /lever of the points at 67, 209|sprung blade's front has no lip|blades are rigid/.test(w)) && !(/Double slip crossover/.test(name) && /sprung blade's front has no lip/.test(w)));
+      // (the double slip monster crossover's three-ways keep both blades: the design's one blade a set is its double slips')
+      const extra = b.info.warnings.filter((w) => !/experimental/.test(w) && !/at an angle to the baseplate grid/.test(w) && !(/Double slip/.test(name) && /blades are rigid/.test(w)) && !(/Helix/.test(name) && /stands over other track/.test(w)) && !(/triple crossover/.test(name) && /sections don't fit the \d+ x \d+ print bed/.test(w)) && !(/X yard/.test(name) && /lever of the points at 67, 209|sprung blade's front has no lip|blades are rigid/.test(w)) && !(/Double slip (monster )?crossover/.test(name) && /sprung blade's front has no lip/.test(w)) && !(/Double slip monster crossover/.test(name) && /a three-way's points keep both blades/.test(w)));
       // (said in full when it fails)
       expect(extra.join(' | ')).toBe('');
       // (and on every part: no two studs that touch or overlap, nor tubes, nor pins; each
