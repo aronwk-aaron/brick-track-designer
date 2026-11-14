@@ -12,6 +12,7 @@
 import { type Design, isMono, STUD, toRoutes } from './design';
 import { routeLength, routePose, type Route } from '../route/route';
 import { gifBytes } from '../geom/gif';
+import { routeCrossings } from './handcuts';
 
 /** What the export needs of a built piece. */
 export interface PieceLike { name: string; color: number; positions: Float32Array; /** a bought piece: what it is (LEGO's part number; shop: another maker's) */ lego?: { part: string; shop?: string }[] }
@@ -268,11 +269,22 @@ export function layoutParts(design: Design, pieces: PieceLike[], name = design.n
     return merged;
   };
   const routeRuns = routes.map(({ rt, L }) => runsOf(rt, L));
-  // joints between parts along each route: halfway across the gap between one part's run and the next's
+  // (the cut paths drawn by hand (expert), mm: a joint at one is where it crosses the track, not halfway across the gap
+  // (a joint's plates overlap there, and from above neither part has the track's centre line for a stud or two))
+  const pathSegs = (design.expert?.cutPaths ?? []).flatMap((p) => p.pts.slice(1).map((q, k): [[number, number], [number, number]] => [[p.pts[k][0] * STUD, p.pts[k][1] * STUD], [q[0] * STUD, q[1] * STUD]]));
+  const crossAt = new Map<number, number[]>();
+  const pathAt = (rt: Route, ri: number, s0: number, s1: number) => {
+    if (!pathSegs.length) return undefined;
+    let xs = crossAt.get(ri);
+    if (!xs) { xs = pathSegs.flatMap(([a, b]) => routeCrossings(rt, a, b).map((c) => c.s)); crossAt.set(ri, xs); }
+    const near = xs.filter((s) => s >= s0 - STUD && s <= s1 + STUD), mid = (s0 + s1) / 2;
+    return near.length ? near.reduce((p, q) => (Math.abs(q - mid) < Math.abs(p - mid) ? q : p)) : undefined;
+  };
+  // joints between parts along each route: halfway across the gap between one part's run and the next's (at a cut path: where it crosses)
   routes.forEach(({ rt, i }, ri) => {
     const runs = routeRuns[ri], type = connectionType(design, i);
     for (let k = 1; k < runs.length; k++) {
-      const s = (runs[k - 1].s1 + runs[k].s0) / 2, at = ptAt(rt, s), d = dirAt(rt, s);
+      const s = pathAt(rt, ri, runs[k - 1].s1, runs[k].s0) ?? (runs[k - 1].s1 + runs[k].s0) / 2, at = ptAt(rt, s), d = dirAt(rt, s);
       conns.push({ part: runs[k - 1].part, at, dir: d, type }, { part: runs[k].part, at, dir: [-d[0], -d[1]], type });
     }
   });

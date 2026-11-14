@@ -2506,7 +2506,7 @@ function buildOne(w: Wasm, design: Design, report: (what: string, frac: number) 
   const handCuts = designCuts(design);
   if (handCuts && !inLengths) bedWarnings.add('the hand cuts across tracks are made only with Long track cut into: Track pieces');
   // (the cut paths drawn along and between tracks (expert): on the stud grid, the impossible ones left out and said)
-  const cutPaths = overlay.cutting && designPaths(design, gridPose, routes, track.c.railOffset, overlay.cutting.no);
+  const cutPaths = overlay.cutting && designPaths(design, gridPose, routes, track.c.railOffset, overlay.cutting.no, !!o.pathSquare);
   if (cutPaths && !inLengths) bedWarnings.add('the cut paths are made only with Long track cut into: Track pieces');
   const sleepered = o.sleepers === 'sleepers' && o.ballast === 'none';
   // (expert: the sleepers edited by hand that can't be made as they're asked for: said)

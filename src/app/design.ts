@@ -212,6 +212,8 @@ export interface PieceOptions {
   splitTrack?: 'bed' | 'lengths'; pieceLengthStuds?: number;
   /** A stud a cut between parts goes through: taken off ('off'), given whole to the part its middle is on, over the next part's edge ('whole'), or cut through, half on each ('split'). */
   studsAtCuts?: 'off' | 'whole' | 'split';
+  /** (expert) Each end of a cut path that crosses a switch's branch at a slant turned square to the branch there, as a modular kit's sections are joined (handcuts.ts squarePathEnds); off: along the stud grid, as drawn. */
+  pathSquare?: boolean;
   /** With track pieces: plain track bought, not printed: LEGO's straights (53401, with ballast on LEGO plates) and curves, R40 LEGO's (53400), R56 to R120 BrickTracks' ('lego'); only LEGO's, BrickTracks' radii printed ('lego-only'); or every piece printed ('print'). */
   legoTrack?: 'lego' | 'lego-only' | 'print';
   /** Bought track's printed ballast: a part for each bought piece, whole as it is (a switch's over-long one in two, between its sleepers); or 'together', one under the pieces side by side, cut for the bed and at table seams. */
@@ -361,7 +363,7 @@ export const OPTION_DEFAULTS: PieceOptions = {
   throwSide: 'auto', threeWayLevers: 2, leverOffset: 8, pointThrow: 3, pointClearance: 0.3, springPreload: 1, springThickness: 0.9, springLength: 40,
   flangeway: 3, flangewayDepth: 3, checkRailLen: 30, checkRailW: 1, checkRailFlare: 1.5, printBedX: 256, printBedY: 256, baseplate: 0, baseplateX: 0, baseplateY: 0, ballast: 'none', bottomStyle: 'antistud', joint: 'lego', pointsModule: 'built-in', endSupports: true, tongueRails: 'all', grip: 'edges', pointsPieces: 1, pointBlades: 2, throwStyle: 'built-in', mechStyle: 'plates', curveStuds: 'follow',
   throwAction: 'detent', leverHousing: 'arm', bladeStyle: 'sprung', bladeLip: 'pin', sleepers: 'sleepers', undersideGrid: 'baseplate', splitTrack: 'lengths', pieceLengthStuds: 16, studsAtCuts: 'off', legoTrack: 'lego', axleStuds: 2, sleeperWidthStuds: 2, sleeperGapStuds: 2, studFit: 0.18, antistudFit: 0.06,
-  bladeDiscD: 14, throwBallast: false, axleHoles: false, pegOnBallast: false,
+  bladeDiscD: 14, throwBallast: false, pathSquare: false, axleHoles: false, pegOnBallast: false,
   bufferStyle: 'frame', bufferPostPlates: 8, bufferBeamBottom: 2, bufferBeamTop: 12, bufferPinHoles: true,
   trackBallast: 'together', trackFitTol: 0.2, labelText: '', labelSize: true, labelGauge: false, labelParts: true,
   monoEndStuds: 'side', monoAxleHoles: true, monoLegoAntistud: false, monoAxleLengthStuds: 2, monoHoleFit: 0.1, monoLabels: 'name', monoSwitchFit: 0.3,
@@ -1345,19 +1347,19 @@ export const TEMPLATES: Record<string, Design> = {
     expert: { cutPaths: [{ id: 'c1', pts: [[-24, 28], [24, 28]] }, { id: 'c2', pts: [[-24, 52], [24, 52]] },
       { id: 'c3', pts: [[-16, 28], [-16, 52]] }, { id: 'c4', pts: [[0, 28], [0, 52]] }, { id: 'c5', pts: [[16, 28], [16, 52]] },
       { id: 'c6', pts: [[-8, -1], [-8, 28]] }, { id: 'c7', pts: [[8, -1], [8, 28]] }, { id: 'c8', pts: [[-8, 52], [-8, 81]] }, { id: 'c9', pts: [[8, 52], [8, 81]] }] } },
-  // (the R104 switch cut as the modular kit's is (expert, cut paths): the base, its first 16 studs; detach 1, on to 28,
+  // (the R104 switch cut as the modular kit's is (expert, cut paths; across the branch square to it, as the kit's joints): the base, its first 16 studs; detach 1, on to 28,
   // both tracks; from 28 to the end the straight is cut along its centre line: the branch's side, with the frog, is
   // detach 2, the far half of the straight the track terminator (the end connector's tab, which reaches across the
   // centre line, stays whole on detach 2: the cut goes round it))
-  'Switch R104 left, base and detachable modules': { version: 1, gaugeStuds: 4, options: { legoTrack: 'print', splitTrack: 'lengths' }, routes: [{ name: 'Straight', x: 0, y: 0, heading: 0, segs: [{ kind: 'straight', studs: 40 }] }, { name: 'Branch', x: 0, y: 0, heading: 0, segs: [{ kind: 'curve', radius: 104, angle: 22.5 }, { kind: 'straight', studs: 0.218121 }], throwSide: 'left' }], trackwork: r104Work('left'),
+  'Switch R104 left, base and detachable modules': { version: 1, gaugeStuds: 4, options: { legoTrack: 'print', splitTrack: 'lengths', pathSquare: true }, routes: [{ name: 'Straight', x: 0, y: 0, heading: 0, segs: [{ kind: 'straight', studs: 40 }] }, { name: 'Branch', x: 0, y: 0, heading: 0, segs: [{ kind: 'curve', radius: 104, angle: 22.5 }, { kind: 'straight', studs: 0.218121 }], throwSide: 'left' }], trackwork: r104Work('left'),
     expert: { cutPaths: [{ id: 'c1', pts: [[-10, 16], [6, 16]] }, { id: 'c2', pts: [[-12, 28], [6, 28]] }, { id: 'c3', pts: [[0, 28], [0, 42]] }] } },
-  'Switch R104 right, base and detachable modules': { version: 1, gaugeStuds: 4, options: { legoTrack: 'print', splitTrack: 'lengths' }, routes: [{ name: 'Straight', x: 0, y: 0, heading: 0, segs: [{ kind: 'straight', studs: 40 }] }, { name: 'Branch', x: 0, y: 0, heading: 0, segs: [{ kind: 'curve', radius: 104, angle: -22.5 }, { kind: 'straight', studs: 0.218121 }], throwSide: 'right' }], trackwork: r104Work('right'),
+  'Switch R104 right, base and detachable modules': { version: 1, gaugeStuds: 4, options: { legoTrack: 'print', splitTrack: 'lengths', pathSquare: true }, routes: [{ name: 'Straight', x: 0, y: 0, heading: 0, segs: [{ kind: 'straight', studs: 40 }] }, { name: 'Branch', x: 0, y: 0, heading: 0, segs: [{ kind: 'curve', radius: 104, angle: -22.5 }, { kind: 'straight', studs: 0.218121 }], throwSide: 'right' }], trackwork: r104Work('right'),
     expert: { cutPaths: [{ id: 'c1', pts: [[10, 16], [-6, 16]] }, { id: 'c2', pts: [[12, 28], [-6, 28]] }, { id: 'c3', pts: [[0, 28], [0, 42]] }] } },
   // (the R104 three-way cut as the modular kit's is (expert, cut paths): the triple base, its first 16 studs; the triple
   // detach 1, on to 28, all three tracks; from 28 to the end the straight is cut along its centre line into the two
   // detach 2 sections, each a branch with its frogs and its half of the straight (the straight's end connector, whole,
   // is the left one's: the cut goes round its tab))
-  'Three-way R104, base and detachable modules': { version: 1, gaugeStuds: 4, options: { legoTrack: 'print', threeWayLevers: 2, splitTrack: 'lengths' }, routes: [{ name: 'Straight', x: 0, y: 0, heading: 0, segs: [{ kind: 'straight', studs: 40 }] }, { name: 'Left', x: 0, y: 0, heading: 0, segs: [{ kind: 'curve', radius: 104, angle: 22.5 }, { kind: 'straight', studs: 0.218121 }] }, { name: 'Right', x: 0, y: 0, heading: 0, segs: [{ kind: 'curve', radius: 104, angle: -22.5 }, { kind: 'straight', studs: 0.218121 }] }], trackwork: r104Work(),
+  'Three-way R104, base and detachable modules': { version: 1, gaugeStuds: 4, options: { legoTrack: 'print', threeWayLevers: 2, splitTrack: 'lengths', pathSquare: true }, routes: [{ name: 'Straight', x: 0, y: 0, heading: 0, segs: [{ kind: 'straight', studs: 40 }] }, { name: 'Left', x: 0, y: 0, heading: 0, segs: [{ kind: 'curve', radius: 104, angle: 22.5 }, { kind: 'straight', studs: 0.218121 }] }, { name: 'Right', x: 0, y: 0, heading: 0, segs: [{ kind: 'curve', radius: 104, angle: -22.5 }, { kind: 'straight', studs: 0.218121 }] }], trackwork: r104Work(),
     expert: { cutPaths: [{ id: 'c1', pts: [[-10, 16], [10, 16]] }, { id: 'c2', pts: [[-12, 28], [12, 28]] }, { id: 'c3', pts: [[0, 28], [0, 42]] }] } },
   // (two tracks 12 studs apart (a 4-stud gap), the crossover in two halves: R35.86 for 30 degrees and 2.39 studs straight each, 40 studs along; each half's straight 24 studs, the second 16 on; the levers on the crossover's side)
   'Crossover, 4-stud gap, left': { version: 1, gaugeStuds: 4, options: { legoTrack: 'print' }, routes: [{ name: 'A', x: 0, y: 0, heading: 0, segs: [{ kind: 'straight', studs: 24 }] }, { name: 'B', x: -12, y: 16, heading: 0, segs: [{ kind: 'straight', studs: 24 }] }, { name: 'Over', x: 0, y: 0, heading: 0, segs: [{ kind: 'curve', radius: 35.856, angle: 30 }, { kind: 'straight', studs: 4.784 }, { kind: 'curve', radius: 35.856, angle: -30 }], throwSide: 'left' }] },

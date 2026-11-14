@@ -39,12 +39,17 @@ type Module = [what: string, ends: [number, number][], long: number, wide?: numb
 const m = (hand: 1 | -1, ends: [number, number][]): [number, number][] => ends.map(([x, y]) => [x * hand, y]);
 /** The compact R40 base's ends: the toe, the straight's end, the branch's (22.5 degrees of R40: 3.04 over, 15.31 on). */
 const BASE40: [number, number][] = [[0, 0], [0, 16], [-3.045, 15.307]];
-/** The R40 branch's end at 33.75 degrees; and at 45 (-11.716, 28.284), the outer end of its end sleeper there (4 studs out, square to the track: a part's edge is its box's). */
-const B33: [number, number] = [-6.741, 22.223], B45_SLEEPER: [number, number] = [-11.716 - 2.828, 28.284 - 2.828];
+/** The R40 branch's end at 45 degrees (-11.716, 28.284): the outer end of its end sleeper there (4 studs out, square to the track: a part's edge is its box's). */
+const B45_SLEEPER: [number, number] = [-11.716 - 2.828, 28.284 - 2.828];
+/** (studs) How much nearer the toe the compact R40 base's cut reaches at the branch's outer edge, square to the branch there. */
+const DIP40 = 2.6;
 const compact = (hand: 1 | -1): Record<string, Module[]> => {
   const h = hand === 1 ? 'left' : 'right', base = (gto = ''): Module => [`comp base ${gto}${h}`, m(hand, BASE40), 16];
-  // (on sleepers the detachable section's two tracks are a part each: the straight's, and the branch's from where they've parted)
-  const det = (what: string, end: [number, number], long: number): Module[] => [[`comp det ${what} ${h}, the straight`, m(hand, [[0, 16], end]), long], [`comp det ${what} ${h}, the branch`, m(hand, [[-4.5, 17], B33]), 6.5, 5.5]];
+  // (the detachable section one part, its two tracks together as the kit's: the base's cut square to the branch across
+  // it (Cut path ends square to a branch) reaches DIP40 nearer the toe at the branch's outer edge, so its straight's end
+  // at 16 is inside its box, and it's that much longer; its ends: the branch's where the cut crosses it (16 studs up,
+  // 3.34 over), and the straight's far one; as wide as the branch's sleepers reach past 33.75 degrees)
+  const det = (what: string, end: [number, number], long: number): Module[] => [[`comp det ${what} ${h}`, m(hand, [[-3.34, 16], end]), long + DIP40, 14.1]];
   return {
     [`Switch R40 ${h}, compact base and standard section`]: [base(), ...det('straight standard', [0, 32], 16)],
     [`Switch R40 ${h}, compact base and short section`]: [base(), ...det('straight short', [0, 28], 12)],
@@ -63,7 +68,8 @@ const KITS: Record<string, Module[]> = {
     ['base triple', [[0, 0], [0, 16], [-1, 16], [1, 16]], 16],
     ['detach 1 triple', [[0, 16], [-1, 16], [1, 16], [-4, 28], [4, 28]], 12],
     // (their side joints, at 0, 34, are each other's: checked below, where the two meet along the centre line)
-    ['triple detach 2 left', [[-4, 28], [-8, 40]], 12], ['triple detach 2 right', [[4, 28], [8, 40]], 12]],
+    // (each 12 along the straight, and 2.4 more at its branch's outer edge: the cut at 28 there square to the branch)
+    ['triple detach 2 left', [[-4, 28], [-8, 40]], 14.4], ['triple detach 2 right', [[4, 28], [8, 40]], 14.4]],
   'Double slip R104 left, middle and detachable sections': slip(1),
   'Double slip R104 right, middle and detachable sections': slip(-1),
   ...compact(1), ...compact(-1),

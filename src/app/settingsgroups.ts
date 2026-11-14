@@ -25,7 +25,7 @@ export interface Group {
 /** Every setting in one group, once (a test checks it). */
 export const GROUPS: Group[] = [
   { id: 'bed', title: 'Printer and bed', keys: ['printBedX', 'printBedY'] },
-  { id: 'cuts', title: 'Cutting and joints', keys: ['splitTrack', 'pieceLengthStuds', 'baseplate', 'baseplateX', 'baseplateY', 'studsAtCuts', 'joint', 'axleStuds', 'tongueRails', 'endSupports', 'pegOnBallast', 'axleHoles'],
+  { id: 'cuts', title: 'Cutting and joints', keys: ['splitTrack', 'pieceLengthStuds', 'baseplate', 'baseplateX', 'baseplateY', 'studsAtCuts', 'pathSquare', 'joint', 'axleStuds', 'tongueRails', 'endSupports', 'pegOnBallast', 'axleHoles'],
     subs: { splitTrack: 'Cutting', joint: 'Joints' } },
   { id: 'fits', title: 'Fits and clearances', keys: ['studFit', 'antistudFit', 'trackFitTol'] },
   { id: 'track', title: 'Track and rails', needs: 'train', keys: ['gaugeStuds', 'raisedOn', 'curveStuds', 'studsFullPitch'] },

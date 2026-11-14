@@ -62,9 +62,10 @@ export function jointsOn(d: Design, i: number, joints: [number, number][]): numb
  * A design's cut paths for the build (undefined: it has none): each laid on the build's stud grid (gp, mm: a file's
  * corners a hair off it, or a path left behind by track since moved, are put on the nearest grid corners, so no cut
  * goes through a stud), in mm; the ones that can't be made (cutpaths.ts pathProblem: a blade, a frog, down a rail, a
- * sliver between two) left out and listed in refused, with why and where (studs).
+ * sliver between two) left out and listed in refused, with why and where (studs). square: each end run that crosses a
+ * branch at a slant turned square to it (squarePathEnds), after it's been checked on the grid.
  */
-export function designPaths(d: Design, gp: Pose, routes: Route[], railG: number, no: NoCut): { cut: HandPath[]; refused: (PathFault & { id: string })[] } | undefined {
+export function designPaths(d: Design, gp: Pose, routes: Route[], railG: number, no: NoCut, square = false): { cut: HandPath[]; refused: (PathFault & { id: string })[] } | undefined {
   const ps = d.expert?.cutPaths;
   if (!ps?.length) return undefined;
   const g: Grid = [gp[0] / 8, gp[1] / 8, gp[2]], laid = ps.map((p) => ({ ...p, pts: gridPath(g, p.pts) }));
@@ -73,7 +74,65 @@ export function designPaths(d: Design, gp: Pose, routes: Route[], railG: number,
     const why = pathProblem(p.pts, ok.map((q) => q.pts), { routes, railG, no });
     if (why) { refused.push({ id: p.id, ...why }); continue; }
     ok.push(p);
-    cut.push({ id: p.id, pts: p.pts.map((q): [number, number] => [q[0] * 8, q[1] * 8]), ...(p.joint && { joint: p.joint === 'flataxle' ? 'axle' as const : p.joint, flatRails: p.joint === 'flataxle' }) });
+    const mm = p.pts.map((q): [number, number] => [q[0] * 8, q[1] * 8]);
+    cut.push({ id: p.id, pts: square ? squarePathEnds(mm, routes) : mm, ...(p.joint && { joint: p.joint === 'flataxle' ? 'axle' as const : p.joint, flatRails: p.joint === 'flataxle' }) });
   }
   return { cut, refused };
+}
+
+/** Where route rt's centre line crosses the stretch a-b (mm): each crossing's distance along the route (s) and how far along a-b (0 to 1). Sampled a mm apart along the route, each crossing then found to a hundredth of a mm. */
+export function routeCrossings(rt: Route, a: [number, number], b: [number, number]): { s: number; t: number }[] {
+  const L = routeLength(rt), dx = b[0] - a[0], dy = b[1] - a[1], l2 = dx * dx + dy * dy;
+  if (!(L > 0) || !(l2 > 0)) return [];
+  const side = (s: number) => { const p = routePose(rt, s); return (p[0] - a[0]) * dy - (p[1] - a[1]) * dx; };
+  const along = (s: number) => { const p = routePose(rt, s); return ((p[0] - a[0]) * dx + (p[1] - a[1]) * dy) / l2; };
+  const n = Math.max(1, Math.ceil(L)), out: { s: number; t: number }[] = [];
+  let s0 = 0, f0 = side(0);
+  if (f0 === 0) { const t = along(0); if (t >= 0 && t <= 1) out.push({ s: 0, t }); }
+  for (let k = 1; k <= n; k++) {
+    const s1 = (L * k) / n, f1 = side(s1);
+    // (on the line at a sample itself: crossing there)
+    if (f1 === 0) { const t = along(s1); if (t >= 0 && t <= 1) out.push({ s: s1, t }); }
+    else if (f0 !== 0 && Math.sign(f0) !== Math.sign(f1)) {
+      let lo = s0, hi = s1, flo = f0;
+      while (hi - lo > 0.01) { const m = (lo + hi) / 2, fm = side(m); if (Math.sign(fm) === Math.sign(flo)) { lo = m; flo = fm; } else hi = m; }
+      const s = (lo + hi) / 2, t = along(s);
+      if (t >= 0 && t <= 1) out.push({ s, t });
+    }
+    s0 = s1; f0 = f1;
+  }
+  return out;
+}
+
+/** How far a track crossed at a slant may be off square to the run it's on, for that run's end to be turned square to it (degrees). */
+const SQUARE_MAX = 30;
+
+/**
+ * (Settings › Cutting: Cut paths square to a branch) A cut path with each end run that crosses a track at a slant, first
+ * from that end (a switch's branch, past where the path crosses the straight track square), turned square to that
+ * track: from where it crosses the track's centre line, the same length, so the joint there is square to the branch as a
+ * modular kit's sections' are. Left as drawn where the end run crosses no track, or crosses it square already (within
+ * half a degree), or one more than SQUARE_MAX off square. mm.
+ */
+export function squarePathEnds(pts: [number, number][], routes: Route[]): [number, number][] {
+  let out = pts.map((q) => [q[0], q[1]] as [number, number]);
+  for (const end of [0, 1]) {
+    if (end) out.reverse();
+    const e = out[0], b = out[1], len = Math.hypot(b[0] - e[0], b[1] - e[1]), u: [number, number] = [(b[0] - e[0]) / len, (b[1] - e[1]) / len];
+    let best: { t: number; rt: Route; s: number } | undefined;
+    for (const rt of routes) for (const c of routeCrossings(rt, e, b)) if (!best || c.t < best.t) best = { t: c.t, rt, s: c.s };
+    if (best) {
+      const p = routePose(best.rt, best.s), h = (p[2] * Math.PI) / 180, tang: [number, number] = [-Math.sin(h), Math.cos(h)];
+      // (how far off square the track is: the run's direction against the track's own)
+      const off = (Math.asin(Math.min(1, Math.abs(u[0] * tang[0] + u[1] * tang[1]))) * 180) / Math.PI;
+      if (off > 0.5 && off <= SQUARE_MAX) {
+        const c: [number, number] = [p[0], p[1]], r = Math.hypot(e[0] - c[0], e[1] - c[1]);
+        let m: [number, number] = [Math.cos(h), Math.sin(h)];
+        if (m[0] * (e[0] - c[0]) + m[1] * (e[1] - c[1]) < 0) m = [-m[0], -m[1]];
+        if (r > 1) out = [[c[0] + m[0] * r, c[1] + m[1] * r], c, ...out.slice(1)];
+      }
+    }
+    if (end) out.reverse();
+  }
+  return out;
 }

@@ -40,7 +40,8 @@ describe('cut paths: the R104 switch as the modular kit cuts it', { timeout: 600
     ['base', [[0, 0], [0, 16], [-1, 16]], 16],
     ['detach 1', [[0, 16], [-1, 16], [-4, 28]], 12],
     // (its side joint, at 0, 34, is the terminator's one end: checked below, where the two meet along the centre line)
-    ['detach 2', [[-4, 28], [-8, 40]], 12],
+    // (12 along the straight, and 2.4 more at the branch's outer edge: the cut at 28 there square to the branch)
+    ['detach 2', [[-4, 28], [-8, 40]], 14.4],
     ['track terminator', [[0, 34]], 12],
   ];
   it('four parts, each where the library has that module\'s ends, none over the bed, no stud cut', async () => {
