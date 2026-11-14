@@ -501,7 +501,15 @@ export function networkSplits(s: Scad, routes: Route[], sol: Solution, p: BasePa
     // channel, arm and steps, the slider and tie-rod at either end of their travel, the lever as it swings, its bracket
     // and the spring. Only where the bed is at the sleepers' top (on ballast; sprung blades on track alone), so each
     // stud stands as high as the track's; a bed raised over the slider keeps none, as before)
-    const gl = switchGlobals(pp), studsOff = studsOffOf(s, P, plan.routes, gl.G, gl.bedTop, mech.bed, [mech.pockets, mech.channel, mech.arm, ...mech.steps, ...(mech.rests ? [mech.rests] : []), ...(spr ? [spr] : []), ...(br ? [br] : [])],
+    // (not where another route's track runs through its bed (a slip's, a monster's crossing diagonals): there the
+    // other track's own rows are the bed's, and studs added round them moved what the cuts left; as before, none)
+    const gl = switchGlobals(pp), bbL = mech.bed.boundingBox(), reach = gl.sleeperLen / 2 + 8;
+    const crossed = routes.some((rt, k) => ![i, j, j2].includes(k) && Array.from({ length: 41 }, (_, t) => routePose(rt, (routeLength(rt) * t) / 40)).some((q) => {
+      const l = worldToPose(P, [q[0], q[1]]);
+      return l[0] > bbL.min[0] - reach && l[0] < bbL.max[0] + reach && l[1] > bbL.min[1] - 8 && l[1] < bbL.max[1] + 8;
+    }));
+    const wb = crossed ? [bed.bed, place(mech.arm, P), ...mech.steps.map((m) => place(m, P))].filter((m) => !m.isEmpty()).map((m) => m.boundingBox()) : [];
+    const studsOff = crossed ? (q: [number, number]) => wb.some((bb) => q[0] > bb.min[0] - 3 && q[0] < bb.max[0] + 3 && q[1] > bb.min[1] - 3 && q[1] < bb.max[1] + 3) : studsOffOf(s, P, plan.routes, gl.G, gl.bedTop, mech.bed, [mech.pockets, mech.channel, mech.arm, ...mech.steps, ...(mech.rests ? [mech.rests] : []), ...(spr ? [spr] : []), ...(br ? [br] : [])],
       [thr, thp, thr2].filter((m): m is Man => !!m), lev, gm.throwMove(0).slide, mech.armRects);
     built.push({
       key: JSON.stringify({ rts, used, p: pp, P, routes: [i, j, j2], end, n, of: groups.length, ...(bed.by.length && { clear: bed.by }) }),

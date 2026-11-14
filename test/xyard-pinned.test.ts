@@ -1,6 +1,7 @@
 // The X yard stays as Aaron approved it (main 5669d85): its throws and levers aren't to move ("on the X, don't move the
 // throws on the switches, leave them alone"). Each part's name, volume and box, as the app builds it, are pinned here
-// (fixtures/xyard-parts.json, made from 5669d85). A change to the double slips' generator that moves anything on the X
+// (fixtures/xyard-parts.json, made from 5669d85; track2 to track5 since given the studs outside their stock rails along
+// the points, 7, 7, 10 and 10 of them, 34.66 mm3 each, their boxes as they were). A change to the double slips' generator that moves anything on the X
 // yard fails this; such a change goes behind a guard that leaves the X yard's slips as they are.
 import { describe, expect, it } from 'vitest';
 import fs from 'node:fs';
