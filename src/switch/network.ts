@@ -9,6 +9,7 @@
 import { type CrossingOptions, crossingPiece } from '../geom/crossing';
 import { segDist } from '../geom/pathsplit';
 import { R, T, type Man, type Scad } from '../geom/scad';
+import { DEFAULTS as TRACK_DEFAULTS, PLATE_H } from '../geom/track';
 import type { Pose, Pt, Route } from '../route/route';
 import { poseToWorld, railOffsetOf, railPoint, routeLat, routeLength, routePose, routeSOf, worldToPose } from '../route/route';
 import type { Solution } from '../route/solver';
@@ -54,6 +55,8 @@ export interface SplitParts {
   stepRect?: [number, number, number, number];
   /** (its arm under other track) where that track's studs stand on the arm, in the design's frame */
   studsOn?: (q: [number, number]) => boolean;
+  /** where the bed's studs can't stand for its parts (studsOffOf), in the design's frame: elsewhere in what it adds they do */
+  studsOff?: (q: [number, number]) => boolean;
   moving: NetworkPart[];
 }
 
@@ -478,8 +481,9 @@ export function networkSplits(s: Scad, routes: Route[], sol: Solution, p: BasePa
     // (the lever in a housing at a corner: the tie-rod out to it, on after the slider)
     const thr2 = gm.throwRodPart(0), thr2P = gm.throwRodPrint(0);
     if (thr2 && thr2P) moving.push({ name: `${tag}-throw-rod`, color: 0xe8892b, local: thr2P, world: place(thr2, P), slide: mv.slide });
-    if (!gm.isNail(0)) moving.push({ name: `${tag}-lever`, color: 0xd4af37, local: gm.leverPrint(0), world: place(gm.leverPart(0), P), ...(mv.hinge && { hinge: mv.hinge }) });
-    if (p.throwModule && !gm.isNail(0)) { const br = gm.bracketPart(0); moving.push({ name: `${tag}-bracket`, color: 0x8a8f99, local: br, world: place(br, P) }); }
+    const lev = gm.isNail(0) ? undefined : gm.leverPart(0), br = p.throwModule && !gm.isNail(0) ? gm.bracketPart(0) : undefined;
+    if (lev) moving.push({ name: `${tag}-lever`, color: 0xd4af37, local: gm.leverPrint(0), world: place(lev, P), ...(mv.hinge && { hinge: mv.hinge }) });
+    if (br) moving.push({ name: `${tag}-bracket`, color: 0x8a8f99, local: br, world: place(br, P) });
     const end = sp.merge ? 'end' : 'start';
     // (its arm under other track: that track's studs on it, as on its bed (crossing.ts, where they're clear of its rails),
     // not on its own bed nor by the lever (its ears, its opening))
@@ -491,6 +495,14 @@ export function networkSplits(s: Scad, routes: Route[], sol: Solution, p: BasePa
     } : undefined;
     levers.push({ toe: [P[0], P[1]], frame: P, set: plan.sets[0] });
     const bed = bedClear(n, place(mech.bed, P));
+    // (the bed's studs carried on along the points outside the stock rails, as on the track either side: crossingPiece
+    // keeps every stud off what the points add, by its box, and that box takes in the bed out to the sleepers' ends.
+    // Off only where something needs the room: between the stock rails (the blades), and round the pockets, the throw's
+    // channel, arm and steps, the slider and tie-rod at either end of their travel, the lever as it swings, its bracket
+    // and the spring. Only where the bed is at the sleepers' top (on ballast; sprung blades on track alone), so each
+    // stud stands as high as the track's; a bed raised over the slider keeps none, as before)
+    const gl = switchGlobals(pp), studsOff = studsOffOf(s, P, plan.routes, gl.G, gl.bedTop, mech.bed, [mech.pockets, mech.channel, mech.arm, ...mech.steps, ...(mech.rests ? [mech.rests] : []), ...(spr ? [spr] : []), ...(br ? [br] : [])],
+      [thr, thp, thr2].filter((m): m is Man => !!m), lev, gm.throwMove(0).slide, mech.armRects);
     built.push({
       key: JSON.stringify({ rts, used, p: pp, P, routes: [i, j, j2], end, n, of: groups.length, ...(bed.by.length && { clear: bed.by }) }),
       toe: [P[0], P[1]], frame: P, set: plan.sets[0], src: gr.main,
@@ -499,6 +511,7 @@ export function networkSplits(s: Scad, routes: Route[], sol: Solution, p: BasePa
       ...(mech.stepRect && { stepRect: mech.stepRect }),
       ...(mech.armRects.length && { armRects: mech.armRects }),
       ...(studsOn && { studsOn }),
+      studsOff,
       stock: place(mech.stockCut, P),
       bladeCuts: mech.bladeRails.map(([rt, cut]) => [worldOf(rt), place(cut, P)] as [number, Man]),
       inner: [`${j}:${end}`, ...(j2 >= 0 ? [`${j2}:${end}`] : [])],
@@ -519,6 +532,49 @@ export function networkSplits(s: Scad, routes: Route[], sol: Solution, p: BasePa
       warnings.push(`the points at ${studsAt(preps[a].gr.main)} and ${studsAt(preps[b].gr.main)} are too close for their springs: one's spring or slider is in the other's parts, and they can't be put together as built; set Throw to a lever`);
   }
   return { splits: built, levers, warnings };
+}
+
+/** Inside one of these polygons (even-odd, as a CrossSection's). */
+function inPolys(polys: [number, number][][], q: Pt) {
+  let inside = false;
+  for (const ring of polys) for (let a = 0, b = ring.length - 1; a < ring.length; b = a++) {
+    const [xa, ya] = ring[a], [xb, yb] = ring[b];
+    if ((ya > q[1]) !== (yb > q[1]) && q[0] < xa + ((q[1] - ya) * (xb - xa)) / (yb - ya)) inside = !inside;
+  }
+  return inside;
+}
+
+/**
+ * Where a points set (in frame P, its routes in that frame: the first the right-hand stock rail's, the last the
+ * left's) keeps the bed's studs off, in the design's frame: everywhere along its bed between the stock rails and a
+ * stud's room outside them (3.9 from each rail's middle, as base.ts's top studs keep), and within a stud's radius and
+ * 0.3 of its fixed parts' outlines (fixed: pockets, channel, arm, steps, rests, spring, bracket), the throw's parts at
+ * either end of their slide, and the lever as far as it swings (its outline the slide's length either way, and 4 more).
+ * A bed raised over the slider (bedTop over a plate) all of it, as before: a stud there would stand higher than the
+ * track's. Its outline is worked out the first time a stud's tried by the points.
+ */
+export function studsOffOf(s: Scad, P: Pose, rts: Route[], G: number, bedTop: number, bed: Man, fixed: Man[], sliding: Man[], lever: Man | undefined, slide: number, rects: [number, number, number, number][] = []) {
+  const bb = bed.boundingBox(), r = TRACK_DEFAULTS.studD / 2 + 0.3, raised = bedTop > PLATE_H + 0.01;
+  const rtR = rts[0], rtL = rts[rts.length - 1];
+  let polys: [number, number][][] | undefined;
+  const keepOut = () => {
+    if (polys) return polys;
+    const W = s.w, cs = (m: Man) => m.project();
+    const parts = fixed.filter((m) => !m.isEmpty()).map(cs);
+    for (const m of sliding) if (!m.isEmpty()) { const c = cs(m); parts.push(c.translate([-slide, 0]), c, c.translate([slide, 0])); parts.push(W.CrossSection.hull([c.translate([-slide, 0]), c.translate([slide, 0])])); }
+    if (lever && !lever.isEmpty()) { const c = cs(lever); parts.push(W.CrossSection.hull([c.translate([-slide - 4, 0]), c.translate([slide + 4, 0])])); }
+    for (const q of rects) parts.push(W.CrossSection.square([q[1] - q[0], q[3] - q[2]]).translate([q[0], q[2]]));
+    polys = parts.length ? (W.CrossSection.union(parts).offset(r, 'Round', 2, 24).toPolygons() as [number, number][][]) : [];
+    return polys;
+  };
+  return (q: [number, number]) => {
+    const l = worldToPose(P, q) as Pt;
+    if (l[1] > bb.min[1] - r && l[1] < bb.max[1] + r) {
+      if (raised) return true;
+      if (!(routeLat(rtR, l) > G + 3.9 + r || routeLat(rtL, l) < -G - 3.9 - r)) return true;
+    }
+    return inPolys(keepOut(), l);
+  };
 }
 
 /** The piece's body with the given splits' points built in (routes and splits by the same route indices). */
@@ -549,7 +605,9 @@ export function networkBody(s: Scad, routes: Route[], sol: Solution, copt: Cross
   for (const sp of splits) if (sp.stepRect) hollows.push({ P: sp.frame, r: sp.stepRect });
   const blades = splits.flatMap((sp) => sp.bladeCuts.map(([, m]) => m)).filter(ok);
   const body = crossingPiece(s, routes, copt, sol, grips, { railCuts, innerEnds, adds: adds.filter(ok), ...(blades.length && { blades }), cuts: [...cuts, ...(more.cuts ?? [])].filter(ok), ...(more.keeps?.length && { keeps: more.keeps }), gridPose: more.gridPose, hollows, bedAt: more.bedAt,
-    ...(splits.some((sp) => sp.studsOn) && { studsOn: (q: [number, number]) => splits.some((sp) => sp.studsOn?.(q)) }) });
+    ...(splits.some((sp) => sp.studsOn) && { studsOn: (q: [number, number]) => splits.some((sp) => sp.studsOn?.(q)) }),
+    // (a split without its own (none now): its adds' boxes keep studs off, as they did)
+    ...(splits.length && splits.every((sp) => sp.studsOff) && { studsOff: (q: [number, number]) => splits.some((sp) => sp.studsOff!(q)) }) });
   // (sprung blades on track alone: what the sliders rest on, after the underside's cut; on the stud corners of each
   // points set's own frame, so in line with the piece's underside where that frame is on its grid)
   const rests = splits.flatMap((sp) => (sp.rests && ok(sp.rests) ? [sp.rests] : []));

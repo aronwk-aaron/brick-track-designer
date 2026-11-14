@@ -162,6 +162,8 @@ export interface CrossingExtras {
   bedAt?: { p: [number, number]; d: [number, number]; len?: number }[];
   /** where studs stand though something's added there (a throw arm under other track: that track's studs on it) */
   studsOn?: (q: [number, number]) => boolean;
+  /** (the points' adds) where studs can't stand for them (network.ts studsOffOf): in their boxes, studs stand elsewhere; unset, nowhere in their boxes */
+  studsOff?: (q: [number, number]) => boolean;
   /** the points' blades, where each swings (network.ts: what each takes out of the rails it replaces): no check rail comes within CHECK_CLEAR of one */
   blades?: Man[];
   /** (the ballast alone) the seat to cut, from the bed up, in place of the track's own outline: a bought piece's footprint */
@@ -709,7 +711,7 @@ export function crossingPiece(s: Scad, routes: Route[], o: CrossingOptions = CRO
       if (handCheck && byCheckWide(q)) continue;
       // (clear of the end connectors: 8 mm in from each end)
       if (ends.some(({ e, len }) => Math.hypot(q[0] - e[0], q[1] - e[1]) < len && Math.abs(worldToPose(e, q)[1]) < 10)) continue;
-      if (addBoxes.some((bb) => q[0] > bb.min[0] - 3 && q[0] < bb.max[0] + 3 && q[1] > bb.min[1] - 3 && q[1] < bb.max[1] + 3) && !x.studsOn?.(q)) continue;
+      if (addBoxes.some((bb) => q[0] > bb.min[0] - 3 && q[0] < bb.max[0] + 3 && q[1] > bb.min[1] - 3 && q[1] < bb.max[1] + 3) && (!x.studsOff || x.studsOff(q)) && !x.studsOn?.(q)) continue;
       if (bufPoses.some(({ e, t: tb }) => inBufferPost(tb, worldToPose(e, q), c.postD / 2 + 0.6, (o.buffer ?? BUFFER_DEFAULTS).style ?? 'frame'))) continue;
       // (and of the check rails)
       if (byCheckRail(q)) continue;

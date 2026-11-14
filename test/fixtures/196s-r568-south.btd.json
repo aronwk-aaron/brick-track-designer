@@ -1,0 +1,109 @@
+{
+ "version": 1,
+ "gaugeStuds": 4,
+ "routes": [
+  {
+   "name": "T1",
+   "x": -8,
+   "y": 40,
+   "heading": -180,
+   "segs": [
+    {
+     "kind": "straight",
+     "studs": 40
+    }
+   ]
+  },
+  {
+   "name": "R2",
+   "x": 8,
+   "y": 40,
+   "heading": -180,
+   "segs": [
+    {
+     "kind": "straight",
+     "studs": 40
+    }
+   ]
+  },
+  {
+   "name": "T3",
+   "x": 8,
+   "y": 1,
+   "heading": 0,
+   "segs": [
+    {
+     "kind": "curve",
+     "radius": 568.0625,
+     "angle": 4
+    }
+   ]
+  },
+  {
+   "name": "T4",
+   "x": -8,
+   "y": 1,
+   "heading": 0,
+   "segs": [
+    {
+     "kind": "curve",
+     "radius": 568.0625,
+     "angle": -4
+    }
+   ]
+  }
+ ],
+ "name": "196s R568 (trimmed: the south crossover)",
+ "options": {
+  "grip": "edges",
+  "pointsPieces": 1,
+  "bottomStyle": "antistud",
+  "ballast": "buddy",
+  "baseplate": 64,
+  "printBedX": 128,
+  "printBedY": 128,
+  "joint": "flataxle"
+ },
+ "trackwork": {
+  "throw": {
+   "64,8": {
+    "side": "right",
+    "leverOffset": 20,
+    "on": [
+     "T3",
+     "s",
+     0,
+     0
+    ],
+    "is": [
+     [
+      "R2",
+      "T3"
+     ],
+     0,
+     0,
+     1
+    ]
+   },
+   "-64,8": {
+    "side": "left",
+    "leverOffset": 12,
+    "on": [
+     "T4",
+     "s",
+     0,
+     0
+    ],
+    "is": [
+     [
+      "T1",
+      "T4"
+     ],
+     0,
+     0,
+     1
+    ]
+   }
+  }
+ }
+}
