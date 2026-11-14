@@ -163,6 +163,13 @@ export const PAST_FROG = 13.5;
 export const SLIP_HEEL = 18;
 /** The reference's levers: 7 studs from the track's centre line (leverOffset, mm), in a housing at the corner 5.5 studs in from the track's end. */
 export const SLIP_LEVER_OFFSET = 24, SLIP_LEVER_AT = 5.5;
+/** (slipLevers 'reference') The reference's levers' pivots: 3 studs past the acute frog (towards the crossing), 7 studs
+ * from the track's centre line, then on the half-stud grid from the crossing's centre: across the slip (the grid's axis
+ * nearer square to the bisector) out to the next half stud, along it in to the next (mm). The R104 double slip's four come
+ * out exactly as its switch-motor points: (7, 10) from the crossing by the straight track, (10.5, 6.5) by the diagonal. */
+export const REF_LEVER_PAST_FROG = 24, REF_LEVER_OUT = 56, REF_LEVER_GRID = 4;
+/** The build's options slipTrackwork follows: the levers as the reference's (the sleepers' half length, mm: where leverOffset is measured from). */
+export interface SlipOpts { reference?: { edge: number } }
 /** A check rail opposite an acute frog that runs on into the blade ends this much (mm) short of the blade's toe, at least 9 shorter, as the reference's does at its tongue's toe. */
 const CHECK_BEFORE_TOE = 1, CHECK_SHORTER = 9;
 
@@ -206,7 +213,7 @@ const FACING_LEVER_OFFSET = 8;
  * lever outside in a housing at the corner, and the check rail there ended short of the blade. Elsewhere (a 45-degree
  * slip, its points at its ends before the frogs) nothing: the build places their levers itself.
  */
-export function slipTrackwork(routes: Route[], sol: Solution, slips: DoubleSlip[]): Required<Tw> {
+export function slipTrackwork(routes: Route[], sol: Solution, slips: DoubleSlip[], opts: SlipOpts = {}): Required<Tw> {
   const tw: Required<Tw> = { points: {}, throw: {}, check: {} };
   // (each route's centre line, every 4 mm, made when first asked for)
   const lineOf = new Map<number, Pt[]>();
@@ -235,10 +242,14 @@ export function slipTrackwork(routes: Route[], sol: Solution, slips: DoubleSlip[
     // (the lever's housing out at the reference's offset only where that's clear of the track beside it, and of its lever's)
     const was = tw.throw[st.key] as { side?: string; nail?: boolean; leverOffset?: number } | undefined;
     const lo = (was && !was.nail && was.leverOffset === undefined) || housingHits(routes, sol, ds, st, lines) ? undefined
+      // (with the levers as the reference's too: its two tabs facing each other between two tracks, 7 studs out each,
+      // meet as one block; this build's housings, wider, would run into each other there)
       : Math.min(facing(st) ? FACING_LEVER_OFFSET : SLIP_LEVER_OFFSET, (was?.leverOffset as number | undefined) ?? Infinity);
-    const off = lo === undefined ? {} : { leverOffset: lo };
-    tw.throw[st.key] = st.atX || was?.nail ? { nail: true } : was?.side && was.side !== st.outside ? { awayFrom: [Math.round(st.away[0]), Math.round(st.away[1])], ...off, leverAt: SLIP_LEVER_AT }
-      : { side: st.outside, ...off, leverAt: SLIP_LEVER_AT };
+    // (the levers as the reference's (slipLevers 'reference'): where refPivot puts them, unless pulled in as above)
+    const rp = opts.reference && lo === SLIP_LEVER_OFFSET ? refPivot(routes, sol, ds, st, opts.reference.edge) : undefined;
+    const off = rp ? { leverOffset: rp.leverOffset } : lo === undefined ? {} : { leverOffset: lo }, at = rp ? rp.leverAt : SLIP_LEVER_AT;
+    tw.throw[st.key] = st.atX || was?.nail ? { nail: true } : was?.side && was.side !== st.outside ? { awayFrom: [Math.round(st.away[0]), Math.round(st.away[1])], ...off, leverAt: at }
+      : { side: st.outside, ...off, leverAt: at };
     // (the check rail on this track that would run on into the blade: ended short of its toe)
     const sp = sol.splits[st.split], L = routeLength(routes[st.track]), sa = sp.merge ? L - sp.spans[0][1] : sp.spans[0][0], toeS = sa + 2 + st.lead + toe;
     for (const cr of sol.checkRails) {
@@ -251,6 +262,23 @@ export function slipTrackwork(routes: Route[], sol: Solution, slips: DoubleSlip[
     }
   }
   return tw;
+}
+/**
+ * Where the reference puts a set's lever (REF_LEVER_*): the pivot 3 studs past its acute frog on its track, 7 studs out on
+ * its outer side, put on the nearest half stud; given as the hand edits give it, along its points' frame from where the
+ * routes part (leverAt, studs) and past the sleepers' ends (leverOffset, mm, from edge: their half length).
+ */
+function refPivot(routes: Route[], sol: Solution, ds: DoubleSlip, st: SlipSet, edge: number): { leverAt: number; leverOffset: number } {
+  const sp = sol.splits[st.split], L = routeLength(routes[st.track]), rt = sp.merge ? reversedRoute(routes[st.track]) : routes[st.track];
+  const sa = sp.merge ? L - sp.spans[0][1] : sp.spans[0][0], P = routePose(rt, sa), s = Math.min(L, sa + st.frogS + REF_LEVER_PAST_FROG);
+  // (outside: away from the other track's centre line by the frog; + is right)
+  const sg = worldToPose(routePose(rt, s), st.away)[0] > 0 ? -1 : 1, a = railPoint(rt, s, sg * REF_LEVER_OUT);
+  // (from the crossing's centre: which grid axis runs along the slip (nearer the bisector, heading h: (-sin h, cos h)))
+  const h = (ds.bisector * Math.PI) / 180, alongY = Math.abs(Math.cos(h)) >= Math.abs(Math.sin(h)), G = REF_LEVER_GRID;
+  const out = (v: number) => Math.sign(v) * Math.ceil(Math.abs(v) / G - 1e-3) * G, inn = (v: number) => Math.sign(v) * Math.floor(Math.abs(v) / G + 1e-3) * G;
+  const dx = a[0] - ds.centre[0], dy = a[1] - ds.centre[1], q: Pt = [ds.centre[0] + (alongY ? out(dx) : inn(dx)), ds.centre[1] + (alongY ? inn(dy) : out(dy))];
+  const f = worldToPose(P, q);
+  return { leverAt: Math.round((f[1] / 8) * 1000) / 1000, leverOffset: Math.round((Math.abs(f[0]) - edge) * 100) / 100 };
 }
 /** Hand edits over what's worked out: each item's own fields over the worked-out ones; but a lever set by hand at all is
  * as it's set, none of the worked-out lever's fields under it (a lever's side and offset left out by hand are left to the

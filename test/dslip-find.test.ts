@@ -6,7 +6,7 @@ import { solve } from '../src/route/solver';
 import { findDoubleSlips, slipTrackwork, underHand } from '../src/switch/dslip';
 
 // (solved as the build solves it: its check rails as long as the options make them)
-const found = (d: Design) => { const o = { ...OPTION_DEFAULTS, ...d.options }, routes = toRoutes(d), sol = solve(routes, { gauge: 40, step: 0.5, flangeway: o.flangeway, checkRailLen: o.checkRailLen, checkRailW: o.checkRailW }), ds = findDoubleSlips(routes, sol); return { routes, ds, tw: slipTrackwork(routes, sol, ds) }; };
+const found = (d: Design) => { const o = { ...OPTION_DEFAULTS, ...d.options }, routes = toRoutes(d), sol = solve(routes, { gauge: 40, step: 0.5, flangeway: o.flangeway, checkRailLen: o.checkRailLen, checkRailW: o.checkRailW }), ds = findDoubleSlips(routes, sol); return { routes, ds, tw: slipTrackwork(routes, sol, ds), ref: slipTrackwork(routes, sol, ds, { reference: { edge: 32 } }) }; };
 /** The R104 double slip's trackwork as it was set by hand (hand 1: the diagonal crossing to the left). */
 const handR104 = (hand: 1 | -1) => {
   const side = (s: 'left' | 'right'): 'left' | 'right' => (hand === 1 ? s : s === 'left' ? 'right' : 'left'), th = (s: 'left' | 'right') => ({ side: side(s), leverOffset: 24, leverAt: 5.5 });
@@ -60,5 +60,21 @@ describe('double slips found in plain routes', () => {
     expect(m.throw!['0,160']).toEqual(tw.throw['0,160']);
     expect(m.points!['0,160']).toEqual({ toe: 60, heel: 18, single: 'straight' });
     expect(m.check).toEqual(tw.check);
+  });
+  // (the reference's switch-motor points, 'tb switch r104 dslip left': (10, 7), (-10, -7) by the straight track and
+  // (-6.5, 10.5), (6.5, -10.5) by the diagonal, its track along x: here the straight track runs up, so x and y swap)
+  for (const hand of [1, -1] as const) it(`the R104 double slip (${hand === 1 ? 'left' : 'right'}), levers as the reference: on its switch-motor points, from the frogs, not set by hand`, () => {
+    const { ds, ref } = found(TEMPLATES[`Double slip R104 ${hand === 1 ? 'left' : 'right'}`]);
+    const side = (s: 'left' | 'right'): 'left' | 'right' => (hand === 1 ? s : s === 'left' ? 'right' : 'left');
+    // (leverAt studs from where the routes part, leverOffset mm past the sleepers' ends (32 from the centre line))
+    const tr = (s: 'left' | 'right') => ({ side: side(s), leverOffset: 24, leverAt: 10 }), dg = (s: 'left' | 'right') => ({ side: side(s), leverOffset: 27.81, leverAt: 11.516 });
+    expect(ref.throw).toEqual({ '0,-160': tr('left'), [`${64 * hand},-160`]: dg('right'), [`${-64 * hand},160`]: dg('right'), '0,160': tr('left') });
+    expect(ds[0].sets).toHaveLength(4);
+  });
+  it('the X yard: levers as the reference changes nothing where its housings face the next track\'s', () => {
+    const { tw, ref } = found(slipXYard());
+    const facing = Object.entries(tw.throw).filter(([, v]) => (v as { leverOffset?: number }).leverOffset === 8).map(([k]) => k);
+    expect(facing.length).toBeGreaterThan(0);
+    for (const k of facing) expect(ref.throw[k]).toEqual(tw.throw[k]);
   });
 });

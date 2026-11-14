@@ -117,6 +117,7 @@ export const SPECS: OptionSpec[] = [
   // (three tracks 9 studs apart, a crossover from the middle one to the left one: the middle track's points have a track
   // a stud off on each side, their lever on one or the other whichever side it's on. As a nail switch it goes together
   // (nail-switch.test.ts); with a slider, the lever's in the way of trains, and the build says so)
+  { key: 'slipLevers', values: ['corner', 'reference'], base: D(TEMPLATES['Double slip R104 left'].routes, { pointBlades: 1 }), cam: above },
   { key: 'boxedThrow', values: ['nail', 'slider'], base: D(BOXED_IN), cam: { dir: '0.2,-0.8,1.1', r: 300, at: () => [0, 120, 6] } },
   // (the snap clamp on the lever's arm, with the default sprung blades; from above the points, the lever beside them)
   { key: 'throwAction', values: ['detent', 'overcentre', 'snap'], base: D(sw), cam: { dir: '0.45,-0.75,1', r: 125, at: () => [16, 26, 6] } },

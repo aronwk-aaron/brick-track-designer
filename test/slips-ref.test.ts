@@ -8,11 +8,11 @@
 //   R104 double slip (22.5 degrees, left and right): four sets, each one tongue by the slip road's own stock rail
 //     (the other rail of the slip road is fixed), its toe 11 studs from the crossing (8.9 studs in from the straight
 //     track's ends, 10.5 from the diagonal's, whose arms are 1.5 studs longer) and its heel 5 from the crossing; its
-//     lever outside, 10 studs from the crossing (10 in from the straight track's ends, 11.5 from the diagonal's) and
-//     7 from its track's centre line.
-// Where the app differs, and why: the R104 double slip's levers are in housings at its four outer corners, 5.5 studs in
-// from each end, a tie-rod out to each, as Aaron's reference photo of the slip has them (2026-11-12), not where the
-// library's part has them, 10 and 11.5 studs in.
+//     lever outside, 10 studs from the crossing: 10 in from the straight track's ends and 7 from its centre line; on the
+//     diagonal, from its end's line (22.5 degrees, the line between them 21.75), 11.52 in and 7.48 out.
+// The R104 double slip's levers as the library's part has them (its template's slipLevers 'reference': worked out from
+// the frogs, switch/dslip.ts refPivot), its switch-motor points; with slipLevers 'corner' they're in housings at its
+// four outer corners, 5.5 studs in from each end, a tie-rod out to each, as Aaron's reference photo has them (2026-11-12).
 // Also: a throw's slider lies between the baseplate's studs where its track is square to the
 // stud grid, so on the R40 slips' straight track it is 3 studs in from the end, not 3.5.
 import { describe, expect, it } from 'vitest';
@@ -33,7 +33,7 @@ interface SlipRef { ends: [number, number, number][]; sets: PointsRef[] }
 
 // (square: on the track that's square to the stud grid, where the slider lies between the baseplate's studs, on a whole-stud line from the first track's start: within half a stud of the part's)
 const r40 = (end: number, side: 1 | -1, square: boolean): PointsRef => ({ end, side, blades: 2, toe: 2, heel: 8, lever: 3.5, out: 7, within: square ? 0.5 : 0.05 });
-const r104 = (end: number, side: 1 | -1, diagonal: boolean): PointsRef => ({ end, side, blades: 1, toe: diagonal ? 10.5 : 8.9, heel: diagonal ? 16.1 : 14.6, lever: 5.5, out: 7, within: 0.05 });
+const r104 = (end: number, side: 1 | -1, diagonal: boolean): PointsRef => ({ end, side, blades: 1, toe: diagonal ? 10.5 : 8.9, heel: diagonal ? 16.1 : 14.6, lever: diagonal ? 11.52 : 10, out: diagonal ? 7.48 : 7, within: 0.05 });
 const REF: Record<string, SlipRef> = {
   // (the library's part turned over, left for right: the same part, as it's its own mirror image)
   'Double slip R40 45°': { ends: [[0, -T, -90], [0, T, 90], [D, -D, -45], [-D, D, 135]],

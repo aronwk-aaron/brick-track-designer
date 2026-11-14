@@ -184,6 +184,8 @@ export interface PieceOptions {
   throwStyle?: 'bracket' | 'built-in' | 'stand' | 'nail';
   /** (blades on top, the lever built in) The lever's housing: the arm out to the lever ('arm', default), or a cross-bar 16 studs long with a 4 x 3 stud block at each end, the lever in the block on its side ('crossbar', as the reference range's). */
   leverHousing?: 'arm' | 'crossbar';
+  /** (blades on top) A double slip's levers, where they're worked out: in a housing at each corner, 5.5 studs in from where the roads part ('corner', default), or where the reference's are ('reference': 3 studs past the acute frog, 7 studs out, on the nearest half stud). */
+  slipLevers?: 'corner' | 'reference';
   /** Points with no room for a throw (its arm across other track, a double slip's in its middle): a nail switch ('nail') or the slider under that track to a lever past it ('slider', default). */
   boxedThrow?: 'nail' | 'slider';
   /** (plate-style points) What holds the points, and what a train trailing through them does: 'detent' (the lever's click), 'overcentre' (Peco's V spring: they snap over and stay), 'snap' (the snap clamp: a toggle on knife edges). (the sprung blades spring back on their own.) */
@@ -362,7 +364,7 @@ export function readDesign(v: unknown): Design {
 export const OPTION_DEFAULTS: PieceOptions = {
   throwSide: 'auto', threeWayLevers: 2, leverOffset: 8, pointThrow: 3, pointClearance: 0.3, springPreload: 1, springThickness: 0.9, springLength: 40,
   flangeway: 3, flangewayDepth: 3, checkRailLen: 30, checkRailW: 1, checkRailFlare: 1.5, printBedX: 256, printBedY: 256, baseplate: 0, baseplateX: 0, baseplateY: 0, ballast: 'none', bottomStyle: 'antistud', joint: 'lego', pointsModule: 'built-in', endSupports: true, tongueRails: 'all', grip: 'edges', pointsPieces: 1, pointBlades: 2, throwStyle: 'built-in', mechStyle: 'plates', curveStuds: 'follow',
-  throwAction: 'detent', leverHousing: 'arm', bladeStyle: 'sprung', bladeLip: 'pin', sleepers: 'sleepers', undersideGrid: 'baseplate', splitTrack: 'lengths', pieceLengthStuds: 16, studsAtCuts: 'off', legoTrack: 'lego', axleStuds: 2, sleeperWidthStuds: 2, sleeperGapStuds: 2, studFit: 0.18, antistudFit: 0.06,
+  throwAction: 'detent', leverHousing: 'arm', slipLevers: 'corner', bladeStyle: 'sprung', bladeLip: 'pin', sleepers: 'sleepers', undersideGrid: 'baseplate', splitTrack: 'lengths', pieceLengthStuds: 16, studsAtCuts: 'off', legoTrack: 'lego', axleStuds: 2, sleeperWidthStuds: 2, sleeperGapStuds: 2, studFit: 0.18, antistudFit: 0.06,
   bladeDiscD: 14, throwBallast: false, pathSquare: false, axleHoles: false, pegOnBallast: false,
   bufferStyle: 'frame', bufferPostPlates: 8, bufferBeamBottom: 2, bufferBeamTop: 12, bufferPinHoles: true,
   trackBallast: 'together', trackFitTol: 0.2, labelText: '', labelSize: true, labelGauge: false, labelParts: true,
@@ -593,14 +595,15 @@ function r104Diagonal(turn: 1 | -1): DSeg[] {
 function r104Slip(hand: 1 | -1): Design {
   // (the R104 switch's branch: 22.5 degrees of R104 and 0.218 studs straight end 40 on and 8 over)
   const lead = 0.218121;
-  return { version: 1, gaugeStuds: 4, options: { legoTrack: 'print', pointBlades: 1 }, routes: [
+  return { version: 1, gaugeStuds: 4, options: { legoTrack: 'print', pointBlades: 1, slipLevers: 'reference' }, routes: [
     { name: 'Straight', x: 0, y: -20, heading: 0, segs: [{ kind: 'straight', studs: 40 }] },
     { name: 'Diagonal', x: 8 * hand, y: -20, heading: 22.5 * hand, segs: [{ kind: 'straight', studs: lead }, { kind: 'curve', radius: 208, angle: -0.754152 * hand }, { kind: 'straight', studs: 37.169679 }, { kind: 'curve', radius: 208, angle: 0.754152 * hand }, { kind: 'straight', studs: lead }] },
     { name: 'Slip A', x: 0, y: -20, heading: 0, segs: [{ kind: 'curve', radius: 104, angle: 22.5 * hand }, { kind: 'straight', studs: lead }] },
     { name: 'Slip B', x: 8 * hand, y: -20, heading: 22.5 * hand, segs: [{ kind: 'straight', studs: lead }, { kind: 'curve', radius: 104, angle: -22.5 * hand }] },
     // (its points, levers and check rails worked out from the routes as the reference's (switch/dslip.ts): the straight
     // track's points 67 mm on from its ends, the diagonal's 78 (each 13.5 past the acute frog), one moving blade a set,
-    // each lever outside at its corner, and the check rail opposite each acute frog ended short of the blade)
+    // each lever outside where the reference's is (slipLevers 'reference': 3 studs past the acute frog, 7 out, on the
+    // half-stud grid: its switch-motor points), and the check rail opposite each acute frog ended short of the blade)
   ] };
 }
 /**
@@ -630,7 +633,7 @@ export function slipCrossover(): Design {
   // (each diagonal through two slips: r104Slip's diagonal twice, end to end; h 1: up to the left, -1: up to the right)
   const diagonal = (name: string, x: number, h: 1 | -1): DRoute => ({ name, x, y: -20, heading: 22.5 * h, segs: [{ kind: 'straight', studs: lead }, ...run(h), { kind: 'straight', studs: 2 * lead }, ...run(h), { kind: 'straight', studs: lead }] });
   const tracks: DRoute[] = [0, 16].map((x, k) => ({ name: `T${k + 1}`, x, y: -20, heading: 0, segs: [{ kind: 'straight', studs: 80 }] }));
-  return { version: 1, gaugeStuds: 4, options: { legoTrack: 'print', pointBlades: 1 }, routes: [...tracks, diagonal('D1', -8, -1), diagonal('D2', 24, 1),
+  return { version: 1, gaugeStuds: 4, options: { legoTrack: 'print', pointBlades: 1, slipLevers: 'reference' }, routes: [...tracks, diagonal('D1', -8, -1), diagonal('D2', 24, 1),
     ...slipRoads('D1-T1', [0, 0], -1), ...slipRoads('D1-T2', [16, 40], -1), ...slipRoads('D2-T2', [16, 0], 1), ...slipRoads('D2-T1', [0, 40], 1)] };
 }
 /**
@@ -663,6 +666,8 @@ export function slipMonster(): Design {
   // along the first one's joints)
   const c2 = [...half(-24).slice(0, -2), [-24, Y - 2], [-12, Y - 2], [-12, Y]] as [number, number][];
   const cuts = [{ id: 'c1', pts: [...half(-8), ...mirrorY(half(-8)).reverse()] }, { id: 'c2', pts: c2 }, { id: 'c3', pts: mirrorY(half(-24)) }];
+  // (its levers not yet as the reference's (slipLevers): there the upper left slip's inner set on the outer track, its
+  // lever beside its throw bar, has its slider's end 6 mm3 into the bed's part (assembled-dslip-monster))
   return { version: 1, gaugeStuds: 4, options: { legoTrack: 'print', pointBlades: 1, threeWayLevers: 2, splitTrack: 'lengths' }, routes: [...tracks, ...side(1, 'R'), ...side(-1, 'L'),
     ...slipRoads('QR-T1', [0, 0], 1), ...slipRoads('PR-T1', [0, 40], -1), ...slipRoads('QL-T3', [-32, 0], -1), ...slipRoads('PL-T3', [-32, 40], 1)],
     expert: { cutPaths: cuts } };

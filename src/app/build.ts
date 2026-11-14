@@ -989,7 +989,8 @@ function solveTrackwork(w: Wasm, design: Design, o: PieceOptions, step: (what: s
   sol = handChecks(routes, sol, gauge / 2, solverOpts);
   // (double and single slips, found in the routes: their points, levers and check rails as the reference's are, worked
   // out from the crossing and the slip roads (switch/dslip.ts), the hand edits over them)
-  { const slips = findDoubleSlips(routes, sol); if (slips.length) Object.assign(tw, underHand(tw, slipTrackwork(routes, sol, slips))); }
+  // (slipLevers 'reference': each lever where the reference's is, measured past the sleepers' ends, half their length)
+  { const slips = findDoubleSlips(routes, sol); if (slips.length) Object.assign(tw, underHand(tw, slipTrackwork(routes, sol, slips, o.slipLevers === 'reference' ? { reference: { edge: gauge / 2 + 12 } } : {}))); }
   // What the canvas draws over the track, in mm: flangeway cuts, check rails,
   // rail crossings and points.
   const g = gauge / 2, gOf = (i: number) => railOffsetOf(routes[i], g);
