@@ -371,11 +371,15 @@ export function crossingPiece(s: Scad, routes: Route[], o: CrossingOptions = CRO
     const reach = (end: number, dir: 1 | -1) => {
       // (the tracks out on that side, nearest first, as distances out from the sleeper's middle)
       const out = beside.map(([a, b]): [number, number] => (dir > 0 ? [a, b] : [-b, -a])).filter(([, b]) => b > half + 1e-6).sort((x, y) => x[0] - y[0]);
-      let got = half;
+      let got = half, reached = false;
       for (const [a, b] of out) {
-        if (a > got + TIE_GAP && end < a + STUD - 1e-6) return Math.min(end, half + Math.floor((got - half) / STUD + 1e-9) * STUD);
+        // (and across a gap from its own sleeper's end, no track under it yet on that side, only if it gets a stud past
+        // that track's middle: one cut off at its reach (longTie, two sleepers' length) ended under a track 16 studs over
+        // at its middle, as at a double slip's end where the diagonal it's tied to is on its other side (bridged, it
+        // joined the two tracks' slips in one part too big for the bed). A dual-gauge switch's branch beside it is reached)
+        if (a > got + TIE_GAP && (end < a + STUD - 1e-6 || (!reached && end < (a + b) / 2 + STUD - 1e-6))) return Math.min(end, half + Math.floor((got - half) / STUD + 1e-9) * STUD);
         if (end < a) break;
-        got = Math.max(got, b);
+        got = Math.max(got, b); reached = true;
       }
       return end;
     };

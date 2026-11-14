@@ -284,7 +284,7 @@ Counts: close 69, exact 197, in progress elsewhere 15, missing 53, n/a 1 (of 335
 | tb combo r104 double crossover | Double crossover R104, bases and detachable modules | close | lever 14.0 studs from the part's lever tab; housing: BTD builds its lever into a housing with no studs; the reference has 4 x 3 studs there for its clip-on lever unit (Throw: Lever on a bracket is the nearest) |
 | tb combo r104 double slip crossover 2 ds para | Double slip templates | in progress elsewhere | the double slips and their crossovers are being rebuilt separately |
 | tb combo r104 double slip crossover 2 ds side | Double slip templates | in progress elsewhere | the double slips and their crossovers are being rebuilt separately |
-| tb combo r104 double slip crossover | Double slip templates | in progress elsewhere | the double slips and their crossovers are being rebuilt separately |
+| tb combo r104 double slip crossover | Double slip crossover R104 | close | ends exact (all 12 within 0.25 studs, from plain routes); one moving blade a set where the reference has two; levers at the sets' corners, not yet on the reference's tabs; sections cut by the build, not the reference's cuts |
 | tb combo r104 double slip monster crossover 2 ds para | Double slip templates | in progress elsewhere | the double slips and their crossovers are being rebuilt separately |
 | tb combo r104 double slip monster crossover 2 ds side | Double slip templates | in progress elsewhere | the double slips and their crossovers are being rebuilt separately |
 | tb combo r104 double slip monster crossover | Double slip templates | in progress elsewhere | the double slips and their crossovers are being rebuilt separately |
