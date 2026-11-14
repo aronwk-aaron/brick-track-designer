@@ -9,8 +9,8 @@ export type Range = readonly [min: number, max: number, def: number];
 export const LIMITS = {
   /** a straight's length, studs (2000: 16 m) */
   straight: [0, 2000, 16],
-  /** a curve's radius, studs (the curves there are run 24 + 8k, to 1000) */
-  radius: [24, 1000, 40],
+  /** a curve's radius, studs (the curves there are run 24 + 8k, to 1000; typed in, down to 12: the reference range's short connector is R19, its dual gauge crossing's narrow-gauge curve R14.7) */
+  radius: [12, 1000, 40],
   /** a monorail curve's radius, studs (LEGO's points and short curve are R22; printed monorail curves go down to R4) */
   monoRadius: [4, 1000, 28],
   /** a curve's angle, degrees, + left (a whole turn at most a piece: a helix is curve after curve) */
@@ -43,8 +43,10 @@ export const LIMITS = {
   twLeverOut: [0, 10, 1],
 } as const satisfies Record<string, Range>;
 
-/** A route's curve radius range, studs: a monorail beam's curves go down to R4, a train's to R24. */
+/** A route's curve radius range, studs: a monorail beam's curves go down to R4, a train's to R12, typed in (dragged, R24 and up: TRAIN_DRAG_MIN). */
 export const radiusRange = (r: { system?: 'train' | 'monorail' }): Range => (r.system === 'monorail' ? LIMITS.monoRadius : LIMITS.radius);
+/** (studs) The least radius a train curve's handle drags to: the usual radii are 24 + 8k; a smaller one (the reference's R19 connector) is typed in. */
+export const TRAIN_DRAG_MIN = 24;
 export const clamp = (v: number, r: Range) => Math.min(r[1], Math.max(r[0], v));
 /** A range as a field says it: "Range 0 to 2000, default 16." */
 export const rangeText = (r: Range) => `Range ${r[0]} to ${r[1]}, default ${r[2]}.`;

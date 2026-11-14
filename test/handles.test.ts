@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { DRoute } from '../src/app/design';
 import { dragResult, dragValue, guidedHandle, handleLabel, poseBefore, segmentHandles, visibleHandles, withValue } from '../src/app/handles';
-import { LIMITS } from '../src/app/limits';
+import { LIMITS, TRAIN_DRAG_MIN } from '../src/app/limits';
 import { follow } from '../src/app/planner';
 
 const route = (segs: DRoute['segs'], more: Partial<DRoute> = {}): DRoute => ({ name: 'A', x: 0, y: 0, heading: 0, segs, ...more });
@@ -106,8 +106,8 @@ describe('handles at their limits', () => {
   it('a radius dragged below the least says so, with the limit from limits.ts', () => {
     const r = curve(90), m = follow({ x: 0, y: 0, heading: 0 }, [{ kind: 'curve', radius: 8, angle: 45 }]);
     const res = dragResult(r, { seg: 0, kind: 'radius' }, [m.x, m.y])!;
-    expect(res.value).toBe(LIMITS.radius[0]);
-    expect(res.why).toBe(`smallest radius is ${LIMITS.radius[0]} studs`);
+    expect(res.value).toBe(TRAIN_DRAG_MIN);
+    expect(res.why).toBe(`smallest radius is ${TRAIN_DRAG_MIN} studs`);
     const ok = follow({ x: 0, y: 0, heading: 0 }, [{ kind: 'curve', radius: 56, angle: 45 }]);
     expect(dragResult(r, { seg: 0, kind: 'radius' }, [ok.x, ok.y])?.why).toBeUndefined();
     expect(dragResult(r, { seg: 0, kind: 'radius' }, [-9999, 9999])?.why).toBe(`biggest radius is ${LIMITS.radius[1]} studs`);

@@ -3,7 +3,7 @@
 // degrees. The geometry is here (where each handle is; the new value from a dragged point, snapped); the canvas draws
 // them and forwards the pointer.
 import type { DRoute, DSeg } from './design';
-import { clamp, LIMITS, radiusRange } from './limits';
+import { clamp, LIMITS, radiusRange, TRAIN_DRAG_MIN } from './limits';
 import { type Guide, type GuideEnd, type GuideStraight, SPACINGS } from './guides';
 import { follow, type Pose } from './planner';
 
@@ -97,7 +97,7 @@ export function dragResult(r: DRoute, h: { seg: number; kind: HandleKind }, w: [
     const m = follow(p, [{ ...sg, angle: sg.angle / 2 }]), vx = (m.x - p.x) / sg.radius, vy = (m.y - p.y) / sg.radius;
     const raw = ((w[0] - p.x) * vx + (w[1] - p.y) * vy) / (vx * vx + vy * vy);
     // (a train curve: the usual radii, 24 + 8k; a monorail beam's: whole studs, from R4)
-    const rr = radiusRange(r), v = o.shift || r.system === 'monorail' ? Math.round(raw) : 24 + Math.round((raw - 24) / 8) * 8, [lo, hi] = rr;
+    const rr0 = radiusRange(r), rr: [number, number, number] = r.system === 'monorail' ? [...rr0] : [Math.max(TRAIN_DRAG_MIN, rr0[0]), rr0[1], rr0[2]], v = o.shift || r.system === 'monorail' ? Math.round(raw) : 24 + Math.round((raw - 24) / 8) * 8, [lo, hi] = rr;
     return { value: clamp(Math.max(1, v), rr), why: v < lo ? `smallest radius is ${lo} studs` : v > hi ? `biggest radius is ${hi} studs` : undefined };
   }
   return undefined;

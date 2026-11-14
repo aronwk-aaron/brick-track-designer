@@ -16,7 +16,7 @@ describe('the numbers\' ranges', () => {
       segs: [{ kind: 'straight', studs: 1e7 }, { kind: 'straight', studs: -5 }, { kind: 'curve', radius: 3, angle: 5000 }, { kind: 'curve', radius: 1e6, angle: -5000 }] }],
     tables: [{ shape: 'rect', x: 1e8, y: 0, w: -3, h: 1e6 }, { shape: 'arc', cx: 0, cy: 0, r0: -1, r1: 1e5, a0: -999, a1: 999 }, { shape: 'poly', pts: [[0, 0], [1e7, 0], [0, -1e7]] }] }) as Design;
     expect(d.routes[0]).toMatchObject({ x: 10000, y: -10000, heading: 360, monoHeight: 0, monoHeightEnd: 250 });
-    expect(d.routes[0].segs).toEqual([{ kind: 'straight', studs: 2000 }, { kind: 'straight', studs: 0 }, { kind: 'curve', radius: 24, angle: 360 }, { kind: 'curve', radius: 1000, angle: -360 }]);
+    expect(d.routes[0].segs).toEqual([{ kind: 'straight', studs: 2000 }, { kind: 'straight', studs: 0 }, { kind: 'curve', radius: LIMITS.radius[0], angle: 360 }, { kind: 'curve', radius: 1000, angle: -360 }]);
     expect(d.tables).toEqual([{ shape: 'rect', x: 10000, y: 0, w: 1, h: 2000 }, { shape: 'arc', cx: 0, cy: 0, r0: 0, r1: 2000, a0: -360, a1: 360 }, { shape: 'poly', pts: [[0, 0], [10000, 0], [0, -10000]] }]);
   });
 });

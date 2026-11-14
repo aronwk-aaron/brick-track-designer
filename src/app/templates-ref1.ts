@@ -1,8 +1,6 @@
 // The reference range's plain track: every straight and curve it has, each as the part is (its ends where the parts
 // library has them, studs and degrees: the curve between them fitted to those ends, said over each). All printed, none
-// bought. A part that's another turned round or mirrored has no template of its own; nor the R40 pass-through
-// connector (4.2 studs long, turning 11.25 degrees: its ends in the library need an R19 curve, under the app's 24-stud minimum) and
-// the narrow-gauge curve made for the 45-degree dual gauge crossing (33.75 degrees in 9.4 studs: R14.7). (Four of the shortest are on a solid
+// bought. A part that's another turned round or mirrored has no template of its own. (Four of the shortest are on a solid
 // bed: on sleepers their length leaves part of a sleeper at an end joined to nothing, and the piece came out in two or three.)
 import type { Design } from './design';
 
@@ -139,6 +137,11 @@ export const REF1_PLAIN: Record<string, Design> = {
   'Dual gauge curve R40, 22.5°, narrow gauge outside': { version: 1, gaugeStuds: 4, options: { legoTrack: 'print', splitTrack: 'bed' }, routes: [{ name: 'Track', x: 0, y: 0, heading: 0, dualGauge: true, dualShared: 'right', segs: [{ kind: 'curve', radius: 40, angle: 22.5 }] }] },
   // (R40 for 22.5 degrees)
   'Dual gauge curve R40, 22.5°, narrow gauge centred': { version: 1, gaugeStuds: 4, options: { legoTrack: 'print', splitTrack: 'bed' }, routes: [{ name: 'Track', x: 0, y: 0, heading: 0, dualGauge: true, dualShared: 'centre', segs: [{ kind: 'curve', radius: 40, angle: 22.5 }] }] },
+  // (the R40 pass-through crossovers' short connector: 4.2 studs long, turning 11.25 degrees; its ends as the library has them are a
+  // 0.42-stud straight and an R19.08 curve)
+  'Curve R19.1, 11.25° with 0.42 studs straight': { version: 1, gaugeStuds: 4, options: { legoTrack: 'print', splitTrack: 'bed' }, routes: [{ name: 'Track', x: 0, y: 0, heading: 0, segs: [{ kind: 'straight', studs: 0.424926 }, { kind: 'curve', radius: 19.077485, angle: 11.25 }] }] },
+  // (the narrow-gauge curve of the 45-degree dual gauge crossings, turning 33.75 degrees in 9.4 studs: an R14.68 curve and a 1.49-stud straight)
+  'Narrow-gauge curve R14.7, 33.75° with 1.49 studs straight': { version: 1, gaugeStuds: 2, options: { legoTrack: 'print', splitTrack: 'bed' }, routes: [{ name: 'Track', x: 0, y: 0, heading: 0, segs: [{ kind: 'curve', radius: 14.681098, angle: 33.75 }, { kind: 'straight', studs: 1.488383 }] }] },
 };
 
 /**

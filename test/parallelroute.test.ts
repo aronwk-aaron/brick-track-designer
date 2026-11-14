@@ -31,7 +31,7 @@ describe('a parallel track', () => {
     expect('route' in res && res.route.segs).toEqual([{ kind: 'straight', studs: 10 }, { kind: 'curve', radius: 32, angle: 45 }, { kind: 'straight', studs: 6 }, { kind: 'curve', radius: 64, angle: -90 }, { kind: 'straight', studs: 3 }]);
   });
   it('refuses, saying why, when a curve would go under the least radius', () => {
-    const r = route({ segs: [{ kind: 'curve', radius: 24, angle: 90 }] });
+    const r = route({ segs: [{ kind: 'curve', radius: 16, angle: 90 }] });
     const res = parallelRoute(des(r), r, 'left', 8);
     expect(res).toHaveProperty('problem');
     expect('problem' in res && res.problem).toContain(`R${LIMITS.radius[0]}`);
