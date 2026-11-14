@@ -108,6 +108,8 @@ const frags = (r: number) => Math.ceil(Math.max(Math.min(360 / 12, (r * 2 * Math
 const FDB = { plateT: 1.6, plateW: 10, pivotIn: 7, pinD: 4, discR: 5, postD: 2.2, rodW: 4 };
 /** (gapOthers) How far past a blade's sweep another track's rail is cut out, each end (mm along it). */
 const GAP_PAST = 1;
+/** (gapOthers) A blade moved on from the set's toe keeps this much of its length at least, toe to heel (mm). */
+const BLADE_MIN = 24;
 /**
  * the sprung blades (bladeStyle 'sprung'): the plate 3 mm
  * thick with a flat, closed top, turning on a LEGO stud (a blind hole
@@ -277,20 +279,39 @@ function fdbLayout(v: SetLike, p: BaseParams, rails: [Route, number, number][], 
   const own = v.three ? [v.three.S, v.three.L, v.three.R] : [v.ra, v.rb];
   // (the other rails near the points, as runs of points 0.5 apart; not where one runs along one of the set's own rails)
   const y0 = v.toeY - 12, y1 = v.pointsEndY + 12, keep: Pt[][] = [];
-  // (gapOthers: a double slip's points with both blades moving, as a real slip's (slipBlades 'two'): where a blade sweeps
-  // over another track's rail (past the acute frog, its rail between this track's stock rails), that rail is cut out, a
-  // little past the sweep each end, and isn't in the blades' way. The sweep as each blade's swings, about its pin as first
-  // placed (as barOk looks), its head's half-width and the clearance round it)
+  // (gapOthers: a double slip's points with both blades moving, as a real slip's (slipBlades 'two'). Near the crossing
+  // the two sets' inner blades lie in one V with the other set's stock rail and blade: each inner blade starts further
+  // from the crossing (its own toe, toeS), where the V is wide enough for it to swing clear of every other track's rail
+  // there, with room for that rail's own blade to swing too (pointThrow), so the two sets stay independent. The swing as
+  // barOk looks at it: about its pin as first placed, its head's half-width and the clearance round it. What's still
+  // swept (no toe far enough out) is cut out of that rail, a little past the sweep each end, and isn't in the blades' way)
   const gaps: RailGap[] = [];
-  const swept = !p.gapOthers || v.three ? undefined : [0, 1].map((b) => {
+  const near: [Route, number, number, Pt][] = [];
+  for (const [rt, o, s0] of rails) for (let s = Math.max(0, s0), L = routeLength(rt); s <= L + 1e-9; s += 0.5) {
+    const q = railPoint(rt, s, o);
+    if (!(q[1] < y0 || q[1] > y1 || Math.abs(q[0]) > 3 * G + 40 || own.some((r) => [-G, G].some((oo) => Math.abs(routeLat(r, q) - oo) < 0.6)))) near.push([rt, o, s, q]);
+  }
+  const sweepOf = (b: number, toe: number, more: number) => {
     const rt = b === 0 ? v.ra : v.rb, o = b === 0 ? -G : +G, side = b === 0 ? 1 : -1, dir = b === 0 ? 1 : -1;
-    const pivot = railPoint(rt, v.sHeel - 4, o + side * FDB.pivotIn), tip = railPoint(rt, v.sToe, o);
+    const pivot = railPoint(rt, v.sHeel - 4, o + side * FDB.pivotIn), tip = railPoint(rt, toe, o);
     const ang = (p.pointThrow / norm(sub(tip, pivot))) * (180 / Math.PI), n = swingsOf(v);
     return (q: Pt) => Array.from({ length: 9 }, (_, k) => (dir * n * ang * k) / 8).some((a) => {
       const q2 = rotAbout(q, pivot, -a), sq = sOf(rt, q2);
-      return Math.abs(routeLat(rt, q2) - o) < HEAD_HW + hwBar + c && sq >= v.sToe - c && sq <= v.sHeel;
+      // (more: the other rail's own blade's swing, as this one's, most at the toe and none at the heel)
+      return sq >= toe - c && sq <= v.sHeel && Math.abs(routeLat(rt, q2) - o) < HEAD_HW + hwBar + c + more * Math.max(0, Math.min(1, (v.sHeel - 4 - sq) / (v.sHeel - 4 - toe)));
     });
-  });
+  };
+  // (each blade's toe: the set's, or the first place on (0.5 apart) clear of the rails, its blade kept BLADE_MIN long)
+  const toes = [v.sToe, v.sToe];
+  if (p.gapOthers && !v.three) for (const b of [0, 1]) {
+    for (let toe = v.sToe; toe <= v.sHeel - BLADE_MIN + 1e-9; toe += 0.5) {
+      const f = sweepOf(b, toe, p.pointThrow);
+      if (!near.some(([, , , q]) => f(q))) { toes[b] = toe; break; }
+      toes[b] = NaN;
+    }
+    if (!Number.isFinite(toes[b])) toes[b] = v.sToe;
+  }
+  const swept = !p.gapOthers || v.three ? undefined : [0, 1].map((b) => sweepOf(b, toes[b], 0));
   for (const [rt, o, s0] of rails) {
     let run: Pt[] = [], gap: number[] = [];
     const L = routeLength(rt), flush = () => { if (run.length > 1) keep.push(run); run = []; };
@@ -334,7 +355,7 @@ function fdbLayout(v: SetLike, p: BaseParams, rails: [Route, number, number][], 
     const stockRt = v.three ? (b === 0 ? v.three.L : v.three.R) : b === 0 ? v.rb : v.ra;
     // (turning + opens blade 0 (its toe moves in, to +x), - blade 1; it goes from closed (0) to open (n3 * ang))
     const dir = b === 0 ? 1 : -1;
-    const tip = railPoint(rt, v.sToe, o), sPost = sOf(rt, [0, v.throwY]);
+    const toeB = toes[b], tip = railPoint(rt, toeB, o), sPost = sOf(rt, [0, v.throwY]);
     // (each pin's place and each post's worked out once: the search below asks for the same ones over and over)
     const pivots = new Map<number, Pt>(), postsAt = new Map<number, Pt>();
     const pivotOf = (shift: number, pin: number) => { const k = shift * 4096 + Math.round(pin * 64); let q = pivots.get(k); if (!q) { q = railPoint(rt, v.sHeel - 4 - shift, o + side * pin); pivots.set(k, q); } return q; };
@@ -345,7 +366,7 @@ function fdbLayout(v: SetLike, p: BaseParams, rails: [Route, number, number][], 
       const ang = shift === 0 && pin === FDB.pivotIn ? (p.pointThrow / norm(sub(tip, pivot))) * (180 / Math.PI)
         : ((v.fdbTravel - pre) / Math.max(1, Math.abs(pivot[1] - post[1]))) * (180 / Math.PI);
       // (a three-way's other blade is open twice as far: the middle has both open by the throw)
-      return { pivot, tip, ang, post, open: b === 0 ? 0 : -n3 * ang, pivotIn: pin, postIn, shift, keep, hw, ...(notches.length && { notches }), ...(plates.length && { plates }), ...(gaps.length && { gaps }) };
+      return { pivot, tip, ang, post, open: b === 0 ? 0 : -n3 * ang, pivotIn: pin, postIn, shift, keep, hw, ...(notches.length && { notches }), ...(plates.length && { plates }), ...(gaps.length && { gaps }), ...(toeB !== v.sToe && { toeS: toeB }) };
     };
     const notches = v.notches?.[b] ?? [];
     let rootNow = SPRUNG.root;
@@ -364,7 +385,7 @@ function fdbLayout(v: SetLike, p: BaseParams, rails: [Route, number, number][], 
         const q2 = rotAbout(q, f.pivot, -a);
         if (Math.abs(routeLat(rt, q2) - o) >= HEAD_HW + (fromPlate.has(q) ? c : hwBar)) return true;
         const sq = sOf(rt, q2);
-        return sq < v.sToe || sq > v.sHeel - c;
+        return sq < toeB || sq > v.sHeel - c;
       }));
     };
     if (!barOk(f0)) return { ...f0, blocked: 'it crosses the blade' };
@@ -450,7 +471,7 @@ function sprungFront(v: SetLike, b: number, p: BaseParams, f: FdbBladeLayout) {
   const G = switchGlobals(p).G, c = p.pointClearance, yF = Math.max(v.toeY - 1, 8 + c);
   const rt = v.three ? v.three.S : b === 0 ? v.ra : v.rb, o = b === 0 ? -G : +G, side = b === 0 ? 1 : -1;
   const stockRt = v.three ? (b === 0 ? v.three.L : v.three.R) : b === 0 ? v.rb : v.ra;
-  const s0 = v.sToe - 1, s1 = v.sHeel - c, kFull = Math.max(1, Math.min(6, Math.floor(((sOf(rt, f.post) - 5 - s0) / (s1 - s0)) * 24)));
+  const s0 = (f.toeS ?? v.sToe) - 1, s1 = v.sHeel - c, kFull = Math.max(1, Math.min(6, Math.floor(((sOf(rt, f.post) - 5 - s0) / (s1 - s0)) * 24)));
   const k = Math.max(0, ((sOf(rt, [railCross(rt, o, yF)[0], yF]) - s0) / (s1 - s0)) * 24);
   const inW = -HEAD_HW + (0.35 + 0.65 * Math.min(1, k / kFull)) * (2 * HEAD_HW + fdbPlateW(p));
   const sw = swingsOf(v) * f.ang * side, inner: Pt = [railCross(rt, o + side * inW, yF)[0], yF];
@@ -510,7 +531,7 @@ function fdbFootprintOf(v: SetLike, p: BaseParams): { plates: Pt[][]; rails: Pt[
   v.fdb.forEach((f, b) => {
     if (b === v.fixed) return;
     const rt = v.three ? v.three.S : b === 0 ? v.ra : v.rb, o = b === 0 ? -G : +G, side = b === 0 ? 1 : -1;
-    const n = 24, s0 = v.sToe - 1, s1 = v.sHeel - c, kFull = Math.max(1, Math.min(6, Math.floor(((sOf(rt, f.post) - 5 - s0) / (s1 - s0)) * n)));
+    const n = 24, s0 = (f.toeS ?? v.sToe) - 1, s1 = v.sHeel - c, kFull = Math.max(1, Math.min(6, Math.floor(((sOf(rt, f.post) - 5 - s0) / (s1 - s0)) * n)));
     const outOff = p.bladeStyle === 'prototype' ? -HEAD_HW - 1.3 : -HEAD_HW, inOff = HEAD_HW + fdbPlateW(p);
     const ss = Array.from({ length: n + 1 }, (_, k) => s0 + ((s1 - s0) * k) / n);
     const outer = ss.map((sv) => railPoint(rt, sv, o + side * outOff));
@@ -1601,7 +1622,7 @@ export function switchGeometry(s: Scad, plan: SwitchPlan, extraCuts: Man[] = [])
     const rt = bRt(v, b), o = bO(b), side = bSide(b), fb = fdbBlades(v)[b];
     // (on to where the blade's rail ends at the heel: under all of it)
     // (from just before the toe: the rail's point on plate to its end, nothing of it out over nothing as printed)
-    const n = 24, s0 = v.sToe - 1, s1 = v.sHeel - c;
+    const n = 24, s0 = (fb.toeS ?? v.sToe) - 1, s1 = v.sHeel - c;
     const edge = (off: number) => Array.from({ length: n + 1 }, (_, k) => railPoint(rt, s0 + ((s1 - s0) * k) / n, o + side * off) as Vec2);
     // (from the blade bar's inner face inward; tapering to the toe)
     // (tapering toward the toe, to full width before the slider's post: its hole in the full plate)
@@ -1649,7 +1670,7 @@ export function switchGeometry(s: Scad, plan: SwitchPlan, extraCuts: Man[] = [])
     const bevel = (q: Vec2[]) => s.polygon(sideS > 0 ? q : q.map(([x, y]) => [2 * face - x, y] as Vec2).reverse());
     const offStock = keep ?? sweep(flareW ? bevel([[face + flareW, z0 - 1], [face + flareW, z1], [face, z1 + flareW], [face, z1 + 40], [face + 30, z1 + 40], [face + 30, z0 - 1]])
       : sq([30, 40], [sideS > 0 ? face : face - 30, z0 - 1]), bOther(v, b), 0, v.sHeel + 5);
-    const bar0 = s.intersection(sweep(sq([2 * HEAD_HW, railTop - z1 + 0.01], [o - HEAD_HW, z1 - 0.01]), rt, protoOn ? protoTip(v, b) : v.sToe, v.sHeel - c), offStock);
+    const bar0 = s.intersection(sweep(sq([2 * HEAD_HW, railTop - z1 + 0.01], [o - HEAD_HW, z1 - 0.01]), rt, protoOn ? protoTip(v, b) : fdbBlades(v)[b].toeS ?? v.sToe, v.sHeel - c), offStock);
     // (a rail crossing it near the heel: notched for that rail's flanges, closed and open)
     const turns = [0, (b === 0 ? 1 : -1) * swingsOf(v) * fb.ang];
     const bar = notched(bar0, v, b, fb.pivot, turns);

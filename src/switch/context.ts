@@ -235,6 +235,8 @@ export interface FdbBladeLayout {
   keep: Pt[][]; hw: number; stockKeep?: Pt[]; stockHw?: number; blocked?: string;
   /** (gapOthers: a double slip's, both blades moving) the other track's rails cut out where the blades sweep over them: which rail (a route of the plan's, its offset) and the stretch (s, along it), the same on each blade's layout */
   gaps?: RailGap[];
+  /** (gapOthers) this blade's own toe (s along its route), further from the crossing than the set's (sToe): the V there wide enough for it to swing */
+  toeS?: number;
   /** Another track's rails crossing the blade near its pin, where it hardly moves (a double slip's obtuse crossing): the blade notched there for their flanges, as a frog. */
   notches?: Notch[];
   /** (sprung blades) the spring's beams' length, where shorter than the full 34.5 (other track running past) */
