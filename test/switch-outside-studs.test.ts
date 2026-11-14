@@ -4,7 +4,7 @@
 // outside of the rails where the switches are". The bed's studs stopped along the points: crossingPiece kept every stud
 // out of the box round what the points add (their bed, out to the sleepers' ends, and the arm), so the row outside
 // each stock rail broke off from the toe to the heel. Now it runs on, off only round the throw's arm (network.ts
-// studsOffOf); none overlap or touch, none is cut.
+// studsOffOf), on the stud grid (crossing.ts); none overlap or touch, none is cut.
 import { describe, expect, it } from 'vitest';
 import fs from 'node:fs';
 import { kernel } from '../src/geom/kernel';
@@ -26,8 +26,8 @@ describe('studs outside the rails along the points (196s R568)', { timeout: 6000
       const b = buildDesign(w, structuredClone(D));
       const o = { studD: 4.8, studFit: 0.18 };
       // (the routes' middles: the straights at x = -64 and +64 mm, the branches round R568 = 4544.5 mm from y = 8)
-      const R = 568.0625 * 8, arcs = [[-64 + R, 'T4'], [64 - R, 'T3']] as const;
-      const lat = (q: Pt) => Math.min(Math.abs(Math.abs(q[0]) - 64), ...arcs.map(([cx]) => Math.abs(Math.hypot(q[0] - cx, q[1] - 8) - R)));
+      const R = 568.0625 * 8, arcs = [-64 + R, 64 - R];
+      const lat = (q: Pt) => Math.min(Math.abs(Math.abs(q[0]) - 64), ...arcs.map((cx) => Math.abs(Math.hypot(q[0] - cx, q[1] - 8) - R)));
       // (the studs on the top, inside the sleepers' ends (32 out); none of them cut where the print bed's cuts part the
       // track: each a stud's radius inside its part's box. The ballast's steps aren't checked: one on the mid step beside a
       // branch, at 25.6, 153.6, is cut at 152 on main too)
@@ -47,11 +47,11 @@ describe('studs outside the rails along the points (196s R568)', { timeout: 6000
       for (const x of [-92, 92]) for (let y = 44; y <= 244; y += 8) if (!near(x, y)) missing.push(`${x}, ${y}`);
       expect(missing, 'outside the straights\' stock rails').toEqual([]);
       for (const x of [-92, 92]) for (const y of [20, 28, 36]) expect(near(x, y), `none on the arm at ${x}, ${y}`).toBe(false);
-      // (and outside each branch's stock rail, on the side between the tracks: 28 in from its middle)
-      for (const [cx, name] of arcs) {
-        const row = top.filter((q) => q[1] > 40 && q[1] < 250 && Math.abs(Math.abs(Math.hypot(q[0] - cx, q[1] - 8) - R) - 28) < 0.6);
-        expect(row.length, `outside ${name}'s stock rail`).toBeGreaterThanOrEqual(25);
-      }
+      // (and on the branch's side, the straight's row there (28 in, on the grid) on along the points until the branch's rail
+      // comes too near; off the grid, along the branch, none: the bed's cuts run on the grid's lines)
+      const branch: string[] = [];
+      for (const x of [-36, 36]) for (let y = 44; y <= 116; y += 8) if (!near(x, y)) branch.push(`${x}, ${y}`);
+      expect(branch, 'beside the branches\' stock rails').toEqual([]);
       expect(studFaults(w, b.pieces, () => o), 'studs that touch').toEqual([]);
     } finally { Object.assign(OPTION_DEFAULTS, saved); clearBuildCache(); }
   });

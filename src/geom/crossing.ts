@@ -695,6 +695,7 @@ export function crossingPiece(s: Scad, routes: Route[], o: CrossingOptions = CRO
     } else for (let i = -reachS; i <= reachS; i++) for (let j = -reachS; j <= reachS; j++) {
       spots.push(poseToWorld(gp, [4 + i * STUD, 4 + j * STUD]));
     }
+    const onGrid = (q: [number, number]) => { const l = worldToPose(gp, q); return [l[0], l[1]].every((v) => Math.abs((((v - 4) % STUD) + STUD) % STUD - STUD / 2) > STUD / 2 - 0.01); };
     const onTie = new Set<[number, number]>(tieStuds as [number, number][]);
     spots.push(...(tieStuds as [number, number][]));
     for (const q of spots) {
@@ -711,7 +712,9 @@ export function crossingPiece(s: Scad, routes: Route[], o: CrossingOptions = CRO
       if (handCheck && byCheckWide(q)) continue;
       // (clear of the end connectors: 8 mm in from each end)
       if (ends.some(({ e, len }) => Math.hypot(q[0] - e[0], q[1] - e[1]) < len && Math.abs(worldToPose(e, q)[1]) < 10)) continue;
-      if (addBoxes.some((bb) => q[0] > bb.min[0] - 3 && q[0] < bb.max[0] + 3 && q[1] > bb.min[1] - 3 && q[1] < bb.max[1] + 3) && (!x.studsOff || x.studsOff(q)) && !x.studsOn?.(q)) continue;
+      // (in what the points add: only where they say a stud can stand (studsOff), and only on the stud grid, where the bed's
+      // cuts, which run on its lines, never meet one: off it, along a branch, they left the monster crossovers no cut that fit)
+      if (addBoxes.some((bb) => q[0] > bb.min[0] - 3 && q[0] < bb.max[0] + 3 && q[1] > bb.min[1] - 3 && q[1] < bb.max[1] + 3) && (!x.studsOff || x.studsOff(q) || !onGrid(q)) && !x.studsOn?.(q)) continue;
       if (bufPoses.some(({ e, t: tb }) => inBufferPost(tb, worldToPose(e, q), c.postD / 2 + 0.6, (o.buffer ?? BUFFER_DEFAULTS).style ?? 'frame'))) continue;
       // (and of the check rails)
       if (byCheckRail(q)) continue;
