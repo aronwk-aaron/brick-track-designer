@@ -171,9 +171,11 @@ export function lookAt(w: Awaited<ReturnType<typeof kernel>>, p: Piece): Found |
   return { part: p.name, hang: h.area, hangAt: boxText(h.where), hangByHeight: hs, islands: isl.length, islandArea: isl.reduce((t, i) => t + i.area, 0), islandAt: isl.length ? `${r(ix)} ${r(iy)} ${r(iz)}` : '' };
 }
 
-/** A design built as the app builds it, every printed part looked at, and what's found held to what's pinned. */
-export function printsClean(name: string) {
-  it(`${name}: every printed part, as exported, hangs nowhere and has no floating island (but what's pinned)`, { timeout: 900000 }, async () => {
+/** A design built as the app builds it, every printed part looked at (or only those `only` keeps: a design with big parts
+ * shared out among files, each part a few minutes), and what's found held to what's pinned. */
+export function printsClean(name: string, only?: { which: string; keep: (part: string) => boolean }) {
+  const keep = only?.keep ?? (() => true);
+  it(`${name}: every printed part${only ? ` (${only.which})` : ''}, as exported, hangs nowhere and has no floating island (but what's pinned)`, { timeout: 900000 }, async () => {
     const saved = { ...OPTION_DEFAULTS };
     Object.assign(OPTION_DEFAULTS, APP);
     try {
@@ -182,11 +184,12 @@ export function printsClean(name: string) {
       const b = buildDesign(w, structuredClone(DESIGNS[name]));
       // (its pieces are plain data: the build's own solids let go before the looking makes its own)
       clearBuildCache();
-      const found = b.pieces.flatMap((p) => arena(w, () => [lookAt(w, p)], () => [])).filter((f): f is Found => !!f);
+      const mine = b.pieces.filter((p) => keep(p.name));
+      const found = mine.flatMap((p) => arena(w, () => [lookAt(w, p)], () => [])).filter((f): f is Found => !!f);
       expect(found.length, `${name}: no printed part`).toBeGreaterThan(0);
-      const pins = PINNED[name] ?? {}, bad: string[] = [];
+      const pins = Object.fromEntries(Object.entries(PINNED[name] ?? {}).filter(([part]) => keep(part))), bad: string[] = [];
       // (what holds things up in a file is the supports the build made, no more and none lost: assembled.shared.ts supportsSound)
-      for (const p of b.pieces) if (!p.lego && p.stl.length) bad.push(...arena(w, () => { const part = solid(w, p.positions), file = stlSolid(w, p.stl); return part && file ? supportsSound(w, p, part, file) : []; }, () => []));
+      for (const p of mine) if (!p.lego && p.stl.length) bad.push(...arena(w, () => { const part = solid(w, p.positions), file = stlSolid(w, p.stl); return part && file ? supportsSound(w, p, part, file) : []; }, () => []));
       for (const f of found) {
         const pin = pins[f.part];
         if (f.hang > HANG) {
