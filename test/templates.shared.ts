@@ -86,8 +86,9 @@ Object.assign(BUDGET, { 'Compact corner R104, four tracks, left': 63, 'Compact c
 Object.assign(BUDGET, { 'Double turnout R104 and R120, right': 44, 'Double turnout R104 and R120, left': 44, 'Double pass-through turnout R72 and R56, left': 28, 'Triple pass-through turnout R72, R56 and R40, left': 33, 'Double pass-through turnout R72 and R56, right': 28, 'Triple pass-through turnout R72, R56 and R40, right': 33, 'Wide switched parallel curve section': 63, 'Wide switched parallel curve section with three ends': 88, 'Wide switched triple parallel curve section': 106 });
 // (the loop sets cut to the bed by a cut path: 1.3 times their CI time (PR 48: 54, 105 and 59 s))
 Object.assign(BUDGET, { 'Dome crossing R104 and R120': 70, 'Double dome crossing R104 and R120': 137, 'T-junction R104 and R120': 77 });
-// (the narrow-gauge 45-degree crossings over standard track and the R40 pass-through crossovers: 1.3 times their CI time (PR 51), 10 at least)
-Object.assign(BUDGET, { 'Narrow-gauge crossing 45° left over one standard track': 10, 'Narrow-gauge crossing 45° right over one standard track': 10, 'Narrow-gauge crossing 45° left over two standard tracks': 13, 'Narrow-gauge crossing 45° right over two standard tracks': 10, 'Single pass-through crossover R40, left': 13, 'Single pass-through crossover R40, right': 17, 'Double pass-through crossover R40, left': 24, 'Double pass-through crossover R40, right': 24 });
+// (the narrow-gauge 45-degree crossings over standard track and the R40 pass-through crossovers: 1.3 times the slowest of their three
+// CI runs (PR 51 twice, main d1a958c and ed46451, whose shard ran them up to 1.5 times slower), 10 at least)
+Object.assign(BUDGET, { 'Narrow-gauge crossing 45° left over one standard track': 10, 'Narrow-gauge crossing 45° right over one standard track': 10, 'Narrow-gauge crossing 45° left over two standard tracks': 19, 'Narrow-gauge crossing 45° right over two standard tracks': 14, 'Single pass-through crossover R40, left': 22, 'Single pass-through crossover R40, right': 23, 'Double pass-through crossover R40, left': 36, 'Double pass-through crossover R40, right': 34 });
 const BUDGET_SMALL = 10; // (a template with no time of its own yet)
 /** only: just these templates of the groups */
 export function templatesBuild(groups: string[], only?: string[]) {
