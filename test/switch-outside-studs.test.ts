@@ -10,7 +10,8 @@ import fs from 'node:fs';
 import { kernel } from '../src/geom/kernel';
 import { buildDesign, clearBuildCache } from '../src/app/build';
 import { type Design, OPTION_DEFAULTS, type PieceOptions, TEMPLATES } from '../src/app/design';
-import { partStuds, studFaults, studsOf } from './studs-apart.shared';
+import { circlesIn, partStuds, studFaults, studsOf } from './studs-apart.shared';
+import { drop, solid } from './assembled.shared';
 
 const APP = (globalThis as { APP_DEFAULTS?: PieceOptions }).APP_DEFAULTS!;
 const D: Design = JSON.parse(fs.readFileSync(new URL('./fixtures/196s-r568-south.btd.json', import.meta.url), 'utf8'));
@@ -122,6 +123,29 @@ describe('studs outside the rails along the points (196s R568)', { timeout: 6000
       expect(missing, 'outside the stock rails').toEqual([]);
       expect(tracks.flatMap((p) => partStuds(w, p, o)), 'studs in part').toEqual([]);
       expect(studFaults(w, b.pieces, () => o), 'studs that touch').toEqual([]);
+    } finally { Object.assign(OPTION_DEFAULTS, saved); clearBuildCache(); }
+  });
+
+  // (a stud along the points that only just ran into something beside it, a check rail or a rail's foot on the other
+  // track: a stud in part, a millimetre cubed or so of it in the other. Along the points a stud only stands where it
+  // stands free (crossing.ts free). Yard R40, three tracks, left had two on track3, at -3.93, -145.01 (0.1 mm3 of it
+  // in the other) and 7.16, -142.80 (1.3 mm3))
+  it('Yard R40, three tracks, left: no stud along the points run into what\'s beside it', async () => {
+    const saved = { ...OPTION_DEFAULTS };
+    Object.assign(OPTION_DEFAULTS, APP);
+    try {
+      const w = await kernel();
+      clearBuildCache();
+      const b = buildDesign(w, structuredClone(TEMPLATES['Yard R40, three tracks, left']));
+      const p = b.pieces.find((q) => q.name === 'track3')!, m = solid(w, p.positions)!;
+      // (half way up a stud, over the rails' feet: what stands at each of the two places, within a millimetre of it)
+      const sl = m.slice(3.2 + 1.3), at = (x: number, y: number) => { const c = w.CrossSection.circle(1, 24).translate([x, y]), i = sl.intersect(c), a = i.area(); c.delete(); i.delete(); return a; };
+      const there = [at(-3.93, -145.01), at(7.16, -142.8)];
+      // (and the studs that stand free beside them are still there)
+      const n = circlesIn(sl.toPolygons() as Pt[][], (4.8 + 0.18) / 2, 0.03).length;
+      sl.delete(); drop(m);
+      expect(there, 'the two studs that ran into something').toEqual([0, 0]);
+      expect(n, 'studs on the part').toBeGreaterThan(40);
     } finally { Object.assign(OPTION_DEFAULTS, saved); clearBuildCache(); }
   });
 });
