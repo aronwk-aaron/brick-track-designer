@@ -671,9 +671,8 @@ export function slipMonster(): Design {
   // along the first one's joints)
   const c2 = [...half(-24).slice(0, -2), [-24, Y - 2], [-12, Y - 2], [-12, Y]] as [number, number][];
   const cuts = [{ id: 'c1', pts: [...half(-8), ...mirrorY(half(-8)).reverse()] }, { id: 'c2', pts: c2 }, { id: 'c3', pts: mirrorY(half(-24)) }];
-  // (its levers not yet as the reference's (slipLevers): there the upper left slip's inner set on the outer track, its
-  // lever beside its throw bar, has its slider's end 6 mm3 into the bed's part (assembled-dslip-monster))
-  return { version: 1, gaugeStuds: 4, options: { legoTrack: 'print', pointBlades: 1, threeWayLevers: 2, splitTrack: 'lengths', slipCuts: 'reference' }, routes: [...tracks, ...side(1, 'R'), ...side(-1, 'L'),
+  // (its levers as the reference's (slipLevers))
+  return { version: 1, gaugeStuds: 4, options: { legoTrack: 'print', pointBlades: 1, threeWayLevers: 2, splitTrack: 'lengths', slipLevers: 'reference', slipCuts: 'reference' }, routes: [...tracks, ...side(1, 'R'), ...side(-1, 'L'),
     ...slipRoads('QR-T1', [0, 0], 1), ...slipRoads('PR-T1', [0, 40], -1), ...slipRoads('QL-T3', [-32, 0], -1), ...slipRoads('PL-T3', [-32, 40], 1)],
     expert: { cutPaths: cuts } };
 }

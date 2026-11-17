@@ -72,6 +72,8 @@ export interface SetOver { leverOffset?: number; springLength?: number; throwShi
 // foot that carries on from the heel.
 /** (mm3) A body of the base smaller than this, not one with the rest, is a loose bit: left out (base). */
 const LOOSE_BIT = 600;
+/** How far before the toe a blade's cut starts for a route that starts there, and after it for one that runs through (mech bladeRails, toeCut), mm. */
+const TOE_BACK = 0.05;
 export const DISC2_R = 4.5;
 const pivotIn = (c: number) => 3.9 + c + DISC2_R + 0.2;
 
@@ -2620,11 +2622,25 @@ export function switchGeometry(s: Scad, plan: SwitchPlan, extraCuts: Man[] = [])
    * routes' rails the blades replace ([route, cut] in this frame).
    */
   /** What a blade takes out of other track's rails: along it, as wide as it swings; where a rail crosses it near the heel (notches), only the blade's own width, so that rail's gap is short, as at a frog. */
-  const bladeCut = (v: SetV, b: number): Man => {
+  const bladeCut = (v: SetV, b: number, from = 0): Man => {
     const rt = bRt(v, b), end = (b === v.fixed ? v.sMate! : v.sHeel) + c, nts = v.notches?.[b] ?? [];
-    if (!nts.length) return sweep(sq([9, 30], [bO(b) - 4.5, -5]), rt, 0, end);
+    if (!nts.length) return sweep(sq([9, 30], [bO(b) - 4.5, -5]), rt, from, end);
     const sN = Math.min(...nts.map((nt) => sOf(rt, nt.at))) - 6, w = HEAD_HW + c + 0.3;
-    return s.union([sweep(sq([9, 30], [bO(b) - 4.5, -5]), rt, 0, sN), sweep(sq([2 * w, 30], [bO(b) - w, -5]), rt, sN, end)]);
+    return s.union([sweep(sq([9, 30], [bO(b) - 4.5, -5]), rt, from, sN), sweep(sq([2 * w, 30], [bO(b) - w, -5]), rt, sN, end)]);
+  };
+  /**
+   * A blade's cut as its route's rails take it (toe 'at': the route starts at the toe; 'through': it runs on through).
+   * The cut's first face was the toe's own plane, and so was the end face of the rails of a route that starts there,
+   * the two worked out apart and a hair off each other (a thousandth of a mm): a route's rails cut from their very end
+   * kept a film of rail of no thickness, and a rail cut off at the toe met the other route's rail starting there face
+   * to face, a film between them (the double slip monster crossover with the reference's levers: edges of four
+   * triangles in its parts' files). So 'at' starts TOE_BACK before the toe (the cut's first bit again, set back), and
+   * 'through' TOE_BACK after it, where the other route's stock rail, the same rail there, has started.
+   */
+  const toeCut = (rt: Route, o: number, cut: (from: number) => Man) => (toe: 'at' | 'through'): Man => {
+    if (toe === 'through') return cut(TOE_BACK);
+    const p0 = routePose(rt, 0), p1 = routePose(rt, 4 * TOE_BACK), l = Math.hypot(p1[0] - p0[0], p1[1] - p0[1]);
+    return s.union([cut(0), T(sweep(sq([9, 30], [o - 4.5, -5]), rt, 0, 4 * TOE_BACK), [(-(p1[0] - p0[0]) / l) * TOE_BACK, (-(p1[1] - p0[1]) / l) * TOE_BACK, 0])]);
   };
   const mech = (k = 0) => {
     const v: SetV = sets[k];
@@ -2637,10 +2653,11 @@ export function switchGeometry(s: Scad, plan: SwitchPlan, extraCuts: Man[] = [])
       steps: throwSteps(k), stepRect: plan.setData[k].steps?.rect(plan.setData[k].steps!.buddy ? 1 : 0),
       // (the lever in a housing at a corner: the arm there, and the run out to it)
       armRects: v.corner && !v.nail ? cornerRects(v) : [],
+      // (each as its route's rails take it: toeCut)
       bladeRails: [
-        ...[0, 1].map((b) => [bRt(v, b), bladeCut(v, b)] as [Route, Man]),
+        ...[0, 1].map((b) => [bRt(v, b), toeCut(bRt(v, b), bO(b), (from) => bladeCut(v, b, from))] as [Route, (toe: 'at' | 'through') => Man]),
         // (a three-way's branches' inner rails too: they start at the heels, the blades in their place before)
-        ...(v.three ? [[v.three.L, +G], [v.three.R, -G]].map(([rt, o]) => [rt, sweep(sq([9, 30], [(o as number) - 4.5, -5]), rt as Route, 0, v.sHeel + c)] as [Route, Man]) : []),
+        ...(v.three ? [[v.three.L, +G], [v.three.R, -G]].map(([rt, o]) => [rt, toeCut(rt as Route, o as number, (from) => sweep(sq([9, 30], [(o as number) - 4.5, -5]), rt as Route, from, v.sHeel + c))] as [Route, (toe: 'at' | 'through') => Man]) : []),
       ],
     };
   };

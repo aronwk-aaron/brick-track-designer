@@ -523,7 +523,9 @@ export function networkSplits(s: Scad, routes: Route[], sol: Solution, p: BasePa
       ...(studsOn && { studsOn }),
       studsOff,
       stock: place(mech.stockCut, P),
-      bladeCuts: mech.bladeRails.map(([rt, cut]) => [worldOf(rt), place(cut, P)] as [number, Man]),
+      // (each as its route's rails take it, base.ts toeCut: a route that starts or ends at the toe, or one that runs through)
+      bladeCuts: mech.bladeRails.map(([rt, cut]) => { const w = worldOf(rt), r = routes[w], atToe = [routePose(r, 0), routePose(r, routeLength(r))].some((q) => Math.hypot(q[0] - P[0], q[1] - P[1]) < 0.01);
+        return [w, place(cut(atToe ? 'at' : 'through'), P)] as [number, Man]; }),
       inner: [`${j}:${end}`, ...(j2 >= 0 ? [`${j2}:${end}`] : [])],
       moving,
     });

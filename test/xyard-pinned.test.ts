@@ -3,6 +3,10 @@
 // (fixtures/xyard-parts.json, made from 5669d85; track2 to track5, track22 and track23 since given the studs outside their stock
 // rails along the points, 13, 13, 11, 11, 29 and 29 of them, 34.66 mm3 each, their boxes as they were). A change to the double slips' generator that moves anything on the X
 // yard fails this; such a change goes behind a guard that leaves the X yard's slips as they are.
+// (track9's volume 216625.83 -> 216590.3 when blades' cuts started clear of the toe's own plane (switch/base.ts toeCut):
+// its file's own volume, from its triangles, was 216589.97 before and is 216590.30 now. The 216625.83 was the file read
+// back as a solid with a film of rail of no thickness in it, 35.86 too much; the film's gone, and the file reads back
+// as it is. Its box, and every other part, as they were.)
 import { describe, expect, it } from 'vitest';
 import fs from 'node:fs';
 import { kernel } from '../src/geom/kernel';
