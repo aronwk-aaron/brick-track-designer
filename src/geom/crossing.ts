@@ -765,6 +765,13 @@ export function crossingPiece(s: Scad, routes: Route[], o: CrossingOptions = CRO
     }
   const cavH = o.studH + 0.21;
   // (banked: the underside's hollows kept 0.8 mm under the bed's turned top, which comes down on the inner side)
+  // (a hollow's outline tidied before it's drawn up: an outline that touches itself (a tube's ring just meeting the
+  // hollow's edge, where a throw arm's floor on its own grid joins the bed's) had the kernel join its top and bottom
+  // faces wrongly, a solid whose volume was right but which cut wrong: on the double slip monster crossover with the
+  // reference's levers the section came out 12000 mm3 too big, with sheets from the floor up to the roof across the
+  // tubes' bores. simplify() gives each loop that touches itself as loops of their own (there 3689 -> 3693))
+  // (the outline as it was deleted at once: the kernel's memory only grows, memory.test.ts)
+  const tidy = (cs: CS) => { const out = cs.simplify(1e-6); cs.delete(); return out; };
   const roofed = (ms: Man[]) => (anyBank ? [s.difference(s.union(ms), [bankedRoof(s, routes, lenOf, 0.8)])] : ms);
   // 'edges': hollow like a LEGO plate, a rim round each route's bed (not
   // under the end connectors), with anti-stud tubes between the studs that
@@ -905,7 +912,7 @@ export function crossingPiece(s: Scad, routes: Route[], o: CrossingOptions = CRO
       const kept = tubesT.filter((q) => whole(q.cs));
       grips?.push(...kept.map((q) => q.c as [number, number]));
       if (kept.length) hollow = hollow.subtract(s.w.CrossSection.union(kept.map((q) => q.cs)));
-      cutsT.push(T(s.extrude(hollow, cavH), [0, 0, -0.01]));
+      cutsT.push(T(s.extrude(tidy(hollow), cavH), [0, 0, -0.01]));
     }
     return s.difference(body, [...roofed(cutsT), ...(x.cuts ?? [])]);
   }
@@ -944,7 +951,7 @@ export function crossingPiece(s: Scad, routes: Route[], o: CrossingOptions = CRO
     const hg = hollowGrid(s, t, beds.length ? s.w.CrossSection.union(beds) : foot.subtract(foot), world, Math.min(...is), Math.max(...is), Math.min(...js), Math.max(...js), o.grip, { ok: okAll, skip: inConn, foot, stubs: anyBank, bare: !beds.length });
     grips?.push(...hg.grips);
     // (nothing to cut: a piece that's all channel, no stud of the plate's standing in its walls)
-    if (!hg.cut.isEmpty()) cuts.push(T(s.extrude(hg.tubes ? hg.cut.subtract(hg.tubes) : hg.cut, cavH), [0, 0, -0.01]));
+    if (!hg.cut.isEmpty()) cuts.push(T(s.extrude(tidy(hg.tubes ? hg.cut.subtract(hg.tubes) : hg.cut), cavH), [0, 0, -0.01]));
   }
   if (connCut) cuts.push(connCut);
   return s.difference(body, [...roofed(cuts), ...(x.cuts ?? [])]);
