@@ -35,8 +35,10 @@ describe('cuts where tracks join inside trackwork: worked out', () => {
     // edge as far as the next track's bed lies against it)
     expect(pts[0]).toEqual([-7.34, 10.99]);
     expect(pts[1]).toEqual([-4, 14.33]);
-    expect(pts[pts.length - 1][0]).toBe(-4);
-    expect(pts[pts.length - 1][1]).toBeGreaterThan(15.9);
+    // (to the straight's own end at y 16, and a little along that end, where the next track's corner lies past it)
+    expect(pts).toContainEqual([-4, 16]);
+    expect(pts[pts.length - 1][1]).toBe(16);
+    expect(pts[pts.length - 1][0]).toBeGreaterThan(-4);
     // (never along a rail, nor refused as a cut: checked as a slip's own cuts are)
     expect(pathProblem(cuts[0].pts.map((q): [number, number] => [q[0] / 8, q[1] / 8]), [], { routes: rts, railG: 20, no: { blades: [], frogs: [], moving: [] }, slip: true, free: true })).toBeUndefined();
   });
