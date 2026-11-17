@@ -1055,7 +1055,14 @@ export function crossingPiece(s: Scad, routes: Route[], o: CrossingOptions = CRO
     if (alone) {
       const seat = x0.seat ?? trackSeat(s, crossingPiece(s, routes, { ...o, ballast: 'none', ballastOnly: undefined, supports: false, axleHoles: false }, sol, undefined, x0), o.ballastOnly ?? 0);
       const bb = body.boundingBox(), below = s.intersection(body, T(s.cube([bb.max[0] - bb.min[0] + 2, bb.max[1] - bb.min[1] + 2, 200]), [bb.min[0] - 1, bb.min[1] - 1, -200]));
-      out = s.difference(s.union([x0.seat ? undefined : below, ballastBody, studs]), [seat]);
+      // (a step's stud the seat would take part of isn't made: the points' bed, wider than the sleepers, reaches over the
+      // mid step's row, and the seat round it left studs there cut down to slivers and halves. Against the seat's
+      // outline, as plain points: the ones wholly inside it went with the seat, as they did)
+      const sc = seat.project(), ring = sc.toPolygons() as Vec2[][], reach = studR + 0.05; sc.delete();
+      const segD = (q: Vec2, a: Vec2, b: Vec2) => { const dx = b[0] - a[0], dy = b[1] - a[1], l2 = dx * dx + dy * dy, u = l2 ? Math.max(0, Math.min(1, ((q[0] - a[0]) * dx + (q[1] - a[1]) * dy) / l2)) : 0; return Math.hypot(q[0] - a[0] - u * dx, q[1] - a[1] - u * dy); };
+      const bitten = ([px, py, z]: [number, number, number]) => z + o.studH > 0.01 && ring.some((pg) => pg.some((a, k) => segD([px, py], a, pg[(k + 1) % pg.length]) < reach));
+      const whole = pts.some(bitten) ? s.union(pts.filter((q) => !bitten(q)).map(([px, py, z]) => T(t.stud(), [px, py, z - 0.01]))) : studs;
+      out = s.difference(s.union([x0.seat ? undefined : below, ballastBody, whole]), [seat]);
     }
     if (antistud) {
       // hollow inside a rim, LEGO tubes on the stud grid (of the grid pose)

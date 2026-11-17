@@ -216,6 +216,8 @@ export interface PieceOptions {
   splitTrack?: 'bed' | 'lengths'; pieceLengthStuds?: number;
   /** A stud a cut between parts goes through: taken off ('off'), given whole to the part its middle is on, over the next part's edge ('whole'), or cut through, half on each ('split'). */
   studsAtCuts?: 'off' | 'whole' | 'split';
+  /** (no setting: the X yard's own, to stay as pinned) a stud run into a wall beside it (a ballast step's against the points' bed) that a cut goes through is left as it was, in two; unset, it comes off as any other stud a cut goes through */
+  joinedStudsSplit?: boolean;
   /** (expert) Each end of a cut path that crosses a switch's branch at a slant turned square to the branch there, as a modular kit's sections are joined (handcuts.ts squarePathEnds); off: along the stud grid, as drawn. */
   pathSquare?: boolean;
   /** With track pieces: plain track bought, not printed: LEGO's straights (53401, with ballast on LEGO plates) and curves, R40 LEGO's (53400), R56 to R120 BrickTracks' ('lego'); only LEGO's, BrickTracks' radii printed ('lego-only'); or every piece printed ('print'). */
@@ -682,7 +684,7 @@ export function slipMonster(): Design {
 export function slipXYard(): Design {
   const [x1, c1] = slipDiagonal('X1', 0, 24, -1, 4), [x2, c2] = slipDiagonal('X2', 80, 24, 1, 4);
   const tracks: DRoute[] = Array.from({ length: 6 }, (_, k) => ({ name: `T${k + 1}`, x: 16 * k, y: 0, heading: 0, segs: [{ kind: 'straight', studs: 288 }] }));
-  return { version: 1, gaugeStuds: 4, options: { pointBlades: 1, ballast: 'ballast', legoTrack: 'print' }, routes: [...tracks, x1, x2,
+  return { version: 1, gaugeStuds: 4, options: { pointBlades: 1, ballast: 'ballast', legoTrack: 'print', joinedStudsSplit: true }, routes: [...tracks, x1, x2,
     ...c1.flatMap((c) => slipRoads(`X1-T${c[0] / 16 + 1}`, c, -1)), ...c2.flatMap((c) => slipRoads(`X2-T${c[0] / 16 + 1}`, c, 1))] };
 }
 /** The R104 double slip cut into its kit's three sections (TEMPLATES): r104Slip, with track cut into pieces and the two cut paths. */

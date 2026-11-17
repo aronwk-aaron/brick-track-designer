@@ -10,7 +10,7 @@ import fs from 'node:fs';
 import { kernel } from '../src/geom/kernel';
 import { buildDesign, clearBuildCache } from '../src/app/build';
 import { type Design, OPTION_DEFAULTS, type PieceOptions } from '../src/app/design';
-import { studFaults, studsOf } from './studs-apart.shared';
+import { partStuds, studFaults, studsOf } from './studs-apart.shared';
 
 const APP = (globalThis as { APP_DEFAULTS?: PieceOptions }).APP_DEFAULTS!;
 const D: Design = JSON.parse(fs.readFileSync(new URL('./fixtures/196s-r568-south.btd.json', import.meta.url), 'utf8'));
@@ -28,18 +28,20 @@ describe('studs outside the rails along the points (196s R568)', { timeout: 6000
       // (the routes' middles: the straights at x = -64 and +64 mm, the branches round R568 = 4544.5 mm from y = 8)
       const R = 568.0625 * 8, arcs = [-64 + R, 64 - R];
       const lat = (q: Pt) => Math.min(Math.abs(Math.abs(q[0]) - 64), ...arcs.map((cx) => Math.abs(Math.hypot(q[0] - cx, q[1] - 8) - R)));
-      // (the studs on the top, inside the sleepers' ends (32 out); none of them cut where the print bed's cuts part the
-      // track: each a stud's radius inside its part's box. The ballast's steps aren't checked: one on the mid step beside a
-      // branch, at 25.6, 153.6, is cut at 152 on main too)
+      // (the studs on the top, inside the sleepers' ends (32 out); no stud cut where the print bed's cuts part the track,
+      // on the top or on the ballast's steps: each a stud's radius inside its part's box. One on the mid step beside a
+      // branch, at 25.6, 153.6, ran into the points' bed and was cut at 152: a step's stud that runs into the track over
+      // the step isn't made (crossing.ts))
       const cut: string[] = [];
       const top: Pt[] = b.pieces.filter((p) => /^track/.test(p.name)).flatMap((p) => {
-        const P = p.positions, r = (o.studD + o.studFit) / 2 - 0.05, on = studsOf(w, p, o).studs.flat().filter((q) => lat(q) < 32);
+        const P = p.positions, r = (o.studD + o.studFit) / 2 - 0.05, all = studsOf(w, p, o).studs.flat();
         let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity;
         for (let i = 0; i < P.length; i += 3) { x0 = Math.min(x0, P[i]); x1 = Math.max(x1, P[i]); y0 = Math.min(y0, P[i + 1]); y1 = Math.max(y1, P[i + 1]); }
-        for (const q of on) if (q[0] - r < x0 || q[0] + r > x1 || q[1] - r < y0 || q[1] + r > y1) cut.push(`${p.name}: ${q.map((v) => v.toFixed(1)).join(', ')}`);
-        return on;
+        for (const q of all) if (q[0] - r < x0 || q[0] + r > x1 || q[1] - r < y0 || q[1] + r > y1) cut.push(`${p.name}: ${q.map((v) => v.toFixed(1)).join(', ')}`);
+        return all.filter((q) => lat(q) < 32);
       });
       expect(cut, 'studs cut by a part\'s edge').toEqual([]);
+      expect(b.pieces.filter((p) => /^track/.test(p.name)).flatMap((p) => partStuds(w, p, o)), 'studs in part, on any level').toEqual([]);
       const near = (x: number, y: number) => top.some((q) => Math.abs(q[0] - x) < 0.3 && Math.abs(q[1] - y) < 0.3);
       // (the straights at x = -64 and +64 mm, their sleepers 64 wide: a row 28 out, past the stock rail; the points from
       // y 16 to 250, their throw's arm across y 16 to 40)
@@ -73,6 +75,28 @@ describe('studs outside the rails along the points (196s R568)', { timeout: 6000
       for (const x of [-92, 92]) for (const [y0, y1] of [[44, 250], [1286, 1492]]) {
         const n = all.filter((q) => Math.abs(q[0] - x) < 0.3 && q[1] > y0 && q[1] < y1).length;
         expect(n, `outside the stock rail at x = ${x}, y ${y0} to ${y1}`).toBeGreaterThanOrEqual(20);
+      }
+    } finally { Object.assign(OPTION_DEFAULTS, saved); clearBuildCache(); }
+  });
+  // (bought track on printed ballast, the ballast a part of its own: a LEGO switch's is longer than the bed and cut in
+  // two across it, and its seat for the switch is wider than the sleepers. The cut went through a stud of each step,
+  // left in two halves (the halves weren't looked at for studs), and the seat took a bite out of a mid-step stud beside
+  // the branch, 0.1 of it left. Now no part has part of a stud: the halves are cut as any parts are (studs.ts), and a
+  // step's stud the seat would bite isn't made (crossing.ts))
+  it('a bought switch\'s ballast: no part of a stud on either half', async () => {
+    const saved = { ...OPTION_DEFAULTS };
+    Object.assign(OPTION_DEFAULTS, APP);
+    try {
+      const w = await kernel(), o = { studD: 4.8, studFit: 0.18 };
+      for (const ballast of ['ballast', 'buddy'] as const) {
+        clearBuildCache();
+        const d: Design = { version: 1, gaugeStuds: 4, options: { legoTrack: 'lego', ballast }, routes: [
+          { name: 'Straight', x: 0, y: 0, heading: 0, segs: [{ kind: 'straight', studs: 32 }] },
+          { name: 'Branch', x: 0, y: 0, heading: 0, segs: [{ kind: 'curve', radius: 40, angle: 36.8699 }, { kind: 'curve', radius: 40, angle: -14.3699 }] }] };
+        const b = buildDesign(w, d), bal = b.pieces.filter((p) => /ballast/.test(p.name));
+        expect(bal.length, `${ballast}: the ballast in two`).toBe(2);
+        expect(bal.flatMap((p) => partStuds(w, p, o)), `${ballast}: studs in part`).toEqual([]);
+        expect(studFaults(w, b.pieces, () => o), `${ballast}: studs that touch`).toEqual([]);
       }
     } finally { Object.assign(OPTION_DEFAULTS, saved); clearBuildCache(); }
   });

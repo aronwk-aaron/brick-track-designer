@@ -80,6 +80,33 @@ export function studsOf(w: Wasm, p: Piece, o: { studD: number; studFit: number; 
   return out;
 }
 
+/**
+ * The studs a part has only part of (in words: none, every stud whole): a round outline of a stud's size at one of its
+ * flat tops (a whole circle or an arc of one, circlesIn) where the part has under 0.97 of a stud's circle. What a cut
+ * through a stud leaves on either side, or a seat cut out of the ballast beside one.
+ */
+export function partStuds(w: Wasm, p: Piece, o: { studD: number; studFit: number }): string[] {
+  const P = p.positions, mesh = new w.Mesh({ numProp: 3, vertProperties: new Float32Array(P), triVerts: new Uint32Array(P.length / 3).map((_, i) => i) }); mesh.merge();
+  const m = new w.Manifold(mesh), z0 = m.boundingBox().min[2], r = (o.studD + o.studFit) / 2, full = Math.PI * r * r, out: string[] = [];
+  const tops = new Map<number, number>();
+  for (let j = 0; j < P.length; j += 9) {
+    if (Math.abs(P[j + 2] - P[j + 5]) > 1e-4 || Math.abs(P[j + 2] - P[j + 8]) > 1e-4) continue;
+    const a = ((P[j + 3] - P[j]) * (P[j + 7] - P[j + 1]) - (P[j + 6] - P[j]) * (P[j + 4] - P[j + 1])) / 2;
+    if (a > 0) { const z = Math.round(P[j + 2] * 100) / 100; tops.set(z, (tops.get(z) ?? 0) + a); }
+  }
+  for (const [z, a] of tops) if (a >= 1 && z - z0 >= 1.5) {
+    const sl = m.slice(z - 0.5);
+    for (const c of circlesIn(sl.toPolygons() as Pt[][], r, 0.03)) {
+      const circ = w.CrossSection.circle(r + 0.05, 48).translate(c), x = sl.intersect(circ), share = x.area() / full;
+      circ.delete(); x.delete();
+      if (share < 0.97) out.push(`${p.name}: ${share.toFixed(2)} of a stud at ${c.map((v) => v.toFixed(1)).join(', ')} (top ${z})`);
+    }
+    sl.delete();
+  }
+  m.delete();
+  return out;
+}
+
 /** What's wrong with a build's parts, in words (none: nothing): studs, tubes or pins that touch or overlap. */
 export function studFaults(w: Wasm, pieces: Piece[], optsOf: (p: Piece) => { studD: number; studFit: number; antistudFit?: number }): string[] {
   const out: string[] = [];

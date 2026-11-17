@@ -37,8 +37,35 @@ const mids = (m: Man, top: number, plate: number, h: number) => {
   return out;
 };
 
-/** The studs on m (r: a stud's radius, h: how far it stands up), on the bed's top (top) or a plate (plate) or more below. */
-export function findStuds(s: Scad, m: Man, r: number, h: number, top: number, plate: number): Stud[] {
+/** The middles of the arcs of radius r in an outline: where five corners or more in a row (no two further apart than a 24-sided circle's are) lie round one middle, the outline bulging out there. */
+function arcs(p0: Pt[], r: number): Pt[] {
+  // (corners along a straight side left out: a slice has them where its triangles' edges cross it)
+  const p = p0.filter((B, i) => { const A = p0[(i + p0.length - 1) % p0.length], C = p0[(i + 1) % p0.length]; return Math.abs((B[0] - A[0]) * (C[1] - A[1]) - (C[0] - A[0]) * (B[1] - A[1])) > 1e-3 * Math.hypot(C[0] - A[0], C[1] - A[1]); });
+  const out: Pt[] = [], votes = new Map<string, { c: Pt; n: number }>();
+  if (p.length < 7) return out;
+  for (let i = 0; i < p.length; i++) {
+    const A = p[i], B = p[(i + 1) % p.length], C = p[(i + 2) % p.length];
+    if (Math.hypot(A[0] - B[0], A[1] - B[1]) > r * 0.45 || Math.hypot(C[0] - B[0], C[1] - B[1]) > r * 0.45) continue;
+    const d = 2 * (A[0] * (B[1] - C[1]) + B[0] * (C[1] - A[1]) + C[0] * (A[1] - B[1]));
+    // (bulging out: a hollow of a stud's size cut into the outline isn't one)
+    if (d < 1e-9) continue;
+    const a2 = A[0] * A[0] + A[1] * A[1], b2 = B[0] * B[0] + B[1] * B[1], c2 = C[0] * C[0] + C[1] * C[1];
+    const cx = (a2 * (B[1] - C[1]) + b2 * (C[1] - A[1]) + c2 * (A[1] - B[1])) / d, cy = (a2 * (C[0] - B[0]) + b2 * (A[0] - C[0]) + c2 * (B[0] - A[0])) / d;
+    if (Math.abs(Math.hypot(A[0] - cx, A[1] - cy) - r) > 0.08) continue;
+    const key = `${Math.round(cx * 5)},${Math.round(cy * 5)}`, v = votes.get(key) ?? { c: [cx, cy] as Pt, n: 0 };
+    v.n++; votes.set(key, v);
+  }
+  for (const v of votes.values()) if (v.n >= 5 && !out.some((q) => Math.hypot(q[0] - v.c[0], q[1] - v.c[1]) < 0.5)) out.push(v.c);
+  return out;
+}
+
+/**
+ * The studs on m (r: a stud's radius, h: how far it stands up), on the bed's top (top) or a plate (plate) or more below.
+ * joined: also the ones run into something beside them (a ballast step's stud against the points' bed, wider than the
+ * sleepers): not a circle of their own in the slice, found by the arc of one in a bigger outline (five corners or more
+ * in a row round the same middle, at a stud's radius).
+ */
+export function findStuds(s: Scad, m: Man, r: number, h: number, top: number, plate: number, joined = false): Stud[] {
   return arena(s.w, () => {
     const full = Math.PI * r * r, out: Stud[] = [];
     // (each slice let go once read: a yard's piece is big)
@@ -51,7 +78,7 @@ export function findStuds(s: Scad, m: Man, r: number, h: number, top: number, pl
       let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity;
       for (const q of p) { x0 = Math.min(x0, q[0]); x1 = Math.max(x1, q[0]); y0 = Math.min(y0, q[1]); y1 = Math.max(y1, q[1]); }
       const cx = (x0 + x1) / 2, cy = (y0 + y1) / 2;
-      if (p.some((q) => Math.abs(Math.hypot(q[0] - cx, q[1] - cy) - r) > 0.08)) continue;
+      if (p.some((q) => Math.abs(Math.hypot(q[0] - cx, q[1] - cy) - r) > 0.08)) { if (joined) for (const c of arcs(p, r)) out.push({ c, mid: z }); continue; }
       // (an outline, not a hole: a pin hole the size of a stud isn't one)
       const a = p.reduce((t, q, k) => { const n = p[(k + 1) % p.length]; return t + q[0] * n[1] - n[0] * q[1]; }, 0) / 2;
       if (a > 0.95 * full && a < 1.01 * full) out.push({ c: [cx, cy], mid: z });

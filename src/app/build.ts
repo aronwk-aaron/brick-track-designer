@@ -1387,8 +1387,9 @@ function cutContext(w: Wasm, scad: Scad, o: PieceOptions, track: Track, routes: 
     return out;
   };
   /** The parts cut from body, with the studs a cut went through as set (Studs a cut goes through: never half a stud on a part unless asked; geom/studs.ts). */
+  // (a stud run into a wall beside it found too (a step's against the points' bed: not a circle of its own); but on the X yard, pinned as it is with two such studs cut: joinedStudsSplit)
   const whole = (body: Man, parts: Man[]) => ((o.studsAtCuts ?? 'off') === 'split' ? parts
-    : wholeStuds(scad, findStuds(scad, body, track.c.postD / 2, track.o.studH, PLATE_H, PLATE_H), parts, track.c.postD / 2, track.o.studH, o.studsAtCuts === 'whole', fitsBed));
+    : wholeStuds(scad, findStuds(scad, body, track.c.postD / 2, track.o.studH, PLATE_H, PLATE_H, !o.joinedStudsSplit), parts, track.c.postD / 2, track.o.studH, o.studsAtCuts === 'whole', fitsBed));
   /** A part too big for the bed cut as the parts filling it are: straight across where it can (tiles.ts planCuts), then along stepped paths (fitter). */
   /** taken: the rail-end tongue joints earlier cuts of the piece m is a part of made (cutter.ts jointsNear). */
   /** keep: more places no cut goes (a section's own track ends inside it: endKeeps). */
@@ -2313,8 +2314,9 @@ function boughtSwitches(b: PieceBuild, bought: BoughtSwitch[], copt: typeof CROS
       // least of its underside (between its sleepers), each half fitting the bed: they butt together on the baseplate)
       if (m.numTri() === 0) return { view, bal: [] as Baked[] };
       // (or, Bought track's ballast: Together, cut at the tables' seams and for the bed)
+      // (the two halves with no part of a stud the cut went through, as any cut's parts: studs.ts)
       const parts = o.boughtBallast === 'together' ? byTables(b, m).flatMap((p) => (b.cut.fitsBed(p) ? [p] : b.cut.whole(p, b.cut.bedCut(flat(w, p), bs.legs))))
-        : b.cut.fitsBed(m) ? [m] : halvesOf(b, m, bs, fp.underside);
+        : b.cut.fitsBed(m) ? [m] : (() => { const hs = halvesOf(b, m, bs, fp.underside); return hs.length > 1 ? b.cut.whole(m, hs) : hs; })();
       // (nothing loose in them: a chip of a few mm3 a cut left (1 mm3 of an R104 switch's second half) dropped, as a cut part's are)
       return { view, bal: parts.filter((p) => p.numTri() > 0).map((p) => bake(b, tidy(scad, p))) };
     }, () => []), undefined);
