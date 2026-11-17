@@ -21,6 +21,7 @@ import { buildDesign, clearBuildCache, type Piece } from '../src/app/build';
 import { type Design, OPTION_DEFAULTS, type PieceOptions, TEMPLATE_GROUPS, TEMPLATES } from '../src/app/design';
 import { putTogether, sharedEdges, stlPositions } from './assembly.shared';
 import { studsCut } from './cutpaths.shared';
+import { partStuds } from './studs-apart.shared';
 import { leverTravel, movedLocal, pointsLocal, toothA, toothB, toothTravel, POINTS, type PointsPart } from '../src/geom/monoswitch';
 import { MONO, placeAt } from '../src/geom/monorail';
 import { routePose, routeSOf, type Route } from '../src/route/route';
@@ -643,6 +644,10 @@ export async function goesTogether(name: string, design: Design, k?: Known, edge
     expect(problems.filter((q) => !allowed.some((re) => re.test(q))).join('; ')).toBe('');
     // (9. cut by hand along paths (expert): no stud is cut, cutpaths.shared.ts)
     if (d.expert?.cutPaths?.length) expect(studsCut(d, b).join('; ')).toBe('');
+    // (9b. the return loops: bought plain track's ballast beside a bought switch's gives way to it, cut straight down;
+    // no stud on its steps is left in part by that, the buddy's step under it neither (build.ts yielded): seven were
+    // on each, 0.15 to 0.91 of a stud)
+    if (/^Double-track return loop/.test(name)) expect(b.pieces.filter((p) => /-ballast$/.test(p.name)).flatMap((p) => partStuds(w, p, { studD: 4.8, studFit: 0.18 })).join('; '), 'studs in part on the ballast').toBe('');
     // (what's allowed is still there (else it comes off the list), and said by the build where it's a limit)
     for (const re of allowed) expect(problems.some((q) => re.test(q)), `${name}: ${re} is no longer found: take it off the list`).toBe(true);
     if (k?.warning) expect(b.info.warnings.some((q) => k.warning!.test(q)), `${name}: the build doesn't say ${k.warning}`).toBe(true);
