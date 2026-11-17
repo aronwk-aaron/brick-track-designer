@@ -7,6 +7,10 @@
 // its file's own volume, from its triangles, was 216589.97 before and is 216590.30 now. The 216625.83 was the file read
 // back as a solid with a film of rail of no thickness in it, 35.86 too much; the film's gone, and the file reads back
 // as it is. Its box, and every other part, as they were.)
+// (track2 to track5, 2026-11-16, Aaron: "Fix them". The two studs a cut went through, one on each side's ballast step at
+// (38.07, 249.34) and (601.93, 249.34), left in two till then (track2 and track3 had 0.83 of one each, track4 and track5
+// the rest), come off as any stud a cut goes through does: track2 and track3 29.79 mm3 less each, track4 and track5
+// 5.95 less each. Their boxes, and every other part's volume and box (the throws and levers among them), as they were.)
 import { describe, expect, it } from 'vitest';
 import fs from 'node:fs';
 import { kernel } from '../src/geom/kernel';

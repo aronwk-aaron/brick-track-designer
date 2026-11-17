@@ -1408,9 +1408,9 @@ function cutContext(w: Wasm, scad: Scad, o: PieceOptions, track: Track, routes: 
     return out;
   };
   /** The parts cut from body, with the studs a cut went through as set (Studs a cut goes through: never half a stud on a part unless asked; geom/studs.ts). */
-  // (a stud run into a wall beside it found too (a step's against the points' bed: not a circle of its own); but on the X yard, pinned as it is with two such studs cut: joinedStudsSplit)
+  // (a stud run into a wall beside it found too (a step's against the points' bed: not a circle of its own))
   const whole = (body: Man, parts: Man[]) => ((o.studsAtCuts ?? 'off') === 'split' ? parts
-    : wholeStuds(scad, findStuds(scad, body, track.c.postD / 2, track.o.studH, PLATE_H, PLATE_H, !o.joinedStudsSplit), parts, track.c.postD / 2, track.o.studH, o.studsAtCuts === 'whole', fitsBed));
+    : wholeStuds(scad, findStuds(scad, body, track.c.postD / 2, track.o.studH, PLATE_H, PLATE_H, true), parts, track.c.postD / 2, track.o.studH, o.studsAtCuts === 'whole', fitsBed));
   /** A part too big for the bed cut as the parts filling it are: straight across where it can (tiles.ts planCuts), then along stepped paths (fitter). */
   /** taken: the rail-end tongue joints earlier cuts of the piece m is a part of made (cutter.ts jointsNear). */
   /** keep: more places no cut goes (a section's own track ends inside it: endKeeps). */
