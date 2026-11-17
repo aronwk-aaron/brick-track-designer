@@ -588,39 +588,34 @@ export const RAIL_KNOWN: Record<string, (keyof typeof RAIL_KINDS)[]> = { 'Double
  * it, where a square socket was, and a circle meets a wall along a line more often than a square did. Double crossover
  * (R56) 97 to 106 (101 found), Yard ladder (R40) 33 to 38 (35), T-junction core R56 30 to 38 (35); Banked curve 6 to 21
  * (19: 16 of them on one part, at the hollow's roof, where the stubs of wall at its sleepers' low ends are taken out).)
+ * (2026-11-17, counted again from CI's log (EDGES-FOUND, PR 66) once two causes were put right: a hollow's outline
+ * tidied before it's drawn up (crossing.ts, f737845) and a blade's cut started clear of the toe's own plane
+ * (switch/base.ts toeCut, d58ef8c). Each allowance lowered to what's found and a tenth (2 at least), none raised; one
+ * that comes to EDGES_FEW or less is off the list. The X yard 472 to 5 (3 found), the double slip crossover R104 150
+ * to none (0), the double slip monster crossover 9 to none (0), Double slip (22.5°) 39 to none (2), Yard (R56) 159 to
+ * 96 (87), Yard ladder (R40) 38 to 16 (14), Wye R40, 8-stud spacing 32 to 16 (14), Banked curve 21 to 6 (4), Wye with
+ * a crossover 78 to 63 (57), Pass-through crossing R72 (B) right 41 to 30 (27), Narrow gauge beside and across standard
+ * track 118 to 103 (93). As found, so unchanged: the return loops (103, 102), Double crossover (R56) (101), T-junction
+ * core R56 (35), the compact R40 corners (30, 22).)
  */
-export const EDGES: Record<string, number> = { 'Modular wye R40, lever on the left': 10, 'Modular wye R40, lever on the right': 8, 'Modular wye R40 with continuous-curve adapters': 8, 'Test print 7: clearance round the points': 21, 'Curve R40, 5.62°': 15, 'X yard (6 tracks, double slips)': 472, 'Yard (R56)': 159, 'Double-track return loop (turning left)': 109, 'Double-track return loop (turning right)': 109, 'Double crossover (R56)': 106, 'Wye with a crossover': 78, 'Double slip (22.5°)': 39, 'Yard ladder (R40)': 38, 'Wye R40, 8-stud spacing': 32, 'T-junction core R56': 38, 'Pass-through crossing R72 (B) right': 41, 'Siding ending in a buffer stop': 16, 'Pass-through crossing R72 (B) left': 14, 'Crossing 45° left': 14, 'Double crossover R40': 9, 'Wye R40 left, R56 right': 8, 'Wye switch': 7, 'Wye R120 left, R104 right': 7, 'Dual gauge track': 7, 'Crossing 45° right': 18, 'Banked curve': 21, 'Pass-through crossing R120 right': 6, 'Wye R104 left, R120 right': 6, 'Narrow-gauge crossing 33.75° left': 6, 'Curved switch R56 90° left': 6, 'Wye R40': 6, 'Narrow-gauge crossing 90°': 5, 'Narrow-gauge switch R48 left': 5, 'Narrow-gauge wye R36': 5, 'Dual gauge crossing 45°': 5, 'Switch R72 left': 5,
-  // (mixed gauges: as the same layout at one gauge has them, 92 at 4 studs, in the sleepered crossing's part; and the 45° crossings as the standard ones)
-  'Narrow gauge beside and across standard track': 118, 'Narrow-gauge crossing of standard track 45° right': 21, 'Narrow-gauge crossing of standard track 45° left': 7,
+export const EDGES: Record<string, number> = { 'Modular wye R40, lever on the left': 5, 'Modular wye R40, lever on the right': 5, 'Test print 7: clearance round the points': 8, 'Curve R40, 5.62°': 14, 'X yard (6 tracks, double slips)': 5, 'Yard (R56)': 96, 'Double-track return loop (turning left)': 109, 'Double-track return loop (turning right)': 109, 'Double crossover (R56)': 106, 'Wye with a crossover': 63, 'Yard ladder (R40)': 16, 'Wye R40, 8-stud spacing': 16, 'T-junction core R56': 38, 'Pass-through crossing R72 (B) right': 30, 'Siding ending in a buffer stop': 16, 'Pass-through crossing R72 (B) left': 9, 'Crossing 45° left': 11, 'Double crossover R40': 6, 'Wye R40 left, R56 right': 8, 'Crossing 45° right': 15, 'Banked curve': 6, 'Pass-through crossing R120 right': 6, 'Wye R104 left, R120 right': 5, 'Narrow-gauge crossing 33.75° left': 6, 'Wye R40': 6, 'Narrow-gauge switch R48 left': 5, 'Narrow-gauge wye R36': 5,
+  // (mixed gauges: as the same layout at one gauge has them, in the sleepered crossing's part; and the 45° crossing as the standard ones)
+  'Narrow gauge beside and across standard track': 103, 'Narrow-gauge crossing of standard track 45° right': 20,
   // (the right hand's sleepered part where the gauges part: corners of its bed meeting on the baseplate, as the 45° crossings')
-  'Dual gauge split, both ways, standard gauge R40 right': 7,
-  // (a track's own settings, expert: 15 on the outer track's ballast slopes and 2 on the inner's sleepers' ends, as each alone has them)
-  'Double track, one on sleepers, one on ballast': 19,
+  'Dual gauge split, both ways, standard gauge R40 right': 5,
+  // (a track's own settings, expert: on the outer track's ballast slopes and the inner's sleepers' ends, as each alone has them)
+  'Double track, one on sleepers, one on ballast': 15,
   // (its line's sleepered parts: 5, on sleepers' ends and a joint, as the line has alone)
   'Station track on a solid bed, the line beyond on sleepers': 7,
   // (a part whose end supports were one with it till supports were carried apart (they stood in the track beside the end):
-  // the part on its own has these, on its underside where the supports had covered them: the 45° crossing 16 for 7,
-  // the R72 pass-through (B) 37 for 26, the R56 one 5; and two more each in the 22.5° double slip (37) and the wye with a
-  // crossover (76), their parts' edge rims now whole (edgeGrip had the supports' outlines in its slices))
-  'Pass-through crossing R56 right': 7,
-  // (and in a support cut back from the part, layer by layer (supports.ts cutBack), where two layers' outlines meet along
-  // a line: the test prints' end supports, beside their points' sleepers, 6 more in print 4 and 11 in print 7 (8 before))
-  'Test print 4: points three ways': 12,
+  // the part on its own has these, on its underside where the supports had covered them)
+  'Pass-through crossing R56 right': 5,
   // (the long tie past the branch's end cut back to what's under track (switch/base.ts turnoutTies: its tip lay loose):
   // 7 on the base's underside where the tie now ends on the end connector's room)
-  'Curved switch R40 90° left': 8, 'Curved switch R40 90° right': 8,
+  'Curved switch R40 90° left': 8,
   // (the double crossover's check rails, held by nothing, each got a sleeper of its own under its middle (crossing.ts
   // CHECK_UNHELD): 2 more on track1, where its rail meets it; the 2 each in points3-a and points4-b as they were)
   'Modular double crossover R40, levers inside': 6, 'Modular double crossover R40, levers outside': 6,
-  // (its lever's arm, 3 studs past the sleepers' ends on the straight's side as the reference's is: 6 where the arm's sides meet the base's, at 5.4, -35.1, 1.1 in its file; the other three R104 switches have 2 to 4 there)
-  'Switch R104 right, lever on the straight side': 7,
-  // (the double slip crossover: 142 found on CI, the X yard's kind at its four R104 double slips (it has eight: 472),
-  // on blades' and rails' tops and up the cuts' joints: track1 45, track5 54, track6 33 and a few in the others)
-  'Double slip crossover R104': 150,
-  // (the double slip monster crossover: 7 found with its levers at the corners (track3 1, track7 2, track8 4; the first at
-  // 53.3, -72.8, 5.3 in track3's file); with the reference's levers 12, films of rail of no thickness at two three-ways'
-  // toes, till blades' cuts started clear of the toe's own plane (switch/base.ts toeCut): none found since)
-  'Double slip monster crossover R104': 9,
   // (the compact R40 corners, 2026-11-12: 30 and 22 found, in most of their parts, 1 to 7 each: the switch bases' 7 at
   // 43.7, 67.5, 0.0 in their files as the R40 switches' are, the curves' 1 to 4 on rail tops and sleepers' ends)
   'Compact corner R40 left': 33, 'Compact corner R40 right': 25,
