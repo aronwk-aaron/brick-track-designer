@@ -23,7 +23,7 @@ Match: **exact** (ends, and lever or section where it has one), **close** (a tem
 **missing** (no template or setting makes it), **in progress elsewhere** (the double slips and their crossovers, being
 rebuilt separately).
 
-Counts: close 78, exact 223, in progress elsewhere 13, missing 20, n/a 1 (of 335).
+Counts: close 79, exact 224, in progress elsewhere 13, missing 18, n/a 1 (of 335).
 
 ## Parts
 
@@ -351,7 +351,7 @@ Counts: close 78, exact 223, in progress elsewhere 13, missing 20, n/a 1 (of 335
 | tb dg crossing x45 1mt right | Narrow-gauge crossing 45° right over one standard track | exact | its pieces joined end to end; its 4 ends where the set's are |
 | tb dg crossing x45 2mt left | Narrow-gauge crossing 45° left over two standard tracks | exact | its pieces joined end to end; its 6 ends within 0.01 studs of the set's |
 | tb dg crossing x45 2mt right | Narrow-gauge crossing 45° right over two standard tracks | exact | its pieces joined end to end; its 6 ends within 0.01 studs of the set's; one section cut across at x 9 (a cut path) to fit a 256 mm bed |
-| tb dg crossing x45 2mt star | - | missing | chained from its pieces (ends within 0.01 studs), but it can't be cut to a 256 mm bed: its five crossings (four over the standard tracks, one of the two narrow-gauge lines in the middle) are too close for any cut on whole studs to pass between them 2 studs clear of a frog, and the one section that holds them all is 270 mm long with its track ends. The kit's own joints lie between the crossings, square to the 45-degree lines: it needs a cut square across a slanted track, which cut paths don't make |
+| tb dg crossing x45 2mt star | Narrow-gauge star crossing 45° over two standard tracks | exact | its 21 pieces joined end to end; its 8 ends within 0.01 studs of the set's; cut where its pieces join (the setting Cut where tracks join in trackwork: cuts worked out at the joints, square across the 45-degree lines), so its four crossings and the crossing between the tracks are parts of their own, as the set's pieces are, each on a 256 mm bed |
 | tb dg crossing x45 rhombus left | Narrow-gauge rhombus crossing 45° left over two standard tracks | exact | its 26 pieces joined end to end; its 8 ends within 0.10 studs: the library's own placing of the set's pieces; one section cut across at y 15 (a cut path) to fit a 256 mm bed |
 | tb dg crossing x45 rhombus right | Narrow-gauge rhombus crossing 45° right over two standard tracks | exact | its 26 pieces joined end to end; its 8 ends within 0.24 studs: the library's own placing of the set's pieces; one section cut across at y 17 (a cut path) to fit a 256 mm bed |
 | tb dome crossing r104 r120 | Dome crossing R104 and R120 | close | its pieces joined end to end; the library's 'ct r120 sixth' turned so the loop closes, the R104 run's four 11.25-degree curves R103.48; one section cut across at x 80 (a cut path) to fit a 256 mm bed |
@@ -367,6 +367,6 @@ Counts: close 78, exact 223, in progress elsewhere 13, missing 20, n/a 1 (of 335
 | tb switch r104 wye 8sg | Wye R104, 8-stud gap, with its curves | exact | ends within 0.09 studs: the library's own placing of the set's pieces; lever within 0.64 studs of the part's tab; housing: the reference's cross-bar, 16 studs with a 4 x 3 stud block at each end (Lever housing: Cross-bar); the lever built in where the clip-on lever unit goes |
 | tb switch r104 wye | Wye R104 with its adapter curves | exact | ends within 0.09 studs: the library's own placing of the set's pieces; lever within 0.56 studs of the part's tab; housing: the reference's cross-bar, 16 studs with a 4 x 3 stud block at each end (Lever housing: Cross-bar); the lever built in where the clip-on lever unit goes |
 | tb t-junction r104 r120 | T-junction R104 and R120 | close | its pieces joined end to end; the R104 runs' curves R103.17 to R107.11 so the loop closes; one section cut across at y 186 (a cut path) to fit a 256 mm bed |
-| tb t-junction r40 r56 | - | missing | chained from its pieces with the two yard switches whole (19 pieces; its 6 ends within 0.28 studs, the two R40 runs closed with R40.32 and R39.63 curves), but two sections don't fit a 256 mm bed: the core (its straight 38.3 studs, 304 mm, with frogs all along it: no cut path passes 2 studs clear of them; on its own the core is cut down its middle by the build) and each R56 switch with its track ends (257 mm) |
+| tb t-junction r40 r56 | T-junction R40 and R56 | close | its 19 pieces joined end to end; its 6 ends within 0.28 studs; the two R40 runs' curves R40.32 and R39.63 so the loop closes; cut where its pieces join (the setting Cut where tracks join in trackwork), the core then across its middle, as it is on its own; its levers each on an arm, not the cross-bar (the two lines are 16 studs apart: a bar on one would be on the other's lever) |
 | tb w-junction r104 r120 | W-junction R104 and R120 | exact | ends within 0.22 studs: the library's own placing of the set's pieces; 2 lever tab(s): lever place not checked (template not in the build batch) |
 
