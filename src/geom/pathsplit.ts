@@ -427,3 +427,105 @@ export function cutOnPaths(s: Scad, m: Man, routes: Route[], paths: HandPath[], 
   }
   return { parts: out, done: [...done.values()] };
 }
+
+/** A cut worked out at a joint between two tracks (app/jointcuts.ts), for the build: its corners (mm). It ends in the open, on a part's edge, or on another such cut; it isn't carried on past its ends. */
+export interface KerfCut { id: string; pts: [number, number][] }
+/** What became of a joint cut in a piece: made (the parts either side of it are parts apart), or not (it parted nothing: left out, nothing cut). */
+export interface KerfDone { id: string; made: boolean }
+
+/** (mm) A joint cut's own width; how far past each corner and end it reaches. */
+const KERF = 0.1, KERF_END = 0.3;
+/** (mm) How far either side of a joint cut a part's plan is looked at to tell which side it's on, and how much of it there counts (mm2). */
+const SIDE = 4, SIDE_MIN = 3;
+
+/**
+ * A piece cut along joint cuts: lines that part it only together with its own edges and each other (a track's width
+ * across, from the open to the open, or to another cut), so there's no left and right of them beyond their ends as
+ * there is of a hand path (cutOnPaths). The piece is cut through along each (KERF wide), and what then holds together
+ * is a part. A cut with the same part still on both sides of it parted nothing (its end is short of the open, or
+ * runs into another track): it's left out, and the piece cut again without it, so no slit is left in a part. Each
+ * cut that's made is joined along its runs as a hand path is (pathJoints, worked out on the whole piece), each
+ * joint's parts given to the part on their side. A stud a cut would go through stays whole on the side its middle is
+ * on, the cut going round it. bodiesOf: a solid's bodies, each with the loose bits nearest it (cutContext bodies).
+ */
+export function cutOnKerfs(s: Scad, m: Man, routes: Route[], cuts: KerfCut[], join: PathJoin | undefined, taken: [number, number][], bodiesOf: (m: Man) => Man[], flatOf: (m: Man) => Man = (x) => x): { parts: Man[]; done: KerfDone[] } {
+  const CS = s.w.CrossSection;
+  const unit = (a: [number, number], b: [number, number]): [number, number] => { const l = Math.hypot(b[0] - a[0], b[1] - a[1]); return [(b[0] - a[0]) / l, (b[1] - a[1]) / l]; };
+  const prism = (cs: CS) => T(s.extrude(cs, 1000), [0, 0, -500]);
+  /** The rectangle along a-b from u0 before a to u1 past b, from v0 to v1 to its left. */
+  const rect = (a: [number, number], b: [number, number], u0: number, u1: number, v0: number, v1: number) => {
+    const d = unit(a, b), n: [number, number] = [-d[1], d[0]], at = (q: [number, number], u: number, v: number): [number, number] => [q[0] + d[0] * u + n[0] * v, q[1] + d[1] * u + n[1] * v];
+    return s.polygon([at(a, -u0, v0), at(b, u1, v0), at(b, u1, v1), at(a, -u0, v1)]);
+  };
+  const segs = (c: KerfCut) => c.pts.slice(1).map((q, k) => [c.pts[k], q] as [[number, number], [number, number]]).filter(([a, b]) => Math.hypot(b[0] - a[0], b[1] - a[1]) > 0.05);
+  const studR = join ? join.t.c.postD / 2 : 0, studs = join ? findStuds(s, m, studR, join.t.o.studH, PLATE_H, PLATE_H) : [];
+  // (each cut's own width in plan: along its runs, round the studs in its way)
+  const kerfOf = (c: KerfCut) => {
+    let k = CS.union(segs(c).map(([a, b]) => rect(a, b, KERF_END, KERF_END, -KERF / 2, KERF / 2)));
+    for (const st of studs) for (const [a, b] of segs(c)) {
+      const d = unit(a, b), len = Math.hypot(b[0] - a[0], b[1] - a[1]), u = (st.c[0] - a[0]) * d[0] + (st.c[1] - a[1]) * d[1], v = (st.c[0] - a[0]) * -d[1] + (st.c[1] - a[1]) * d[0];
+      if (u < -studR || u > len + studR || Math.abs(v) > studR + 0.15) continue;
+      // (the stud whole with the side its middle is on: the cut round it on the other side)
+      const ring = CS.circle(studR + 0.05 + KERF, 48).subtract(CS.circle(studR + 0.05, 48)).translate(st.c);
+      const away = v >= 0 ? rect(a, b, 2 * studR + 2, 2 * studR + 2, -(2 * studR + 2), KERF / 2) : rect(a, b, 2 * studR + 2, 2 * studR + 2, -KERF / 2, 2 * studR + 2);
+      k = k.subtract(CS.circle(studR + 0.05, 48).translate(st.c)).add(ring.intersect(away));
+      break;
+    }
+    return k;
+  };
+  const kerfs = new Map(cuts.map((c) => [c.id, kerfOf(c)]));
+  /** The plan beside a cut, on its left (sd 1) or right (-1): SIDE wide (or w), clear of the cut and of its corners. */
+  const band = (c: KerfCut, sd: number, w = SIDE) => CS.union(segs(c).map(([a, b]) => { const len = Math.hypot(b[0] - a[0], b[1] - a[1]), e = Math.min(1, len / 4); return sd > 0 ? rect(a, b, -e, -e, 0.3, w) : rect(a, b, -e, -e, -w, -0.3); }));
+  const floorOf = (x: Man) => { const bb = x.boundingBox(), zs: number[] = []; for (let z = bb.min[2] + 0.3; z < bb.max[2] - 0.1; z += 1.5) zs.push(z); zs.push(bb.min[2] + 2.6); return CS.union(zs.map((z) => x.slice(z))); };
+  const near = (c: KerfCut, bb: { min: number[]; max: number[] }) => c.pts.some((q, k) => k > 0 && Math.max(q[0], c.pts[k - 1][0]) >= bb.min[0] - SIDE && Math.min(q[0], c.pts[k - 1][0]) <= bb.max[0] + SIDE && Math.max(q[1], c.pts[k - 1][1]) >= bb.min[1] - SIDE && Math.min(q[1], c.pts[k - 1][1]) <= bb.max[1] + SIDE);
+  /** Cut along the cuts on: the bodies left, each one's plan, and which side of each cut it's on (bit 1 left, 2 right). */
+  const cutUp = (on: KerfCut[], holes?: Man) => {
+    const body = s.difference(m, [prism(CS.union(on.map((c) => kerfs.get(c.id)!))), ...(holes ? [holes] : [])]);
+    const bodies = bodiesOf(flatOf(body)), floors = bodies.map((x) => floorOf(x));
+    const sides = on.map((c) => bodies.map((x, i) => {
+      if (!near(c, x.boundingBox())) return 0;
+      return (floors[i].intersect(band(c, 1)).area() > SIDE_MIN ? 1 : 0) | (floors[i].intersect(band(c, -1)).area() > SIDE_MIN ? 2 : 0);
+    }));
+    return { bodies, floors, sides };
+  };
+  // (the cuts that part something: one with a part on both sides of it, or nothing one side, left out, and the rest tried again)
+  let on = [...cuts], got = on.length ? cutUp(on) : undefined;
+  for (let round = 0; got && round < cuts.length; round++) {
+    const bad = on.filter((_, k) => got!.sides[k].some((v) => v === 3) || !got!.sides[k].some((v) => v === 1) || !got!.sides[k].some((v) => v === 2));
+    if (!bad.length) break;
+    on = on.filter((c) => !bad.includes(c));
+    got = on.length ? cutUp(on) : undefined;
+  }
+  const done = cuts.map((c) => ({ id: c.id, made: on.includes(c) }));
+  if (!got || !on.length) return { parts: [m], done };
+  if (!join) return { parts: got.bodies, done };
+  // (the joints along each cut that's made, worked out on the whole piece: each run clear of where another cut meets it)
+  const GAPK = 10, js = on.map((c) => {
+    const meets = on.filter((o) => o !== c).flatMap((o) => o.pts), runs: Run[] = [];
+    for (const [a, b] of segs(c)) {
+      const d = unit(a, b), len = Math.hypot(b[0] - a[0], b[1] - a[1]);
+      const us = meets.flatMap((q) => { const u = (q[0] - a[0]) * d[0] + (q[1] - a[1]) * d[1], v = Math.abs((q[0] - a[0]) * -d[1] + (q[1] - a[1]) * d[0]); return v < 1 && u > -GAPK && u < len + GAPK ? [u] : []; }).sort((p, q) => p - q);
+      let u0 = 0;
+      for (const u of [...us, Infinity]) { const u1 = Math.min(len, u - GAPK); if (u1 - u0 > 4) runs.push({ p: [a[0] + d[0] * u0, a[1] + d[1] * u0], d, len: u1 - u0 }); u0 = Math.max(u0, u + GAPK); }
+    }
+    const j = runs.length ? pathJoints(s, join.t, m, routes, runs, join.joint, join.flatRails, join.noTongue, taken) : undefined;
+    if (j) taken.push(...j.tongueAt);
+    return j;
+  });
+  const holes = js.flatMap((j) => (j?.cut ? [j.cut] : []));
+  if (!holes.length) return { parts: got.bodies, done };
+  const fin = cutUp(on, s.union(holes)), adds: Man[][] = fin.bodies.map(() => []);
+  js.forEach((j, k) => {
+    if (!j) return;
+    j.add.forEach((list, a) => {
+      const side = band(on[k], a === 0 ? 1 : -1, 12);
+      for (const ad of list) {
+        const fp = ad.project().offset(0.5, 'Round').intersect(side);
+        let best = -1, ba = 0.2;
+        fin.floors.forEach((f, i) => { if (!(fin.sides[k][i] & (a === 0 ? 1 : 2))) return; const ar = f.intersect(fp).area(); if (ar > ba) { ba = ar; best = i; } });
+        if (best >= 0) adds[best].push(ad);
+      }
+    });
+  });
+  return { parts: fin.bodies.map((x, i) => (adds[i].length ? flatOf(tidy(s, s.union([x, ...adds[i]]))) : x)), done };
+}

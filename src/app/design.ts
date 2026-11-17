@@ -218,6 +218,8 @@ export interface PieceOptions {
   studsAtCuts?: 'off' | 'whole' | 'split';
   /** (expert) Each end of a cut path that crosses a switch's branch at a slant turned square to the branch there, as a modular kit's sections are joined (handcuts.ts squarePathEnds); off: along the stud grid, as drawn. */
   pathSquare?: boolean;
+  /** (track cut into pieces) Where two tracks drawn end to end join inside trackwork, where no ordinary track end fits (on a slanted track just past the track it crosses): cut there too, square across that track (jointcuts.ts), so a set chained from its pieces comes apart where they join. Off (default): one part there, cut for the bed as any part. */
+  jointCuts?: boolean;
   /** With track pieces: plain track bought, not printed: LEGO's straights (53401, with ballast on LEGO plates) and curves, R40 LEGO's (53400), R56 to R120 BrickTracks' ('lego'); only LEGO's, BrickTracks' radii printed ('lego-only'); or every piece printed ('print'). */
   legoTrack?: 'lego' | 'lego-only' | 'print';
   /** Bought track's printed ballast: a part for each bought piece, whole as it is (a switch's over-long one in two, between its sleepers); or 'together', one under the pieces side by side, cut for the bed and at table seams. */
@@ -367,7 +369,7 @@ export const OPTION_DEFAULTS: PieceOptions = {
   throwSide: 'auto', threeWayLevers: 2, leverOffset: 8, pointThrow: 3, pointClearance: 0.3, springPreload: 1, springThickness: 0.9, springLength: 40,
   flangeway: 3, flangewayDepth: 3, checkRailLen: 30, checkRailW: 1, checkRailFlare: 1.5, printBedX: 256, printBedY: 256, baseplate: 0, baseplateX: 0, baseplateY: 0, ballast: 'none', bottomStyle: 'antistud', joint: 'lego', pointsModule: 'built-in', endSupports: true, tongueRails: 'all', grip: 'edges', pointsPieces: 1, pointBlades: 2, throwStyle: 'built-in', mechStyle: 'plates', curveStuds: 'follow',
   throwAction: 'detent', leverHousing: 'arm', slipLevers: 'corner', slipCuts: 'none', bladeStyle: 'sprung', bladeLip: 'pin', sleepers: 'sleepers', undersideGrid: 'baseplate', splitTrack: 'lengths', pieceLengthStuds: 16, studsAtCuts: 'off', legoTrack: 'lego', axleStuds: 2, sleeperWidthStuds: 2, sleeperGapStuds: 2, studFit: 0.18, antistudFit: 0.06,
-  bladeDiscD: 14, throwBallast: false, pathSquare: false, axleHoles: false, pegOnBallast: false,
+  bladeDiscD: 14, throwBallast: false, pathSquare: false, jointCuts: false, axleHoles: false, pegOnBallast: false,
   bufferStyle: 'frame', bufferPostPlates: 8, bufferBeamBottom: 2, bufferBeamTop: 12, bufferPinHoles: true,
   trackBallast: 'together', trackFitTol: 0.2, labelText: '', labelSize: true, labelGauge: false, labelParts: true,
   monoEndStuds: 'side', monoAxleHoles: true, monoLegoAntistud: false, monoAxleLengthStuds: 2, monoHoleFit: 0.1, monoLabels: 'name', monoSwitchFit: 0.3,
