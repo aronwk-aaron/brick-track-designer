@@ -123,9 +123,17 @@
   "stand",
   "nail"
  ],
+ "leverHousing": [
+  "arm",
+  "crossbar"
+ ],
  "threeWayLevers": [
   "1",
   "2"
+ ],
+ "slipLevers": [
+  "corner",
+  "reference"
  ],
  "boxedThrow": [
   "nail",
@@ -238,7 +246,15 @@
   "whole",
   "split"
  ],
+ "slipCuts": [
+  "none",
+  "reference"
+ ],
  "pathSquare": [
+  "false",
+  "true"
+ ],
+ "jointCuts": [
   "false",
   "true"
  ],
