@@ -1802,6 +1802,7 @@ function updateLegend() {
   show('legend-ballast', (design.options?.ballast ?? 'none') !== 'none');
   show('legend-baseplate', (design.options?.baseplate ?? 0) > 0);
   show('legend-tables', !!design.tables?.length);
+  show('legend-jointcuts', !!o?.jointCuts?.some((q) => q.made));
   show('legend-grooves', !!o?.grooves.length); show('legend-checks', !!o?.checkRails.length); show('legend-crossings', !!o?.crossings.length);
   show('legend-points', its.some((it) => it.kind === 'points' && !it.off && !it.cand));
   show('legend-points-off', its.some((it) => it.kind === 'points' && it.off));

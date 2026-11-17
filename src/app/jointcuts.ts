@@ -245,3 +245,13 @@ function tidyLine(pts: Pt[]): Pt[] {
   }
   return out.map((q) => [Math.round(q[0] * 1000) / 1000, Math.round(q[1] * 1000) / 1000]);
 }
+
+/**
+ * The cut (its place in the list) whose line p is nearest, within reach of it (the plan: p, the cuts' corners and
+ * reach in one unit); undefined: none that near. For a press on the plan to say what the line under it is.
+ */
+export function jointCutNear(cuts: { pts: Pt[] }[], p: Pt, reach: number): number | undefined {
+  let best: number | undefined, bd = reach;
+  cuts.forEach((c, n) => { for (let k = 0; k + 1 < c.pts.length; k++) { const d = segDist(p, c.pts[k], c.pts[k + 1]); if (d <= bd) { bd = d; best = n; } } });
+  return best;
+}

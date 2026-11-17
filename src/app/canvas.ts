@@ -18,6 +18,7 @@ import { LIMITS, radiusRange } from './limits';
 import { cutSegs, joinInto, nearestAlong, routeStuds, splitProblem } from './splitmerge';
 import { cleanCuts, cutLength, cutProblem, liveCuts } from './routecuts';
 import { editSays, layOf, planSleepers, reverseShared, type SleeperEdit, type SleeperLay, SLEEPER_MOVE, sleeperProblem, withSleeperEdit } from './sleeperedits';
+import { jointCutNear } from './jointcuts';
 import { type CutPath, type Grid, gridPath, type NoCut, moveCorner, newPathId, PATH_MAX, pathProblem, type Pt as CutPt, snapToGrid } from './cutpaths';
 import { dragResult, END_INSET_PX, guidedHandle, type Handle, type HandleKind, handleLabel, segmentHandles, visibleHandles, withValue } from './handles';
 import { isEdit, reverseAnchors } from './twfollow';
@@ -63,6 +64,8 @@ export interface Overlay { grooves: [number, number][][]; checkRails: [number, n
   /** where the track's cut across into track pieces, mm (a route card's Keep the cuts it has now) */ joints?: [number, number][];
   /** for cut paths (expert): the stud grid in force (mm; degrees), the rails' offset, where no cut goes; and the paths the last build didn't make, with why */
   cutting?: { grid: [number, number, number]; railG: number; no: NoCut }; pathsNot?: { id: string; why: string }[];
+  /** the cuts worked out where tracks join inside trackwork (Cut where tracks join in trackwork, jointcuts.ts): each one's joint and corners (mm), and whether the build made it */
+  jointCuts?: { at: [number, number]; pts: [number, number][]; made: boolean }[];
   /** (expert) where tracks run over each other (mm), which two, and whether the pair is accepted (accept.ts) */ over?: { at: [number, number]; routes: [string, string]; ok: boolean }[];
   /** what's wrong, and where (mm): ringed in red */ issues?: { at: [number, number]; r: number; text: string; /** r is the size of the thing itself (a part too big for the bed): ringed whole; else the ring is kept small, on the spot */ area?: boolean }[] }
 /** A trackwork item on the plan (mm); a lever ('throw') has its points' frame and settings, to drag it. */
@@ -498,6 +501,15 @@ export class TrackCanvas {
     const list = ((d.expert ??= {}).cutPaths ??= []), id = newPathId(list.map((p) => p.id));
     list.push({ id, pts });
     this.pathDraw = undefined; this.setItem({ kind: 'cutpath', id }); this.host.changed(true); this.draw();
+  }
+  /** A press at w (studs) on a cut worked out where tracks join (overlay.jointCuts): what it is, said in the status line (by mouse or finger: nothing here is on hover alone). */
+  private jointCutNote(w: [number, number]) {
+    const jc = this.overlay?.jointCuts;
+    if (!jc?.length) return;
+    const n = jointCutNear(jc, [w[0] * MM, w[1] * MM], this.reach(this.touching || matchMedia('(pointer: coarse)').matches ? 18 : 8) * MM);
+    if (n === undefined) return;
+    this.say(jc[n].made ? 'Cut where two tracks join here (worked out, not drawn) · it moves with the tracks · Settings › Cutting and joints › Cut where tracks join in trackwork'
+      : 'Two tracks join here, but a cut here would part nothing: left out · Settings › Cutting and joints › Cut where tracks join in trackwork', 5000);
   }
   /** The cuts, cut paths, stretches and joints under a point of the plan, the one a press takes first (items.ts hitItems): of the kinds a click may take now. */
   private itemHits(w: [number, number]): Hit[] {
@@ -1242,6 +1254,8 @@ export class TrackCanvas {
     // (what the press is on: plan.hitTest; anything but a cut, a cut path, a stretch or a joint, and the one selected is let go of)
     const hit = this.hitTest(w);
     if (hit?.kind !== 'item') this.setItem(undefined);
+    // (a press on a cut worked out where tracks join: what the line is, said; the press goes on as any other)
+    if (e.button === 0 && this.mode === 'select' && hit?.kind !== 'item') this.jointCutNote(w);
     // Pressing on a handle of the selected route: drag it (a curve's angle or radius, a straight's length)
     if (hit?.kind === 'handle') {
       const h = hit.handle, ri = this.selection()[0], hr = this.host.design().routes[ri];
@@ -2537,6 +2551,15 @@ export class TrackCanvas {
         line(p.pts, bad ? '#e0452b' : '#d9480f', sel ? 4 : 2.5);
         if (sel) for (const q of p.pts) { const [x, y] = this.toScreen(q[0], q[1]); c.fillStyle = '#fff'; c.strokeStyle = bad ? '#e0452b' : '#d9480f'; c.lineWidth = 2; c.beginPath(); c.rect(x - 4, y - 4, 8, 8); c.fill(); c.stroke(); }
         if (dragged && this.cutDrag!.why && this.mouse) { const [mx, my] = this.toScreen(this.mouse[0], this.mouse[1]); tag(mx, my + 30, this.cutDrag!.why, '#e0452b'); }
+      }
+      // (the cuts worked out where tracks join inside trackwork: a line as a cut path's, not to be dragged (none is drawn
+      // by hand: the tracks' joints place them); one the build left out, as it parts nothing, thin and dashed)
+      {
+        const jc = this.overlay?.jointCuts ?? [];
+        for (const q of jc) line(q.pts.map((v): CutPt => [v[0] / MM, v[1] / MM]), q.made ? '#d9480f' : '#b0613a', q.made ? 2.5 : 1.5, q.made ? [] : [3, 4]);
+        // (where they are on the screen, for the browser smoke tests)
+        const where = jc.length ? JSON.stringify(jc.map((q) => { const m = q.pts[Math.floor((q.pts.length - 1) / 2)], n = q.pts[Math.floor((q.pts.length - 1) / 2) + 1] ?? m, [x, y] = this.toScreen((m[0] + n[0]) / 2 / MM, (m[1] + n[1]) / 2 / MM); return { x: Math.round(x), y: Math.round(y), made: q.made }; })) : '';
+        if (where) { if (this.el.dataset.jointcuts !== where) this.el.dataset.jointcuts = where; } else delete this.el.dataset.jointcuts;
       }
       // (where tracks run over each other on purpose, accepted: a small orange ring with a tick, not the red warning's)
       for (const o of this.overlay?.over ?? []) {

@@ -220,6 +220,26 @@ async function tablet(width: number, height: number, tag: string) {
     check(ex.height >= 30, `[${tag}] the explode slider is finger-sized (${Math.round(ex.width)}x${Math.round(ex.height)})`);
     await shot('3d');
   }
+  // (the cuts worked out where tracks join: drawn on the plan, and a finger on one says what it is)
+  if (tag === 'landscape') {
+    at = `${tag}: a cut where tracks join`;
+    await tapOn('#templates-open'); await page.fill('#tpl-search', 'compact base standard'); await sleep(200);
+    const kit = '#tpl-body .tcard[data-template="Switch R40 left, compact base and standard section"] .tpick';
+    await page.locator(kit).first().scrollIntoViewIfNeeded(); await tapOn(kit);
+    await page.waitForFunction(() => (window as unknown as { btdCanvas: C }).btdCanvas.host.design().routes.length === 4, null, { timeout: 15_000 }).catch(() => {});
+    check(await routes() === 4, `[${tag}] the compact kit opens (${await routes()} routes)`);
+    await page.waitForFunction(() => !!document.getElementById('track')!.dataset.jointcuts && document.getElementById('buildstatus')!.hidden, null, { timeout: 60_000 }).catch(() => {});
+    await tapOn('#mode-select'); await tapOn('#fit'); await sleep(400);
+    const jc = await page.evaluate(() => { const el = document.getElementById('track')!, r = el.getBoundingClientRect(); return (JSON.parse(el.dataset.jointcuts ?? '[]') as { x: number; y: number; made: boolean }[]).map((q) => ({ ...q, x: q.x + r.left, y: q.y + r.top })); });
+    check(jc.length === 1 && jc[0].made, `[${tag}] the kit's cut where its tracks join is drawn on the plan (${JSON.stringify(jc)})`);
+    check(await page.locator('#legend-jointcuts').evaluate((e: HTMLElement) => !e.hidden), `[${tag}] and the legend has it`);
+    if (jc.length) {
+      await f.tap([jc[0].x, jc[0].y]);
+      const said = await page.locator('#hint').innerText();
+      check(/Cut where two tracks join here/.test(said), `[${tag}] a tap on it says what it is (${said.slice(0, 80)})`);
+      await shot('jointcut');
+    }
+  }
   await pageStill('everything');
   check(errors.length === 0, `[${tag}] no errors on the page${errors.length ? `: ${errors.join(' | ').slice(0, 400)}` : ''}`);
   await ctx.close();

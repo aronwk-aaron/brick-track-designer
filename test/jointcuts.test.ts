@@ -5,7 +5,7 @@ import { describe, expect, it } from 'vitest';
 import { buildDesign, clearBuildCache } from '../src/app/build';
 import { pathProblem } from '../src/app/cutpaths';
 import { type Design, OPTION_DEFAULTS, type PieceOptions, TEMPLATES, toRoutes } from '../src/app/design';
-import { jointClusters, jointCuts, routeJoints, trackGroups } from '../src/app/jointcuts';
+import { jointClusters, jointCutNear, jointCuts, routeJoints, trackGroups } from '../src/app/jointcuts';
 import { kernel } from '../src/geom/kernel';
 
 const APP = (globalThis as { APP_DEFAULTS?: PieceOptions }).APP_DEFAULTS!;
@@ -85,6 +85,13 @@ describe('joints beside each other, each on the other track\'s bed: one cut acro
     expect(pts[1][0]).toBeCloseTo(-1.37, 1); expect(pts[1][1]).toBe(16);
     expect(pts[2][0]).toBeCloseTo(4.08, 1); expect(pts[2][1]).toBe(16);
     expect(pathProblem(cuts[0].pts.map((q): [number, number] => [q[0] / 8, q[1] / 8]), [], { routes: rts, railG: 20, no: { blades: [], frogs: [], moving: [] }, slip: true, free: true })).toBeUndefined();
+  });
+  it('a press on the plan finds the cut whose line it is on, within reach', () => {
+    const cuts = jointCuts(rts, halves);
+    expect(jointCutNear(cuts, [8, 128.5], 1)).toBe(0);
+    expect(jointCutNear(cuts, [-40, 116], 3)).toBe(0);
+    expect(jointCutNear(cuts, [8, 132], 1)).toBeUndefined();
+    expect(jointCutNear([], [8, 128], 1)).toBeUndefined();
   });
   it('a joint on another track\'s bed with no joint of that track beside it has no cut, as before', () => {
     const d = kit();
