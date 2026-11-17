@@ -241,7 +241,8 @@ export function splitOnPath(s: Scad, m: Man, routes: Route[], path: [number, num
 }
 
 /** A cut path drawn by hand (expert mode, app/cutpaths.ts), for the build: its corners (mm, on the stud grid, each run along a grid line), and its own joint if it has one. */
-export interface HandPath { id: string; pts: [number, number][]; joint?: Joint; flatRails?: boolean }
+/** several: a side may be in two bodies or more (a double slip's own cut right across two tracks side by side: the ends beyond it are two parts, split apart afterwards as any bodies that don't touch are). */
+export interface HandPath { id: string; pts: [number, number][]; joint?: Joint; flatRails?: boolean; several?: boolean }
 /** What became of a hand path in a piece: made (it cut a part in two), or why not and where: 'edge', it ends inside a part; 'sliver', a side would be a sliver; 'two', a side would be in two bodies. */
 export interface HandPathDone { id: string; made?: true; why?: 'edge' | 'sliver' | 'two'; at?: [number, number] }
 
@@ -379,7 +380,7 @@ export function cutOnPaths(s: Scad, m: Man, routes: Route[], paths: HandPath[], 
         const sides = mans.map((x) => x.decompose().filter((y) => y.volume() > 5));
         if (sides.some((bs) => !bs.length)) { next.push(lf); continue; } // (nothing one side: it only ran along the part's edge)
         const why = sides.some((bs) => bs.reduce((t, y) => t + y.volume(), 0) < SLIVER || bs.some((y) => y.volume() >= BIT && y.volume() < SLIVER)) ? 'sliver' as const
-          : sides.some((bs) => bs.filter((y) => y.volume() >= BIT).length > 1) ? 'two' as const : undefined;
+          : !hp.several && sides.some((bs) => bs.filter((y) => y.volume() >= BIT).length > 1) ? 'two' as const : undefined;
         if (why) { not(hp, why, at); next.push(lf); continue; }
         // (the joints along this stretch of the path: their holes, within the part; their own parts, each side's
         // with its side; and of the joints' parts the part had already, each with the side it's on)

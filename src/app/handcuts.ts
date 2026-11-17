@@ -64,18 +64,19 @@ export function jointsOn(d: Design, i: number, joints: [number, number][]): numb
  * goes through a stud), in mm; the ones that can't be made (cutpaths.ts pathProblem: a blade, a frog, down a rail, a
  * sliver between two) left out and listed in refused, with why and where (studs). square: each end run that crosses a
  * branch at a slant turned square to it (squarePathEnds), after it's been checked on the grid.
+ * slipIds: the paths that are a double slip's own sections (slipcuts.ts), checked as those are.
  */
-export function designPaths(d: Design, gp: Pose, routes: Route[], railG: number, no: NoCut, square = false): { cut: HandPath[]; refused: (PathFault & { id: string })[] } | undefined {
+export function designPaths(d: Design, gp: Pose, routes: Route[], railG: number, no: NoCut, square = false, slipIds?: Set<string>): { cut: HandPath[]; refused: (PathFault & { id: string })[] } | undefined {
   const ps = d.expert?.cutPaths;
   if (!ps?.length) return undefined;
   const g: Grid = [gp[0] / 8, gp[1] / 8, gp[2]], laid = ps.map((p) => ({ ...p, pts: gridPath(g, p.pts) }));
   const cut: HandPath[] = [], refused: (PathFault & { id: string })[] = [], ok: typeof laid = [];
   for (const p of laid) {
-    const why = pathProblem(p.pts, ok.map((q) => q.pts), { routes, railG, no });
+    const why = pathProblem(p.pts, ok.map((q) => q.pts), { routes, railG, no, slip: !!slipIds?.has(p.id) });
     if (why) { refused.push({ id: p.id, ...why }); continue; }
     ok.push(p);
     const mm = p.pts.map((q): [number, number] => [q[0] * 8, q[1] * 8]);
-    cut.push({ id: p.id, pts: square ? squarePathEnds(mm, routes) : mm, ...(p.joint && { joint: p.joint === 'flataxle' ? 'axle' as const : p.joint, flatRails: p.joint === 'flataxle' }) });
+    cut.push({ id: p.id, pts: square ? squarePathEnds(mm, routes) : mm, ...(p.joint && { joint: p.joint === 'flataxle' ? 'axle' as const : p.joint, flatRails: p.joint === 'flataxle' }), ...(slipIds?.has(p.id) && { several: true }) });
   }
   return { cut, refused };
 }

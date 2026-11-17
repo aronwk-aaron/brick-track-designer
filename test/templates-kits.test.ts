@@ -61,10 +61,12 @@ const compact = (hand: 1 | -1): Record<string, Module[]> => {
 const slip = (hand: 1 | -1): Module[] => { const h = hand === 1 ? 'left' : 'right'; return [
   // (its joints to the middle: 4 studs from the crossing along the line between the two tracks, 11.25 degrees off the straight one)
   // (the joints square to that line, as the library's (slipCuts 'reference'), laid on the stud grid with a step: the
-  // middle's box 10 studs long (the library's, 8 long and 12 wide at 11.25 degrees, is 10.2), each detachable's 18)
-  [`dslip detach ${h} (below)`, m(hand, [[0, -20], [8, -20], [0.78, -3.92]]), 18],
-  ['dslip middle', m(hand, [[0.78, -3.92], [-0.78, 3.92]]), 10],
-  [`dslip detach ${h} (above)`, m(hand, [[0, 20], [-8, 20], [-0.78, 3.92]]), 18]]; };
+  // middle's box 10 studs long (the library's, 8 long and 12 wide at 11.25 degrees, is 10.2), each detachable's 18).
+  // Cut clear of the blades (each straight-track blade's heel and pin are 4.8 studs from the crossing, under where the
+  // staircase's outer run was): straight across 3 studs out, the middle 6 long)
+  [`dslip detach ${h} (below)`, m(hand, [[0, -20], [8, -20], [0.78, -3.92]]), 18.6],
+  ['dslip middle', m(hand, [[0.78, -3.92], [-0.78, 3.92]]), 6],
+  [`dslip detach ${h} (above)`, m(hand, [[0, 20], [-8, 20], [-0.78, 3.92]]), 18.6]]; };
 const KITS: Record<string, Module[]> = {
   'Three-way R104, base and detachable modules': [
     ['base triple', [[0, 0], [0, 16], [-1, 16], [1, 16]], 16],

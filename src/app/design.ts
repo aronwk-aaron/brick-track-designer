@@ -637,7 +637,8 @@ export function slipCrossover(): Design {
   // (each diagonal through two slips: r104Slip's diagonal twice, end to end; h 1: up to the left, -1: up to the right)
   const diagonal = (name: string, x: number, h: 1 | -1): DRoute => ({ name, x, y: -20, heading: 22.5 * h, segs: [{ kind: 'straight', studs: lead }, ...run(h), { kind: 'straight', studs: 2 * lead }, ...run(h), { kind: 'straight', studs: lead }] });
   const tracks: DRoute[] = [0, 16].map((x, k) => ({ name: `T${k + 1}`, x, y: -20, heading: 0, segs: [{ kind: 'straight', studs: 80 }] }));
-  return { version: 1, gaugeStuds: 4, options: { legoTrack: 'print', pointBlades: 1, slipLevers: 'reference' }, routes: [...tracks, diagonal('D1', -8, -1), diagonal('D2', 24, 1),
+  // (its sections as the reference's (slipCuts): each slip's middle cut out, right across both tracks; between them the inner ends, both tracks' in one)
+  return { version: 1, gaugeStuds: 4, options: { legoTrack: 'print', pointBlades: 1, slipLevers: 'reference', slipCuts: 'reference' }, routes: [...tracks, diagonal('D1', -8, -1), diagonal('D2', 24, 1),
     ...slipRoads('D1-T1', [0, 0], -1), ...slipRoads('D1-T2', [16, 40], -1), ...slipRoads('D2-T2', [16, 0], 1), ...slipRoads('D2-T1', [0, 40], 1)] };
 }
 /**
@@ -672,7 +673,7 @@ export function slipMonster(): Design {
   const cuts = [{ id: 'c1', pts: [...half(-8), ...mirrorY(half(-8)).reverse()] }, { id: 'c2', pts: c2 }, { id: 'c3', pts: mirrorY(half(-24)) }];
   // (its levers not yet as the reference's (slipLevers): there the upper left slip's inner set on the outer track, its
   // lever beside its throw bar, has its slider's end 6 mm3 into the bed's part (assembled-dslip-monster))
-  return { version: 1, gaugeStuds: 4, options: { legoTrack: 'print', pointBlades: 1, threeWayLevers: 2, splitTrack: 'lengths' }, routes: [...tracks, ...side(1, 'R'), ...side(-1, 'L'),
+  return { version: 1, gaugeStuds: 4, options: { legoTrack: 'print', pointBlades: 1, threeWayLevers: 2, splitTrack: 'lengths', slipCuts: 'reference' }, routes: [...tracks, ...side(1, 'R'), ...side(-1, 'L'),
     ...slipRoads('QR-T1', [0, 0], 1), ...slipRoads('PR-T1', [0, 40], -1), ...slipRoads('QL-T3', [-32, 0], -1), ...slipRoads('PL-T3', [-32, 40], 1)],
     expert: { cutPaths: cuts } };
 }

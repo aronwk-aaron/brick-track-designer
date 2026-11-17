@@ -73,6 +73,17 @@ describe('cut paths: what\'s against one before the build', () => {
     expect(pathProblem([[8, 0], [8, 10]], [[[8, 10], [8, 30]]])).toBeUndefined();
     expect(pathProblem([[0, 10], [8, 10]], [[[8, 0], [8, 30]]])).toBeUndefined();
   });
+  it('a double slip\'s own cut: through a frog and the points\' span, clear of the moving parts themselves', () => {
+    const slip = { ...tr, no: { ...tr.no, moving: [[-16, 48, 6]] as [number, number, number][] }, slip: true };
+    // (refused as any path is: the points' span; through a frog)
+    expect(pathProblem([[-6, 9], [6, 9]], [], tr)?.why).toMatch(/A blade moves here/);
+    expect(pathProblem([[-6, 9], [6, 9]], [], slip)).toBeUndefined();
+    expect(pathProblem([[15, 10], [15, 30]], [], slip)).toBeUndefined();
+    // (a moving part in its way: with where)
+    expect(pathProblem([[-6, 6], [6, 6]], [], slip)).toEqual({ why: 'A moving part is here (a blade, its slider or its lever)', at: [-2.5, 6] });
+    // (and without the moving parts given, as any path)
+    expect(pathProblem([[-6, 9], [6, 9]], [], { ...tr, slip: true })?.why).toMatch(/A blade moves here/);
+  });
   it('through a blade\'s moving length, through a frog, down a rail: with where', () => {
     expect(pathProblem([[-6, 6], [6, 6]], [], tr)).toEqual({ why: 'A blade moves here: cut before the toe or past the heel', at: [-2.75, 6] });
     expect(pathProblem([[15, 10], [15, 30]], [], tr)).toEqual({ why: `Through a frog (where two rails cross): keep the cut ${FROG_CLEAR / 8} studs clear of it`, at: [16, 20] });

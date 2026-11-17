@@ -118,7 +118,8 @@ const cross = (a: Pt, b: Pt, c: Pt, d: Pt) => {
 };
 
 /** What a cut must keep clear of, from the build (its overlay): where blades move (each a line along the track, and how far each side of it, mm), and where rails cross (mm). */
-export interface NoCut { blades: { line: Pt[]; half: number }[]; frogs: Pt[] }
+/** moving: (for a double slip's own sections, slipcuts.ts) the moving parts themselves, as circles [x, y, radius] (mm): each moving blade as it swings, its slider's tunnel, the lever's arm and the blades' pins. */
+export interface NoCut { blades: { line: Pt[]; half: number }[]; frogs: Pt[]; moving?: [number, number, number][] }
 /** Why a path can't be cut, and where (studs). */
 export interface PathFault { why: string; at: Pt }
 
@@ -126,11 +127,12 @@ export interface PathFault { why: string; at: Pt }
  * Why a path can't be made, with where (undefined: nothing against it before the build): fewer than two corners, a
  * run between turns under RUN_MIN studs, crossing itself, running beside another path less than 2 studs off (a
  * sliver between them), down a rail (within 1.5 studs of it and along it), through a blade's moving length, through
- * a frog. pts and others in studs, on the grid; tr: the track, mm (its routes, the rails' offset from a centre line
+ * a frog (slip, a double slip's own sections: through a frog's V is allowed, as the reference's are cut, and the points
+ * are kept clear by their moving parts themselves, no.moving, not their whole span). pts and others in studs, on the grid; tr: the track, mm (its routes, the rails' offset from a centre line
  * at the design's gauge, and what the build says to keep clear of).
  */
-export function pathProblem(pts: Pt[], others: Pt[][] = [], tr?: { routes: Route[]; railG: number; no?: NoCut }): PathFault | undefined {
-  const routes = tr?.routes ?? [], no = tr?.no;
+export function pathProblem(pts: Pt[], others: Pt[][] = [], tr?: { routes: Route[]; railG: number; no?: NoCut; slip?: boolean }): PathFault | undefined {
+  const routes = tr?.routes ?? [], no = tr?.no, slip = !!tr?.slip && !!no?.moving;
   if (pts.length < 2) return { why: 'A cut path has two points or more', at: pts[0] ?? [0, 0] };
   const mid = (a: Pt, b: Pt): Pt => [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2], len = (a: Pt, b: Pt) => Math.hypot(b[0] - a[0], b[1] - a[1]);
   for (let k = 1; k + 2 < pts.length; k++) if (len(pts[k], pts[k + 1]) < RUN_MIN - 1e-6) return { why: `Each run between two turns ${RUN_MIN} studs or longer (a shorter one leaves a tab 1 stud wide)`, at: mid(pts[k], pts[k + 1]) };
@@ -149,10 +151,11 @@ export function pathProblem(pts: Pt[], others: Pt[][] = [], tr?: { routes: Route
   const boxes = routes.map((rt) => routesBox([rt], 64));
   for (let i = 0; i + 1 < mm.length; i++) {
     const a = mm[i], b = mm[i + 1], l = len(a, b), n = Math.max(1, Math.ceil(l / 2)), d: Pt = [(b[0] - a[0]) / l, (b[1] - a[1]) / l];
-    for (const f of no?.frogs ?? []) if (segDist(f, a, b) < FROG_CLEAR - 1e-6) return { why: `Through a frog (where two rails cross): keep the cut ${FROG_CLEAR / 8} studs clear of it`, at: [f[0] / 8, f[1] / 8] };
+    if (!slip) for (const f of no?.frogs ?? []) if (segDist(f, a, b) < FROG_CLEAR - 1e-6) return { why: `Through a frog (where two rails cross): keep the cut ${FROG_CLEAR / 8} studs clear of it`, at: [f[0] / 8, f[1] / 8] };
     for (let k = 0; k <= n; k++) {
       const q: Pt = [a[0] + (d[0] * l * k) / n, a[1] + (d[1] * l * k) / n], at: Pt = [q[0] / 8, q[1] / 8];
-      for (const bl of no?.blades ?? []) for (let j = 0; j + 1 < bl.line.length; j++) if (segDist(q, bl.line[j], bl.line[j + 1]) < bl.half) return { why: 'A blade moves here: cut before the toe or past the heel', at };
+      if (slip) { for (const [mx, my, mr] of no!.moving!) if (Math.hypot(q[0] - mx, q[1] - my) < mr) return { why: 'A moving part is here (a blade, its slider or its lever)', at }; }
+      else for (const bl of no?.blades ?? []) for (let j = 0; j + 1 < bl.line.length; j++) if (segDist(q, bl.line[j], bl.line[j + 1]) < bl.half) return { why: 'A blade moves here: cut before the toe or past the heel', at };
       for (let r = 0; r < routes.length; r++) {
         const rt = routes[r], bx = boxes[r];
         if (q[0] < bx[0] || q[0] > bx[2] || q[1] < bx[1] || q[1] > bx[3]) continue;

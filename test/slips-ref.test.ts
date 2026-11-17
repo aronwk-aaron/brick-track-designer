@@ -152,15 +152,20 @@ describe('the TrixBrix slips: ends, points, throws and levers as the parts\'', {
 // (the library's 'tb switch r104 dslip middle': 8 studs long on the bisector, its joints square to it through
 // (+-0.78, +-3.92) from the crossing; laid on the stud grid, a step in each: here the diagonal crosses to the left)
 describe('the R104 double slip\'s middle section as the reference\'s (slipCuts), worked out', { timeout: 600000 }, () => {
-  it('both cuts made, each a staircase on the bisector\'s square 4 studs out; a part between them across both tracks', async () => {
+  // (as worked out, a staircase on the bisector's square 4 studs out, from -5 to 5 at its ends: its runs 5 studs out went
+  // under each straight-track blade's heel, 1.6 mm of the blade and its pin past the cut. Cut clear of the moving parts
+  // themselves, it's straight across 3 studs out)
+  it('both cuts made, clear of the blades: straight across 3 studs out; a part between them across both tracks', async () => {
     const b = await built(structuredClone(TEMPLATES['Double slip R104 left']));
     expect(b.info.warnings.filter((wn) => /cut path/.test(wn))).toEqual([]);
     const box = (P: Float32Array | number[]) => { let y0 = Infinity, y1 = -Infinity, x0 = Infinity, x1 = -Infinity; for (let i = 0; i < P.length; i += 3) { x0 = Math.min(x0, P[i]); x1 = Math.max(x1, P[i]); y0 = Math.min(y0, P[i + 1]); y1 = Math.max(y1, P[i + 1]); } return [x0 / 8, x1 / 8, y0 / 8, y1 / 8]; };
     const mid = b.pieces.filter((p) => p.positions.length && /^track/.test(p.name)).map((p) => box(p.positions)).filter(([, , y0, y1]) => y0 > -5.6 && y1 < 5.6);
     expect(mid).toHaveLength(1);
-    // (from -5 to 5 at its ends, 3 to -3 where it steps: across both tracks)
-    expect(mid[0][2]).toBeCloseTo(-5, 0);
-    expect(mid[0][3]).toBeCloseTo(5, 0);
+    // (from -3 to 3: across both tracks)
+    expect(mid[0][2]).toBeCloseTo(-3, 0);
+    expect(mid[0][3]).toBeCloseTo(3, 0);
+    // (and no blade over a cut: each one's part of the bed is one part's)
+    for (const bl of b.pieces.filter((p) => p.positions.length && /^points\d+$/.test(p.name)).map((p) => box(p.positions))) expect(bl[2] > 3 || bl[3] < -3, JSON.stringify(bl)).toBe(true);
     expect(mid[0][1] - mid[0][0]).toBeGreaterThan(10);
   });
 });

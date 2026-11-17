@@ -1103,6 +1103,43 @@ interface LeverPlan {
   throwDir: number; leverX: number; throwY: number; leverY?: number; corner?: boolean; forkX?: number; throwStockX: number; throwEdgeX: number; leverMinD: number; tineLen: number; pivotPt: [number, number];
   ra: Route; rb: Route; sHeel: number; leverTravel: number; fixed?: number; three?: { S: Route; own?: boolean }; fdb?: { pivot: [number, number]; post: [number, number] }[];
 }
+/**
+ * A plate-style points set's keep-outs, where no cut goes: the slider's tunnel, from past the far blade to the stock
+ * rail (the rod and its walls, 6 mm either side of its line), the arm out to its end (3 studs wide, with the lever's
+ * opening), and the pins the blades turn on (and a little bed round them); under the loose blades is fine.
+ * swing: and each moving blade as it swings (a double slip's own sections, slipcuts.ts: cut clear of everything that
+ * moves): its plate's half-width and 2 mm round its line from pin to tip, as it lies and turned its throw either way.
+ */
+function leverKeeps(G: number, P: Pose, v: LeverPlan, swing = false): Keep[] {
+  const out: Keep[] = [];
+  if ((v as { nail?: boolean }).nail && !swing) return out;
+  const wd = (x: number, y: number) => poseToWorld(P, [x, y]);
+  const xOut = v.throwDir * Math.ceil((v.throwDir * (v.leverX + v.throwDir * 10)) / 8 - 1e-6) * 8, hw = 12;
+  if (!(v as { nail?: boolean }).nail) {
+    const keep = (q: [number, number], r: number): Keep => [q[0], q[1], r, r];
+    // (the tunnel's far end: past the far post by the slider's travel, and its wall (base.ts fdbSlot2d); as far as
+    // past the far rail where the plan doesn't say: a cut can go close by it, between a double slip's points)
+    const posts = (v.fdb ?? []).filter((_, b) => b !== v.fixed).map((f) => f.post[0]);
+    const far = posts.length ? (v.throwDir > 0 ? Math.min(...posts) : Math.max(...posts)) - v.throwDir * (v.leverTravel + 6) : v.throwStockX - v.throwDir * (2 * G + 16);
+    for (let x = far; v.throwDir * (x - v.throwStockX) < 0; x += v.throwDir * 4) out.push(keep(wd(x, v.throwY), 6.5));
+    for (let x = v.throwStockX; v.throwDir * x <= v.throwDir * xOut + 1e-9; x += v.throwDir * 4) out.push(keep(wd(x, v.throwY), hw + 1));
+    // (where the plan put them: moved, clear of other track running past)
+    for (const b of [0, 1]) if (b !== v.fixed) { const q = v.fdb?.[b].pivot ?? railPoint(v.three ? v.three.S : b === 0 ? v.ra : v.rb, v.sHeel - 4, (b === 0 ? 1 : -1) * (7 - G)); out.push(keep(wd(q[0], q[1]), 6)); }
+    // (the lever in a housing at a corner: nor the run along to it with the tie-rod, nor the arm round the lever there)
+    if (v.corner && v.leverY !== undefined && v.forkX !== undefined) {
+      const ly = v.leverY, dy = Math.sign(ly - v.throwY);
+      for (let y = v.throwY; dy * (y - ly) <= 0; y += dy * 4) out.push(keep(wd(v.forkX, y), 13));
+      for (let x = v.throwStockX; v.throwDir * x <= v.throwDir * xOut + 1e-9; x += v.throwDir * 4) out.push(keep(wd(x, ly), hw + 1));
+    }
+  }
+  if (swing) for (const [b, f] of ((v.fdb ?? []) as { pivot: [number, number]; tip?: [number, number]; ang?: number; hw?: number }[]).entries()) {
+    if (b === v.fixed || !f?.tip) continue;
+    const r = (f.hw ?? 3) + 2, len = Math.hypot(f.tip[0] - f.pivot[0], f.tip[1] - f.pivot[1]), n = Math.max(1, Math.ceil(len / 3));
+    for (const a of [0, f.ang ?? 0, -(f.ang ?? 0)]) { const c = Math.cos((a * Math.PI) / 180), sn = Math.sin((a * Math.PI) / 180);
+      for (let k = 0; k <= n; k++) { const dx = ((f.tip[0] - f.pivot[0]) * k) / n, dy = ((f.tip[1] - f.pivot[1]) * k) / n, q = wd(f.pivot[0] + dx * c - dy * sn, f.pivot[1] + dx * sn + dy * c); out.push([q[0], q[1], r, r]); } }
+  }
+  return out;
+}
 /** A points set's lever on the plan (it can be dragged there). avoid: (the plate-style) where no cut goes, its parts' keep-outs added; G: the rails' offset. */
 function leverItem(items: TrackworkItem[], tw: Trackwork, avoid: Keep[] | undefined, G: number, key: string, P: Pose, v: LeverPlan) {
   if ((v as { nail?: boolean }).nail) return; // (a nail switch: no lever to place)
@@ -1115,23 +1152,7 @@ function leverItem(items: TrackworkItem[], tw: Trackwork, avoid: Keep[] | undefi
   // (the plate-style: no cut through the slider's tunnel, from past the far blade to the stock rail (the rod and
   // its walls, 6 mm either side of its line), nor the arm out to its end (3 studs wide, with the lever's
   // opening), nor the pins the blades turn on (and a little bed round them); under the loose blades is fine)
-  if (avoid) {
-    const keep = (q: [number, number], r: number): Keep => [q[0], q[1], r, r];
-    // (the tunnel's far end: past the far post by the slider's travel, and its wall (base.ts fdbSlot2d); as far as
-    // past the far rail where the plan doesn't say: a cut can go close by it, between a double slip's points)
-    const posts = (v.fdb ?? []).filter((_, b) => b !== v.fixed).map((f) => f.post[0]);
-    const far = posts.length ? (v.throwDir > 0 ? Math.min(...posts) : Math.max(...posts)) - v.throwDir * (v.leverTravel + 6) : v.throwStockX - v.throwDir * (2 * G + 16);
-    for (let x = far; v.throwDir * (x - v.throwStockX) < 0; x += v.throwDir * 4) avoid.push(keep(wd(x, v.throwY), 6.5));
-    for (let x = v.throwStockX; v.throwDir * x <= v.throwDir * xOut + 1e-9; x += v.throwDir * 4) avoid.push(keep(wd(x, v.throwY), hw + 1));
-    // (where the plan put them: moved, clear of other track running past)
-    for (const b of [0, 1]) if (b !== v.fixed) { const q = v.fdb?.[b].pivot ?? railPoint(v.three ? v.three.S : b === 0 ? v.ra : v.rb, v.sHeel - 4, (b === 0 ? 1 : -1) * (7 - G)); avoid.push(keep(wd(q[0], q[1]), 6)); }
-    // (the lever in a housing at a corner: nor the run along to it with the tie-rod, nor the arm round the lever there)
-    if (v.corner && v.leverY !== undefined && v.forkX !== undefined) {
-      const ly = v.leverY, dy = Math.sign(ly - v.throwY);
-      for (let y = v.throwY; dy * (y - ly) <= 0; y += dy * 4) avoid.push(keep(wd(v.forkX, y), 13));
-      for (let x = v.throwStockX; v.throwDir * x <= v.throwDir * xOut + 1e-9; x += v.throwDir * 4) avoid.push(keep(wd(x, ly), hw + 1));
-    }
-  }
+  if (avoid) avoid.push(...leverKeeps(G, P, v));
   // (the lever in a housing at a corner: the arm's outline an L, along the run to the lever)
   const ly = v.corner && v.leverY !== undefined ? v.leverY : v.throwY, xr = v.forkX !== undefined ? v.forkX - v.throwDir * 12 : v.throwStockX;
   const pts: [number, number][] = ly === v.throwY ? [wd(v.throwStockX, v.throwY - hw), wd(xOut, v.throwY - hw), wd(xOut, v.throwY + hw), wd(v.throwStockX, v.throwY + hw)]
@@ -2509,19 +2530,6 @@ function buildOne(w: Wasm, design: Design, report: (what: string, frac: number) 
   if (design.tables?.length && !inLengths) bedWarnings.add('the tables cut the track at their seams only with Long track cut into: Track pieces');
   const handCuts = designCuts(design);
   if (handCuts && !inLengths) bedWarnings.add('the hand cuts across tracks are made only with Long track cut into: Track pieces');
-  // (the cut paths drawn along and between tracks (expert): on the stud grid, the impossible ones left out and said)
-  // (slipCuts 'reference': the double slips' sections as the reference's, cut paths worked out from the slips (slipcuts.ts) beside the design's own)
-  const slipPaths = o.slipCuts === 'reference' && overlay.cutting ? slipCutPaths(routes, sol, [gridPose[0] / 8, gridPose[1] / 8, gridPose[2]],
-    track.c.railOffset, overlay.cutting.no, (design.expert?.cutPaths ?? []).map((p) => gridPath([gridPose[0] / 8, gridPose[1] / 8, gridPose[2]], p.pts))) : [];
-  const cutPaths = overlay.cutting && designPaths(slipPaths.length ? { ...design, expert: { ...design.expert, cutPaths: [...(design.expert?.cutPaths ?? []), ...slipPaths] } } : design, gridPose, routes, track.c.railOffset, overlay.cutting.no, !!o.pathSquare);
-  if (cutPaths && !inLengths) bedWarnings.add('the cut paths are made only with Long track cut into: Track pieces');
-  const sleepered = o.sleepers === 'sleepers' && o.ballast === 'none';
-  // (expert: the sleepers edited by hand that can't be made as they're asked for: said)
-  for (const wn of sleeperWarnings(design, o)) bedWarnings.add(wn);
-  for (const wn of railWarnings(design)) bedWarnings.add(wn);
-  const labelOn = o.ballast !== 'none' && o.bottomStyle === 'float' && !!o.labelText?.trim();
-  const b: PieceBuild = { w, scad, o, gaugeStuds: design.gaugeStuds, track, cut, prog, pieces: [], volume: 0, bedWarnings, overlay, job,
-    labelOn, ...(opts.mark && { mark: opts.mark, markBoth: opts.markBoth }), num: { part: 0, sec: 0 }, alongTrack, gridPose, sleepered, bufs, grooveCuts, grooveKeeps, grooveEdits: tw.groove, dropInner, tables: design.tables ?? [], boughtSw: bought, trackRoutes: routes, ...(handCuts && { handCuts }), ...(cutPaths?.cut.length && inLengths && { cutPaths: cutPaths.cut }) };
   const copt = { ...CROSSING_DEFAULTS, gaugeStuds: design.gaugeStuds, grip: o.grip ?? 'edges', flangeway: o.flangeway, flangewayDepth: o.flangewayDepth, checkRailW: o.checkRailW, checkRailFlare: o.checkRailFlare,
     ballast: o.ballast, bottomStyle: o.bottomStyle, supports: o.endSupports !== false, curveStuds: o.curveStuds,
     studFit: o.studFit, antistudFit: o.antistudFit, sleepers: o.sleepers, undersideGrid: o.ballast === 'none' ? o.undersideGrid : undefined, sleeperWidthStuds: o.sleeperWidthStuds, sleeperGapStuds: o.sleeperGapStuds,
@@ -2530,12 +2538,33 @@ function buildOne(w: Wasm, design: Design, report: (what: string, frac: number) 
     ...(o.axleHoles && { axleHoles: true }), ...(o.pegOnBallast && { pegOnBallast: true }), ...(o.ballastEnds === 'stepped' && o.ballast !== 'none' && { ballastEnds: 'stepped' as const }), ...(alone && { ballastOnly: o.trackFitTol ?? 0.2 }), ...(o.studsFullPitch && { studsFullPitch: true }) };
   const tp = params;
   const netKey = JSON.stringify({ routes, tp, copt, tw });
+  // (the cut paths drawn along and between tracks (expert): on the stud grid, the impossible ones left out and said)
+  // (slipCuts 'reference': the double slips' sections as the reference's, cut paths worked out from the slips (slipcuts.ts) beside the design's own)
+  // (they are cut clear of the moving parts themselves (each moving blade as it swings, its slider and arm: leverKeeps),
+  // not of the points' whole span, and may go through a frog's V, as the reference's do: so the points are planned
+  // first (the plan only: networkSplits, found again below))
+  const slipOn = o.slipCuts === 'reference' && !!overlay.cutting;
   let net: ReturnType<typeof networkSplits> | undefined;
-  if (network) {
+  const netOf = () => {
     editChecks(items, tw, routes, sol.checkRails);
     // (only the plan's trackwork wanted: where the levers are, none of the points' parts built)
-    net = opts.planOnly ? cached(`netplan:${netKey}`, () => networkSplits(scad, routes, sol, tp, toeShift, throwEdit, true, true))
+    return opts.planOnly ? cached(`netplan:${netKey}`, () => networkSplits(scad, routes, sol, tp, toeShift, throwEdit, true, true))
       : cached(`netsplits:${netKey}`, () => networkSplits(scad, routes, sol, tp, toeShift, throwEdit, true));
+  };
+  if (slipOn && network) { net = netOf(); overlay.cutting!.no.moving = net.levers.flatMap((sp) => leverKeeps(track.c.railOffset, sp.frame, sp.set, true).map((k): [number, number, number] => [k[0], k[1], k[2] ?? 6])); }
+  const slipPaths = slipOn ? slipCutPaths(routes, sol, [gridPose[0] / 8, gridPose[1] / 8, gridPose[2]],
+    track.c.railOffset, overlay.cutting!.no, (design.expert?.cutPaths ?? []).map((p) => gridPath([gridPose[0] / 8, gridPose[1] / 8, gridPose[2]], p.pts))) : [];
+  const cutPaths = overlay.cutting && designPaths(slipPaths.length ? { ...design, expert: { ...design.expert, cutPaths: [...(design.expert?.cutPaths ?? []), ...slipPaths] } } : design, gridPose, routes, track.c.railOffset, overlay.cutting.no, !!o.pathSquare, new Set(slipPaths.filter((q) => q.slip).map((q) => q.id)));
+  if (cutPaths && !inLengths) bedWarnings.add('the cut paths are made only with Long track cut into: Track pieces');
+  const sleepered = o.sleepers === 'sleepers' && o.ballast === 'none';
+  // (expert: the sleepers edited by hand that can't be made as they're asked for: said)
+  for (const wn of sleeperWarnings(design, o)) bedWarnings.add(wn);
+  for (const wn of railWarnings(design)) bedWarnings.add(wn);
+  const labelOn = o.ballast !== 'none' && o.bottomStyle === 'float' && !!o.labelText?.trim();
+  const b: PieceBuild = { w, scad, o, gaugeStuds: design.gaugeStuds, track, cut, prog, pieces: [], volume: 0, bedWarnings, overlay, job,
+    labelOn, ...(opts.mark && { mark: opts.mark, markBoth: opts.markBoth }), num: { part: 0, sec: 0 }, alongTrack, gridPose, sleepered, bufs, grooveCuts, grooveKeeps, grooveEdits: tw.groove, dropInner, tables: design.tables ?? [], boughtSw: bought, trackRoutes: routes, ...(handCuts && { handCuts }), ...(cutPaths?.cut.length && inLengths && { cutPaths: cutPaths.cut }) };
+  if (network) {
+    net ??= netOf();
     for (const sp of net.levers) lever(keyOf(sp.toe), sp.frame, sp.set);
   }
   const rest = network ? [] : pc.rest;
