@@ -148,4 +148,19 @@ describe('studs outside the rails along the points (196s R568)', { timeout: 6000
       expect(n, 'studs on the part').toBeGreaterThan(40);
     } finally { Object.assign(OPTION_DEFAULTS, saved); clearBuildCache(); }
   });
+
+  // (a three-way with a lever to each blade, built in a bigger piece as two sets at the one toe: each set's far block,
+  // across the track from its lever, had a middle row of studs, and the other set's slider's channel ran through them:
+  // an eighth of each left, its two edges, four a side. One blade's set of such a three-way has no middle row there
+  // (switch/base.ts throwArm))
+  it('Three-way R40: no part of a stud where the other blade\'s slider runs', async () => {
+    const saved = { ...OPTION_DEFAULTS };
+    Object.assign(OPTION_DEFAULTS, APP);
+    try {
+      const w = await kernel();
+      clearBuildCache();
+      const b = buildDesign(w, structuredClone(TEMPLATES['Three-way R40'])), o = { studD: 4.8, studFit: 0.18 };
+      expect(b.pieces.filter((p) => /^track/.test(p.name)).flatMap((p) => partStuds(w, p, o)), 'studs in part').toEqual([]);
+    } finally { Object.assign(OPTION_DEFAULTS, saved); clearBuildCache(); }
+  });
 });

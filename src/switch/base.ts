@@ -1464,7 +1464,10 @@ export function switchGeometry(s: Scad, plan: SwitchPlan, extraCuts: Man[] = [])
     // the far block's middle row too where another set's lever is that side (a three-way's two levers))
     if (v.farRect && !g.ballast) {
       const r = TRACK_DEFAULTS.studD / 2 + 0.3, f = v.farRect, x0 = Math.min(xIn, xOut, f[0]), x1 = Math.max(xIn, xOut, f[1]);
-      const otherLever = sets.some((u) => u !== v && !(u as SetLike).nail && u.throwDir === -v.throwDir);
+      // (or it's one blade's set of a three-way with a lever to each (three.own), built on its own in a bigger piece: the
+      // other blade's set, with its lever that side, is another of the piece's, and its slider's channel went through
+      // this one's middle row there, leaving an eighth of each stud, its two edges)
+      const otherLever = sets.some((u) => u !== v && !(u as SetLike).nail && u.throwDir === -v.throwDir) || !!v.three?.own;
       for (let x = Math.floor(x0 / STUD) * STUD + 4; x <= x1 + 1e-9; x += STUD) for (const dy of [-STUD, 0, STUD]) {
         const q: Pt = [x, v.throwY + dy];
         // (and off the toe's end row: its studs at 4 in, the bar's lowest row too close to them where the throw's near the toe, a wye's)
