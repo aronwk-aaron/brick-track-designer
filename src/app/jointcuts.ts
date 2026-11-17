@@ -10,8 +10,8 @@
 import { type Pose, type Route, railPoint, routeLat, routeLength, routePose, routeSOf } from '../route/route';
 
 type Pt = [number, number];
-/** A cut at a joint between two tracks: where the joint is, and the cut's corners (mm). */
-export interface JointCut { id: string; at: Pt; pts: Pt[] }
+/** A cut at a joint between two tracks: where the joint is, and the cut's corners (mm). more: the other joints it's the cut of too (a switch's tracks each joined beside the other: one cut across them all). */
+export interface JointCut { id: string; at: Pt; pts: Pt[]; more?: Pt[] }
 
 /** (mm) How far past the bed's edge a cut that ends in the open is carried; how far along another track's bed edge a cut follows it at most. */
 const OVER = 0.6, FOLLOW_MAX = 128;
@@ -49,7 +49,7 @@ export function routeJoints(routes: Route[]): { i: number; k: number; P: Pose }[
  * routes that part at points (the same place and heading at an end of each, or one's end on the other's line, along
  * it). Routes that only meet end to end are pieces apart: that's where the joints are.
  */
-export function trackGroups(routes: Route[]): number[] {
+export function trackGroups(routes: Route[], halves?: number[]): number[] {
   const parent = routes.map((_, k) => k), find = (k: number): number => (parent[k] === k ? k : (parent[k] = find(parent[k])));
   const lines = routes.map((rt) => { const L = routeLength(rt), n = Math.max(1, Math.ceil(L / 2)); return Array.from({ length: n + 1 }, (_, k) => { const p = routePose(rt, (L * k) / n); return [p[0], p[1]] as Pt; }); });
   const boxes = lines.map((ps) => [Math.min(...ps.map((q) => q[0])), Math.min(...ps.map((q) => q[1])), Math.max(...ps.map((q) => q[0])), Math.max(...ps.map((q) => q[1]))]);
@@ -81,7 +81,38 @@ export function trackGroups(routes: Route[]): number[] {
     if (boxes[a][0] > boxes[b][2] + 1 || boxes[b][0] > boxes[a][2] + 1 || boxes[a][1] > boxes[b][3] + 1 || boxes[b][1] > boxes[a][3] + 1) continue;
     if (parts(a, b) || parts(b, a) || crosses(a, b)) parent[find(a)] = find(b);
   }
+  // (joints beside each other on each other's beds, a switch's tracks each joined to the next piece's: one cut across
+  // them all, so the tracks on each side of it are one piece: the switch's base, and the section that carries them on)
+  if (halves) {
+    const joints = routeJoints(routes);
+    for (const cl of jointClusters(routes, halves, joints)) for (const n of cl.slice(1)) {
+      const a = joints[cl[0]], b = joints[n], same = cosd(b.P[2] - a.P[2]) > 0;
+      parent[find(a.i)] = find(same ? b.i : b.k);
+      parent[find(a.k)] = find(same ? b.k : b.i);
+    }
+  }
   return routes.map((_, k) => find(k));
+}
+
+/**
+ * The joints (routeJoints) that lie beside each other, each on the bed of a track of the other: a switch's straight
+ * and branch each joined to the next piece's a little apart (a kit's base and its detachable section). Each set of
+ * two or more, the joints' numbers in order across the tracks. halves: how far each route's bed reaches each side (mm).
+ */
+export function jointClusters(routes: Route[], halves: number[], joints = routeJoints(routes)): number[][] {
+  const on = (j: number, q: Pt) => Math.abs(routeLat(routes[j], q)) < halves[j] - 0.01;
+  const parent = joints.map((_, n) => n), find = (n: number): number => (parent[n] === n ? n : (parent[n] = find(parent[n])));
+  for (let a = 0; a < joints.length; a++) for (let b = a + 1; b < joints.length; b++) {
+    const A = joints[a], B = joints[b], ja: Pt = [A.P[0], A.P[1]], jb: Pt = [B.P[0], B.P[1]];
+    if (new Set([A.i, A.k, B.i, B.k]).size < 4 || Math.abs(cosd(B.P[2] - A.P[2])) < 0.5) continue;
+    if ((on(B.i, ja) || on(B.k, ja)) && (on(A.i, jb) || on(A.k, jb))) parent[find(a)] = find(b);
+  }
+  const sets = new Map<number, number[]>();
+  joints.forEach((_, n) => sets.set(find(n), [...(sets.get(find(n)) ?? []), n]));
+  return [...sets.values()].filter((g) => g.length > 1).map((g) => {
+    const f = joints[g[0]].P, across = (n: number) => (joints[n].P[0] - f[0]) * cosd(f[2]) + (joints[n].P[1] - f[1]) * sind(f[2]);
+    return [...g].sort((p, q) => across(p) - across(q));
+  });
 }
 
 /**
@@ -92,24 +123,26 @@ export function trackGroups(routes: Route[]): number[] {
  * track's bed first, to that bed's edge and along it: towards the side of the joint that isn't one piece with that
  * track (trackGroups), for as long as that side's bed lies against the edge: on along the next track's edge where
  * that track runs on into one end to end, else round its end if the bed lies against that too. Only the bed of a track that's one piece with either side turns it. A joint that is
- * on another track's bed itself has no cut. Ids j1, j2, … in the joints' order.
+ * on another track's bed itself has no cut of its own; with that track's own joint beside it, on this one's bed
+ * (jointClusters: a switch's straight and branch each joined to the next piece's, a kit's base and its detachable
+ * section), the two have one cut: square across each track at its own joint, the two lines meeting between them
+ * (clusterCut). Ids j1, j2, … in the joints' order.
  */
 export function jointCuts(routes: Route[], halves: number[], near = 12): JointCut[] {
-  const joints = routeJoints(routes), group = trackGroups(routes), out: JointCut[] = [];
+  const joints = routeJoints(routes), group = trackGroups(routes, halves), out: JointCut[] = [];
+  const clusters = jointClusters(routes, halves, joints);
   const inStrip = (j: number, q: Pt, grow = 0) => Math.abs(routeLat(routes[j], q)) < halves[j] + grow;
-  joints.forEach(({ i, k, P }, n) => {
+  /** A joint's cut from the joint out one way (sd), to the open or along another track's bed; skip: the tracks whose beds don't turn it (the joints cut with it). */
+  const sideOf = (n: number, sd: number, skip: number[] = []): Pt[] => {
+    const { i, k, P } = joints[n];
     const J: Pt = [P[0], P[1]], nr: Pt = [cosd(P[2]), sind(P[2])], tg: Pt = [-sind(P[2]), cosd(P[2])], hw = Math.max(halves[i], halves[k]);
     const others = routes.map((_, j) => j).filter((j) => j !== i && j !== k && routes[j].segments.length > 0);
-    const at = (sd: number, u: number): Pt => [J[0] + sd * u * nr[0], J[1] + sd * u * nr[1]];
-    if (others.some((j) => inStrip(j, J, -0.01))) return;
-    // (is it a joint the build can make as an ordinary end: its bed there, and a connector's room either side, clear of every other bed)
-    const clear = [-10, 0, 10].every((ds) => [-1, 1].every((sd) => { for (let u = 0; u <= hw + 1e-9; u += 4) { const q = at(sd, u), p: Pt = [q[0] + ds * tg[0], q[1] + ds * tg[1]]; if (others.some((j) => inStrip(j, p, near - 10))) return false; } return true; }));
-    if (clear) return;
-    const side = (sd: number): Pt[] => {
+    const at = (sd2: number, u: number): Pt => [J[0] + sd2 * u * nr[0], J[1] + sd2 * u * nr[1]];
+    {
       // (out from the joint to the bed's edge, or to where another track's bed begins)
       let hit = -1, u0 = 0, u1 = hw + OVER;
       // (a track that's one piece with either side of the joint: a third piece's bed reaching onto this track's own isn't in its way)
-      const mates = others.filter((j) => group[j] === group[i] || group[j] === group[k]);
+      const mates = others.filter((j) => !skip.includes(j) && (group[j] === group[i] || group[j] === group[k]));
       for (let u = 0.25; u <= hw + OVER + 1e-9 && hit < 0; u += 0.25) { const j = mates.find((j2) => inStrip(j2, at(sd, u), -0.01)); if (j !== undefined) { hit = j; u1 = u; } else u0 = u; }
       if (hit < 0) return [at(sd, hw + OVER)];
       for (let it = 0; it < 30; it++) { const m = (u0 + u1) / 2; if (inStrip(hit, at(sd, m), -0.01)) u1 = m; else u0 = m; }
@@ -150,10 +183,53 @@ export function jointCuts(routes: Route[], halves: number[], near = 12): JointCu
         if (!far.some((f) => inStrip(f, o, 0.25))) break;
       }
       return pts;
-    };
-    const a = side(-1), b = side(1);
+    }
+  };
+  joints.forEach(({ i, k, P }, n) => {
+    const J: Pt = [P[0], P[1]], nr: Pt = [cosd(P[2]), sind(P[2])], tg: Pt = [-sind(P[2]), cosd(P[2])], hw = Math.max(halves[i], halves[k]);
+    const others = routes.map((_, j) => j).filter((j) => j !== i && j !== k && routes[j].segments.length > 0);
+    const at = (sd: number, u: number): Pt => [J[0] + sd * u * nr[0], J[1] + sd * u * nr[1]];
+    if (others.some((j) => inStrip(j, J, -0.01))) {
+      // (on another track's bed. With that track's own joint beside it, on this one's bed (a switch's two tracks, each
+      // joined to the next piece's): one cut across them all, done at the first of them)
+      const cl = clusters.find((c) => c.includes(n));
+      if (!cl || Math.min(...cl) !== n) return;
+      const pts = clusterCut(cl);
+      if (pts) out.push({ id: `j${n + 1}`, at: J, pts, more: cl.filter((m) => m !== n).map((m): Pt => [joints[m].P[0], joints[m].P[1]]) });
+      return;
+    }
+    // (is it a joint the build can make as an ordinary end: its bed there, and a connector's room either side, clear of every other bed)
+    const clear = [-10, 0, 10].every((ds) => [-1, 1].every((sd) => { for (let u = 0; u <= hw + 1e-9; u += 4) { const q = at(sd, u), p: Pt = [q[0] + ds * tg[0], q[1] + ds * tg[1]]; if (others.some((j) => inStrip(j, p, near - 10))) return false; } return true; }));
+    if (clear) return;
+    const a = sideOf(n, -1), b = sideOf(n, 1);
     out.push({ id: `j${n + 1}`, at: J, pts: tidyLine([...a.reverse(), ...b]) });
   });
+  /**
+   * One cut across joints beside each other (jointClusters, in order across the tracks): from the first one's outer
+   * end square across its track, on to where its line meets the next joint's line, and so on, out square across the
+   * last one's track to its outer end. Where two lines don't meet between their joints (the tracks side by side,
+   * the joints a little apart along them): a step along the track half way between the two.
+   */
+  function clusterCut(cl: number[]): Pt[] | undefined {
+    const J = (n: number): Pt => [joints[n].P[0], joints[n].P[1]], nr = (n: number): Pt => [cosd(joints[n].P[2]), sind(joints[n].P[2])];
+    const dot = (a: Pt, b: Pt) => a[0] * b[0] + a[1] * b[1], sub = (a: Pt, b: Pt): Pt => [a[0] - b[0], a[1] - b[1]], crs = (a: Pt, b: Pt) => a[0] * b[1] - a[1] * b[0];
+    const skip = cl.flatMap((n) => [joints[n].i, joints[n].k]), first = cl[0], last = cl[cl.length - 1];
+    const pts: Pt[] = [...sideOf(first, -(Math.sign(dot(sub(J(cl[1]), J(first)), nr(first))) || 1), skip).reverse(), J(first)];
+    for (let m = 0; m + 1 < cl.length; m++) {
+      const a = cl[m], b = cl[m + 1], ja = J(a), jb = J(b), na = nr(a), nb = nr(b), d = sub(jb, ja), den = crs(na, nb);
+      const ha = Math.max(halves[joints[a].i], halves[joints[a].k]), hb = Math.max(halves[joints[b].i], halves[joints[b].k]);
+      const ua = Math.abs(den) > 1e-6 ? crs(d, nb) / den : Infinity, ub = Math.abs(den) > 1e-6 ? crs(d, na) / den : Infinity;
+      // (the lines meet between the two joints: on each line, from its joint towards the other, no further than its bed reaches)
+      if (ua * dot(d, na) >= -1e-9 && Math.abs(ua) <= ha && -ub * dot(d, nb) >= -1e-9 && Math.abs(ub) <= hb) pts.push([ja[0] + ua * na[0], ja[1] + ua * na[1]]);
+      else {
+        const mid: Pt = [(ja[0] + jb[0]) / 2, (ja[1] + jb[1]) / 2], va = dot(sub(mid, ja), na), vb = dot(sub(mid, jb), nb);
+        pts.push([ja[0] + va * na[0], ja[1] + va * na[1]], [jb[0] + vb * nb[0], jb[1] + vb * nb[1]]);
+      }
+      pts.push(jb);
+    }
+    pts.push(...sideOf(last, -(Math.sign(dot(sub(J(cl[cl.length - 2]), J(last)), nr(last))) || 1), skip));
+    return tidyLine(pts);
+  }
   return out;
 }
 

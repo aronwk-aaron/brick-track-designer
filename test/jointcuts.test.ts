@@ -5,7 +5,7 @@ import { describe, expect, it } from 'vitest';
 import { buildDesign, clearBuildCache } from '../src/app/build';
 import { pathProblem } from '../src/app/cutpaths';
 import { type Design, OPTION_DEFAULTS, type PieceOptions, TEMPLATES, toRoutes } from '../src/app/design';
-import { jointCuts, routeJoints, trackGroups } from '../src/app/jointcuts';
+import { jointClusters, jointCuts, routeJoints, trackGroups } from '../src/app/jointcuts';
 import { kernel } from '../src/geom/kernel';
 
 const APP = (globalThis as { APP_DEFAULTS?: PieceOptions }).APP_DEFAULTS!;
@@ -46,6 +46,54 @@ describe('cuts where tracks join inside trackwork: worked out', () => {
     const { rts, halves } = of(cross(16));
     expect(routeJoints(rts)).toHaveLength(1);
     expect(jointCuts(rts, halves)).toEqual([]);
+  });
+});
+
+describe('joints beside each other, each on the other track\'s bed: one cut across them all', () => {
+  // (a compact R40 switch as its kit: the base's straight, 16 studs, and its branch, 22.5 degrees of R40; the
+  // detachable section's two tracks joined onto their ends, 3 studs apart)
+  const kit = (): Design => ({ version: 1, gaugeStuds: 4, routes: [
+    { name: 'Straight', x: 0, y: 0, heading: 0, segs: [{ kind: 'straight', studs: 16 }] },
+    { name: 'Branch', x: 0, y: 0, heading: 0, segs: [{ kind: 'curve', radius: 40, angle: 22.5 }] },
+    { name: 'Section straight', x: 0, y: 16, heading: 0, segs: [{ kind: 'straight', studs: 16 }] },
+    { name: 'Section branch', x: -3.044819, y: 15.307337, heading: 22.5, segs: [{ kind: 'curve', radius: 40, angle: 11.25 }] }] });
+  const rts = toRoutes(kit()), halves = rts.map(() => 32);
+  it('the two joints are one set, and the tracks each side of them one piece', () => {
+    const js = routeJoints(rts);
+    expect(js.map((j) => [j.i, j.k])).toEqual([[0, 2], [1, 3]]);
+    // (in order across the tracks: the branch's, then the straight's)
+    expect(jointClusters(rts, halves)).toEqual([[1, 0]]);
+    const g = trackGroups(rts, halves);
+    expect(g[0]).toBe(g[1]);
+    expect(g[2]).toBe(g[3]);
+    expect(g[2]).not.toBe(g[0]);
+    // (without the beds' widths, as before: the section's two tracks, which neither cross nor part, pieces apart)
+    const g0 = trackGroups(rts);
+    expect(g0[2]).not.toBe(g0[3]);
+  });
+  it('one cut: square across the branch at its joint, to where that line meets the straight\'s, and square across the straight', () => {
+    const cuts = jointCuts(rts, halves);
+    expect(cuts).toHaveLength(1);
+    expect(cuts[0].id).toBe('j1');
+    expect(st(cuts[0].at)).toEqual([0, 16]);
+    expect(cuts[0].more!.map(st)).toEqual([[-3.04, 15.31]]);
+    const pts = cuts[0].pts.map(st);
+    expect(pts).toHaveLength(3);
+    // (from the open past the branch's outer edge, 22.5 degrees off square to the straight; the corner between the
+    // two tracks, on the straight's line at 16 studs; out past the straight's far edge)
+    expect(pts[0][0]).toBeCloseTo(-6.81, 1); expect(pts[0][1]).toBeCloseTo(13.75, 1);
+    expect(pts[1][0]).toBeCloseTo(-1.37, 1); expect(pts[1][1]).toBe(16);
+    expect(pts[2][0]).toBeCloseTo(4.08, 1); expect(pts[2][1]).toBe(16);
+    expect(pathProblem(cuts[0].pts.map((q): [number, number] => [q[0] / 8, q[1] / 8]), [], { routes: rts, railG: 20, no: { blades: [], frogs: [], moving: [] }, slip: true, free: true })).toBeUndefined();
+  });
+  it('a joint on another track\'s bed with no joint of that track beside it has no cut, as before', () => {
+    const d = kit();
+    d.routes[1].segs = [{ kind: 'curve', radius: 40, angle: 33.75 }];
+    d.routes.pop();
+    const r2 = toRoutes(d);
+    expect(routeJoints(r2)).toHaveLength(1);
+    expect(jointClusters(r2, r2.map(() => 32))).toEqual([]);
+    expect(jointCuts(r2, r2.map(() => 32))).toEqual([]);
   });
 });
 

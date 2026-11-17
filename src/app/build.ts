@@ -1450,7 +1450,7 @@ interface PieceBuild {
   /** the design's cut paths (expert, handcuts.ts designPaths), mm on the stud grid; and what became of each, as the sections are built */
   cutPaths?: HandPath[]; pathsDone?: Map<string, HandPathDone>;
   /** the cuts worked out where tracks join inside trackwork (Cut where tracks join in trackwork, jointcuts.ts), mm, each with its joint's place; and whether each was made, as the sections are built */
-  jointCuts?: (KerfCut & { at: [number, number] })[]; jointsDone?: Map<string, boolean>;
+  jointCuts?: (KerfCut & { at: [number, number]; more?: [number, number][] })[]; jointsDone?: Map<string, boolean>;
   /** with those: the design's routes and which piece of trackwork each is of (jointcuts.ts trackGroups) */
   jointGroups?: { routes: Route[]; group: number[] };
   /** A heavy job (BuildJob): built (or found in the cache); or, planning, listed (if it isn't cached) and passed over. */
@@ -1772,7 +1772,7 @@ function sectioned(b: PieceBuild, name: string, all: Route[], checks: CheckRail[
   // (the hand cuts across these routes (expert): joints of the plan's too; with none, the plan and its key as ever)
   const hc = b.handCuts && handCutsFor(b.handCuts, all);
   // (the ends of these routes cut where they join the next track inside trackwork (jointcuts.ts): none of the app's own joints close by)
-  const jAt = (P: Pose) => !!b.jointCuts?.some((c) => Math.hypot(c.at[0] - P[0], c.at[1] - P[1]) < 1);
+  const jAt = (P: Pose) => !!b.jointCuts?.some((c) => [c.at, ...(c.more ?? [])].some((q) => Math.hypot(q[0] - P[0], q[1] - P[1]) < 1));
   const jointEnds = b.jointCuts?.length ? all.map((rt): [boolean, boolean] => [jAt(routePose(rt, 0)), jAt(routePose(rt, routeLength(rt)))]) : undefined;
   const plan = cached(`secplan:${key}:${room}:${o.printBedX}x${o.printBedY}:${bandHalf}:${ex}:${JSON.stringify(plates)}:${JSON.stringify(std && [...std])}:${stdStraights}:${lead}:${JSON.stringify(tables)}${hc ? `:hand${JSON.stringify(hc.hand)}` : ''}${jointEnds ? `:je${JSON.stringify(jointEnds)}` : ''}`, () => planSections(all, solSplits, cx.bandHalf0, room, 40, ex, plates, std, stdStraights, lead, seamOf, track.c.trackGauge, pieceFit, hc?.hand, jointEnds));
   const st = (q: [number, number]) => `${(q[0] / 8).toFixed(0)}, ${(q[1] / 8).toFixed(0)}`;
@@ -1932,8 +1932,9 @@ function sectioned(b: PieceBuild, name: string, all: Route[], checks: CheckRail[
     const jg = b.jointGroups, groups = jg && rts.length > 1 ? rts.map((rt, k) => { const m = routePose(rt, routeLength(rt) / 2), q: [number, number] = [m[0], m[1]], di = jg.routes.findIndex((dr) => Math.abs(routeLat(dr, q)) < 0.05); return di >= 0 ? jg.group[di] : -1 - k; }) : undefined;
     // (the cuts worked out where tracks join (jointcuts.ts) inside it: where two of its pieces, of two tracks, meet end to
     // end, built as one. A joint with its other track in the next section is an ordinary track end already)
-    const jcs = (b.jointCuts ?? []).filter((c) => c.at[0] >= sb[0] && c.at[0] <= sb[2] && c.at[1] >= sb[1] && c.at[1] <= sb[3]
-      && new Set(ps.filter(([pi, a, b2]) => [a, b2].some((sv) => { const q = routePose(all[pi], sv); return Math.hypot(q[0] - c.at[0], q[1] - c.at[1]) < 1; })).map(([pi]) => pi)).size > 1);
+    // (a cut across several joints beside each other, a switch's tracks each joined to the next piece's: by any of them)
+    const jcs = (b.jointCuts ?? []).filter((c) => [c.at, ...(c.more ?? [])].some((at) => at[0] >= sb[0] && at[0] <= sb[2] && at[1] >= sb[1] && at[1] <= sb[3]
+      && new Set(ps.filter(([pi, a, b2]) => [a, b2].some((sv) => { const q = routePose(all[pi], sv); return Math.hypot(q[0] - at[0], q[1] - at[1]) < 1; })).map(([pi]) => pi)).size > 1));
     const sk = `sec:${JSON.stringify({ rts, cChecks, m: mine.map((x) => [x.key, x.inner, x.bladeCuts.map(([i]) => i)]), copt, g: b.grooveCuts.length || b.grooveKeeps.length ? b.grooveEdits : 0, di: [...secInner],
       gp: gridPose, bp, bxy: [o.baseplateX, o.baseplateY], joint: o.joint, ...(apart && { seat: o.trackFitTol ?? 0.2, seated, bb: o.boughtBallast }), ...(o.ballast !== 'none' && (b.boughtSw.length || seated) && { sw: groundKey(b, routesBox(rts, bandHalf + 64), seated) }), bed: [o.printBedX, o.printBedY], zs, ...(b.boughtSw.length > 0 && { pt: partingsNear(b, sb) }), ...(b.labelOn && { lab: [o.labelText, o.labelSize, o.labelGauge, o.labelParts, base + si + 1] }), ...(hps.length > 0 && { hps }), ...(jcs.length > 0 && { jcs, no: b.overlay.cutting?.no.moving }), ...(groups && { groups }) })}`;
     let part: { ms: (Baked & { id?: string; lego?: LegoPart[]; seats?: Pose[] })[]; grips: [number, number][]; paths?: HandPathDone[]; joints?: { id: string; made: boolean }[] };
@@ -2654,10 +2655,11 @@ function buildOne(w: Wasm, design: Design, report: (what: string, frac: number) 
   const cutPaths = overlay.cutting && designPaths(slipPaths.length ? { ...design, expert: { ...design.expert, cutPaths: [...(design.expert?.cutPaths ?? []), ...slipPaths] } } : design, gridPose, routes, track.c.railOffset, overlay.cutting.no, !!o.pathSquare, new Set(slipPaths.filter((q) => q.slip).map((q) => q.id)));
   if (cutPaths && !inLengths) bedWarnings.add('the cut paths are made only with Long track cut into: Track pieces');
   const jointRoutes = jointOn ? toRoutes(design).filter((rt, i) => rt.segments.length > 0 && !isMono(design.routes[i])) : [];
+  const jointHalves = jointRoutes.map((rt) => cut.bandHalf0 + ((rt.gauge ?? track.c.trackGauge) - track.c.trackGauge) / 2);
   const jointCutList = jointOn ? (() => {
     const drs = jointRoutes;
     const tr = { routes, railG: track.c.railOffset, no: overlay.cutting!.no, slip: true, free: true };
-    return jointCuts(drs, drs.map((rt) => cut.bandHalf0 + ((rt.gauge ?? track.c.trackGauge) - track.c.trackGauge) / 2))
+    return jointCuts(drs, jointHalves)
       .filter((c) => !pathProblem(c.pts.map((q): [number, number] => [q[0] / 8, q[1] / 8]), [], tr));
   })() : [];
   const sleepered = o.sleepers === 'sleepers' && o.ballast === 'none';
@@ -2666,7 +2668,7 @@ function buildOne(w: Wasm, design: Design, report: (what: string, frac: number) 
   for (const wn of railWarnings(design)) bedWarnings.add(wn);
   const labelOn = o.ballast !== 'none' && o.bottomStyle === 'float' && !!o.labelText?.trim();
   const b: PieceBuild = { w, scad, o, gaugeStuds: design.gaugeStuds, track, cut, prog, pieces: [], volume: 0, bedWarnings, overlay, job,
-    labelOn, ...(opts.mark && { mark: opts.mark, markBoth: opts.markBoth }), num: { part: 0, sec: 0 }, alongTrack, gridPose, sleepered, bufs, grooveCuts, grooveKeeps, grooveEdits: tw.groove, dropInner, tables: design.tables ?? [], boughtSw: bought, trackRoutes: routes, ...(handCuts && { handCuts }), ...(cutPaths?.cut.length && inLengths && { cutPaths: cutPaths.cut }), ...(jointCutList.length > 0 && { jointCuts: jointCutList, jointGroups: { routes: jointRoutes, group: trackGroups(jointRoutes) } }) };
+    labelOn, ...(opts.mark && { mark: opts.mark, markBoth: opts.markBoth }), num: { part: 0, sec: 0 }, alongTrack, gridPose, sleepered, bufs, grooveCuts, grooveKeeps, grooveEdits: tw.groove, dropInner, tables: design.tables ?? [], boughtSw: bought, trackRoutes: routes, ...(handCuts && { handCuts }), ...(cutPaths?.cut.length && inLengths && { cutPaths: cutPaths.cut }), ...(jointCutList.length > 0 && { jointCuts: jointCutList, jointGroups: { routes: jointRoutes, group: trackGroups(jointRoutes, jointHalves) } }) };
   if (network) {
     net ??= netOf();
     for (const sp of net.levers) lever(keyOf(sp.toe), sp.frame, sp.set);

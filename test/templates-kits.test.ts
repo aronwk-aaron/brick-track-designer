@@ -41,21 +41,21 @@ const m = (hand: 1 | -1, ends: [number, number][]): [number, number][] => ends.m
 const BASE40: [number, number][] = [[0, 0], [0, 16], [-3.045, 15.307]];
 /** The R40 branch's end at 45 degrees (-11.716, 28.284): the outer end of its end sleeper there (4 studs out, square to the track: a part's edge is its box's). */
 const B45_SLEEPER: [number, number] = [-11.716 - 2.828, 28.284 - 2.828];
-/** (studs) How much nearer the toe the compact R40 base's cut reaches at the branch's outer edge, square to the branch there. */
-const DIP40 = 2.6;
+/** (studs) How much longer the compact R40's detachable section is than its straight: its joint square to the branch at 22.5 degrees reaches 2.2 nearer the toe at the branch's outer edge, and its far end's connector 0.9 past the end. */
+const DIP40 = 3.1;
 const compact = (hand: 1 | -1): Record<string, Module[]> => {
   const h = hand === 1 ? 'left' : 'right', base = (gto = ''): Module => [`comp base ${gto}${h}`, m(hand, BASE40), 16];
-  // (the detachable section one part, its two tracks together as the kit's: the base's cut square to the branch across
-  // it (Cut path ends square to a branch) reaches DIP40 nearer the toe at the branch's outer edge, so its straight's end
-  // at 16 is inside its box, and it's that much longer; its ends: the branch's where the cut crosses it (16 studs up,
-  // 3.34 over), and the straight's far one; as wide as the branch's sleepers reach past 33.75 degrees)
-  const det = (what: string, end: [number, number], long: number): Module[] => [[`comp det ${what} ${h}`, m(hand, [[-3.34, 16], end]), long + DIP40, 14.1]];
+  // (the detachable section one part, its two tracks together as the kit's: its ends the base's two (the straight's at
+  // 16 studs, the branch's at 22.5 degrees of the curve, each square to its own track: Cut where tracks join in
+  // trackwork; the cut square to the branch reaches nearer the toe at the branch's outer edge, so the straight's end
+  // at 16 is inside the part's box: the branch's is looked for) and the straight's far one; as wide as the branch's sleepers reach past 33.75 degrees)
+  const det = (what: string, end: [number, number], long: number, wide = 14.1, more: [number, number][] = []): Module[] => [[`comp det ${what} ${h}`, m(hand, [BASE40[2], end, ...more]), long + DIP40, wide]];
   return {
     [`Switch R40 ${h}, compact base and standard section`]: [base(), ...det('straight standard', [0, 32], 16)],
     [`Switch R40 ${h}, compact base and short section`]: [base(), ...det('straight short', [0, 28], 12)],
     [`Yard switch R40 ${h}, compact base and rail yard section`]: [base('gto '), ...det('straight railyard', [-0.03, 28.844], 12.84)],
     [`Switch R40 ${h}, compact base and curved 45° section`]: [base(), ...det('curved 45', [-0.769, 30.431], 14.43)],
-    [`Switch R40 ${h}, compact base and curved 90° section`]: [base(), [`comp det curved 90 ${h}`, m(hand, [[0, 16], [-3.045, 15.307], [-3.045, 31.307], B45_SLEEPER]), 16.5]],
+    [`Switch R40 ${h}, compact base and curved 90° section`]: [base(), ...det('curved 90', [-3.045, 31.307], 16.5, 18.5, [B45_SLEEPER])],
   };
 };
 const slip = (hand: 1 | -1): Module[] => { const h = hand === 1 ? 'left' : 'right'; return [

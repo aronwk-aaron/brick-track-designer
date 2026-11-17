@@ -219,7 +219,7 @@ export interface PieceOptions {
   studsAtCuts?: 'off' | 'whole' | 'split';
   /** (expert) Each end of a cut path that crosses a switch's branch at a slant turned square to the branch there, as a modular kit's sections are joined (handcuts.ts squarePathEnds); off: along the stud grid, as drawn. */
   pathSquare?: boolean;
-  /** (track cut into pieces) Where two tracks drawn end to end join inside trackwork, where no ordinary track end fits (on a slanted track just past the track it crosses): cut there too, square across that track (jointcuts.ts), so a set chained from its pieces comes apart where they join. Off (default): one part there, cut for the bed as any part. */
+  /** (track cut into pieces) Where two tracks drawn end to end join inside trackwork, where no ordinary track end fits (on a slanted track just past the track it crosses): cut there too, square across that track (jointcuts.ts), so a set chained from its pieces comes apart where they join; joints beside each other on each other's beds (a switch's straight and branch, each joined to the next piece's: a kit's base and its detachable section) in one cut across them all. Off (default): one part there, cut for the bed as any part. */
   jointCuts?: boolean;
   /** With track pieces: plain track bought, not printed: LEGO's straights (53401, with ballast on LEGO plates) and curves, R40 LEGO's (53400), R56 to R120 BrickTracks' ('lego'); only LEGO's, BrickTracks' radii printed ('lego-only'); or every piece printed ('print'). */
   legoTrack?: 'lego' | 'lego-only' | 'print';

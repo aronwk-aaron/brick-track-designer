@@ -1,7 +1,7 @@
 // The reference range's modular kits: a switch sold as a base (the points and the lever) and detachable sections that
-// carry its tracks on, so one base serves several switches. Each template is the whole piece of trackwork, cut by hand
-// (expert, cut paths) into the kit's parts, each where the parts library has that module's ends
-// (test/templates-kits.test.ts). The R104 switch's and three-way's kits and the three-track crossover are in design.ts.
+// carry its tracks on, so one base serves several switches. Each template is the whole piece of trackwork, cut into
+// the kit's parts, each where the parts library has that module's ends (test/templates-kits.test.ts): the compact R40
+// kits where their tracks are drawn joined (Cut where tracks join in trackwork), the others by hand (expert, cut paths). The R104 switch's and three-way's kits and the three-track crossover are in design.ts.
 import type { Design, DRoute, Trackwork } from './design';
 
 type Seg = DRoute['segs'][number];
@@ -10,40 +10,42 @@ const cv = (radius: number, angle: number): Seg => ({ kind: 'curve', radius, ang
 /** A route's segments mirrored, left for right. */
 const mirrored = (segs: Seg[]): Seg[] => segs.map((g) => (g.kind === 'curve' ? { ...g, angle: -g.angle } : g));
 
+/** (studs) Where the compact R40 base's branch ends: 22.5 degrees of R40 from the toe, 3.04 over and 15.31 on. */
+const BASE40 = { x: 40 * (1 - Math.cos(Math.PI / 8)), y: 40 * Math.sin(Math.PI / 8) };
 /**
- * A compact R40 switch as its kit: the compact base (the first 16 studs: the points, the lever, the branch on to 22.5
- * degrees, 3 studs over) and the detachable section that carries both tracks on (straight and branch: their shapes
- * past the base). Cut across at 16 studs: square to the straight track, and across the branch square to the branch
- * from where its centre line crosses (Cut path ends square to a branch), as the kit's joint is (the kit's is at 22.5
- * degrees of the branch, 0.7 studs nearer the toe). The detachable section is one part, as the kit's. hand: 1 left, -1 right;
+ * A compact R40 switch as its kit: the compact base (the points, the lever, the straight's first 16 studs and the
+ * branch on to 22.5 degrees, 3 studs over) and the detachable section that carries both tracks on (straight and
+ * branch: their shapes past the base). Drawn as the kit is made: the base's two tracks, and the section's two joined
+ * onto their ends; cut where they join (Cut where tracks join in trackwork, jointcuts.ts: none is drawn), each track
+ * square across at its own joint, the two lines meeting between the tracks, as the kit's two ends are. The
+ * detachable section is one part, as the kit's. hand: 1 left, -1 right;
  * lever: on the branch's side, or the straight's (the kit's base with its ground throw outside); 3 studs in from the
  * toe end (the kit's is 3.5 in: the slider lies between the baseplate's studs, on a whole-stud line).
- * square: the cut across the branch square to it (Cut path ends square to a branch); else along the grid.
+ * straight, branch: the section's two tracks, from the base's ends on.
  */
-function compactR40(hand: 1 | -1, straight: Seg[], branch: Seg[], lever: 'branch' | 'straight' = 'branch', square = true): Design {
+function compactR40(hand: 1 | -1, straight: Seg[], branch: Seg[], lever: 'branch' | 'straight' = 'branch'): Design {
   const side = (hand === 1) === (lever === 'branch') ? 'left' : 'right', flip = (segs: Seg[]) => (hand === 1 ? segs : mirrored(segs));
-  return { version: 1, gaugeStuds: 4, options: { legoTrack: 'print', splitTrack: 'lengths', ...(square && { pathSquare: true }) }, routes: [
-    { name: 'Straight', x: 0, y: 0, heading: 0, segs: flip(straight) }, { name: 'Branch', x: 0, y: 0, heading: 0, segs: flip(branch), throwSide: side }],
+  const r6 = (v: number) => Math.round(v * 1e6) / 1e6;
+  return { version: 1, gaugeStuds: 4, options: { legoTrack: 'print', splitTrack: 'lengths', jointCuts: true }, routes: [
+    { name: 'Straight', x: 0, y: 0, heading: 0, segs: [st(16)] }, { name: 'Branch', x: 0, y: 0, heading: 0, segs: flip([cv(40, 22.5)]), throwSide: side },
+    { name: 'Section straight', x: 0, y: 16, heading: 0, segs: flip(straight) }, { name: 'Section branch', x: r6(-BASE40.x * hand), y: r6(BASE40.y), heading: 22.5 * hand, segs: flip(branch) }],
     // (the lever 7 studs from the track's centre line, 3 past the sleepers' ends, as the kit's base has it)
-    trackwork: { throw: { '0,0': { leverOffset: 24 } } },
-    expert: { cutPaths: [{ id: 'c1', pts: [[-10 * hand, 16], [6 * hand, 16]] }] } };
+    trackwork: { throw: { '0,0': { leverOffset: 24 } } } };
 }
 /** The compact R40 kits, each hand: the base with each of its detachable sections. */
 const compactKits = (hand: 1 | -1): Record<string, Design> => {
   const h = hand === 1 ? 'left' : 'right';
   return {
     // (the standard straight section: the straight on to 32 studs, the branch to 33.75 degrees: the R40 switch)
-    [`Switch R40 ${h}, compact base and standard section`]: compactR40(hand, [st(32)], [cv(40, 33.75)]),
+    [`Switch R40 ${h}, compact base and standard section`]: compactR40(hand, [st(16)], [cv(40, 11.25)]),
     // (the short straight section: the straight on to 28 studs)
-    [`Switch R40 ${h}, compact base and short section`]: compactR40(hand, [st(28)], [cv(40, 33.75)]),
+    [`Switch R40 ${h}, compact base and short section`]: compactR40(hand, [st(12)], [cv(40, 11.25)]),
     // (the rail yard section: the straight on to 28.84 studs; the base with its lever on the straight's side)
-    [`Yard switch R40 ${h}, compact base and rail yard section`]: compactR40(hand, [st(28.844)], [cv(40, 33.75)], 'straight'),
+    [`Yard switch R40 ${h}, compact base and rail yard section`]: compactR40(hand, [st(12.844)], [cv(40, 11.25)], 'straight'),
     // (the curved 45-degree section: the straight track 6.63 studs on and then round R40 for 11.25 degrees, the branch to 33.75)
-    [`Switch R40 ${h}, compact base and curved 45° section`]: compactR40(hand, [st(22.627417), cv(40, 11.25)], [cv(40, 33.75)]),
+    [`Switch R40 ${h}, compact base and curved 45° section`]: compactR40(hand, [st(6.627417), cv(40, 11.25)], [cv(40, 11.25)]),
     // (the curved 90-degree section: the straight track round R40 for 22.5 degrees from the base's end, the branch on to 45)
-    // (cut along the grid, not square to the branch: there the slanted cut left the detachable section's file with edges
-    // shared by more than two triangles)
-    [`Switch R40 ${h}, compact base and curved 90° section`]: compactR40(hand, [st(16), cv(40, 22.5)], [cv(40, 45)], 'branch', false),
+    [`Switch R40 ${h}, compact base and curved 90° section`]: compactR40(hand, [cv(40, 22.5)], [cv(40, 22.5)]),
   };
 };
 
