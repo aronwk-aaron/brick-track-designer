@@ -10,7 +10,8 @@ import fs from 'node:fs';
 import { kernel } from '../src/geom/kernel';
 import { buildDesign, clearBuildCache } from '../src/app/build';
 import { type Design, OPTION_DEFAULTS, type PieceOptions, TEMPLATES } from '../src/app/design';
-import { partStuds, studFaults, studsOf } from './studs-apart.shared';
+import { circlesIn, partStuds, studFaults, studsOf } from './studs-apart.shared';
+import { drop, solid } from './assembled.shared';
 
 const APP = (globalThis as { APP_DEFAULTS?: PieceOptions }).APP_DEFAULTS!;
 const D: Design = JSON.parse(fs.readFileSync(new URL('./fixtures/196s-r568-south.btd.json', import.meta.url), 'utf8'));
@@ -122,6 +123,36 @@ describe('studs outside the rails along the points (196s R568)', { timeout: 6000
       expect(missing, 'outside the stock rails').toEqual([]);
       expect(tracks.flatMap((p) => partStuds(w, p, o)), 'studs in part').toEqual([]);
       expect(studFaults(w, b.pieces, () => o), 'studs that touch').toEqual([]);
+    } finally { Object.assign(OPTION_DEFAULTS, saved); clearBuildCache(); }
+  });
+
+  // (a stud along the points that only just ran into something beside it, a check rail or a rail's foot on the other
+  // track: a stud in part, a millimetre cubed or so of it in the other (Yard R40, three tracks, left: two on track3;
+  // the yard ladder: two; the wide switched section: one). Along the points a stud only stands where it stands free
+  // (crossing.ts free): here, nothing but the stud itself within 0.25 of it, half way up it)
+  it.each(['Yard R40, three tracks, left', 'Yard ladder (R40)', 'Wide switched parallel curve section'])('%s: every stud on the track stands free', async (name) => {
+    const saved = { ...OPTION_DEFAULTS };
+    Object.assign(OPTION_DEFAULTS, APP);
+    try {
+      const w = await kernel();
+      clearBuildCache();
+      const b = buildDesign(w, structuredClone(TEMPLATES[name]));
+      const r = (4.8 + 0.18) / 2, full = Math.PI * r * r, joined: string[] = [];
+      let n = 0;
+      for (const p of b.pieces.filter((q) => /^track/.test(q.name) && q.positions?.length)) {
+        const m = solid(w, p.positions);
+        if (!m) continue;
+        const sl = m.slice(3.2 + 0.9);
+        for (const c of circlesIn(sl.toPolygons() as Pt[][], r, 0.03)) {
+          n++;
+          const circ = w.CrossSection.circle(r + 0.25, 48).translate(c), x = sl.intersect(circ), a = x.area();
+          circ.delete(); x.delete();
+          if (a > full * 1.01) joined.push(`${p.name}: ${c.map((v) => v.toFixed(1)).join(', ')} (${(a / full).toFixed(2)} of a stud within 0.25 of it)`);
+        }
+        sl.delete(); drop(m);
+      }
+      expect(n, 'studs found').toBeGreaterThan(20);
+      expect(joined, 'studs run into something').toEqual([]);
     } finally { Object.assign(OPTION_DEFAULTS, saved); clearBuildCache(); }
   });
 });
