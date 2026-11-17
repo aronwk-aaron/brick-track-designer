@@ -568,13 +568,14 @@ const RAIL_KINDS = { nub: /has a nub of rail/, stud: /stud at .* is run into|mor
  * found, so the list comes down. nub: bits of rail head a few mm2 between flangeways or at blades' heels (double and
  * single slips, 0.2 to 5.7 mm2; a 45 degree crossing cut across its middle, 5.7); stud: a stud with a rail's foot or
  * a wing rail within 0.25 mm of its side (the wyes' two studs at the toe, 0.2 to 0.4 mm2; the slips' and the R56
- * crossovers', 0.7 to 1.3); sliver: a part of track under 1000 mm3 (the yards' ladders: 608 to 884 mm3); check: a
+ * crossovers', 0.7 to 1.3; the compact switch sets' third switch, which stands at 45 degrees to the stud grid, two studs
+ * at its toe, 0.7: there with the set uncut and with its levers on arms too, not on the switch alone on the grid); sliver: a part of track under 1000 mm3 (the yards' ladders: 608 to 884 mm3); check: a
  * check rail with no bed or sleeper under it for more than 24 mm (none now: the R72 pass-through crossings' got a sleeper
  * under the track their long ties stop part way under).
  * ('the double slip as nail switches': nail-switch.test.ts's, the 22.5 degree double slip. The double slip monster
  * crossover had a stud at each three-way's toe, 0.61 mm2, as the wyes', till its levers were the reference's.)
  */
-export const RAIL_KNOWN: Record<string, (keyof typeof RAIL_KINDS)[]> = { 'Double slip (22.5°)': ['nub'], 'the double slip as nail switches': ['nub'], 'Double slip (45°, R40)': ['nub', 'stud'], 'Double slip R40 45°': ['nub'], 'Dual gauge crossing 45°': ['nub'], 'Narrow-gauge wye R36': ['stud'], 'Single slip R40 45°': ['nub'], 'Wye R40': ['stud'], 'Wye R40, 8-stud spacing': ['stud'], 'T-junction R40 and R56': ['stud'], 'Yard (R56)': ['nub', 'sliver'], 'Yard ladder (R40)': ['nub'], 'monster-switch-6-tracks-double-slips.btd.json': ['nub'], 'monster-switch-6-tracks.btd.json': ['nub'], 'return-loop-turning-left.btd.json': ['nub'], 'return-loop-turning-right.btd.json': ['nub'] };
+export const RAIL_KNOWN: Record<string, (keyof typeof RAIL_KINDS)[]> = { 'Double slip (22.5°)': ['nub'], 'the double slip as nail switches': ['nub'], 'Double slip (45°, R40)': ['nub', 'stud'], 'Double slip R40 45°': ['nub'], 'Dual gauge crossing 45°': ['nub'], 'Narrow-gauge wye R36': ['stud'], 'Single slip R40 45°': ['nub'], 'Wye R40': ['stud'], 'Wye R40, 8-stud spacing': ['stud'], 'T-junction R40 and R56': ['stud'], 'Compact switch set R40, two left and one right curved 45° switches': ['stud'], 'Compact switch set R40, two right and one left curved 45° switches': ['stud'], 'Yard (R56)': ['nub', 'sliver'], 'Yard ladder (R40)': ['nub'], 'monster-switch-6-tracks-double-slips.btd.json': ['nub'], 'monster-switch-6-tracks.btd.json': ['nub'], 'return-loop-turning-left.btd.json': ['nub'], 'return-loop-turning-right.btd.json': ['nub'] };
 
 /**
  * 7. Edges shared by more than two triangles in the printed parts' files (assembly.shared.ts sharedEdges), a template's
@@ -622,7 +623,10 @@ export const EDGES: Record<string, number> = { 'Modular wye R40, lever on the le
   // (the sets cut where their pieces join (jointCuts, 2026-11-17). The star: 10 found, on the four crossings' rail tops and
   // joints (track1 1, track3 6, track4 2, track14 1); as one part, not cut there, it has 74. The T-junction: 56 found, 44 of
   // them in the core's two halves (track4 20, track5 24: the core on its own has 35), the rest 1 to 4 in the switches)
-  'Narrow-gauge star crossing 45° over two standard tracks': 12, 'T-junction R40 and R56': 62 };
+  'Narrow-gauge star crossing 45° over two standard tracks': 12, 'T-junction R40 and R56': 62,
+  // (the compact switch sets: 4 found in the first, 32 in its mirror image (track4, the part with the third switch, 14; 1 to 4
+  // in seven more), as the compact R40 corners' two hands differ)
+  'Compact switch set R40, two left and one right curved 45° switches': 6, 'Compact switch set R40, two right and one left curved 45° switches': 36 };
 /** (edges) A template not in EDGES may have this many: one or two come and go with a corner's last digit. */
 export const EDGES_FEW = 4;
 

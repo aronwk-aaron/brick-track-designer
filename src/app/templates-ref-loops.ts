@@ -5,7 +5,7 @@ import type { Design } from './design';
 
 /** A set's other hand, as the range's left and right sets are each other's mirror image: across the line its first track starts up
  * (x to -x), each heading and curve the other way, each lever on the other side. */
-function mirror(d: Design): Design {
+export function mirror(d: Design): Design {
   return { ...d, routes: d.routes.map((r) => ({ ...r, x: -r.x, heading: -r.heading, segs: r.segs.map((g) => (g.kind === 'curve' ? { ...g, angle: -g.angle } : g)),
     ...(r.throwSide && { throwSide: r.throwSide === 'left' ? 'right' as const : 'left' as const }) })) };
 }

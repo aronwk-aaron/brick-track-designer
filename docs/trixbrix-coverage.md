@@ -23,7 +23,7 @@ Match: **exact** (ends, and lever or section where it has one), **close** (a tem
 **missing** (no template or setting makes it), **in progress elsewhere** (the double slips and their crossovers, being
 rebuilt separately).
 
-Counts: close 79, exact 224, in progress elsewhere 13, missing 18, n/a 1 (of 335).
+Counts: close 79, exact 226, in progress elsewhere 13, missing 16, n/a 1 (of 335).
 
 ## Parts
 
@@ -272,8 +272,8 @@ Counts: close 79, exact 224, in progress elsewhere 13, missing 18, n/a 1 (of 335
 | tb combo compact corner 90d r104 2R | Compact corner R104, three tracks, left | exact | ends within 0.12 studs: the library's own placing of the set's pieces; 2 lever tab(s): lever place not checked (template not in the build batch) |
 | tb combo compact corner 90d r104 3L | Compact corner R104, four tracks, left | exact | ends within 0.12 studs: the library's own placing of the set's pieces; 3 lever tab(s): lever place not checked (template not in the build batch) |
 | tb combo compact corner 90d r104 3R | Compact corner R104, four tracks, right | exact | ends within 0.13 studs: the library's own placing of the set's pieces; 3 lever tab(s): lever place not checked (template not in the build batch) |
-| tb combo compact switch set - 2l+1r curved switches 45d r40 | - | missing | made by chaining its pieces (ends within the library's slack), but some of its sections don't fit a 256 mm bed: left out of the templates for now |
-| tb combo compact switch set - 2r+1l curved switches 45d r40 | - | missing | made by chaining its pieces (ends within the library's slack), but some of its sections don't fit a 256 mm bed: left out of the templates for now |
+| tb combo compact switch set - 2l+1r curved switches 45d r40 | Compact switch set R40, two left and one right curved 45° switches | exact | its 13 pieces joined end to end; its 5 ends within 0.16 studs: the library's own placing of the set's pieces; cut where its pieces join (the setting Cut where tracks join in trackwork) to fit a 256 mm bed; 3 lever tab(s): lever place not checked |
+| tb combo compact switch set - 2r+1l curved switches 45d r40 | Compact switch set R40, two right and one left curved 45° switches | exact | the other hand's mirror image (the two sets are each other's; its free ends on the library's own to 0.00 studs after the same move); cut where its pieces join to fit a 256 mm bed; 3 lever tab(s): lever place not checked |
 | tb combo diverging double track r40 r56 left | Double turnout R56 and R40, left | exact | ends within 0.09 studs: the library's own placing of the set's pieces; 2 lever tab(s): lever place not checked (template not in the build batch) |
 | tb combo diverging double track r40 r56 right | Double turnout R56 and R40, right | exact | ends within 0.09 studs: the library's own placing of the set's pieces; 2 lever tab(s): lever place not checked (template not in the build batch) |
 | tb combo pass-through double crossover r40 left | Double pass-through crossover R40, left | exact | its pieces joined end to end (with the R19.08 pass-through connectors); its 8 ends within 0.26 studs: the library's own placing of the set's pieces |
