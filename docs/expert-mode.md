@@ -545,9 +545,12 @@ route-owned storage, the follow rules and the card section they bring are the pa
   rail yard section'). test/templates-kits.test.ts holds each kit's modules to the library's ends (`KITS`: the
   `MODULES` pattern, with a width where a module's ends are on its neighbour's edge too) and the R104 switch's points
   and lever to the library's base (design.ts `r104Work`: toe 16 mm on, lever 7 studs out and 5 in).
-  **Where a kit differs from the maker's, and why:** a cut path is on the stud grid, so the compact R40 base ends
-  square to the straight track at 16 studs (the maker's joint on the branch is square to the branch, 0.7 studs
-  sooner), and the double slip's sections meet square to the straight track 4 studs from the crossing (the maker's
+  The compact R40 kits are drawn as the kit is made, not cut by a path: the base's two tracks (16 studs of straight,
+  22.5 degrees of the branch) and the section's two joined onto their ends, with Cut where tracks join in trackwork
+  (jointcuts.ts `jointClusters`, `clusterCut`: two joints beside each other, each on the other track's bed, have one
+  cut, square across each track at its own joint, the two lines meeting between the tracks). Their 14 parts' ends
+  are the library's (to 0.01 studs; the rail yard section's 0.03).
+  **Where a kit differs from the maker's, and why:** a cut path is on the stud grid, so the double slip's sections meet square to the straight track 4 studs from the crossing (the maker's
   are square to the line between the two tracks, 11.25 degrees off: stepped, the path would run down a rail); the
   double crossover's two middle sections are one part (they meet where the crossovers cross: through the frogs);
   on sleepers a compact detachable section's two tracks aren't joined where they've parted (two parts).
@@ -565,8 +568,11 @@ route-owned storage, the follow rules and the card section they bring are the pa
   the way of a train on another track"), two sets' plates lie 45 mm3 in the next slip's bed (the beds at two
   heights of network.ts `bedClear`, between slips here), a sprung blade has no lip, and the middle (the kit's two
   crossover adapters, which meet at the crossing: through its frogs) is 272 mm wide. The maker's adapters have no
-  levers on those four sets. (3) The compact R40 "perpendicular" section and its 3T sets, and the T-junction R40
-  R56: not tried.
+  levers on those four sets. (3) The compact R40 "perpendicular" 3T sets: the section itself is a template
+  with its base and the curved 90-degree section (templates-ref-kits.ts `perpendicularR40`: a tandem, the second
+  points with one moving blade, cut at the second points' toe); the set chained from its pieces builds, but two
+  parts of its third track's second curve lie 11 mm3 in each other at one of the app's own cuts (the inner rail's
+  tongue with no notch for it): not a template till that's traced.
 - **The editor's side of section 5 is built: typed selection, stretches on the plan, joints in the Trackwork panel,
   the Expert tools switch, the Pick list.** Pure part `src/app/items.ts`: `Item` (the typed ids: `route`, `table`,
   `cut` (route, k), `cutpath` (id), `stretch` (route, k), `joint` (a track's end, or its two tracks)), `hitItems` (the

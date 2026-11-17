@@ -95,6 +95,8 @@ Object.assign(BUDGET, { 'Narrow-gauge rhombus crossing 45° left over two standa
 // 84dc48b, PR 67, PR 69 twice: 13.2 to 17.6 s), the T-junction's five (22.6 to 32.7 s), the compact switch sets' two (PR 69:
 // 14.0 and 16.8 s, 15.8 and 14.5 s; each hand the slower of the pair's))
 Object.assign(BUDGET, { 'Narrow-gauge star crossing 45° over two standard tracks': 23, 'T-junction R40 and R56': 43, 'Compact switch set R40, two left and one right curved 45° switches': 22, 'Compact switch set R40, two right and one left curved 45° switches': 22 });
+// (the perpendicular section's kit: provisional, 3 times a laptop's 4.8 s, till CI has run it twice)
+Object.assign(BUDGET, { 'Switch R40 left, compact base, perpendicular section and curved 90° section': 15, 'Switch R40 right, compact base, perpendicular section and curved 90° section': 15 });
 const BUDGET_SMALL = 10; // (a template with no time of its own yet)
 /** only: just these templates of the groups */
 export function templatesBuild(groups: string[], only?: string[]) {
@@ -121,7 +123,7 @@ export function templatesBuild(groups: string[], only?: string[]) {
       expect(again.pieces.length).toBe(b.pieces.length);
       expect(b.pieces.length).toBeGreaterThan(0);
       // (the double slip monster crossover's three-ways keep both blades: the design's one blade a set is its double slips')
-      const extra = b.info.warnings.filter((w) => !/experimental/.test(w) && !/at an angle to the baseplate grid/.test(w) && !(/Double slip/.test(name) && /blades are rigid/.test(w)) && !(/Helix/.test(name) && /stands over other track/.test(w)) && !(/triple crossover/.test(name) && /sections don't fit the \d+ x \d+ print bed/.test(w)) && !(/X yard/.test(name) && /lever of the points at 67, 209|sprung blade's front has no lip|blades are rigid/.test(w)) && !(/Double slip (monster )?crossover/.test(name) && /sprung blade's front has no lip/.test(w)) && !(/Double slip monster crossover/.test(name) && /a three-way's points keep both blades/.test(w)));
+      const extra = b.info.warnings.filter((w) => !/experimental/.test(w) && !/at an angle to the baseplate grid/.test(w) && !(/Double slip/.test(name) && /blades are rigid/.test(w)) && !(/Helix/.test(name) && /stands over other track/.test(w)) && !(/triple crossover/.test(name) && /sections don't fit the \d+ x \d+ print bed/.test(w)) && !(/X yard/.test(name) && /lever of the points at 67, 209|sprung blade's front has no lip|blades are rigid/.test(w)) && !(/Double slip (monster )?crossover/.test(name) && /sprung blade's front has no lip/.test(w)) && !(/[Pp]erpendicular/.test(name) && /sprung blade's front has no lip/.test(w)) && !(/Double slip monster crossover/.test(name) && /a three-way's points keep both blades/.test(w)));
       // (said in full when it fails)
       expect(extra.join(' | ')).toBe('');
       // (and on every part: no two studs that touch or overlap, nor tubes, nor pins; each

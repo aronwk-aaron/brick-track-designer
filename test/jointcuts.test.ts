@@ -104,6 +104,47 @@ describe('joints beside each other, each on the other track\'s bed: one cut acro
   });
 });
 
+describe('a joint at a toe, with a joint beside it: cut with it', () => {
+  // (a tandem as its kit: the base's straight and branch; the next piece begins with points of its own at the straight's
+  // end (a second branch from there), the first branch carried on through it)
+  const tandem = (): Design => ({ version: 1, gaugeStuds: 4, routes: [
+    { name: 'Straight', x: 0, y: 0, heading: 0, segs: [{ kind: 'straight', studs: 16 }] },
+    { name: 'Branch', x: 0, y: 0, heading: 0, segs: [{ kind: 'curve', radius: 40, angle: 22.5 }] },
+    { name: 'Section straight', x: 0, y: 16, heading: 0, segs: [{ kind: 'straight', studs: 16 }] },
+    { name: 'Section branch', x: -3.044819, y: 15.307337, heading: 22.5, segs: [{ kind: 'curve', radius: 40, angle: 16.875 }] },
+    { name: 'Section second branch', x: 0, y: 16, heading: 0, segs: [{ kind: 'curve', radius: 40, angle: 22.5 }] }] });
+  const rts = toRoutes(tandem()), halves = rts.map(() => 32);
+  it('three ends at one place are no joint, but for the cuts: a track\'s end with two setting out from it', () => {
+    expect(routeJoints(rts).map((j) => [j.i, j.k])).toEqual([[1, 3]]);
+    // (the joints at toes after the others, out of the one track into the first of the two, the other with it)
+    expect(routeJoints(rts, true).map((j) => [j.i, j.k, j.also])).toEqual([[1, 3, undefined], [0, 2, [4]]]);
+    // (two tracks from one toe and nothing joined on before them: no joint)
+    expect(routeJoints(rts.slice(0, 2), true)).toEqual([]);
+  });
+  it('one cut across the branch\'s joint and the toe, as a kit\'s base ends; the points\' own blades past the toe are not in its way', () => {
+    expect(jointClusters(rts, halves)).toEqual([[0, 1]]);
+    const cuts = jointCuts(rts, halves);
+    expect(cuts).toHaveLength(1);
+    expect(cuts[0].id).toBe('j1');
+    expect(cuts[0].pts.map(st).map((q) => q[1])).toEqual([13.75, 16, 16]);
+    expect(cuts[0].toes!.map((P) => st([P[0], P[1]]))).toEqual([[0, 16]]);
+    expect(cuts[0].toes![0][2]).toBeCloseTo(0, 6);
+    // (the piece past the cut one piece of trackwork: the straight, the branch carried on and the second branch)
+    const g = trackGroups(rts, halves);
+    expect(new Set([g[2], g[3], g[4]]).size).toBe(1);
+    expect(g[0]).toBe(g[1]);
+    expect(g[0]).not.toBe(g[2]);
+  });
+  it('a toe with no joint beside it has no cut', () => {
+    const d = tandem();
+    d.routes.splice(3, 1);
+    d.routes[1].segs = [{ kind: 'curve', radius: 40, angle: 45 }];
+    const r2 = toRoutes(d);
+    expect(routeJoints(r2, true)).toHaveLength(1);
+    expect(jointCuts(r2, r2.map(() => 32))).toEqual([]);
+  });
+});
+
 describe('the star crossing set cut where its pieces join', { timeout: 600000 }, () => {
   const build = async (on: boolean) => {
     const saved = { ...OPTION_DEFAULTS };

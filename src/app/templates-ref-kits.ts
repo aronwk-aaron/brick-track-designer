@@ -49,6 +49,37 @@ const compactKits = (hand: 1 | -1): Record<string, Design> => {
   };
 };
 
+/**
+ * The compact R40 kit's perpendicular section, with the base before it and the curved 90-degree section after: three
+ * tracks off one, each an R40 curve from its own toe, 16 studs apart (the 'perpendicular turnout': the tracks end square
+ * to the one they left, 16 studs apart). The perpendicular section is 16 studs of the straight with the base's branch
+ * carried on through it (from 22.5 to 39.375 degrees) and a second set of points of its own at its start: the same
+ * base again (a branch to 22.5 degrees, 3 studs over, at its far end), for the next section. Drawn as the kit is made
+ * and cut where its pieces join (Cut where tracks join in trackwork): the base's two joints, the straight's at the
+ * second points' toe; and the section's two, as any compact kit's.
+ * The second points have one moving blade, the outer one (the kit's: its plate lies between the first branch's rail
+ * and the far rail; with two, the near blade would lie on the first branch's rail, which crosses the straight's near
+ * rail 4 studs past their toe). Both levers on the straight's side (the kit's base with its ground throw outside).
+ * set: the whole 3T set, each track carried on round to 90 degrees (the first by the kit's 5.625-degree piece and two
+ * R40 22.5-degree curves, the second by two, the third by three); else the three kit pieces alone. The set is not a
+ * template yet: it builds, its 4 ends within 0.09 studs of the library's, but two parts of the third track's second
+ * curve lie 11 mm3 in each other where the app cuts it (the inner rail's tongue, with no notch for it in the other part).
+ */
+export function perpendicularR40(hand: 1 | -1, set: boolean): Design {
+  const flip = (segs: Seg[]) => (hand === 1 ? segs : mirrored(segs)), r6 = (v: number) => Math.round(v * 1e6) / 1e6, side = hand === 1 ? 'right' : 'left';
+  /** A piece of one of the three R40 curves: from a degrees round it to b, the curve's toe y0 studs up the straight. */
+  const arc = (name: string, y0: number, a: number, b: number, more: Partial<DRoute> = {}): DRoute => ({ name, x: r6(-40 * (1 - Math.cos((a * Math.PI) / 180)) * hand), y: r6(y0 + 40 * Math.sin((a * Math.PI) / 180)), heading: a * hand, segs: flip([cv(40, b - a)]), ...more });
+  return { version: 1, gaugeStuds: 4, options: { legoTrack: 'print', splitTrack: 'lengths', jointCuts: true }, routes: [
+    { name: 'Straight', x: 0, y: 0, heading: 0, segs: [st(16)] }, arc('Branch', 0, 0, 22.5, { throwSide: side }),
+    { name: 'Section straight', x: 0, y: 16, heading: 0, segs: [st(16)] }, arc('Section branch', 0, 22.5, 39.375), arc('Section second branch', 16, 0, 22.5, { throwSide: side }),
+    arc('Curved section straight', 32, 0, 22.5), arc('Curved section branch', 16, 22.5, 45),
+    // (the set's plain curves, each its own piece: the first track's 5.625-degree piece and two R40 22.5-degree curves, the second's two, the third's three)
+    ...(set ? [arc('Track 1 curve 1', 0, 39.375, 45), arc('Track 1 curve 2', 0, 45, 67.5), arc('Track 1 curve 3', 0, 67.5, 90), arc('Track 2 curve 1', 16, 45, 67.5), arc('Track 2 curve 2', 16, 67.5, 90),
+      arc('Track 3 curve 1', 32, 22.5, 45), arc('Track 3 curve 2', 32, 45, 67.5), arc('Track 3 curve 3', 32, 67.5, 90)] : [])],
+    // (each lever 7 studs from the track's centre line, as the kit's base has it; the second points by their toe, 16 studs on)
+    trackwork: { throw: { '0,0': { leverOffset: 24 }, '0,128': { leverOffset: 24 } }, points: { '0,128': { blades: 1, single: 'curved' } } } };
+}
+
 /** (degrees) The R104 crossovers' curves: 40 studs on and 8 over each. */
 const CO = 22.619865;
 /** The R104 double crossover's four sets of points and levers, as the R104 switch's base has them (design.ts r104Work): by each set's toe (mm). */
@@ -56,6 +87,8 @@ const coWork = (): Trackwork => { const keys = ['-64,0', '64,0', '-64,640', '64,
 
 export const REF_KITS: Record<string, Design> = {
   ...compactKits(1), ...compactKits(-1),
+  'Switch R40 left, compact base, perpendicular section and curved 90° section': perpendicularR40(1, false),
+  'Switch R40 right, compact base, perpendicular section and curved 90° section': perpendicularR40(-1, false),
   // (the R104 double crossover as its kit: two tracks 16 studs apart, 80 long, a crossover each way (two R104 curves
   // of 22.62 degrees each), crossing in the middle. Cut by hand (expert, cut paths) into the kit's parts: four bases
   // (each track's first and last 16 studs), four detach 1 sections (on to 28 and from 52, out to the line between the

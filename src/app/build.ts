@@ -2659,9 +2659,15 @@ function buildOne(w: Wasm, design: Design, report: (what: string, frac: number) 
   const jointCutList = jointOn ? (() => {
     const drs = jointRoutes;
     const tr = { routes, railG: track.c.railOffset, no: overlay.cutting!.no, slip: true, free: true };
+    // (a cut at a toe is that piece's own end, as where points are drawn at a track's start: square across the track
+    // there, 8 mm short of the blades themselves. Their keep-outs begin at the toe, round each blade's line to its tip:
+    // those within a stud past the toe aren't in such a cut's way)
+    const atToe = (P: Pose, m: [number, number, number]) => { const h = (P[2] * Math.PI) / 180, dx = m[0] - P[0], dy = m[1] - P[1], along = -Math.sin(h) * dx + Math.cos(h) * dy; return along > -1 && along < 8 && Math.abs(Math.cos(h) * dx + Math.sin(h) * dy) < cut.bandHalf0; };
     return jointCuts(drs, jointHalves)
-      .filter((c) => !pathProblem(c.pts.map((q): [number, number] => [q[0] / 8, q[1] / 8]), [], tr));
+      .filter((c) => !pathProblem(c.pts.map((q): [number, number] => [q[0] / 8, q[1] / 8]), [], c.toes ? { ...tr, no: { ...tr.no, moving: tr.no.moving?.filter((m) => !c.toes!.some((P) => atToe(P, m))) } } : tr));
   })() : [];
+  // (on the plan from the start, as worked out (the plan alone wanted, the 3D view hidden: all that's said of them); which of them the build made, once it has: below)
+  if (jointCutList.length) overlay.jointCuts = jointCutList.map((c) => ({ at: c.at, pts: c.pts, made: true }));
   const sleepered = o.sleepers === 'sleepers' && o.ballast === 'none';
   // (expert: the sleepers edited by hand that can't be made as they're asked for: said)
   for (const wn of sleeperWarnings(design, o)) bedWarnings.add(wn);

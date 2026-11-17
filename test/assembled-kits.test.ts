@@ -11,5 +11,6 @@ describe('templates go together: the modular kits', { timeout: 1800000 }, () => 
   'Yard switch R40 left, compact base and rail yard section', 'Yard switch R40 right, compact base and rail yard section',
   'Switch R40 left, compact base and curved 45° section', 'Switch R40 right, compact base and curved 45° section',
   'Switch R40 left, compact base and curved 90° section', 'Switch R40 right, compact base and curved 90° section',
+  'Switch R40 left, compact base, perpendicular section and curved 90° section', 'Switch R40 right, compact base, perpendicular section and curved 90° section',
   'Double crossover R104, bases and detachable modules',
 ]));

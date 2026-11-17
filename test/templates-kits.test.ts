@@ -17,6 +17,7 @@ describe('templates: the modular kits', { timeout: 900000 }, () => templatesBuil
   'Yard switch R40 left, compact base and rail yard section', 'Yard switch R40 right, compact base and rail yard section',
   'Switch R40 left, compact base and curved 45° section', 'Switch R40 right, compact base and curved 45° section',
   'Switch R40 left, compact base and curved 90° section', 'Switch R40 right, compact base and curved 90° section',
+  'Switch R40 left, compact base, perpendicular section and curved 90° section', 'Switch R40 right, compact base, perpendicular section and curved 90° section',
   'Double crossover R104, bases and detachable modules',
 ]));
 
@@ -56,6 +57,12 @@ const compact = (hand: 1 | -1): Record<string, Module[]> => {
     [`Yard switch R40 ${h}, compact base and rail yard section`]: [base('gto '), ...det('straight railyard', [-0.03, 28.844], 12.84)],
     [`Switch R40 ${h}, compact base and curved 45° section`]: [base(), ...det('curved 45', [-0.769, 30.431], 14.43)],
     [`Switch R40 ${h}, compact base and curved 90° section`]: [base(), ...det('curved 90', [-3.045, 31.307], 16.5, 18.5, [B45_SLEEPER])],
+    // (the perpendicular section between the base and the curved 90-degree section: its ends the base's branch's, the
+    // straight's far one (the next section's joint), and its through branch's at 39.375 degrees (-9.08, 25.375): the outer end
+    // of its end sleeper there; the curved section 16 studs further on)
+    [`Switch R40 ${h}, compact base, perpendicular section and curved 90° section`]: [base('gto '),
+      [`comp perpendicular ${h}`, m(hand, [BASE40[2], [0, 32], [-9.08 - 3.09, 25.375 - 2.54]]), 16 + DIP40, 21.7],
+      [`comp det curved 90 ${h}`, m(hand, [[-3.045, 31.307], [-3.045, 47.307], [B45_SLEEPER[0], B45_SLEEPER[1] + 16]]), 16.5 + DIP40, 18.5]],
   };
 };
 const slip = (hand: 1 | -1): Module[] => { const h = hand === 1 ? 'left' : 'right'; return [

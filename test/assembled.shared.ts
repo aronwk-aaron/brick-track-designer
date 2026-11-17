@@ -626,7 +626,9 @@ export const EDGES: Record<string, number> = { 'Modular wye R40, lever on the le
   'Narrow-gauge star crossing 45° over two standard tracks': 12, 'T-junction R40 and R56': 62,
   // (the compact switch sets: 4 found in the first, 32 in its mirror image (track4, the part with the third switch, 14; 1 to 4
   // in seven more), as the compact R40 corners' two hands differ)
-  'Compact switch set R40, two left and one right curved 45° switches': 6, 'Compact switch set R40, two right and one left curved 45° switches': 36 };
+  'Compact switch set R40, two left and one right curved 45° switches': 6, 'Compact switch set R40, two right and one left curved 45° switches': 36,
+  // (the perpendicular section's kit: none in the left one, 21 in its mirror image (the perpendicular section 20, at its lever's arm; the curved section 1))
+  'Switch R40 right, compact base, perpendicular section and curved 90° section': 24 };
 /** (edges) A template not in EDGES may have this many: one or two come and go with a corner's last digit. */
 export const EDGES_FEW = 4;
 
