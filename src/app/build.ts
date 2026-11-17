@@ -22,20 +22,21 @@ import { planPieces, subRoute, toFrame } from '../switch/pieces';
 import { networkBody, networkSplits, type SplitParts, throwMoves } from '../switch/network';
 import { findDoubleSlips, slipTrackwork, underHand } from '../switch/dslip';
 import { slipCutPaths } from './slipcuts';
+import { jointCuts, trackGroups } from './jointcuts';
 import { blocks as tileBlocks, cropRoutes, nearCell, planCuts, routesBox, type Rect } from './tiles';
 import type { CheckRail, Split } from '../route/solver';
 import { planSections } from './sections';
 import type { Route } from '../route/route';
 import { cutPiece, type CutLine, tidy } from '../geom/cutter';
 import { type DesignCuts, designCuts, designPaths, handCutsFor } from './handcuts';
-import { type NoCut, gridPath, pathTracks } from './cutpaths';
+import { type NoCut, gridPath, pathProblem, pathTracks } from './cutpaths';
 import { hasPartOwn, partGroups, withoutPartOwn } from './overrides';
 import { expandStretches } from './stretches';
 import { sleeperWarnings } from './sleeperedits';
 import { railWarnings } from './railedits';
 import { accepted } from './accept';
 import { ANTISTUD_FIT, BOTTOM_WALL, edgeGrip, rowUnderside, TUBE_ID, TUBE_OD } from '../geom/underside';
-import { cutOnPaths, type HandPath, type HandPathDone, pathSplit, splitOnPath, type Keep } from '../geom/pathsplit';
+import { cutOnKerfs, cutOnPaths, type HandPath, type HandPathDone, type KerfCut, pathSplit, splitOnPath, type Keep } from '../geom/pathsplit';
 import { findStuds, wholeStuds } from '../geom/studs';
 import { dualEndMismatches } from './routeedits';
 import { dualBranches } from './dualbranch';
@@ -904,6 +905,8 @@ export interface Overlay {
   cutting?: { grid: Pose; railG: number; no: NoCut };
   /** the cut paths that weren't made (by id), and why */
   pathsNot?: { id: string; why: string }[];
+  /** the cuts worked out where tracks join inside trackwork (jointcuts.ts): each one's joint and corners (mm), and whether it was made */
+  jointCuts?: { at: [number, number]; pts: [number, number][]; made: boolean }[];
   /** (expert) where tracks run over each other (mm), which two (by name), and whether that pair is accepted (accept.ts: no warning then, a mark on the plan) */
   over?: { at: [number, number]; routes: [string, string]; ok: boolean }[];
 }
@@ -1446,6 +1449,10 @@ interface PieceBuild {
   handCuts?: DesignCuts;
   /** the design's cut paths (expert, handcuts.ts designPaths), mm on the stud grid; and what became of each, as the sections are built */
   cutPaths?: HandPath[]; pathsDone?: Map<string, HandPathDone>;
+  /** the cuts worked out where tracks join inside trackwork (Cut where tracks join in trackwork, jointcuts.ts), mm, each with its joint's place; and whether each was made, as the sections are built */
+  jointCuts?: (KerfCut & { at: [number, number] })[]; jointsDone?: Map<string, boolean>;
+  /** with those: the design's routes and which piece of trackwork each is of (jointcuts.ts trackGroups) */
+  jointGroups?: { routes: Route[]; group: number[] };
   /** A heavy job (BuildJob): built (or found in the cache); or, planning, listed (if it isn't cached) and passed over. */
   job: <T>(key: string, cost: number, f: () => T, none: T) => T;
   /** labels engraved under the parts (name, label_*) */
@@ -1764,7 +1771,10 @@ function sectioned(b: PieceBuild, name: string, all: Route[], checks: CheckRail[
   };
   // (the hand cuts across these routes (expert): joints of the plan's too; with none, the plan and its key as ever)
   const hc = b.handCuts && handCutsFor(b.handCuts, all);
-  const plan = cached(`secplan:${key}:${room}:${o.printBedX}x${o.printBedY}:${bandHalf}:${ex}:${JSON.stringify(plates)}:${JSON.stringify(std && [...std])}:${stdStraights}:${lead}:${JSON.stringify(tables)}${hc ? `:hand${JSON.stringify(hc.hand)}` : ''}`, () => planSections(all, solSplits, cx.bandHalf0, room, 40, ex, plates, std, stdStraights, lead, seamOf, track.c.trackGauge, pieceFit, hc?.hand));
+  // (the ends of these routes cut where they join the next track inside trackwork (jointcuts.ts): none of the app's own joints close by)
+  const jAt = (P: Pose) => !!b.jointCuts?.some((c) => Math.hypot(c.at[0] - P[0], c.at[1] - P[1]) < 1);
+  const jointEnds = b.jointCuts?.length ? all.map((rt): [boolean, boolean] => [jAt(routePose(rt, 0)), jAt(routePose(rt, routeLength(rt)))]) : undefined;
+  const plan = cached(`secplan:${key}:${room}:${o.printBedX}x${o.printBedY}:${bandHalf}:${ex}:${JSON.stringify(plates)}:${JSON.stringify(std && [...std])}:${stdStraights}:${lead}:${JSON.stringify(tables)}${hc ? `:hand${JSON.stringify(hc.hand)}` : ''}${jointEnds ? `:je${JSON.stringify(jointEnds)}` : ''}`, () => planSections(all, solSplits, cx.bandHalf0, room, 40, ex, plates, std, stdStraights, lead, seamOf, track.c.trackGauge, pieceFit, hc?.hand, jointEnds));
   const st = (q: [number, number]) => `${(q[0] / 8).toFixed(0)}, ${(q[1] / 8).toFixed(0)}`;
   if (hc) {
     const at = (q: number[]) => `${+(q[0] / 8).toFixed(1)}, ${+(q[1] / 8).toFixed(1)}`;
@@ -1832,6 +1842,31 @@ function sectioned(b: PieceBuild, name: string, all: Route[], checks: CheckRail[
     const bedAt: { p: [number, number]; d: [number, number]; len: number }[] = got.runs.map((r) => ({ p: r.p, d: r.d, len: r.len }));
     return { path: got.path, axis, bedAt };
   };
+  /**
+   * A part the cuts at its tracks' joints left still too big, which no ordinary cut would part (a crossing piece with
+   * frogs all along it): cut straight across its longer side on the stud-grid line nearest its middle that a cut can
+   * run on, as a section too big is cut across its middle. Checked as a slip's own cuts are (cutpaths.ts pathProblem):
+   * clear of every moving part, not down a rail, through a frog's V if it must. Undefined: no such line within 6 studs
+   * of the middle, or the grid isn't square to the plan.
+   */
+  const midCut = (m: Man, rts: Route[], taken: [number, number][]): Man[] | undefined => {
+    const ct = b.overlay.cutting;
+    if (!ct || Math.abs(Math.sin((2 * ct.grid[2] * Math.PI) / 180)) > 1e-6) return undefined;
+    const bb = m.boundingBox(), ax = bb.max[0] - bb.min[0] >= bb.max[1] - bb.min[1] ? 0 : 1, o = 1 - ax;
+    const mid = (bb.min[ax] + bb.max[ax]) / 2, c0 = ct.grid[ax] + Math.round((mid - ct.grid[ax]) / 8) * 8;
+    const tr = { routes: b.trackRoutes, railG: ct.railG, no: ct.no, slip: true, free: true };
+    for (const k of [0, 1, -1, 2, -2, 3, -3, 4, -4, 5, -5, 6, -6]) {
+      const c = c0 + 8 * k, e0 = bb.min[o] - 8, e1 = bb.max[o] + 8;
+      const pts: [number, number][] = ax === 0 ? [[c, e0], [c, e1]] : [[e0, c], [e1, c]];
+      if (pathProblem(pts.map((q): [number, number] => [q[0] / 8, q[1] / 8]), [], tr)) continue;
+      // (cut as a section is across its middle: splitOnPath, along the grid line a stud a step)
+      const g0 = ct.grid[o] + Math.floor((e0 - ct.grid[o]) / 8) * 8, path: [number, number][] = [];
+      for (let v = g0; v <= e1 + 8; v += 8) path.push(ax === 0 ? [c, v] : [v, c]);
+      const sp = splitOnPath(scad, m, rts, path, ax as 0 | 1, join, taken);
+      if (sp.parts.length > 1) { taken.push(...sp.tongueAt); return sp.parts.map((h) => flat(w, h)); }
+    }
+    return undefined;
+  };
   plan.sections.forEach((sec, si) => {
     b.prog.step(`Building ${name}: section ${si + 1} of ${plan.sections.length}`);
     const ps = sec.map((k) => plan.pieces[k]);
@@ -1893,9 +1928,15 @@ function sectioned(b: PieceBuild, name: string, all: Route[], checks: CheckRail[
     const zs = cx.zones.filter((z) => z.box[2] >= sb[0] && z.box[0] <= sb[2] && z.box[3] >= sb[1] && z.box[1] <= sb[3]).map((z) => [z.rt.id, z.s0, z.s1, z.box]);
     // (the cut paths drawn by hand that reach it (expert): among what it's built from; none, the section and its key as ever)
     const hps = pathsIn(b, sb);
+    // (cut at its tracks' joints: which piece of trackwork each of its routes is of, by where it lies on the design's own)
+    const jg = b.jointGroups, groups = jg && rts.length > 1 ? rts.map((rt, k) => { const m = routePose(rt, routeLength(rt) / 2), q: [number, number] = [m[0], m[1]], di = jg.routes.findIndex((dr) => Math.abs(routeLat(dr, q)) < 0.05); return di >= 0 ? jg.group[di] : -1 - k; }) : undefined;
+    // (the cuts worked out where tracks join (jointcuts.ts) inside it: where two of its pieces, of two tracks, meet end to
+    // end, built as one. A joint with its other track in the next section is an ordinary track end already)
+    const jcs = (b.jointCuts ?? []).filter((c) => c.at[0] >= sb[0] && c.at[0] <= sb[2] && c.at[1] >= sb[1] && c.at[1] <= sb[3]
+      && new Set(ps.filter(([pi, a, b2]) => [a, b2].some((sv) => { const q = routePose(all[pi], sv); return Math.hypot(q[0] - c.at[0], q[1] - c.at[1]) < 1; })).map(([pi]) => pi)).size > 1);
     const sk = `sec:${JSON.stringify({ rts, cChecks, m: mine.map((x) => [x.key, x.inner, x.bladeCuts.map(([i]) => i)]), copt, g: b.grooveCuts.length || b.grooveKeeps.length ? b.grooveEdits : 0, di: [...secInner],
-      gp: gridPose, bp, bxy: [o.baseplateX, o.baseplateY], joint: o.joint, ...(apart && { seat: o.trackFitTol ?? 0.2, seated, bb: o.boughtBallast }), ...(o.ballast !== 'none' && (b.boughtSw.length || seated) && { sw: groundKey(b, routesBox(rts, bandHalf + 64), seated) }), bed: [o.printBedX, o.printBedY], zs, ...(b.boughtSw.length > 0 && { pt: partingsNear(b, sb) }), ...(b.labelOn && { lab: [o.labelText, o.labelSize, o.labelGauge, o.labelParts, base + si + 1] }), ...(hps.length > 0 && { hps }) })}`;
-    let part: { ms: (Baked & { id?: string; lego?: LegoPart[]; seats?: Pose[] })[]; grips: [number, number][]; paths?: HandPathDone[] };
+      gp: gridPose, bp, bxy: [o.baseplateX, o.baseplateY], joint: o.joint, ...(apart && { seat: o.trackFitTol ?? 0.2, seated, bb: o.boughtBallast }), ...(o.ballast !== 'none' && (b.boughtSw.length || seated) && { sw: groundKey(b, routesBox(rts, bandHalf + 64), seated) }), bed: [o.printBedX, o.printBedY], zs, ...(b.boughtSw.length > 0 && { pt: partingsNear(b, sb) }), ...(b.labelOn && { lab: [o.labelText, o.labelSize, o.labelGauge, o.labelParts, base + si + 1] }), ...(hps.length > 0 && { hps }), ...(jcs.length > 0 && { jcs, no: b.overlay.cutting?.no.moving }), ...(groups && { groups }) })}`;
+    let part: { ms: (Baked & { id?: string; lego?: LegoPart[]; seats?: Pose[] })[]; grips: [number, number][]; paths?: HandPathDone[]; joints?: { id: string; made: boolean }[] };
     const cost = rts.reduce((t, rt) => t + routeLength(rt), 0) + 400 * mine.length;
     try { part = b.job(sk, cost, () => arena(w, () => {
       const grips: [number, number][] = [];
@@ -1903,7 +1944,7 @@ function sectioned(b: PieceBuild, name: string, all: Route[], checks: CheckRail[
       const keeps = b.grooveKeeps.filter((m) => { const bb = m.boundingBox(); return rts.some((rt) => { const b2 = routesBox([rt], bandHalf + 8); return bb.max[0] >= b2[0] && bb.min[0] <= b2[2] && bb.max[1] >= b2[1] && bb.min[1] <= b2[3]; }); });
       // (the studs stood on its parts once it's cut: standStuds)
       const after: [number, number][] = [];
-      const buildBody = (bedAt?: { p: [number, number]; d: [number, number]; len?: number }[]) => { grips.length = 0; after.length = 0; return networkBody(scad, rts, { crossings: [], grooves: [], splits: [], checkRails: cChecks }, copt, mine, grips, { cuts, keeps, gridPose, innerEnds: secInner, after, ...(bedAt && { bedAt }) }); };
+      const buildBody = (bedAt?: { p: [number, number]; d: [number, number]; len?: number }[]) => { grips.length = 0; after.length = 0; return networkBody(scad, rts, { crossings: [], grooves: [], splits: [], checkRails: cChecks }, copt, mine, grips, { cuts, keeps, gridPose, innerEnds: secInner, after, ...(bedAt && { bedAt }), ...(groups && { groups }) }); };
       // (bought pieces: each as bought, track only (LEGO's sleepers, as both make theirs); on ballast, the section's ballast
       // printed alone, seated for them all, cut for the bed if it has to be)
       if (apart) {
@@ -1957,7 +1998,8 @@ function sectioned(b: PieceBuild, name: string, all: Route[], checks: CheckRail[
       // long, kept some thirty copies of itself to the job's end, 4 GB of them, all the kernel has)
       const step = <T extends Man | Man[]>(f: () => T): T => arena(w, f, (r) => (Array.isArray(r) ? r : [r]));
       // (on sleepers, the bed kept across each hand path's runs, as across the app's own cuts)
-      let body = step(() => buildBody(hps.length && b.sleepered ? hps.flatMap((hp) => hp.pts.slice(1).map((q, k) => { const a = hp.pts[k], len = Math.hypot(q[0] - a[0], q[1] - a[1]); return { p: a, d: [(q[0] - a[0]) / len, (q[1] - a[1]) / len] as [number, number], len }; })) : undefined));
+      const lined = [...hps, ...jcs];
+      let body = step(() => buildBody(lined.length && b.sleepered ? lined.flatMap((hp) => hp.pts.slice(1).flatMap((q, k) => { const a = hp.pts[k], len = Math.hypot(q[0] - a[0], q[1] - a[1]); return len > 0.05 ? [{ p: a, d: [(q[0] - a[0]) / len, (q[1] - a[1]) / len] as [number, number], len }] : []; })) : undefined));
       // (on ballast, its ballast clear of a bought switch's beside it, which is a part of its own: up to the sleepers' top)
       if (o.ballast !== 'none' && b.boughtSw.length) {
         const whole0 = body;
@@ -1970,8 +2012,27 @@ function sectioned(b: PieceBuild, name: string, all: Route[], checks: CheckRail[
       // (where this section's cuts so far put rail-end tongue joints: no later cut puts one near (cutter.ts jointsNear))
       const taken: [number, number][] = [];
       // (cut along the hand paths first: every part they leave is then as any other, cut again only if it's too big for the bed)
-      let pathsDone: HandPathDone[] | undefined;
-      if (hps.length) {
+      let pathsDone: HandPathDone[] | undefined, jointsDone: { id: string; made: boolean }[] | undefined;
+      if (jcs.length) {
+        // (along the cuts at its tracks' joints first, then each part along the hand paths; a part still too big for
+        // the bed cut across its middle first (midCut), as a section too big is, then as any part is (bedCut))
+        const whole0 = body, bottom = body.boundingBox().min[2] + 0.02;
+        const cutUp = step(() => {
+          const got = cutOnKerfs(scad, whole0, rts, jcs, join, taken, (m) => flat(w, m));
+          jointsDone = got.done;
+          if (!hps.length) return got.parts;
+          const made = new Map<string, HandPathDone>();
+          const out = got.parts.flatMap((p) => { const g2 = cutOnPaths(scad, p, rts, hps, join, taken, (m) => flat(w, m)); for (const pd of g2.done) if (!made.get(pd.id)?.made) made.set(pd.id, pd); return g2.parts; });
+          pathsDone = [...made.values()];
+          return out;
+        });
+        const fit = (m: Man): Man[] => {
+          if (fitsBed(m)) return [m];
+          const hs = step(() => midCut(m, rts, taken) ?? []);
+          return (hs.length > 1 ? hs : [m]).flatMap((h) => (fitsBed(h) ? [h] : step(() => cx.bedCut(h, rts, taken, endKeeps(h)))));
+        };
+        if (cutUp.length > 1) parts2 = step(() => cx.whole(whole0, cutUp.flatMap((m) => fit(m))).map((m) => (b.alongTrack ? m : edgeGrip(scad, track, m, gridPose, bottom))));
+      } else if (hps.length) {
         const whole0 = body, bottom = body.boundingBox().min[2] + 0.02;
         const cutUp = step(() => { const got = cutOnPaths(scad, whole0, rts, hps, join, taken, (m) => flat(w, m)); pathsDone = got.done; return got.parts; });
         if (cutUp.length > 1) parts2 = step(() => cx.whole(whole0, cutUp.flatMap((m) => step(() => cx.bedCut(m, rts, taken, endKeeps(m))))).map((m) => (b.alongTrack ? m : edgeGrip(scad, track, m, gridPose, bottom))));
@@ -2008,7 +2069,7 @@ function sectioned(b: PieceBuild, name: string, all: Route[], checks: CheckRail[
       // (a bit a cut left loose: back on the part across the cut, cutContext rehome)
       parts2 = parts2.length > 1 ? step(() => cx.rehome(parts2, true)) : parts2;
       const kept = parts2.filter((m) => m.numTri() > 0).flatMap((m) => partedAtSwitches(b, m)).flatMap((m) => cx.bodies(m, 600)), id = (k: number) => (kept.length > 1 ? `${base + si + 1}-${k + 1}` : `${base + si + 1}`);
-      return { ms: kept.map((m, k) => arena(w, () => ({ ...bake(b, labelled(b, standStuds(b, m, after), rts, kept.length > 1 ? undefined : sizeOf(rts), id(k))), ...(b.labelOn && { id: id(k) }) }), () => [])), grips, ...(pathsDone && { paths: pathsDone }) };
+      return { ms: kept.map((m, k) => arena(w, () => ({ ...bake(b, labelled(b, standStuds(b, m, after), rts, kept.length > 1 ? undefined : sizeOf(rts), id(k))), ...(b.labelOn && { id: id(k) }) }), () => [])), grips, ...(pathsDone && { paths: pathsDone }), ...(jointsDone && { joints: jointsDone }) };
     }, () => []), { ms: [], grips: [] }); } catch (err) {
       if (kernelBroke(err)) throw err;
       b.bedWarnings.add(`section ${si + 1} of ${name} failed to build: ${err instanceof Error ? err.message : String(err)}`);
@@ -2016,6 +2077,7 @@ function sectioned(b: PieceBuild, name: string, all: Route[], checks: CheckRail[
     }
     b.overlay.grips.push(...part.grips);
     for (const pd of part.paths ?? []) if (!b.pathsDone?.get(pd.id)?.made) (b.pathsDone ??= new Map()).set(pd.id, pd);
+    for (const jd of part.joints ?? []) if (!b.jointsDone?.get(jd.id)) (b.jointsDone ??= new Map()).set(jd.id, jd.made);
     // (a piece of a track cut by hand only, too long for the bed: cut again to fit, as any part is, and said)
     if (hc && part.ms.length > 1 && ps.length === 1 && hc.hand[ps[0][0]]?.only) { const q = routePose(rts[0], routeLength(rts[0]) / 2); b.bedWarnings.add(`a part of a track cut by hand only doesn't fit the ${o.printBedX} x ${o.printBedY} print bed at ${(q[0] / 8).toFixed(0)}, ${(q[1] / 8).toFixed(0)} (studs): it's cut again to fit (add a cut there)`); }
     for (const b2 of part.ms) {
@@ -2577,6 +2639,8 @@ function buildOne(w: Wasm, design: Design, report: (what: string, frac: number) 
   // not of the points' whole span, and may go through a frog's V, as the reference's do: so the points are planned
   // first (the plan only: networkSplits, found again below))
   const slipOn = o.slipCuts === 'reference' && !!overlay.cutting;
+  // (Cut where tracks join in trackwork: cuts worked out at the design's own joints, jointcuts.ts; checked as a slip's are, against the moving parts themselves)
+  const jointOn = !!o.jointCuts && inLengths && !!overlay.cutting;
   let net: ReturnType<typeof networkSplits> | undefined;
   const netOf = () => {
     editChecks(items, tw, routes, sol.checkRails);
@@ -2584,18 +2648,25 @@ function buildOne(w: Wasm, design: Design, report: (what: string, frac: number) 
     return opts.planOnly ? cached(`netplan:${netKey}`, () => networkSplits(scad, routes, sol, tp, toeShift, throwEdit, true, true))
       : cached(`netsplits:${netKey}`, () => networkSplits(scad, routes, sol, tp, toeShift, throwEdit, true));
   };
-  if (slipOn && network) { net = netOf(); overlay.cutting!.no.moving = net.levers.flatMap((sp) => leverKeeps(track.c.railOffset, sp.frame, sp.set, true).map((k): [number, number, number] => [k[0], k[1], k[2] ?? 6])); }
+  if ((slipOn || jointOn) && network) { net = netOf(); overlay.cutting!.no.moving = net.levers.flatMap((sp) => leverKeeps(track.c.railOffset, sp.frame, sp.set, true).map((k): [number, number, number] => [k[0], k[1], k[2] ?? 6])); }
   const slipPaths = slipOn ? slipCutPaths(routes, sol, [gridPose[0] / 8, gridPose[1] / 8, gridPose[2]],
     track.c.railOffset, overlay.cutting!.no, (design.expert?.cutPaths ?? []).map((p) => gridPath([gridPose[0] / 8, gridPose[1] / 8, gridPose[2]], p.pts))) : [];
   const cutPaths = overlay.cutting && designPaths(slipPaths.length ? { ...design, expert: { ...design.expert, cutPaths: [...(design.expert?.cutPaths ?? []), ...slipPaths] } } : design, gridPose, routes, track.c.railOffset, overlay.cutting.no, !!o.pathSquare, new Set(slipPaths.filter((q) => q.slip).map((q) => q.id)));
   if (cutPaths && !inLengths) bedWarnings.add('the cut paths are made only with Long track cut into: Track pieces');
+  const jointRoutes = jointOn ? toRoutes(design).filter((rt, i) => rt.segments.length > 0 && !isMono(design.routes[i])) : [];
+  const jointCutList = jointOn ? (() => {
+    const drs = jointRoutes;
+    const tr = { routes, railG: track.c.railOffset, no: overlay.cutting!.no, slip: true, free: true };
+    return jointCuts(drs, drs.map((rt) => cut.bandHalf0 + ((rt.gauge ?? track.c.trackGauge) - track.c.trackGauge) / 2))
+      .filter((c) => !pathProblem(c.pts.map((q): [number, number] => [q[0] / 8, q[1] / 8]), [], tr));
+  })() : [];
   const sleepered = o.sleepers === 'sleepers' && o.ballast === 'none';
   // (expert: the sleepers edited by hand that can't be made as they're asked for: said)
   for (const wn of sleeperWarnings(design, o)) bedWarnings.add(wn);
   for (const wn of railWarnings(design)) bedWarnings.add(wn);
   const labelOn = o.ballast !== 'none' && o.bottomStyle === 'float' && !!o.labelText?.trim();
   const b: PieceBuild = { w, scad, o, gaugeStuds: design.gaugeStuds, track, cut, prog, pieces: [], volume: 0, bedWarnings, overlay, job,
-    labelOn, ...(opts.mark && { mark: opts.mark, markBoth: opts.markBoth }), num: { part: 0, sec: 0 }, alongTrack, gridPose, sleepered, bufs, grooveCuts, grooveKeeps, grooveEdits: tw.groove, dropInner, tables: design.tables ?? [], boughtSw: bought, trackRoutes: routes, ...(handCuts && { handCuts }), ...(cutPaths?.cut.length && inLengths && { cutPaths: cutPaths.cut }) };
+    labelOn, ...(opts.mark && { mark: opts.mark, markBoth: opts.markBoth }), num: { part: 0, sec: 0 }, alongTrack, gridPose, sleepered, bufs, grooveCuts, grooveKeeps, grooveEdits: tw.groove, dropInner, tables: design.tables ?? [], boughtSw: bought, trackRoutes: routes, ...(handCuts && { handCuts }), ...(cutPaths?.cut.length && inLengths && { cutPaths: cutPaths.cut }), ...(jointCutList.length > 0 && { jointCuts: jointCutList, jointGroups: { routes: jointRoutes, group: trackGroups(jointRoutes) } }) };
   if (network) {
     net ??= netOf();
     for (const sp of net.levers) lever(keyOf(sp.toe), sp.frame, sp.set);
@@ -2710,6 +2781,7 @@ function buildOne(w: Wasm, design: Design, report: (what: string, frac: number) 
     for (const n of not) bedWarnings.add(`the cut path at ${+n.at[0].toFixed(1)}, ${+n.at[1].toFixed(1)} (studs) isn't made: ${n.why.charAt(0).toLowerCase()}${n.why.slice(1)}`);
     if (not.length) overlay.pathsNot = not.map(({ id, why }) => ({ id, why }));
   }
+  if (b.jointCuts) overlay.jointCuts = b.jointCuts.map((c) => ({ at: c.at, pts: c.pts, made: !!b.jointsDone?.get(c.id) }));
   const pieces = b.pieces;
   const all = pieces.flatMap((p) => [p.positions]);
   const mn = [Infinity, Infinity, Infinity], mx = [-Infinity, -Infinity, -Infinity];

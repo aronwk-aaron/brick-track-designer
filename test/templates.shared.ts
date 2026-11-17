@@ -91,6 +91,8 @@ Object.assign(BUDGET, { 'Dome crossing R104 and R120': 70, 'Double dome crossing
 Object.assign(BUDGET, { 'Narrow-gauge crossing 45° left over one standard track': 10, 'Narrow-gauge crossing 45° right over one standard track': 10, 'Narrow-gauge crossing 45° left over two standard tracks': 19, 'Narrow-gauge crossing 45° right over two standard tracks': 14, 'Single pass-through crossover R40, left': 22, 'Single pass-through crossover R40, right': 23, 'Double pass-through crossover R40, left': 36, 'Double pass-through crossover R40, right': 34 });
 // (the narrow-gauge rhombus crossings over two standard tracks: 1.3 times the slowest of PR 60's two CI runs (27.2 and 18.3 s; 21.9 and 15.7 s))
 Object.assign(BUDGET, { 'Narrow-gauge rhombus crossing 45° left over two standard tracks': 36, 'Narrow-gauge rhombus crossing 45° right over two standard tracks': 29 });
+// (the sets cut where their pieces join, templates-ref-joints.ts: provisional, 4 times a laptop's time, till CI has run them twice)
+Object.assign(BUDGET, { 'Narrow-gauge star crossing 45° over two standard tracks': 40, 'T-junction R40 and R56': 80 });
 const BUDGET_SMALL = 10; // (a template with no time of its own yet)
 /** only: just these templates of the groups */
 export function templatesBuild(groups: string[], only?: string[]) {

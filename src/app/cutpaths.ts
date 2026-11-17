@@ -128,14 +128,16 @@ export interface PathFault { why: string; at: Pt }
  * run between turns under RUN_MIN studs, crossing itself, running beside another path less than 2 studs off (a
  * sliver between them), down a rail (within 1.5 studs of it and along it), through a blade's moving length, through
  * a frog (slip, a double slip's own sections: through a frog's V is allowed, as the reference's are cut, and the points
- * are kept clear by their moving parts themselves, no.moving, not their whole span). pts and others in studs, on the grid; tr: the track, mm (its routes, the rails' offset from a centre line
+ * are kept clear by their moving parts themselves, no.moving, not their whole span; free, a cut worked out at a joint
+ * between two tracks, jointcuts.ts: off the grid, its runs as short as they come, through a frog's V too, and along
+ * another track's bed edge, which is 12 mm from that track's rail). pts and others in studs, on the grid; tr: the track, mm (its routes, the rails' offset from a centre line
  * at the design's gauge, and what the build says to keep clear of).
  */
-export function pathProblem(pts: Pt[], others: Pt[][] = [], tr?: { routes: Route[]; railG: number; no?: NoCut; slip?: boolean }): PathFault | undefined {
-  const routes = tr?.routes ?? [], no = tr?.no, slip = !!tr?.slip && !!no?.moving;
+export function pathProblem(pts: Pt[], others: Pt[][] = [], tr?: { routes: Route[]; railG: number; no?: NoCut; slip?: boolean; free?: boolean }): PathFault | undefined {
+  const routes = tr?.routes ?? [], no = tr?.no, slip = !!tr?.slip && !!no?.moving, free = !!tr?.free;
   if (pts.length < 2) return { why: 'A cut path has two points or more', at: pts[0] ?? [0, 0] };
   const mid = (a: Pt, b: Pt): Pt => [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2], len = (a: Pt, b: Pt) => Math.hypot(b[0] - a[0], b[1] - a[1]);
-  for (let k = 1; k + 2 < pts.length; k++) if (len(pts[k], pts[k + 1]) < RUN_MIN - 1e-6) return { why: `Each run between two turns ${RUN_MIN} studs or longer (a shorter one leaves a tab 1 stud wide)`, at: mid(pts[k], pts[k + 1]) };
+  if (!free) for (let k = 1; k + 2 < pts.length; k++) if (len(pts[k], pts[k + 1]) < RUN_MIN - 1e-6) return { why: `Each run between two turns ${RUN_MIN} studs or longer (a shorter one leaves a tab 1 stud wide)`, at: mid(pts[k], pts[k + 1]) };
   for (let i = 0; i + 1 < pts.length; i++) for (let j = i + 2; j + 1 < pts.length; j++) if (cross(pts[i], pts[i + 1], pts[j], pts[j + 1])) return { why: 'The cut crosses itself', at: pts[j] };
   // (beside another path: a point of one within 2 studs of a run of the other, the two running the same way there)
   for (const o of others) for (let i = 0; i + 1 < pts.length; i++) for (let j = 0; j + 1 < o.length; j++) {
@@ -151,7 +153,7 @@ export function pathProblem(pts: Pt[], others: Pt[][] = [], tr?: { routes: Route
   const boxes = routes.map((rt) => routesBox([rt], 64));
   for (let i = 0; i + 1 < mm.length; i++) {
     const a = mm[i], b = mm[i + 1], l = len(a, b), n = Math.max(1, Math.ceil(l / 2)), d: Pt = [(b[0] - a[0]) / l, (b[1] - a[1]) / l];
-    if (!slip) for (const f of no?.frogs ?? []) if (segDist(f, a, b) < FROG_CLEAR - 1e-6) return { why: `Through a frog (where two rails cross): keep the cut ${FROG_CLEAR / 8} studs clear of it`, at: [f[0] / 8, f[1] / 8] };
+    if (!slip && !free) for (const f of no?.frogs ?? []) if (segDist(f, a, b) < FROG_CLEAR - 1e-6) return { why: `Through a frog (where two rails cross): keep the cut ${FROG_CLEAR / 8} studs clear of it`, at: [f[0] / 8, f[1] / 8] };
     for (let k = 0; k <= n; k++) {
       const q: Pt = [a[0] + (d[0] * l * k) / n, a[1] + (d[1] * l * k) / n], at: Pt = [q[0] / 8, q[1] / 8];
       if (slip) { for (const [mx, my, mr] of no!.moving!) if (Math.hypot(q[0] - mx, q[1] - my) < mr) return { why: 'A moving part is here (a blade, its slider or its lever)', at }; }
@@ -161,7 +163,7 @@ export function pathProblem(pts: Pt[], others: Pt[][] = [], tr?: { routes: Route
         if (q[0] < bx[0] || q[0] > bx[2] || q[1] < bx[1] || q[1] > bx[3]) continue;
         const lat = routeLat(rt, q), G = railOffsetOf(rt, tr!.railG);
         // (a rail within a stud and a half of it, running along it within 10 degrees: the cut would run down the rail)
-        if (Math.min(Math.abs(lat - G), Math.abs(lat + G)) >= 12) continue;
+        if (Math.min(Math.abs(lat - G), Math.abs(lat + G)) >= (free ? 11.5 : 12)) continue;
         const s = routeSOf(rt, q);
         if (s <= 0.5 || s >= routeLength(rt) - 0.5) continue;
         const h = (routePose(rt, s)[2] * Math.PI) / 180;

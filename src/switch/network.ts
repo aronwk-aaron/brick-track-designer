@@ -607,7 +607,7 @@ export function studsOffOf(s: Scad, P: Pose, rts: Route[], G: number, bedTop: nu
 
 /** The piece's body with the given splits' points built in (routes and splits by the same route indices). */
 export function networkBody(s: Scad, routes: Route[], sol: Solution, copt: CrossingOptions, splits: SplitParts[], grips?: [number, number][],
-  more: { cuts?: Man[]; keeps?: Man[]; innerEnds?: Set<string>; gridPose?: Pose; bedAt?: { p: [number, number]; d: [number, number]; len?: number }[]; after?: [number, number][] } = {}) {
+  more: { cuts?: Man[]; keeps?: Man[]; innerEnds?: Set<string>; gridPose?: Pose; bedAt?: { p: [number, number]; d: [number, number]; len?: number }[]; after?: [number, number][]; groups?: number[] } = {}) {
   const railCuts = new Map<number, Man[]>(), innerEnds = new Set<string>(more.innerEnds), adds: Man[] = [], cuts: Man[] = [];
   const addCut = (i: number, m: Man) => { if (!railCuts.has(i)) railCuts.set(i, []); railCuts.get(i)!.push(m); };
   for (const sp of splits) {
@@ -632,7 +632,7 @@ export function networkBody(s: Scad, routes: Route[], sol: Solution, copt: Cross
   // (and the steps round them, on ballast)
   for (const sp of splits) if (sp.stepRect) hollows.push({ P: sp.frame, r: sp.stepRect });
   const blades = splits.flatMap((sp) => sp.bladeCuts.map(([, m]) => m)).filter(ok);
-  const body = crossingPiece(s, routes, copt, sol, grips, { railCuts, innerEnds, adds: adds.filter(ok), ...(blades.length && { blades }), cuts: [...cuts, ...(more.cuts ?? [])].filter(ok), ...(more.keeps?.length && { keeps: more.keeps }), gridPose: more.gridPose, hollows, bedAt: more.bedAt, ...(more.after && { after: more.after }),
+  const body = crossingPiece(s, routes, copt, sol, grips, { railCuts, innerEnds, adds: adds.filter(ok), ...(blades.length && { blades }), cuts: [...cuts, ...(more.cuts ?? [])].filter(ok), ...(more.keeps?.length && { keeps: more.keeps }), gridPose: more.gridPose, hollows, bedAt: more.bedAt, ...(more.after && { after: more.after }), ...(more.groups && { groups: more.groups }),
     ...(splits.some((sp) => sp.studsOn) && { studsOn: (q: [number, number]) => splits.some((sp) => sp.studsOn?.(q)) }),
     // (a split without its own (none now): its adds' boxes keep studs off, as they did)
     ...(splits.length && splits.every((sp) => sp.studsOff) && { studsOff: (q: [number, number]) => splits.some((sp) => sp.studsOff!(q)) }),
