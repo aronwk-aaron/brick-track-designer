@@ -11,6 +11,10 @@
 // (38.07, 249.34) and (601.93, 249.34), left in two till then (track2 and track3 had 0.83 of one each, track4 and track5
 // the rest), come off as any stud a cut goes through does: track2 and track3 29.79 mm3 less each, track4 and track5
 // 5.95 less each. Their boxes, and every other part's volume and box (the throws and levers among them), as they were.)
+// (track6 to track21, the parts with its eight double slips: the studs outside their stock rails along the points, put in
+// on the parts after the cuts, each standing free (crossing.ts studsAfter, build.ts standStuds): 25, 20, 23, 18, 26, 27, 21, 14, 18, 21, 15, 23, 19, 23,
+// 21 and 26 of them, 340 in all, 34.66 mm3 each, each part's change a whole number of studs to 0.003 mm3 a stud, nothing
+// taken from any part. Boxes, throws, levers and points as they were.)
 import { describe, expect, it } from 'vitest';
 import fs from 'node:fs';
 import { kernel } from '../src/geom/kernel';

@@ -164,6 +164,18 @@ export interface CrossingExtras {
   studsOn?: (q: [number, number]) => boolean;
   /** (the points' adds) where studs can't stand for them (network.ts studsOffOf): in their boxes, studs stand elsewhere; unset, nowhere in their boxes */
   studsOff?: (q: [number, number]) => boolean;
+  /**
+   * (points another route's track runs through: studsOff is their adds' boxes there, as it was) where a stud can't
+   * stand for the points' parts, for studs put in after all the others: a spot the boxes alone turned down is tried
+   * again once every other stud has its place, so no stud the piece had is moved or left out for a new one
+   */
+  studsAfter?: (q: [number, number]) => boolean;
+  /**
+   * (out) studsAfter's studs: where each would stand. They aren't made here: the piece is cut into its parts as it was
+   * without them (a stud on a cut, or a part's size with them, changed what the cuts left), and each is stood on the
+   * part that has all its footing afterwards (build.ts standStuds). Not given: none are worked out.
+   */
+  after?: [number, number][];
   /** the points' blades, where each swings (network.ts: what each takes out of the rails it replaces): no check rail comes within CHECK_CLEAR of one */
   blades?: Man[];
   /** (the ballast alone) the seat to cut, from the bed up, in place of the track's own outline: a bought piece's footprint */
@@ -680,7 +692,7 @@ export function crossingPiece(s: Scad, routes: Route[], o: CrossingOptions = CRO
   const studPts: [number, number][] = [];
   {
     const gp = x.gridPose ?? routePose(routes[0], 0), clearR = c.postD / 2 + HEAD_HW + 0.6;
-    const bb0 = parts.length ? s.union(parts).boundingBox() : { min: [0, 0, 0], max: [0, 0, 0] };
+    const partsNow = parts.length ? s.union(parts) : undefined, bb0 = partsNow ? partsNow.boundingBox() : { min: [0, 0, 0], max: [0, 0, 0] };
     const reachS = Math.ceil((Math.hypot(bb0.max[0] - bb0.min[0], bb0.max[1] - bb0.min[1]) + Math.hypot(bb0.min[0] - gp[0], bb0.min[1] - gp[1])) / STUD) + 2;
     const ends = routes.flatMap((rt, i) => [!x.innerEnds?.has(`${i}:start`) && { e: routePose(rt, 0), len: lenOf[i] }, !x.innerEnds?.has(`${i}:end`) && { e: routePose(rt, routeLength(rt)), len: lenOf[i] }]).filter((e): e is { e: Pose; len: number } => !!e);
     // (the spots to try: the stud grid's, or along each track at the straight track's places across it, a stud apart along it)
@@ -711,6 +723,7 @@ export function crossingPiece(s: Scad, routes: Route[], o: CrossingOptions = CRO
       return inside;
     };
     const onTie = new Set<[number, number]>(tieStuds as [number, number][]);
+    const after: [number, number][] = [];
     spots.push(...(tieStuds as [number, number][]));
     for (const q of spots) {
       if (q[0] < bb0.min[0] || q[0] > bb0.max[0] || q[1] < bb0.min[1] || q[1] > bb0.max[1]) continue;
@@ -727,13 +740,44 @@ export function crossingPiece(s: Scad, routes: Route[], o: CrossingOptions = CRO
       // (clear of the end connectors: 8 mm in from each end)
       if (ends.some(({ e, len }) => Math.hypot(q[0] - e[0], q[1] - e[1]) < len && Math.abs(worldToPose(e, q)[1]) < 10)) continue;
       // (in what the points add: only where they say a stud can stand (studsOff), clear of the piece's cuts)
-      if (addBoxes.some((bb) => q[0] > bb.min[0] - 3 && q[0] < bb.max[0] + 3 && q[1] > bb.min[1] - 3 && q[1] < bb.max[1] + 3) && (!x.studsOff || x.studsOff(q) || inCuts(q)) && !x.studsOn?.(q)) continue;
+      if (addBoxes.some((bb) => q[0] > bb.min[0] - 3 && q[0] < bb.max[0] + 3 && q[1] > bb.min[1] - 3 && q[1] < bb.max[1] + 3) && (!x.studsOff || x.studsOff(q) || inCuts(q)) && !x.studsOn?.(q)) {
+        // (turned down by the boxes alone: tried again after the rest, studsAfter)
+        if (x.studsAfter && !x.studsAfter(q) && !inCuts(q)) after.push(q);
+        continue;
+      }
       if (bufPoses.some(({ e, t: tb }) => inBufferPost(tb, worldToPose(e, q), c.postD / 2 + 0.6, (o.buffer ?? BUFFER_DEFAULTS).style ?? 'frame'))) continue;
       // (and of the check rails)
       if (byCheckRail(q)) continue;
       // (and of every stud there already: the ends' rows, the sleepers' and the ties')
       if (!claim(q)) continue;
       studPts.push(q);
+    }
+    // (points another route's track runs through: the studs outside their stock rails, in the room the others left.
+    // Each one whole and standing free: none where anything of the piece stands above the bed's top within a stud's
+    // radius and 0.15 (a rail's foot, a check rail, a blade's rest: the piece as it is, cut level at five heights up
+    // a stud), so each adds a whole stud's volume and nothing else)
+    let standing: [number, number][][] | undefined;
+    const free = (q: [number, number]) => {
+      if (!standing) {
+        const secs = [...(partsNow ? [partsNow] : []), ...(x.adds ?? [])].flatMap((m) => [0.05, 0.3, 0.7, 1.2, c.postH - 0.25].map((dz) => m.slice(PLATE_H + dz))), u = s.w.CrossSection.union(secs), g = u.offset(c.postD / 2 + 0.15, 'Round', 2, 24);
+        standing = g.toPolygons() as [number, number][][];
+        for (const k of [...secs, u, g]) k.delete();
+      }
+      let inside = false;
+      for (const ring of standing) for (let a = 0, b = ring.length - 1; a < ring.length; b = a++) {
+        const [xa, ya] = ring[a], [xb, yb] = ring[b];
+        if ((ya > q[1]) !== (yb > q[1]) && q[0] < xa + ((q[1] - ya) * (xb - xa)) / (yb - ya)) inside = !inside;
+      }
+      return !inside;
+    };
+    // (not made here, x.after: stood on the parts once the piece is cut; none on banked track)
+    if (x.after && !routes.some(hasRoll)) for (const q of after) {
+      if (!free(q)) continue;
+      if ([...studPts, ...x.after].some((p) => Math.hypot(p[0] - q[0], p[1] - q[1]) < c.postD + 0.6)) continue;
+      if (bufPoses.some(({ e, t: tb }) => inBufferPost(tb, worldToPose(e, q), c.postD / 2 + 0.6, (o.buffer ?? BUFFER_DEFAULTS).style ?? 'frame'))) continue;
+      if (byCheckRail(q)) continue;
+      if (!claim(q)) continue;
+      x.after.push(q);
     }
     // (and the short pieces' one row each)
     studPts.push(...rowStuds);

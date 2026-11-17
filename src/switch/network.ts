@@ -57,6 +57,12 @@ export interface SplitParts {
   studsOn?: (q: [number, number]) => boolean;
   /** where the bed's studs can't stand for its parts (studsOffOf), in the design's frame: elsewhere in what it adds they do */
   studsOff?: (q: [number, number]) => boolean;
+  /**
+   * (another route's track through its bed: a slip's, a monster's crossing diagonals) studsOff is its adds' boxes, as it
+   * was, so every stud the piece had stands where it stood; this is where a stud can't stand for its parts (studsOffOf),
+   * for the studs put in afterwards, in the room left (crossing.ts studsAfter)
+   */
+  studsAfter?: (q: [number, number]) => boolean;
   moving: NetworkPart[];
 }
 
@@ -501,8 +507,12 @@ export function networkSplits(s: Scad, routes: Route[], sol: Solution, p: BasePa
     // channel, arm and steps, the slider and tie-rod at either end of their travel, the lever as it swings, its bracket
     // and the spring. Only where the bed is at the sleepers' top (on ballast; sprung blades on track alone), so each
     // stud stands as high as the track's; a bed raised over the slider keeps none, as before)
-    // (not where another route's track runs through its bed (a slip's, a monster's crossing diagonals): there the
-    // other track's own rows are the bed's, and studs added round them moved what the cuts left; as before, none)
+    // (where another route's track runs through its bed (a slip's, a monster's crossing diagonals): the other track's
+    // own rows are the bed's, and studs added among them took the place of some the piece had (one moved 2 mm, and the
+    // cuts' chips with it). There the boxes keep studs off as before, so every stud the piece had stands where it stood,
+    // and the studs outside the stock rails are found after all the others, in the room left, each standing free
+    // (studsAfter, crossing.ts), and stood on the parts once the piece is cut (build.ts standStuds), so the cuts are
+    // where they were too)
     const gl = switchGlobals(pp), bbL = mech.bed.boundingBox(), reach = gl.sleeperLen / 2 + 8;
     const crossed = routes.some((rt, k) => ![i, j, j2].includes(k) && Array.from({ length: 41 }, (_, t) => routePose(rt, (routeLength(rt) * t) / 40)).some((q) => {
       const l = worldToPose(P, [q[0], q[1]]) as Pt;
@@ -511,8 +521,9 @@ export function networkSplits(s: Scad, routes: Route[], sol: Solution, p: BasePa
         && !plan.routes.some((rt) => Math.abs(routeLat(rt, l)) < 0.5);
     }));
     const wb = crossed ? [bed.bed, place(mech.arm, P), ...mech.steps.map((m) => place(m, P))].filter((m) => !m.isEmpty()).map((m) => m.boundingBox()) : [];
-    const studsOff = crossed ? (q: [number, number]) => wb.some((bb) => q[0] > bb.min[0] - 3 && q[0] < bb.max[0] + 3 && q[1] > bb.min[1] - 3 && q[1] < bb.max[1] + 3) : studsOffOf(s, P, plan.routes, gl.G, gl.bedTop, mech.bed, [mech.pockets, mech.channel, mech.arm, ...mech.steps, ...(mech.rests ? [mech.rests] : []), ...(spr ? [spr] : []), ...(br ? [br] : [])],
+    const offOwn = studsOffOf(s, P, plan.routes, gl.G, gl.bedTop, mech.bed, [mech.pockets, mech.channel, mech.arm, ...mech.steps, ...(mech.rests ? [mech.rests] : []), ...(spr ? [spr] : []), ...(br ? [br] : [])],
       [thr, thp, thr2].filter((m): m is Man => !!m), lev, gm.throwMove(0).slide, mech.armRects);
+    const studsOff = crossed ? (q: [number, number]) => wb.some((bb) => q[0] > bb.min[0] - 3 && q[0] < bb.max[0] + 3 && q[1] > bb.min[1] - 3 && q[1] < bb.max[1] + 3) : offOwn;
     built.push({
       key: JSON.stringify({ rts, used, p: pp, P, routes: [i, j, j2], end, n, of: groups.length, ...(bed.by.length && { clear: bed.by }) }),
       toe: [P[0], P[1]], frame: P, set: plan.sets[0], src: gr.main,
@@ -522,6 +533,8 @@ export function networkSplits(s: Scad, routes: Route[], sol: Solution, p: BasePa
       ...(mech.armRects.length && { armRects: mech.armRects }),
       ...(studsOn && { studsOn }),
       studsOff,
+      // (another route's track through its bed: its own keep-out, for the studs put in after all the others: studsAfter)
+      ...(crossed && { studsAfter: offOwn }),
       stock: place(mech.stockCut, P),
       // (each as its route's rails take it, base.ts toeCut: a route that starts or ends at the toe, or one that runs through)
       bladeCuts: mech.bladeRails.map(([rt, cut]) => { const w = worldOf(rt), r = routes[w], atToe = [routePose(r, 0), routePose(r, routeLength(r))].some((q) => Math.hypot(q[0] - P[0], q[1] - P[1]) < 0.01);
@@ -594,7 +607,7 @@ export function studsOffOf(s: Scad, P: Pose, rts: Route[], G: number, bedTop: nu
 
 /** The piece's body with the given splits' points built in (routes and splits by the same route indices). */
 export function networkBody(s: Scad, routes: Route[], sol: Solution, copt: CrossingOptions, splits: SplitParts[], grips?: [number, number][],
-  more: { cuts?: Man[]; keeps?: Man[]; innerEnds?: Set<string>; gridPose?: Pose; bedAt?: { p: [number, number]; d: [number, number]; len?: number }[] } = {}) {
+  more: { cuts?: Man[]; keeps?: Man[]; innerEnds?: Set<string>; gridPose?: Pose; bedAt?: { p: [number, number]; d: [number, number]; len?: number }[]; after?: [number, number][] } = {}) {
   const railCuts = new Map<number, Man[]>(), innerEnds = new Set<string>(more.innerEnds), adds: Man[] = [], cuts: Man[] = [];
   const addCut = (i: number, m: Man) => { if (!railCuts.has(i)) railCuts.set(i, []); railCuts.get(i)!.push(m); };
   for (const sp of splits) {
@@ -619,10 +632,11 @@ export function networkBody(s: Scad, routes: Route[], sol: Solution, copt: Cross
   // (and the steps round them, on ballast)
   for (const sp of splits) if (sp.stepRect) hollows.push({ P: sp.frame, r: sp.stepRect });
   const blades = splits.flatMap((sp) => sp.bladeCuts.map(([, m]) => m)).filter(ok);
-  const body = crossingPiece(s, routes, copt, sol, grips, { railCuts, innerEnds, adds: adds.filter(ok), ...(blades.length && { blades }), cuts: [...cuts, ...(more.cuts ?? [])].filter(ok), ...(more.keeps?.length && { keeps: more.keeps }), gridPose: more.gridPose, hollows, bedAt: more.bedAt,
+  const body = crossingPiece(s, routes, copt, sol, grips, { railCuts, innerEnds, adds: adds.filter(ok), ...(blades.length && { blades }), cuts: [...cuts, ...(more.cuts ?? [])].filter(ok), ...(more.keeps?.length && { keeps: more.keeps }), gridPose: more.gridPose, hollows, bedAt: more.bedAt, ...(more.after && { after: more.after }),
     ...(splits.some((sp) => sp.studsOn) && { studsOn: (q: [number, number]) => splits.some((sp) => sp.studsOn?.(q)) }),
     // (a split without its own (none now): its adds' boxes keep studs off, as they did)
-    ...(splits.length && splits.every((sp) => sp.studsOff) && { studsOff: (q: [number, number]) => splits.some((sp) => sp.studsOff!(q)) }) });
+    ...(splits.length && splits.every((sp) => sp.studsOff) && { studsOff: (q: [number, number]) => splits.some((sp) => sp.studsOff!(q)) }),
+    ...(splits.length && splits.every((sp) => sp.studsOff) && splits.some((sp) => sp.studsAfter) && { studsAfter: (q: [number, number]) => splits.some((sp) => (sp.studsAfter ?? sp.studsOff)!(q)) }) });
   // (sprung blades on track alone: what the sliders rest on, after the underside's cut; on the stud corners of each
   // points set's own frame, so in line with the piece's underside where that frame is on its grid)
   const rests = splits.flatMap((sp) => (sp.rests && ok(sp.rests) ? [sp.rests] : []));

@@ -9,7 +9,7 @@ import { describe, expect, it } from 'vitest';
 import fs from 'node:fs';
 import { kernel } from '../src/geom/kernel';
 import { buildDesign, clearBuildCache } from '../src/app/build';
-import { type Design, OPTION_DEFAULTS, type PieceOptions } from '../src/app/design';
+import { type Design, OPTION_DEFAULTS, type PieceOptions, TEMPLATES } from '../src/app/design';
 import { partStuds, studFaults, studsOf } from './studs-apart.shared';
 
 const APP = (globalThis as { APP_DEFAULTS?: PieceOptions }).APP_DEFAULTS!;
@@ -98,6 +98,30 @@ describe('studs outside the rails along the points (196s R568)', { timeout: 6000
         expect(bal.flatMap((p) => partStuds(w, p, o)), `${ballast}: studs in part`).toEqual([]);
         expect(studFaults(w, b.pieces, () => o), `${ballast}: studs that touch`).toEqual([]);
       }
+    } finally { Object.assign(OPTION_DEFAULTS, saved); clearBuildCache(); }
+  });
+
+  // (points another track runs through, a double slip's: the rows outside the stock rails there too. They're found after
+  // every other stud has its place (crossing.ts studsAfter), each standing free of the rails' feet and everything else
+  // above the bed, and stood on the parts once the piece is cut (build.ts standStuds): the piece's own studs and its
+  // cuts stay where they were, and each new one is a whole stud on one part)
+  it('a double slip: the rows outside its straights\' stock rails along the points', async () => {
+    const saved = { ...OPTION_DEFAULTS };
+    Object.assign(OPTION_DEFAULTS, APP);
+    try {
+      const w = await kernel();
+      clearBuildCache();
+      const b = buildDesign(w, structuredClone(TEMPLATES['Double slip (22.5°)']));
+      const o = { studD: 4.8, studFit: 0.18 };
+      const tracks = b.pieces.filter((p) => /^track/.test(p.name));
+      const top: Pt[] = tracks.flatMap((p) => studsOf(w, p, o).studs.flat());
+      const near = (x: number, y: number) => top.some((q) => Math.abs(q[0] - x) < 0.3 && Math.abs(q[1] - y) < 0.3);
+      // (the straight up the middle, its sleepers 64 wide: the rows 28 out, past each stock rail, where there were none)
+      const missing: string[] = [];
+      for (const [x, y] of [[-28, 68], [-28, 76], [-28, 84], [-28, 100], [28, 84], [28, 92], [28, 100], [28, -68], [28, -76], [28, -84], [28, -92], [28, -100], [-28, -84], [-28, -92], [-28, -100]]) if (!near(x, y)) missing.push(`${x}, ${y}`);
+      expect(missing, 'outside the stock rails').toEqual([]);
+      expect(tracks.flatMap((p) => partStuds(w, p, o)), 'studs in part').toEqual([]);
+      expect(studFaults(w, b.pieces, () => o), 'studs that touch').toEqual([]);
     } finally { Object.assign(OPTION_DEFAULTS, saved); clearBuildCache(); }
   });
 });

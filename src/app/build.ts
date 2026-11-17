@@ -1599,12 +1599,39 @@ function labelled(b: PieceBuild, m0: Man, rts: Route[], size?: string, num?: str
   return cut ? b.scad.difference(m, [cut]) : m;
 }
 
+/**
+ * A part with the studs put on after the cuts (crossing.ts after: the ones outside the stock rails of points another
+ * track runs through): each one whose whole footing the part has, the bed's top under all of it and 0.2 more all round
+ * (no part's edge, no pocket), and nothing of the part above the bed within 0.1 of it. The others (on a cut, by an
+ * edge) aren't made. So the piece is cut as it was without them, and each is a whole stud on one part.
+ */
+function standStuds(b: PieceBuild, m: Man, pts: [number, number][]): Man {
+  if (!pts.length || m.numTri() === 0) return m;
+  const { w, scad, track } = b, r = track.c.postD / 2, bb = m.boundingBox();
+  if (bb.min[2] > PLATE_H - 0.5 || bb.max[2] < PLATE_H - 0.01) return m;
+  const mine = pts.filter((q) => q[0] > bb.min[0] + r && q[0] < bb.max[0] - r && q[1] > bb.min[1] + r && q[1] < bb.max[1] - r);
+  if (!mine.length) return m;
+  const under = m.slice(PLATE_H - 0.1), footing = under.offset(-(r + 0.2), 'Round', 2, 24);
+  const overs = [0.05, 0.7, track.c.postH - 0.25].map((dz) => m.slice(PLATE_H + dz)), over = w.CrossSection.union(overs), room = over.offset(r + 0.1, 'Round', 2, 24);
+  const ok = footing.subtract(room), rings = ok.toPolygons() as [number, number][][];
+  for (const k of [under, footing, ...overs, over, room, ok]) k.delete();
+  const on = mine.filter((q) => {
+    let inside = false;
+    for (const ring of rings) for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+      const [xa, ya] = ring[i], [xb, yb] = ring[j];
+      if ((ya > q[1]) !== (yb > q[1]) && q[0] < xa + ((q[1] - ya) * (xb - xa)) / (yb - ya)) inside = !inside;
+    }
+    return inside;
+  });
+  return on.length ? scad.union([m, ...on.map((q) => T(track.stud(track.c.postD, track.c.postH), [q[0], q[1], PLATE_H - 0.2]))]) : m;
+}
+
 /** rebuild: (sleepers) the piece built again with the bed kept across the cut lines (crossing.ts bedAt). */
-function addTrack(b: PieceBuild, name: string, world0: Man, pieceRoutes: Route[], size?: string, rebuild?: (lines: CutLine[]) => Man) {
+function addTrack(b: PieceBuild, name: string, world0: Man, pieceRoutes: Route[], size?: string, rebuild?: (lines: CutLine[]) => Man, after: [number, number][] = []) {
   const { w, scad, o, track, cut: cx } = b, bp = cx.bp;
   let world = world0;
   const bb = world.boundingBox(), r: Rect = [bb.min[0], bb.min[1], bb.max[0], bb.max[1]];
-  if (!bp && cx.fitsBed(world)) { const lm = labelled(b, world, pieceRoutes, size); return add(b, name, TRACK_COLOR, lm, lm); }
+  if (!bp && cx.fitsBed(world)) { const lm = labelled(b, standStuds(b, world, after), pieceRoutes, size); return add(b, name, TRACK_COLOR, lm, lm); }
   // too big for the print bed (or at the baseplate edges): cut across the
   // track (tiles.ts planCuts), each part joined to the next like LEGO track
   const plan = planCuts(r, o.printBedX, o.printBedY, bp, (o.baseplateX ?? 0) * 8, (o.baseplateY ?? 0) * 8, cx.pointsAvoid, pieceRoutes, cx.bandHalf, cx.jointRoom, track.c.railOffset, cx.crossings);
@@ -1625,7 +1652,7 @@ function addTrack(b: PieceBuild, name: string, world0: Man, pieceRoutes: Route[]
     const gp = routePose(pieceRoutes[0], 0), bottom = world.boundingBox().min[2] + 0.02;
     return parts.map((m) => arena(w, () => (b.alongTrack ? m : edgeGrip(scad, track, m, gp, bottom)), (r2) => [r2]));
   });
-  all.forEach((m, k) => arena(w, () => { const lm = labelled(b, m, pieceRoutes, all.length > 1 ? undefined : size, all.length > 1 ? `${k + 1}` : undefined); add(b, all.length > 1 ? `${name}${plan.why === 'baseplate' ? '-plate' : ''}${k + 1}` : name, TRACK_COLOR, lm, lm); }, () => []));
+  all.forEach((m, k) => arena(w, () => { const lm = labelled(b, standStuds(b, m, after), pieceRoutes, all.length > 1 ? undefined : size, all.length > 1 ? `${k + 1}` : undefined); add(b, all.length > 1 ? `${name}${plan.why === 'baseplate' ? '-plate' : ''}${k + 1}` : name, TRACK_COLOR, lm, lm); }, () => []));
   if (all.some((m) => !cx.fitsBed(m))) b.bedWarnings.add(`some parts don't fit the ${o.printBedX} x ${o.printBedY} print bed: there's nowhere left to cut them`);
   for (const m of all) if (!cx.fitsBed(m)) bedIssue(b, m.boundingBox(), cx.tightOf(m));
 }
@@ -1874,7 +1901,9 @@ function sectioned(b: PieceBuild, name: string, all: Route[], checks: CheckRail[
       const grips: [number, number][] = [];
       const cuts = b.grooveCuts.filter((m) => { const bb = m.boundingBox(); return rts.some((rt) => { const b2 = routesBox([rt], bandHalf + 8); return bb.max[0] >= b2[0] && bb.min[0] <= b2[2] && bb.max[1] >= b2[1] && bb.min[1] <= b2[3]; }); });
       const keeps = b.grooveKeeps.filter((m) => { const bb = m.boundingBox(); return rts.some((rt) => { const b2 = routesBox([rt], bandHalf + 8); return bb.max[0] >= b2[0] && bb.min[0] <= b2[2] && bb.max[1] >= b2[1] && bb.min[1] <= b2[3]; }); });
-      const buildBody = (bedAt?: { p: [number, number]; d: [number, number]; len?: number }[]) => { grips.length = 0; return networkBody(scad, rts, { crossings: [], grooves: [], splits: [], checkRails: cChecks }, copt, mine, grips, { cuts, keeps, gridPose, innerEnds: secInner, ...(bedAt && { bedAt }) }); };
+      // (the studs stood on its parts once it's cut: standStuds)
+      const after: [number, number][] = [];
+      const buildBody = (bedAt?: { p: [number, number]; d: [number, number]; len?: number }[]) => { grips.length = 0; after.length = 0; return networkBody(scad, rts, { crossings: [], grooves: [], splits: [], checkRails: cChecks }, copt, mine, grips, { cuts, keeps, gridPose, innerEnds: secInner, after, ...(bedAt && { bedAt }) }); };
       // (bought pieces: each as bought, track only (LEGO's sleepers, as both make theirs); on ballast, the section's ballast
       // printed alone, seated for them all, cut for the bed if it has to be)
       if (apart) {
@@ -1979,7 +2008,7 @@ function sectioned(b: PieceBuild, name: string, all: Route[], checks: CheckRail[
       // (a bit a cut left loose: back on the part across the cut, cutContext rehome)
       parts2 = parts2.length > 1 ? step(() => cx.rehome(parts2, true)) : parts2;
       const kept = parts2.filter((m) => m.numTri() > 0).flatMap((m) => partedAtSwitches(b, m)).flatMap((m) => cx.bodies(m, 600)), id = (k: number) => (kept.length > 1 ? `${base + si + 1}-${k + 1}` : `${base + si + 1}`);
-      return { ms: kept.map((m, k) => arena(w, () => ({ ...bake(b, labelled(b, m, rts, kept.length > 1 ? undefined : sizeOf(rts), id(k))), ...(b.labelOn && { id: id(k) }) }), () => [])), grips, ...(pathsDone && { paths: pathsDone }) };
+      return { ms: kept.map((m, k) => arena(w, () => ({ ...bake(b, labelled(b, standStuds(b, m, after), rts, kept.length > 1 ? undefined : sizeOf(rts), id(k))), ...(b.labelOn && { id: id(k) }) }), () => [])), grips, ...(pathsDone && { paths: pathsDone }) };
     }, () => []), { ms: [], grips: [] }); } catch (err) {
       if (kernelBroke(err)) throw err;
       b.bedWarnings.add(`section ${si + 1} of ${name} failed to build: ${err instanceof Error ? err.message : String(err)}`);
@@ -2056,10 +2085,10 @@ function tiled(b: PieceBuild, name: string, all: Route[], checks: CheckRail[], s
     // (how long it takes, about: its track, and points most of all)
     const cost = cr.routes.reduce((t, rt) => t + routeLength(rt), 0) + 400 * near.length;
     try { part = b.job(tk, cost, () => arena(w, () => {
-      const grips: [number, number][] = [];
+      const grips: [number, number][] = [], after: [number, number][] = [];
       // (each step's leftovers let go as it's done, as a section's)
       const step = <T extends Man | Man[]>(f: () => T): T => arena(w, f, (r) => (Array.isArray(r) ? r : [r]));
-      const body0 = step(() => networkBody(scad, cr.routes, { crossings: [], grooves: [], splits: [], checkRails: cr.checks }, copt, tileSplits, grips, { cuts: tileCuts, keeps: tileKeeps, innerEnds: tileInner, gridPose, ...(b.sleepered && { bedAt: lines }) }));
+      const body0 = step(() => networkBody(scad, cr.routes, { crossings: [], grooves: [], splits: [], checkRails: cr.checks }, copt, tileSplits, grips, { cuts: tileCuts, keeps: tileKeeps, innerEnds: tileInner, gridPose, after, ...(b.sleepered && { bedAt: lines }) }));
       const body = nearSw ? step(() => yielded(b, body0, switchKeepOut(b, kbox), PLATE_H + 0.01)) : body0;
       const holes: [number, number, number][] = [], taken: [number, number][] = [];
       const got = step(() => cutPiece(scad, track, body, cr.routes, lines, join.joint, join.flatRails, cx.noTongue, holes, cx.fitsBed, taken).filter((m) => {
@@ -2072,7 +2101,7 @@ function tiled(b: PieceBuild, name: string, all: Route[], checks: CheckRail[], s
       // always get round a curvy track without running along it)
       // (and the track on from each far end of a bought switch a part of its own: partedAtSwitches)
       const fit = cx.fitter(cr.routes, holes, taken), parts = step(() => cx.rehome(cx.whole(body, got.filter((m) => m.numTri() > 0).flatMap((m) => step(() => fit(m)))))).flatMap((m) => partedAtSwitches(b, m));
-      return { ms: parts.map((m, k) => arena(w, () => ({ ...bake(b, labelled(b, b.alongTrack ? m : edgeGrip(scad, track, m, gridPose, bottom), cr.routes, undefined, `${base + ci + 1}-${k + 1}`)), ...(b.labelOn && { id: `${base + ci + 1}-${k + 1}` }) }), () => [])),
+      return { ms: parts.map((m, k) => arena(w, () => ({ ...bake(b, labelled(b, standStuds(b, b.alongTrack ? m : edgeGrip(scad, track, m, gridPose, bottom), after), cr.routes, undefined, `${base + ci + 1}-${k + 1}`)), ...(b.labelOn && { id: `${base + ci + 1}-${k + 1}` }) }), () => [])),
         grips: grips.filter((q) => q[0] > R[0] && q[0] <= R[2] && q[1] > R[1] && q[1] <= R[3]) };
     }, () => []), { ms: [], grips: [] }); } catch (err) {
       if (kernelBroke(err)) throw err; // (the kernel's broken now: no use carrying on)
@@ -2598,7 +2627,7 @@ function buildOne(w: Wasm, design: Design, report: (what: string, frac: number) 
     if (inLengths) sectioned(b, 'track', routes, sol.checkRails, net.splits, sol.splits, copt, netKey);
     else if (!tiled(b, 'track', routes, sol.checkRails, net.splits, copt)) {
       if (plan) throw PLANNED; // (built whole: nothing to share out)
-      const whole = cached(`net:${netKey}`, () => { const grips: [number, number][] = []; return { body: networkBody(scad, routes, sol, copt, net.splits, grips, { cuts: grooveCuts, keeps: grooveKeeps, innerEnds: dropInner(routes) }), grips }; }, true);
+      const whole = cached(`net:${netKey}`, () => { const grips: [number, number][] = [], after: [number, number][] = []; return { body: networkBody(scad, routes, sol, copt, net.splits, grips, { cuts: grooveCuts, keeps: grooveKeeps, innerEnds: dropInner(routes), after }), grips, after }; }, true);
       overlay.grips.push(...whole.grips);
       if (layered) {
         // (prototype) in two layers: the lower one and the deck, each cut for the bed on its own
@@ -2608,7 +2637,7 @@ function buildOne(w: Wasm, design: Design, report: (what: string, frac: number) 
         // (each lid its own part)
         const lidParts = ls.deck.decompose().filter((m) => m.volume() > 20);
         lidParts.forEach((m, k) => add(b, `points${lidParts.length > 1 ? k + 1 : ''}-lid`, TRACK_COLOR, m, m));
-      } else addTrack(b, 'track', whole.body, routes, undefined, sleepered ? (ls) => cached(`netcut:${netKey}:${JSON.stringify(ls)}`, () => networkBody(scad, routes, sol, copt, net.splits, [], { cuts: grooveCuts, keeps: grooveKeeps, innerEnds: dropInner(routes), bedAt: ls }), true) : undefined);
+      } else addTrack(b, 'track', whole.body, routes, undefined, sleepered ? (ls) => cached(`netcut:${netKey}:${JSON.stringify(ls)}`, () => networkBody(scad, routes, sol, copt, net.splits, [], { cuts: grooveCuts, keeps: grooveKeeps, innerEnds: dropInner(routes), bedAt: ls }), true) : undefined, whole.after);
     }
     if (plan) { boughtSwitches(b, bought, copt, gridPose); throw PLANNED; }
     // (each points set's moving parts baked, by what they're made from: an edit bakes only the ones it changes)
