@@ -2241,16 +2241,20 @@ function yielded(b: PieceBuild, m: Man, to: CS | undefined, top = 150): Man {
   if (out.numTri() === 0) return out;
   // (the studs near the cut: bodies of the slice just over the ballast's top (z 0), within reach of what was cut away
   // (a stud and more: the slice's own edge cuts studs too, further out; those don't touch the cut and stay))
-  const near = scad.intersection(out, T(scad.extrude(to.offset(8, 'Round'), 2.4), [0, 0, 0.2]));
-  if (near.numTri() === 0) return out;
-  const atCut = T(scad.extrude(to.offset(1, 'Round'), 3), [0, 0, 0]);
-  const split = near.decompose().flatMap((c) => {
-    const bb = c.boundingBox(), dx = bb.max[0] - bb.min[0], dy = bb.max[1] - bb.min[1], dz = bb.max[2] - bb.min[2];
-    if (Math.max(dx, dy) > 5.4) return [];
-    // (a whole stud: round, as wide one way as the other, and all of it there)
-    if (Math.abs(dx - dy) < 0.08 && dx > 4 && c.volume() > 0.76 * dx * dy * dz) return [];
-    if (c.intersect(atCut).volume() < 1e-6) return [];
-    return [T(scad.cube([dx + 0.04, dy + 0.04, 3]), [bb.min[0] - 0.02, bb.min[1] - 0.02, 0])];
+  // (and the same a plate down, on the buddy's step under it (its top at -PLATE_H): a bought plain track's ballast
+  // beside a switch's had studs there left in part, 0.15 to 0.93 of one)
+  const split = [0, -PLATE_H].filter((z0) => mb.min[2] < z0 - 0.1 && mb.max[2] > z0 + 0.2).flatMap((z0) => {
+    const near = scad.intersection(out, T(scad.extrude(to.offset(8, 'Round'), 2.4), [0, 0, z0 + 0.2]));
+    if (near.numTri() === 0) return [];
+    const atCut = T(scad.extrude(to.offset(1, 'Round'), 3), [0, 0, z0]);
+    return near.decompose().flatMap((c) => {
+      const bb = c.boundingBox(), dx = bb.max[0] - bb.min[0], dy = bb.max[1] - bb.min[1], dz = bb.max[2] - bb.min[2];
+      if (Math.max(dx, dy) > 5.4) return [];
+      // (a whole stud: round, as wide one way as the other, and all of it there)
+      if (Math.abs(dx - dy) < 0.08 && dx > 4 && c.volume() > 0.76 * dx * dy * dz) return [];
+      if (c.intersect(atCut).volume() < 1e-6) return [];
+      return [T(scad.cube([dx + 0.04, dy + 0.04, 3]), [bb.min[0] - 0.02, bb.min[1] - 0.02, z0])];
+    });
   });
   return split.length ? scad.difference(out, split) : out;
 }
