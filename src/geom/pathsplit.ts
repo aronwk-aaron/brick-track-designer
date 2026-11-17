@@ -437,6 +437,8 @@ export interface KerfDone { id: string; made: boolean }
 const KERF = 0.1, KERF_END = 0.3;
 /** (mm) How far either side of a joint cut a part's plan is looked at to tell which side it's on, and how much of it there counts (mm2). */
 const SIDE = 4, SIDE_MIN = 3;
+/** (mm3) A bit the joint cuts take off smaller than this isn't kept: a corner of one track's bed that lay on the next piece's. */
+const CHIP = 60;
 
 /**
  * A piece cut along joint cuts: lines that part it only together with its own edges and each other (a track's width
@@ -446,9 +448,10 @@ const SIDE = 4, SIDE_MIN = 3;
  * runs into another track): it's left out, and the piece cut again without it, so no slit is left in a part. Each
  * cut that's made is joined along its runs as a hand path is (pathJoints, worked out on the whole piece), each
  * joint's parts given to the part on their side. A stud a cut would go through stays whole on the side its middle is
- * on, the cut going round it. bodiesOf: a solid's bodies, each with the loose bits nearest it (cutContext bodies).
+ * on, the cut going round it. A chip the cuts take off, under CHIP (the corner of one track's bed lying on another
+ * piece's), is left out; a loose bit the piece had already goes with the part nearest it.
  */
-export function cutOnKerfs(s: Scad, m: Man, routes: Route[], cuts: KerfCut[], join: PathJoin | undefined, taken: [number, number][], bodiesOf: (m: Man) => Man[], flatOf: (m: Man) => Man = (x) => x): { parts: Man[]; done: KerfDone[] } {
+export function cutOnKerfs(s: Scad, m: Man, routes: Route[], cuts: KerfCut[], join: PathJoin | undefined, taken: [number, number][], flatOf: (m: Man) => Man = (x) => x): { parts: Man[]; done: KerfDone[] } {
   const CS = s.w.CrossSection;
   const unit = (a: [number, number], b: [number, number]): [number, number] => { const l = Math.hypot(b[0] - a[0], b[1] - a[1]); return [(b[0] - a[0]) / l, (b[1] - a[1]) / l]; };
   const prism = (cs: CS) => T(s.extrude(cs, 1000), [0, 0, -500]);
@@ -475,13 +478,28 @@ export function cutOnKerfs(s: Scad, m: Man, routes: Route[], cuts: KerfCut[], jo
   };
   const kerfs = new Map(cuts.map((c) => [c.id, kerfOf(c)]));
   /** The plan beside a cut, on its left (sd 1) or right (-1): SIDE wide (or w), clear of the cut and of its corners. */
-  const band = (c: KerfCut, sd: number, w = SIDE) => CS.union(segs(c).map(([a, b]) => { const len = Math.hypot(b[0] - a[0], b[1] - a[1]), e = Math.min(1, len / 4); return sd > 0 ? rect(a, b, -e, -e, 0.3, w) : rect(a, b, -e, -e, -w, -0.3); }));
+  // (not beside a stretch it runs along twice, out and back: a spur along a track's end, which parts nothing on its own)
+  const same = (p: [number, number], q: [number, number]) => Math.hypot(p[0] - q[0], p[1] - q[1]) < 1e-6;
+  const sided = (c: KerfCut) => { const all = segs(c); return all.filter(([a, b]) => Math.hypot(b[0] - a[0], b[1] - a[1]) >= 2 && !all.some(([p, q]) => same(p, b) && same(q, a))); };
+  const band = (c: KerfCut, sd: number, w = SIDE) => CS.union(sided(c).map(([a, b]) => { const len = Math.hypot(b[0] - a[0], b[1] - a[1]), e = Math.min(1, len / 4); return sd > 0 ? rect(a, b, -e, -e, 0.3, w) : rect(a, b, -e, -e, -w, -0.3); }));
   const floorOf = (x: Man) => { const bb = x.boundingBox(), zs: number[] = []; for (let z = bb.min[2] + 0.3; z < bb.max[2] - 0.1; z += 1.5) zs.push(z); zs.push(bb.min[2] + 2.6); return CS.union(zs.map((z) => x.slice(z))); };
   const near = (c: KerfCut, bb: { min: number[]; max: number[] }) => c.pts.some((q, k) => k > 0 && Math.max(q[0], c.pts[k - 1][0]) >= bb.min[0] - SIDE && Math.min(q[0], c.pts[k - 1][0]) <= bb.max[0] + SIDE && Math.max(q[1], c.pts[k - 1][1]) >= bb.min[1] - SIDE && Math.min(q[1], c.pts[k - 1][1]) <= bb.max[1] + SIDE);
+  // (the piece's own loose bits, by size and place: kept, each with the part nearest it; any other bit under CHIP is a chip the cuts took off)
+  const mid = (y: Man) => { const b = y.boundingBox(); return [(b.min[0] + b.max[0]) / 2, (b.min[1] + b.max[1]) / 2, (b.min[2] + b.max[2]) / 2]; };
+  const own = flatOf(m).decompose().filter((x) => x.volume() < BIT).map((x) => ({ v: x.volume(), c: mid(x) }));
+  const isOwn = (y: Man) => { const v = y.volume(), c = mid(y); return own.some((b) => Math.abs(b.v - v) < 0.02 * b.v + 0.5 && Math.hypot(b.c[0] - c[0], b.c[1] - c[1], b.c[2] - c[2]) < 0.5); };
+  const bodiesOf = (x: Man): Man[] => {
+    const all = flatOf(x).decompose().filter((y) => y.volume() > 0.01), big = all.filter((y) => y.volume() >= BIT), small = all.filter((y) => y.volume() < BIT && (isOwn(y) || y.volume() >= CHIP));
+    if (!big.length) return all.length ? [x] : [];
+    const boxes = big.map((y) => y.boundingBox()), groups: Man[][] = big.map((y) => [y]);
+    const gap = (a: { min: number[]; max: number[] }, b: { min: number[]; max: number[] }) => Math.hypot(Math.max(0, a.min[0] - b.max[0], b.min[0] - a.max[0]), Math.max(0, a.min[1] - b.max[1], b.min[1] - a.max[1]));
+    for (const sm of small) { const sb = sm.boundingBox(); let best = 0; boxes.forEach((bx, k) => { if (gap(sb, bx) < gap(sb, boxes[best])) best = k; }); groups[best].push(sm); }
+    return groups.map((g) => (g.length > 1 ? flatOf(s.union(g)) : g[0]));
+  };
   /** Cut along the cuts on: the bodies left, each one's plan, and which side of each cut it's on (bit 1 left, 2 right). */
   const cutUp = (on: KerfCut[], holes?: Man) => {
     const body = s.difference(m, [prism(CS.union(on.map((c) => kerfs.get(c.id)!))), ...(holes ? [holes] : [])]);
-    const bodies = bodiesOf(flatOf(body)), floors = bodies.map((x) => floorOf(x));
+    const bodies = bodiesOf(body), floors = bodies.map((x) => floorOf(x));
     const sides = on.map((c) => bodies.map((x, i) => {
       if (!near(c, x.boundingBox())) return 0;
       return (floors[i].intersect(band(c, 1)).area() > SIDE_MIN ? 1 : 0) | (floors[i].intersect(band(c, -1)).area() > SIDE_MIN ? 2 : 0);

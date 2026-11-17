@@ -160,6 +160,8 @@ export interface CrossingExtras {
   hollows?: { P: Pose; r: [number, number, number, number] }[];
   /** (sleepers) the lines the piece will be cut along (for the bed, the baseplates): the bed kept across each, so the parts have floor there to join with */
   bedAt?: { p: [number, number]; d: [number, number]; len?: number }[];
+  /** (sleepers) which piece of trackwork each route is of (a number each; app/jointcuts.ts trackGroups), where the piece is cut at its tracks' joints: no long tie from a route across to one of another piece, which would hold the two together past the cut */
+  groups?: number[];
   /** where studs stand though something's added there (a throw arm under other track: that track's studs on it) */
   studsOn?: (q: [number, number]) => boolean;
   /** (the points' adds) where studs can't stand for them (network.ts studsOffOf): in their boxes, studs stand elsewhere; unset, nowhere in their boxes */
@@ -1025,7 +1027,7 @@ export function crossingPiece(s: Scad, routes: Route[], o: CrossingOptions = CRO
       // (where a sleeper here, across this route, would reach onto another route's bed: the square where two tracks
       // cross (as LEGO's crossing: solid in the middle, sleepers on its arms), or all along tracks side by side)
       const hd = (routePose(rt, sAt)[2] * Math.PI) / 180, nx = Math.cos(hd), ny = Math.sin(hd), half = lenOf[i] / 2;
-      const meets = (r2: Route, j: number) => near2[j] && !shared[j].some((e) => Math.hypot(q[0] - e[0], q[1] - e[1]) < lenOf[i])
+      const meets = (r2: Route, j: number) => near2[j] && (!x.groups || x.groups[i] === x.groups[j]) && !shared[j].some((e) => Math.hypot(q[0] - e[0], q[1] - e[1]) < lenOf[i])
           && [-1, -0.75, -0.5, -0.25, 0, 0.25, 0.5, 0.75, 1].some((f) => Math.abs(routeLat(r2, [q[0] + nx * half * f, q[1] + ny * half * f])) < lenOf[j] / 2 + 1);
       // (a track beside this one at a small angle: long ties there; one crossing it at an angle: solid)
       const steep = (r2: Route) => headingDiff(routePose(rt, sAt)[2], routePose(r2, Math.min(Math.max(routeSOf(r2, q), 0), routeLength(r2)))[2]) > 35;

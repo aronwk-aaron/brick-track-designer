@@ -152,6 +152,8 @@ export const SPECS: OptionSpec[] = [
   // (the R104 switch cut as its kit: the base's cut across the branch along the grid, or square to the branch)
   { key: 'slipCuts', values: ['none', 'reference'], base: D(TEMPLATES['Double slip R104 left'].routes, { pointBlades: 1, printBedX: 256, printBedY: 256 }), cam: above },
   { key: 'pathSquare', values: [false, true], base: { ...TEMPLATES['Switch R104 left, base and detachable modules'], options: { ...TEMPLATES['Switch R104 left, base and detachable modules'].options, pathSquare: false } }, explode: 10, cam: { dir: '0,-0.2,1', dist: 1.6 } },
+  // (the star crossing set: one part of its five crossings, too big for the bed, or cut where its pieces join)
+  { key: 'jointCuts', values: [false, true], base: { ...TEMPLATES['Narrow-gauge star crossing 45° over two standard tracks'], options: { ...TEMPLATES['Narrow-gauge star crossing 45° over two standard tracks'].options, jointCuts: false } }, explode: 10, cam: above },
   // Bought track (printed blue, LEGO's green, BrickTracks' purple, as the 3D view)
   { key: 'legoTrack', values: ['lego', 'lego-only', 'print'], base: D([{ name: 'A', x: 0, y: 0, heading: 0, segs: [{ kind: 'straight', studs: 16 }, { kind: 'curve', radius: 40, angle: 22.5 }, { kind: 'curve', radius: 104, angle: 11.25 }] },
     { name: 'S', x: 24, y: 0, heading: 0, segs: [{ kind: 'straight', studs: 32 }] }, { name: 'SB', x: 24, y: 0, heading: 0, segs: [{ kind: 'curve', radius: 40, angle: -36.8699 }, { kind: 'curve', radius: 40, angle: 14.3699 }] },

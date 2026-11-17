@@ -128,16 +128,18 @@ export function jointCuts(routes: Route[], halves: number[], near = 12): JointCu
           pts.push(corner);
           // (that track's own end. Where it runs on into the next track, end to end: on along that one's edge)
           const nx = joints.find((jn) => (jn.i === cur || jn.k === cur) && Math.hypot(jn.P[0] - pe[0], jn.P[1] - pe[1]) < 0.5), nxt = nx ? (nx.i === cur ? nx.k : nx.i) : -1;
-          if (nxt >= 0 && nxt !== i && nxt !== k && Math.abs(halves[nxt] - halves[cur]) < 0.01) {
-            const rn = routes[nxt], atStart = Math.hypot(rn.start[0] - pe[0], rn.start[1] - pe[1]) < 0.5, ahead: Pt = [corner[0] - sind(pe[2]) * dir, corner[1] + cosd(pe[2]) * dir];
-            cur = nxt; rj = rn; Lj = routeLength(rn); s = atStart ? 0 : Lj; dir = atStart ? 1 : -1; tau = Math.sign(routeLat(rn, ahead)) || tau;
-            continue;
-          }
-          // (else round its corner and along its end, as far as the other piece's bed lies against that too)
+          // (and along its end as far as the other piece's bed lies against that: past the end it lies on the next track's
+          // bed, or on nothing)
           const ox = -sind(pe[2]) * dir * 0.5, oy = cosd(pe[2]) * dir * 0.5;
           let last: Pt | undefined;
           for (let v = 0.5; v <= 2 * halves[cur]; v += 0.5) { const e = railPoint(rj, se, tau * (halves[cur] - v)); if (!far.some((f) => inStrip(f, [e[0] + ox, e[1] + oy], 0.25))) break; last = railPoint(rj, se, tau * (halves[cur] - v - OVER)); }
           if (last) pts.push(last);
+          if (nxt >= 0 && nxt !== i && nxt !== k && Math.abs(halves[nxt] - halves[cur]) < 0.01) {
+            if (last) pts.push(corner);
+            const rn = routes[nxt], atStart = Math.hypot(rn.start[0] - pe[0], rn.start[1] - pe[1]) < 0.5, ahead: Pt = [corner[0] - sind(pe[2]) * dir, corner[1] + cosd(pe[2]) * dir];
+            cur = nxt; rj = rn; Lj = routeLength(rn); s = atStart ? 0 : Lj; dir = atStart ? 1 : -1; tau = Math.sign(routeLat(rn, ahead)) || tau;
+            continue;
+          }
           break;
         }
         const o = railPoint(rj, s, tau * (halves[cur] + 0.5)), e = railPoint(rj, s, tau * halves[cur]);
