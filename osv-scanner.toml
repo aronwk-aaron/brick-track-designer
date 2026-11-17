@@ -1,0 +1,9 @@
+# Findings the dependency scan (ci.yml: OSV-Scanner) passes over for now, each with why and until when.
+
+# picomatch 4.0.7: a glob an attacker supplies can take very long to match (ReDoS). No fixed release yet (4.0.7 is
+# the newest). Here it is only in the build and test tools (vite, vitest, tinyglobby), which match this repo's own
+# file globs: nothing the app ships, and no glob from outside. Take this out when a fixed picomatch is released.
+[[IgnoredVulns]]
+id = "GHSA-fc5q-39xc-vjpf"
+ignoreUntil = 2026-12-17
+reason = "dev tooling only (vite, vitest, tinyglobby); no fixed release yet"
