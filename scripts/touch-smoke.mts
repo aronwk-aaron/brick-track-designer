@@ -226,8 +226,12 @@ async function tablet(width: number, height: number, tag: string) {
     await tapOn('#templates-open'); await page.fill('#tpl-search', 'compact base standard'); await sleep(200);
     const kit = '#tpl-body .tcard[data-template="Switch R40 left, compact base and standard section"] .tpick';
     await page.locator(kit).first().scrollIntoViewIfNeeded(); await tapOn(kit);
-    await page.waitForFunction(() => (window as unknown as { btdCanvas: C }).btdCanvas.host.design().routes.length === 4, null, { timeout: 15_000 }).catch(() => {});
-    check(await routes() === 4, `[${tag}] the compact kit opens (${await routes()} routes)`);
+    // (the design has changes in no file: it asks first, and the answer is tapped)
+    await page.waitForSelector('#ask-dlg[open]', { timeout: 5_000 }).catch(() => undefined);
+    if (await page.locator('#ask-dlg').evaluate((d: HTMLDialogElement) => d.open)) await tapOn('#ask-yes');
+    const isKit = () => page.evaluate(() => (window as unknown as { btdCanvas: { host: { design(): { routes: { name?: string }[] } } } }).btdCanvas.host.design().routes.map((r) => r.name).join());
+    await page.waitForFunction(() => (window as unknown as { btdCanvas: { host: { design(): { routes: { name?: string }[] } } } }).btdCanvas.host.design().routes.some((r) => r.name === 'Section branch'), null, { timeout: 15_000 }).catch(() => {});
+    check(/Section branch/.test(await isKit()), `[${tag}] the compact kit opens (${await isKit()})`);
     await page.waitForFunction(() => !!document.getElementById('track')!.dataset.jointcuts && document.getElementById('buildstatus')!.hidden, null, { timeout: 60_000 }).catch(() => {});
     await tapOn('#mode-select'); await tapOn('#fit'); await sleep(400);
     const jc = await page.evaluate(() => { const el = document.getElementById('track')!, r = el.getBoundingClientRect(); return (JSON.parse(el.dataset.jointcuts ?? '[]') as { x: number; y: number; made: boolean }[]).map((q) => ({ ...q, x: q.x + r.left, y: q.y + r.top })); });
