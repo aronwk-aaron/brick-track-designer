@@ -23,7 +23,7 @@ Match: **exact** (ends, and lever or section where it has one), **close** (a tem
 **missing** (no template or setting makes it), **in progress elsewhere** (the double slips and their crossovers, being
 rebuilt separately).
 
-Counts: close 77, exact 220, in progress elsewhere 13, missing 24, n/a 1 (of 335).
+Counts: close 78, exact 223, in progress elsewhere 13, missing 20, n/a 1 (of 335).
 
 ## Parts
 
@@ -64,7 +64,7 @@ Counts: close 77, exact 220, in progress elsewhere 13, missing 24, n/a 1 (of 335
 | tb ct r104 | Curve R104, 11.25° | exact |  |
 | tb ct r104bc | Curve R104, 11.25° with 0.22 studs straight, on ballast | exact |  |
 | tb ct r120 half | Curve R120, 5.62° | exact |  |
-| tb ct r120 sixth | Straight, 4 studs | close | ends 0.10 studs / 1.9° off |
+| tb ct r120 sixth | Curve R120, 1.88° | close | ends 0.13 studs / 0.0° off: the library's part turns 1.875 degrees one way and steps aside the other way (0.064 studs each, its own slip); the template is the R120 1.875-degree curve the part is |
 | tb ct r120 third left | Curve R120, 3.75° | exact |  |
 | tb ct r120 third right | Curve R120, 3.75° | exact |  |
 | tb ct r120 | Curve R120, 11.25° | exact |  |
@@ -124,8 +124,8 @@ Counts: close 77, exact 220, in progress elsewhere 13, missing 24, n/a 1 (of 335
 | tb ng ct r48 | Narrow-gauge curve R48, 11.25° | exact |  |
 | tb ng ct r72 | Narrow-gauge curve R72, 11.25° | exact |  |
 | tb ng ct r84 | Narrow-gauge curve R84, 11.25° | exact |  |
-| tb ng ct r84bc left | Narrow-gauge curve R65.4, 11.25° with 3.42 studs straight, on ballast | exact |  |
-| tb ng ct r84bc right | Narrow-gauge curve R84, 11.25° | close | ends 0.42 studs / 0.0° off |
+| tb ng ct r84bc left | Narrow-gauge curve R65.4, 11.25° left, with 3.42 studs straight, on ballast | exact |  |
+| tb ng ct r84bc right | Narrow-gauge curve R65.4, 11.25° right, with 3.42 studs straight, on ballast | exact |  |
 | tb ng ct r96 | Narrow-gauge curve R96, 11.25° | exact |  |
 | tb ng ct x45 left | Narrow-gauge curve R14.7, 33.75° with 1.49 studs straight | exact | its ends as the library has them: an R14.68 curve and a 1.49-stud straight |
 | tb ng ct x45 right | Narrow-gauge curve R14.7, 33.75° with 1.49 studs straight | exact | the left one's mirror image |
@@ -351,9 +351,9 @@ Counts: close 77, exact 220, in progress elsewhere 13, missing 24, n/a 1 (of 335
 | tb dg crossing x45 1mt right | Narrow-gauge crossing 45° right over one standard track | exact | its pieces joined end to end; its 4 ends where the set's are |
 | tb dg crossing x45 2mt left | Narrow-gauge crossing 45° left over two standard tracks | exact | its pieces joined end to end; its 6 ends within 0.01 studs of the set's |
 | tb dg crossing x45 2mt right | Narrow-gauge crossing 45° right over two standard tracks | exact | its pieces joined end to end; its 6 ends within 0.01 studs of the set's; one section cut across at x 9 (a cut path) to fit a 256 mm bed |
-| tb dg crossing x45 2mt star | - | missing | chained from its pieces (ends within 0.01 studs), but its crossing section (37 x 26 studs) doesn't fit a 256 mm bed and no single straight cut path fits it: left out for now |
-| tb dg crossing x45 rhombus left | - | missing | chained from its pieces (ends within 0.1 studs), but its crossing section doesn't fit a 256 mm bed (no single straight cut found): left out for now |
-| tb dg crossing x45 rhombus right | - | missing | as the left one (ends within 0.24 studs; a 40 x 40 stud section) |
+| tb dg crossing x45 2mt star | - | missing | chained from its pieces (ends within 0.01 studs), but it can't be cut to a 256 mm bed: its five crossings (four over the standard tracks, one of the two narrow-gauge lines in the middle) are too close for any cut on whole studs to pass between them 2 studs clear of a frog, and the one section that holds them all is 270 mm long with its track ends. The kit's own joints lie between the crossings, square to the 45-degree lines: it needs a cut square across a slanted track, which cut paths don't make |
+| tb dg crossing x45 rhombus left | Narrow-gauge rhombus crossing 45° left over two standard tracks | exact | its 26 pieces joined end to end; its 8 ends within 0.10 studs: the library's own placing of the set's pieces; one section cut across at y 15 (a cut path) to fit a 256 mm bed |
+| tb dg crossing x45 rhombus right | Narrow-gauge rhombus crossing 45° right over two standard tracks | exact | its 26 pieces joined end to end; its 8 ends within 0.24 studs: the library's own placing of the set's pieces; one section cut across at y 17 (a cut path) to fit a 256 mm bed |
 | tb dome crossing r104 r120 | Dome crossing R104 and R120 | close | its pieces joined end to end; the library's 'ct r120 sixth' turned so the loop closes, the R104 run's four 11.25-degree curves R103.48; one section cut across at x 80 (a cut path) to fit a 256 mm bed |
 | tb double dome crossing r104 r120 | Double dome crossing R104 and R120 | close | two domes, closed as the single one (R103.48 on the R104 runs); the first dome's section cut as the single one's, the second fits whole |
 | tb ng combo r48 ry2 left | Narrow-gauge switch R48 left to a parallel track | exact | ends within 0.09 studs: the library's own placing of the set's pieces; 1 lever tab(s): lever place not checked (template not in the build batch) |
@@ -362,11 +362,11 @@ Counts: close 77, exact 220, in progress elsewhere 13, missing 24, n/a 1 (of 335
 | tb ng combo r48 to right | Narrow-gauge switch R48 right with its turnout curve | exact | ends within 0.09 studs: the library's own placing of the set's pieces; 1 lever tab(s): lever place not checked (template not in the build batch) |
 | tb ng combo r84 left | Narrow-gauge switch R84 left to a parallel track | exact | ends within 0.09 studs: the library's own placing of the set's pieces; 1 lever tab(s): lever place not checked |
 | tb ng combo r84 right | Narrow-gauge switch R84 right to a parallel track | close | the left one's mirror image: the library places its right set's R84 'bc' curve 0.42 studs off, so it chains no other way |
-| tb ng combo x22 left | - | missing | no template for the arrangement; its pieces (5, 3 kinds): all made by BTD now (the connector and narrow-gauge curve as exact templates, the 22.5° crossing close), so it is only a template to add |
-| tb ng combo x22 right | - | missing | no template for the arrangement; its pieces (5, 3 kinds): all made by BTD now (the connector and narrow-gauge curve as exact templates, the 22.5° crossing close), so it is only a template to add |
+| tb ng combo x22 left | Narrow-gauge crossing 22.5° left with its curves to parallel tracks | close | its 5 pieces joined end to end; ends 1.03 studs off the set's: the library has the crossing's diagonal ends on whole studs (26.6 degrees), the crossing is 22.5 (as tb ng crossing x22.5 left) |
+| tb ng combo x22 right | Narrow-gauge crossing 22.5° right with its curves to parallel tracks | close | as the left one, with the right-hand ballast curve |
 | tb switch r104 wye 8sg | Wye R104, 8-stud gap, with its curves | exact | ends within 0.09 studs: the library's own placing of the set's pieces; lever within 0.64 studs of the part's tab; housing: the reference's cross-bar, 16 studs with a 4 x 3 stud block at each end (Lever housing: Cross-bar); the lever built in where the clip-on lever unit goes |
 | tb switch r104 wye | Wye R104 with its adapter curves | exact | ends within 0.09 studs: the library's own placing of the set's pieces; lever within 0.56 studs of the part's tab; housing: the reference's cross-bar, 16 studs with a 4 x 3 stud block at each end (Lever housing: Cross-bar); the lever built in where the clip-on lever unit goes |
 | tb t-junction r104 r120 | T-junction R104 and R120 | close | its pieces joined end to end; the R104 runs' curves R103.17 to R107.11 so the loop closes; one section cut across at y 186 (a cut path) to fit a 256 mm bed |
-| tb t-junction r40 r56 | - | missing | no template for the arrangement; its pieces (19, 12 kinds): all made by BTD (exact or close), so it is only a template to add |
+| tb t-junction r40 r56 | - | missing | chained from its pieces with the two yard switches whole (19 pieces; its 6 ends within 0.28 studs, the two R40 runs closed with R40.32 and R39.63 curves), but two sections don't fit a 256 mm bed: the core (its straight 38.3 studs, 304 mm, with frogs all along it: no cut path passes 2 studs clear of them; on its own the core is cut down its middle by the build) and each R56 switch with its track ends (257 mm) |
 | tb w-junction r104 r120 | W-junction R104 and R120 | exact | ends within 0.22 studs: the library's own placing of the set's pieces; 2 lever tab(s): lever place not checked (template not in the build batch) |
 

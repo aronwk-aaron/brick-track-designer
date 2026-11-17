@@ -126,7 +126,9 @@ export const REF1_PLAIN: Record<string, Design> = {
   // (R96 for 11.25 degrees)
   'Narrow-gauge curve R96, 11.25°': { version: 1, gaugeStuds: 2, options: { legoTrack: 'print', splitTrack: 'bed' }, routes: [{ name: 'Track', x: 0, y: 0, heading: 0, segs: [{ kind: 'curve', radius: 96, angle: 11.25 }] }] },
   // (3.42 studs straight, then R65.36 for 11.25 degrees)
-  'Narrow-gauge curve R65.4, 11.25° with 3.42 studs straight, on ballast': { version: 1, gaugeStuds: 2, options: { legoTrack: 'print', splitTrack: 'bed', ballast: 'ballast' }, routes: [{ name: 'Track', x: 0, y: 0, heading: 0, segs: [{ kind: 'straight', studs: 3.417145 }, { kind: 'curve', radius: 65.359154, angle: 11.25 }] }] },
+  'Narrow-gauge curve R65.4, 11.25° left, with 3.42 studs straight, on ballast': { version: 1, gaugeStuds: 2, options: { legoTrack: 'print', splitTrack: 'bed', ballast: 'ballast' }, routes: [{ name: 'Track', x: 0, y: 0, heading: 0, segs: [{ kind: 'straight', studs: 3.417145 }, { kind: 'curve', radius: 65.359154, angle: 11.25 }] }] },
+  // (the right hand: 3.42 studs straight, then R65.36 for 11.25 degrees the other way. Not the left one turned round: that has its curve first, seen from its other end)
+  'Narrow-gauge curve R65.4, 11.25° right, with 3.42 studs straight, on ballast': { version: 1, gaugeStuds: 2, options: { legoTrack: 'print', splitTrack: 'bed', ballast: 'ballast' }, routes: [{ name: 'Track', x: 0, y: 0, heading: 0, segs: [{ kind: 'straight', studs: 3.417145 }, { kind: 'curve', radius: 65.359154, angle: -11.25 }] }] },
   // (16 studs straight)
   'Dual gauge straight, 16 studs, narrow gauge at the side': { version: 1, gaugeStuds: 4, options: { legoTrack: 'print', splitTrack: 'bed' }, routes: [{ name: 'Track', x: 0, y: 0, heading: 0, dualGauge: true, segs: [{ kind: 'straight', studs: 16 }] }] },
   // (16 studs straight)

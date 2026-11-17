@@ -46,7 +46,7 @@ describe('studs keep a full stud apart', { timeout: 600000 }, () => {
     expect(off.best).toBeGreaterThanOrEqual(5.28);
   });
   it('a curve\'s bed studs in rows along the track: each row spaced along its own line, so the inner rows lose a stud, not every other one', async () => {
-    const d = { ...TEMPLATES['Narrow-gauge curve R65.4, 11.25° with 3.42 studs straight, on ballast'] }, off = await closest(structuredClone(d)), full = await closest(on(d));
+    const d = { ...TEMPLATES['Narrow-gauge curve R65.4, 11.25° left, with 3.42 studs straight, on ballast'] }, off = await closest(structuredClone(d)), full = await closest(on(d));
     expect(full.best).toBeGreaterThanOrEqual(STUD - PITCH_SLACK - 0.02);
     expect(full.n).toBeGreaterThan(0.9 * off.n);
   });
