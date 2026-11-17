@@ -95,8 +95,7 @@ Object.assign(BUDGET, { 'Narrow-gauge rhombus crossing 45° left over two standa
 // 84dc48b, PR 67, PR 69 twice: 13.2 to 17.6 s), the T-junction's five (22.6 to 32.7 s), the compact switch sets' two (PR 69:
 // 14.0 and 16.8 s, 15.8 and 14.5 s; each hand the slower of the pair's))
 Object.assign(BUDGET, { 'Narrow-gauge star crossing 45° over two standard tracks': 23, 'T-junction R40 and R56': 43, 'Compact switch set R40, two left and one right curved 45° switches': 22, 'Compact switch set R40, two right and one left curved 45° switches': 22 });
-// (the perpendicular section's kit: provisional, 3 times a laptop's 4.8 s, till CI has run it twice)
-Object.assign(BUDGET, { 'Switch R40 left, compact base, perpendicular section and curved 90° section': 15, 'Switch R40 right, compact base, perpendicular section and curved 90° section': 15 });
+// (the perpendicular section's kit has none of its own: PR 70's two runs 5.7 and 5.0 s, its mirror image 6.6 and 5.2; 1.3 times the slowest is under the 10 below)
 const BUDGET_SMALL = 10; // (a template with no time of its own yet)
 /** only: just these templates of the groups */
 export function templatesBuild(groups: string[], only?: string[]) {
