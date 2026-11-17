@@ -659,6 +659,8 @@ export async function goesTogether(name: string, design: Design, k?: Known, edge
     if (edges !== undefined) {
       const found = b.pieces.filter((p) => !p.lego && p.stl.length).map((p) => [p.name, sharedEdges(stlPositions(p.stl))] as const).filter(([, e]) => e.length);
       const total = found.reduce((t, [, e]) => t + e.length, 0);
+      // (said in the run's log, as each template's build time is: what the allowances in EDGES are read from)
+      process.stdout.write(`EDGES-FOUND\t${name}\t${total}\tallowed=${edges}\n`);
       expect(total, `${name}: ${total} edges shared by more than two triangles in its files (${found.map(([n, e]) => `${n} ${e.length}, the first at ${e[0][0].map((v) => v.toFixed(1)).join(' ')}`).join('; ')})`).toBeLessThanOrEqual(edges);
     }
   } finally { Object.assign(OPTION_DEFAULTS, saved); clearBuildCache(); }
