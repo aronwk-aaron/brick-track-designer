@@ -36,8 +36,16 @@ export class Scad {
     return cs.extrude(h);
   }
 
+  /**
+   * (tests only: test/union-order.test.ts) Every union's solids taken in the opposite order. A sound part comes out
+   * the same either way; one that doesn't has faces lying flush on each other somewhere (a bed's end on its
+   * connector's back, a rail's end on a block), which the kernel joins one way or the other by the last digit.
+   */
+  static reversed = false;
+
   union(parts: (Man | undefined | false)[]): Man {
     const ms = parts.filter((p): p is Man => !!p);
+    if (Scad.reversed) ms.reverse();
     return this.w.Manifold.union(ms); // (empty: a valid empty solid; cube([0, 0, 0]) is an invalid one, which empties every boolean it meets)
   }
 
