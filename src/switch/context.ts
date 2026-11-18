@@ -63,6 +63,15 @@ export interface SwitchParams {
   sprungThin?: boolean;
   /** (the plate-style points, rigid blades) What holds each blade down: 'pin' (a snap lip on its pin, as before) or 'front' (a lip on the bed over its plate's front, as the sprung blades', and a plain pin). The sprung blades always have the lip. */
   bladeLip?: 'pin' | 'front';
+  /**
+   * (PROTOTYPE, blades with a lip over the front) An end connector's studs that stand into the wall of a blade's hold-down lip
+   * (a switch whose toe is at the part's end: the row's two studs 1.5 studs either side of the centre line, 0.4 into the
+   * wall's foot): 'keep' (as it was: stud and wall one shape), 'drop' (those studs left out, the lip whole) or 'relieve'
+   * (the studs kept, the wall cut back round each by toeStudClear: switch/base.ts toeLipFeet).
+   */
+  toeStuds?: 'keep' | 'drop' | 'relieve';
+  /** (toeStuds 'relieve') The gap round a stud the wall is cut back by, mm (0.3, the default: 1.2 of the wall's 2.0 left at its thinnest; 1.0: 0.5 left). */
+  toeStudClear?: number;
   /** (the plate-style points) Blades per set: 2 (both move), or 1 (a single-point switch, as a tram's: only the blade on the more curved route moves; the other side's rail is fixed, from where it's a flangeway clear of its stock rail). A three-way keeps both. */
   pointBlades?: 1 | 2;
   /** (the plate-style points) A three-way's levers: 1 (one slider under both blades, three positions), or 2 (as the reference's triple switches: a slider and a lever to each blade, one each side, each with two positions; the routes set by the two together). */

@@ -9,12 +9,12 @@
 import { type CrossingOptions, crossingPiece } from '../geom/crossing';
 import { segDist } from '../geom/pathsplit';
 import { R, T, type Man, type Scad } from '../geom/scad';
-import { DEFAULTS as TRACK_DEFAULTS, PLATE_H } from '../geom/track';
+import { DEFAULTS as TRACK_DEFAULTS, PLATE_H, Track } from '../geom/track';
 import type { Pose, Pt, Route } from '../route/route';
 import { poseToWorld, railOffsetOf, railPoint, routeLat, routeLength, routePose, routeSOf, worldToPose } from '../route/route';
 import type { Solution } from '../route/solver';
 import { reversedRoute } from './reverse';
-import { type BaseParams, fdbFootprint, type SetOver, type SetSpec, switchGeometry, switchPlan, type SwitchPlan, thirdRailAt } from './base';
+import { type BaseParams, fdbFootprint, lipFeet, type SetOver, type SetSpec, switchGeometry, switchPlan, type SwitchPlan, thirdRailAt } from './base';
 import { bladeEdit, gridLever, sharedLead, subRoute, type ThrowEdit, toFrame, twoLevers } from './pieces';
 import { gridIn, sprungOnGrid, switchGlobals } from './context';
 
@@ -63,6 +63,9 @@ export interface SplitParts {
    * for the studs put in afterwards, in the room left (crossing.ts studsAfter)
    */
   studsAfter?: (q: [number, number]) => boolean;
+  /** (PROTOTYPE, toeStuds) whether an end connector's stud at q (the design's frame) stands into the wall of a blade's hold-down lip, or within 0.3 of it */
+  lipMeets?: (q: [number, number]) => boolean;
+  lipDrop?: boolean;
   moving: NetworkPart[];
 }
 
@@ -500,7 +503,18 @@ export function networkSplits(s: Scad, routes: Route[], sol: Solution, p: BasePa
         && rts.every((rt) => Math.abs(routeLat(rt, [x, y])) > sl + 1);
     } : undefined;
     levers.push({ toe: [P[0], P[1]], frame: P, set: plan.sets[0] });
-    const bed = bedClear(n, place(mech.bed, P));
+    const gl0 = switchGlobals(pp);
+    const bed0 = bedClear(n, place(mech.bed, P));
+    // (PROTOTYPE, toeStuds: a switch whose toe is at a part's end has the end sleeper's row of studs 4 from the toe, and
+    // the lips' wall 6 to 8 from it: the two studs 1.5 studs either side of the centre line stand 0.4 into the wall.
+    // 'drop': crossing.ts leaves those studs out (lipMeets). 'relieve': the wall cut back round each, by toeStudClear,
+    // where a route starts or ends at the toe (an end connector there); the studs as they were)
+    const feet = lipFeet(plan), sr = (TRACK_DEFAULTS.studD + (pp.studFit ?? TRACK_DEFAULTS.studFit)) / 2;
+    const lipMeets = feet.length ? (q: [number, number]) => { const l = worldToPose(P, q) as Pt; return feet.some(([x0, x1, y0, y1]) => Math.hypot(Math.max(x0 - l[0], 0, l[0] - x1), Math.max(y0 - l[1], 0, l[1] - y1)) < sr + 0.3); } : undefined;
+    const endAtToe = routes.some((r) => [routePose(r, 0), routePose(r, routeLength(r))].some((e) => Math.hypot(e[0] - P[0], e[1] - P[1]) < 0.01));
+    const relief = pp.toeStuds === 'relieve' && lipMeets && endAtToe
+      ? new Track({} as Scad, { ...TRACK_DEFAULTS, gaugeStuds: pp.gaugeStuds, studFit: pp.studFit ?? TRACK_DEFAULTS.studFit }).endpointPosts().map((x) => poseToWorld(P, [x, 4]) as Pt).filter(lipMeets).map((q) => T(s.cylinder(30, sr + (pp.toeStudClear ?? 0.3), sr + (pp.toeStudClear ?? 0.3), 64), [q[0], q[1], gl0.bedTop + 0.001])) : [];
+    const bed = relief.length ? { ...bed0, bed: s.difference(bed0.bed, relief) } : bed0;
     // (the bed's studs carried on along the points outside the stock rails, as on the track either side: crossingPiece
     // keeps every stud off what the points add, by its box, and that box takes in the bed out to the sleepers' ends.
     // Off only where something needs the room: between the stock rails (the blades), and round the pockets, the throw's
@@ -533,6 +547,7 @@ export function networkSplits(s: Scad, routes: Route[], sol: Solution, p: BasePa
       ...(mech.armRects.length && { armRects: mech.armRects }),
       ...(studsOn && { studsOn }),
       studsOff,
+      ...(lipMeets && { lipMeets, lipDrop: pp.toeStuds === 'drop' }),
       // (another route's track through its bed: its own keep-out, for the studs put in after all the others: studsAfter)
       ...(crossed && { studsAfter: offOwn }),
       stock: place(mech.stockCut, P),
@@ -633,6 +648,7 @@ export function networkBody(s: Scad, routes: Route[], sol: Solution, copt: Cross
   for (const sp of splits) if (sp.stepRect) hollows.push({ P: sp.frame, r: sp.stepRect });
   const blades = splits.flatMap((sp) => sp.bladeCuts.map(([, m]) => m)).filter(ok);
   const body = crossingPiece(s, routes, copt, sol, grips, { railCuts, innerEnds, adds: adds.filter(ok), ...(blades.length && { blades }), cuts: [...cuts, ...(more.cuts ?? [])].filter(ok), ...(more.keeps?.length && { keeps: more.keeps }), gridPose: more.gridPose, hollows, bedAt: more.bedAt, ...(more.after && { after: more.after }), ...(more.groups && { groups: more.groups }),
+    ...(splits.some((sp) => sp.lipMeets) && { lipMeets: (q: [number, number]) => splits.some((sp) => sp.lipMeets?.(q)), lipDrop: splits.some((sp) => sp.lipDrop) }),
     ...(splits.some((sp) => sp.studsOn) && { studsOn: (q: [number, number]) => splits.some((sp) => sp.studsOn?.(q)) }),
     // (a split without its own (none now): its adds' boxes keep studs off, as they did)
     ...(splits.length && splits.every((sp) => sp.studsOff) && { studsOff: (q: [number, number]) => splits.some((sp) => sp.studsOff!(q)) }),

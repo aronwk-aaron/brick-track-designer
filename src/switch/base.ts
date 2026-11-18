@@ -479,6 +479,20 @@ function segBoxDist(a: Pt, b: Pt, x0: number, x1: number, y0: number, y1: number
  * its front on the bed, where it has one. With each blade's rail (toe to heel), turned the same: the neighbouring
  * points share out the room between their plates by how near it is to each one's rails (network.ts).
  */
+/**
+ * (PROTOTYPE, toeStuds) The feet of a plan's blades' hold-down lips, in plan, in its frame [x0, x1, y0, y1]: as
+ * sprungLipFits' footprint, from the stock rail in past the plate's front open; the wall's foot only (LIP's thick along
+ * the track), which is what an end connector's stud 4 from the toe stands into.
+ */
+export function lipFeet(plan: SwitchPlan): [number, number, number, number][] {
+  const p = plan.p;
+  if (!fdbLipOn(p)) return [];
+  return (plan.sets as SetLike[]).flatMap((v) => (v.fdb ?? []).flatMap((f, b) => {
+    if (b === v.fixed || f.blocked || !f.lip) return [];
+    const { yF, side, xStock, xIn } = sprungFront(v, b, p, f), c = p.pointClearance;
+    return [[Math.min(xStock, xIn + side), Math.max(xStock, xIn + side), yF - c - lipOf(p).thick, yF - c] as [number, number, number, number]];
+  }));
+}
 export function fdbFootprint(plan: SwitchPlan): { plates: Pt[][]; rails: Pt[][] } {
   return fdbFootprintOf(plan.sets[0] as SetLike, plan.p);
 }

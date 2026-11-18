@@ -163,6 +163,9 @@ export interface CrossingExtras {
   /** (sleepers) which piece of trackwork each route is of (a number each; app/jointcuts.ts trackGroups), where the piece is cut at its tracks' joints: no long tie from a route across to one of another piece, which would hold the two together past the cut */
   groups?: number[];
   /** where studs stand though something's added there (a throw arm under other track: that track's studs on it) */
+  /** (PROTOTYPE, toeStuds) whether an end connector's stud at q stands into the wall of a blade's hold-down lip (network.ts); lipDrop: such a stud is left out */
+  lipMeets?: (q: [number, number]) => boolean;
+  lipDrop?: boolean;
   studsOn?: (q: [number, number]) => boolean;
   /** (the points' adds) where studs can't stand for them (network.ts studsOffOf): in their boxes, studs stand elsewhere; unset, nowhere in their boxes */
   studsOff?: (q: [number, number]) => boolean;
@@ -228,6 +231,8 @@ export function ownSleeperSpots(rt: Route, in0: boolean, in1: boolean, gapStuds:
   return sleeperSpots(f.L, f.in0, f.in1, gapStuds, wStuds, curved).map((v) => v - f.s0).filter((v) => v >= 0 && v <= L);
 }
 
+/** (PROTOTYPE, toeStuds) The ends' studs found standing into a hold-down lip's wall since it was last emptied, whatever is done with them: for counting. */
+export const toeStudHits: [number, number][] = [];
 /** grips, if given, gets the centres of the gripping anti-stud tubes under the bed (mm). */
 export function crossingPiece(s: Scad, routes: Route[], o: CrossingOptions = CROSSING_DEFAULTS, solution?: Solution, grips?: [number, number][], x0: CrossingExtras = {}): Man {
   // (route ends that another route runs on from, end to end (a route drawn in two, the track into a wye's toe): inner
@@ -518,8 +523,10 @@ export function crossingPiece(s: Scad, routes: Route[], o: CrossingOptions = CRO
       oneRows.set(i, { P: Pm, xs });
       rowStuds.push(...xs.map((px) => poseToWorld(Pm, [px, 0]) as [number, number]));
     }
-    const posts0 = oneRow || noConn0 ? [] : all0.filter((px) => { const q = poseToWorld(e0, [px, 4]) as [number, number]; return clearOfRails(i, q) && claim(q, tt.c.postD); });
-    const posts1 = oneRow || noConn1 ? [] : all1.filter((px) => { const q = poseToWorld(e1, [-px, -4]) as [number, number]; return clearOfRails(i, q) && claim(q, tt.c.postD); });
+    // (PROTOTYPE, toeStuds 'drop': an end's stud that stands into a blade's hold-down lip is left out; counted either way)
+    const lipFree = (q: [number, number]) => { if (!x.lipMeets?.(q)) return true; if (toeStudHits.length < 5000) toeStudHits.push([Math.round(q[0] * 100) / 100, Math.round(q[1] * 100) / 100]); return !x.lipDrop; };
+    const posts0 = oneRow || noConn0 ? [] : all0.filter((px) => { const q = poseToWorld(e0, [px, 4]) as [number, number]; return clearOfRails(i, q) && lipFree(q) && claim(q, tt.c.postD); });
+    const posts1 = oneRow || noConn1 ? [] : all1.filter((px) => { const q = poseToWorld(e1, [-px, -4]) as [number, number]; return clearOfRails(i, q) && lipFree(q) && claim(q, tt.c.postD); });
     return { xfs0, xfs1, noConn0, noConn1, oneRow, posts0, posts1 };
   });
   routes.forEach((rt, i) => {

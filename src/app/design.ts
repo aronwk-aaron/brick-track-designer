@@ -197,6 +197,10 @@ export interface PieceOptions {
   bladeStyle?: 'simple' | 'prototype' | 'sprung';
   /** (plate-style points, rigid blades) What holds each blade down: 'pin' (a snap lip on its pin) or 'front' (a lip on the bed over its plate's front, as the sprung blades', and a plain pin). */
   bladeLip?: 'pin' | 'front';
+  /** (PROTOTYPE, no setting yet) An end's studs that stand into a blade's hold-down lip: kept as they are, left out, or the lip's wall cut back round them (switch/context.ts toeStuds). */
+  toeStuds?: 'keep' | 'drop' | 'relieve';
+  /** (toeStuds 'relieve') The gap round each stud, mm. */
+  toeStudClear?: number;
   /** The points' mechanism: 'tines' (switch.scad's: under the bed, from below) or 'plates' (each blade on a plate on top of the bed on a pin, a slider bar through the bed; the blades go in from above). */
   mechStyle?: 'tines' | 'plates';
   /** Ballast under the track: none, ballast, or ballast with the wider buddy layer under it. */
