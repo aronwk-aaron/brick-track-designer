@@ -738,10 +738,10 @@ route-owned storage, the follow rules and the card section they bring are the pa
   as it was; held in `railProblem`'s words), drag, arrow keys, Delete, Esc, its card (where it is, to type).
   Everything doesn't take them, as it doesn't take sleepers. (3) Cut keep-outs are shown while a path is selected or
   dragged, not only while one is drawn. Each by touch too (the touch smoke test's last step).
-- **Next, in order:** (1) the double track's budget from CI's log (test/templates.shared.ts); (2) buffer stop
-  settings per end; (3) then S5/S6 (the other kit modules as templates: the same three kinds of path cover them;
-  `test/templates-cutpaths.test.ts` `MODULES` is the pattern for checking a module against the library's ends). Left
-  from the editor's side: several items selected at once (a box round cuts).
+- **Next:** several items selected at once (a box round cuts); the kit modules as templates on their own (a base, a
+  detach 1 alone: the two faults of "Not templates" (1) are gone: an R104 base and a compact R40 base alone build
+  clean, a detach 1 alone with its two tracks accepted (`expert.accept`); each wants its routes drawn to the library's
+  ends and a row in `KITS`); buffer stop settings per end; the double track's budget from CI's log.
 - **Traps.** The editor: an item goes by its track's and its own place in their lists, so whatever changes those lists
   without `setSelection` (which lets go of it) must let go of it itself (`canvas.selectItem(undefined)`: the card's ✕
   on a cut or a stretch, Delete on a card). `updateSelbar` and `renderTrackwork` are set up after the first `render()`
