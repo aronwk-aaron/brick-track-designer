@@ -14,7 +14,7 @@ import type { Pose, Pt, Route } from '../route/route';
 import { poseToWorld, railOffsetOf, railPoint, routeLat, routeLength, routePose, routeSOf, worldToPose } from '../route/route';
 import type { Solution } from '../route/solver';
 import { reversedRoute } from './reverse';
-import { type BaseParams, fdbFootprint, type SetOver, type SetSpec, switchGeometry, switchPlan, type SwitchPlan, thirdRailAt } from './base';
+import { type BaseParams, fdbFootprint, lipFeet, type SetOver, type SetSpec, switchGeometry, switchPlan, type SwitchPlan, thirdRailAt } from './base';
 import { bladeEdit, gridLever, sharedLead, subRoute, type ThrowEdit, toFrame, twoLevers } from './pieces';
 import { gridIn, sprungOnGrid, switchGlobals } from './context';
 
@@ -63,6 +63,8 @@ export interface SplitParts {
    * for the studs put in afterwards, in the room left (crossing.ts studsAfter)
    */
   studsAfter?: (q: [number, number]) => boolean;
+  /** whether an end connector's stud at q (the design's frame) would stand into the wall of a blade's hold-down lip, or within a stud's room of it (2.7 from its middle; base.ts lipFeet): it's left out */
+  lipMeets?: (q: [number, number]) => boolean;
   moving: NetworkPart[];
 }
 
@@ -501,6 +503,9 @@ export function networkSplits(s: Scad, routes: Route[], sol: Solution, p: BasePa
     } : undefined;
     levers.push({ toe: [P[0], P[1]], frame: P, set: plan.sets[0] });
     const bed = bedClear(n, place(mech.bed, P));
+    // (the toe at a part's end: the end connector's studs that would stand into the lips' wall, base.ts lipFeet)
+    const feet = lipFeet(plan), sr = TRACK_DEFAULTS.studD / 2; // (a stud's room, as studsOffOf's)
+    const lipMeets = feet.length ? (q: [number, number]) => { const l = worldToPose(P, q) as Pt; return feet.some(([x0, x1, y0, y1]) => Math.hypot(Math.max(x0 - l[0], 0, l[0] - x1), Math.max(y0 - l[1], 0, l[1] - y1)) < sr + 0.3); } : undefined;
     // (the bed's studs carried on along the points outside the stock rails, as on the track either side: crossingPiece
     // keeps every stud off what the points add, by its box, and that box takes in the bed out to the sleepers' ends.
     // Off only where something needs the room: between the stock rails (the blades), and round the pockets, the throw's
@@ -533,6 +538,7 @@ export function networkSplits(s: Scad, routes: Route[], sol: Solution, p: BasePa
       ...(mech.armRects.length && { armRects: mech.armRects }),
       ...(studsOn && { studsOn }),
       studsOff,
+      ...(lipMeets && { lipMeets }),
       // (another route's track through its bed: its own keep-out, for the studs put in after all the others: studsAfter)
       ...(crossed && { studsAfter: offOwn }),
       stock: place(mech.stockCut, P),
@@ -633,6 +639,7 @@ export function networkBody(s: Scad, routes: Route[], sol: Solution, copt: Cross
   for (const sp of splits) if (sp.stepRect) hollows.push({ P: sp.frame, r: sp.stepRect });
   const blades = splits.flatMap((sp) => sp.bladeCuts.map(([, m]) => m)).filter(ok);
   const body = crossingPiece(s, routes, copt, sol, grips, { railCuts, innerEnds, adds: adds.filter(ok), ...(blades.length && { blades }), cuts: [...cuts, ...(more.cuts ?? [])].filter(ok), ...(more.keeps?.length && { keeps: more.keeps }), gridPose: more.gridPose, hollows, bedAt: more.bedAt, ...(more.after && { after: more.after }), ...(more.groups && { groups: more.groups }),
+    ...(splits.some((sp) => sp.lipMeets) && { lipMeets: (q: [number, number]) => splits.some((sp) => sp.lipMeets?.(q)) }),
     ...(splits.some((sp) => sp.studsOn) && { studsOn: (q: [number, number]) => splits.some((sp) => sp.studsOn?.(q)) }),
     // (a split without its own (none now): its adds' boxes keep studs off, as they did)
     ...(splits.length && splits.every((sp) => sp.studsOff) && { studsOff: (q: [number, number]) => splits.some((sp) => sp.studsOff!(q)) }),

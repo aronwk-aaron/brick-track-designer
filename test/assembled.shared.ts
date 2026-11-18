@@ -567,19 +567,18 @@ const RAIL_KINDS = { nub: /has a nub of rail/, stud: /stud at .* is run into|mor
  * 8. The rail faults known, by template or saved design, as found when the checks were written; each must still be
  * found, so the list comes down. nub: bits of rail head a few mm2 between flangeways or at blades' heels (double and
  * single slips, 0.2 to 5.7 mm2; a 45 degree crossing cut across its middle, 5.7); stud: a stud with a rail's foot or
- * a wing rail within 0.25 mm of its side (the wyes' two studs at the toe, 0.2 to 0.4 mm2; the slips' and the R56
- * crossovers', 0.7 to 1.3; the compact switch sets' third switch, which stands at 45 degrees to the stud grid, two studs
- * at its toe, 0.7: the end sleeper's two outer studs, 1.5 studs either side of the centre line, against the wall of the
- * sprung blades' hold-down lip, which reaches 12 mm in from each stock rail 5.5 to 7.2 mm from the toe. A compact switch on
- * the grid has the same, 0.7 mm2 too, but there stud and wall are one shape with its bump along an axis, not "a whole round
- * stud", and it's passed over; turned 45 degrees the bump is on the diagonal and the shape still measures round. Left as it
- * is: the fix, the end connector's studs standing free of the lip, takes two studs off every such switch); sliver: a part of track under 1000 mm3 (the yards' ladders: 608 to 884 mm3); check: a
+ * a wing rail within 0.25 mm of its side (none now. The wyes' two studs at the toe, 0.2 to 0.4 mm2, the 45 degree
+ * double slip's, the R40 and R56 T-junction's and the compact switch sets' third switch's, 0.7, were all the one thing:
+ * the end sleeper's two studs 1.5 studs either side of the centre line stood 0.49 into the wall of the blades'
+ * hold-down lip, 6 to 8 mm from a toe at a part's end; on a switch square to the grid too, where stud and wall were one
+ * shape with its bump along an axis and it was passed over. Those two studs are left out there, the lip whole:
+ * switch/base.ts lipFeet); sliver: a part of track under 1000 mm3 (the yards' ladders: 608 to 884 mm3); check: a
  * check rail with no bed or sleeper under it for more than 24 mm (none now: the R72 pass-through crossings' got a sleeper
  * under the track their long ties stop part way under).
  * ('the double slip as nail switches': nail-switch.test.ts's, the 22.5 degree double slip. The double slip monster
  * crossover had a stud at each three-way's toe, 0.61 mm2, as the wyes', till its levers were the reference's.)
  */
-export const RAIL_KNOWN: Record<string, (keyof typeof RAIL_KINDS)[]> = { 'Double slip (22.5°)': ['nub'], 'the double slip as nail switches': ['nub'], 'Double slip (45°, R40)': ['nub', 'stud'], 'Double slip R40 45°': ['nub'], 'Dual gauge crossing 45°': ['nub'], 'Narrow-gauge wye R36': ['stud'], 'Single slip R40 45°': ['nub'], 'Wye R40': ['stud'], 'Wye R40, 8-stud spacing': ['stud'], 'T-junction R40 and R56': ['stud'], 'Compact switch set R40, two left and one right curved 45° switches': ['stud'], 'Compact switch set R40, two right and one left curved 45° switches': ['stud'], 'Yard (R56)': ['nub', 'sliver'], 'Yard ladder (R40)': ['nub'], 'monster-switch-6-tracks-double-slips.btd.json': ['nub'], 'monster-switch-6-tracks.btd.json': ['nub'], 'return-loop-turning-left.btd.json': ['nub'], 'return-loop-turning-right.btd.json': ['nub'] };
+export const RAIL_KNOWN: Record<string, (keyof typeof RAIL_KINDS)[]> = { 'Double slip (22.5°)': ['nub'], 'the double slip as nail switches': ['nub'], 'Double slip (45°, R40)': ['nub'], 'Double slip R40 45°': ['nub'], 'Dual gauge crossing 45°': ['nub'], 'Single slip R40 45°': ['nub'], 'Yard (R56)': ['nub', 'sliver'], 'Yard ladder (R40)': ['nub'], 'monster-switch-6-tracks-double-slips.btd.json': ['nub'], 'monster-switch-6-tracks.btd.json': ['nub'], 'return-loop-turning-left.btd.json': ['nub'], 'return-loop-turning-right.btd.json': ['nub'] };
 
 /**
  * 7. Edges shared by more than two triangles in the printed parts' files (assembly.shared.ts sharedEdges), a template's

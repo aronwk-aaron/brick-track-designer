@@ -165,6 +165,8 @@ export interface CrossingExtras {
   /** (sleepers) which piece of trackwork each route is of (a number each; app/jointcuts.ts trackGroups), where the piece is cut at its tracks' joints: no long tie from a route across to one of another piece, which would hold the two together past the cut */
   groups?: number[];
   /** where studs stand though something's added there (a throw arm under other track: that track's studs on it) */
+  /** (points with a lip over the blades' fronts) whether an end connector's stud at q would stand into the lip's wall (network.ts lipMeets): it's left out */
+  lipMeets?: (q: [number, number]) => boolean;
   studsOn?: (q: [number, number]) => boolean;
   /** (the points' adds) where studs can't stand for them (network.ts studsOffOf): in their boxes, studs stand elsewhere; unset, nowhere in their boxes */
   studsOff?: (q: [number, number]) => boolean;
@@ -529,8 +531,8 @@ export function crossingPiece(s: Scad, routes: Route[], o: CrossingOptions = CRO
       oneRows.set(i, { P: Pm, xs });
       rowStuds.push(...xs.map((px) => poseToWorld(Pm, [px, 0]) as [number, number]));
     }
-    const posts0 = oneRow || noConn0 ? [] : all0.filter((px) => { const q = poseToWorld(e0, [px, 4]) as [number, number]; return clearOfRails(i, q) && claim(q, tt.c.postD); });
-    const posts1 = oneRow || noConn1 ? [] : all1.filter((px) => { const q = poseToWorld(e1, [-px, -4]) as [number, number]; return clearOfRails(i, q) && claim(q, tt.c.postD); });
+    const posts0 = oneRow || noConn0 ? [] : all0.filter((px) => { const q = poseToWorld(e0, [px, 4]) as [number, number]; return clearOfRails(i, q) && !x.lipMeets?.(q) && claim(q, tt.c.postD); });
+    const posts1 = oneRow || noConn1 ? [] : all1.filter((px) => { const q = poseToWorld(e1, [-px, -4]) as [number, number]; return clearOfRails(i, q) && !x.lipMeets?.(q) && claim(q, tt.c.postD); });
     return { xfs0, xfs1, noConn0, noConn1, oneRow, posts0, posts1 };
   });
   routes.forEach((rt, i) => {
