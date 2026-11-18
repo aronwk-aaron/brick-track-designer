@@ -607,7 +607,7 @@ route-owned storage, the follow rules and the card section they bring are the pa
   rails); in Select only. Tests: test/items.test.ts (the hit test, the names, the drags held to what `stretchProblem`
   takes, the switch's notes, the list), five steps in the browser smoke test.
 - **How that differs from section 5:** (1) the selection is the tracks and tables plus one item, not a list of
-  items of any kind: nothing yet needs two cuts selected at once. (2) Ids are a track's place in the list and the
+  items of any kind (since 2026-11-18 several cuts and cut paths, see below). (2) Ids are a track's place in the list and the
   item's place in the track's list, not names: they are let go of whenever the list changes under them (undo, a
   track deleted, a card's ✕). (3) The switch is in the routes panel's heading, not the toolbar: the toolbar has no
   room left at 1440 px. (4) The Pick list's default is Everything (what a click took before), not tracks only; its
@@ -742,6 +742,17 @@ route-owned storage, the follow rules and the card section they bring are the pa
   settings per end; (3) then S5/S6 (the other kit modules as templates: the same three kinds of path cover them;
   `test/templates-cutpaths.test.ts` `MODULES` is the pattern for checking a module against the library's ends). Left
   from the editor's side: several items selected at once (a box round cuts).
+- **Several cuts at once (2026-11-18).** Cuts across tracks and cut paths can be selected several together
+  (`canvas.ts selAlso`, beside `selItem`; `items.ts BoxItem`): with **Clicks pick: Cuts and cut paths** a box dragged
+  out on empty ground takes the cuts and paths it touches (`itemsInBox`; with Everything or Tracks the box takes
+  tracks and tables, as ever; Shift adds to the ones selected); Shift+click on a cut adds it or takes it out. By touch:
+  a finger held still on empty ground, then dragged, is the box (as for tracks); a finger held on a cut adds it or
+  takes it out. Together they are dragged (press one of them: `multiDrag`), moved by the arrow keys and taken out
+  (Delete, the bar's Delete, the card's "Delete 3"): a cut goes along its own track by whole studs, as far as the move
+  points along it there (`moveCuts`), a path over the stud grid; all of them or none (where one can't go, why is said
+  and they stay; let go there, they go back). One undo step each. A click on one of several, not dragged, selects it
+  alone; Esc lets go. Only these two kinds: stretches, sleepers and rail edits are still one at a time. Tests:
+  test/items.test.ts (several cuts at once), a step each in the browser and touch smoke tests.
 - **Traps.** The editor: an item goes by its track's and its own place in their lists, so whatever changes those lists
   without `setSelection` (which lets go of it) must let go of it itself (`canvas.selectItem(undefined)`: the card's ✕
   on a cut or a stretch, Delete on a card). `updateSelbar` and `renderTrackwork` are set up after the first `render()`
