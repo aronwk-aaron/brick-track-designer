@@ -190,13 +190,16 @@ export function planSections(routes: Route[], splits: Split[], half: number, roo
           return at;
         })() : undefined;
         // (a and b cuts only where points or a crossing end the stretch, not at the route's own ends' margins)
+        // (b: the last place looked at is a whole step short of the end's margin on a track whose length isn't a whole
+        // number of steps, a curve's: that isn't points ending the stretch. Cut there, a printed R40 22.5-degree curve came
+        // out in two, 10 studs and 5.7)
         // (only where its pieces join: beside the points or other track too (below), so what's built with them is whole pieces)
         if (natural) { for (const c2 of natural) if (c2 > a + 1e-6 && c2 < b - 1e-6) cuts.push(c2); }
-        else if (exact > 0 && !edges.length) { if (a > minPart) cuts.push(a); for (let c2 = Math.ceil((a + 1e-6) / exact) * exact; c2 < b - 1e-6; c2 += exact) cuts.push(c2); if (b < L - minPart) cuts.push(b); }
+        else if (exact > 0 && !edges.length) { if (a > minPart) cuts.push(a); for (let c2 = Math.ceil((a + 1e-6) / exact) * exact; c2 < b - 1e-6; c2 += exact) cuts.push(c2); if (b + step <= L - minPart) cuts.push(b); }
         else if (!edges.length) for (let m = 0; m <= n; m++) cuts.push(Math.round((a + (inner * m) / n) / step) * step);
         else {
           if (a > minPart) cuts.push(a);
-          if (b < L - minPart) cuts.push(b);
+          if (b + step <= L - minPart) cuts.push(b);
           const stops = [a, ...edges.filter((e) => e > a + minPart / 2 && e < b - minPart / 2), b];
           for (let k2 = 0; k2 + 1 < stops.length; k2++) { if (k2 > 0) cuts.push(stops[k2]); fill(stops[k2], stops[k2 + 1]); }
         }
