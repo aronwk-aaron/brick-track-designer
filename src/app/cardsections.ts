@@ -4,11 +4,11 @@
 import { type Design, isMono, RAIL_DEFAULTS, routeGaugeStuds, type DRoute } from './design';
 import { cutsSummary } from './routecuts';
 import { hasPartOwn, inForce, liveOwn, partGroups, resolveOptions } from './overrides';
-import { PART_KEYS } from './routeown';
+import { BED_KEYS, MORE_KEYS, type RouteKey } from './routeown';
 import { sharedOf, sleepersSummary } from './sleeperedits';
 import { railsSummary } from './railedits';
 
-export type SectionId = 'shape' | 'place' | 'ends' | 'guard' | 'dual' | 'bed' | 'sleepers' | 'rails' | 'levers' | 'height' | 'cuts';
+export type SectionId = 'shape' | 'place' | 'ends' | 'guard' | 'dual' | 'bed' | 'more' | 'sleepers' | 'rails' | 'levers' | 'height' | 'cuts';
 export interface CardSection {
   id: SectionId;
   /** the names the card uses */
@@ -45,7 +45,18 @@ export function bedSummary(d: Design, r: DRoute): string {
   const bed = o.ballast === 'buddy' ? 'ballast + buddy layer' : o.ballast === 'ballast' ? 'ballast' : o.sleepers === 'sleepers' ? 'sleepers' : 'solid bed';
   const from = i >= 0 && hasPartOwn(d) ? partGroups(d).takes[i] : undefined;
   const st = r.stretches?.length ? ` · ${r.stretches.length} ${r.stretches.length === 1 ? 'stretch' : 'stretches'} with ${r.stretches.length === 1 ? 'its' : 'their'} own` : '';
-  return `${bed} · ${from !== undefined ? `as ${d.routes[from].name || `route ${from + 1}`} (one part)` : Object.keys(liveOwn(d, r, PART_KEYS)).length ? 'its own' : 'design default'}${st}`;
+  return `${bed} · ${from !== undefined ? `as ${d.routes[from].name || `route ${from + 1}`} (one part)` : Object.keys(liveOwn(d, r, BED_KEYS)).length ? 'its own' : 'design default'}${st}`;
+}
+/** The groups of More of its own a track's card shows: check rails and flangeways always; buffer stops with a buffer stop at an end; what it stands on when raised; labels. */
+export function moreGroups(r: DRoute): (keyof typeof MORE_KEYS)[] {
+  const raised = (r.monoHeight ?? 0) > 0 || (r.monoHeightEnd ?? 0) > 0, buf = r.startEnd === 'buffer' || r.endEnd === 'buffer';
+  return ['check', ...(buf ? ['buffer' as const] : []), ...(raised ? ['raised' as const] : []), 'labels'];
+}
+/** How many of those it has of its own, and whose they are (as bedSummary). */
+export function moreSummary(d: Design, r: DRoute): string {
+  const i = d.routes.indexOf(r), from = i >= 0 && hasPartOwn(d) ? partGroups(d).takes[i] : undefined;
+  const keys = Object.values(MORE_KEYS).flat() as RouteKey[], n = Object.keys(liveOwn(d, r, keys)).length;
+  return from !== undefined ? `as ${d.routes[from].name || `route ${from + 1}`} (one part)` : n ? `${n} of its own` : 'design default';
 }
 /** The sections of a route's card, in their fixed order. */
 export function cardSections(d: Design, r: DRoute, ctx: CardContext): CardSection[] {
@@ -62,6 +73,8 @@ export function cardSections(d: Design, r: DRoute, ctx: CardContext): CardSectio
       { id: 'dual', title: 'Dual gauge', summary: dualSummary(d, r), on: !!r.dualGauge, ...(r.guardRails && !r.dualGauge && { locked: 'not with guard rails: they are in the way of the third rail' }), ...(both && { note: clash }) });
     // (expert: its bed, sleepers, ballast and underside, the design's unless it has its own)
     out.push({ id: 'bed', title: 'Bed and underside', summary: bedSummary(d, r) });
+    // (expert: the rest of what its part is made with: check rails and flangeways, buffer stops, raised track's stands, labels)
+    out.push({ id: 'more', title: 'More of its own', summary: moreSummary(d, r) });
     // (expert: its sleepers edited by hand, and the ones it shares with the track beside)
     { const i = d.routes.indexOf(r), sh = i >= 0 ? sharedOf(d, i).length : 0; out.push({ id: 'sleepers', title: 'Sleepers', summary: `${sleepersSummary(r)}${sh ? ' · shared with the track beside' : ''}` }); }
     // (expert: its rails edited by hand)

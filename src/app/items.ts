@@ -312,7 +312,7 @@ export function handTracks(d: Design, pathRoutes: readonly (readonly number[])[]
   return out;
 }
 /** A route card's sections that only the expert tools show (cardsections.ts ids). */
-export const EXPERT_SECTIONS: readonly string[] = ['bed', 'sleepers', 'rails', 'cuts'];
+export const EXPERT_SECTIONS: readonly string[] = ['bed', 'more', 'sleepers', 'rails', 'cuts'];
 
 // ---------- the Pick list: what a click on the plan takes ----------
 /** What's on the plan to pick, in layers: more come with the later stages (sleepers, rails, ballast). */

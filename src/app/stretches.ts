@@ -3,12 +3,12 @@
 // end for end, split, joined or reshaped, and the design the build builds (each stretch a track of its own, the
 // track cut at the stretch's ends as Split cuts it: an ordinary track end each side). Pure: no geometry built.
 import { type Design, type DRoute, isMono } from './design';
-import { cleanOwn, type Own, PART_KEYS } from './routeown';
+import { BED_KEYS, cleanOwn, type Own } from './routeown';
 import { cutLength } from './routecuts';
 import { splitRoute } from './splitmerge';
 
-/** The settings a stretch may have of its own: a part's, but for bought or printed (that's the whole track's). */
-export const STRETCH_KEYS = PART_KEYS.filter((k) => k !== 'legoTrack');
+/** The settings a stretch may have of its own: its bed, sleepers, ballast and underside (the rest of a part's are the whole track's). */
+export const STRETCH_KEYS = [...BED_KEYS];
 export interface Stretch {
   /** where it starts and ends: whole studs from the track's start */
   from: number; to: number;

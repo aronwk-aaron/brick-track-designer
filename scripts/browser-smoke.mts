@@ -715,6 +715,32 @@ try {
     await page.click('#dim-plain'); await page.waitForTimeout(150);
     check(await pressed() === 'false' && await dimmed() === null, 'pressed again, every track is drawn as ever'); }
 
+  // More of its own (expert, a track's card): a track's own flangeway and check rail length (studs shown, mm kept); Use the design default takes it off; buffer stops only with a buffer stop
+  at = 'more of a track\'s own';
+  { const own = () => page.evaluate(() => JSON.stringify(JSON.parse(localStorage.getItem('btd-design')!).routes[1].own ?? {}));
+    // (the far track, at its left end: clear of the legend, which is taller with the expert tools shown)
+    const [tx, ty] = await scr(8, 24); await page.mouse.click(tx, ty); await page.waitForTimeout(250);
+    check(await page.locator('#sel-count').innerText() === '1 selected', 'the far track is selected');
+    const sec = page.locator('details.route.selected details.rsub', { has: page.locator('summary', { hasText: 'More of its own' }) });
+    check(await sec.count() === 1 && /design default/.test(await sec.locator('summary').innerText()), 'a track\'s card has More of its own, the design default to start with');
+    await sec.locator('summary').click(); await page.waitForTimeout(150);
+    const txt = await sec.innerText();
+    check(/Check rails and flangeways/.test(txt) && /Buffer stops: none on this track/.test(txt) && /Raised track: this track is on the baseplate/.test(txt) && /Labels go only on a flat underside/.test(txt), 'it shows the groups that apply, and one line for each that doesn\'t');
+    const fw = sec.locator('label', { hasText: 'Flangeway width, mm' }).locator('input');
+    await fw.fill('3.5'); await fw.press('Enter'); await page.waitForTimeout(300);
+    check(await own() === '{"flangeway":3.5}', `a flangeway typed is this track's own (${await own()})`);
+    const sec2 = page.locator('details.route.selected details.rsub', { has: page.locator('summary', { hasText: 'More of its own' }) });
+    check(/1 of its own/.test(await sec2.locator('summary').innerText()), 'the section says it has one of its own');
+    const len = sec2.locator('label', { hasText: 'Check rail length, studs' }).locator('input');
+    await len.fill('5'); await len.press('Enter'); await page.waitForTimeout(300);
+    check(await own() === '{"flangeway":3.5,"checkRailLen":40}', `a check rail length typed in studs is kept in mm (${await own()})`);
+    const sec3 = page.locator('details.route.selected details.rsub', { has: page.locator('summary', { hasText: 'More of its own' }) });
+    await sec3.locator('button', { hasText: 'Use the design default' }).first().click(); await page.waitForTimeout(300);
+    check(!/checkRailLen/.test(await own()) || !/flangeway/.test(await own()), `Use the design default takes one off (${await own()})`);
+    await page.keyboard.press('Control+z'); await page.keyboard.press('Control+z'); await page.keyboard.press('Control+z'); await page.waitForTimeout(250);
+    check(await own() === '{}', 'and each change is an undo step');
+    await page.keyboard.press('Escape'); }
+
   // stretches on the plan (expert): an end dragged along the track on whole studs, held at the track's end with why; the whole stretch dragged; Add a stretch… by a drag along the track
   at = 'stretches on the plan';
   await page.evaluate(() => localStorage.setItem('btd-design', JSON.stringify({ version: 1, gaugeStuds: 4, routes: [

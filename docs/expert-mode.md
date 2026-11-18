@@ -709,6 +709,14 @@ route-owned storage, the follow rules and the card section they bring are the pa
   a warning; (4) a cut across a track is an ordinary track end; (5) radii under R24 are a geometry job for everyone; (6)
   gauge where it is, and the design default → this track pattern for the rest (S5c puts the per-set points settings on
   the points' own rows, as recommended).
+- **More of a track's own (2026-11-17).** `PART_KEYS` gains the rest of what a part is made with: `checkRailLen`
+  (kept in mm, shown in studs: `OWN_SCALE`), `checkRailW`, `checkRailFlare`, `flangeway`, `flangewayDepth`,
+  `bufferStyle`, `bufferPostPlates`, `bufferBeamBottom`, `bufferBeamTop`, `bufferPinHoles`, `raisedOn`, `labelText`,
+  `labelSize`, `labelGauge`, `labelParts` (on or off: `OWN_CHECKS`; text: `OWN_TEXTS`, 40 characters). The build needed
+  nothing: a group is built with its own options. The card's **More of its own** section (cardsections.ts `moreGroups`:
+  check rails and flangeways always; buffer stops with a buffer stop at an end; raised track's stands with a height;
+  labels, one line where the underside isn't flat). A stretch keeps the bed's settings only (`BED_KEYS`). Buffer stops
+  are per track, not per end.
 - **The editor's leftovers (2026-11-17).** (1) **By hand only**: a button at the top of the legend (expert
   tools shown; `btd-dim-plain`; not a row of its own: the legend is tall enough): every track with nothing by hand under a veil of the plan's colour (`items.ts
   handTracks`: a track's own cuts, settings, stretches, sleepers, rails; trackwork edits on it or between it and
@@ -719,7 +727,7 @@ route-owned storage, the follow rules and the card section they bring are the pa
   Everything doesn't take them, as it doesn't take sleepers. (3) Cut keep-outs are shown while a path is selected or
   dragged, not only while one is drawn. Each by touch too (the touch smoke test's last step).
 - **Next, in order:** (1) the double track's budget from CI's log (test/templates.shared.ts); a group's build told of the other groups' track at its ends, so a track joined onto points
-  can have its own; (2) S1 more keys (buffer stops per end; labels per part); (3) then S5/S6 (the other kit
+  can have its own; (2) buffer stop settings per end; (3) then S5/S6 (the other kit
   modules as templates: the same three kinds of path cover them; `test/templates-cutpaths.test.ts` `MODULES` is the
   pattern for checking a module against the library's ends). Left from the editor's side: several items selected at
   once (a box round cuts).

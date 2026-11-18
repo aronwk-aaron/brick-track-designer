@@ -5,7 +5,7 @@
 // Pure: the build and the route card both go by it.
 import { type Design, type DRoute, isMono, OPTION_DEFAULTS, type PieceOptions, routeGaugeStuds, toRoutes } from './design';
 import { routeLength, routePose } from '../route/route';
-import { BANK_KEYS, isRouteKey, type Own, OWN_LABELS, OWN_UNSET, PART_KEYS, ROUTE_KEYS, type RouteKey } from './routeown';
+import { BANK_KEYS, isRouteKey, type Own, ownName, OWN_UNSET, PART_KEYS, ROUTE_KEYS, type RouteKey } from './routeown';
 
 /** Where a value in force comes from, for the card. */
 export type Source = 'default' | 'design' | 'route' | 'feature';
@@ -199,7 +199,7 @@ export function partGroups(d: Design): PartGroups {
     takes.push(w !== undefined && w !== i ? w : undefined);
     if (w !== undefined && w !== i) {
       const differ = sameValues(mine, from, PART_KEYS);
-      if (differ.length) warnings.push(`${name(i)} and ${name(w)} are one part (they meet in points or a crossing, or lie side by side): both take ${name(w)}'s ${differ.map((k) => OWN_LABELS[k]).join(', ')}`);
+      if (differ.length) warnings.push(`${name(i)} and ${name(w)} are one part (they meet in points or a crossing, or lie side by side): both take ${name(w)}'s ${differ.map(ownName).join(', ')}`);
     }
     const diff = Object.fromEntries(PART_KEYS.filter((k) => partOpts[k] !== dop[k]).map((k) => [k, partOpts[k]])) as Own;
     const gk = JSON.stringify(diff);

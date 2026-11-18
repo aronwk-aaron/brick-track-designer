@@ -5,9 +5,10 @@ import { describe, expect, it } from 'vitest';
 import { bankRolls, type Design, type DRoute, OPTION_DEFAULTS, readDesign, TEMPLATES } from '../src/app/design';
 import { clampDesign } from '../src/app/limits';
 import { hasPartOwn, ignoredOwn, inForce, inForceAll, liveOwn, partGroups, partsOf, resolveOptions, sourceOf, withoutPartOwn } from '../src/app/overrides';
-import { BANK_KEYS, cleanOwn, OWN_CHOICES, OWN_LABELS, OWN_RANGES, PART_KEYS, ROUTE_KEYS } from '../src/app/routeown';
+import { BANK_KEYS, BED_KEYS, clampOwn, cleanOwn, MORE_KEYS, OWN_CHECKS, OWN_CHOICES, OWN_LABELS, OWN_RANGES, OWN_SCALE, OWN_TEXT_MAX, OWN_TEXTS, ownName, PART_KEYS, ROUTE_KEYS } from '../src/app/routeown';
+import { moreGroups, moreSummary } from '../src/app/cardsections';
 import { optionForm } from '../src/app/settings';
-import { cleanStretches, expandStretches, followStretches, joinStretches, liveStretches, lostStretches, reverseStretches, splitStretches, stretchProblem } from '../src/app/stretches';
+import { cleanStretches, expandStretches, followStretches, joinStretches, liveStretches, lostStretches, reverseStretches, splitStretches, STRETCH_KEYS, stretchProblem } from '../src/app/stretches';
 import { alongAfter } from '../src/app/routecuts';
 import { splitRoute } from '../src/app/splitmerge';
 import { reversedRoute } from '../src/app/routeedits';
@@ -35,7 +36,7 @@ describe('the settings in force on a track', () => {
     const r = straight('A', 0, 0, { own: { ballast: 'ballast', printBedX: 100, joint: 'butt' } as never });
     const dd = design([r]);
     expect(resolveOptions(dd, 0)).toMatchObject({ ballast: 'ballast', printBedX: OPTION_DEFAULTS.printBedX, joint: OPTION_DEFAULTS.joint });
-    expect(resolveOptions(dd, 0, { joint: 'butt', flangeway: 5 })).toMatchObject({ joint: OPTION_DEFAULTS.joint, flangeway: OPTION_DEFAULTS.flangeway });
+    expect(resolveOptions(dd, 0, { joint: 'butt', studFit: 0.5 })).toMatchObject({ joint: OPTION_DEFAULTS.joint, studFit: OPTION_DEFAULTS.studFit });
     expect(ignoredOwn(r)).toEqual([{ key: 'printBedX', why: 'set for the whole design: parts that meet must agree' }, { key: 'joint', why: 'set for the whole design: parts that meet must agree' }]);
     // (a monorail beam has none of them)
     const m = straight('M', 0, 0, { system: 'monorail', own: { ballast: 'ballast' } });
@@ -153,9 +154,49 @@ describe('a track\'s own settings are the Settings panel\'s', () => {
       const f = fields.find((x) => x.key === k)!;
       expect(f, k).toBeDefined();
       expect(OWN_LABELS[k], k).toBe(f.label);
-      if (f.choices) expect([...(OWN_CHOICES[k] ?? [])].map(String).sort(), k).toEqual(f.choices.map((c) => c.v).sort());
+      if (f.check) expect(OWN_CHECKS, k).toContain(k);
+      else if (f.text) expect(OWN_TEXTS, k).toContain(k);
+      else if (f.choices) expect([...(OWN_CHOICES[k] ?? [])].map(String).sort(), k).toEqual(f.choices.map((c) => c.v).sort());
       else expect([OWN_RANGES[k]?.min, OWN_RANGES[k]?.max, OWN_RANGES[k]?.step], k).toEqual([f.min, f.max, f.step]);
     }
+  });
+  it('every part setting is on the card once: under Bed and underside, More of its own, or (bought or printed) Cuts into parts', () => {
+    const more = Object.values(MORE_KEYS).flat();
+    expect([...BED_KEYS, 'legoTrack', ...more].sort()).toEqual([...PART_KEYS].sort());
+    // (a stretch has the bed's only: the rest are the whole track's)
+    expect(STRETCH_KEYS).toEqual([...BED_KEYS]);
+  });
+  it('more of its own: on or off, text, and a number the panel shows in studs kept in mm', () => {
+    expect(cleanOwn({ bufferPinHoles: false, labelParts: true, labelSize: 'yes', labelText: 'Yard', labelGauge: 1, bufferStyle: 'blocks', raisedOn: 'lego', flangeway: 3.5 }))
+      .toEqual({ bufferPinHoles: false, labelParts: true, labelText: 'Yard', bufferStyle: 'blocks', raisedOn: 'lego', flangeway: 3.5 });
+    expect(cleanOwn({ labelText: 'x'.repeat(100) })!.labelText).toHaveLength(OWN_TEXT_MAX);
+    expect(cleanOwn({ bufferStyle: 'wood', raisedOn: 'stilts', labelText: 5 })).toBeUndefined();
+    // (check rail length: 1.25 to 10 studs in the panel, kept in mm)
+    expect(OWN_SCALE.checkRailLen).toBe(8);
+    expect(clampOwn({ checkRailLen: 4, flangeway: 9, bufferPostPlates: 2.4, flangewayDepth: 0 })).toEqual({ checkRailLen: 10, flangeway: 4, bufferPostPlates: 4, flangewayDepth: 1 });
+    expect(clampOwn({ checkRailLen: 500 }).checkRailLen).toBe(80);
+    expect(clampOwn({ checkRailLen: 30 }).checkRailLen).toBe(30);
+    // (said by what it's of where its panel group isn't beside it)
+    expect(ownName('bufferStyle')).toBe('Buffer stop style'); expect(ownName('flangeway')).toBe('Flangeway width, mm');
+  });
+  it('a track with its own flangeway is built with it; tracks that are one part share it, said by name', () => {
+    const d = design([{ ...straight('A', 0), own: { flangeway: 3.5 } }, straight('B', 24)]);
+    expect(resolveOptions(d, 0).flangeway).toBe(3.5); expect(resolveOptions(d, 1).flangeway).toBe(3);
+    expect(sourceOf(d, 0, 'flangeway')).toBe('route');
+    const pg = partGroups(d);
+    expect(pg.groups.map((g) => [g.routes, g.options.flangeway])).toEqual([[[0], 3.5], [[1], undefined]]);
+    const sw = structuredClone(TEMPLATES['Left switch (LEGO)']);
+    sw.routes[1].own = { bufferStyle: 'blocks' };
+    expect(partGroups(sw).warnings).toEqual(["Straight and Branch are one part (they meet in points or a crossing, or lie side by side): both take Branch's Buffer stop style"]);
+  });
+  it('the card shows only the groups that apply, and says how many it has of its own', () => {
+    const plain = straight('A', 0);
+    expect(moreGroups(plain)).toEqual(['check', 'labels']);
+    expect(moreGroups({ ...plain, endEnd: 'buffer' })).toEqual(['check', 'buffer', 'labels']);
+    expect(moreGroups({ ...plain, monoHeight: 4, startEnd: 'buffer' })).toEqual(['check', 'buffer', 'raised', 'labels']);
+    expect(moreGroups({ ...plain, monoHeightEnd: 2 })).toEqual(['check', 'raised', 'labels']);
+    const d = design([{ ...plain, own: { flangeway: 3.5, bufferStyle: 'blocks', ballast: 'ballast' } }, straight('B', 24)]);
+    expect(moreSummary(d, d.routes[0])).toBe('2 of its own'); expect(moreSummary(d, d.routes[1])).toBe('design default');
   });
 });
 
