@@ -38,6 +38,7 @@ export class Scad {
 
   union(parts: (Man | undefined | false)[]): Man {
     const ms = parts.filter((p): p is Man => !!p);
+    if (process.env.REV) ms.reverse();
     return this.w.Manifold.union(ms); // (empty: a valid empty solid; cube([0, 0, 0]) is an invalid one, which empties every boolean it meets)
   }
 
