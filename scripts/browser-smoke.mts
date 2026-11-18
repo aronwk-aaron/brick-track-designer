@@ -828,6 +828,47 @@ try {
     check(await page.locator('#pick-row').isHidden() && await bar() === '1 selected', 'with the expert tools hidden the list is away and a click takes a track');
     await page.click('#expert-toggle'); await page.selectOption('#pick', 'all'); await page.keyboard.press('Escape'); }
 
+  // several cuts at once (expert, Clicks pick: Cuts and cut paths): a box round them selects them; Shift+click adds one or takes it out; dragged, moved by an arrow key and deleted together
+  at = 'several cuts at once';
+  await page.evaluate(() => localStorage.setItem('btd-design', JSON.stringify({ version: 1, gaugeStuds: 4, options: { splitTrack: 'lengths' }, routes: [
+    { name: 'A', x: 0, y: 0, heading: 0, segs: [{ kind: 'straight', studs: 48 }], cuts: [12, 24, 40] }, { name: 'B', x: 16, y: 0, heading: 0, segs: [{ kind: 'straight', studs: 48 }], cuts: [12] }] })));
+  await page.reload(); await page.waitForSelector('#track'); await page.click('#mode-select'); await page.click('#fit'); await page.waitForTimeout(400);
+  { const bar = () => page.locator('#sel-count').innerText(), cuts = () => page.evaluate(() => JSON.stringify((JSON.parse(localStorage.getItem('btd-design')!).routes as { cuts?: number[] }[]).map((r) => r.cuts ?? [])));
+    const n = () => page.evaluate(() => (window as unknown as { btdCanvas: { selItems(): unknown[] } }).btdCanvas.selItems().length);
+    const drag = async (a: [number, number], b: [number, number], shift = false) => { if (shift) await page.keyboard.down('Shift'); await page.mouse.move(...a); await page.mouse.down(); await page.mouse.move(...b, { steps: 6 }); await page.mouse.up(); if (shift) await page.keyboard.up('Shift'); await page.waitForTimeout(250); };
+    await page.selectOption('#pick', 'cut'); await page.waitForTimeout(150);
+    // (a box on empty ground round the two cuts at 12 and A's at 24)
+    await drag(await scr(-8, 8), await scr(24, 28));
+    check(await bar() === '3 cuts selected' && await n() === 3, `with only cuts picked, a box round three cuts selects the three (${await bar()})`);
+    check(await page.locator('#itemcard').isVisible() && /Delete 3/.test(await page.locator('#itemcard').innerText()) && await page.locator('#sel-item-del').isVisible(), 'their card says how many, with Delete; the bar has Delete too');
+    await page.keyboard.down('Shift'); await page.mouse.click(...(await scr(0.5, 40))); await page.keyboard.up('Shift'); await page.waitForTimeout(200);
+    check(await bar() === '4 cuts selected', `Shift+click adds a cut (${await bar()})`);
+    await page.keyboard.down('Shift'); await page.mouse.click(...(await scr(0.5, 40))); await page.keyboard.up('Shift'); await page.waitForTimeout(200);
+    check(await bar() === '3 cuts selected', `and takes it out again (${await bar()})`);
+    await page.focus('#track'); await page.keyboard.press('ArrowUp'); await page.waitForTimeout(200);
+    check(await cuts() === '[[13,25,40],[13]]' && await bar() === '3 cuts selected', `an arrow key moves them all a stud along their tracks (${await cuts()})`);
+    await page.keyboard.press('Control+z'); await page.waitForTimeout(250);
+    check(await cuts() === '[[12,24,40],[12]]', 'one undo step');
+    await drag(await scr(-8, 8), await scr(24, 28));
+    await drag(await scr(0.5, 12), await scr(0.5, 15.2));
+    check(await cuts() === '[[15,27,40],[15]]' && await bar() === '3 cuts selected', `one of them dragged takes them all along (${await cuts()}; ${await bar()})`);
+    // (dragged till A's cut at 27 would come too near its cut at 40: none moves past where they all can be, and let go there they go back)
+    await drag(await scr(0.5, 15), await scr(0.5, 27.2));
+    check(await cuts() === '[[15,27,40],[15]]' && /Too near the cut at 40/.test(await page.locator('#hint').innerText()), `let go where one can't be, they all go back, and why is said (${await cuts()}; ${await page.locator('#hint').innerText()})`);
+    await page.keyboard.press('Delete'); await page.waitForTimeout(250);
+    check(await cuts() === '[[40],[]]' && await page.locator('#selbar').isHidden(), `Delete takes them all out (${await cuts()})`);
+    await page.keyboard.press('Control+z'); await page.waitForTimeout(250);
+    check(await cuts() === '[[15,27,40],[15]]', 'and one undo brings them back');
+    // (a box with Shift adds to the ones selected; a click on one of several, not dragged, selects it alone)
+    await drag(await scr(-8, 10), await scr(8, 18)); check(await bar().then((t) => /^Cut across A, 15 studs/.test(t)), `a box round one cut selects it as a click does (${await bar()})`);
+    await drag(await scr(-8, 36), await scr(8, 44), true); check(await bar() === '2 cuts selected', `a box with Shift adds to them (${await bar()})`);
+    await page.mouse.click(...(await scr(0.5, 40))); await page.waitForTimeout(200);
+    check(/^Cut across A, 40 studs/.test(await bar()), `a click on one of several selects it alone (${await bar()})`);
+    await page.selectOption('#pick', 'all'); await page.keyboard.press('Escape'); await page.waitForTimeout(150);
+    await drag(await scr(-8, 8), await scr(24, 28));
+    check(await bar() === '2 selected', `with Clicks pick: Everything the box takes tracks, as ever (${await bar()})`);
+    await page.keyboard.press('Escape'); }
+
   check(errors.length === 0, `no errors on the page${errors.length ? `: ${errors.join(' | ').slice(0, 600)}` : ''}`);
 } catch (err) {
   fails.push(`${at}: ${err instanceof Error ? err.message : err}`);

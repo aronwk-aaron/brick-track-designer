@@ -5,7 +5,7 @@ import { describe, expect, it } from 'vitest';
 import type { Design, DRoute, DSeg } from '../src/app/design';
 import { joints } from '../src/app/connections';
 import { stretchProblem } from '../src/app/stretches';
-import { alongBeyond, byHand, byHandNote, designByHandNote, dragStretchEnd, dragStretchWhole, EXPERT_SECTIONS, handTracks, hitItems, type HitCtx, isPick, itemLabel, jointsOf, jointWhere, layerOf, newStretchAt, PICKS, picks, placeAlong, sameItem, takesFirst, withStretch } from '../src/app/items';
+import { alongBeyond, boxable, byHand, byHandNote, designByHandNote, dragStretchEnd, dragStretchWhole, EXPERT_SECTIONS, handTracks, hitItems, type HitCtx, isPick, itemLabel, itemsInBox, itemsLabel, jointsOf, jointWhere, layerOf, moveCuts, newStretchAt, PICKS, picks, placeAlong, sameItem, takesFirst, withStretch } from '../src/app/items';
 import { cardSections } from '../src/app/cardsections';
 
 const st = (studs: number): DSeg => ({ kind: 'straight', studs });
@@ -319,5 +319,75 @@ describe('the Pick list', () => {
     expect(isPick('cut')).toBe(true);
     expect(isPick('sleepers')).toBe(false);
     expect(isPick(undefined)).toBe(false);
+  });
+});
+
+describe('several cuts at once', () => {
+  /** Up runs up the plan from 0, 0 (cuts at 12 and 24); Across runs to the right from 20, 30 (a cut at 16, where x = 36); Locked beside Up, cut at 12; a path across Up at y = 40. */
+  const two = () => d([
+    r('Up', 0, 0, 0, [st(48)], { cuts: [12, 24] }),
+    r('Across', 20, 30, -90, [st(32)], { cuts: [16] }),
+    r('Locked', -20, 0, 0, [st(48)], { cuts: [12], locked: true }),
+  ], { expert: { cutPaths: [{ id: 'c1', pts: [[-6, 40], [6, 40]] }] } });
+  const paths = (des: Design) => des.expert?.cutPaths ?? [];
+  const names = (des: Design, box: [number, number, number, number]) => itemsInBox(des, paths(des), ...box).map((q) => (q.kind === 'cut' ? `cut ${des.routes[q.route].name} ${des.routes[q.route].cuts![q.k]}` : `path ${q.id}`));
+
+  it('a box takes the cuts across tracks and the cut paths it touches, whichever way it is dragged', () => {
+    const des = two();
+    expect(names(des, [-2, 10, 2, 26])).toEqual(['cut Up 12', 'cut Up 24']);
+    expect(names(des, [2, 26, -2, 10])).toEqual(['cut Up 12', 'cut Up 24']);
+    // (a corner of it over one end of the cut's line is enough; the track's middle isn't needed)
+    expect(names(des, [3, 11, 8, 13])).toEqual(['cut Up 12']);
+    // (the box wholly inside the track, the cut's line through it)
+    expect(names(des, [-1, 11.5, 1, 12.5])).toEqual(['cut Up 12']);
+    expect(names(des, [34, 28, 38, 32])).toEqual(['cut Across 16']);
+    expect(names(des, [-8, 38, 8, 42])).toEqual(['path c1']);
+    expect(names(des, [-30, -5, 60, 60])).toEqual(['cut Up 12', 'cut Up 24', 'cut Across 16', 'path c1']);
+  });
+  it('nothing where it touches none; a locked track\'s cuts are left', () => {
+    const des = two();
+    expect(names(des, [-2, 14, 2, 22])).toEqual([]);
+    expect(names(des, [-24, 10, -16, 14])).toEqual([]);
+    expect(itemsInBox(des, paths(des), -30, -5, 60, 60).every(boxable)).toBe(true);
+  });
+  it('moved together: each along its own track, as far as the move points along it', () => {
+    const des = two(), sel = [{ route: 0, at: 12 }, { route: 0, at: 24 }, { route: 1, at: 16 }];
+    // (2 studs up the plan: along Up; square to Across, which stays)
+    const up = moveCuts(des, sel, 0, 2);
+    expect(up.why).toBeUndefined(); expect(up.moved).toBe(true);
+    expect(up.cuts.get(0)).toEqual([14, 26]); expect(up.cuts.get(1)).toEqual([16]); expect(up.at).toEqual([14, 26, 16]);
+    // (3 to the right: along Across; Up's stay)
+    const right = moveCuts(des, sel, 3, 0);
+    expect(right.cuts.get(0)).toEqual([12, 24]); expect(right.cuts.get(1)).toEqual([19]); expect(right.at).toEqual([12, 24, 19]);
+    // (aslant: both)
+    expect(moveCuts(des, sel, -4, -4).at).toEqual([8, 20, 12]);
+    // (nothing is changed in the design: the caller puts them in)
+    expect(des.routes[0].cuts).toEqual([12, 24]);
+  });
+  it('all or none: where one can\'t go, why, and nothing moves', () => {
+    const des = two(), sel = [{ route: 0, at: 12 }, { route: 0, at: 24 }, { route: 1, at: 16 }];
+    // (Up's first cut would come within 2 studs of its start)
+    const down = moveCuts(des, sel, 0, -11);
+    expect(down.why).toMatch(/at least 2 studs in from its ends/); expect(down.moved).toBe(false); expect(down.cuts.size).toBe(0); expect(down.at).toEqual([12, 24, 16]);
+    // (one of two on a track moved onto the other, which stays)
+    expect(moveCuts(des, [{ route: 0, at: 12 }], 0, 12).why).toMatch(/cut there already/);
+    expect(moveCuts(des, [{ route: 0, at: 12 }], 0, 11).why).toMatch(/Too near the cut at 24/);
+    // (both moved: they keep their distance, so neither is in the other's way)
+    expect(moveCuts(des, [{ route: 0, at: 12 }, { route: 0, at: 24 }], 0, 12).cuts.get(0)).toEqual([24, 36]);
+  });
+  it('a move square to every track moves nothing, and says so by moved', () => {
+    const des = two(), none = moveCuts(des, [{ route: 0, at: 12 }], 5, 0);
+    expect(none.moved).toBe(false); expect(none.why).toBeUndefined(); expect(none.cuts.get(0)).toEqual([12, 24]);
+  });
+  it('from where they were, not where they are: a drag is worked out from its start each time', () => {
+    const des = two(), sel = [{ route: 0, at: 12 }], was = () => [12, 24];
+    des.routes[0].cuts = [15, 24];
+    expect(moveCuts(des, sel, 0, 5, was).cuts.get(0)).toEqual([17, 24]);
+    expect(moveCuts(des, sel, 0, 0, was).cuts.get(0)).toEqual([12, 24]);
+  });
+  it('what several are called', () => {
+    expect(itemsLabel([{ kind: 'cut', route: 0, k: 0 }, { kind: 'cut', route: 0, k: 1 }])).toBe('2 cuts selected');
+    expect(itemsLabel([{ kind: 'cut', route: 0, k: 0 }, { kind: 'cutpath', id: 'c1' }])).toBe('1 cut and 1 cut path selected');
+    expect(itemsLabel([{ kind: 'cutpath', id: 'c1' }, { kind: 'cutpath', id: 'c2' }])).toBe('2 cut paths selected');
   });
 });

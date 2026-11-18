@@ -8,7 +8,7 @@ import type { Joint } from './connections';
 import type { CutPath } from './cutpaths';
 import { liveOwn } from './overrides';
 import { follow } from './planner';
-import { cutLength, liveCuts } from './routecuts';
+import { cleanCuts, cutLength, cutProblem, liveCuts } from './routecuts';
 import { cutSegs, nearestAlong } from './splitmerge';
 import { type Stretch, STRETCH_MIN } from './stretches';
 import { railEditAt, railEditCount, railEditText, type RailWhat } from './railedits';
@@ -35,6 +35,10 @@ export type Item =
 export type ItemKind = Item['kind'];
 /** The kinds that are selected one at a time, beside the tracks and tables. */
 export type OwnItem = Exclude<Item, { kind: 'route' | 'table' }>;
+
+/** The kinds that can be selected several at once (a box round them, or added one by one): cuts across tracks and cut paths. */
+export type BoxItem = Extract<OwnItem, { kind: 'cut' | 'cutpath' }>;
+export const boxable = (it: Item | undefined): it is BoxItem => it?.kind === 'cut' || it?.kind === 'cutpath';
 
 export const sameItem = (a: Item | undefined, b: Item | undefined) => JSON.stringify(a ?? null) === JSON.stringify(b ?? null);
 
@@ -336,3 +340,64 @@ export const layerOf = (kind: ItemKind): Layer => (kind === 'route' || kind === 
  * ever, and no cut or stretch; with them shown, what the Pick list says.
  */
 export const picks = (pick: PickId, layer: Layer, expert: boolean): boolean => (expert ? (pick === 'all' && layer !== 'sleeper' && layer !== 'rail') || pick === layer : layer === 'track' || layer === 'mark' || layer === 'joint');
+
+// ---------- several at once ----------
+/** Does the line from a to b touch the box x0, y0 to x1, y1 (an end inside it, or the line across one of its sides)? */
+function segInBox(a: readonly number[], b: readonly number[], x0: number, y0: number, x1: number, y1: number) {
+  const inside = (q: readonly number[]) => q[0] >= x0 && q[0] <= x1 && q[1] >= y0 && q[1] <= y1;
+  if (inside(a) || inside(b)) return true;
+  const side = (p: readonly number[], q: readonly number[], r: readonly number[]) => Math.sign((q[0] - p[0]) * (r[1] - p[1]) - (q[1] - p[1]) * (r[0] - p[0]));
+  const cross = (c: readonly number[], e: readonly number[]) => side(a, b, c) !== side(a, b, e) && side(c, e, a) !== side(c, e, b);
+  const k: [number, number][] = [[x0, y0], [x1, y0], [x1, y1], [x0, y1]];
+  return k.some((c, n) => cross(c, k[(n + 1) % 4]));
+}
+/**
+ * The cuts across tracks and the cut paths a box on the plan touches (studs): a cut by its line across its track (as
+ * wide as it's drawn), a path by any of its runs. A locked track's cuts aren't taken (they can't be moved or taken out).
+ */
+export function itemsInBox(d: Design, paths: readonly CutPath[], xa: number, ya: number, xb: number, yb: number): BoxItem[] {
+  const x0 = Math.min(xa, xb), x1 = Math.max(xa, xb), y0 = Math.min(ya, yb), y1 = Math.max(ya, yb), out: BoxItem[] = [];
+  d.routes.forEach((r, i) => {
+    if (!r.cuts?.length || r.locked) return;
+    const half = ((r.gaugeStuds ?? d.gaugeStuds) + 4) / 2;
+    for (const at of liveCuts(r)) {
+      const q = placeAlong(r, at), h = (q.heading * Math.PI) / 180, ax = Math.cos(h) * half, ay = Math.sin(h) * half;
+      if (segInBox([q.x - ax, q.y - ay], [q.x + ax, q.y + ay], x0, y0, x1, y1)) out.push({ kind: 'cut', route: i, k: r.cuts.indexOf(at) });
+    }
+  });
+  for (const p of paths) if (p.pts.some((q, k) => k > 0 && segInBox(p.pts[k - 1], q, x0, y0, x1, y1))) out.push({ kind: 'cutpath', id: p.id });
+  return out;
+}
+/**
+ * Several cuts across tracks moved together by (dx, dy) studs on the plan: each along its own track, as far as that
+ * points along it there, by whole studs (a cut on a track square to the move stays). All of them or none: where one
+ * can't go, why. cuts: each track's cuts as they'd be (by its place in the design's list); at: where each of the cuts
+ * given comes to, in their order.
+ */
+export function moveCuts(d: Design, cuts: readonly { route: number; at: number }[], dx: number, dy: number, was: (route: number) => readonly number[] = (i) => d.routes[i]?.cuts ?? []):
+  { cuts: Map<number, number[]>; at: number[]; moved: boolean; why?: string } {
+  const out = new Map<number, number[]>(), at: number[] = cuts.map((c) => c.at);
+  let moved = false;
+  for (const i of new Set(cuts.map((c) => c.route))) {
+    const r = d.routes[i], mine = cuts.map((c, n) => ({ ...c, n })).filter((c) => c.route === i);
+    if (!r) continue;
+    const others = was(i).filter((c) => !mine.some((m) => Math.abs(m.at - c) < 1e-6));
+    const to = mine.map((m) => { const h = (placeAlong(r, m.at).heading * Math.PI) / 180; return { ...m, s: Math.round(m.at + Math.round(-dx * Math.sin(h) + dy * Math.cos(h))) }; });
+    const put = to.map((m) => m.s), none = () => ({ cuts: new Map<number, number[]>(), at: cuts.map((c) => c.at), moved: false });
+    for (const m of to) at[m.n] = m.s;
+    if (to.every((m) => m.s === m.at)) { out.set(i, [...was(i)]); continue; }
+    // (each where it comes to, against the track's cuts that stay and the others where they come to)
+    for (const [k, m] of to.entries()) {
+      const why = cutProblem(r, m.s, [...others, ...put.filter((_, n) => n !== k)]);
+      if (why) return { ...none(), why };
+    }
+    moved = true;
+    out.set(i, cleanCuts([...others, ...put]) ?? []);
+  }
+  return { cuts: out, at, moved };
+}
+/** What several selected cuts and cut paths are called together: "3 cuts selected", "2 cut paths selected", "2 cuts and 1 cut path selected". */
+export function itemsLabel(items: readonly BoxItem[]): string {
+  const c = items.filter((q) => q.kind === 'cut').length, p = items.length - c, n = (k: number, one: string) => `${k} ${one}${k === 1 ? '' : 's'}`;
+  return `${[c && n(c, 'cut'), p && n(p, 'cut path')].filter(Boolean).join(' and ')} selected`;
+}

@@ -271,6 +271,31 @@ async function tablet(width: number, height: number, tag: string) {
     await tapOn('#sel-item-del'); await sleep(250);
     check(await gaps() === '[]', `[${tag}] and Delete on the bar takes it out (${await gaps()})`);
     await shot('expert');
+    // (several cuts at once by touch: a finger held on empty ground, then dragged, boxes them; a finger held on a cut adds it;
+    // one dragged takes them all; the bar's Delete takes them out)
+    at = `${tag}: several cuts at once by touch`;
+    await page.evaluate(() => { localStorage.setItem('btd-pick', 'cut');
+      localStorage.setItem('btd-design', JSON.stringify({ version: 1, gaugeStuds: 4, options: { splitTrack: 'lengths' }, routes: [
+        { name: 'A', x: 0, y: 0, heading: -90, segs: [{ kind: 'straight', studs: 48 }], cuts: [12, 24, 40] },
+        { name: 'B', x: 0, y: 24, heading: -90, segs: [{ kind: 'straight', studs: 48 }], cuts: [12] }] })); });
+    await page.reload(); await page.waitForSelector('#track'); await tapOn('#mode-select'); await tapOn('#fit'); await sleep(400);
+    const cuts = () => page.evaluate(() => JSON.stringify((window as unknown as { btdCanvas: { host: { design(): { routes: { cuts?: number[] }[] } } } }).btdCanvas.host.design().routes.map((r) => r.cuts ?? [])));
+    const bar = () => page.locator('#sel-count').innerText();
+    // (the two tracks run to the right, B above A; the box from the empty ground between them down over A's cuts at 12 and 24)
+    await f.drag(await scr(8, 12), await scr(28, -3), { steps: 10, holdFirst: 600 }); await sleep(250);
+    check(await bar() === '2 cuts selected', `[${tag}] a finger held on empty ground, then dragged, boxes the cuts (${await bar()})`);
+    await f.hold(await scr(40, 0.4)); await sleep(250);
+    check(await bar() === '3 cuts selected', `[${tag}] a finger held on another cut adds it (${await bar()})`);
+    await f.hold(await scr(40, 0.4)); await sleep(250);
+    check(await bar() === '2 cuts selected', `[${tag}] and held on it again takes it out (${await bar()})`);
+    await f.drag(await scr(12, 0.4), await scr(15.2, 0.4), { steps: 8 }); await sleep(250);
+    check(await cuts() === '[[15,27,40],[12]]' && await bar() === '2 cuts selected', `[${tag}] a finger drags them all along their track (${await cuts()}; ${await bar()})`);
+    const del2 = (await page.locator('#itemcard button.danger').boundingBox()), sdel = (await page.locator('#sel-item-del').boundingBox())!;
+    check(sdel.height >= 36 && (!del2 || del2.height >= 36), `[${tag}] Delete is finger-sized on the bar and the card (${Math.round(sdel.height)}, ${del2 ? Math.round(del2.height) : 'card not shown'})`);
+    await tapOn('#sel-item-del'); await sleep(250);
+    check(await cuts() === '[[40],[12]]', `[${tag}] and Delete on the bar takes them all out (${await cuts()})`);
+    await page.evaluate(() => localStorage.setItem('btd-pick', 'all'));
+    await shot('several');
   }
   await pageStill('everything');
   check(errors.length === 0, `[${tag}] no errors on the page${errors.length ? `: ${errors.join(' | ').slice(0, 400)}` : ''}`);

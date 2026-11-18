@@ -28,7 +28,7 @@ import { lockedWhy } from './lock';
 import { type MeasurePoint, measureBetween, measurePoint } from './measure';
 import { applyCarry, type Carry, connectedSet, holds, type Joint, jointNames, joints, LOOP_OPENS_DEFAULT, type LoopOpens, openedBy, planCarry, poseAt, setApart, tidyExpert } from './connections';
 import { moveRailEdit, railEditAt, type RailEdits, type RailWhat, withRailEdit } from './railedits';
-import { alongBeyond, dragStretchEnd, dragStretchWhole, handTracks, hitItems, type Hit, type Item, jointsOf, sleeperEditAt, sleeperEditOf, type Layer, newStretchAt, type OwnItem, type PickId, PICKS, picks, placeAlong, sameItem, takesFirst, withStretch } from './items';
+import { alongBeyond, type BoxItem, boxable, dragStretchEnd, dragStretchWhole, handTracks, hitItems, type Hit, type Item, itemsInBox, itemsLabel, jointsOf, moveCuts, sleeperEditAt, sleeperEditOf, type Layer, newStretchAt, type OwnItem, type PickId, PICKS, picks, placeAlong, sameItem, takesFirst, withStretch } from './items';
 import type { Stretch } from './stretches';
 import { COMMON_RADII, type GuideEnd, type GuideResult, type GuideStraight, guidePoint } from './guides';
 import { describe, follow, plan, planAnyway, planAuto, planFreeTurning, planToPose, reversed, trace as traceRaw, type Pose } from './planner';
@@ -152,6 +152,8 @@ export function typingIn(e: KeyboardEvent) {
 }
 /** A dialog open over the page (the parts list, Help, a setting's pictures): a key pressed then isn't one of the plan's shortcuts. */
 export const dialogOpen = () => !!document.querySelector('dialog[open]');
+/** Several cuts and cut paths as they were before a move of them all: the cuts by track and place, each such track's cuts, the paths' corners. */
+interface MultiOrig { cuts: { route: number; at: number }[]; was: Map<number, number[]>; paths: { id: string; pts: CutPt[] }[] }
 /** What a press on the plan takes hold of (TrackCanvas hitTest). */
 type PlanHit = { kind: 'handle'; handle: Handle } | { kind: 'lever'; it: OverlayItem } | { kind: 'mark'; mark: NonNullable<ReturnType<TrackCanvas['itemAt']>> }
   | { kind: 'end'; route: number; end: 'start' | 'end' } | { kind: 'item'; hit: Hit } | { kind: 'table'; table: number } | { kind: 'route'; route: number };
@@ -232,10 +234,27 @@ export class TrackCanvas {
    */
   private selItemNow: OwnItem | undefined;
   get selItem(): OwnItem | undefined { return this.selItemNow; }
-  private setItem(v: OwnItem | undefined) { if (sameItem(v, this.selItemNow)) return; this.selItemNow = v; this.host.item?.(); }
-  /** Everything selected, each with its kind: the tracks (the main one first), the tables, and the item. */
+  private setItem(v: OwnItem | undefined) { if (sameItem(v, this.selItemNow) && !this.selAlso.length) return; this.selAlso = []; this.selItemNow = v; this.host.item?.(); }
+  /**
+   * Several at once: the other cuts across tracks and cut paths selected beside selItem (a box round them with only cuts
+   * picked, Shift+click, or a finger held on one). Together they're moved (dragged, or by the arrow keys) and taken
+   * out; anything else selected lets go of them (setItem). They go by their places in their lists, as selItem does.
+   */
+  private selAlso: BoxItem[] = [];
+  /** The selected cut, cut path, stretch or joint, and the cuts and cut paths selected with it. */
+  selItems(): OwnItem[] { return this.selItemNow ? [this.selItemNow, ...this.selAlso] : []; }
+  private setItems(list: BoxItem[]) { this.selItemNow = list[0]; this.selAlso = list.slice(1); this.host.item?.(); }
+  /** A cut or a cut path added to the ones selected, or taken out of them (Shift+click, a finger held on it). */
+  private toggleItem(it: BoxItem) {
+    const all = this.selItems().filter(boxable), next = all.some((q) => sameItem(q, it)) ? all.filter((q) => !sameItem(q, it)) : [...all, it];
+    if (this.selection().length || this.tableSelection().length) this.setSelection([]);
+    if (next.length) this.setItems(next); else this.setItem(undefined);
+    if (next.length > 1) this.say(`${itemsLabel(next)} · drag one to move them all · Delete takes them out`, 4000);
+    this.draw();
+  }
+  /** Everything selected, each with its kind: the tracks (the main one first), the tables, and the item (or the several cuts). */
   items(): Item[] {
-    return [...this.selection().map((route): Item => ({ kind: 'route', route })), ...this.tableSelection().map((table): Item => ({ kind: 'table', table })), ...(this.selItemNow ? [this.selItemNow] : [])];
+    return [...this.selection().map((route): Item => ({ kind: 'route', route })), ...this.tableSelection().map((table): Item => ({ kind: 'table', table })), ...this.selItems()];
   }
   /** Select a cut, a cut path, a stretch or a joint (undefined: none): a stretch with its track, the others alone. */
   selectItem(v: OwnItem | undefined) {
@@ -249,7 +268,7 @@ export class TrackCanvas {
   loopOpens: LoopOpens = LOOP_OPENS_DEFAULT;
   /** The expert tools hidden: whatever of theirs is being drawn, dragged or waited for is let go of, and a selected cut, cut path or stretch too. */
   stopExpert() {
-    this.cutArmed = false; this.stretchArmed = false; this.stretchNew = undefined; this.pathDraw = undefined; this.cutDrag = undefined; this.stretchDrag = undefined; this.sleeperDrag = undefined; this.railDrag = undefined; this.sleeperArmed = false;
+    this.cutArmed = false; this.stretchArmed = false; this.stretchNew = undefined; this.pathDraw = undefined; this.cutDrag = undefined; this.multiDrag = undefined; this.stretchDrag = undefined; this.sleeperDrag = undefined; this.railDrag = undefined; this.sleeperArmed = false;
     if (this.selItemNow && this.selItemNow.kind !== 'joint') this.setItem(undefined);
     this.draw();
   }
@@ -286,7 +305,7 @@ export class TrackCanvas {
     return undefined;
   }
   /** A selection box being dragged out (studs), and whether it adds to the selection. */
-  private box: { x0: number; y0: number; x1: number; y1: number; add: boolean } | undefined;
+  private box: { x0: number; y0: number; x1: number; y1: number; add: boolean; /** (adding) the cuts and cut paths selected before */ items?: BoxItem[] } | undefined;
   /** While drawing: the route being extended (or a new one not yet added), and where it ends. */
   private active: { route: number | undefined; start?: Pose; end?: Pose; newRoute?: DRoute; either?: number; from?: number } | undefined;
   /** Starting on a track (its start, or along it): lay the new track whichever way the mouse is, along it or back out of it. */
@@ -396,7 +415,7 @@ export class TrackCanvas {
     this.placing = { tpl, turn: 0, mirror: false, onto, theirs: openEnds(this.host.design().routes), moved: false, session: new SnapSession() };
     this.draw();
   }
-  private letGoSome() { this.splitArmed = false; this.cutArmed = false; this.stretchArmed = false; this.sleeperArmed = false; this.sleeperDrag = undefined; this.railDrag = undefined; this.stretchNew = undefined; this.stretchDrag = undefined; this.pathDraw = undefined; this.cutDrag = undefined; this.meas = {}; this.active = undefined; }
+  private letGoSome() { this.splitArmed = false; this.cutArmed = false; this.stretchArmed = false; this.sleeperArmed = false; this.sleeperDrag = undefined; this.railDrag = undefined; this.stretchNew = undefined; this.stretchDrag = undefined; this.pathDraw = undefined; this.cutDrag = undefined; this.multiDrag = undefined; this.meas = {}; this.active = undefined; }
   /** Where the template being placed goes now (final: the click that puts it down, which snaps whatever the pointer's speed). */
   private placedNow(final = false): Placed | undefined {
     const p = this.placing;
@@ -421,6 +440,10 @@ export class TrackCanvas {
   pathDraw: CutPt[] | undefined;
   /** A cut being dragged: a path's corner, a whole path, or a cut across a track along it; why: why it can't go where it is now. */
   private cutDrag: ({ kind: 'corner'; id: string; k: number; orig: CutPt[] } | { kind: 'path'; id: string; x: number; y: number; orig: CutPt[] } | { kind: 'cut'; route: number; orig: number[]; k: number }) & { moved: boolean; why?: string } | undefined;
+  /** Several cuts and cut paths being dragged together: where the press was (studs), how they were, the one pressed; why: what holds them. */
+  private multiDrag: { x: number; y: number; orig: MultiOrig; on: BoxItem; moved: boolean; why?: string } | undefined;
+  /** The cut, cut path or other item the last press was on (a finger held on it adds it to the ones selected). */
+  private pressed: OwnItem | undefined;
   /** A stretch being dragged along its track: one of its ends, or the whole; s0: how far along the press was; orig: its track's stretches as they were; why: what holds it short of the pointer. */
   private stretchDrag: { route: number; k: number; part: 'from' | 'to' | 'body'; s0: number; orig: Stretch[]; moved: boolean; why?: string } | undefined;
   /** (expert) A sleeper being dragged along its track: which (its edit's place), where the press was along the track, and its track's edits as they were. */
@@ -575,8 +598,13 @@ export class TrackCanvas {
     return tr && { kind: 'route', route: tr.route };
   }
   /** A press on a cut, a cut path, a stretch or a joint: it's selected, and dragged from there (a cut along its track, a path or its corner on the stud grid, a stretch or its end along its track). */
-  private pressItem(h: Hit, w: [number, number]) {
+  private pressItem(h: Hit, w: [number, number], add = false) {
     const d = this.host.design(), it = h.item;
+    this.pressed = it;
+    // (Shift: a cut or a cut path added to the ones selected, or taken out; not dragged)
+    if (add && boxable(it)) { this.toggleItem(it); return; }
+    // (one of several selected: they're all dragged from there; let go without a move, it's selected alone)
+    if (this.selAlso.length && boxable(it) && h.part === 'body' && this.selItems().some((q) => sameItem(q, it))) { this.multiDrag = { x: w[0], y: w[1], orig: this.multiOrig(), on: it, moved: false }; this.draw(); return; }
     this.selectItem(it);
     if (it.kind === 'cut') this.cutDrag = { kind: 'cut', route: it.route, orig: [...(d.routes[it.route].cuts ?? [])], k: it.k, moved: false };
     else if (it.kind === 'cutpath') {
@@ -634,6 +662,42 @@ export class TrackCanvas {
     if (this.selection().length !== 1 || this.tableSelection().length) { this.say('Select one route to add a stretch to it'); return; }
     this.splitArmed = false; this.cutArmed = false; this.setItem(undefined); this.stretchArmed = true; this.draw();
   }
+  /** Several cuts and cut paths as they are now: what a move of them all starts from (multiMove). */
+  private multiOrig(): MultiOrig {
+    const d = this.host.design(), its = this.selItems().filter(boxable);
+    const cuts = its.flatMap((it) => { const at = it.kind === 'cut' ? d.routes[it.route]?.cuts?.[it.k] : undefined; return it.kind === 'cut' && at !== undefined ? [{ route: it.route, at }] : []; });
+    const paths = its.flatMap((it) => { const p = it.kind === 'cutpath' ? this.cutPaths().find((q) => q.id === it.id) : undefined; return p ? [{ id: p.id, pts: structuredClone(p.pts) }] : []; });
+    return { cuts, was: new Map([...new Set(cuts.map((c) => c.route))].map((i) => [i, [...(d.routes[i].cuts ?? [])]])), paths };
+  }
+  /**
+   * The several selected cuts and cut paths put where a move of (dx, dy) studs from where they were (o) takes them: a
+   * cut along its own track by whole studs, as far as the move points along it there; a path over the stud grid. All
+   * of them or none: where one can't go, why, and they stay as they are.
+   */
+  private multiMove(o: MultiOrig, dx: number, dy: number): { why?: string; moved: boolean } {
+    const d = this.host.design(), g = this.cutGrid(), mc = moveCuts(d, o.cuts, dx, dy, (i) => o.was.get(i) ?? []);
+    if (mc.why) return { why: mc.why, moved: false };
+    const live = o.paths.map((p) => this.cutPaths().find((q) => q.id === p.id)).filter((p): p is CutPath => !!p), now = live.map((p) => p.pts);
+    const to = o.paths.map((p) => gridPath(g, p.pts.map((q): CutPt => snapToGrid(g, [q[0] + dx, q[1] + dy]))));
+    // (the paths all put where they'd be, then each looked at against the rest)
+    live.forEach((p, k) => { p.pts = to[k]; });
+    const why = live.map((p, k) => (to[k].length < 2 ? 'The cut path can\'t go there' : this.pathWhy(to[k], p.id))).find((q) => q);
+    if (why) { live.forEach((p, k) => { p.pts = now[k]; }); return { why, moved: false }; }
+    for (const [i, cs] of mc.cuts) if (d.routes[i]) d.routes[i].cuts = cs;
+    // (they go by their places in their lists: found again where they came to)
+    this.selItemNow = undefined; this.selAlso = [];
+    const list: BoxItem[] = [...o.cuts.map((c, n): BoxItem => ({ kind: 'cut', route: c.route, k: d.routes[c.route].cuts!.indexOf(mc.at[n]) })), ...live.map((p): BoxItem => ({ kind: 'cutpath', id: p.id }))];
+    this.selItemNow = list[0]; this.selAlso = list.slice(1);
+    return { moved: mc.moved || to.some((pts, k) => JSON.stringify(pts) !== JSON.stringify(o.paths[k].pts)) };
+  }
+  /** The several being dragged, taken to the pointer; where they can't all be, shown why, and put back when let go. */
+  private dragMulti(p: [number, number]) {
+    const md = this.multiDrag!, before = JSON.stringify([this.host.design().routes.map((r) => r.cuts), this.cutPaths().map((q) => q.pts)]);
+    const r = this.multiMove(md.orig, p[0] - md.x, p[1] - md.y);
+    md.why = r.why;
+    if (r.why || before === JSON.stringify([this.host.design().routes.map((q) => q.cuts), this.cutPaths().map((q) => q.pts)])) return;
+    md.moved = true; this.host.changed(false); this.host.live?.(); this.host.item?.();
+  }
   /** The cut being dragged, taken to the pointer: a corner or a path on the stud grid, a cut across a track along it by whole studs; where it can't be, it's shown red and put back when let go. */
   private dragCut(p: [number, number]) {
     const cd = this.cutDrag!, d = this.host.design(), g = this.cutGrid();
@@ -659,6 +723,19 @@ export class TrackCanvas {
   deleteItem() {
     const sc = this.selItemNow, d = this.host.design();
     if (!sc || sc.kind === 'joint') return;
+    if (this.selAlso.length) {
+      // (several: every one of them, one step)
+      const its = this.selItems().filter(boxable), ids = new Set(its.flatMap((q) => (q.kind === 'cutpath' ? [q.id] : [])));
+      if (ids.size) { d.expert!.cutPaths = this.cutPaths().filter((p) => !ids.has(p.id)); tidyExpert(d); }
+      for (const i of new Set(its.flatMap((q) => (q.kind === 'cut' ? [q.route] : [])))) {
+        const rr = d.routes[i], ks = new Set(its.flatMap((q) => (q.kind === 'cut' && q.route === i ? [q.k] : [])));
+        if (!rr?.cuts) continue;
+        rr.cuts = rr.cuts.filter((_, k) => !ks.has(k));
+        if (!rr.cuts.length) delete rr.cuts;
+      }
+      this.setItem(undefined); this.host.changed(true); this.say(`${itemsLabel(its).replace(' selected', '')} taken out · Undo brings them back`, 4000);
+      return this.draw();
+    }
     if (sc.kind === 'cutpath') { d.expert!.cutPaths = this.cutPaths().filter((p) => p.id !== sc.id); tidyExpert(d); }
     else if (sc.kind === 'cut') { const rr = d.routes[sc.route]; if (rr?.cuts) { rr.cuts.splice(sc.k, 1); if (!rr.cuts.length) delete rr.cuts; } }
     else if (sc.kind === 'rail') {
@@ -680,6 +757,13 @@ export class TrackCanvas {
   private nudgeItem(dx: number, dy: number) {
     const it = this.selItemNow, d = this.host.design();
     if (!it || it.kind === 'joint') return;
+    if (this.selAlso.length) {
+      // (several: all of them, or none)
+      const r = this.multiMove(this.multiOrig(), dx, dy);
+      if (r.why) { this.say(r.why); return; }
+      if (!r.moved) { this.say('This arrow points across the tracks: press one that points along them'); return; }
+      this.host.changed(true); this.host.item?.(); return this.draw();
+    }
     if (it.kind === 'cutpath') {
       const path = this.cutPaths().find((q) => q.id === it.id), g = this.cutGrid();
       if (!path) return;
@@ -1134,11 +1218,25 @@ export class TrackCanvas {
           return;
         }
         // (on empty ground in Select: pan, as the middle button; on track, a lever or points: as the left button)
-        const onSomething = !!(this.handleAt(w) || this.leverAt(w) || this.itemAt(w) || this.nearTrack(w, this.reach(24)) || this.onBand(w));
+        const onSomething = !!(this.handleAt(w) || this.leverAt(w) || this.itemAt(w) || this.nearTrack(w, this.reach(24)) || this.onBand(w) || (this.mode === 'select' && this.itemHits(w).length));
         oneButton = this.mode === 'select' && !onSomething ? 1 : 0;
         this.mouse = w;
-        const before = this.selection();
+        const before = this.selection(), itemsBefore = this.selItems().filter(boxable);
+        this.pressed = undefined;
         this.down(fake(t, oneButton));
+        // (a finger held still on a cut or a cut path: it's added to the ones selected, or taken out, as Shift+click)
+        const onItem = this.mode === 'select' && (this.multiDrag || (this.cutDrag && this.cutDrag.kind !== 'corner')) && boxable(this.pressed) ? this.pressed : undefined;
+        if (onItem) {
+          arm(500, () => {
+            held = true;
+            // (the press itself selected it, ready to drag: the ones selected before put back, then this one added or taken out)
+            this.cutDrag = undefined; this.multiDrag = undefined;
+            if (itemsBefore.length) this.setItems(itemsBefore); else this.setItem(undefined);
+            this.toggleItem(onItem);
+            navigator.vibrate?.(15);
+          });
+          return;
+        }
         const on = this.mode === 'select' && !this.handleDrag && !this.leverDrag && !this.itemDrag && !this.drag && !this.tableDrag ? this.nearTrack(w, this.reach(24)) ?? this.onBand(w) : undefined;
         if (on) arm(500, () => {
           held = true;
@@ -1149,12 +1247,12 @@ export class TrackCanvas {
           this.host.select(this.selected); this.draw();
         });
         // (held still on empty ground: the pan let go of, and a box dragged out from there selects what it touches)
-        else if (oneButton === 1 && this.picks('track')) arm(450, () => {
+        else if (oneButton === 1 && (this.picks('track') || this.picks('cut'))) arm(450, () => {
           boxing = true;
           this.up(fake({ clientX: start[0], clientY: start[1] }, 1));
           this.box = { x0: w[0], y0: w[1], x1: w[0], y1: w[1], add: false };
           navigator.vibrate?.(15);
-          this.say('Drag out a box: what it touches is selected', 2500); this.draw();
+          this.say(this.picks('track') ? 'Drag out a box: what it touches is selected' : 'Drag out a box: the cuts it touches are selected', 2500); this.draw();
         });
         return;
       }
@@ -1288,6 +1386,8 @@ export class TrackCanvas {
     }
     // (what the press is on: plan.hitTest; anything but a cut, a cut path, a stretch or a joint, and the one selected is let go of)
     const hit = this.hitTest(w);
+    // (the cuts selected before: a box dragged out with Shift adds to them)
+    const itemsWere = this.selItems().filter(boxable);
     if (hit?.kind !== 'item') this.setItem(undefined);
     // (a press on a cut worked out where tracks join: what the line is, said; the press goes on as any other)
     if (e.button === 0 && this.mode === 'select' && hit?.kind !== 'item') this.jointCutNote(w);
@@ -1317,7 +1417,7 @@ export class TrackCanvas {
     }
     if (this.mode === 'select') {
       // (a cut, a cut path, a stretch or a joint: selected, and dragged from there)
-      if (hit?.kind === 'item') { this.pressItem(hit.hit, w); return; }
+      if (hit?.kind === 'item') { this.pressItem(hit.hit, w, e.shiftKey || e.ctrlKey || e.metaKey); return; }
       // (a table's handle: drag the table about)
       if (hit?.kind === 'table') {
         const tk = hit.table;
@@ -1335,8 +1435,9 @@ export class TrackCanvas {
       // pressing on a selected track: drag the selection about
       const add = e.shiftKey || e.ctrlKey || e.metaKey;
       // pressing on empty ground: drag out a box to select what it touches
-      // (only tracks and tables are boxed: none when a click takes neither)
-      if (hit?.kind !== 'route') { if (this.picks('track')) this.box = { x0: w[0], y0: w[1], x1: w[0], y1: w[1], add }; return; }
+      // (tracks and tables are boxed; where a click takes cuts and not tracks (Clicks pick: Cuts and cut paths), the cuts
+      // across tracks and the cut paths; none when a click takes neither)
+      if (hit?.kind !== 'route') { if (this.picks('track') || this.picks('cut')) this.box = { x0: w[0], y0: w[1], x1: w[0], y1: w[1], add, ...(add && { items: itemsWere }) }; return; }
       if (!add && (hit.route === this.selected || this.extra.has(hit.route))) {
         const d = this.host.design();
         this.startMoving(w, this.selection(), this.tableSelection().map((k) => ({ k, orig: structuredClone(d.tables![k]) })));
@@ -1444,6 +1545,7 @@ export class TrackCanvas {
       return this.drawSoon();
     }
     if (this.cutDrag) { this.mouse = this.evWorld(e); this.dragCut(this.mouse); return this.drawSoon(); }
+    if (this.multiDrag) { this.mouse = this.evWorld(e); this.dragMulti(this.mouse); return this.drawSoon(); }
     if (this.stretchDrag) { this.mouse = this.evWorld(e); this.dragStretch(this.mouse); return this.drawSoon(); }
     if (this.sleeperDrag) { this.mouse = this.evWorld(e); this.dragSleeper(this.mouse); return this.drawSoon(); }
     if (this.railDrag) { this.mouse = this.evWorld(e); this.dragRail(this.mouse); return this.drawSoon(); }
@@ -1536,6 +1638,13 @@ export class TrackCanvas {
       if (moved && ld.at && ld.arm) this.leverPending = { key: ld.it.key, at: ld.at, arm: ld.arm };
       if (moved) this.host.changed(true); return this.draw();
     }
+    if (this.multiDrag) {
+      // (several: let go where they can't all be, back where they were, and why said; not moved at all, the one pressed is selected alone)
+      const md = this.multiDrag; this.multiDrag = undefined;
+      if (md.why) { this.multiMove(md.orig, 0, 0); this.say(md.why); }
+      if (md.moved) { this.host.changed(true); this.host.item?.(); } else if (!md.why) this.selectItem(md.on);
+      return this.draw();
+    }
     if (this.cutDrag) {
       // (let go where it can't be: back where it was, and why said; else kept, a path tidied on the grid: one undo step)
       const cd = this.cutDrag, d = this.host.design(); this.cutDrag = undefined;
@@ -1568,6 +1677,12 @@ export class TrackCanvas {
       const b = this.box; this.box = undefined;
       const x0 = Math.min(b.x0, b.x1), x1 = Math.max(b.x0, b.x1), y0 = Math.min(b.y0, b.y1), y1 = Math.max(b.y0, b.y1);
       const tiny = x1 - x0 < 0.2 && y1 - y0 < 0.2;
+      if (!this.picks('track')) {
+        // (only cuts are picked: the cuts across tracks and the cut paths the box touches, several at once)
+        const keep = b.items ?? [], found = tiny ? [] : itemsInBox(this.host.design(), this.cutPaths(), x0, y0, x1, y1), next = [...keep, ...found.filter((f) => !keep.some((k) => sameItem(k, f)))];
+        if (next.length) { this.setItems(next); if (next.length > 1) this.say(`${itemsLabel(next)} · drag one to move them all · Delete takes them out`, 4000); } else this.setItem(undefined);
+        return this.draw();
+      }
       const inBox = tiny ? [] : this.host.design().routes.map((r, i) => (trace(r, r.segs, 0.5).some((q) => q[0] >= x0 && q[0] <= x1 && q[1] >= y0 && q[1] <= y1) ? i : -1)).filter((i) => i >= 0);
       const keep = b.add ? this.selection() : [], keepT = b.add ? this.tableSelection() : [];
       // (a table only when the whole of it is inside the box)
@@ -1804,6 +1919,12 @@ export class TrackCanvas {
       if (e.key === 'Escape') { this.pathDraw = undefined; return this.draw(); }
       if (e.key === 'Backspace') { this.pathDraw.pop(); return this.draw(); }
     }
+    if (e.key === 'Escape' && this.multiDrag) {
+      const md = this.multiDrag; this.multiDrag = undefined;
+      this.multiMove(md.orig, 0, 0);
+      if (md.moved) this.host.changed(true);
+      this.host.item?.(); return this.draw();
+    }
     if (e.key === 'Escape' && this.cutDrag) {
       const cd = this.cutDrag, d = this.host.design(); this.cutDrag = undefined;
       if (cd.kind === 'cut') { if (d.routes[cd.route]) d.routes[cd.route].cuts = cd.orig; this.selItemNow = { kind: 'cut', route: cd.route, k: cd.k }; }
@@ -1840,10 +1961,10 @@ export class TrackCanvas {
     // (a cut, a cut path or a stretch selected: Esc lets go of it (a stretch's track stays selected), Delete takes it out, the arrow keys move it a stud)
     const own = this.selItemNow && this.selItemNow.kind !== 'joint' && !this.active ? this.selItemNow : undefined;
     if (e.key === 'Escape' && own) { this.setItem(undefined); return this.draw(); }
-    if ((e.key === 'Delete' || e.key === 'Backspace') && own && !this.cutDrag && !this.stretchDrag && !this.sleeperDrag && !this.railDrag) return this.deleteItem();
+    if ((e.key === 'Delete' || e.key === 'Backspace') && own && !this.cutDrag && !this.multiDrag && !this.stretchDrag && !this.sleeperDrag && !this.railDrag) return this.deleteItem();
     if (e.key.startsWith('Arrow') && own && this.mode === 'select' && plain && onPlan) {
       e.preventDefault();
-      if (!this.cutDrag && !this.stretchDrag && !this.sleeperDrag && !this.railDrag) { const n = e.shiftKey ? 8 : 1; this.nudgeItem(e.key === 'ArrowLeft' ? -n : e.key === 'ArrowRight' ? n : 0, e.key === 'ArrowDown' ? -n : e.key === 'ArrowUp' ? n : 0); }
+      if (!this.cutDrag && !this.multiDrag && !this.stretchDrag && !this.sleeperDrag && !this.railDrag) { const n = e.shiftKey ? 8 : 1; this.nudgeItem(e.key === 'ArrowLeft' ? -n : e.key === 'ArrowRight' ? n : 0, e.key === 'ArrowDown' ? -n : e.key === 'ArrowUp' ? n : 0); }
       return;
     }
     if (e.key === 'Escape' && this.handleDrag) {
@@ -1913,7 +2034,7 @@ export class TrackCanvas {
     this.guideNow = undefined; this.guideKey = '';
     this.drag = undefined; this.dragBad = false; this.dragSnap = undefined; this.moving = undefined; this.box = undefined; this.tableDrag = undefined;
     this.itemDrag = undefined; this.handleDrag = undefined; this.leverDrag = undefined; this.leverPending = undefined; this.panning = undefined;
-    this.cutDrag = undefined; this.stretchDrag = undefined; this.sleeperDrag = undefined; this.railDrag = undefined; this.sleeperArmed = false; this.stretchNew = undefined; this.stretchArmed = false;
+    this.cutDrag = undefined; this.multiDrag = undefined; this.stretchDrag = undefined; this.sleeperDrag = undefined; this.railDrag = undefined; this.sleeperArmed = false; this.stretchNew = undefined; this.stretchArmed = false;
     this.stopDrawing();
   }
   /** The track being drawn carries on from where its route ends now (the route changed on its card, turned or mirrored since the last click); a route that's gone: nothing being drawn. */
@@ -1974,10 +2095,12 @@ export class TrackCanvas {
     if (this.sleeperArmed) return 'Click on the route where the sleeper goes · Esc cancels';
     if (this.sleeperDrag?.moved || this.sleeperDrag?.why) return this.sleeperDrag.why ?? 'Moving the sleeper along its track: let go to put it down · Esc puts it back';
     if (this.pathDraw) return this.pathDraw.length ? `Cut path, ${this.pathDraw.length} point${this.pathDraw.length > 1 ? 's' : ''}: click the next (between studs; a slant is laid as steps) · Enter ends it · Backspace takes the last back · Esc cancels` : 'Click where the cut path starts: outside the part, or on another cut · it runs between the studs · Esc cancels';
+    if (this.multiDrag?.moved) return this.multiDrag.why ?? 'Moving the cuts: each along its own track, whole studs; a path over the stud grid · let go to put them down · Esc puts them back';
     if (this.cutDrag?.moved) return this.cutDrag.why ?? (this.cutDrag.kind === 'cut' ? 'Moving the cut along its track, whole studs: let go to put it down · Esc puts it back' : 'Moving the cut path on the stud grid: let go to put it down · Esc puts it back');
     if (this.stretchArmed) return this.stretchNew ? 'Drag along the track to where the stretch ends, and let go · Esc cancels' : 'Press on the route where the stretch starts and drag along it to where it ends · whole studs · Esc cancels';
     if (this.stretchDrag?.moved) return this.stretchDrag.why ?? `Moving the stretch${this.stretchDrag.part === 'from' ? '\'s start' : this.stretchDrag.part === 'to' ? '\'s end' : ''} along its track, whole studs: let go to put it down · Esc puts it back`;
     const si = this.selItemNow;
+    if (this.selAlso.length) return `${itemsLabel(this.selItems().filter(boxable))} · drag one to move them all (a cut along its own track, a path over the grid), or press an arrow key · Delete takes them out · ${matchMedia('(pointer: coarse)').matches ? 'hold a finger on a cut to add it or take it out' : 'Shift+click adds a cut or takes it out'} · Esc lets go`;
     if (si?.kind === 'cutpath') { const not = this.overlay?.pathsNot?.find((n) => n.id === si.id); return `${not ? `This cut path isn't made: ${not.why} · ` : 'Cut path selected · '}drag a corner or the path · arrow keys move it a stud · Delete removes it · its joint is on its card`; }
     if (si?.kind === 'cut') return 'Cut across the track selected · drag it along the track, or press an arrow key (a stud; Shift: eight) · Delete removes it';
     if (si?.kind === 'sleeper') return 'Sleeper selected · drag it along the track, or press an arrow key · Delete takes it out · longer, turned, without studs: on its card';
@@ -2617,10 +2740,10 @@ export class TrackCanvas {
       if (keepShown) keepOuts();
       if (keepShown && this.overlay?.cutting?.no) this.el.dataset.keepouts = String(this.overlay.cutting.no.blades.length + this.overlay.cutting.no.frogs.length); else delete this.el.dataset.keepouts;
       for (const p of this.cutPaths()) {
-        const sel = sc?.kind === 'cutpath' && sc.id === p.id, dragged = this.cutDrag && this.cutDrag.kind !== 'cut' && this.cutDrag.id === p.id;
+        const also = this.selAlso.some((q) => q.kind === 'cutpath' && q.id === p.id), sel = (sc?.kind === 'cutpath' && sc.id === p.id) || also, dragged = this.cutDrag && this.cutDrag.kind !== 'cut' && this.cutDrag.id === p.id;
         const bad = dragged ? !!this.cutDrag!.why : !!this.overlay?.pathsNot?.some((n) => n.id === p.id);
         line(p.pts, bad ? '#e0452b' : '#d9480f', sel ? 4 : 2.5);
-        if (sel) for (const q of p.pts) { const [x, y] = this.toScreen(q[0], q[1]); c.fillStyle = '#fff'; c.strokeStyle = bad ? '#e0452b' : '#d9480f'; c.lineWidth = 2; c.beginPath(); c.rect(x - 4, y - 4, 8, 8); c.fill(); c.stroke(); }
+        if (sel && !this.selAlso.length) for (const q of p.pts) { const [x, y] = this.toScreen(q[0], q[1]); c.fillStyle = '#fff'; c.strokeStyle = bad ? '#e0452b' : '#d9480f'; c.lineWidth = 2; c.beginPath(); c.rect(x - 4, y - 4, 8, 8); c.fill(); c.stroke(); }
         if (dragged && this.cutDrag!.why && this.mouse) { const [mx, my] = this.toScreen(this.mouse[0], this.mouse[1]); tag(mx, my + 30, this.cutDrag!.why, '#e0452b'); }
       }
       // (the cuts worked out where tracks join inside trackwork: a line as a cut path's, not to be dragged (none is drawn
@@ -2665,8 +2788,21 @@ export class TrackCanvas {
           else if (this.railDrag?.moved) tag(at[0], at[1] + 30, 'at' in e ? `${+e.at.toFixed(2)} studs from its start` : `${e.from} to ${e.to} studs`, '#b23c0a');
         }
       } else delete this.el.dataset.rail;
+      // (several selected: each cut across a track ringed; how many, and where the first is on the screen, for the browser smoke tests)
+      if (this.selAlso.length) {
+        const pos: [number, number][] = [];
+        for (const q of this.selItems()) {
+          if (q.kind !== 'cut') continue;
+          const rr = d.routes[q.route], at = rr?.cuts?.[q.k];
+          if (!rr || at === undefined) continue;
+          const pl = placeAlong(rr, at), [qx, qy] = this.toScreen(pl.x, pl.y);
+          c.strokeStyle = '#d9480f'; c.lineWidth = 2; c.beginPath(); c.arc(qx, qy, 9, 0, 2 * Math.PI); c.stroke(); pos.push([Math.round(qx), Math.round(qy)]);
+        }
+        if (this.multiDrag?.why && this.mouse) { const [mx, my] = this.toScreen(this.mouse[0], this.mouse[1]); tag(mx, my + 30, this.multiDrag.why, '#e0452b'); }
+        this.el.dataset.items = JSON.stringify({ n: this.selItems().length, cuts: pos });
+      } else delete this.el.dataset.items;
       // (the selected cut across a track: ringed)
-      if (sc?.kind === 'cut') {
+      if (sc?.kind === 'cut' && !this.selAlso.length) {
         const rr = d.routes[sc.route], at = rr?.cuts?.[sc.k];
         if (rr && at !== undefined) { const [first] = cutSegs(rr.segs, at), q = follow(rr, first), [qx, qy] = this.toScreen(q.x, q.y); c.strokeStyle = '#d9480f'; c.lineWidth = 2; c.beginPath(); c.arc(qx, qy, 9, 0, 2 * Math.PI); c.stroke(); if (this.cutDrag?.why && this.mouse) tag(qx, qy + 30, this.cutDrag.why, '#e0452b'); else if (this.cutDrag?.moved) tag(qx, qy + 30, `${at} studs from its start`, '#b23c0a'); }
       }

@@ -29,7 +29,7 @@ import { BED_KEYS, isRouteKey, MORE_KEYS, OWN_CHECKS, OWN_LABELS, OWN_RANGES, OW
 import { accepted, pruneAccept, renameAccept, setAccept } from './accept';
 import { curvedAt, followShared, followSleeperEdits, pruneShared, renameShared, setShared, sharedOf, type SleeperEdit, sleeperEditText, SLEEPER_LONG, SLEEPER_MOVE, SPAN_MAX } from './sleeperedits';
 import { cleanRailEdits, FLANGEWAY_MIN, followRailEdits, GAP_DEF, GAP_MAX, GAP_MIN, GAP_RADIUS_MIN, GUARD_GAP_MAX, GUARD_GAP_MIN, moveRailEdit, RAIL_RUN_MIN, railEditAt, type RailEdits, type RailGap, railProblem, type RailSide, withRailEdit } from './railedits';
-import { byHandNote, designByHandNote, EXPERT_SECTIONS, isPick, itemLabel, jointsOf, jointWhere, PICKS, sleeperEditAt, sleeperEditOf } from './items';
+import { boxable, byHandNote, designByHandNote, EXPERT_SECTIONS, isPick, itemLabel, itemsLabel, jointsOf, jointWhere, PICKS, sleeperEditAt, sleeperEditOf } from './items';
 import { expandStretches, followStretches, liveStretches, lostStretches, type Stretch, STRETCH_KEYS, STRETCH_MIN, stretchProblem } from './stretches';
 import { designOfSelection, listMine, saveMine, type StorageLike } from './mytemplates';
 import { openMineStore } from './minestore';
@@ -550,6 +550,19 @@ function renderItemCard() {
   const box = $('itemcard'), it = canvas?.selItem, js = it ? canvas.jointList() : [], label = it && itemLabel(design, it, js);
   box.replaceChildren(); box.hidden = !it || !label;
   if (!it || !label) return;
+  // (several cuts and cut paths selected at once: how many, what moves them, Delete)
+  const several = canvas.selItems().filter(boxable);
+  if (several.length > 1) {
+    const title = document.createElement('b'); title.textContent = itemsLabel(several); box.append(title);
+    const n = document.createElement('small'); n.className = 'desc';
+    n.textContent = 'Drag one on the plan to move them all, or press an arrow key: a cut goes along its own track by whole studs, a cut path over the stud grid. Where one can\'t go, none moves. Shift+click a cut, or hold a finger on it, to add it or take it out.';
+    const row = document.createElement('div'); row.className = 'row';
+    const del = document.createElement('button'); del.type = 'button'; del.className = 'danger'; del.textContent = `Delete ${several.length}`; del.title = 'Take them all out (Del). Undo brings them back.';
+    del.addEventListener('click', () => canvas.deleteItem());
+    const one = document.createElement('button'); one.type = 'button'; one.textContent = 'Select none'; one.title = 'Let go of them (Esc)'; one.addEventListener('click', () => canvas.selectItem(undefined));
+    row.append(del, one); box.append(n, row);
+    return;
+  }
   const small = (text: string, warn = false) => { const n = document.createElement('small'); n.className = warn ? 'desc warn' : 'desc'; n.textContent = text; box.append(n); return n; };
   const title = document.createElement('b'); title.textContent = label.replace(/,.*$/, ''); box.append(title);
   const row = document.createElement('div'); row.className = 'row';
@@ -2541,7 +2554,8 @@ function mergeSel() {
 function updateSelbar() {
   const n = selected().length + selectedTables().length, bar = $('selbar');
   // (a cut, a cut path or a stretch selected, or a joint alone: the bar is that item's: what it is, and what can be done with it)
-  const it = canvas.selItem, label = it && itemLabel(design, it, canvas.jointList()), itemMode = !!it && !!label && (it.kind !== 'joint' || n === 0);
+  const several = canvas.selItems().filter(boxable);
+  const it = canvas.selItem, label = several.length > 1 ? itemsLabel(several) : it && itemLabel(design, it, canvas.jointList()), itemMode = !!it && !!label && (it.kind !== 'joint' || n === 0);
   bar.classList.toggle('item', itemMode);
   $('sel-item-del').hidden = !itemMode || it.kind === 'joint';
   bar.hidden = !itemMode && n === 0 && !clipboard.length && !clipTables.length;
