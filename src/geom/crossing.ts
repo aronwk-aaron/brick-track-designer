@@ -512,7 +512,7 @@ export function crossingPiece(s: Scad, routes: Route[], o: CrossingOptions = CRO
     for (const [end, e, dir] of [['start', routePose(r2, 0), -1], ['end', routePose(r2, Lk), 1]] as const) {
       if (x.innerEnds?.has(`${k}:${end}`) || bufEnd(k, end) || isHosted(k, end)) continue;
       const l = worldToPose(e, q), past = l[1] * dir;
-      if (past > 0 && past < STUD + c.postD / 2 && Math.abs(Math.abs(l[0]) - gOf[k]) < c.postD / 2 + HEAD_HW + 0.6) return false;
+      if (!process.env.NOSTUD && past > 0 && past < STUD + c.postD / 2 && Math.abs(Math.abs(l[0]) - gOf[k]) < c.postD / 2 + HEAD_HW + 0.6) { if (process.env.DBGSTUD) console.log('STUDPAST', q.map((v) => +v.toFixed(1)).join(','), 'route', i, 'past', k, end); return false; }
     }
     const sk = routeSOf(r2, q);
     if (sk < 0 || sk > Lk) return true;
@@ -571,7 +571,7 @@ export function crossingPiece(s: Scad, routes: Route[], o: CrossingOptions = CRO
     // triangles in the part's file)
     const { peg: pegI, conn0, conn1 } = connOf(i);
     const bedEnds = (): (Man | false | undefined)[] => {
-      if (scadParity() || hasRoll(rt)) return endBoxes(BED_END);
+      if (process.env.NOROOT || scadParity() || hasRoll(rt) || onBallast) return endBoxes(BED_END);
       const w = c.sleeperLen + 2 * STUD, box = (d: number, y: number) => T(s.cube([w, d + 1, 30]), [-w / 2, y, -5]);
       const { noConn0, noConn1 } = connPlan[i];
       const inConn = (conn: Man, y: number) => s.intersection(conn, T(s.cube([w, RAIL_ROOT, PLATE_H]), [-w / 2, y, 0]));
