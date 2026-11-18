@@ -19,14 +19,14 @@ export const saved = (file: string) => readDesign(JSON.parse(readFileSync(`${DIR
 
 /** What a saved design shows wrong, not yet put right (as assembled.shared.ts KNOWN); and the warnings its build gives (each must be given). */
 export const KNOWN_SAVED: Record<string, Known & { warnings?: RegExp[] }> = {
-  'R136-152_corner.btd.json': { problems: [/^track13 and track14 overlap/],
-    why: 'two neighbouring pieces of the two curves (R136 and R152, on ballast with a buddy strip, cut at the 32-stud baseplate edges) share 5.75 mm3 at 721, 852: a sliver 6.7 x 1.6 x 2.3 mm where their ballast meets' },
+  // ('R136-152_corner.btd.json' had 5.75 mm3 of track13 in track14 at 721, 852: the wedge a rail's end left where it only
+  // nearly met its end connector's tongue (crossing.ts rooted): gone)
   'return-loop-turning-left.btd.json': { problems: [],
     warnings: [/sprung blades are on thinner plates/],
     why: 'the build says it: the second points lie at an angle to the baseplate grid, on thinner plates; its parts go together' },
-  'return-loop-turning-right.btd.json': { problems: [/^track-bought-BrickTracksR120-\d+ and track-bought-BrickTracksR120-\d+ overlap: [\d.]+ mm3 at 294\.9, 2776\.7/, /^track-bought-53401-\d+ and track-bought-53401-\d+ overlap: [\d.]+ mm3 at 1247\.5, 1208\.0/, /^track-bought-53401-\d+ and track-bought-53401-\d+ overlap: [\d.]+ mm3 at 11(31\.9, 1153\.1|49\.6, 1117\.0)/],
+  'return-loop-turning-right.btd.json': { problems: [],
     warnings: [/sprung blades are on thinner plates/],
-    why: 'the build says the thinner plates, as the loop turning left; and three pairs of neighbouring bought pieces share 11 to 23 mm3 at their joints (two R120 curves at 295, 2777; three straights at 1132 to 1248, 1153 to 1208); by where, not by name: their numbers move with the parts before them' },
+    why: 'the build says the thinner plates, as the loop turning left; its parts go together (three pairs of neighbouring bought pieces shared 11 to 23 mm3 at their joints, two R120 curves at 295, 2777 and three straights at 1132 to 1248, 1153 to 1208: each the wedge a rail\'s end left at its end connector\'s tongue, gone with crossing.ts rooted)' },
   'monster-switch-6-tracks.btd.json': { problems: [],
     warnings: [/blades are rigid/, /a sprung blade's front has no lip/],
     why: 'the build says it: rigid blades where the sprung plates don\'t fit, and a sprung blade with no lip; its parts go together' },
