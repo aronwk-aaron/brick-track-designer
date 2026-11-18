@@ -569,9 +569,10 @@ export function crossingPiece(s: Scad, routes: Route[], o: CrossingOptions = CRO
     // end face flush with the connector's back, at an angle to everything else of the piece (a branch's end beside the
     // straight's), was joined with a sheet of no thickness and a hollow corner between the two, edges shared by four
     // triangles in the part's file)
-    const { peg: pegI, conn0, conn1 } = connOf(i);
     const bedEnds = (): (Man | false | undefined)[] => {
       if (process.env.NOROOT || scadParity() || hasRoll(rt) || onBallast) return endBoxes(BED_END);
+      // (its own copies of the connectors, made here: the ones built onto the piece are made after the bed, as ever)
+      const { conn0, conn1 } = connOf(i);
       const w = c.sleeperLen + 2 * STUD, box = (d: number, y: number) => T(s.cube([w, d + 1, 30]), [-w / 2, y, -5]);
       const { noConn0, noConn1 } = connPlan[i];
       const inConn = (conn: Man, y: number) => s.intersection(conn, T(s.cube([w, RAIL_ROOT, PLATE_H]), [-w / 2, y, 0]));
@@ -666,10 +667,10 @@ export function crossingPiece(s: Scad, routes: Route[], o: CrossingOptions = CRO
     }
     // End connectors and breakaway supports, at both ends.
     // (on ballast: no peg and clip, as the switches')
-    const peg = pegI;
     // (at a banked end, a route left banked to its end: turned with the bed)
     // (solid underneath here: the underside's cut under them, below)
     const { xfs0, xfs1, noConn0, noConn1 } = connPlan[i];
+    const { peg, conn0, conn1 } = connOf(i);
     if (!noConn0) parts.push(atPose(roll0 ? bankedEnd(s, conn0, trackBank(c.sleeperLen), roll0, c.sleeperLen, true) : conn0, p0));
     if (!noConn1) parts.push(atPose(roll1 ? bankedEnd(s, conn1, trackBank(c.sleeperLen), roll1, c.sleeperLen, false) : conn1, p1));
     // (buffer stops, in their end's frame; the peg and clip above the bed on ballast held up by breakaway supports)
