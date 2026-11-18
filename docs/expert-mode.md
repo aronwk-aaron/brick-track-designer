@@ -709,12 +709,20 @@ route-owned storage, the follow rules and the card section they bring are the pa
   a warning; (4) a cut across a track is an ordinary track end; (5) radii under R24 are a geometry job for everyone; (6)
   gauge where it is, and the design default → this track pattern for the rest (S5c puts the per-set points settings on
   the points' own rows, as recommended).
+- **The editor's leftovers (2026-11-17).** (1) **By hand only**: a button at the top of the legend (expert
+  tools shown; `btd-dim-plain`; not a row of its own: the legend is tall enough): every track with nothing by hand under a veil of the plan's colour (`items.ts
+  handTracks`: a track's own cuts, settings, stretches, sleepers, rails; trackwork edits on it or between it and
+  another; taken apart; accepted; a cut path's tracks). (2) **Clicks pick: Rail gaps, guard and check rails**: the
+  item kind `rail` (route, what: gap | guard | check, k): `hitItems` (a gap where its bar is, on its rail's side; a
+  stretch of rail all along it), `railedits.ts moveRailEdit` (a gap by quarter studs, a stretch by whole studs as long
+  as it was; held in `railProblem`'s words), drag, arrow keys, Delete, Esc, its card (where it is, to type).
+  Everything doesn't take them, as it doesn't take sleepers. (3) Cut keep-outs are shown while a path is selected or
+  dragged, not only while one is drawn. Each by touch too (the touch smoke test's last step).
 - **Next, in order:** (1) the double track's budget from CI's log (test/templates.shared.ts); a group's build told of the other groups' track at its ends, so a track joined onto points
   can have its own; (2) S1 more keys (buffer stops per end; labels per part); (3) then S5/S6 (the other kit
   modules as templates: the same three kinds of path cover them; `test/templates-cutpaths.test.ts` `MODULES` is the
-  pattern for checking a module against the library's ends). Left from S3: the keep-outs are drawn only while a path
-  is being drawn. Left from the editor's side: "Show what's overridden"; several items selected at once (a box round
-  cuts); the Pick list's kinds for S5b (rails: add to `PICKS` and `Layer`, and a kind to `hitItems`; sleepers are in).
+  pattern for checking a module against the library's ends). Left from the editor's side: several items selected at
+  once (a box round cuts).
 - **Traps.** The editor: an item goes by its track's and its own place in their lists, so whatever changes those lists
   without `setSelection` (which lets go of it) must let go of it itself (`canvas.selectItem(undefined)`: the card's ✕
   on a cut or a stretch, Delete on a card). `updateSelbar` and `renderTrackwork` are set up after the first `render()`

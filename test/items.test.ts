@@ -5,7 +5,7 @@ import { describe, expect, it } from 'vitest';
 import type { Design, DRoute, DSeg } from '../src/app/design';
 import { joints } from '../src/app/connections';
 import { stretchProblem } from '../src/app/stretches';
-import { alongBeyond, byHand, byHandNote, designByHandNote, dragStretchEnd, dragStretchWhole, EXPERT_SECTIONS, hitItems, type HitCtx, isPick, itemLabel, jointsOf, jointWhere, layerOf, newStretchAt, PICKS, picks, placeAlong, sameItem, takesFirst, withStretch } from '../src/app/items';
+import { alongBeyond, byHand, byHandNote, designByHandNote, dragStretchEnd, dragStretchWhole, EXPERT_SECTIONS, handTracks, hitItems, type HitCtx, isPick, itemLabel, jointsOf, jointWhere, layerOf, newStretchAt, PICKS, picks, placeAlong, sameItem, takesFirst, withStretch } from '../src/app/items';
 import { cardSections } from '../src/app/cardsections';
 
 const st = (studs: number): DSeg => ({ kind: 'straight', studs });
@@ -242,6 +242,60 @@ describe('the Expert tools switch', () => {
   });
 });
 
+describe('rail edits on the plan', () => {
+  const railed = () => d([r('Main', 0, 0, 0, [st(48)], { railEdits: { gaps: [{ at: 8, side: 'left' }, { at: 8, side: 'right' }, { at: 20, side: 'both' }], guards: [{ from: 24, to: 40 }], checks: [{ from: 10, to: 16, side: 'right' }] } }), r('Plain', 20, 0, 0, [st(48)])]);
+  const rails = (des: Design, w: [number, number]) => hitItems(des, w, ctx(des, { kinds: ['rail'], railsOf: [0, 1] })).map((h) => `${'what' in h.item ? h.item.what : ''}${'k' in h.item ? h.item.k : ''}`);
+  it('a gap where its bar is, on its own rail\'s side; a stretch of rail all along it, on its side', () => {
+    const des = railed();
+    expect(rails(des, [-2.5, 8.2])).toEqual(['gap0']);              // the left rail's gap
+    expect(rails(des, [2.5, 8.2])).toEqual(['gap1']);               // the right rail's, at the same place
+    expect(rails(des, [-2, 20])).toEqual(['gap2']); expect(rails(des, [2, 20.4])).toEqual(['gap2']);   // both rails': from either side
+    expect(rails(des, [0, 30])).toEqual(['guard0']);                // guard rails inside both
+    expect(rails(des, [1.5, 13])).toEqual(['check0']);              // the right rail's check rail
+    expect(rails(des, [-1.5, 13])).toEqual([]);                     // not from the left rail
+    expect(rails(des, [0, 44])).toEqual([]);                        // past them all
+    expect(rails(des, [20, 8])).toEqual([]);                        // a track with none
+    expect(rails(des, [9, 8])).toEqual([]);                         // beside the track
+    // (a gap before the rail it's cut in: the smaller thing first)
+    const over = d([r('Main', 0, 0, 0, [st(48)], { railEdits: { gaps: [{ at: 30, side: 'both' }], guards: [{ from: 24, to: 40 }] } })]);
+    expect(rails(over, [0, 30.3])).toEqual(['gap0', 'guard0']);
+  });
+  it('only when rails are picked, never on a locked track; called by what it is and where', () => {
+    const des = railed();
+    expect(what(des, [-2.5, 8.2])).toEqual([]);
+    des.routes[0].locked = true;
+    expect(rails(des, [0, 30])).toEqual([]);
+    expect(itemLabel(des, { kind: 'rail', route: 0, what: 'gap', k: 0 })).toBe('Gap in the left rail, 8 studs from the start, on Main');
+    expect(itemLabel(des, { kind: 'rail', route: 0, what: 'guard', k: 0 })).toBe('Guard rails, 24 to 40 studs, on Main');
+    expect(itemLabel(des, { kind: 'rail', route: 0, what: 'check', k: 4 })).toBeUndefined();
+    expect(layerOf('rail')).toBe('rail');
+    // (Everything doesn't take them, as it doesn't take sleepers: they lie along a track)
+    expect(picks('all', 'rail', true)).toBe(false); expect(picks('rail', 'rail', true)).toBe(true); expect(picks('rail', 'rail', false)).toBe(false); expect(picks('rail', 'track', true)).toBe(false);
+  });
+});
+
+describe('which tracks have anything by hand', () => {
+  it('a track\'s own cuts, settings, stretches, sleepers and rails; none on a track left as the app lays it', () => {
+    const des = d([r('A', 0, 0, 0, [st(32)], { cuts: [12] }), r('B', 16, 0, 0, [st(32)]), r('C', 32, 0, 0, [st(32)], { own: { ballast: 'ballast' } }),
+      r('D', 48, 0, 0, [st(32)], { sleeperEdits: [{ at: 8, off: true }] }), r('E', 64, 0, 0, [st(32)], { railEdits: { gaps: [{ at: 8, side: 'left' }] } })]);
+    expect(handTracks(des)).toEqual([true, false, true, true, true]);
+    // (a setting of its own that is the design's is none)
+    expect(handTracks(d([r('A', 0, 0, 0, [st(32)], { own: { sleepers: 'bed' } })], { options: { sleepers: 'bed' } }))).toEqual([false]);
+  });
+  it('and what lies between tracks: trackwork edited by hand, tracks taken apart or meant to run close, a cut path\'s tracks', () => {
+    const routes = () => [r('A', 0, 0, 0, [st(32)]), r('B', 0, 0, 0, [cv(40, 22.5)]), r('C', 40, 0, 0, [st(32)]), r('', 60, 0, 0, [st(32)])];
+    expect(handTracks(d(routes()))).toEqual([false, false, false, false]);
+    // (points edited: on the branch, between the two; an entry with only its place is no edit)
+    expect(handTracks(d(routes(), { trackwork: { points: { '0,0': { blades: 1, on: ['B', 's', 0, 0], is: [['A', 'B'], 0, 0, 1] } } } }))).toEqual([true, true, false, false]);
+    expect(handTracks(d(routes(), { trackwork: { points: { '0,0': { on: ['B', 's', 0, 0], is: [['A', 'B'], 0, 0, 1] } } } }))).toEqual([false, false, false, false]);
+    expect(handTracks(d(routes(), { expert: { apart: [['A', 'C']] } }))).toEqual([true, false, true, false]);
+    expect(handTracks(d(routes(), { expert: { accept: [{ routes: ['B', 'C'], what: 'over' }] } }))).toEqual([false, true, true, false]);
+    // (a track with no name goes by its place in the list; the tracks a cut path lies along are given by the caller)
+    expect(handTracks(d(routes(), { expert: { apart: [['A', '3']] } }))).toEqual([true, false, false, true]);
+    expect(handTracks(d(routes()), [[2], [3, 9]])).toEqual([false, false, true, true]);
+  });
+});
+
 describe('the Pick list', () => {
   it('Everything takes every layer; another only its own', () => {
     for (const l of ['track', 'cut', 'stretch', 'joint', 'mark'] as const) {
@@ -260,7 +314,7 @@ describe('the Pick list', () => {
   });
   it('every kind of item is in a layer the list has, and each entry has a name and a tip', () => {
     const layers = PICKS.map((p) => p.id as string);
-    for (const k of ['route', 'table', 'cut', 'cutpath', 'stretch', 'joint'] as const) expect(layers).toContain(layerOf(k));
+    for (const k of ['route', 'table', 'cut', 'cutpath', 'stretch', 'joint', 'sleeper', 'rail'] as const) expect(layers).toContain(layerOf(k));
     for (const p of PICKS) { expect(p.label.length).toBeGreaterThan(3); expect(p.tip.length).toBeGreaterThan(10); }
     expect(isPick('cut')).toBe(true);
     expect(isPick('sleepers')).toBe(false);

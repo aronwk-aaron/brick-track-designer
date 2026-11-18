@@ -28,7 +28,7 @@ import { designOptions, hasPartOwn, ignoredOwn, inForce, liveOwn, partGroups } f
 import { isRouteKey, OWN_LABELS, OWN_RANGES, OWN_UNSET, PART_KEYS, type RouteKey } from './routeown';
 import { accepted, pruneAccept, renameAccept, setAccept } from './accept';
 import { curvedAt, followShared, followSleeperEdits, pruneShared, renameShared, setShared, sharedOf, type SleeperEdit, sleeperEditText, SLEEPER_LONG, SLEEPER_MOVE, SPAN_MAX } from './sleeperedits';
-import { cleanRailEdits, FLANGEWAY_MIN, followRailEdits, GAP_DEF, GAP_MAX, GAP_MIN, GAP_RADIUS_MIN, GUARD_GAP_MAX, GUARD_GAP_MIN, RAIL_RUN_MIN, type RailEdits, type RailGap, railProblem, type RailSide, withRailEdit } from './railedits';
+import { cleanRailEdits, FLANGEWAY_MIN, followRailEdits, GAP_DEF, GAP_MAX, GAP_MIN, GAP_RADIUS_MIN, GUARD_GAP_MAX, GUARD_GAP_MIN, moveRailEdit, RAIL_RUN_MIN, railEditAt, type RailEdits, type RailGap, railProblem, type RailSide, withRailEdit } from './railedits';
 import { byHandNote, designByHandNote, EXPERT_SECTIONS, isPick, itemLabel, jointsOf, jointWhere, PICKS, sleeperEditAt, sleeperEditOf } from './items';
 import { followStretches, liveStretches, lostStretches, type Stretch, STRETCH_KEYS, STRETCH_MIN, stretchProblem } from './stretches';
 import { designOfSelection, listMine, saveMine, type StorageLike } from './mytemplates';
@@ -610,6 +610,28 @@ function renderItemCard() {
     const not = canvas.overlay?.pathsNot?.find((n) => n.id === it.id);
     if (not) small(`Not made: ${not.why}.`, true);
     row.append(del);
+  } else if (it.kind === 'rail') {
+    // (a rail edit: where it is, to type; moved along as the plan's drag moves it; its side and size are on the track's card)
+    const r = design.routes[it.route], e = railEditAt(r.railEdits, it.what, it.k)!, L = cutLength(r);
+    const moved = (by: number, key: string, was: HTMLInputElement, back: number) => {
+      const put = moveRailEdit(r, it.what, it.k, by);
+      if (!put.edits) { canvas.say(put.why ?? 'It can\'t go there'); was.value = String(back); return; }
+      r.railEdits = put.edits; coalesceNext = `rail:${it.route}:${it.what}:${key}`; changed(); canvas.selectItem({ kind: 'rail', route: it.route, what: it.what, k: put.k! }); updateSelbar(); soon(render);
+    };
+    if ('at' in e) {
+      const inp = document.createElement('input'); inp.type = 'number'; inp.step = '0.25'; inp.min = '1'; inp.max = String(+(L - 1).toFixed(2)); inp.value = String(e.at);
+      inp.title = `This gap, studs from the track's start. Range 1 to ${+(L - 1).toFixed(2)}.`; inp.setAttribute('aria-label', 'Selected rail gap: studs from the start');
+      inp.addEventListener('change', () => { const n = Number(inp.value); if (inp.value.trim() === '' || !Number.isFinite(n)) { canvas.say('Type how far along the gap is, studs'); inp.value = String(e.at); return; } moved(n - e.at, 'at', inp, e.at); });
+      box.append(field('Studs from the start', inp));
+      small(`Range 1 to ${+(L - 1).toFixed(2)}: between the track's end connectors. Drag it on the plan, or press an arrow key. Its rail and width: the track's card, Rails.`);
+    } else {
+      const inp = document.createElement('input'); inp.type = 'number'; inp.step = '1'; inp.min = '0'; inp.max = String(Math.max(0, Math.floor(L) - (e.to - e.from))); inp.value = String(e.from);
+      inp.title = `Where it starts, studs from the track's start; it stays ${e.to - e.from} studs long. Range 0 to ${Math.max(0, Math.floor(L) - (e.to - e.from))}.`; inp.setAttribute('aria-label', 'Selected rail: starts at, studs');
+      inp.addEventListener('change', () => { const n = Math.round(Number(inp.value)); if (inp.value.trim() === '' || !Number.isFinite(n)) { canvas.say('Type where it starts, studs'); inp.value = String(e.from); return; } moved(n - e.from, 'from', inp, e.from); });
+      box.append(field('Starts at, studs', inp));
+      small(`Whole studs, 0 to ${Math.max(0, Math.floor(L) - (e.to - e.from))}; it stays ${e.to - e.from} studs long. Drag it on the plan, or press an arrow key. Its length, side and gap: the track's card, Rails.`);
+    }
+    row.append(del, showCard(it.route, 'Rails'));
   } else if (it.kind === 'sleeper') {
     sleeperControls(box, it, true);
     row.append(showCard(it.route, 'Sleepers'));
@@ -644,7 +666,7 @@ function setExpert(on: boolean) {
 }
 function syncExpert() {
   const b = $('expert-toggle');
-  $('pick-row').hidden = !expertTools; $('loop-row').hidden = !expertTools;
+  $('pick-row').hidden = !expertTools; $('loop-row').hidden = !expertTools; $('dim-plain').hidden = !expertTools;
   b.classList.toggle('on', expertTools); b.setAttribute('aria-pressed', String(expertTools));
   b.title = expertTools ? 'The expert tools are shown: cuts across a track, cut paths, stretches and a track\'s own settings, on the plan and in the cards. Click to hide them: nothing in the design changes.'
     : 'Show the expert tools: cut a track where you choose, draw cut paths, give a track or a stretch of it its own settings. Hidden, the design is built the same, and a track that has any of these says so on its card.';
@@ -944,7 +966,10 @@ function railsSection(box: HTMLElement, r: DRoute) {
   const L = cutLength(r), Lw = Math.floor(L), e = r.railEdits ?? {};
   const small = (text: string, warn = false) => { const n = document.createElement('small'); n.className = 'desc'; n.style.color = warn ? 'var(--warn)' : 'var(--muted)'; n.textContent = text; box.append(n); };
   const head = (text: string) => { const h = document.createElement('div'); h.className = 'rsub'; h.textContent = text; h.style.cssText = 'font-weight:600;margin-top:8px'; box.append(h); };
+  // (the lists change under a rail edit selected on the plan, which goes by its place in them: let go of)
+  const letGo = () => { if (canvas.selItem?.kind === 'rail') canvas.selectItem(undefined); };
   const put = (next: RailEdits | undefined, tag: string) => {
+    letGo();
     const why = next ? railProblem(r, next) : undefined;
     if (why) { canvas.say(why); soon(render); return; }
     if (next) r.railEdits = next; else delete r.railEdits;
@@ -961,7 +986,7 @@ function railsSection(box: HTMLElement, r: DRoute) {
     sel.append(new Option('Left rail', 'left'), new Option('Right rail', 'right')); sel.value = v ?? 'both'; sel.title = 'Facing from the track\'s start';
     sel.addEventListener('change', () => set(sel.value)); return sel;
   };
-  const x = (label: string, fn: () => void) => { const b = btn('✕', fn, label); b.style.cssText = 'flex:none;width:auto;padding:2px 8px'; b.setAttribute('aria-label', label); return b; };
+  const x = (label: string, fn: () => void) => { const b = btn('✕', () => { letGo(); fn(); }, label); b.style.cssText = 'flex:none;width:auto;padding:2px 8px'; b.setAttribute('aria-label', label); return b; };
   const rowOf = (label: string, ...els: HTMLElement[]) => { const pair = document.createElement('span'); pair.style.cssText = 'display:flex;gap:4px;align-items:center'; pair.append(...els); const fl = field(label, pair); fl.classList.add('stack'); box.append(fl); };
   small(`Places in studs from the track's start (0 to ${Lw}); left and right facing from its start. Shown in orange on the plan.`);
   // (gaps)
@@ -972,7 +997,7 @@ function railsSection(box: HTMLElement, r: DRoute) {
     sideSel(g.side, true, (v) => put(withRailEdit(e, 'gaps', k, { ...g, side: v as RailGap['side'] }), `gap${k}side`)),
     numIn(g.w ?? GAP_DEF, GAP_MIN, GAP_MAX, 0.1, `How wide the gap is, mm. Range ${GAP_MIN} to ${GAP_MAX}, default ${GAP_DEF}.`, (v) => put(withRailEdit(e, 'gaps', k, { ...g, w: v }), `gap${k}w`)),
     x(`Take gap ${k + 1} out`, () => { if (!railProblem(r, withRailEdit(e, 'gaps', k, undefined) ?? {})) { const n = withRailEdit(e, 'gaps', k, undefined); if (n) r.railEdits = n; else delete r.railEdits; } })));
-  { const b = btn('Add a gap', () => { const at = Math.max(1, Math.round(L / 2)); const n = withRailEdit(e, 'gaps', undefined, { at, side: 'both' }); if (n) r.railEdits = n; }, 'One more gap, in the middle of the track to start with (then set where)'); box.append(b); }
+  { const b = btn('Add a gap', () => { letGo(); const at = Math.max(1, Math.round(L / 2)); const n = withRailEdit(e, 'gaps', undefined, { at, side: 'both' }); if (n) r.railEdits = n; }, 'One more gap, in the middle of the track to start with (then set where)'); box.append(b); }
   // (guard rails along stretches)
   head('Guard rails along stretches');
   if (r.guardRails) small('Locked: this track has guard rails all along (Guard rails). Turn those off to have them on stretches only.', true);
@@ -985,7 +1010,7 @@ function railsSection(box: HTMLElement, r: DRoute) {
       sideSel(g.side, true, (v) => { const { side: _s, ...rest } = g; put(withRailEdit(e, 'guards', k, { ...rest, ...(v !== 'both' && { side: v as RailSide }) }), `gd${k}side`); }),
       numIn(g.gap ?? RAIL_DEFAULTS.guardRailGapStuds, GUARD_GAP_MIN, GUARD_GAP_MAX, 0.01, `Studs from the rail's head. Range ${GUARD_GAP_MIN} to ${GUARD_GAP_MAX}, default ${RAIL_DEFAULTS.guardRailGapStuds}.`, (v) => put(withRailEdit(e, 'guards', k, { ...g, gap: v }), `gd${k}gap`)),
       x(`Take guard rails ${k + 1} out`, () => { const n = withRailEdit(e, 'guards', k, undefined); if (n) r.railEdits = n; else delete r.railEdits; })));
-    const b = btn('Add guard rails', () => { const n = withRailEdit(e, 'guards', undefined, { from: 0, to: Math.max(RAIL_RUN_MIN, Lw) }); if (n) r.railEdits = n; }, 'Guard rails inside both rails along the whole track to start with (then set from and to)'); box.append(b);
+    const b = btn('Add guard rails', () => { letGo(); const n = withRailEdit(e, 'guards', undefined, { from: 0, to: Math.max(RAIL_RUN_MIN, Lw) }); if (n) r.railEdits = n; }, 'Guard rails inside both rails along the whole track to start with (then set from and to)'); box.append(b);
   }
   // (check rails by hand)
   head('Check rails added by hand');
@@ -995,7 +1020,7 @@ function railsSection(box: HTMLElement, r: DRoute) {
     numIn(c.to, 0, Lw, 1, `Studs from the track's start. Range 0 to ${Lw}.`, (v) => put(withRailEdit(e, 'checks', k, { ...c, to: v }), `ck${k}to`)),
     sideSel(c.side, false, (v) => put(withRailEdit(e, 'checks', k, { ...c, side: v as RailSide }), `ck${k}side`)),
     x(`Take check rail ${k + 1} out`, () => { const n = withRailEdit(e, 'checks', k, undefined); if (n) r.railEdits = n; else delete r.railEdits; })));
-  { const b = btn('Add a check rail', () => { const mid = Math.floor(L / 2); const n = withRailEdit(e, 'checks', undefined, { from: Math.max(0, mid - 2), to: Math.min(Lw, mid + 2), side: 'left' }); if (n) r.railEdits = n; }, 'A check rail 4 studs long in the middle of the track to start with, inside the left rail'); b.disabled = Lw < RAIL_RUN_MIN; box.append(b); }
+  { const b = btn('Add a check rail', () => { letGo(); const mid = Math.floor(L / 2); const n = withRailEdit(e, 'checks', undefined, { from: Math.max(0, mid - 2), to: Math.min(Lw, mid + 2), side: 'left' }); if (n) r.railEdits = n; }, 'A check rail 4 studs long in the middle of the track to start with, inside the left rail'); b.disabled = Lw < RAIL_RUN_MIN; box.append(b); }
   // (rail ends at cuts)
   head('Rail ends where a part is cut through');
   {
@@ -1005,7 +1030,7 @@ function railsSection(box: HTMLElement, r: DRoute) {
     sel.addEventListener('change', () => { const { ends: _e, ...rest } = e; put(cleanRailEdits({ ...rest, ...(sel.value === 'square' && { ends: 'square' }) }), 'ends'); });
     const fl = field('Rail ends', sel); fl.classList.add('stack'); box.append(fl);
   }
-  const auto = btn('Rails as laid', () => { delete r.railEdits; }, 'Take every rail edit on this track off: gaps, guard rail stretches, check rails added, square ends'); auto.disabled = !r.railEdits; box.append(auto);
+  const auto = btn('Rails as laid', () => { letGo(); delete r.railEdits; }, 'Take every rail edit on this track off: gaps, guard rail stretches, check rails added, square ends'); auto.disabled = !r.railEdits; box.append(auto);
 }
 /**
  * A route card's Cuts into parts (expert): where its track is cut into parts by hand, a field each (studs from its
@@ -2061,6 +2086,19 @@ $('legend-fold').addEventListener('click', () => foldLegend(!legendEl.classList.
     canvas.loopOpens = lo.value;
     try { localStorage.setItem('btd-loop-opens', lo.value); } catch { /* fine */ }
     lo.blur();
+  });
+}
+// By hand only (a button at the top of the legend, with the expert tools shown): tracks with nothing by hand drawn faint;
+// remembered in this browser, as the Pick list.
+{
+  const dim = $<HTMLButtonElement>('dim-plain');
+  try { canvas.dimPlain = localStorage.getItem('btd-dim-plain') === '1'; } catch { /* fine */ }
+  const show = () => { dim.classList.toggle('on', canvas.dimPlain); dim.setAttribute('aria-pressed', String(canvas.dimPlain)); };
+  show();
+  dim.addEventListener('click', () => {
+    canvas.dimPlain = !canvas.dimPlain;
+    try { localStorage.setItem('btd-dim-plain', canvas.dimPlain ? '1' : '0'); } catch { /* fine */ }
+    show(); dim.blur(); canvas.draw();
   });
 }
 canvas.expert = expertTools; syncExpert();

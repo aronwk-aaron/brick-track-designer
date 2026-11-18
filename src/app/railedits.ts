@@ -125,6 +125,39 @@ export function withRailEdit<K extends 'gaps' | 'guards' | 'checks'>(e: RailEdit
   return cleanRailEdits({ ...e, [key]: v ? [...list, v] : list });
 }
 
+/** Which of a track's rail edits: a gap, a stretch of guard rails or a check rail added by hand, by its place in its list. */
+export type RailWhat = 'gap' | 'guard' | 'check';
+const LIST = { gap: 'gaps', guard: 'guards', check: 'checks' } as const;
+/** The edit itself (undefined: it isn't there). */
+export const railEditAt = (e: RailEdits | undefined, what: RailWhat, k: number): RailGap | GuardStretch | HandCheck | undefined => e?.[LIST[what]]?.[k];
+/**
+ * A track's rail edit moved `by` studs along it (a gap by any step, a stretch of rail by whole studs, as long as it
+ * was): the edits to keep and where the moved one is in its list now, or why it can't go there (railProblem's words;
+ * held at the track's start too). The plan's drag and arrow keys, and the item's card.
+ */
+export function moveRailEdit(r: Pick<DRoute, 'segs' | 'railEdits' | 'guardRails' | 'dualGauge'>, what: RailWhat, k: number, by: number): { edits?: RailEdits; k?: number; why?: string } {
+  const e = r.railEdits, was = railEditAt(e, what, k);
+  if (!was) return { why: 'That rail edit is gone' };
+  let now: RailGap | GuardStretch | HandCheck;
+  if (what === 'gap') now = { ...(was as RailGap), at: r2((was as RailGap).at + by) };
+  else { const st = was as GuardStretch, d = Math.round(by); if (st.from + d < 0) return { why: 'The track starts here' }; now = { ...st, from: st.from + d, to: st.to + d }; }
+  const next = withRailEdit(e, LIST[what], k, now as never);
+  if (!next) return { why: 'That rail edit can\'t go there' };
+  const why = railProblem(r, next);
+  if (why) return { why };
+  const same = (x: RailGap | GuardStretch | HandCheck) => ('at' in x ? 'at' in now && Math.abs(x.at - now.at) < 0.005 && x.side === now.side : !('at' in now) && x.from === now.from && x.to === now.to && x.side === now.side);
+  const at = ((next[LIST[what]] ?? []) as (RailGap | GuardStretch | HandCheck)[]).findIndex(same);
+  // (two of a kind at one place and side are kept as one: said, not made)
+  if (at < 0 || railEditCount(next) !== railEditCount(e)) return { why: what === 'gap' ? 'There\'s a gap in that rail there already' : 'There\'s a rail of that kind there already' };
+  return { edits: next, k: at };
+}
+/** What a rail edit is, for the selection bar and its card: "Gap in the left rail, 12 studs from the start". */
+export function railEditText(e: RailGap | GuardStretch | HandCheck, what: RailWhat): string {
+  if (what === 'gap') { const g = e as RailGap; return `Gap in ${g.side === 'both' ? 'both rails' : `the ${g.side} rail`}, ${+g.at.toFixed(2)} studs from the start`; }
+  const st = e as GuardStretch;
+  return what === 'guard' ? `Guard ${st.side ? `rail inside the ${st.side} rail` : 'rails'}, ${st.from} to ${st.to} studs` : `Check rail inside the ${st.side} rail, ${st.from} to ${st.to} studs`;
+}
+
 /** A track's rail edits for the build (route.ts RouteHand: mm along the drawn route; sides -1 left, 1 right, 0 both). Its guard rails go by its extra rails (design.ts toRoutes: ExtraRails.guardOn). */
 export function handRails(e: RailEdits, flangewayMm: number): Pick<RouteHand, 'gaps' | 'checks' | 'square'> {
   const s = (x: RailSide | 'both' | undefined) => (x === 'left' ? -1 : x === 'right' ? 1 : 0) as -1 | 0 | 1;

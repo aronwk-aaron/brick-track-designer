@@ -3,7 +3,7 @@
 // reshaped.
 import { describe, expect, it } from 'vitest';
 import { type DRoute, readDesign, toRoutes } from '../src/app/design';
-import { cleanRailEdits, followRailEdits, handRails, joinRailEdits, mirrorRailEdits, railProblem, railsSummary, railWarnings, reverseRailEdits, splitRailEdits, withRailEdit } from '../src/app/railedits';
+import { cleanRailEdits, followRailEdits, handRails, joinRailEdits, mirrorRailEdits, moveRailEdit, railEditAt, railEditText, railProblem, railsSummary, railWarnings, reverseRailEdits, splitRailEdits, withRailEdit } from '../src/app/railedits';
 import { alongAfter } from '../src/app/routecuts';
 import { mirrorRoute, reversedRoute } from '../src/app/routeedits';
 import { mergeRoutes, splitRoute } from '../src/app/splitmerge';
@@ -102,6 +102,43 @@ describe('rail edits: they go with their track', () => {
     expect(cardSections(d, r, { branches: false }).find((s) => s.id === 'rails')?.summary).toBe('2 gaps, 1 guard rail stretch, 1 check rail, square ends');
     expect(byHandNote(d, r)).toBe('Has 5 rail edits');
     expect(handRails({ checks: [{ from: 2, to: 6, side: 'right' }] }, 2.5)).toEqual({ checks: [{ a: 16, b: 48, side: 1, fw: 2.5 }] });
+  });
+});
+
+describe('rail edits: one moved along its track (the plan\'s drag, the arrow keys, its card)', () => {
+  it('a gap by any step, a stretch of rail by whole studs as long as it was; where it is in its list after', () => {
+    const r = straight({ railEdits: structuredClone(ALL) });
+    const g = moveRailEdit(r, 'gap', 0, 14.25);       // (the gap at 8 to 22.25: past the one at 20, so second in the list now)
+    expect(g.why).toBeUndefined();
+    expect(g.edits!.gaps).toEqual([{ at: 20, side: 'left', w: 2 }, { at: 22.25, side: 'both' }]);
+    expect(g.k).toBe(1);
+    const gd = moveRailEdit(r, 'guard', 0, 3.4);
+    expect(gd.edits!.guards).toEqual([{ from: 7, to: 15, side: 'right', gap: 0.5 }]);
+    expect(gd.k).toBe(0);
+    expect(moveRailEdit(r, 'check', 0, -16).edits!.checks).toEqual([{ from: 0, to: 8, side: 'left' }]);
+    // (the rest as it was; the track's own edits untouched)
+    expect(g.edits!.guards).toEqual(ALL.guards); expect(g.edits!.ends).toBe('square'); expect(r.railEdits).toEqual(ALL);
+    expect(moveRailEdit(r, 'gap', 0, 0).edits).toEqual(cleanRailEdits(ALL));
+  });
+  it('held where it can\'t be, in railProblem\'s words: at the track\'s ends, on one of its kind already there', () => {
+    const r = straight({ railEdits: structuredClone(ALL) });
+    expect(moveRailEdit(r, 'gap', 0, -7.5).why).toMatch(/between the track's end connectors/);
+    expect(moveRailEdit(r, 'gap', 0, 24).why).toMatch(/between the track's end connectors/);
+    expect(moveRailEdit(r, 'check', 0, 12).why).toMatch(/past the track's end/);
+    expect(moveRailEdit(r, 'guard', 0, -5).why).toBe('The track starts here');
+    expect(moveRailEdit(r, 'gap', 0, 12).why).toMatch(/gap in that rail there already/);
+    const two = straight({ railEdits: { checks: [{ from: 2, to: 8, side: 'left' }, { from: 10, to: 16, side: 'left' }] } });
+    expect(moveRailEdit(two, 'check', 0, 4).why).toMatch(/of that kind there already/);
+    expect(moveRailEdit(two, 'check', 0, 2).edits!.checks![0]).toEqual({ from: 4, to: 10, side: 'left' });
+    expect(moveRailEdit(r, 'gap', 5, 1).why).toBe('That rail edit is gone');
+  });
+  it('what each is called', () => {
+    expect(railEditText(railEditAt(ALL, 'gap', 0)!, 'gap')).toBe('Gap in both rails, 8 studs from the start');
+    expect(railEditText(railEditAt(ALL, 'gap', 1)!, 'gap')).toBe('Gap in the left rail, 20 studs from the start');
+    expect(railEditText(railEditAt(ALL, 'guard', 0)!, 'guard')).toBe('Guard rail inside the right rail, 4 to 12 studs');
+    expect(railEditText({ from: 0, to: 8 }, 'guard')).toBe('Guard rails, 0 to 8 studs');
+    expect(railEditText(railEditAt(ALL, 'check', 0)!, 'check')).toBe('Check rail inside the left rail, 16 to 24 studs');
+    expect(railEditAt(ALL, 'check', 3)).toBeUndefined();
   });
 });
 

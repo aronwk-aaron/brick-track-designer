@@ -244,6 +244,34 @@ async function tablet(width: number, height: number, tag: string) {
       await shot('jointcut');
     }
   }
+  // (the expert tools by touch: the legend's By hand only pressed by a finger; a rail gap tapped, dragged
+  // along its track by a finger, taken out with the bar's Delete)
+  if (tag === 'landscape') {
+    at = `${tag}: the expert tools by touch`;
+    await page.evaluate(() => { localStorage.setItem('btd-expert', '1'); localStorage.setItem('btd-pick', 'rail'); localStorage.removeItem('btd-dim-plain');
+      localStorage.setItem('btd-design', JSON.stringify({ version: 1, gaugeStuds: 4, routes: [
+        { name: 'Main', x: 0, y: 0, heading: -90, segs: [{ kind: 'straight', studs: 48 }], railEdits: { gaps: [{ at: 16, side: 'both' }] } },
+        { name: 'Far', x: 0, y: 24, heading: -90, segs: [{ kind: 'straight', studs: 48 }] }] })); });
+    await page.reload(); await page.waitForSelector('#track'); await tapOn('#mode-select'); await tapOn('#fit'); await sleep(400);
+    const scr = (wx: number, wy: number) => page.evaluate(([x, y]) => { const c = (window as unknown as { btdCanvas: { view(): { scale: number; ox: number; oy: number } } }).btdCanvas, v = c.view(), r = document.getElementById('track')!.getBoundingClientRect(); return [r.left + v.ox + x * v.scale, r.top + v.oy - y * v.scale] as [number, number]; }, [wx, wy]);
+    const gaps = () => page.evaluate(() => JSON.stringify((window as unknown as { btdCanvas: { host: { design(): { routes: { railEdits?: { gaps?: unknown[] } }[] } } } }).btdCanvas.host.design().routes[0].railEdits?.gaps ?? []));
+    const dim = (await page.locator('#dim-plain').boundingBox())!;
+    check(dim.height >= 36 && dim.width >= 36, `[${tag}] the legend's By hand only button is finger-sized (${Math.round(dim.width)}x${Math.round(dim.height)})`);
+    await tapOn('#dim-plain'); await sleep(200);
+    check(await page.locator('#track').getAttribute('data-dimmed') === '1', `[${tag}] a tap presses it: the track with nothing by hand is faint (${await page.locator('#track').getAttribute('data-dimmed')})`);
+    await tapOn('#dim-plain'); await sleep(200);
+    check(await page.locator('#track').getAttribute('data-dimmed') === null, `[${tag}] and a tap lets it go`);
+    const g = await scr(16, 0.3);
+    await f.tap(g); await sleep(250);
+    check(/^Gap in both rails, 16 studs/.test(await page.locator('#sel-count').innerText()), `[${tag}] a tap on a rail gap selects it (${await page.locator('#sel-count').innerText()})`);
+    await f.drag(g, await scr(22.1, 0.3), { steps: 8 }); await sleep(250);
+    check(await gaps() === '[{"at":22,"side":"both"}]', `[${tag}] a finger drags it along its track (${await gaps()})`);
+    const del = (await page.locator('#sel-item-del').boundingBox())!;
+    check(del.height >= 36, `[${tag}] the bar's Delete is finger-sized (${Math.round(del.width)}x${Math.round(del.height)})`);
+    await tapOn('#sel-item-del'); await sleep(250);
+    check(await gaps() === '[]', `[${tag}] and Delete on the bar takes it out (${await gaps()})`);
+    await shot('expert');
+  }
   await pageStill('everything');
   check(errors.length === 0, `[${tag}] no errors on the page${errors.length ? `: ${errors.join(' | ').slice(0, 400)}` : ''}`);
   await ctx.close();

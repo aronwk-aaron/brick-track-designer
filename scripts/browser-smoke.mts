@@ -667,6 +667,54 @@ try {
     check((await main()).stretches?.length === 1, 'and one undo brings it back');
     await page.keyboard.press('Escape'); await page.keyboard.press('Escape'); }
 
+  // rail edits on the plan (expert, Clicks pick: Rail gaps, guard and check rails): a click selects a gap or a check rail added by hand; the arrow keys, a drag and its card move it along the track; Delete takes it out
+  at = 'rail edits on the plan';
+  await page.evaluate(() => localStorage.setItem('btd-design', JSON.stringify({ version: 1, gaugeStuds: 4, routes: [
+    { name: 'Main', x: 0, y: 0, heading: -90, segs: [{ kind: 'straight', studs: 48 }], railEdits: { gaps: [{ at: 8, side: 'both' }], checks: [{ from: 20, to: 28, side: 'left' }] } },
+    { name: 'Far', x: 0, y: 24, heading: -90, segs: [{ kind: 'straight', studs: 48 }] }] })));
+  await page.reload(); await page.waitForSelector('#track'); await page.click('#mode-select'); await page.click('#fit'); await page.waitForTimeout(400);
+  { const bar = () => page.locator('#sel-count').innerText(), rails = () => page.evaluate(() => JSON.stringify(JSON.parse(localStorage.getItem('btd-design')!).routes[0].railEdits ?? {}));
+    const [gx, gy] = await scr(8, 0.3);
+    await page.mouse.click(gx, gy); await page.waitForTimeout(200);
+    check(await bar() === '1 selected', `with Clicks pick: Everything a click on a gap picks its track (${await bar()})`);
+    await page.keyboard.press('Escape');
+    await page.selectOption('#pick', 'rail'); await page.waitForTimeout(150);
+    await page.mouse.click(gx, gy); await page.waitForTimeout(200);
+    check(await bar() === 'Gap in both rails, 8 studs from the start, on Main', `with Rail gaps, guard and check rails picked, the click selects the gap (${await bar()})`);
+    check(await page.locator('#itemcard').isVisible() && await page.locator('#itemcard input').inputValue() === '8' && await page.locator('#sel-item-del').isVisible(), 'its card has where it is, and the bar has Delete');
+    await page.focus('#track'); await page.keyboard.press('ArrowRight'); await page.waitForTimeout(150);
+    check(await rails() === '{"gaps":[{"at":9,"side":"both"}],"checks":[{"from":20,"to":28,"side":"left"}]}', `an arrow key moves it a stud along the track (${await rails()})`);
+    await page.locator('#itemcard input').fill('12.5'); await page.locator('#itemcard input').press('Enter'); await page.waitForTimeout(300);
+    check(/"at":12.5/.test(await rails()) && /12.5 studs/.test(await bar()), `a number typed on its card moves it (${await rails()}; ${await bar()})`);
+    await page.locator('#itemcard input').fill('47.5'); await page.locator('#itemcard input').press('Enter'); await page.waitForTimeout(300);
+    check(/"at":12.5/.test(await rails()) && /between the track's end connectors/.test(await page.locator('#hint').innerText()), `past the end connector it stays, and why is said (${await page.locator('#hint').innerText()})`);
+    // (the check rail, inside the left rail: dragged along by its band, whole studs, as long as it was)
+    const [kx, ky] = await scr(24, 1.5);
+    await page.mouse.click(kx, ky); await page.waitForTimeout(200);
+    check(await bar() === 'Check rail inside the left rail, 20 to 28 studs, on Main', `a click on a check rail added by hand selects it (${await bar()})`);
+    await page.mouse.move(kx, ky); await page.mouse.down(); await page.mouse.move(...(await scr(29.2, 1.5)), { steps: 5 }); await page.mouse.up(); await page.waitForTimeout(250);
+    check(/"checks":\[\{"from":25,"to":33,"side":"left"\}\]/.test(await rails()) && /25 to 33 studs/.test(await bar()), `dragged along the track it goes by whole studs, as long as it was (${await rails()})`);
+    await page.keyboard.press('Control+z'); await page.waitForTimeout(250);
+    check(/"from":20,"to":28/.test(await rails()), 'and the drag is one undo step');
+    await page.mouse.click(kx, ky); await page.waitForTimeout(200); await page.click('#sel-item-del'); await page.waitForTimeout(200);
+    check(!/checks/.test(await rails()) && await page.locator('#selbar').isHidden(), `Delete on the bar takes it out (${await rails()})`);
+    await page.keyboard.press('Control+z'); await page.waitForTimeout(200);
+    check(/checks/.test(await rails()), 'one undo brings it back');
+    await page.selectOption('#pick', 'all'); await page.keyboard.press('Escape'); }
+
+  // By hand only (expert, a button at the top of the legend): tracks with nothing by hand are drawn faint; remembered; away with the expert tools
+  at = 'by hand only';
+  { const dimmed = () => page.locator('#track').getAttribute('data-dimmed'), pressed = () => page.locator('#dim-plain').getAttribute('aria-pressed');
+    check(await page.locator('#dim-plain').isVisible() && await pressed() === 'false' && await dimmed() === null, 'the legend has the button with the expert tools shown, off to start with');
+    await page.click('#dim-plain'); await page.waitForTimeout(200);
+    check(await pressed() === 'true' && await dimmed() === '1', `pressed, the track with nothing by hand is faint, the one with rail edits not (${await dimmed()})`);
+    check(await page.evaluate(() => localStorage.getItem('btd-dim-plain')) === '1', 'and it is remembered in the browser');
+    await page.click('#expert-toggle'); await page.waitForTimeout(200);
+    check(await page.locator('#dim-plain').isHidden() && await dimmed() === null, 'with the expert tools hidden the button is away and nothing is faint');
+    await page.click('#expert-toggle'); await page.waitForTimeout(200);
+    await page.click('#dim-plain'); await page.waitForTimeout(150);
+    check(await pressed() === 'false' && await dimmed() === null, 'pressed again, every track is drawn as ever'); }
+
   // stretches on the plan (expert): an end dragged along the track on whole studs, held at the track's end with why; the whole stretch dragged; Add a stretch… by a drag along the track
   at = 'stretches on the plan';
   await page.evaluate(() => localStorage.setItem('btd-design', JSON.stringify({ version: 1, gaugeStuds: 4, routes: [
@@ -737,7 +785,7 @@ try {
     const kinds = () => page.evaluate(() => (window as unknown as { btdCanvas: { items(): { kind: string }[] } }).btdCanvas.items().map((i) => i.kind).join());
     const points = () => page.evaluate(() => (window as unknown as { btdCanvas: { overlay?: { items?: { kind: string; off?: boolean; cand?: unknown }[] } } }).btdCanvas.overlay?.items?.filter((it) => it.kind === 'points' && !it.off && !it.cand).length ?? 0);
     for (let k = 0; k < 100 && await points() === 0; k++) await page.waitForTimeout(200);
-    check(await page.locator('#pick-row').isVisible() && await page.locator('#pick').inputValue() === 'all' && await page.locator('#pick option').count() === 7, 'with the expert tools shown the legend has the Pick list, on Everything');
+    check(await page.locator('#pick-row').isVisible() && await page.locator('#pick').inputValue() === 'all' && await page.locator('#pick option').count() === 8, 'with the expert tools shown the legend has the Pick list, on Everything');
     const [jx, jy] = await scr(0, 8), [ax, ay] = await scr(0.5, 26), [cx, cy] = await scr(0.5, 20);
     await page.selectOption('#pick', 'joint'); await page.mouse.click(jx, jy); await page.waitForTimeout(250);
     check(await bar() === 'Joint between S and A' && await kinds() === 'joint' && await points() === 1, `picking joints, a click on a branch's joint selects it, under its points, which stay as they are (${await bar()}; ${await kinds()})`);
