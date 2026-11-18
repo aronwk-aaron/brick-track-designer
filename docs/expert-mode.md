@@ -554,14 +554,23 @@ route-owned storage, the follow rules and the card section they bring are the pa
   are square to the line between the two tracks, 11.25 degrees off: stepped, the path would run down a rail); the
   double crossover's two middle sections are one part (they meet where the crossovers cross: through the frogs);
   on sleepers a compact detachable section's two tracks aren't joined where they've parted (two parts).
-  **Not templates, and why:** (1) a module alone (a base, a detach 1, a detach 2 without the rest). Two faults, both
-  with the routes of the module drawn on their own: a track end's connector keeps its studs where another track's
-  rail runs over them (two tracks ending side by side, 1.2 to 3.8 studs apart: 'Switch R104 base' = a 16-stud
-  straight and an R104 curve of 8.85 degrees from one toe: "track1's stud at -28.0, 124.0 is run into", the
-  straight's end connector's stud under the branch's left rail; the same at 3 studs apart on the compact R40 base
-  and at the start of a detach 2), which is the end connectors' geometry (switch/base.ts `fullEndpoint` at
-  `plan.endPoses`); and a detach 1 alone is two tracks side by side with no points, which the build warns of
-  ("tracks run over each other"): it wants the mark of section 4c (`expert.accept`), which isn't built. (2) The
+  **Not templates, and why:** (1) the kits' modules alone are templates now (2026-11-18: 'Switch R104 base',
+  'Switch R104 detach 1', 'Switch R40 compact base', each `, left` and `, right`; templates-ref-kits.ts
+  `REF_MODULES`, test/templates-modules.test.ts: each one track part, its ends on the part's outer edge where the
+  library has them). What kept them out, each put right in general: a branch's end row kept a stud just past the
+  straight's end, on its rail's line (the straight's own rail tongue ran through it, and the next piece's rail lies
+  there): an end's stud is kept off every other route's rail lines a stud past its ends at the piece's edge too
+  (crossing.ts `clearOfRails`). A bed's end face flush with its end connector's back was joined with a sheet of no
+  thickness and a hollow corner wherever anything else of the piece met it at an angle (edges shared by four
+  triangles; a lone R104 8.85-degree curve on a solid bed had them): the bed runs on 0.05 mm into its end connectors,
+  inside the connector only, so nothing is added (crossing.ts `bedEnds`, as the rails into their tongues). A support
+  cut back from the part near it was a stack of layers each a hair into the next, a ledge a thousandth high round
+  every layer, in the file triangles of no area up its walls: layers of one outline are one slab, and each slab stands
+  exactly on the one under it (supports.ts `cutBack`). A detach 1 alone is two tracks side by side with no points:
+  accepted (`expert.accept`). **Not done: a base and its detach 1 built alone don't go together with each other** (about
+  200 mm3 of each in the other at the joint: each track's end is square to that track, so the wedge between the
+  straight's end line and the branch's is in both modules; the kit template, one cut across both tracks at y = 16, is
+  the one whose modules mate). Putting it right wants a track end cut along a line that isn't square to it. (2) The
   double slip crossover and its variants, and the double slip monster crossover: four R104 double slips whose
   diagonals run on into each other and cross between the tracks. They build (23 s), but the four sets of points
   round that crossing have their levers in the way of the other diagonal ("the lever of the points at 8, 0 is in
@@ -738,10 +747,9 @@ route-owned storage, the follow rules and the card section they bring are the pa
   as it was; held in `railProblem`'s words), drag, arrow keys, Delete, Esc, its card (where it is, to type).
   Everything doesn't take them, as it doesn't take sleepers. (3) Cut keep-outs are shown while a path is selected or
   dragged, not only while one is drawn. Each by touch too (the touch smoke test's last step).
-- **Next, in order:** (1) the double track's budget from CI's log (test/templates.shared.ts); (2) buffer stop
-  settings per end; (3) then S5/S6 (the other kit modules as templates: the same three kinds of path cover them;
-  `test/templates-cutpaths.test.ts` `MODULES` is the pattern for checking a module against the library's ends). Left
-  from the editor's side: several items selected at once (a box round cuts).
+- **Next:** several items selected at once (a box round cuts); a track end cut along a line that isn't square to
+  it (the kits' modules alone, so a base and its detach 1 mate); buffer stop settings per end; the double track's
+  budget from CI's log.
 - **Traps.** The editor: an item goes by its track's and its own place in their lists, so whatever changes those lists
   without `setSelection` (which lets go of it) must let go of it itself (`canvas.selectItem(undefined)`: the card's ✕
   on a cut or a stretch, Delete on a card). `updateSelbar` and `renderTrackwork` are set up after the first `render()`

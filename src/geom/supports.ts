@@ -24,14 +24,31 @@ function cutBack(w: Wasm, one: Man, near: Man): Man {
   const bb = one.boundingBox(), z0 = bb.min[2], n = Math.max(1, Math.round((bb.max[2] - z0) / LAYER)), h = (bb.max[2] - z0) / n, G = SUPPORT_GAP + 0.01, up = SUPPORT_GAP + STEP;
   // (the part's outline every STEP up it, between the faces: a cut through a face's own height is neither side of it)
   const got = new Map<number, ReturnType<Man['slice']>>(), at = (k: number) => { let c = got.get(k); if (!c) { c = near.slice(z0 + (k + 0.5) * STEP); got.set(k, c); } return c; };
+  // (layers of one outline are one slab; and each slab stands on the one under it exactly, its bottom the very number the
+  // other's top is. Each layer a slab of its own, a hair into the next (two that only met, their heights a rounding
+  // apart, came out two bodies), left a ledge a thousandth high round every layer, and in the file triangles of no
+  // area up the walls, their edges shared by four: 46 on a kit's detach module, whose branch's end supports stand by
+  // the straight's end)
   const slabs: Man[] = [];
+  let run: { keep: ReturnType<Man['slice']>; from: number; layersTo: number } | undefined, top = z0;
+  const close = () => {
+    if (!run) return;
+    const bottom = run.from, height = z0 + run.layersTo * h - bottom;
+    slabs.push(run.keep.extrude(height).translate([0, 0, bottom]));
+    top = bottom + height;
+    run = undefined;
+  };
   for (let i = 0; i < n; i++) {
     const za = i * h, k0 = Math.ceil((za - up) / STEP - 0.5), k1 = Math.floor((za + h + up) / STEP - 0.5), levels: ReturnType<Man['slice']>[] = [];
     for (let k = k0; k <= k1; k++) levels.push(at(k));
     const keep = one.slice(z0 + za + h / 2).subtract(w.CrossSection.union(levels).offset(G, 'Round', 2, 12));
-    // (each a hair into the next: two that only met, their heights a rounding apart, came out two bodies)
-    if (keep.area() > 0.01) slabs.push(keep.extrude(i < n - 1 ? h + 0.001 : h).translate([0, 0, z0 + za]));
+    if (keep.area() <= 0.01) { close(); continue; }
+    if (run && run.layersTo === i && Math.abs(run.keep.area() - keep.area()) < 1e-9 && run.keep.subtract(keep).area() < 1e-9 && keep.subtract(run.keep).area() < 1e-9) { run.layersTo = i + 1; continue; }
+    close();
+    // (on the slab under it, if that ends here: from its top as built)
+    run = { keep, from: Math.abs(top - (z0 + za)) < 1e-9 ? top : z0 + za, layersTo: i + 1 };
   }
+  close();
   return w.Manifold.union(slabs);
 }
 /** (mm3, mm) A bit of a cut support worth printing: less than this, or shorter every way, doesn't stand. */
