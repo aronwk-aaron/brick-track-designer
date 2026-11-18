@@ -13,7 +13,7 @@ import { type Bank, bankPoint, sweepRoute, trackBank } from './sweep';
 import { connectorKeep, connectorUnderside, hollowGrid, rowUnderside, sleeperUnderside } from './underside';
 import { type ExtraBuilt, extraRails } from './extrarails';
 import { laySleepers, localSleepers, shapedSleeper } from './handsleepers';
-import { DEFAULTS, PLATE_H, RAIL_PROFILE, STUD, Track, type TrackOptions } from './track';
+import { DEFAULTS, PLATE_H, RAIL_PROFILE, scadParity, STUD, Track, type TrackOptions } from './track';
 import { StudPlaces } from './studs';
 import { pitchRow, studGap } from './studpitch';
 import { BUFFER_DEFAULTS, BUFFER_RAIL_END, type BufferOptions, bufferStop, couplerSupports, endAxleHoles, inBufferPost, trackSeat } from './extras';
@@ -74,6 +74,8 @@ export const CROSSING_DEFAULTS: CrossingOptions = { ...DEFAULTS, flangeway: 3, f
 const RAIL_TOP = PLATE_H + 6.4;
 const HEAD_HW = 1.25;
 const END = 4;        // rails stop this far from a route end (the connector takes over)
+/** (mm) How far a rail runs on into its end connector's tongue (rooted, below). */
+const RAIL_ROOT = 0.05;
 const BED_END = 8;    // the track bed stops here (the connector's base is the rest)
 /** (mm) With sleepers, a check rail may run this far over no sleeper, tie or bed (a gap between sleepers crossed at a slant); further, it gets bed under it. */
 export const CHECK_UNHELD = 24;
@@ -539,8 +541,25 @@ export function crossingPiece(s: Scad, routes: Route[], o: CrossingOptions = CRO
       return [!inStart && atPose(box(depth, -1), p0), !inEnd && atPose(box(depth, -depth), p1),
         bufS && bufDepth !== undefined && atPose(box(bufDepth, -1), p0), bufE && bufDepth !== undefined && atPose(box(bufDepth, -bufDepth), p1)];
     };
+    // (each rail run on RAIL_ROOT into its end connector's tongue, inside the tongue only, so nothing is added: cut
+    // flush with the tongue's root, on a piece ending part way round a curve (a curve built in two lengths, its joint
+    // at 59.3 degrees) the rail's end and the tongue's root only nearly met: a crack no wider than the kernel's
+    // rounding, which the part's mesh read back in closed up wrongly, a wedge of rail where the next part's tongue
+    // lies (11 mm3 in both parts). As a cut's tongue runs on into its rail (track.ts cutTongueEnd))
+    const rooted = (box: Man, start: boolean) => {
+      const tg = s.union([T(t.railEndpointLeft(), [-(g + 4), -8, 0]), T(t.railEndpointRight(), [g - 4, -8, 0])]), w = c.sleeperLen + 2 * STUD;
+      const root = s.intersection(start ? T(tg, [0, 4, 0]) : T(R(tg, [0, 0, 180]), [0, -4, 0]), T(s.cube([w, RAIL_ROOT, 30]), [-w / 2, start ? END - RAIL_ROOT : -END, -5]));
+      return s.difference(box, [root]);
+    };
+    const railEnds = (): (Man | false | undefined)[] => {
+      if (scadParity() || hasRoll(rt)) return endBoxes(END, BUFFER_RAIL_END);
+      const w = c.sleeperLen + 2 * STUD, box = (d: number, y: number) => T(s.cube([w, d + 1, 30]), [-w / 2, y, -5]);
+      const { noConn0, noConn1 } = connPlan[i];
+      return [!inStart && atPose(noConn0 ? box(END, -1) : rooted(box(END, -1), true), p0), !inEnd && atPose(noConn1 ? box(END, -END) : rooted(box(END, -END), false), p1),
+        bufS && atPose(box(BUFFER_RAIL_END, -1), p0), bufE && atPose(box(BUFFER_RAIL_END, -BUFFER_RAIL_END), p1)];
+    };
     const rails = s.difference(s.union([-g, g].map((x) =>
-      sweepRoute(s, s.polygon(RAIL_PROFILE.map(([px, py]) => [px + x, py + PLATE_H] as Vec2)), rt, 0, Infinity, trackBank(c.sleeperLen)))), endBoxes(END, BUFFER_RAIL_END));
+      sweepRoute(s, s.polygon(RAIL_PROFILE.map(([px, py]) => [px + x, py + PLATE_H] as Vec2)), rt, 0, Infinity, trackBank(c.sleeperLen)))), railEnds());
     // (each end flared away from the rail it guards, so a flange coming in is led into the gap, as the switches' are)
     const fl = 4, flare = o.checkRailFlare ?? 1.5;
     const checks = checkRails.filter((cr) => cr.route === i).flatMap((cr) => {
