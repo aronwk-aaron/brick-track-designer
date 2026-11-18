@@ -561,7 +561,7 @@ export function crossingPiece(s: Scad, routes: Route[], o: CrossingOptions = CRO
     // rounding, which the part's mesh read back in closed up wrongly, a wedge of rail where the next part's tongue
     // lies (11 mm3 in both parts). As a cut's tongue runs on into its rail (track.ts cutTongueEnd))
     const rooted = (box: Man, start: boolean) => {
-      const tg = s.union([T(t.railEndpointLeft(), [-(g + 4), -8, 0]), T(t.railEndpointRight(), [g - 4, -8, 0])]), w = c.sleeperLen + 2 * STUD;
+      const tg = s.union([T(t.railEndpointLeft(), [-(g + 4), -8, 0]), T(t.railEndpointRight(), [g - 4, -8, 0]), !process.env.NOBLOCK && T(s.cube([1, 4, 3.6]), [-(g + 3.8), -4, 0])]), w = c.sleeperLen + 2 * STUD;
       const root = s.intersection(start ? T(tg, [0, 4, 0]) : T(R(tg, [0, 0, 180]), [0, -4, 0]), T(s.cube([w, RAIL_ROOT, 30]), [-w / 2, start ? END - RAIL_ROOT : -END, -5]));
       return s.difference(box, [root]);
     };
