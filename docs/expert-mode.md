@@ -568,11 +568,15 @@ route-owned storage, the follow rules and the card section they bring are the pa
   the way of a train on another track"), two sets' plates lie 45 mm3 in the next slip's bed (the beds at two
   heights of network.ts `bedClear`, between slips here), a sprung blade has no lip, and the middle (the kit's two
   crossover adapters, which meet at the crossing: through its frogs) is 272 mm wide. The maker's adapters have no
-  levers on those four sets. (3) The compact R40 "perpendicular" 3T sets: the section itself is a template
-  with its base and the curved 90-degree section (templates-ref-kits.ts `perpendicularR40`: a tandem, the second
-  points with one moving blade, cut at the second points' toe); the set chained from its pieces builds, but two
-  parts of its third track's second curve lie 11 mm3 in each other at one of the app's own cuts (the inner rail's
-  tongue with no notch for it): not a template till that's traced.
+  levers on those four sets. (3) The compact R40 "perpendicular" 3T sets are templates now ('Perpendicular turnout R40, three tracks,
+  left|right', templates-ref-joints.ts: the kit, `perpendicularR40`, and its eight plain pieces, track pieces with
+  ordinary ends). What kept them out was no cut: a track piece ending part way round a curve had its rails cut flush
+  with its end connector's tongues, and the union left a wedge of rail there (crossing.ts `rooted`); and its
+  5.625-degree piece came out in two halves (no sleeper fits between its connectors: a bed there now).
+  test/track-ends-whole.test.ts. **Left:** a printed curve whose length isn't a whole number of 8 mm steps is cut 10
+  studs along (sections.ts: the last place looked at is a step short of the end's margin, taken for points ending the
+  free stretch), so each printed R40 22.5-degree curve of a set is two parts; put right (branch `fix-end-margin-cut`)
+  it changes the part count of some 60 of the first 350 designs, the sets with printed curves: Aaron's to decide.
 - **The editor's side of section 5 is built: typed selection, stretches on the plan, joints in the Trackwork panel,
   the Expert tools switch, the Pick list.** Pure part `src/app/items.ts`: `Item` (the typed ids: `route`, `table`,
   `cut` (route, k), `cutpath` (id), `stretch` (route, k), `joint` (a track's end, or its two tracks)), `hitItems` (the

@@ -23,7 +23,7 @@ Match: **exact** (ends, and lever or section where it has one), **close** (a tem
 **missing** (no template or setting makes it), **in progress elsewhere** (the double slips and their crossovers, being
 rebuilt separately).
 
-Counts: close 65, exact 242, in progress elsewhere 13, missing 14, n/a 1 (of 335).
+Counts: close 65, exact 244, in progress elsewhere 13, missing 12, n/a 1 (of 335).
 
 ## Parts
 
@@ -311,8 +311,8 @@ Counts: close 65, exact 242, in progress elsewhere 13, missing 14, n/a 1 (of 335
 | tb combo r148 siding right | Switch R148 right with its siding curves | exact | ends within 0.27 studs: the library's own placing of the set's pieces; lever within 0.67 studs of the part's tab; housing: the reference's cross-bar, 16 studs with a 4 x 3 stud block at each end (Lever housing: Cross-bar); the lever built in where the clip-on lever unit goes |
 | tb combo r148 turnout left | Switch R148 left with its turnout curve | exact | ends within 0.26 studs: the library's own placing of the set's pieces; 1 lever tab(s): lever place not checked (template not in the build batch) |
 | tb combo r148 turnout right | Switch R148 right with its turnout curve | exact | ends within 0.26 studs: the library's own placing of the set's pieces; 1 lever tab(s): lever place not checked (template not in the build batch) |
-| tb combo r40 perpendicular 3T left | - | missing | no template yet: chained from its pieces (templates-ref-kits.ts perpendicularR40, set) its 4 ends are within 0.09 studs of the set's, but two parts of its third track's second curve overlap by 11 mm3 where the app cuts it |
-| tb combo r40 perpendicular 3T right | - | missing | no template yet: chained from its pieces (templates-ref-kits.ts perpendicularR40, set) its 4 ends are within 0.09 studs of the set's, but two parts of its third track's second curve overlap by 11 mm3 where the app cuts it |
+| tb combo r40 perpendicular 3T left | Perpendicular turnout R40, three tracks, left | exact | its 15 pieces joined end to end (the compact base, the perpendicular section and the curved 90° section cut where they join; the 5.625° piece a piece of its own, the seven R40 22.5° curves printed in two lengths each, as every printed curve of a set is); its 4 ends within 0.09 studs: the library's own placing of the set's pieces |
+| tb combo r40 perpendicular 3T right | Perpendicular turnout R40, three tracks, right | exact | its 15 pieces joined end to end (the compact base, the perpendicular section and the curved 90° section cut where they join; the 5.625° piece a piece of its own, the seven R40 22.5° curves printed in two lengths each, as every printed curve of a set is); its 4 ends within 0.09 studs: the library's own placing of the set's pieces |
 | tb combo r40 railyard 2T left | Yard R40, two tracks, left | exact | ends within 0.15 studs: the library's own placing of the set's pieces; lever within 0.53 studs of the part's tab; housing: the reference's cross-bar, 16 studs with a 4 x 3 stud block at each end (Lever housing: Cross-bar); the lever built in where the clip-on lever unit goes |
 | tb combo r40 railyard 2T right | Yard R40, two tracks, right | exact | ends within 0.07 studs: the library's own placing of the set's pieces; lever within 0.60 studs of the part's tab; housing: the reference's cross-bar, 16 studs with a 4 x 3 stud block at each end (Lever housing: Cross-bar); the lever built in where the clip-on lever unit goes |
 | tb combo r40 railyard 3T left | Yard R40, three tracks, left | exact | ends within 0.08 studs: the library's own placing of the set's pieces; 2 lever tab(s): lever place not checked (template not in the build batch) |

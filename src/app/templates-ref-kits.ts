@@ -61,9 +61,7 @@ const compactKits = (hand: 1 | -1): Record<string, Design> => {
  * and the far rail; with two, the near blade would lie on the first branch's rail, which crosses the straight's near
  * rail 4 studs past their toe). Both levers on the straight's side (the kit's base with its ground throw outside).
  * set: the whole 3T set, each track carried on round to 90 degrees (the first by the kit's 5.625-degree piece and two
- * R40 22.5-degree curves, the second by two, the third by three); else the three kit pieces alone. The set is not a
- * template yet: it builds, its 4 ends within 0.09 studs of the library's, but two parts of the third track's second
- * curve lie 11 mm3 in each other where the app cuts it (the inner rail's tongue, with no notch for it in the other part).
+ * R40 22.5-degree curves, the second by two, the third by three: templates-ref-joints.ts); else the three kit pieces alone.
  */
 export function perpendicularR40(hand: 1 | -1, set: boolean): Design {
   const flip = (segs: Seg[]) => (hand === 1 ? segs : mirrored(segs)), r6 = (v: number) => Math.round(v * 1e6) / 1e6, side = hand === 1 ? 'right' : 'left';

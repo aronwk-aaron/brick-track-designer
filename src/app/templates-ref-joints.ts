@@ -5,6 +5,7 @@
 // is drawn), so it comes apart as the set does and every part fits a 256 mm bed.
 import type { Design } from './design';
 import { mirror } from './templates-ref-loops';
+import { perpendicularR40 } from './templates-ref-kits';
 
 export const REF_JOINTS: Record<string, Design> = {
   // (21 pieces: two narrow-gauge lines crossing each other between two standard tracks, and each track twice. Its 8 ends
@@ -25,3 +26,10 @@ export const REF_JOINTS: Record<string, Design> = {
 // (the other hand, two right and one left: the first's mirror image, as the range's two sets are each other's. Chained from
 // the library's own placing of its pieces, it came out with a section too big for a 256 mm bed that no cut would part.)
 REF_JOINTS['Compact switch set R40, two right and one left curved 45° switches'] = mirror(REF_JOINTS['Compact switch set R40, two left and one right curved 45° switches']);
+// (the perpendicular turnouts: three tracks off one, 16 studs apart, each round to 90 degrees. 15 pieces: the compact R40
+// base, the perpendicular section and the curved 90-degree section (templates-ref-kits.ts perpendicularR40, cut where
+// they join), then the first track's 5.625-degree piece and two R40 22.5-degree curves, the second's two curves and the
+// third's three, track pieces with ordinary ends (each printed curve in two lengths, as a set's printed curves are).
+// Its 4 ends within 0.09 studs of the set's.)
+REF_JOINTS['Perpendicular turnout R40, three tracks, left'] = perpendicularR40(1, true);
+REF_JOINTS['Perpendicular turnout R40, three tracks, right'] = perpendicularR40(-1, true);
