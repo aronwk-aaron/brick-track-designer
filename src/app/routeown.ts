@@ -29,7 +29,7 @@ export const isRouteKey = (k: string): k is RouteKey => (ROUTE_KEYS as readonly 
 
 /** Each setting's name, as the Settings panel says it (settings.ts: a test holds them to it). */
 export const OWN_LABELS: Record<RouteKey, string> = {
-  ballast: 'Ballast', ballastLeftStuds: 'Ballast past the sleepers, left, studs', ballastRightStuds: 'Ballast past the sleepers, right, studs', ballastEnds: 'Ballast at a buffer stop', sleepers: 'Under the rails', sleeperWidthStuds: 'Sleeper width', sleeperGapStuds: 'Gap between sleepers, studs', curveStuds: 'Studs on the track',
+  ballast: 'Ballast layers', ballastLeftStuds: 'Ballast past the sleepers, left, studs', ballastRightStuds: 'Ballast past the sleepers, right, studs', ballastEnds: 'Ballast at a buffer stop', sleepers: 'Under the rails', sleeperWidthStuds: 'Sleeper width', sleeperGapStuds: 'Gap between sleepers, studs', curveStuds: 'Studs on the track',
   bottomStyle: 'Ballast underside', undersideGrid: 'Underside lined up with', grip: 'Grip on the baseplate', legoTrack: 'Bought track',
   checkRailLen: 'Check rail length, studs', checkRailW: 'Check rail width, mm', checkRailFlare: 'Check rail end flare, mm', flangeway: 'Flangeway width, mm', flangewayDepth: 'Flangeway depth, mm',
   bufferStyle: 'Style', bufferPostPlates: 'Post height, plates', bufferBeamBottom: 'Beam bottom above the rails, mm', bufferBeamTop: 'Beam top above the rails, mm', bufferPinHoles: 'Pin holes in the posts', raisedOn: 'Raised track stands on',

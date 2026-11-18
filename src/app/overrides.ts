@@ -100,7 +100,7 @@ export interface PartGroups {
   takes: (number | undefined)[];
   /** each track's settings in force (its part's, and its own banks); a monorail's: the design's */
   inForce: PieceOptions[];
-  /** "T2 and T5 are one part: both take T2's Ballast" */
+  /** "T2 and T5 are one part: both take T2's Ballast layers" */
   warnings: string[];
 }
 
@@ -207,7 +207,7 @@ export function ballastSteps(d: Design, inForce: PieceOptions[]): string[] {
     const dz = lift(inForce[i]) - lift(inForce[j]);
     if (!dz || !ends[i].some((a) => ends[j].some((b) => Math.hypot(a[0] - b[0], a[1] - b[1]) < 0.5 && dAng(a[2], b[2]) > 179))) continue;
     const [hi, lo] = dz > 0 ? [i, j] : [j, i], plates = Math.round(Math.abs(dz) / 3.2);
-    out.push(`${name(hi)} and ${name(lo)} meet end to end, but ${name(hi)}'s ballast lifts it ${plates === 1 ? 'a plate' : `${plates} plates`} (${Math.abs(dz)} mm) higher: put ${plates === 1 ? 'a plate' : `${plates} plates`} under ${name(lo)}, or give both the same Ballast`);
+    out.push(`${name(hi)} and ${name(lo)} meet end to end, but ${name(hi)}'s ballast lifts it ${plates === 1 ? 'a plate' : `${plates} plates`} (${Math.abs(dz)} mm) higher: put ${plates === 1 ? 'a plate' : `${plates} plates`} under ${name(lo)}, or give both the same Ballast layers`);
   }
   return out;
 }

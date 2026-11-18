@@ -38,7 +38,7 @@ describe('tracks with settings of their own, built', { timeout: 600000 }, () => 
     t.routes[1].own = { ballast: 'ballast' };
     const b = buildDesign(w, t), all = buildDesign(w, { ...noOwn(t), options: { ...t.options, ballast: 'ballast' } });
     expect(hashes(b)).toEqual(hashes(all));
-    expect(b.info.warnings).toContain("Straight and Branch are one part (they meet in points or a crossing, or lie side by side): both take Branch's Ballast");
+    expect(b.info.warnings).toContain("Straight and Branch are one part (they meet in points or a crossing, or lie side by side): both take Branch's Ballast layers");
   });
   it('bought or printed, per track', async () => {
     const w = await kernel();

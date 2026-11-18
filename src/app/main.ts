@@ -831,7 +831,7 @@ function moreSection(box: HTMLElement, r: DRoute, i: number) {
     if (g === 'labels') {
       // (labels can't be on this track: one line, not four greyed rows)
       const o = { ...OWN_UNSET, ...inForce(design, i) } as PieceOptions;
-      if (!(o.ballast !== 'none' && o.bottomStyle === 'float')) { small('Labels go only on a flat underside: set Ballast to Ballast and Ballast underside to Flat (Bed and underside, or Settings).'); continue; }
+      if (!(o.ballast !== 'none' && o.bottomStyle === 'float')) { small('Labels go only on a flat underside: set Ballast layers to 1 or 2 and Ballast underside to Flat (Bed and underside, or Settings).'); continue; }
     }
     for (const key of MORE_KEYS[g]) box.append(ownRow(r, i, key));
   }
@@ -887,7 +887,7 @@ function stretchRow(r: DRoute, i: number, st: Stretch, k: number, key: RouteKey)
 function stretchList(box: HTMLElement, r: DRoute, i: number) {
   const L = cutLength(r), small = (text: string, warn = false) => { const n = document.createElement('small'); n.className = 'desc'; n.style.color = warn ? 'var(--warn)' : 'var(--muted)'; n.textContent = text; box.append(n); };
   const head = document.createElement('div'); head.className = 'rsub'; head.textContent = 'Stretches with their own'; head.style.cssText = 'font-weight:600;margin-top:8px'; box.append(head);
-  small(`A stretch of this track, from and to in whole studs from its start (0 to ${+L.toFixed(1)}), at least ${STRETCH_MIN} long, with its own settings over the track's. On the plan: click a stretch of the selected track to select it, drag it or its ends along the track. The track is cut at a stretch's ends: an ordinary track end each side. Ballast lifts the track a plate (3.2 mm), with its buddy layer two: put plates under the track beside it.`);
+  small(`A stretch of this track, from and to in whole studs from its start (0 to ${+L.toFixed(1)}), at least ${STRETCH_MIN} long, with its own settings over the track's. On the plan: click a stretch of the selected track to select it, drag it or its ends along the track. The track is cut at a stretch's ends: an ordinary track end each side. Ballast lifts the track a plate (3.2 mm), with two layers, two plates: put plates under the track beside it.`);
   const lost = new Set(lostStretches(r).map((s) => s.from)), live = liveStretches(r);
   (r.stretches ?? []).forEach((st, k) => {
     const num = (which: 'from' | 'to') => {

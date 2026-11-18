@@ -82,7 +82,7 @@ Goals marked *(inferred)* are my reading, not his words.
 
 - Read README, the plan documents, the Help text and all 387 commit subjects.
 - Did one real task in a browser, start to finish: a passing loop with a bought LEGO switch at each end, on two
-  30" × 60" tables, ballast and buddy, default 256 mm bed; then the parts list, the STL zip and the layout-parts zip.
+  30" × 60" tables, ballast in two layers, default 256 mm bed; then the parts list, the STL zip and the layout-parts zip.
   Then the same design at phone size.
 - Timed cold builds of six templates in the browser.
 - Compared the templates with both reference makers' ranges in the BlueBrick library on disk, and with the old
@@ -111,7 +111,7 @@ of joints and undersides beyond the settings pictures; I did not read the logs o
 
 6. **Tables.** Two ready-made 30" × 60" tables. The second lands exactly on top of the first; I moved them by typing
    y. Once moved, the seam is drawn and the parts list splits by table.
-7. **Ballast + buddy.** One select in Settings. Rebuilt in 7.5 s: 6 printed parts (each switch's ballast in two, each
+7. **Ballast, two layers.** One select in Settings. Rebuilt in 7.5 s: 6 printed parts (each switch's ballast in two, each
    curve's in one). The ten straights go on LEGO plates instead: the list asks for 30 × Plate 6 × 16 and 20 × Plate
    2 × 16. That is a real cost and there is no setting to print that ballast instead.
 
@@ -193,7 +193,7 @@ Cold builds in the browser (dev server, this 16-core machine, niced):
 | Design | Built in |
 |---|---|
 | Left switch (LEGO), printed | 2.2 s |
-| My passing loop, bought, ballast + buddy | 7.5 s |
+| My passing loop, bought, ballast in two layers | 7.5 s |
 | Double slip (22.5°) | 7.8 s |
 | Double crossover (R56) | 17 s |
 | Yard (R56) | 25 s |

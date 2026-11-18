@@ -104,7 +104,7 @@ try {
   const ballast = () => page.evaluate(() => (JSON.parse(localStorage.getItem('btd-design')!).options?.ballast ?? 'none') as string);
   const ballast0 = await ballast();
   await page.click('#settings-open'); await page.fill('#settings-search', 'Ballast');
-  const sel = page.locator('#options label.field', { has: page.locator('span', { hasText: /^Ballast\s*i?$/ }) }).locator('select');
+  const sel = page.locator('#options label.field', { has: page.locator('span', { hasText: /^Ballast layers\s*i?$/ }) }).locator('select');
   await sel.selectOption('ballast'); await page.waitForTimeout(300);
   check(await ballast() === 'ballast', 'a setting changed (Ballast) is in the design');
   await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
@@ -132,7 +132,7 @@ try {
   await page.fill('#settings-search', '');
   check(await page.locator('#options summary').count() === 14, `the settings are in 14 groups (${await page.locator('#options summary').count()})`);
   check(await page.locator('#options summary', { hasText: 'Monorail' }).first().innerText().then((t) => /not used in this design/.test(t)), 'a design with no monorail marks Monorail "not used in this design"');
-  await page.locator('#options summary', { hasText: 'Sleepers and ballast' }).click(); await page.locator('#options label.field', { has: page.locator('span', { hasText: /^Ballast\s*i?$/ }) }).locator('select').selectOption('buddy'); await page.waitForTimeout(200);
+  await page.locator('#options summary', { hasText: 'Sleepers and ballast' }).click(); await page.locator('#options label.field', { has: page.locator('span', { hasText: /^Ballast layers\s*i?$/ }) }).locator('select').selectOption('buddy'); await page.waitForTimeout(200);
   check(await page.locator('#options summary', { hasText: 'Sleepers and ballast' }).locator('.chg').innerText().then((t) => /1 changed/.test(t)), 'a changed setting is counted in its group header');
   await page.locator('#options summary', { hasText: 'Sleepers and ballast' }).getByRole('button', { name: 'Reset group' }).click(); await page.waitForTimeout(200);
   check(await ballast() === 'none', 'Reset group puts it back');

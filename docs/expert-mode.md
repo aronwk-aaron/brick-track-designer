@@ -87,7 +87,7 @@ says when (section 9).
 | layer | automatic today | expert may | forbidden, and the words |
 |---|---|---|---|
 | **Settings** (S1) | one set for the design | `ROUTE_KEYS` per route and per stretch: `ballast`, `bottomStyle`, `sleepers`, `sleeperWidthStuds`, `sleeperGapStuds`, `curveStuds`, `undersideGrid`, `grip`, `checkRailLen/W/Flare`, `flangeway`, `flangewayDepth`, `bufferStyle` and its sizes, `bankRampAt/Studs`, `bankClimb`, `raisedOn`, label text; per points set (S5c): the points and throw groups | fits, joints, bed, bought track: "Set for the whole design: parts that meet must agree" (greyed, with that line) |
-| **Ballast** (S1, S5a) | none / ballast / buddy, design-wide; width from the gauge | per route and stretch: which; S5a: width each side in whole studs, square or sloped ends, absent under a stretch | narrower than the sleepers: "The ballast can't be narrower than the sleepers (8 studs)" |
+| **Ballast** (S1, S5a) | 0, 1 or 2 layers, design-wide; width from the gauge | per route and stretch: which; S5a: width each side in whole studs, square or sloped ends, absent under a stretch | narrower than the sleepers: "The ballast can't be narrower than the sleepers (8 studs)" |
 | **Sleepers** (S5a) | `ownSleeperSpots`: every width + gap from each piece's start, square to the track; solid bed under points | move one along (whole studs on the baseplate grid, any on a 'track' underside), take one out, add one, lengthen each side in whole studs, turn (curves: fan or square); share one across parallel tracks (`expert.shared`) | a gap the rails can't span (the geometry agent's sleeper-gap rule): "The rails would span 9 studs here: 6 at most"; a sleeper under a blade's moving length |
 | **Rails** (S5b) | both running rails end to end; flangeway gaps at frogs worked out; which rail is cut at a crossing by the solver | start and stop a rail (a gap, an isolating cut 1 mm wide), choose which rail runs through at a frog, a rail end's shape (square, tongue) | a gap on a curve under R40 without a check rail opposite: warning, not refusal |
 | **Guard and check rails** (exists + S5b) | guard rails per route (card); check rails opposite frogs, editable in Trackwork (ends, shift, off) | guard rails per stretch (from–to), one side only, flangeway width per rail; check rails added by hand anywhere | flangeway under 2.5 mm: "Wheels need 2.5 mm" |
@@ -457,7 +457,7 @@ route-owned storage, the follow rules and the card section they bring are the pa
 - **How S1b differs from section 1:** (1) `resolveOptions` has no `at`: the place is resolved by cutting the track
   (`expandStretches`), then per piece. (2) Stretches aren't placed or dragged on the plan (numbers in the card only).
   (3) A stretch's one-part lock isn't shown on its rows: the build's warning says it, by the piece's name. (4) Ballast
-  beside none is a step of a plate in the rails (3.2 mm, 6.4 with the buddy layer): said in the card and the help,
+  beside none is a step of a plate in the rails (3.2 mm, 6.4 with two layers): said in the card and the help,
   not warned by the build.
 - **S1 and S1b as landed (2026-11-11).** Checked: tsc and eslint clean; the identical-output baseline over the 303
   templates and 3 saved designs that have none of this (the four heaviest left out) against main: 306 the same (names, triangles, volumes, vertex hashes, warnings: 304 as at

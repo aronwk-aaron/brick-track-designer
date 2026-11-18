@@ -42,7 +42,7 @@ const endsSummary = (r: DRoute) => [r.startEnd === 'buffer' && 'buffer stop at t
 /** What a track's bed is ("sleepers", "ballast"), and whose: its own, another track's it's one part with, or the design's. */
 export function bedSummary(d: Design, r: DRoute): string {
   const i = d.routes.indexOf(r), o = i >= 0 ? inForce(d, i) : resolveOptions(d, r);
-  const bed = o.ballast === 'buddy' ? 'ballast + buddy layer' : o.ballast === 'ballast' ? 'ballast' : o.sleepers === 'sleepers' ? 'sleepers' : 'solid bed';
+  const bed = o.ballast === 'buddy' ? 'ballast, 2 layers' : o.ballast === 'ballast' ? 'ballast, 1 layer' : o.sleepers === 'sleepers' ? 'sleepers' : 'solid bed';
   const from = i >= 0 && hasPartOwn(d) ? partGroups(d).takes[i] : undefined;
   const st = r.stretches?.length ? ` · ${r.stretches.length} ${r.stretches.length === 1 ? 'stretch' : 'stretches'} with ${r.stretches.length === 1 ? 'its' : 'their'} own` : '';
   return `${bed} · ${from !== undefined ? `as ${d.routes[from].name || `route ${from + 1}`} (one part)` : Object.keys(liveOwn(d, r, BED_KEYS)).length ? 'its own' : 'design default'}${st}`;

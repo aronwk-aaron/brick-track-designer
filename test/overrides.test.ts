@@ -101,7 +101,7 @@ describe('which tracks are one part', () => {
     const pg = partGroups(d);
     expect(pg.groups).toEqual([{ routes: [0, 1], options: { ...d.options, ballast: 'ballast' } }]);
     expect(pg.takes).toEqual([1, undefined]);
-    expect(pg.warnings).toEqual(["Straight and Branch are one part (they meet in points or a crossing, or lie side by side): both take Branch's Ballast"]);
+    expect(pg.warnings).toEqual(["Straight and Branch are one part (they meet in points or a crossing, or lie side by side): both take Branch's Ballast layers"]);
     expect(inForce(d, 0).ballast).toBe('ballast');
     d.routes[0].own = { ballast: 'buddy' };
     expect(partGroups(d).takes).toEqual([undefined, 0]);
@@ -112,9 +112,9 @@ describe('which tracks are one part', () => {
   });
   it('tracks joined end to end, one on ballast and the other not: the step in the rails is said', () => {
     const d = design([straight('A', 0, 0, { own: { ballast: 'ballast' } }), straight('B', 0, 32), straight('C', 24)]);
-    expect(partGroups(d).warnings).toEqual(["A and B meet end to end, but A's ballast lifts it a plate (3.2 mm) higher: put a plate under B, or give both the same Ballast"]);
+    expect(partGroups(d).warnings).toEqual(["A and B meet end to end, but A's ballast lifts it a plate (3.2 mm) higher: put a plate under B, or give both the same Ballast layers"]);
     d.routes[1].own = { ballast: 'buddy' };
-    expect(partGroups(d).warnings).toEqual(["B and A meet end to end, but B's ballast lifts it a plate (3.2 mm) higher: put a plate under A, or give both the same Ballast"]);
+    expect(partGroups(d).warnings).toEqual(["B and A meet end to end, but B's ballast lifts it a plate (3.2 mm) higher: put a plate under A, or give both the same Ballast layers"]);
     d.routes[0].own = { ballast: 'buddy' };
     expect(partGroups(d).warnings).toEqual([]);
     expect(partGroups(structuredClone(TEMPLATES['Station track on a solid bed, the line beyond on sleepers'])).warnings).toEqual([]);
