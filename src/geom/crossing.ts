@@ -505,8 +505,17 @@ export function crossingPiece(s: Scad, routes: Route[], o: CrossingOptions = CRO
    * short coupon, had a stud standing against the straight's rail) */
   const clearOfRails = (i: number, q: [number, number]) => routes.every((r2, k) => {
     if (k === i) return true;
+    // (nor on its rails' lines past an end of it at the piece's edge, a stud deep: the next piece's rails lie there, and
+    // this route's own rail ends' tongues. A branch's end row beside the straight's end, where the two tracks have
+    // yet to part (a kit's base module on its own), had a stud standing through the straight's rail's tongue)
+    const Lk = routeLength(r2);
+    for (const [end, e, dir] of [['start', routePose(r2, 0), -1], ['end', routePose(r2, Lk), 1]] as const) {
+      if (x.innerEnds?.has(`${k}:${end}`) || bufEnd(k, end) || isHosted(k, end)) continue;
+      const l = worldToPose(e, q), past = l[1] * dir;
+      if (past > 0 && past < STUD + c.postD / 2 && Math.abs(Math.abs(l[0]) - gOf[k]) < c.postD / 2 + HEAD_HW + 0.6) return false;
+    }
     const sk = routeSOf(r2, q);
-    if (sk < 0 || sk > routeLength(r2)) return true;
+    if (sk < 0 || sk > Lk) return true;
     return Math.abs(Math.abs(routeLat(r2, q)) - gOf[k]) >= c.postD / 2 + HEAD_HW + 0.6;
   });
   const connPlan = routes.map((rt, i) => {

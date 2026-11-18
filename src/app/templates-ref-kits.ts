@@ -101,3 +101,31 @@ export const REF_KITS: Record<string, Design> = {
       { id: 'c5', pts: [[0, -1], [0, 28]] }, { id: 'c6', pts: [[0, 52], [0, 81]] }, { id: 'c7', pts: [[-8, 28], [-8, 52]] }, { id: 'c8', pts: [[8, 28], [8, 52]] },
       { id: 'c9', pts: [[-14, 40], [-8, 40]] }, { id: 'c10', pts: [[8, 40], [14, 40]] }] } },
 };
+
+/**
+ * The kits' modules on their own: a base (the points and the lever) and a detachable section, each the piece of
+ * trackwork the maker sells apart, its tracks drawn as far as the module goes. A base is points as any; a detach 1 is
+ * two tracks side by side with no points of its own (the base has them), closer than their sleepers: the pair is
+ * accepted (expert, accept.ts), as the maker's module runs them.
+ */
+const r104 = (name: string, hand: 1 | -1, a: number, b: number, more: Partial<DRoute> = {}): DRoute => {
+  const r6 = (v: number) => Math.round(v * 1e6) / 1e6, t = (a * Math.PI) / 180;
+  return { name, x: r6(-104 * (1 - Math.cos(t)) * hand), y: r6(104 * Math.sin(t)), heading: a * hand, segs: [cv(104, (b - a) * hand)], ...more };
+};
+const modulesOf = (hand: 1 | -1): Record<string, Design> => {
+  const h = hand === 1 ? 'left' : 'right', opts = { legoTrack: 'print' as const, splitTrack: 'lengths' as const };
+  return {
+    // (the R104 switch's base: the straight's first 16 studs and the branch to 8.85 degrees, 1.24 over; its points and
+    // lever where the library's base has them: design.ts r104Work)
+    [`Switch R104 base, ${h}`]: { version: 1, gaugeStuds: 4, options: opts, routes: [{ name: 'Straight', x: 0, y: 0, heading: 0, segs: [st(16)] }, r104('Branch', hand, 0, 8.85, { throwSide: h })],
+      trackwork: { points: { '0,0': { toe: 16 } }, throw: { '0,0': { side: h, leverOffset: 24 } } } },
+    // (its detach 1: the straight from 16 to 40 studs, the branch on from 8.85 to 15.75 degrees, 3.9 over at 28)
+    [`Switch R104 detach 1, ${h}`]: { version: 1, gaugeStuds: 4, options: opts, routes: [{ name: 'Straight', x: 0, y: 16, heading: 0, segs: [st(24)] }, r104('Branch', hand, 8.85, 15.75)],
+      expert: { accept: [{ routes: ['Straight', 'Branch'], what: 'over' }] } },
+    // (the compact R40 switch's base: 16 studs of the straight, the branch to 22.5 degrees, 3 over; its lever 7 studs
+    // from the track's centre line, as the kit's)
+    [`Switch R40 compact base, ${h}`]: { version: 1, gaugeStuds: 4, options: opts, routes: [{ name: 'Straight', x: 0, y: 0, heading: 0, segs: [st(16)] }, { name: 'Branch', x: 0, y: 0, heading: 0, segs: [cv(40, 22.5 * hand)], throwSide: h }],
+      trackwork: { throw: { '0,0': { leverOffset: 24 } } } },
+  };
+};
+export const REF_MODULES: Record<string, Design> = { ...modulesOf(1), ...modulesOf(-1) };

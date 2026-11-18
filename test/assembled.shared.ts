@@ -640,6 +640,12 @@ export const EDGES: Record<string, number> = { 'Modular wye R40, lever on the le
   'Perpendicular turnout R40, three tracks, right': 30 };
 /** (edges) A template not in EDGES may have this many: one or two come and go with a corner's last digit. */
 export const EDGES_FEW = 4;
+// (the R104 switch's base module on its own, 11 found on the left hand and 8 on the right: all in track1, where the
+// branch's bed ends flush with its end connector's back and the straight's bed meets the two at an angle: joined with a
+// sheet of no thickness and a hollow corner (the first at -38.4, 118.5, 0). Known how to put right (the bed run on
+// 0.05 mm into its end connectors, branch `bed-rooting`), parked: it shifts the underside's posts and walls in some 70
+// other designs, each still to be traced. docs/expert-mode.md, Not templates (1))
+Object.assign(EDGES, { 'Switch R104 base, left': 13, 'Switch R104 base, right': 10 });
 
 /** A design built as the app builds it (its defaults) and checked: nothing wrong but what's known (k), which must still be found. edges: its files' edges shared by more than two triangles, at most (not counted where it isn't given). */
 export async function goesTogether(name: string, design: Design, k?: Known, edges?: number) {
