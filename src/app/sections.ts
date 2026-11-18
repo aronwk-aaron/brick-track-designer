@@ -190,13 +190,39 @@ export function planSections(routes: Route[], splits: Split[], half: number, roo
           return at;
         })() : undefined;
         // (a and b cuts only where points or a crossing end the stretch, not at the route's own ends' margins)
+        // (b: the last place looked at is a whole step short of the end's margin on a track whose length isn't a whole
+        // number of steps, a curve's: that isn't points ending the stretch. Cut there, a printed R40 22.5-degree curve came
+        // out in two, 10 studs and 5.7)
+        // (but where other track's base lies in its own within that margin, or points or a held stretch start there,
+        // that is what ends the stretch, and the cut at b stays: the narrow-gauge crossings' curve ends with its last
+        // sleeper in the corner of the standard track's end, and with no cut at b the curve was one piece up to there:
+        // the cut at its far joint then went through the standard track's end sleeper and left a sliver of it, 921
+        // mm3, a part of its own. Not the track it joins end to end there, whose base starts where its own ends)
+        const endsAt = (b: number) => {
+          if (b + step <= L - minPart) return true;
+          if (!(b < L - minPart)) return false;
+          const e = routePose(rt, L), joined = routes.map((r2, j) => j !== i && [routePose(r2, 0), routePose(r2, routeLength(r2))].some((q) => Math.hypot(q[0] - e[0], q[1] - e[1]) < 1));
+          for (let s = b + step; s < L + step; s += step) {
+            const at = Math.min(s, L);
+            if (busy[i].some(([p, q]) => at >= p && at <= q) || isHeld(i, at)) return true;
+            for (let o = -halves[i]; o <= halves[i] + 1e-9; o += 8) {
+              const q = railPoint(rt, at, o);
+              for (let j = 0; j < routes.length; j++) {
+                if (j === i || joined[j] || !inBox(j, q) || over(i, at, j, q)) continue;
+                const sj = routeSOf(routes[j], q);
+                if (sj >= 0 && sj <= routeLength(routes[j]) && Math.abs(routeLat(routes[j], q)) < halves[j] + 2) return true;
+              }
+            }
+          }
+          return false;
+        };
         // (only where its pieces join: beside the points or other track too (below), so what's built with them is whole pieces)
         if (natural) { for (const c2 of natural) if (c2 > a + 1e-6 && c2 < b - 1e-6) cuts.push(c2); }
-        else if (exact > 0 && !edges.length) { if (a > minPart) cuts.push(a); for (let c2 = Math.ceil((a + 1e-6) / exact) * exact; c2 < b - 1e-6; c2 += exact) cuts.push(c2); if (b < L - minPart) cuts.push(b); }
+        else if (exact > 0 && !edges.length) { if (a > minPart) cuts.push(a); for (let c2 = Math.ceil((a + 1e-6) / exact) * exact; c2 < b - 1e-6; c2 += exact) cuts.push(c2); if (endsAt(b)) cuts.push(b); }
         else if (!edges.length) for (let m = 0; m <= n; m++) cuts.push(Math.round((a + (inner * m) / n) / step) * step);
         else {
           if (a > minPart) cuts.push(a);
-          if (b < L - minPart) cuts.push(b);
+          if (endsAt(b)) cuts.push(b);
           const stops = [a, ...edges.filter((e) => e > a + minPart / 2 && e < b - minPart / 2), b];
           for (let k2 = 0; k2 + 1 < stops.length; k2++) { if (k2 > 0) cuts.push(stops[k2]); fill(stops[k2], stops[k2 + 1]); }
         }
