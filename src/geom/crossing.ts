@@ -597,6 +597,10 @@ export function crossingPiece(s: Scad, routes: Route[], o: CrossingOptions = CRO
         const lo = -c.sleeperLen / 2 - (q.e!.left ?? 0), hi = c.sleeperLen / 2 + (q.e!.right ?? 0), P0 = routePose(rt, q.v);
         handTie(i, q.v, q.e!.square ? squared(P0, lo, c.sleeperW) : P0, lo, hi, !!q.e!.bare);
       }
+      // (a piece too short for a sleeper of its own between its two end connectors, a printed 5.625-degree R40 curve, 31 mm:
+      // nothing joined its two sides (an end connector's bar across is one with one side only), and it came out as two
+      // halves, a rail each. Its bed laid between its connectors, as a piece on a solid bed has it)
+      if (!laid && !bed.length && !connPlan[i].noConn0 && !connPlan[i].noConn1 && !ownSleeperSpots(rt, in0, in1, o.sleeperGapStuds ?? 2, o.sleeperWidthStuds).length) parts.push(s.difference(bedAlong(), endBoxes(BED_END)));
       const atAll = spotsAll.filter((v) => !inTie(i, v));
       // (long ties: square to this route, out under the tracks beside it; clear of every end connector)
       const underServed: number[] = [];
