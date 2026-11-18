@@ -3,7 +3,8 @@
 // end for end, split, joined or reshaped, and the design the build builds (each stretch a track of its own, the
 // track cut at the stretch's ends as Split cuts it: an ordinary track end each side). Pure: no geometry built.
 import { type Design, type DRoute, isMono } from './design';
-import { BED_KEYS, cleanOwn, type Own } from './routeown';
+import { BANK_KEYS, BED_KEYS, cleanOwn, type Own, PART_KEYS } from './routeown';
+import { designOptions, hasPartOwn, partGroups, TOE_LEFT, TOE_STUB, toeEnds } from './overrides';
 import { cutLength } from './routecuts';
 import { splitRoute } from './splitmerge';
 
@@ -97,8 +98,10 @@ export interface Stretched {
   stretch: boolean[];
   /** a piece's name (its id) → its track's, for what the build says by track (the plan's trackwork) */
   names: Map<string, string>;
+  /** which of its tracks are a track's last studs at points' toe, built with the points (overrides.ts TOE_STUB) */
+  toe: boolean[];
 }
-let memo: { key: string; v: Stretched } | undefined;
+let memo: { key: string; v: Stretched | undefined } | undefined;
 
 /**
  * The design with each track that has stretches cut at their ends (splitmerge.ts splitRoute: what's on the track
@@ -107,11 +110,18 @@ let memo: { key: string; v: Stretched } | undefined;
  * are named for where they are ("Main (12 to 20)").
  */
 export function expandStretches(d: Design): Stretched {
-  if (!hasStretches(d)) return { design: d, of: d.routes.map((_, i) => i), stretch: d.routes.map(() => false), names: new Map() };
+  const same = (): Stretched => ({ design: d, of: d.routes.map((_, i) => i), stretch: d.routes.map(() => false), names: new Map(), toe: d.routes.map(() => false) });
+  if (!hasStretches(d) && !hasPartOwn(d)) return same();
   // (the sleepers shared across tracks go by the tracks' names: the pieces' own, where a track is cut)
-  const key = JSON.stringify([d.routes, d.trackwork, d.gaugeStuds, d.expert?.shared, d.expert?.accept]);
-  if (memo?.key === key) return { ...memo.v, design: { ...d, routes: memo.v.design.routes, ...(memo.v.design.trackwork && { trackwork: memo.v.design.trackwork }), ...((d.expert?.shared || d.expert?.accept) && memo.v.design.expert && { expert: { ...d.expert, ...(memo.v.design.expert.shared && { shared: memo.v.design.expert.shared }), ...(memo.v.design.expert.accept && { accept: memo.v.design.expert.accept }) } }) } };
-  const out = structuredClone(d), of: number[] = [], stretch: boolean[] = [], names = new Map<string, string>();
+  const key = JSON.stringify([d.routes, d.trackwork, d.gaugeStuds, d.options, d.expert?.shared, d.expert?.accept]);
+  if (memo?.key === key) return !memo.v ? same() : { ...memo.v, design: { ...d, routes: memo.v.design.routes, ...(memo.v.design.trackwork && { trackwork: memo.v.design.trackwork }), ...((d.expert?.shared || d.expert?.accept) && memo.v.design.expert && { expert: { ...d.expert, ...(memo.v.design.expert.shared && { shared: memo.v.design.expert.shared }), ...(memo.v.design.expert.accept && { accept: memo.v.design.expert.accept }) } }) } };
+  // (a track with settings of its own, or a stretch with them, that ends where points begin: its last studs there are
+  // the points' (overrides.ts toeEnds, TOE_STUB), a piece with none of its own, one part with them)
+  const toes = toeEnds(d), parts = toes.some((t) => t.start || t.end) ? partGroups(d).inForce : [], dop = designOptions(d);
+  /** Does a piece with these settings of its own (over the design's) differ from the points' tracks' in what a part is made with? */
+  const differs = (own: Own | undefined, at: number[] | undefined) => !!at && at.some((j) => PART_KEYS.some((k) => ({ ...dop, ...own } as Record<string, unknown>)[k] !== (parts[j] as unknown as Record<string, unknown> | undefined)?.[k]));
+  if (!hasStretches(d) && !d.routes.some((r, i) => !isMono(r) && (differs(r.own, toes[i].start) || differs(r.own, toes[i].end)))) { memo = { key, v: undefined }; return same(); }
+  const out = structuredClone(d), of: number[] = [], stretch: boolean[] = [], toe: boolean[] = [], names = new Map<string, string>();
   // (a track with no name goes by its place in the list, which the pieces put in would change: named by it first)
   out.routes.forEach((r, i) => { if (!r.name) r.name = String(i); });
   const taken = new Set(out.routes.map((r) => r.name));
@@ -119,10 +129,20 @@ export function expandStretches(d: Design): Stretched {
     const r = out.routes[i], live = isMono(r) ? [] : liveStretches(r), name = r.name, L = cutLength(r), base = r.own;
     delete r.stretches;
     // (the pieces: [from, to, the stretch's own]; cut from the far end back, so each cut is on the first piece still)
-    const pieces: [number, number, Own | undefined][] = [];
+    // (null: a piece at points' toe, with none of the track's own part settings: the points')
+    const pieces: [number, number, Own | undefined | null][] = [];
     let at = 0;
     for (const s of live) { if (s.from > at) pieces.push([at, s.from, undefined]); pieces.push([s.from, s.to, s.own]); at = s.to; }
     if (at < L - 1e-9) pieces.push([at, L, undefined]);
+    if (!isMono(r) && pieces.length === 0) pieces.push([0, L, undefined]);
+    if (!isMono(r)) for (const end of ['end', 'start'] as const) {
+      const k = end === 'end' ? pieces.length - 1 : 0, p = pieces[k];
+      if (!p || p[2] === null || !differs({ ...base, ...p[2] }, toes[src][end])) continue;
+      // (room for the stub and a piece of its own before it: cut there. Else the piece is left as it is: one part with
+      // the points, which take its settings or it theirs, the first with its own (overrides.ts partsOf), said by name)
+      if (p[1] - p[0] >= TOE_STUB + TOE_LEFT - 1e-9) { if (end === 'end') pieces.splice(k, 1, [p[0], Math.round(p[1] - TOE_STUB), p[2]], [Math.round(p[1] - TOE_STUB), p[1], null]); else pieces.splice(k, 1, [p[0], p[0] + TOE_STUB, null], [p[0] + TOE_STUB, p[1], p[2]]); }
+    }
+    if (pieces.length === 1 && pieces[0][2] === undefined) pieces.length = 0;
     for (let k = pieces.length - 1; k >= 1; k--) {
       let nb = `${name} (${pieces[k][0]} to ${+pieces[k][1].toFixed(1)})`;
       while (taken.has(nb)) nb += '\'';
@@ -133,14 +153,16 @@ export function expandStretches(d: Design): Stretched {
     pieces.forEach(([, , own], k) => {
       const p = out.routes[i + k];
       delete p.stretches;
-      const mine = { ...base, ...own };
+      const mine = own === null ? Object.fromEntries(BANK_KEYS.filter((bk) => base?.[bk] !== undefined).map((bk) => [bk, base![bk]])) : { ...base, ...own };
       if (Object.keys(mine).length) p.own = mine; else delete p.own;
-      of.push(src); stretch.push(own !== undefined);
+      of.push(src); stretch.push(own !== undefined); toe.push(own === null);
     });
-    if (!pieces.length) { of.push(src); stretch.push(false); }
+    if (!pieces.length) { of.push(src); stretch.push(false); toe.push(false); }
     i += Math.max(1, pieces.length);
   }
-  const v = { design: out, of, stretch, names };
+  // (no stretch, and no stub made: the design as it is)
+  if (!hasStretches(d) && !toe.some(Boolean)) { memo = { key, v: undefined }; return same(); }
+  const v = { design: out, of, stretch, names, toe };
   memo = { key, v };
   return v;
 }

@@ -4,7 +4,7 @@
 import { describe, expect, it } from 'vitest';
 import { bankRolls, type Design, type DRoute, OPTION_DEFAULTS, readDesign, TEMPLATES } from '../src/app/design';
 import { clampDesign } from '../src/app/limits';
-import { hasPartOwn, ignoredOwn, inForce, inForceAll, liveOwn, partGroups, partsOf, resolveOptions, sourceOf, withoutPartOwn } from '../src/app/overrides';
+import { hasPartOwn, ignoredOwn, inForce, inForceAll, liveOwn, partGroups, partsOf, resolveOptions, sourceOf, TOE_STUB, toeEnds, withoutPartOwn } from '../src/app/overrides';
 import { BANK_KEYS, BED_KEYS, clampOwn, cleanOwn, MORE_KEYS, OWN_CHECKS, OWN_CHOICES, OWN_LABELS, OWN_RANGES, OWN_SCALE, OWN_TEXT_MAX, OWN_TEXTS, ownName, PART_KEYS, ROUTE_KEYS } from '../src/app/routeown';
 import { moreGroups, moreSummary } from '../src/app/cardsections';
 import { optionForm } from '../src/app/settings';
@@ -143,6 +143,58 @@ describe('a file\'s own settings for a track', () => {
   it('a design held to its ranges holds a track\'s own numbers too', () => {
     const d = clampDesign(design([straight('A', 0, 0, { own: { sleeperGapStuds: 0.4, bankRampStuds: 5000 } })]));
     expect(d.routes[0].own).toEqual({ sleeperGapStuds: 1, bankRampStuds: 200 });
+  });
+});
+
+describe('a track with settings of its own that runs up to points', () => {
+  // (Lead runs up the plan to 0, 0, where a wye's two tracks start; On carries on from the left one's end, its bed beside
+  // the right one's end: one part with the wye)
+  const wye = (lead: number, own?: DRoute['own'], more: Partial<DRoute> = {}): Design => design([
+    { name: 'Lead', x: 0, y: -lead, heading: 0, segs: [{ kind: 'straight', studs: lead }], ...(own && { own }), ...more },
+    { name: 'L', x: 0, y: 0, heading: 0, segs: [{ kind: 'curve', radius: 40, angle: 22.5 }] }, { name: 'R', x: 0, y: 0, heading: 0, segs: [{ kind: 'curve', radius: 40, angle: -22.5 }] },
+    { name: 'On', x: -3.044818, y: 15.307337, heading: 22.5, segs: [{ kind: 'straight', studs: 16 }] }]);
+  it('where points begin on a track\'s end: the wye\'s two; not at the points\' own tracks, nor at a plain joint', () => {
+    expect(toeEnds(wye(16))).toEqual([{ end: [1, 2] }, {}, {}, {}]);
+    // (drawn the other way round: at its start)
+    const rev = wye(16); rev.routes[0] = { name: 'Lead', x: 0, y: 0, heading: 180, segs: [{ kind: 'straight', studs: 16 }] };
+    expect(toeEnds(rev)[0]).toEqual({ start: [1, 2] });
+    // (a branch off the side of the track that carries on, two studs past the joint)
+    const side = design([straight('A', 0, -32), straight('B', 0, 0), { name: 'C', x: 0, y: 2, heading: 0, segs: [{ kind: 'curve', radius: 40, angle: 22.5 }] }]);
+    expect(toeEnds(side)).toEqual([{ end: [1, 2] }, {}, {}]);
+    side.routes[2].y = 6;
+    expect(toeEnds(side)).toEqual([{}, {}, {}]);
+  });
+  it('its last studs there are a piece with none of its own, one part with the points; the rest keeps its own', () => {
+    const d = wye(16, { sleepers: 'sleepers', bankClimb: 200 }), x = expandStretches(d);
+    expect(x.design.routes.map((r) => [r.name, r.own])).toEqual([['Lead', { sleepers: 'sleepers', bankClimb: 200 }], [`Lead (${16 - TOE_STUB} to 16)`, { bankClimb: 200 }], ['L', undefined], ['R', undefined], ['On', undefined]]);
+    expect(x.toe).toEqual([false, true, false, false, false]); expect(x.of).toEqual([0, 0, 1, 2, 3]);
+    expect(x.design.routes[0].segs).toEqual([{ kind: 'straight', studs: 16 - TOE_STUB }]);
+    // (the stub is one part with the wye, built with its settings; Lead's own and On in groups of their own)
+    expect(partsOf(x.design)).toEqual([0, 1, 1, 1, 1]);
+    const pg = partGroups(x.design);
+    expect(pg.groups.map((g) => g.routes)).toEqual([[0], [1, 2, 3, 4]]);
+    expect(pg.warnings).toEqual([]);
+    // (the same settings as the points: no stub, the design as it is; none of its own: likewise)
+    const same = wye(16, { sleepers: 'bed' });
+    expect(expandStretches(same).design).toBe(same);
+    const none = wye(16);
+    expect(expandStretches(none).design).toBe(none);
+    // (the points with the track's settings as their own: nothing differs, no stub)
+    const all = wye(16, { ballast: 'ballast' }); all.routes[1].own = { ballast: 'ballast' };
+    expect(expandStretches(all).design).toBe(all);
+  });
+  it('a track too short for a piece of its own before the stub is one part with the points, said by name', () => {
+    const d = wye(6, { sleepers: 'sleepers' });
+    expect(expandStretches(d).design).toBe(d);
+    expect(partsOf(d)).toEqual([0, 0, 0, 0]);
+    expect(partGroups(d).warnings).toEqual(['L', 'R', 'On'].map((n) => `${n} and Lead are one part (they meet in points or a crossing, or lie side by side): both take Lead's Under the rails`));
+    // (long enough: a part of its own, as ever)
+    expect(partsOf(wye(16, { sleepers: 'sleepers' }))).toEqual([0, 1, 1, 1]);
+  });
+  it('a stretch with its own at the toe gives way to the stub; hand cuts go with their pieces', () => {
+    const d = wye(24, undefined, { stretches: [{ from: 16, to: 24, own: { sleepers: 'sleepers' } }], cuts: [8, 22] }), x = expandStretches(d);
+    expect(x.design.routes.slice(0, 3).map((r) => [r.name, r.own, r.cuts])).toEqual([['Lead', undefined, [8]], ['Lead (16 to 20)', { sleepers: 'sleepers' }, undefined], ['Lead (20 to 24)', undefined, [2]]]);
+    expect(x.toe.slice(0, 3)).toEqual([false, false, true]); expect(x.stretch.slice(0, 3)).toEqual([false, true, true]);
   });
 });
 

@@ -7,6 +7,9 @@ import { kernel } from '../src/geom/kernel';
 import { buildDesign, clearBuildCache } from '../src/app/build';
 import { type Design, TEMPLATES } from '../src/app/design';
 import { expandStretches } from '../src/app/stretches';
+import { OPTION_DEFAULTS } from '../src/app/design';
+import { TOE_STUB } from '../src/app/overrides';
+import { assembledProblems, drop, solid } from './assembled.shared';
 
 const hashes = (b: ReturnType<typeof buildDesign>) => b.pieces.map((p) => createHash('sha1').update(p.stl ?? new Uint8Array()).update(p.lego ? JSON.stringify(p.lego) : '').digest('hex')).sort();
 const noOwn = (d: Design): Design => ({ ...d, routes: d.routes.map(({ own: _o, ...r }) => r) });
@@ -71,5 +74,24 @@ describe('tracks with settings of their own, built', { timeout: 600000 }, () => 
     sw.routes[0].stretches = [{ from: 24, to: 32, own: { sleepers: 'bed' } }];
     const ids = new Set(sw.routes.map((r) => r.name));
     for (const it of buildDesign(w, sw).overlay.items) for (const id of it.routes ?? []) expect(ids.has(id), id).toBe(true);
+  });
+  it('a track with its own settings run up to a wye: its last studs are built with the points, an ordinary track end before them; nothing overlaps', async () => {
+    const w = await kernel();
+    const lead = (studs: number, y: number, name = 'Lead'): Design['routes'][number] => ({ name, x: 0, y, heading: 0, segs: [{ kind: 'straight', studs }] });
+    const wye: Design['routes'] = [{ name: 'L', x: 0, y: 0, heading: 0, segs: [{ kind: 'curve', radius: 40, angle: 22.5 }] }, { name: 'R', x: 0, y: 0, heading: 0, segs: [{ kind: 'curve', radius: 40, angle: -22.5 }] }];
+    const d: Design = { version: 1, gaugeStuds: 4, options: { legoTrack: 'print', splitTrack: 'lengths', sleepers: 'sleepers' }, routes: [{ ...lead(16, -16), own: { sleepers: 'bed' } }, ...wye] };
+    const vols = (b: ReturnType<typeof buildDesign>) => b.pieces.map((p) => { const m = p.positions?.length ? solid(w, p.positions) : undefined; if (!m) return '-'; const bb = m.boundingBox(), v = `${m.volume().toFixed(1)} ${[...bb.min, ...bb.max].map((x) => x.toFixed(1)).join()}`; drop(m); return v; }).sort();
+    clearBuildCache();
+    const plain = buildDesign(w, noOwn(d)), b = buildDesign(w, structuredClone(d));
+    expect(assembledProblems(w, b.pieces, { ...OPTION_DEFAULTS, ...d.options })).toEqual([]);
+    expect(b.info.warnings).toEqual([]);
+    // (the wye with the track's last studs, as the design's settings build them; and the rest of the track, alone, on its solid bed)
+    const points = buildDesign(w, { ...noOwn(d), routes: [lead(TOE_STUB, -TOE_STUB, `Lead (${16 - TOE_STUB} to 16)`), ...wye] });
+    const rest = buildDesign(w, { ...noOwn(d), routes: [lead(16 - TOE_STUB, -16)], options: { ...d.options, sleepers: 'bed' } });
+    expect(vols(b)).toEqual([...vols(points), ...vols(rest)].sort());
+    // (its own taken off again: as without, byte for byte)
+    expect(hashes(buildDesign(w, noOwn(d)))).toEqual(hashes(plain));
+    expect(vols(b)).not.toEqual(vols(plain));
+    clearBuildCache();
   });
 });

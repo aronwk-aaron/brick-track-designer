@@ -709,6 +709,18 @@ route-owned storage, the follow rules and the card section they bring are the pa
   a warning; (4) a cut across a track is an ordinary track end; (5) radii under R24 are a geometry job for everyone; (6)
   gauge where it is, and the design default → this track pattern for the rest (S5c puts the per-set points settings on
   the points' own rows, as recommended).
+- **A track with its own settings that runs up to points (2026-11-17).** Built apart from points that begin on its
+  end (a wye's or a switch's toe), a track's end connector had no room: the points' stock rails and bed ran through
+  the joint (75 mm3 of the two parts in each other, studs run into). Now its last `TOE_STUB` (4) studs there are a
+  piece with none of its own part settings, one part with the points, and its own start an ordinary track end before
+  them. Pure: `overrides.ts toeEnds` (at a track's end: joined on in line, and two other tracks' ends within
+  `TOE_NEAR`, 3 studs, both leaving the other way: the points' own tracks aren't it), `stretches.ts expandStretches`
+  (the piece cut off as a stretch is, only where the track's settings differ from the points' tracks'; `Stretched.toe`),
+  `partsOf` (a track under `TOE_STUB + TOE_LEFT`, 8 studs, at a toe is one part with the points, which share settings
+  as any part: the first with its own wins, said by name; and the track before a stub isn't taken into the points'
+  part by the lever's reach). The card's Bed and underside says it. With none of its own, or the points' own
+  settings, the design is passed on as it is. Template (Features): 'Wye, the line into it on a solid bed'. Tests: in
+  test/overrides.test.ts and test/overrides-build.test.ts.
 - **More of a track's own (2026-11-17).** `PART_KEYS` gains the rest of what a part is made with: `checkRailLen`
   (kept in mm, shown in studs: `OWN_SCALE`), `checkRailW`, `checkRailFlare`, `flangeway`, `flangewayDepth`,
   `bufferStyle`, `bufferPostPlates`, `bufferBeamBottom`, `bufferBeamTop`, `bufferPinHoles`, `raisedOn`, `labelText`,
@@ -726,11 +738,10 @@ route-owned storage, the follow rules and the card section they bring are the pa
   as it was; held in `railProblem`'s words), drag, arrow keys, Delete, Esc, its card (where it is, to type).
   Everything doesn't take them, as it doesn't take sleepers. (3) Cut keep-outs are shown while a path is selected or
   dragged, not only while one is drawn. Each by touch too (the touch smoke test's last step).
-- **Next, in order:** (1) the double track's budget from CI's log (test/templates.shared.ts); a group's build told of the other groups' track at its ends, so a track joined onto points
-  can have its own; (2) buffer stop settings per end; (3) then S5/S6 (the other kit
-  modules as templates: the same three kinds of path cover them; `test/templates-cutpaths.test.ts` `MODULES` is the
-  pattern for checking a module against the library's ends). Left from the editor's side: several items selected at
-  once (a box round cuts).
+- **Next, in order:** (1) the double track's budget from CI's log (test/templates.shared.ts); (2) buffer stop
+  settings per end; (3) then S5/S6 (the other kit modules as templates: the same three kinds of path cover them;
+  `test/templates-cutpaths.test.ts` `MODULES` is the pattern for checking a module against the library's ends). Left
+  from the editor's side: several items selected at once (a box round cuts).
 - **Traps.** The editor: an item goes by its track's and its own place in their lists, so whatever changes those lists
   without `setSelection` (which lets go of it) must let go of it itself (`canvas.selectItem(undefined)`: the card's ✕
   on a cut or a stretch, Delete on a card). `updateSelbar` and `renderTrackwork` are set up after the first `render()`

@@ -24,13 +24,13 @@ import { COMMON_RADII } from './guides';
 import { lockedWhy, setLocked } from './lock';
 import { addTemplate, openEnds } from './addtemplate';
 import { cardSections, moreGroups, type SectionId } from './cardsections';
-import { designOptions, hasPartOwn, ignoredOwn, inForce, liveOwn, partGroups } from './overrides';
+import { designOptions, hasPartOwn, ignoredOwn, inForce, liveOwn, partGroups, TOE_STUB } from './overrides';
 import { BED_KEYS, isRouteKey, MORE_KEYS, OWN_CHECKS, OWN_LABELS, OWN_RANGES, OWN_SCALE, OWN_TEXT_MAX, OWN_TEXTS, OWN_UNSET, PART_KEYS, type RouteKey } from './routeown';
 import { accepted, pruneAccept, renameAccept, setAccept } from './accept';
 import { curvedAt, followShared, followSleeperEdits, pruneShared, renameShared, setShared, sharedOf, type SleeperEdit, sleeperEditText, SLEEPER_LONG, SLEEPER_MOVE, SPAN_MAX } from './sleeperedits';
 import { cleanRailEdits, FLANGEWAY_MIN, followRailEdits, GAP_DEF, GAP_MAX, GAP_MIN, GAP_RADIUS_MIN, GUARD_GAP_MAX, GUARD_GAP_MIN, moveRailEdit, RAIL_RUN_MIN, railEditAt, type RailEdits, type RailGap, railProblem, type RailSide, withRailEdit } from './railedits';
 import { byHandNote, designByHandNote, EXPERT_SECTIONS, isPick, itemLabel, jointsOf, jointWhere, PICKS, sleeperEditAt, sleeperEditOf } from './items';
-import { followStretches, liveStretches, lostStretches, type Stretch, STRETCH_KEYS, STRETCH_MIN, stretchProblem } from './stretches';
+import { expandStretches, followStretches, liveStretches, lostStretches, type Stretch, STRETCH_KEYS, STRETCH_MIN, stretchProblem } from './stretches';
 import { designOfSelection, listMine, saveMine, type StorageLike } from './mytemplates';
 import { openMineStore } from './minestore';
 import { parallelRoute } from './parallelroute';
@@ -793,6 +793,9 @@ function bedSection(box: HTMLElement, r: DRoute, i: number) {
   const mine = pg ? pg.takes.flatMap((t, j) => (t === i ? [design.routes[j].name] : [])) : [];
   if (mine.length) small(`${mine.join(', ')} ${mine.length > 1 ? 'are' : 'is'} one part with this track and take${mine.length > 1 ? '' : 's'} its settings here.`);
   for (const q of ignoredOwn(r)) small(`Its own ${q.key} isn't used: ${q.why}.`, true);
+  // (its end where points begin: those studs are the points', said)
+  { const sx = expandStretches(design), n = sx.toe.filter((t, k) => t && sx.of[k] === i).length;
+    if (n) small(`Points begin on ${n > 1 ? 'both its ends' : 'its end'}: its last ${TOE_STUB} studs there are built as part of the points, with their settings (an end connector has no room at their toe). Its own start an ordinary track end before them.`); }
   for (const key of BED_KEYS) box.append(ownRow(r, i, key));
   stretchList(box, r, i);
 }

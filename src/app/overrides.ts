@@ -61,6 +61,38 @@ export const LEVER_REACH = 32;
 const halfBed = (d: Design, r: DRoute, o: PieceOptions) => ((routeGaugeStuds(d, r) + 1) * 8 + 24) / 2 + (o.ballast === 'buddy' ? 16 : o.ballast === 'ballast' ? 8 : 0)
   + (o.ballast !== 'none' ? Math.max(0, Math.max(o.ballastLeftStuds ?? 1, o.ballastRightStuds ?? 1) - 1) * 8 : 0);
 
+/**
+ * (studs) A track with settings of its own that ends where points begin (a wye's or a switch's toe on its end): its last
+ * TOE_STUB studs there are built with the points, as part of them (the points' stock rails and bed run through the
+ * joint: an end connector there has no room), and its own settings start an ordinary track end before them. A track
+ * shorter than TOE_STUB + TOE_LEFT is one part with the points whole. TOE_NEAR: how near the joint points count as
+ * beginning (another track's end: the wye's two at it, a branch off the side of the track that carries on).
+ */
+export const TOE_STUB = 4, TOE_LEFT = 4, TOE_NEAR = 3;
+/**
+ * For each train track, at its start and at its end: the tracks whose points begin there (their indices), where the
+ * track is joined on in line to another's end and a second track's end is within TOE_NEAR studs of the joint, both
+ * leaving it the other way (the track runs up to the toe; the points' own tracks aren't it); undefined where none do.
+ */
+export function toeEnds(d: Design): { start?: number[]; end?: number[] }[] {
+  const rts = toRoutes(d), train = d.routes.map((r, i) => !isMono(r) && r.segs.length > 0 && !!rts[i]?.segments.length);
+  // (each end: where, and the way the track leaves it)
+  const ends = rts.map((rt, i) => { if (!train[i]) return []; const e = routePose(rt, routeLength(rt)); return [[rt.start[0], rt.start[1], rt.start[2]], [e[0], e[1], e[2] + 180]] as [number, number, number][]; });
+  const dAng = (a: number, b: number) => Math.abs(((((a - b) % 360) + 540) % 360) - 180);
+  return d.routes.map((_, i) => {
+    const out: { start?: number[]; end?: number[] } = {};
+    ends[i].forEach((a, k) => {
+      // (the tracks with an end near this one, each leaving it the other way: the points' own tracks leave their toe
+      // the same way as each other, and aren't the track that runs up to it)
+      const near: number[] = [];
+      let joined = false, ahead = true;
+      ends.forEach((es, j) => { if (j !== i) for (const b of es) { const dist = Math.hypot(a[0] - b[0], a[1] - b[1]); if (dist < 0.5 && dAng(a[2], b[2]) > 179) joined = true; if (dist < TOE_NEAR * 8 + 0.5) { near.push(j); if (dAng(a[2], b[2]) < 135) ahead = false; break; } } });
+      if (joined && ahead && near.length >= 2) out[k === 0 ? 'start' : 'end'] = near;
+    });
+    return out;
+  });
+}
+
 export interface PartGroups {
   /** the tracks built together (indices into d.routes, train track only), and the settings they're built with */
   groups: { routes: number[]; options: Partial<PieceOptions> }[];
@@ -127,6 +159,11 @@ export function partsOf(d: Design): number[] {
   const nbrsOf = (i: number) => { if (!nbrs.has(i)) nbrs.set(i, d.routes.flatMap((_, k) => (k !== i && train[k] && joined(i, k).length ? [k] : []))); return nbrs.get(i)!; };
   const viaOne = (i: number, j: number, q: { x: number; y: number }, p: { x: number; y: number }, lim: number) => nbrsOf(i).some((k) => joined(j, k).length > 0
     && joined(i, k).some((J) => Math.hypot(q.x - J[0], q.y - J[1]) < lim) && joined(j, k).some((J) => Math.hypot(p.x - J[0], p.y - J[1]) < lim));
+  // (a track too short to keep a part of its own clear of points that begin on its end (toeEnds): one part with them)
+  if (d.routes.some((r, i) => train[i] && routeLength(rts[i]) < (TOE_STUB + TOE_LEFT) * 8 - 1e-6)) toeEnds(d).forEach((t, i) => {
+    if (routeLength(rts[i]) >= (TOE_STUB + TOE_LEFT) * 8 - 1e-6) return;
+    for (const j of [...(t.start ?? []), ...(t.end ?? [])]) join(i, j);
+  });
   // (first where rails run through rails, but where one track carries on from another's end)
   near((i, j, q, p, dist, lim) => {
     const mk = `${Math.floor(q.x / 8)},${Math.floor(q.y / 8)}`;
@@ -148,6 +185,8 @@ export function partsOf(d: Design): number[] {
       const k = p.i, lim = leverReach(k);
       if (find(k) === find(m.i) || Math.hypot(p.x - m.x, p.y - m.y) >= lim) continue;
       if ([m.i, m.j].some((t) => joined(k, t).some((J) => Math.hypot(p.x - J[0], p.y - J[1]) < lim && Math.hypot(m.x - J[0], m.y - J[1]) < lim))) continue;
+      // (nor the track joined onto that one's other end: the track before a stub at the points' toe (toeEnds), in line with it)
+      if (nbrsOf(k).some((n2) => joined(k, n2).some((J) => Math.hypot(p.x - J[0], p.y - J[1]) < lim) && [m.i, m.j].some((t) => joined(n2, t).some((J) => Math.hypot(m.x - J[0], m.y - J[1]) < lim)))) continue;
       join(k, m.i);
     }
   }
