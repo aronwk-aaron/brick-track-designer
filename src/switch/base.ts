@@ -525,6 +525,16 @@ function fdbFootprintOf(v: SetLike, p: BaseParams): { plates: Pt[][]; rails: Pt[
       out.plates.push([[x0, y0], [x1, y0], [x1, y1], [x0, y1]]);
       out.of.push(b);
     }
+    // (joinedPoints: the other blade on this plate too, the plate across to it, turning on this blade's pin)
+    if (v.joined) {
+      const rt2 = b === 0 ? v.rb : v.ra, web: Pt[] = [...ss.map((sv) => railPoint(rt2, sv, -o + side * HEAD_HW)), ...ss.map((sv) => railPoint(rt, sv, o)).reverse()], rail2 = ss.map((sv) => railPoint(rt2, sv, -o));
+      for (let k = 0; k <= m; k++) {
+        const a = (sw * k) / m - side * f.ang;
+        out.plates.push(web.map((q) => rotAbout(q, f.pivot, a)));
+        out.of.push(b);
+        out.rails.push(rail2.map((q) => rotAbout(q, f.pivot, a)));
+      }
+    }
   });
   return out;
 }
@@ -539,7 +549,7 @@ function fdbFootprintOf(v: SetLike, p: BaseParams): { plates: Pt[][]; rails: Pt[
 function snapPlace(v: SetLike, p: BaseParams): PointsSetValues['snap'] {
   const c = p.pointClearance, G = switchGlobals(p).G, q = snapGeo(v.leverTravel, c), m = c + 0.2;
   const y0 = v.throwY - q.along - m, y1 = v.throwY + q.along + m, within = (y: number) => y >= y0 && y <= y1;
-  if (y0 < Math.max(v.toeY - 1, 8 + c) || y1 > v.pointsEndY - 1) return undefined;
+  if (y0 < Math.max(v.toeY - 1, 8 + c) || y1 > v.pointsEndY - 1 || v.joined) return undefined; // (both blades on one plate: nothing between them)
   const fp = fdbFootprintOf(v, p), posts = fdbPostsOf(v, p, true), xm = (posts[0][0] + posts[1][0]) / 2;
   let lo = -Infinity, hi = Infinity;
   const along = (ring: Pt[], closed: boolean, each: (x: number) => void) => ring.forEach((a, k) => {
@@ -626,15 +636,24 @@ export function threeWaySet(routes: Route[], ps: SetSpec, p: BaseParams, default
  * rail; the other blade, moving, steers the wheels both ways. Set by hand
  * for a points set (SetOver.single 'straight'), the other way round.
  */
-function singlePoint(v: PointsSetValues, G: number, flangeway: number, moves: 'curved' | 'straight' = 'curved') {
+function singlePoint(v: PointsSetValues, G: number, flangeway: number, moves: 'curved' | 'straight' = 'curved', joined = false) {
   const turn = (rt: Route) => Math.abs(((routePose(rt, v.sHeel)[2] - routePose(rt, v.sToe)[2] + 540) % 360) - 180);
   // (moves 'straight': the other blade, as a slip's whose curved route's blade would lie where the other track crosses in)
   const curved = turn(v.ra) >= turn(v.rb) ? 0 : 1, fixed = (moves === 'straight' ? curved : 1 - curved) as 0 | 1;
   const [rt, o, stock] = fixed === 0 ? [v.ra, -G, v.rb] : [v.rb, +G, v.ra];
   let s = v.sToe;
   while (s < v.sHeel && Math.abs(routeLat(stock, railPoint(rt, s, o)) - o) < 2 * HEAD_HW + flangeway) s += 0.25;
-  v.fixed = fixed; v.sMate = s;
+  v.fixed = fixed; v.sMate = joined ? v.sHeel : s; v.joined = joined;
 }
+/**
+ * Narrow gauge (rails under 4 studs apart), both blades moving: two plates, each on its own pin, don't fit side by
+ * side between the rails (they lay over each other, and on each other's pins). As the reference's narrow-gauge
+ * switches and wye: both blades on one plate between the stock rails, turning on one pin near the heels, moved by the
+ * one post on the slider; one blade closes as the other opens. Planned as a single-point switch's one plate (its pin,
+ * post, lip and slider: `fixed` is the blade with none of its own), the other blade's rail on that plate too instead
+ * of fixed to the bed (switchGeometry's tongueHalf). Not a three-way's, nor with the points under the bed on tines.
+ */
+export const joinedPoints = (p: { gaugeStuds: number; pointBlades?: 1 | 2; mechStyle?: string }) => p.gaugeStuds < 4 && p.pointBlades !== 1 && p.mechStyle === 'plates';
 
 /**
  * Other track's rails across a blade (on rt at o, toe to heel): near the heel,
@@ -685,7 +704,7 @@ export function switchPlan(routes: Route[], specs: SetSpec[], p: BaseParams = BA
   const sets = specs.map((ps) => (ps[4] === undefined
     ? pointsSet(routes, { ra: ps[0], rb: ps[1], sToe: ps[2], tside: ps[3] }, { ...p, ...ps[5] }, defaultThrowDir)
     : threeWaySet(routes, ps, p, defaultThrowDir)));
-  if (p.pointBlades === 1 && p.mechStyle === 'plates') sets.forEach((v, k) => { if (!('three' in v)) singlePoint(v, G, p.flangeway, specs[k][5]?.single); });
+  if ((p.pointBlades === 1 || joinedPoints(p)) && p.mechStyle === 'plates') sets.forEach((v, k) => { if (!('three' in v)) singlePoint(v, G, p.flangeway, specs[k][5]?.single, p.pointBlades !== 1); });
   // (the cross-bar housing's far block: none where other track runs beside, outside its stock rail, within the block's
   // reach (a crossover's other track): only the lever's side then, as the arm)
   for (const v of sets) if (v.farRect) {
@@ -1633,7 +1652,25 @@ export function switchGeometry(s: Scad, plan: SwitchPlan, extraCuts: Man[] = [])
     const fb = fdbBlades(v)[b], z1 = bedTop + c + plateT;
     return s.difference(m, [cube([1.4, 7, 1.2], [fb.post[0] - 0.7, fb.post[1] - 3.5, z1 - 1.2])]);
   };
-  const fdbBladePart = (v: SetV, b: number) => {
+  /**
+   * (joinedPoints: narrow gauge, both blades on one plate) The blade without a pin of its own, with the plate that
+   * carries it: from its rail across to the moving blade's rail, both as they lie closed. Then turned about the
+   * moving blade's pin to where it lies with that blade as modelled (one closed, the other open), kept off the
+   * moving blade's stock rail as its own plate is, and out of that plate's outline (rooted a hair into its edge):
+   * its holes, its spring's pocket and its lip stay as they are. Starts behind the lip over the moving plate's
+   * front (yFront), as that blade's rail does.
+   */
+  const tongueHalf = (v: SetV, m: number, mainPlate2d: CS, yFront: number, keepOff: (h: Man) => Man): Man => {
+    const b = 1 - m, fm = fdbBlades(v)[m], n = 24, s0 = v.sToe - 1, s1 = v.sHeel - c;
+    const line = (rt: Route, o: number) => Array.from({ length: n + 1 }, (_, k) => railPoint(rt, s0 + ((s1 - s0) * k) / n, o) as Vec2);
+    const web2d = s.polygon([...line(bRt(v, b), bO(b) - bSide(b) * HEAD_HW), ...line(bRt(v, m), bO(m)).reverse()]);
+    // (+ opens blade 0, - blade 1: the moving blade 0 is modelled closed, so the other is open; blade 1 open (turned
+    // with its part after this), so the other closed then)
+    const h = rot3(fdbBladePart(v, b, { plate2d: web2d, yFront }), fm.pivot, (m === 0 ? -1 : 1) * fm.ang);
+    const outline = s.polygon(mainPlate2d.toPolygons().filter((ring) => ring.reduce((a, q, k) => { const e = ring[(k + 1) % ring.length]; return a + q[0] * e[1] - e[0] * q[1]; }, 0) > 0) as Vec2[][]);
+    return s.difference(keepOff(h), [T(s.extrude(outline.offset(-0.05, 'Miter', 1000), 60), [0, 0, -20])]);
+  };
+  const fdbBladePart = (v: SetV, b: number, half?: { plate2d: CS; yFront: number }): Man => {
     const fb = fdbBlades(v)[b], z0 = bedTop + c, z1 = z0 + plateT;
     const rt = bRt(v, b), o = bO(b), oStock = bO(b), sideS = oStock < 0 ? 1 : -1, face = oStock + sideS * (HEAD_HW + c);
     // (prototype blades: tight against the stock rail, tucked under its undercut head, from where the point's wide enough to print)
@@ -1665,15 +1702,20 @@ export function switchGeometry(s: Scad, plan: SwitchPlan, extraCuts: Man[] = [])
     // plate, cut round the foot: its 45-degree shadow up toward the rail too, so the plate's edge doesn't overhang it as printed)
     const stock2d = rail2d(oStock).offset(c, 'Miter', 1000);
     const stock = protoOn ? s.union([]) : sweep(sprung ? shadow45(stock2d, -sideS, 3) : stock2d, bOther(v, b), 0, v.sHeel + 10);
-    const plate2d = fdbPlate2d(v, b);
-    let plate = s.difference(s.intersection(s.intersection(T(s.extrude(plate2d, plateT), [0, 0, z0]), plateOff), cube([400, 400, 50], [-200, y0, z0 - 10])), [stock]);
+    const plate2d = half?.plate2d ?? fdbPlate2d(v, b);
+    let plate = s.difference(s.intersection(s.intersection(T(s.extrude(plate2d, plateT), [0, 0, z0]), plateOff), cube([400, 400, 50], [-200, half?.yFront ?? y0, z0 - 10])), [stock]);
+    // (the other blade of a joined pair: its rail on its plain plate, as it lies closed)
+    if (half) return s.union([plate, s.intersection(bar, cube([400, 400, 50], [-200, half.yFront, z0 - 10]))]);
     if (sprung) plate = sprungUnderside(v, b, plate, plate2d, z0, (m) => s.difference(s.intersection(m, plateOff), [stock]));
     // (sprung blades, lip or not, and rigid ones with a lip: the front bevelled at 45 degrees for the lip over it (LIP,
     // LIP_RIGID), as the reference's; the rail starting where the bevel does)
     const bev = sprung || (lipOn && !!fb.lip), yF = bev ? lipFront(v, b, plate2d).yF : y0;
     if (bev) plate = s.difference(plate, [W.Manifold.hull([-200, 200].flatMap((x) => [[x, yF - 5, z0 + LP.end - 5], [x, yF + LP.run, z1], [x, yF + LP.run, z1 + 5], [x, yF - 5, z1 + 5]] as Vec3[]))]);
     // (the rail no further toward the toe than its plate goes: clear of the end connector, as the plate is)
-    return rot3(s.union([plate, s.intersection(bar, cube([400, 400, 50], [-200, bev ? yF + LP.run : y0, z0 - 10]))]), fb.pivot, fb.open);
+    const own = [plate, s.intersection(bar, cube([400, 400, 50], [-200, bev ? yF + LP.run : y0, z0 - 10]))];
+    // (narrow gauge, both blades on this plate: the other one with it)
+    if (v.joined && b !== v.fixed) own.push(tongueHalf(v, b, plate2d, bev ? yF + LP.run + c : y0, (h) => s.difference(s.intersection(h, plateOff), [stock])));
+    return rot3(s.union(own), fb.pivot, fb.open);
   };
   /**
    * (bladeRelief) Where a wheel's flange runs over blade b's plate with the blade closed, in plan (RELIEF): inside the

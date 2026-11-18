@@ -1,6 +1,7 @@
-// Narrow gauge points (rails under 4 studs apart) have one moving blade: two blades' plates, each on its own pin,
-// don't fit side by side between the rails (they lay over each other, and on each other's pins: 26 mm3 of each in
-// the bed's stud). The setting says so, greyed out.
+// Narrow gauge points (rails under 4 studs apart): two blades' plates, each on its own pin, don't fit side by side
+// between the rails (they lay over each other, and on each other's pins: 26 mm3 of each in the bed's stud). As the
+// reference's narrow-gauge switches and wye, both blades are on one plate, on one pin (switch/base.ts joinedPoints):
+// one closes as the other opens. Moving blades: One is still the single-point switch.
 import { describe, expect, it } from 'vitest';
 import { kernel } from '../src/geom/kernel';
 import { buildDesign, clearBuildCache } from '../src/app/build';
@@ -14,36 +15,64 @@ import { OPTION_DEFAULTS } from '../src/app/design';
 type W = Awaited<ReturnType<typeof kernel>>;
 /** A piece's triangles as a solid again. */
 const solid = (w: W, pos: Float32Array) => { const m = new w.Mesh({ numProp: 3, vertProperties: pos, triVerts: Uint32Array.from({ length: pos.length / 3 }, (_, k) => k) }); m.merge(); return new w.Manifold(m); };
-const sw = (gaugeStuds: number, options: Design['options'] = {}): Design => ({ ...structuredClone(TEMPLATES['Narrow-gauge switch R48 left']), gaugeStuds, options: { legoTrack: 'print', ...options } });
+const sw = (gaugeStuds: number, options: Design['options'] = {}, name = 'Narrow-gauge switch R48 left'): Design => ({ ...structuredClone(TEMPLATES[name]), gaugeStuds, options: { legoTrack: 'print', ...options } });
+/** A solid turned about a point (degrees, anticlockwise from above). */
+const turned = (m: InstanceType<W['Manifold']>, at: [number, number], a: number) => m.translate([-at[0], -at[1], 0]).rotate([0, 0, a]).translate([at[0], at[1], 0]);
+/** How many rails stand on a points part: the pieces of it at the rail head's height (the bed's top is at 3.2, the rails' at 9.6). */
+const railsOn = (m: InstanceType<W['Manifold']>) => m.slice(8.6).decompose().length;
 
-describe('narrow gauge points', { timeout: 300000 }, () => {
-  for (const blades of [undefined, 2, 1] as const) for (const bladeStyle of ['sprung', 'simple'] as const)
-    it(`2-stud gauge, ${bladeStyle} blades, Moving blades ${blades ?? 'as it comes'}: one blade, its plate clear of the track and its pin's stud`, async () => {
+describe('narrow gauge points', { timeout: 600000 }, () => {
+  for (const name of ['Narrow-gauge switch R48 left', 'Narrow-gauge switch R36 right', 'Narrow-gauge wye R36']) for (const bladeStyle of ['sprung', 'simple'] as const) for (const ballast of ['none', 'ballast'] as const)
+    it(`${name}, ${bladeStyle} blades${ballast === 'none' ? '' : ', on ballast'}: both blades on one plate, one closed as the other opens, clear of the track at both ends`, async () => {
       const w = await kernel();
       clearBuildCache();
-      const b = buildDesign(w, sw(2, { bladeStyle, ...(blades && { pointBlades: blades }) }));
+      const b = buildDesign(w, sw(2, { bladeStyle, ballast }, name));
       expect(b.info.warnings).toEqual([]);
       const points = b.pieces.filter((p) => /points(-[ab])?$/.test(p.name));
       expect(points.map((p) => p.name.replace(/^switch-/, ''))).toEqual(['points']);
       const fixed = w.Manifold.union(b.pieces.filter((p) => /^track|base/.test(p.name)).map((p) => solid(w, p.positions)));
       expect(fixed.volume()).toBeGreaterThan(1000);
-      expect(solid(w, points[0].positions).intersect(fixed).volume()).toBeLessThan(0.05);
+      const m = solid(w, points[0].positions), t = points[0].turn!;
+      // (one part, one body, a rail along each edge)
+      expect(m.decompose().length).toBe(1);
+      expect(railsOn(m)).toBe(2);
+      expect(Math.abs(t.swing!)).toBeGreaterThan(1);
+      // (clear of the track as assembled, over its swing and at its other end)
+      for (const f of [0, 0.25, 0.5, 0.75, 1]) expect(turned(m, t.at, t.swing! * f).intersect(fixed).volume(), `turned ${f} of its swing`).toBeLessThan(0.05);
+      // (at each end a blade lies closed on its stock rail: a degree further and it's in it)
+      expect(turned(m, t.at, -Math.sign(t.swing!)).intersect(fixed).volume(), 'a degree past as assembled').toBeGreaterThan(0.5);
+      expect(turned(m, t.at, t.swing! + Math.sign(t.swing!)).intersect(fixed).volume(), 'a degree past its other end').toBeGreaterThan(0.5);
       clearBuildCache();
     });
-  it('3-stud gauge too; 4 studs and up keep both blades', async () => {
+  it('Moving blades: One is the single-point switch still: one blade on its plate, the other rail fixed', async () => {
     const w = await kernel();
     clearBuildCache();
-    const names = (g: number) => buildDesign(w, sw(g)).pieces.map((p) => p.name.replace(/^switch-/, '')).filter((n) => /^points(-[ab])?$/.test(n));
-    expect(names(3)).toEqual(['points']);
-    expect(names(4)).toEqual(['points-a', 'points-b']);
+    const b = buildDesign(w, sw(2, { pointBlades: 1 }));
+    expect(b.info.warnings).toEqual([]);
+    const points = b.pieces.filter((p) => /points(-[ab])?$/.test(p.name));
+    expect(points.length).toBe(1);
+    expect(railsOn(solid(w, points[0].positions))).toBe(1);
+    const fixed = w.Manifold.union(b.pieces.filter((p) => /^track|base/.test(p.name)).map((p) => solid(w, p.positions)));
+    expect(solid(w, points[0].positions).intersect(fixed).volume()).toBeLessThan(0.05);
     clearBuildCache();
   });
-  it('the Moving blades setting says why Two can\'t be had, at narrow gauge only', () => {
+  it('3-stud gauge too; 4 studs and up keep a plate to each blade; on tines both blades as ever', async () => {
+    const w = await kernel();
+    clearBuildCache();
+    const parts = (g: number, o: Design['options'] = {}) => buildDesign(w, sw(g, o)).pieces.filter((p) => /points(-[ab])?$/.test(p.name));
+    const three = parts(3);
+    expect(three.map((p) => p.name.replace(/^switch-/, ''))).toEqual(['points']);
+    expect(railsOn(solid(w, three[0].positions))).toBe(2);
+    expect(parts(4).map((p) => p.name.replace(/^switch-/, ''))).toEqual(['points-a', 'points-b']);
+    clearBuildCache();
+  });
+  it('the Moving blades setting: Two can be had at narrow gauge, and says how', () => {
     let d: Design = sw(2);
     const f = optionForm(() => d).form.flatMap((s) => s.fields).find((x) => x.key === 'pointBlades')!;
     const c: OptCtx = { o: { ...OPTION_DEFAULTS }, ballast: false, fdb: true, switches: true };
     const two = f.choices!.find((ch) => ch.v === '2')!, one = f.choices!.find((ch) => ch.v === '1')!;
-    expect(two.no?.(c)).toMatch(/gauge is under 4 studs/);
+    expect(two.no?.(c)).toBeUndefined();
+    expect(two.tip).toMatch(/Under 4 studs' gauge the two are on one plate/);
     expect(one.no?.(c)).toBeUndefined();
     d = sw(4);
     expect(two.no?.(c)).toBeUndefined();

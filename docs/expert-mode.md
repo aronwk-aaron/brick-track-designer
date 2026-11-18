@@ -697,7 +697,7 @@ route-owned storage, the follow rules and the card section they bring are the pa
   studs, -5 to 5; set by hand, the app no longer moves it to clear other track). Blade length and heel are "Blades
   lengthened" (`heel`, there before: the blades can't be shorter than worked out, their heels where the rails are just
   far enough apart); lever side and place are the lever's edits (there before). readDesign keeps only the values these
-  take. Editor: the Trackwork panel's points rows (Blade shape, Moving blades, each "As the design: …" first, greyed
+  take (under 4 studs' gauge, two moving blades are on one plate, on one pin: switch/base.ts joinedPoints). Editor: the Trackwork panel's points rows (Blade shape, Moving blades, each "As the design: …" first, greyed
   with why) and lever rows (Throw bar moved along), with the expert tools shown. Template (Features): 'Crossover with
   points of their own'. Test: test/points-own-build.test.ts.
 - **Levers in housings at the corners (2026-11-12):** `trackwork.throw[key].leverAt` (studs along the points from

@@ -232,10 +232,17 @@ export function networkSplits(s: Scad, routes: Route[], sol: Solution, p: BasePa
     // (the blades as chosen, else, where they don't fit: first rigid blades on top, where the chosen shape's plate, with
     // its spring's pocket and the pocket's walls, doesn't fit beside other track's rails running between its stock rails
     // or other points' plates (keep: fdbLayout): a double slip's, a tandem's, a slip's; then on tines; said, where, below)
-    // (points on routes with a gauge of their own, mixed gauges: built at that gauge; under 4 studs, one moving blade,
-    // as a narrow-gauge design's)
-    const gsOwn = A.gauge !== undefined ? A.gauge / 8 - 1 : p.gaugeStuds;
-    const p00 = gsOwn === p.gaugeStuds ? p : { ...p, gaugeStuds: gsOwn, ...(gsOwn < 4 && { pointBlades: 1 as const }) };
+    // (points on routes with a gauge of their own, mixed gauges: built at that gauge; under 4 studs, both blades on one
+    // plate, as a narrow-gauge design's: switch/base.ts joinedPoints. Narrow-gauge points on dual-gauge track keep
+    // their one blade by the narrow gauge's own rail (app/dualbranch.ts; a narrow track drawn within a wider one,
+    // sharing its rail): the other would lie on the shared or the third rail)
+    const gsOwn = A.gauge !== undefined ? A.gauge / 8 - 1 : p.gaugeStuds, gaugeOf = (r: number) => routes[r].gauge ?? (p.gaugeStuds + 1) * 8;
+    const onDual = () => [i, j].some((r) => routes[r].extra?.dual) || routes.some((rt, r) => {
+      if (r === i || r === j || r === j2 || gaugeOf(r) <= (gsOwn + 1) * 8) return false;
+      const t = toeOf(sp), q = routePose(rt, routeSOf(rt, t)), d = Math.abs((((q[2] - routePose(routes[i], sp.merge ? sp.spans[0][1] : sp.spans[0][0])[2]) % 180) + 180) % 180);
+      return Math.hypot(q[0] - t[0], q[1] - t[1]) < gaugeOf(r) / 2 && Math.min(d, 180 - d) < 10;
+    });
+    const p00 = gsOwn === p.gaugeStuds ? p : { ...p, gaugeStuds: gsOwn, ...(gsOwn < 4 && onDual() && { pointBlades: 1 as const }) };
     // (expert, stage 5c: this set's own blade shape and moving blades, over the design's)
     // (and its own mechanism: tines under the bed or blades on top, over the design's; not a three-way's, whose levers go by the design's)
     const p1 = ed?.bladeStyle || ed?.blades || (ed?.mech && !C && ed.mech !== p00.mechStyle) ? { ...p00, ...(ed.mech && !C && { mechStyle: ed.mech }), ...(ed.bladeStyle && { bladeStyle: ed.bladeStyle }), ...(ed.blades && { pointBlades: ed.blades }) } : p00;

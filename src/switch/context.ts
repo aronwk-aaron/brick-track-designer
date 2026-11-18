@@ -63,7 +63,8 @@ export interface SwitchParams {
   sprungThin?: boolean;
   /** (the plate-style points, rigid blades) What holds each blade down: 'pin' (a snap lip on its pin, as before) or 'front' (a lip on the bed over its plate's front, as the sprung blades', and a plain pin). The sprung blades always have the lip. */
   bladeLip?: 'pin' | 'front';
-  /** (the plate-style points) Blades per set: 2 (both move), or 1 (a single-point switch, as a tram's: only the blade on the more curved route moves; the other side's rail is fixed, from where it's a flangeway clear of its stock rail). A three-way keeps both. */
+  /** (the plate-style points) Blades per set: 2 (both move), or 1 (a single-point switch, as a tram's: only the blade on the more curved route moves; the other side's rail is fixed, from where it's a flangeway clear of its stock rail). A three-way keeps both.
+   * Under 4 studs' gauge two plates, each on its own pin, don't fit between the rails: both blades are on one plate there, on one pin (switch/base.ts joinedPoints), as the reference's narrow-gauge switches. */
   pointBlades?: 1 | 2;
   /** (the plate-style points) A three-way's levers: 1 (one slider under both blades, three positions), or 2 (as the reference's triple switches: a slider and a lever to each blade, one each side, each with two positions; the routes set by the two together). */
   threeWayLevers?: 1 | 2;
@@ -376,6 +377,9 @@ export function pointsSet(routes: Route[], ps: PointsSet, p: SwitchParams, defau
     notches: undefined as Notch[][] | undefined, crossBlocked: false,
     /** (a single-point switch) the blade that's fixed rail instead, and where along its route that rail starts: filled in by switchPlan */
     fixed: undefined as 0 | 1 | undefined, sMate: undefined as number | undefined,
+    /** (narrow gauge, both blades moving) both blades on the one plate, on the one pin (`fixed` is the blade without a
+     * plate, pin and post of its own: it rides on the other's plate): filled in by switchPlan */
+    joined: false,
     /** the throw arm runs under other track (its rails across the arm, past the stock rail), and whether the slider can
      * pass under it there (a closed tunnel; with blades on top, the slider in two parts: switch/base.ts fdbSplit): filled in by switchPlan */
     under: false, underOk: false,

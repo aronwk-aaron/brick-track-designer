@@ -33,7 +33,7 @@ The files you may meet:
 | `…-ballast` | Ballast printed apart from its track, when Settings › Ballast › Track and ballast printed is Apart. Bought track drops into one. |
 | `switch-base…` | The track of a switch or crossing, whole, or cut for the bed. Its moving parts are the files below. |
 | `…-throw` | The slider that carries the blades over. A longer arm under other track is `…-throw` and `…-throw-posts`. |
-| `…-points-a`, `…-points-b` | The two blades (one file for both on tines when Points printed as is One part). |
+| `…-points-a`, `…-points-b` | The two blades (one file for both on tines when Points printed as is One part). Narrow gauge (under 4 studs): one file, `…-points`, both blades on one plate. |
 | `…-spring` | A snap clamp (or, on a nail switch, an over-centre spring). |
 | `…-lever`, `…-bracket` | The lever, and the 3 x 3 stud bracket it can stand on. |
 | `…-lid` | The lid of an under-the-bed mechanism with Points go in: From above, under a lid. |
@@ -166,6 +166,9 @@ and close against their rails.** Then roll a wheelset through every route, both 
    - *Rigid blades, Lip over the front:* as sprung ones, front under the lip first.
    - *Rigid, realistic:* these tuck under the stock rail's head, so they go on **open** (turned on their pin, the
      slider at its other end) and are then swung closed.
+   - *Narrow gauge (under 4 studs):* one part, `switch-points`, with both blades on it: two plates don't fit between
+     rails that close. It goes on as one blade does, onto its one pin and the slider's one post; one blade closes as
+     the other opens. (Moving blades: One still makes the single-point switch, with one blade and the other rail fixed.)
 3. **The lever** (`switch-lever`): press it in between its two ears till its pivot clicks in, its foot in the slider.
 
 With sprung blades, a train trailing through the wrong way pushes the blades over and they spring back. With rigid
