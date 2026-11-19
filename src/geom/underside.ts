@@ -166,7 +166,11 @@ export function edgeGrip(s: Scad, t: Track, part: Man, gp: [number, number, numb
   // only touched there, along a line up the part's side: an edge of four triangles in the file, which a mesh read back
   // in can join wrongly (switch/base.ts's slider groove had the same). No further: round a clip's socket, wider at the
   // bottom than where the walls are looked at, it's that much more in the socket (0.05 put 0.1 mm3 more in the peg))
-  const band = roof.subtract(inner), rim = band.subtract(mid).offset(0.01, 'Miter', 4).intersect(band);
+  // (an outline with a spike of no area in it grew to a NEGATIVE area by that offset, and the rim came out empty: a cut
+  // part of the X yard (track3) and of two-crossovers-plates (track9) had no rim at all, their twins theirs. Grown
+  // smaller than it was: the spike taken out first)
+  const band = roof.subtract(inner), open = band.subtract(mid), grown = open.offset(0.01, 'Miter', 4);
+  const rim = (grown.area() < open.area() ? open.simplify(1e-6).offset(0.01, 'Miter', 4) : grown).intersect(band);
   const bb = roof.bounds();
   const toG = (x: number, y: number) => worldToPose(gp, [x, y]).map((v) => v / STUD);
   const cs = [toG(bb.min[0], bb.min[1]), toG(bb.max[0], bb.min[1]), toG(bb.min[0], bb.max[1]), toG(bb.max[0], bb.max[1])];

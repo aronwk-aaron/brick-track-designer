@@ -15,6 +15,9 @@
 // on the parts after the cuts, each standing free (crossing.ts studsAfter, build.ts standStuds): 25, 20, 23, 18, 26, 27, 21, 14, 18, 21, 15, 23, 19, 23,
 // 21 and 26 of them, 340 in all, 34.66 mm3 each, each part's change a whole number of studs to 0.003 mm3 a stud, nothing
 // taken from any part. Boxes, throws, levers and points as they were.)
+// (track3, 2026-11-19, approved by Aaron: 86234.15 -> 86651.66, its edge rim back. The rim along its cut edges had come out
+// empty (underside.ts edgeGrip: its outline's spike of no area grew to a negative area). Its box, and every other part, as
+// they were.)
 import { describe, expect, it } from 'vitest';
 import fs from 'node:fs';
 import { kernel } from '../src/geom/kernel';
