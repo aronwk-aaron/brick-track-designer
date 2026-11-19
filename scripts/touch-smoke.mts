@@ -243,6 +243,22 @@ async function tablet(width: number, height: number, tag: string) {
       check(/Cut where two tracks join here/.test(said), `[${tag}] a tap on it says what it is (${said.slice(0, 80)})`);
       await shot('jointcut');
     }
+    // (its points thrown by a finger: a tap on them in the 3D view, there and back; the touch bar's Throw with their track tapped)
+    at = `${tag}: throwing a switch by touch`;
+    type TW = { btdThrow: { sets(): { key: string; places: number; at: number; moving: boolean; setFor?: string; routes: string[] }[]; tapAt(key: string): [number, number] | undefined; part(name: string): number[] | undefined } };
+    const sets = () => page.evaluate(() => (window as unknown as TW).btdThrow.sets()), settled = async () => { await page.waitForFunction(() => (window as unknown as TW).btdThrow.sets().every((q) => !q.moving), null, { timeout: 5_000 }).catch(() => {}); await sleep(150); };
+    const s0 = await sets();
+    check(s0.length >= 1 && s0[0].at === 0, `[${tag}] the kit's points can be thrown (${JSON.stringify(s0)})`);
+    if (s0.length) {
+      const xy = (await page.evaluate((k) => (window as unknown as TW).btdThrow.tapAt(k), s0[0].key))!;
+      await f.tap(xy); await settled();
+      check((await sets())[0].at === 1, `[${tag}] a tap on the points in the 3D view throws them (${JSON.stringify(await sets())})`);
+      await f.tap([xy[0] + 12, xy[1] + 8]); await settled();
+      check((await sets())[0].at === 0, `[${tag}] a tap a finger's width off them throws them back`);
+      await f.drag(xy, [xy[0] + 70, xy[1] + 25]); await sleep(300);
+      check((await sets())[0].at === 0, `[${tag}] a finger dragged over them turns the view and throws nothing`);
+      await shot('thrown');
+    }
   }
   // (the expert tools by touch: the legend's By hand only pressed by a finger; a rail gap tapped, dragged
   // along its track by a finger, taken out with the bar's Delete)

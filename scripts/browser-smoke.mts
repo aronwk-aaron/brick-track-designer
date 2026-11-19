@@ -869,6 +869,43 @@ try {
     check(await bar() === '2 selected', `with Clicks pick: Everything the box takes tracks, as ever (${await bar()})`);
     await page.keyboard.press('Escape'); }
 
+  // (a printed wye: its points thrown in the 3D view by a click on them and by Throw in their Trackwork row; the
+  // design and its parts' files as they were)
+  at = 'throwing a switch';
+  await page.evaluate(() => { localStorage.setItem('btd-pick', 'all'); localStorage.setItem('btd-design', JSON.stringify({ version: 1, gaugeStuds: 4, options: { legoTrack: 'print' }, routes: [{ name: 'Left', x: 0, y: 0, heading: 0, segs: [{ kind: 'curve', radius: 40, angle: 22.5 }] }, { name: 'Right', x: 0, y: 0, heading: 0, segs: [{ kind: 'curve', radius: 40, angle: -22.5 }] }] })); });
+  await page.reload(); await page.waitForSelector('#track');
+  check(await says(/1 switch.*built in/), `a printed wye builds (${await status()})`);
+  { type TW = { btdThrow: { sets(): { key: string; places: number; at: number; moving: boolean; setFor?: string; routes: string[] }[]; tapAt(key: string): [number, number] | undefined; part(name: string): number[] | undefined } };
+    const sets = () => page.evaluate(() => (window as unknown as TW).btdThrow.sets()), settled = () => page.waitForFunction(() => (window as unknown as TW).btdThrow.sets().every((q) => !q.moving), null, { timeout: 5_000 }).then(() => page.waitForTimeout(150));
+    const names = await page.evaluate(() => (window as unknown as { btdCanvas: unknown; btdThrow: { names?(): string[] } }).btdThrow.names?.() ?? []);
+    const blade = names.find((n) => /points/.test(n))!, lever = names.find((n) => /lever/.test(n))!, slider = names.find((n) => /throw$/.test(n))!;
+    const where = (n: string) => page.evaluate((nm) => JSON.stringify((window as unknown as TW).btdThrow.part(nm)), n);
+    const s0 = await sets(), design0 = await page.evaluate(() => localStorage.getItem('btd-design'));
+    check(s0.length === 1 && s0[0].places === 2 && s0[0].at === 0 && s0[0].routes.join() === 'Right,Left', `the wye's points can be thrown: two places, as assembled set for the right-hand route (${JSON.stringify(s0)})`);
+    check(await page.locator('#throw-note').isVisible(), 'the 3D view says its points can be thrown');
+    const b0 = await where(blade), l0 = await where(lever), t0 = await where(slider), pic = () => page.locator('#view3d canvas').first().screenshot().then((b) => b.toString('base64')), p0 = await pic();
+    const xy = (await page.evaluate((k) => (window as unknown as TW).btdThrow.tapAt(k), s0[0].key))!;
+    await page.mouse.click(xy[0], xy[1]); await settled();
+    const s1 = await sets();
+    check(s1[0].at === 1 && s1[0].setFor === 'Left', `a click on the points in the 3D view throws them: set for the left-hand route (${JSON.stringify(s1)})`);
+    check(await where(blade) !== b0 && await where(lever) !== l0 && await where(slider) !== t0, `their blade, slider and lever have moved (${b0} -> ${await where(blade)})`);
+    check(await pic() !== p0, 'and the view shows it');
+    check(/Points set for Left/.test(await page.locator('#hint').innerText()), `it says which route is set (${await page.locator('#hint').innerText()})`);
+    // (a drag turns the view and throws nothing)
+    await page.mouse.move(xy[0], xy[1]); await page.mouse.down(); await page.mouse.move(xy[0] + 60, xy[1] + 20, { steps: 5 }); await page.mouse.up(); await page.waitForTimeout(300);
+    check((await sets())[0].at === 1, 'a drag over them turns the view and throws nothing');
+    // (Throw in their Trackwork row)
+    if (!(await page.locator('#trackwork').evaluate((d: HTMLDetailsElement) => d.open))) await page.locator('#trackwork > summary').click();
+    const grp = page.locator('#trackwork details.twg', { has: page.locator('button.throwbtn') }).first();
+    if (!(await grp.evaluate((d: HTMLDetailsElement) => d.open))) await grp.locator('> summary').click();
+    const row = page.locator('#trackwork details.tw', { has: page.locator('button.throwbtn') }).first();
+    if (!(await row.evaluate((d: HTMLDetailsElement) => d.open))) await row.locator('summary').click();
+    check(/Set for Left/.test(await row.innerText()), 'their Trackwork row says what they are set for');
+    await page.locator('#trackwork button.throwbtn').first().click(); await settled();
+    check((await sets())[0].at === 0 && await where(blade) === b0 && await where(lever) === l0, `Throw in their Trackwork row puts them back (${JSON.stringify(await sets())})`);
+    check(await page.evaluate(() => localStorage.getItem('btd-design')) === design0, 'the design is as it was: throwing is for looking only');
+  }
+
   check(errors.length === 0, `no errors on the page${errors.length ? `: ${errors.join(' | ').slice(0, 600)}` : ''}`);
 } catch (err) {
   fails.push(`${at}: ${err instanceof Error ? err.message : err}`);

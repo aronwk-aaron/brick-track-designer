@@ -7,6 +7,7 @@ import { BANK_MAX, type BankRamps, type Design, type DRoute, type DSeg, OPTION_D
 import { ISSUE_R, TrackCanvas, type OverlayItem, dialogOpen, eachLever, leverSide, leverSlides, typingIn } from './canvas';
 import { describe } from './planner';
 import { BRICKTRACKS_COLOR, gradeOf, LEGO_COLOR, type LegoPart, legoParts, type Piece } from './build';
+import { moveOf, nextPlace, setRoutes, throwSets, type ThrowSet } from './throwview';
 import { mirroredTable, movedTable, TABLE_COLORS, type Table, tableAt, tableMiddle, tableOutline, turnedTable } from './tables';
 import { zip } from '../geom/zip';
 import { layoutParts } from './layoutparts';
@@ -1682,6 +1683,131 @@ let meshKinds: string[] = [];
 // Exploded view: each part pulled out from the middle (the moving parts lifted too), to see where they separate.
 let meshCentres: THREE.Vector3[] = [];
 const explodeEl = $<HTMLInputElement>('explode');
+// ---------- throwing switches in the 3D view (display only: throwview.ts) ----------
+// A tap or click on a set of points' moving parts in the 3D view, Throw in its Trackwork row, or the touch bar's Throw
+// with its track selected: its blades, slider and lever go over to its next route, and the route it's now set for is
+// picked out (a green band in the 3D view and on the plan). The parts' files and the build are as they were.
+/** each thrown set's place now, by its points' key (none: as assembled, set for its right-hand route) */
+const thrown = new Map<string, number>();
+let throwSetsNow = new Map<string, ThrowSet>();
+/** sets on their way over: each lever from where it was to where it's going, since t0 */
+const throwAnim = new Map<string, { from: number[]; to: number[]; t0: number }>();
+const THROW_MS = 450;
+const builtPoints = (key: string) => (canvas?.overlay?.items ?? []).filter((it) => it.kind === 'points' && it.key === key && !it.off && !it.cand);
+const waysOf = (key: string) => new Set(builtPoints(key).flatMap((it) => it.routes ?? [])).size;
+/** how far over each of a set's levers is now (part way, while it moves) */
+function leversAt(st: ThrowSet, now = performance.now()): number[] {
+  const a = throwAnim.get(st.key), at = st.places[thrown.get(st.key) ?? 0] ?? st.places[0];
+  if (!a) return at;
+  const u = Math.min(1, (now - a.t0) / THROW_MS), e = u * u * (3 - 2 * u);
+  return a.to.map((v, k) => (a.from[k] ?? v) + (v - (a.from[k] ?? v)) * e);
+}
+const setRoutesOf = (key: string) => setRoutes(builtPoints(key), toRoutes(design));
+/** The route a set is set for now (its name), if it's been thrown. */
+const setFor = (key: string) => { const st = throwSetsNow.get(key), rs = st ? setRoutesOf(key) : []; return st && rs.length === st.places.length ? rs[thrown.get(key) ?? 0] : undefined; };
+const throwMarks = new THREE.Group();
+scene.add(throwMarks);
+function markThrown() {
+  for (const m of [...throwMarks.children]) { throwMarks.remove(m); (m as THREE.Mesh).geometry.dispose(); }
+  const lines: [number, number][][] = [];
+  for (const key of thrown.keys()) {
+    const r = setFor(key);
+    if (!r) continue;
+    lines.push(r.line);
+    // (a flat band along the route's middle, just over the sleepers)
+    const pos: number[] = [], hw = 3, z = 3.6;
+    for (let k = 0; k + 1 < r.line.length; k++) {
+      const [a, b] = [r.line[k], r.line[k + 1]], l = Math.hypot(b[0] - a[0], b[1] - a[1]) || 1, n = [-(b[1] - a[1]) / l * hw, (b[0] - a[0]) / l * hw];
+      pos.push(a[0] - n[0], a[1] - n[1], z, b[0] - n[0], b[1] - n[1], z, b[0] + n[0], b[1] + n[1], z, a[0] - n[0], a[1] - n[1], z, b[0] + n[0], b[1] + n[1], z, a[0] + n[0], a[1] + n[1], z);
+    }
+    const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+    throwMarks.add(new THREE.Mesh(g, throwMat));
+  }
+  if (canvas) { canvas.setRoutes = lines; canvas.draw(); }
+}
+const throwMat = new THREE.MeshBasicMaterial({ color: 0x2e9e5b, transparent: true, opacity: 0.8, side: THREE.DoubleSide, depthTest: false });
+/** Each moving part's mesh where its set is now (over where Explode has put it). */
+function applyThrows() {
+  const now = performance.now();
+  for (const st of throwSetsNow.values()) {
+    const fr = leversAt(st, now);
+    st.groups.forEach((g, gi) => {
+      const by = g.map((k) => pieces[k]?.hinge?.by).find((v) => v !== undefined);
+      for (const k of g) {
+        const m = meshes[k], p = pieces[k];
+        if (!m || !p) continue;
+        const mv = moveOf(p, fr[gi] ?? 0, by, st.half), q = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(...mv.axis).normalize(), THREE.MathUtils.degToRad(mv.deg));
+        const c = new THREE.Vector3(...mv.about), ex = (m.userData.ex as THREE.Vector3 | undefined) ?? new THREE.Vector3();
+        m.quaternion.copy(q);
+        m.position.copy(c).sub(c.clone().applyQuaternion(q)).add(new THREE.Vector3(...mv.shift)).add(ex);
+      }
+    });
+  }
+  for (const [key, a] of throwAnim) if (now - a.t0 >= THROW_MS) throwAnim.delete(key);
+  redraw3d();
+}
+/** The sets there are to throw now (after a build): those thrown before stay as they were, where they still are. */
+function refreshThrows() {
+  throwSetsNow = throwSets(pieces, waysOf);
+  throwAnim.clear();
+  for (const [key, at] of [...thrown]) { const st = throwSetsNow.get(key); if (!st || at >= st.places.length) thrown.delete(key); }
+  const note = $('throw-note');
+  note.hidden = !throwSetsNow.size;
+  note.textContent = finger() ? 'Tap a switch\'s points, slider or lever to throw it.' : 'Click a switch\'s points, slider or lever to throw it.';
+  markThrown();
+}
+/** Throw a set of points to its next route (and, a double slip's, its mate at the same end with it). Returns what it's set for now. */
+function throwPoints(key: string, place?: number, withMate = true): string | undefined {
+  const st = throwSetsNow.get(key);
+  if (!st) return undefined;
+  const from = leversAt(st), to = place ?? nextPlace(thrown.get(key) ?? 0, st.places.length);
+  thrown.set(key, to);
+  throwAnim.set(key, { from, to: st.places[to], t0: matchMedia('(prefers-reduced-motion: reduce)').matches ? -THROW_MS : performance.now() });
+  const mate = withMate ? builtPoints(key).map((it) => it.mate).find((m) => m && throwSetsNow.has(m)) : undefined;
+  if (mate) throwPoints(mate, Math.min(to, throwSetsNow.get(mate)!.places.length - 1), false);
+  if (withMate) { markThrown(); applyThrows(); if (twReady) { twSig = ''; renderTrackwork(twList); } const r = setFor(key); canvas?.say(r ? `Points set for ${r.id}${mate ? ' (both sets at this end of the slip)' : ''}` : 'Points thrown', 2500); }
+  return setFor(key)?.id;
+}
+// (a tap or click in the 3D view on a set's moving part, or near one for a finger: not a drag, which turns the view)
+{
+  const ray = new THREE.Raycaster(), el = renderer.domElement;
+  let down: { x: number; y: number; t: number; id: number } | undefined, fingers = 0;
+  const setAt = (x: number, y: number, coarse: boolean): string | undefined => {
+    const r = el.getBoundingClientRect(), keyOf = new Map<THREE.Object3D, string>();
+    for (const st of throwSetsNow.values()) for (const g of st.groups) for (const k of g) if (meshes[k]?.visible) keyOf.set(meshes[k], st.key);
+    if (!keyOf.size) return undefined;
+    ray.setFromCamera(new THREE.Vector2(((x - r.left) / r.width) * 2 - 1, -((y - r.top) / r.height) * 2 + 1), camera);
+    const hit = ray.intersectObjects([...keyOf.keys()], false)[0];
+    if (hit) return keyOf.get(hit.object);
+    // (near one: within a finger's reach of a moving part's middle, 20 px (a 40 px target); 10 for a mouse)
+    let best: string | undefined, bestD = coarse ? 20 : 10;
+    for (const [m, key] of keyOf) {
+      const c = new THREE.Box3().setFromObject(m).getCenter(new THREE.Vector3()).project(camera);
+      if (c.z > 1) continue;
+      const d = Math.hypot((c.x * 0.5 + 0.5) * r.width + r.left - x, (-c.y * 0.5 + 0.5) * r.height + r.top - y);
+      if (d < bestD) { bestD = d; best = key; }
+    }
+    return best;
+  };
+  el.addEventListener('pointerdown', (e) => { fingers++; down = fingers === 1 && e.button === 0 ? { x: e.clientX, y: e.clientY, t: performance.now(), id: e.pointerId } : undefined; });
+  const up = (e: PointerEvent, tap: boolean) => {
+    fingers = Math.max(0, fingers - 1);
+    const d = down; if (d?.id === e.pointerId) down = undefined;
+    if (!tap || !d || d.id !== e.pointerId || Math.hypot(e.clientX - d.x, e.clientY - d.y) > (e.pointerType === 'mouse' ? 4 : 10) || performance.now() - d.t > 600) return;
+    const key = setAt(e.clientX, e.clientY, e.pointerType !== 'mouse');
+    if (key) throwPoints(key);
+  };
+  el.addEventListener('pointerup', (e) => up(e, true));
+  el.addEventListener('pointercancel', (e) => up(e, false));
+  // (for the smoke tests: the sets, where each is, where to tap one on the screen, and a part's mesh's place)
+  (window as unknown as { btdThrow: unknown }).btdThrow = {
+    sets: () => [...throwSetsNow.values()].map((st) => ({ key: st.key, places: st.places.length, at: thrown.get(st.key) ?? 0, moving: throwAnim.has(st.key), setFor: setFor(st.key)?.id, routes: setRoutesOf(st.key).map((r) => r.id) })),
+    tapAt: (key: string) => { const st = throwSetsNow.get(key), k = st?.groups[0].find((i) => pieces[i]?.turn) ?? st?.groups[0][0]; if (k === undefined || !meshes[k]) return undefined; const r = el.getBoundingClientRect(), c = new THREE.Box3().setFromObject(meshes[k]).getCenter(new THREE.Vector3()).project(camera); return [(c.x * 0.5 + 0.5) * r.width + r.left, (-c.y * 0.5 + 0.5) * r.height + r.top]; },
+    part: (name: string) => { const k = pieces.findIndex((p) => p.name === name), m = meshes[k]; return m ? [...m.position.toArray(), ...m.quaternion.toArray()].map((v) => +v.toFixed(4)) : undefined; },
+    throw: (key: string) => throwPoints(key),
+    names: () => pieces.filter((p) => p.set).map((p) => p.name),
+  };
+}
 function applyExplode() {
   redraw3d();
   const e = Number(explodeEl.value), all = new THREE.Vector3();
@@ -1706,6 +1832,9 @@ function applyExplode() {
       : { throw: fromTop ? 15 : -30, points: fromTop ? 25 : -18, cassette: 45, bracket: 30, lever: 60, bought: 40 };
     m.position.set(off.x, off.y, e * (lift[meshKinds[k]] ?? 40));
   });
+  // (and the thrown points' parts turned, slid and swung from there)
+  for (const m of meshes) { m.userData.ex = m.position.clone(); m.quaternion.identity(); }
+  applyThrows();
 }
 explodeEl.addEventListener('input', applyExplode);
 // The 3D view's colours: what each colour of the parts shown is (only those there are).
@@ -1791,6 +1920,7 @@ function showPieces(list: Piece[]) {
   meshKinds = list.map((p) => (p.lego ? 'bought' : kindOf(p.name)));
   showColours(list);
   meshCentres = meshes.map((m) => { m.geometry.computeBoundingBox(); return m.geometry.boundingBox!.getCenter(new THREE.Vector3()); });
+  refreshThrows();
   applyShown(); applyExplode();
   if (!list.length) { framed = false; lastNames = ''; lastSphere = undefined; return; } // (nothing to frame: frame the next pieces afresh)
   const bs = sphereOf();
@@ -1836,7 +1966,7 @@ $('view-top').addEventListener('click', () => look(false));
 $('view-under').addEventListener('click', () => look(true));
 $('view-frame').addEventListener('click', () => { if (meshes.length) frame(sphereOf(), true); });
 renderer.domElement.addEventListener('dblclick', () => { if (meshes.length) frame(sphereOf(), true); });
-renderer.setAnimationLoop(() => { if (!dirty3d) return; dirty3d = false; renderer.render(scene, camera); });
+renderer.setAnimationLoop(() => { if (throwAnim.size) applyThrows(); if (!dirty3d) return; dirty3d = false; renderer.render(scene, camera); });
 
 // ---------- toolbar ----------
 // The template browser (a dialog: templatebrowser.ts) picks one; it replaces the design, after asking if the design has changes in no file.
@@ -2044,6 +2174,7 @@ const canvas = new TrackCanvas($<HTMLCanvasElement>('track'), {
   radius: () => Number(radiusSel.value),
   system: () => (systemSel.value === 'monorail' ? 'monorail' : 'train'),
   leaveDraw: () => setMode('select'),
+  throwPoints: (key) => { throwPoints(key); },
   split: (i, s) => splitRouteAt(i, s),
   cut: (i, s) => cutRouteAt(i, s),
   enterDraw: () => setMode('draw'),
@@ -2975,6 +3106,16 @@ function drawTrackwork(list: TwItem[]) {
           const sub = [ids.join(' / '), st.state === 'off' ? 'taken out' : st.forced ? 'forced' : '', cur.toe ? `moved ${cur.toe > 0 ? '+' : ''}${studsOf(cur.toe)} studs` : '', cur.heel ? `blades ${studsOf(cur.heel)} studs longer` : '', cur.single === 'straight' ? 'the straighter track\'s blade moves' : '', cur.mech ? (cur.mech === 'tines' ? 'on tines' : 'blades on top') : '', cur.bladeStyle ? `${cur.bladeStyle === 'simple' ? 'rigid' : cur.bladeStyle} blades` : '', cur.blades ? `${cur.blades === 1 ? 'one moving blade' : 'two moving blades'}` : '', cur.drop?.length ? `without ${cur.drop.join(', ')}` : ''].filter(Boolean).join(' · ');
           const row = item(g, key, `Points ${++n}`, sub, ed, 'points');
           check(row, 'Built (off: both tracks\' rails run through as plain track)', st.state === 'built', () => canvas.togglePoints(key));
+          // (thrown in the 3D view, to see how they work: display only)
+          if (st.state === 'built') {
+            const can = throwSetsNow.has(key), bt = document.createElement('button'), now = can ? setFor(key) : undefined;
+            bt.type = 'button'; bt.className = 'throwbtn'; bt.textContent = 'Throw'; bt.disabled = !can;
+            bt.title = can ? 'Moves these points\' blades, slider and lever to their next route in the 3D view, to see how they work. The printed parts don\'t change.' : 'These points have no moving parts in the 3D view (bought, or not built yet).';
+            bt.addEventListener('click', () => { throwPoints(key); });
+            const f = field('In the 3D view', bt), sp = document.createElement('small');
+            sp.className = 'desc'; sp.textContent = !can ? 'Nothing to throw here.' : now ? `Set for ${now.id}.` : 'Set as assembled.';
+            f.append(sp); row.append(f);
+          }
           // (a three-way: each route in it or not; one taken out leaves a two-way for the others)
           if (ids.length > 2 && !cur.off) for (const id of ids) check(row, `${id} in the points`, !cur.drop?.includes(id), (v) => {
             const drop = (cur.drop ?? []).filter((d2) => d2 !== id).concat(v ? [] : [id]);

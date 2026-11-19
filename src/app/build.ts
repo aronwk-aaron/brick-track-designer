@@ -55,6 +55,8 @@ export interface TrackworkItem {
    * two whose points they are; a flangeway cut, the rail's route and the one whose flanges cut it; a check rail, its route and the one crossing it.
    * Points made by hand (forced); a near miss where points could be forced (cand: whether they can, and how far off it is) */
   routes?: string[]; forced?: boolean; cand?: { ok: boolean; why: string };
+  /** (points) a double slip's other set of points at the same end, by its key: the two are thrown together in the 3D view */
+  mate?: string;
   /** a lever ('throw'): its points' frame (mm, degrees), side (+1 right), the track's edge beside it and the pivot's y (in the frame), the longest tines, and its settings now */
   lever?: { frame: Pose; side: number; stockX: number; edge: number; minD: number; pivotY: number; maxTine: number; leverOffset: number; springLength: number; edited: boolean;
     /** one of a three-way's two levers (threeWayLevers 2): which, its hand edits its own (Trackwork.throw's each) */
@@ -73,6 +75,8 @@ export interface Piece {
   slide?: { dir: [number, number]; by: number };
   /** (a lever) how it swings from as assembled to its other end: about its pivot at, the axis level along axis (a unit vector), by by (degrees, right-handed) */
   hinge?: { at: [number, number, number]; axis: [number, number]; by: number };
+  /** (a points set's moving part: blade, slider, lever, spring) its points' key (the Trackwork item's: where their toe is), for the 3D view to throw them by */
+  set?: string;
   /** LEGO parts this piece is (a plain straight as LEGO's own track, its ballast as plates): not printed, in the LEGO parts list */
   lego?: LegoPart[];
   /** (track on a grade) how it's lifted in the view: by h at its middle c, rising slope along dir (mm, a unit vector) */
@@ -1030,7 +1034,16 @@ function solveTrackwork(w: Wasm, design: Design, o: PieceOptions, step: (what: s
   // (double and single slips, found in the routes: their points, levers and check rails as the reference's are, worked
   // out from the crossing and the slip roads (switch/dslip.ts), the hand edits over them)
   // (slipLevers 'reference': each lever where the reference's is, measured past the sleepers' ends, half their length)
-  { const slips = findDoubleSlips(routes, sol); if (slips.length) Object.assign(tw, underHand(tw, slipTrackwork(routes, sol, slips, o.slipLevers === 'reference' ? { reference: { edge: gauge / 2 + 12 } } : {}))); }
+  // (a double slip's two sets of points at each end: thrown together in the 3D view, as the real one's are, both
+  // leading to the same track beyond: each one's mate, by their keys. Which end: the side of the crossing its toe is
+  // on, along the line between the two tracks)
+  const mates = new Map<string, string>();
+  { const slips = findDoubleSlips(routes, sol);
+    for (const sl of slips) {
+      const h = (sl.bisector * Math.PI) / 180, side = (st: typeof sl.sets[number]) => { const [x, y] = st.key.split(',').map(Number); return Math.sign(-(x - sl.centre[0]) * Math.sin(h) + (y - sl.centre[1]) * Math.cos(h)); };
+      for (const a of sl.sets) for (const b2 of sl.sets) if (a.key !== b2.key && side(a) === side(b2) && sl.sets.filter((st) => side(st) === side(a)).length === 2) mates.set(a.key, b2.key);
+    }
+    if (slips.length) Object.assign(tw, underHand(tw, slipTrackwork(routes, sol, slips, o.slipLevers === 'reference' ? { reference: { edge: gauge / 2 + 12 } } : {}))); }
   // What the canvas draws over the track, in mm: flangeway cuts, check rails,
   // rail crossings and points.
   const g = gauge / 2, gOf = (i: number) => railOffsetOf(routes[i], g);
@@ -1077,7 +1090,7 @@ function solveTrackwork(w: Wasm, design: Design, o: PieceOptions, step: (what: s
   for (const sp of sol.splits) {
     const at = splitAt(sp), key = keyOf(at), h = (routePose(routes[sp.routes[0]], sp.merge ? sp.spans[0][1] : sp.spans[0][0])[2] * Math.PI) / 180, k = sp.merge ? -1 : 1;
     // (dir: the way "moved along" goes, on the plan)
-    items.push({ kind: 'points', key, at, pts: [at], toe: tw.points?.[key]?.toe ?? 0, dir: [-Math.sin(h) * k, Math.cos(h) * k], routes: idsOf(sp.routes), ...(sp.forced && { forced: true }) });
+    items.push({ kind: 'points', key, at, pts: [at], toe: tw.points?.[key]?.toe ?? 0, dir: [-Math.sin(h) * k, Math.cos(h) * k], routes: idsOf(sp.routes), ...(sp.forced && { forced: true }), ...(mates.has(key) && { mate: mates.get(key) }) });
   }
   // (mixed gauges: points between routes of different gauges aren't built; said, with where and which routes)
   for (const sp of sol.refused ?? []) {
@@ -1611,7 +1624,7 @@ function marked(b: PieceBuild, m0: Man): Man {
 }
 
 /** A piece added: local, as printed; world, where it sits in the design. */
-function add(b: PieceBuild, name: string, color: number, local: Man, world: Man, turn?: Piece['turn'], move?: Pick<Piece, 'slide' | 'hinge'>) {
+function add(b: PieceBuild, name: string, color: number, local: Man, world: Man, turn?: Piece['turn'], move?: Pick<Piece, 'slide' | 'hinge' | 'set'>) {
   // (the copies it's told apart on let go at once, as bake's)
   arena(b.w, () => {
     const notes: SupportNote[] = [], { positions, supports, file, volume } = viewOf(b.w, world, notes);
@@ -2268,14 +2281,16 @@ function buildSwitches(b: PieceBuild, switches: ReturnType<typeof planPieces>['s
       const sfx = sw.sets.length > 1 ? `${k + 1}` : '';
       if (bracket && !gm.nail[k]) add(b, `${tag}-bracket${sfx}`, 0x8a8f99, bracket, place(bracket, sw.pose));
       const turnOf = (j: number): Piece['turn'] => { const t2 = turns?.[j]; return t2 && { at: poseToWorld(sw.pose, t2.at), by: t2.by, swing: t2.swing, ...(t2.tilt && { tilt: t2.tilt.map((q) => poseToWorld(sw.pose, q)) as [[number, number], [number, number]] }) }; };
-      pp.forEach((pts, j) => add(b, `${tag}-points${sfx}${pp.length > 1 ? (j === 0 ? '-a' : '-b') : ''}`, 0x4682b4, pts, place(pts, sw.pose), turnOf(j)));
+      // (set: its points' key, as their Trackwork item's, for the 3D view's Throw)
+      const set = keyOf(sw.setAts[k]);
+      pp.forEach((pts, j) => add(b, `${tag}-points${sfx}${pp.length > 1 ? (j === 0 ? '-a' : '-b') : ''}`, 0x4682b4, pts, place(pts, sw.pose), turnOf(j), { set }));
       // (Peco's spring: printed flat and straight, as assembled squeezed between its pins)
-      if (spring && springPrint) add(b, `${tag}-points${sfx}-spring`, 0xc0392b, springPrint, place(spring, sw.pose));
-      add(b, `${tag}-throw${sfx}`, 0xe8892b, thrPrint, place(thr, sw.pose), undefined, { slide: mv.slide });
-      if (thp && thpPrint) add(b, `${tag}-throw${sfx}-posts`, 0xe8892b, thpPrint, place(thp, sw.pose), undefined, { slide: mv.slide });
+      if (spring && springPrint) add(b, `${tag}-points${sfx}-spring`, 0xc0392b, springPrint, place(spring, sw.pose), undefined, { set });
+      add(b, `${tag}-throw${sfx}`, 0xe8892b, thrPrint, place(thr, sw.pose), undefined, { slide: mv.slide, set });
+      if (thp && thpPrint) add(b, `${tag}-throw${sfx}-posts`, 0xe8892b, thpPrint, place(thp, sw.pose), undefined, { slide: mv.slide, set });
       // (the lever in a housing at a corner: the tie-rod out to it)
-      if (rod && rodPrint) add(b, `${tag}-throw${sfx}-rod`, 0xe8892b, rodPrint, place(rod, sw.pose), undefined, { slide: mv.slide });
-      if (!gm.nail[k]) add(b, `${tag}-lever${sfx}`, 0xd4af37, print, place(lever, sw.pose), undefined, mv.hinge && { hinge: mv.hinge });
+      if (rod && rodPrint) add(b, `${tag}-throw${sfx}-rod`, 0xe8892b, rodPrint, place(rod, sw.pose), undefined, { slide: mv.slide, set });
+      if (!gm.nail[k]) add(b, `${tag}-lever${sfx}`, 0xd4af37, print, place(lever, sw.pose), undefined, { ...(mv.hinge && { hinge: mv.hinge }), set });
     });
   });
 }
@@ -2765,7 +2780,7 @@ function buildOne(w: Wasm, design: Design, report: (what: string, frac: number) 
         const turn = cut.turnOf(m.local);
         return { positions, supports, stl: stlBytes(printed(w, m.local).getMesh(), true, turn), volume: m.local.volume() + (supportsOf(m.local)?.volume() ?? 0), turn };
       }));
-      sp.moving.forEach((m, k) => { b.pieces.push({ name: m.name, color: m.color, positions: ms[k].positions.slice(), stl: ms[k].stl.slice(), ...(ms[k].supports && { supports: ms[k].supports!.slice() }), ...(m.turn && { turn: m.turn }), ...(m.slide && { slide: m.slide }), ...(m.hinge && { hinge: m.hinge }), ...(ms[k].turn && { bedTurn: ms[k].turn }) }); b.volume += ms[k].volume; });
+      sp.moving.forEach((m, k) => { b.pieces.push({ name: m.name, color: m.color, positions: ms[k].positions.slice(), stl: ms[k].stl.slice(), ...(ms[k].supports && { supports: ms[k].supports!.slice() }), ...(m.turn && { turn: m.turn }), ...(m.slide && { slide: m.slide }), ...(m.hinge && { hinge: m.hinge }), ...(ms[k].turn && { bedTurn: ms[k].turn }), set: keyOf(sp.toe) }); b.volume += ms[k].volume; });
     }
     pc = { switches: [], rest: [], warnings: [...net.warnings] };
 

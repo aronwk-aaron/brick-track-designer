@@ -72,7 +72,7 @@ export interface Overlay { grooves: [number, number][][]; checkRails: [number, n
 /** A trackwork item on the plan (mm); a lever ('throw') has its points' frame and settings, to drag it. */
 export interface OverlayItem { kind: string; key: string; at: [number, number]; pts: [number, number][]; dir?: [number, number];
   /** points: taken out (off), made by hand (forced), or a near miss where they could be forced (cand) */
-  off?: boolean; forced?: boolean; cand?: { ok: boolean; why: string }; routes?: string[];
+  off?: boolean; forced?: boolean; cand?: { ok: boolean; why: string }; routes?: string[]; /** (points) a double slip's other set at the same end */ mate?: string;
   lever?: { frame: [number, number, number]; side: number; stockX: number; edge: number; minD: number; pivotY: number; maxTine: number; leverOffset: number; springLength: number; blade?: 'left' | 'right' } }
 
 /** A button on the touch bar (canvas touchTools): id, the key it stands for (or alt, joined); on: a toggle that's on; off: can't now. */
@@ -84,6 +84,8 @@ export interface CanvasHost {
   select(route: number | undefined): void;
   /** Curve radius in studs; 0 = auto (standard radii, 22.5-degree ends); -1 = free (any radius and angle). */
   radius(): number;
+  /** Points to throw in the 3D view (the touch bar's Throw), by their key. */
+  throwPoints?(key: string): void;
   /** What a click or drag would do now, and where the mouse is (studs), for the status line. */
   status?(hint: string, at: [number, number] | undefined): void;
   /** Draw mode wanted (Enter on a route's end). */
@@ -350,6 +352,8 @@ export class TrackCanvas {
   highlight: string | undefined;
   /** A place to pick out (studs): a joint hovered in the Trackwork panel. */
   highlightAt: [number, number] | undefined;
+  /** The routes points thrown in the 3D view are set for now (mm, each a line along the track from their toe): picked out on the plan. */
+  setRoutes: [number, number][][] = [];
   /** A route's straight or curve to pick out (hovered in its card's Shape): [route, piece]. */
   highlightSeg: [number, number] | undefined;
   /** Plan layers turned off from the legend: grooves, checks, crossings, ballast, baseplate, points, levers, grips. */
@@ -1156,16 +1160,28 @@ export class TrackCanvas {
       case 'draw': return [snap, { id: 'Escape', label: 'Stop', title: 'Stop laying this track (Esc, or hold a finger still)', primary: true }];
       case 'select': {
         const sel = this.selection(), joined = this.withJoined(sel).length > sel.length;
-        return joined ? [{ id: 'joined', label: 'Select joined', title: 'Select every track joined to these (double-tap a track)' },
-          { id: 'alt', label: 'Move alone', title: 'Dragged, the selected tracks leave the tracks joined to them behind (Alt)', on: this.touchAlt }] : [];
+        // (a selected track with points on it: throw them in the 3D view, the ones nearest where it was tapped)
+        const pts = this.pointsToThrow();
+        return [...(joined ? [{ id: 'joined', label: 'Select joined', title: 'Select every track joined to these (double-tap a track)' },
+          { id: 'alt', label: 'Move alone', title: 'Dragged, the selected tracks leave the tracks joined to them behind (Alt)', on: this.touchAlt }] : []),
+          ...(pts ? [{ id: 'throw', label: 'Throw', title: 'Throw the points on this track nearest where you tapped it: the 3D view shows them set the other way', group: 2 }] : [])];
       }
     }
     return [];
+  }
+  /** The built points on a selected track nearest the pointer (where the track was tapped), by their key: the touch bar's Throw. */
+  pointsToThrow(): string | undefined {
+    const d = this.host.design(), ids = new Set(this.selection().map((i) => d.routes[i]?.name || String(i)));
+    const its = (this.overlay?.items ?? []).filter((it) => it.kind === 'points' && !it.off && !it.cand && (it.routes ?? []).some((r) => ids.has(r)));
+    if (!its.length) return undefined;
+    const m = this.mouse, far = (it: OverlayItem) => (m ? Math.hypot(it.at[0] / MM - m[0], it.at[1] / MM - m[1]) : 0);
+    return its.reduce((a, b) => (far(b) < far(a) ? b : a)).key;
   }
   /** A touch bar button pressed: what its key does. */
   touchDo(id: string) {
     if (id === 'alt') { this.touchAlt = !this.touchAlt; this.alt = this.touchAlt && this.touchKind !== 'select'; this.guideKey = ''; return this.draw(); }
     if (id === 'joined') { this.selectJoined(this.selection()); return this.draw(); }
+    if (id === 'throw') { const key = this.pointsToThrow(); if (key) this.host.throwPoints?.(key); return; }
     const key = id.length === 1 ? id.toLowerCase() : id;
     this.key({ key, code: '', shiftKey: id === 'R', ctrlKey: false, metaKey: false, altKey: false, target: this.el, preventDefault() {} } as unknown as KeyboardEvent, true);
     this.draw();
@@ -2516,6 +2532,8 @@ export class TrackCanvas {
     // the solver's results
     if (this.overlay) {
       const w = (mm: [number, number][]) => mm.map(([x, y]) => [x / MM, y / MM] as [number, number]);
+      // (points thrown in the 3D view: the route each is set for, under the rest)
+      for (const sr of this.setRoutes) { c.globalAlpha = 0.45; line(w(sr), '#2e9e5b', Math.max(4, 2.2 * this.scale)); c.globalAlpha = 1; }
       if (!this.hidden.has('grooves')) for (const gr of this.overlay.grooves) line(w(gr), '#e0452b', railW * 0.7);
       if (!this.hidden.has('checks')) for (const cr of this.overlay.checkRails) line(w(cr), '#2b6fe0', Math.max(1, (1 / MM) * this.scale));
       if (!this.hidden.has('crossings')) for (const p of this.overlay.crossings) { const [sx, sy] = this.toScreen(p[0] / MM, p[1] / MM); c.strokeStyle = ink.mark; c.lineWidth = 1.2; c.beginPath(); c.arc(sx, sy, 5, 0, 2 * Math.PI); c.stroke(); }
