@@ -143,6 +143,7 @@ export const SPECS: OptionSpec[] = [
   // Print bed and cutting into parts (each part its own colour)
   { key: 'printBedX', values: [256, 160], base: D(bend, { splitTrack: 'bed', printBedY: 160 }), cam: { dir: '0.1,-0.25,1', dist: 1.9 } },
   { key: 'printBedY', values: [256, 160], base: D(bend, { splitTrack: 'bed', printBedX: 160 }), cam: { dir: '0.1,-0.25,1', dist: 1.9 } },
+  { key: 'cutParts', values: ['yes', 'no'], base: D(bend, { printBedX: 200, printBedY: 200, legoTrack: 'print' }), cam: { dir: '0.15,-0.3,1', dist: 2.0 } },
   { key: 'splitTrack', values: ['bed', 'lengths'], base: D(bend, { printBedX: 200, printBedY: 200 }), cam: { dir: '0.15,-0.3,1', dist: 2.0 } },
   { key: 'pieceLengthStuds', values: [16, 8], base: D([st(48)], { legoTrack: 'print' }), explode: 12, cam: { dir: '1,-0.5,1', dist: 1.6 } },
   { key: 'baseplate', values: ['0', '16', '32', '48', '64', '96'], base: D(bend, { splitTrack: 'bed', baseplateX: 20, baseplateY: 20, printBedX: 1000, printBedY: 1000 }), cam: { dir: '0.1,-0.25,1', dist: 1.9 } },

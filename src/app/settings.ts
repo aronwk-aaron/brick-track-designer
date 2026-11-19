@@ -198,6 +198,10 @@ export function optionForm(d: () => Design): { form: OptSection[] } {
     { title: 'Print bed and cutting into parts', fields: [
       { key: 'printBedX', label: 'Print bed width, mm', step: 1, min: 50, max: 1000, help: 'Your printer\'s bed, across (x). Every part is cut to fit on the bed, and turned to fit it best.' },
       { key: 'printBedY', label: 'Print bed depth, mm', step: 1, min: 50, max: 1000, help: 'Your printer\'s bed, front to back (y).' },
+      { key: 'cutParts', label: 'Cut into print parts', def: OPTION_DEFAULTS.cutParts, choices: [
+        { v: 'yes', t: 'Yes', tip: 'Track is cut to fit the print bed, into track pieces, at baseplate edges, and where you cut it.' },
+        { v: 'no', t: 'No, whole tracks', tip: 'No cuts at all: each track is one part, with any track it touches. Your hand cuts and cut paths are kept, greyed on the plan, and not made.',
+          con: 'A part bigger than the print bed gets a warning, not a cut. All track is printed: none is bought.' }] },
       { key: 'splitTrack', label: 'Long track cut into', def: OPTION_DEFAULTS.splitTrack, choices: [
         { v: 'bed', t: 'Parts that fill the print bed', tip: 'Cut along straight lines where the bed needs it; the parts join as set in Parts join with.' },
         { v: 'lengths', t: 'Track pieces, cut across the track', tip: 'Each track cut square to itself into pieces with ordinary end connectors, like LEGO track. Switches and crossings stay whole.', con: 'More parts, and a cut only where the track is clear of other tracks.' }] },

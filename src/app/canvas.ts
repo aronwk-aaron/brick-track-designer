@@ -154,6 +154,9 @@ export function typingIn(e: KeyboardEvent) {
 export const dialogOpen = () => !!document.querySelector('dialog[open]');
 /** Several cuts and cut paths as they were before a move of them all: the cuts by track and place, each such track's cuts, the paths' corners. */
 interface MultiOrig { cuts: { route: number; at: number }[]; was: Map<number, number[]>; paths: { id: string; pts: CutPt[] }[] }
+/** (Cut into print parts: No) The colour of hand cuts and cut paths, kept in the design and not made, and the plan's note by the first of them. */
+const UNCUT_GREY = '#8a8f98';
+export const UNCUT_NOTE = 'Not cut: Cut into print parts is No (Settings)';
 /** What a press on the plan takes hold of (TrackCanvas hitTest). */
 type PlanHit = { kind: 'handle'; handle: Handle } | { kind: 'lever'; it: OverlayItem } | { kind: 'mark'; mark: NonNullable<ReturnType<TrackCanvas['itemAt']>> }
   | { kind: 'end'; route: number; end: 'start' | 'end' } | { kind: 'item'; hit: Hit } | { kind: 'table'; table: number } | { kind: 'route'; route: number };
@@ -2706,15 +2709,19 @@ export class TrackCanvas {
       }
       this.el.dataset.measure = text;
     } else delete this.el.dataset.measure;
+    // (Cut into print parts: No: the hand cuts and cut paths aren't made. Each is drawn grey, and the first says why)
+    const uncut = (d.options?.cutParts ?? 'yes') === 'no';
+    let uncutAt: [number, number] | undefined;
     // Hand cuts (expert): a line across each track where it's cut into parts by hand
     for (const rr of d.routes) {
       if (!rr.cuts?.length) continue;
       const half = ((rr.gaugeStuds ?? d.gaugeStuds) + 4) / 2 * this.scale;
-      c.strokeStyle = '#d9480f'; c.lineWidth = 2.5; c.setLineDash(rr.cutsLocked ? [] : [5, 3]);
+      c.strokeStyle = uncut ? UNCUT_GREY : '#d9480f'; c.lineWidth = 2.5; c.setLineDash(rr.cutsLocked ? [] : [5, 3]);
       for (const at of liveCuts(rr)) {
         const [first] = cutSegs(rr.segs, at), q = follow(rr, first), [qx, qy] = this.toScreen(q.x, q.y), ang = (q.heading * Math.PI) / 180;
         const nx = Math.cos(ang) * half, ny = -Math.sin(ang) * half;
         c.beginPath(); c.moveTo(qx - nx, qy - ny); c.lineTo(qx + nx, qy + ny); c.stroke();
+        uncutAt ??= [qx, qy];
       }
       c.setLineDash([]);
     }
@@ -2742,10 +2749,12 @@ export class TrackCanvas {
       for (const p of this.cutPaths()) {
         const also = this.selAlso.some((q) => q.kind === 'cutpath' && q.id === p.id), sel = (sc?.kind === 'cutpath' && sc.id === p.id) || also, dragged = this.cutDrag && this.cutDrag.kind !== 'cut' && this.cutDrag.id === p.id;
         const bad = dragged ? !!this.cutDrag!.why : !!this.overlay?.pathsNot?.some((n) => n.id === p.id);
-        line(p.pts, bad ? '#e0452b' : '#d9480f', sel ? 4 : 2.5);
+        line(p.pts, uncut ? UNCUT_GREY : bad ? '#e0452b' : '#d9480f', sel ? 4 : 2.5);
+        if (uncut && p.pts.length) uncutAt ??= this.toScreen(p.pts[0][0], p.pts[0][1]) as [number, number];
         if (sel && !this.selAlso.length) for (const q of p.pts) { const [x, y] = this.toScreen(q[0], q[1]); c.fillStyle = '#fff'; c.strokeStyle = bad ? '#e0452b' : '#d9480f'; c.lineWidth = 2; c.beginPath(); c.rect(x - 4, y - 4, 8, 8); c.fill(); c.stroke(); }
         if (dragged && this.cutDrag!.why && this.mouse) { const [mx, my] = this.toScreen(this.mouse[0], this.mouse[1]); tag(mx, my + 30, this.cutDrag!.why, '#e0452b'); }
       }
+      if (uncut && uncutAt) { tag(uncutAt[0], uncutAt[1] + 40, UNCUT_NOTE, UNCUT_GREY); this.el.dataset.uncut = '1'; } else delete this.el.dataset.uncut;
       // (the cuts worked out where tracks join inside trackwork: a line as a cut path's, not to be dragged (none is drawn
       // by hand: the tracks' joints place them); one the build left out, as it parts nothing, thin and dashed)
       {

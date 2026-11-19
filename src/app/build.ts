@@ -503,8 +503,44 @@ function buildKit(w: Wasm, design: Design, report: (what: string, frac: number) 
   return { overlay: merged() as unknown as Overlay, pieces, info: { ms: performance.now() - t0, volume: sum((r) => r.info.volume), size: [0, 1, 2].map((k) => mx[k] - mn[k]),
     crossings: sum((r) => r.info.crossings), checkRails: sum((r) => r.info.checkRails), splits: sum((r) => r.info.splits), switches: sum((r) => r.info.switches), pieces: pieces.length, turned: sum((r) => r.info.turned ?? 0), warnings: built.flatMap((r) => r.info.warnings) } };
 }
+/** (Cut into print parts: No) A bed no part is too big for: nothing is cut to fit it. */
+const UNCUT_BED = 1e6;
+/**
+ * Cut into print parts: No. The design as it's built then: nothing cut for the bed (a bed nothing is too big for),
+ * into track pieces, at baseplate edges or tables' seams, where tracks join in trackwork, or by hand (the routes' hand
+ * cuts and the cut paths left out of what's built: the design itself keeps them). All track printed: a bought piece
+ * is a cut each end. Every track is one part with whatever its base touches; moving parts and supports are their own
+ * as ever.
+ */
+export function uncutDesign(design: Design): Design {
+  const { cutPaths: _paths, ...expert } = design.expert ?? {};
+  return { ...design, tables: [],
+    routes: design.routes.map((r) => { const { cuts: _cuts, cutsLocked: _locked, ...rest } = r; return rest; }),
+    ...(design.expert && { expert }),
+    options: { ...design.options, cutParts: 'yes', splitTrack: 'bed', printBedX: UNCUT_BED, printBedY: UNCUT_BED, baseplate: 0, legoTrack: 'print', jointCuts: false, slipCuts: 'none' } };
+}
+/** (Cut into print parts: No) The design built whole; each part too big for the design's print bed said by name and size, and ringed on the plan. */
+function buildUncut(w: Wasm, design: Design, report: (what: string, frac: number) => void, early: ((overlay: unknown) => void) | undefined, opts: BuildOpts): ReturnType<typeof buildWhole> {
+  const o = { ...OPTION_DEFAULTS, ...design.options }, X = o.printBedX, Y = o.printBedY;
+  const r = buildAll(w, uncutDesign(design), report, early, opts);
+  const warnings: string[] = [];
+  for (const p of r.pieces) {
+    if (p.lego || !p.positions?.length) continue;
+    const f = bedFit(p.positions, X, Y, 3);
+    if (f.fits) continue;
+    const P = p.positions, [a, b] = tightBox(P, 3).size;
+    let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity;
+    for (let i = 0; i < P.length; i += 3) { x0 = Math.min(x0, P[i]); x1 = Math.max(x1, P[i]); y0 = Math.min(y0, P[i + 1]); y1 = Math.max(y1, P[i + 1]); }
+    const text = `${p.name} is ${a.toFixed(0)} x ${b.toFixed(0)} mm: too big for the ${X} x ${Y} print bed, and it isn't cut (Cut into print parts is No)`;
+    warnings.push(text);
+    (p as { fits?: boolean }).fits = false;
+    r.overlay.issues.push({ at: [(x0 + x1) / 2, (y0 + y1) / 2], r: Math.hypot(x1 - x0, y1 - y0) / 2, text, area: true });
+  }
+  return warnings.length ? { ...r, info: { ...r.info, warnings: [...r.info.warnings, ...warnings] } } : r;
+}
 function buildAll(w: Wasm, design: Design, report: (what: string, frac: number) => void, early: ((overlay: unknown) => void) | undefined, opts: BuildOpts): ReturnType<typeof buildWhole> {
   design = upgradeDesign(design);
+  if (design.options?.cutParts === 'no') return buildUncut(w, design, report, early, opts);
   // (expert: a stretch of a track with settings of its own is a track of its own for the build (stretches.ts); what the
   // build says by track, the plan's trackwork, said of the design's own tracks again)
   const st = expandStretches(design);

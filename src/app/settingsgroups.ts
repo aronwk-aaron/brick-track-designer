@@ -25,8 +25,8 @@ export interface Group {
 /** Every setting in one group, once (a test checks it). */
 export const GROUPS: Group[] = [
   { id: 'bed', title: 'Printer and bed', keys: ['printBedX', 'printBedY'] },
-  { id: 'cuts', title: 'Cutting and joints', keys: ['splitTrack', 'pieceLengthStuds', 'baseplate', 'baseplateX', 'baseplateY', 'studsAtCuts', 'pathSquare', 'jointCuts', 'slipCuts', 'joint', 'axleStuds', 'tongueRails', 'endSupports', 'pegOnBallast', 'axleHoles'],
-    subs: { splitTrack: 'Cutting', joint: 'Joints' } },
+  { id: 'cuts', title: 'Cutting and joints', keys: ['cutParts', 'splitTrack', 'pieceLengthStuds', 'baseplate', 'baseplateX', 'baseplateY', 'studsAtCuts', 'pathSquare', 'jointCuts', 'slipCuts', 'joint', 'axleStuds', 'tongueRails', 'endSupports', 'pegOnBallast', 'axleHoles'],
+    subs: { cutParts: 'Cutting', joint: 'Joints' } },
   { id: 'fits', title: 'Fits and clearances', keys: ['studFit', 'antistudFit', 'trackFitTol'] },
   { id: 'track', title: 'Track and rails', needs: 'train', keys: ['gaugeStuds', 'raisedOn', 'curveStuds', 'studsFullPitch'] },
   { id: 'ballast', title: 'Sleepers and ballast', needs: 'train', keys: ['sleepers', 'sleeperWidthStuds', 'sleeperGapStuds', 'ballast', 'ballastLeftStuds', 'ballastRightStuds', 'ballastEnds', 'trackBallast'] },
@@ -61,7 +61,10 @@ const HIDDEN_WHEN: Record<string, (c: OptCtx) => boolean> = {
   trackBallast: (c) => !c.ballast, trackFitTol: (c) => !c.ballast || c.o.trackBallast !== 'apart',
   bottomStyle: (c) => !c.ballast, undersideGrid: (c) => c.ballast,
   labelSize: (c) => !c.o.labelText, labelGauge: (c) => !c.o.labelText, labelParts: (c) => !c.o.labelText,
-  pieceLengthStuds: (c) => c.o.splitTrack !== 'lengths', baseplateX: (c) => !((c.o.baseplate ?? 0) > 0), baseplateY: (c) => !((c.o.baseplate ?? 0) > 0),
+  // (Cut into print parts: No: nothing is cut, so how it would be isn't asked)
+  splitTrack: (c) => c.o.cutParts === 'no', baseplate: (c) => c.o.cutParts === 'no', studsAtCuts: (c) => c.o.cutParts === 'no', pathSquare: (c) => c.o.cutParts === 'no',
+  jointCuts: (c) => c.o.cutParts === 'no', slipCuts: (c) => c.o.cutParts === 'no',
+  pieceLengthStuds: (c) => c.o.cutParts === 'no' || c.o.splitTrack !== 'lengths', baseplateX: (c) => c.o.cutParts === 'no' || !((c.o.baseplate ?? 0) > 0), baseplateY: (c) => c.o.cutParts === 'no' || !((c.o.baseplate ?? 0) > 0),
   axleStuds: (c) => c.o.joint !== 'axle' && c.o.joint !== 'flataxle', pegOnBallast: (c) => !c.ballast, axleHoles: (c) => c.o.ballast !== 'buddy',
   // (the blades-on-top mechanism's settings, and the tines')
   pointBlades: (c) => !c.fdb, bladeStyle: (c) => !c.fdb, bladeRelief: (c) => !c.fdb, bladeLip: (c) => !c.fdb, throwAction: (c) => !c.fdb, leverHousing: (c) => !c.fdb || (c.o.throwStyle ?? 'built-in') !== 'built-in', boxedThrow: (c) => !c.fdb, slipLevers: (c) => !c.fdb,

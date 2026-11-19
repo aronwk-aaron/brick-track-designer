@@ -217,6 +217,10 @@
   "256",
   "160"
  ],
+ "cutParts": [
+  "yes",
+  "no"
+ ],
  "splitTrack": [
   "bed",
   "lengths"

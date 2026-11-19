@@ -492,7 +492,8 @@ function renderCutPaths() {
   addB.title = 'Then click its points on the plan: they snap to the corners between studs. Start outside the part (or on another cut) and end outside it. Enter ends the path, Esc cancels.';
   addB.addEventListener('click', () => { canvas.drawCutPath(); addB.blur(); });
   bar.append(addB); body.append(bar);
-  if ((design.options?.splitTrack ?? OPTION_DEFAULTS.splitTrack) !== 'lengths' && ps.length) body.append(small('Cut paths are made only with Long track cut into: Track pieces (Settings › Print bed and cutting into parts).', true));
+  if ((design.options?.cutParts ?? OPTION_DEFAULTS.cutParts) === 'no') { if (ps.length) body.append(small('Not made now: Cut into print parts is No (Settings › Print bed and cutting into parts).', true)); }
+  else if ((design.options?.splitTrack ?? OPTION_DEFAULTS.splitTrack) !== 'lengths' && ps.length) body.append(small('Cut paths are made only with Long track cut into: Track pieces (Settings › Print bed and cutting into parts).', true));
   // (named as Settings › Parts join with names them)
   const jointNames: Record<PathJoint, string> = { lego: 'Rail tongues + peg and clip', dovetail: 'Rail tongues + dovetails', axle: 'Rail tongues + LEGO axles', flataxle: 'Straight cuts + LEGO axles', butt: 'Straight cuts' };
   ps.forEach((p, k) => {

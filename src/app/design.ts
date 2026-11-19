@@ -214,6 +214,13 @@ export interface PieceOptions {
   /** Track only: the underside lined up with the baseplate's stud grid, or with the track itself (rows along it). */
   undersideGrid?: 'baseplate' | 'track';
   /** Long track: in parts that fill the print bed (cut along straight lines), or in track pieces cut square across it with ordinary end connectors (pieceLengthStuds long; 0: as long as fits the bed). */
+  /**
+   * Cut into print parts: 'yes' (the default: for the bed, into track pieces, at baseplate edges and tables' seams, where
+   * tracks join in trackwork, and where it's cut by hand), or 'no': no cut of any kind, each track whole with whatever
+   * it touches (build.ts uncutDesign). Hand cuts and cut paths stay in the design, not made. A part too big for the bed
+   * is warned of, not cut.
+   */
+  cutParts?: 'yes' | 'no';
   splitTrack?: 'bed' | 'lengths'; pieceLengthStuds?: number;
   /** A stud a cut between parts goes through: taken off ('off'), given whole to the part its middle is on, over the next part's edge ('whole'), or cut through, half on each ('split'). */
   studsAtCuts?: 'off' | 'whole' | 'split';
@@ -369,7 +376,7 @@ export function readDesign(v: unknown): Design {
 export const OPTION_DEFAULTS: PieceOptions = {
   throwSide: 'auto', threeWayLevers: 2, leverOffset: 8, pointThrow: 3, pointClearance: 0.3, springPreload: 1, springThickness: 0.9, springLength: 40,
   flangeway: 3, flangewayDepth: 3, checkRailLen: 30, checkRailW: 1, checkRailFlare: 1.5, printBedX: 256, printBedY: 256, baseplate: 0, baseplateX: 0, baseplateY: 0, ballast: 'none', bottomStyle: 'antistud', joint: 'lego', pointsModule: 'built-in', endSupports: true, tongueRails: 'all', grip: 'edges', pointsPieces: 1, pointBlades: 2, throwStyle: 'built-in', mechStyle: 'plates', curveStuds: 'follow',
-  throwAction: 'detent', leverHousing: 'arm', slipLevers: 'corner', slipCuts: 'none', bladeStyle: 'sprung', bladeLip: 'pin', sleepers: 'sleepers', undersideGrid: 'baseplate', splitTrack: 'lengths', pieceLengthStuds: 16, studsAtCuts: 'off', legoTrack: 'lego', axleStuds: 2, sleeperWidthStuds: 2, sleeperGapStuds: 2, studFit: 0.18, antistudFit: 0.06,
+  throwAction: 'detent', leverHousing: 'arm', slipLevers: 'corner', slipCuts: 'none', bladeStyle: 'sprung', bladeLip: 'pin', sleepers: 'sleepers', undersideGrid: 'baseplate', cutParts: 'yes', splitTrack: 'lengths', pieceLengthStuds: 16, studsAtCuts: 'off', legoTrack: 'lego', axleStuds: 2, sleeperWidthStuds: 2, sleeperGapStuds: 2, studFit: 0.18, antistudFit: 0.06,
   bladeDiscD: 14, throwBallast: false, pathSquare: false, jointCuts: false, axleHoles: false, pegOnBallast: false,
   bufferStyle: 'frame', bufferPostPlates: 8, bufferBeamBottom: 2, bufferBeamTop: 12, bufferPinHoles: true,
   trackBallast: 'together', trackFitTol: 0.2, labelText: '', labelSize: true, labelGauge: false, labelParts: true,

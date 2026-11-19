@@ -294,6 +294,17 @@ async function tablet(width: number, height: number, tag: string) {
     check(sdel.height >= 36 && (!del2 || del2.height >= 36), `[${tag}] Delete is finger-sized on the bar and the card (${Math.round(sdel.height)}, ${del2 ? Math.round(del2.height) : 'card not shown'})`);
     await tapOn('#sel-item-del'); await sleep(250);
     check(await cuts() === '[[40],[12]]', `[${tag}] and Delete on the bar takes them all out (${await cuts()})`);
+    // (Cut into print parts: No, set by touch in Settings: the cuts stay in the design, and are drawn grey with a note by the first)
+    await tapOn('#settings-open'); await sleep(300);
+    const cpField = page.locator('#options label.field', { has: page.locator('span', { hasText: /^Cut into print parts/ }) });
+    await cpField.evaluate((e) => { for (let d = e.closest('details'); d; d = d.parentElement?.closest('details') ?? null) d.open = true; e.scrollIntoView({ block: 'center' }); }); await sleep(200);
+    const cpSel = cpField.locator('select'), cpBox = (await cpSel.boundingBox())!;
+    check(cpBox.height >= 36, `[${tag}] Cut into print parts is finger-sized (${Math.round(cpBox.height)})`);
+    await cpSel.selectOption('no'); await sleep(300);
+    await tapOn('#settings-close');
+    await page.waitForFunction(() => document.getElementById('track')!.dataset.uncut === '1', null, { timeout: 20_000 }).catch(() => {});
+    check(await page.evaluate(() => document.getElementById('track')!.dataset.uncut) === '1' && await cuts() === '[[40],[12]]', `[${tag}] Cut into print parts: No greys the cuts on the plan and keeps them in the design (${await cuts()})`);
+    await shot('uncut');
     await page.evaluate(() => localStorage.setItem('btd-pick', 'all'));
     await shot('several');
   }
