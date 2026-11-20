@@ -358,6 +358,93 @@ async function tablet(width: number, height: number, tag: string) {
     await f.tap(beside); await sleep(250);
     check(/^A selected|^1 selected/.test(await bar()) || await sel() === '0', `[${tag}] Everything: a tap 17 px from a cut takes the track (${await bar()}; ${await sel()})`);
     await page.evaluate(() => localStorage.setItem('btd-pick', 'cut'));
+    // (the app's trackwork by touch: points tapped open their card under the plan, Take out takes them out, Undo puts them
+    // back; a check rail tapped anywhere along it is selected)
+    at = `${tag}: trackwork by touch`;
+    await page.evaluate(() => { localStorage.setItem('btd-pick', 'mark');
+      localStorage.setItem('btd-design', JSON.stringify({ version: 1, gaugeStuds: 4, routes: [
+        { name: 'A', x: 0, y: 0, heading: 0, segs: [{ kind: 'straight', studs: 32 }] }, { name: 'S', x: 0, y: 8, heading: 0, segs: [{ kind: 'curve', radius: 40, angle: -22.5 }] }] })); });
+    await page.reload(); await page.waitForSelector('#track'); await tapOn('#mode-select'); await tapOn('#fit'); await sleep(400);
+    type Ov = { overlay?: { items?: { kind: string; key: string; at: [number, number]; pts: [number, number][]; off?: boolean; cand?: unknown }[] }; pointsState(k: string): { state: string }; toScreen(x: number, y: number): [number, number] };
+    const twAt = (kind: string) => page.evaluate((kind) => {
+      const c = (window as unknown as { btdCanvas: Ov }).btdCanvas, r = document.getElementById('track')!.getBoundingClientRect();
+      const it = c.overlay?.items?.find((i) => i.kind === kind && !i.off && !i.cand); if (!it) return undefined;
+      const p = kind === 'check' ? it.pts[Math.floor(it.pts.length / 2)] : it.at, [x, y] = c.toScreen(p[0] / 8, p[1] / 8);
+      return { key: it.key, xy: [r.left + x, r.top + y] as [number, number] };
+    }, kind);
+    let toe = await twAt('points');
+    for (let k = 0; k < 100 && !toe; k++) { await sleep(200); toe = await twAt('points'); }
+    check(!!toe, `[${tag}] the points are on the plan`);
+    if (toe) {
+      const state = () => page.evaluate((k) => (window as unknown as { btdCanvas: Ov }).btdCanvas.pointsState(k).state, toe!.key);
+      await f.tap(toe.xy); await sleep(300);
+      const card = page.locator('#itemcard');
+      check(await card.isVisible() && /^Points/.test(await card.locator(':scope > b').innerText()) && /Worked out by the app/.test(await card.locator('.istatus').innerText()), `[${tag}] a tap on points opens their card under the plan, said to be the app's (${await card.isVisible() ? await card.innerText() : 'no card'})`);
+      check(await state() === 'built', `[${tag}] and leaves them built (a tap no longer takes them out)`);
+      await tapOn('#itemcard button.danger'); await sleep(300);
+      check(await state() === 'off', `[${tag}] the card's Take out takes them out (${await state()})`);
+      await tapOn('#undo'); await sleep(300);
+      check(await state() === 'built', `[${tag}] and Undo puts them back (${await state()})`);
+      await shot('points-card');
+    }
+    // (a crossover with its check rails, frogs and levers: each tapped along it or on it opens its card; a check rail is
+    // taken out by the card and Undo puts it back; a frog made open, a lever moved out, each undone; a frog or a lever
+    // can't be taken out, and Delete says why)
+    at = `${tag}: check rails, frogs and levers by touch`;
+    await tapOn('#templates-open'); await page.fill('#tpl-search', 'Crossover with points of their own'); await sleep(300);
+    await tapOn('#tpl-body .tcard[data-template="Crossover with points of their own"] .tpick');
+    await page.waitForSelector('#ask-dlg[open]', { timeout: 3_000 }).catch(() => undefined);
+    if (await page.locator('#ask-dlg').evaluate((d: HTMLDialogElement) => d.open)) await tapOn('#ask-yes');
+    await tapOn('#mode-select'); await tapOn('#fit'); await sleep(300);
+    await tapOn('#layers button[data-pick="mark"]'); await sleep(200);
+    const twFull = (kind: string) => page.evaluate((kind) => {
+      const c = (window as unknown as { btdCanvas: Ov }).btdCanvas, r = document.getElementById('track')!.getBoundingClientRect();
+      const it = c.overlay?.items?.find((i) => i.kind === kind && !i.off && !i.cand && (kind === 'throw' || i.pts.length > 1)); if (!it) return undefined;
+      const p = kind === 'throw' ? it.at : it.pts.length > 2 ? it.pts[Math.floor(it.pts.length / 2)] : [(it.pts[0][0] + it.pts[1][0]) / 2, (it.pts[0][1] + it.pts[1][1]) / 2], [x, y] = c.toScreen(p[0] / 8, p[1] / 8);
+      return { key: it.key, xy: [r.left + x, r.top + y] as [number, number] };
+    }, kind);
+    let ck = await twFull('check');
+    for (let k = 0; k < 150 && !ck; k++) { await sleep(200); ck = await twFull('check'); }
+    const tw = (kind: string, key: string) => page.evaluate(([kind, key]) => JSON.stringify(((window as unknown as { btdCanvas: { host: { design(): { trackwork?: Record<string, Record<string, unknown>> } } } }).btdCanvas.host.design().trackwork?.[kind] ?? {})[key] ?? {}), [kind, key]);
+    const cardTitle = () => page.locator('#itemcard > b').innerText().catch(() => '');
+    check(!!ck, `[${tag}] the crossover's check rails are on the plan`);
+    if (ck) {
+      await f.tap(ck.xy); await sleep(300);
+      check(/^Check rail/.test(await cardTitle()), `[${tag}] a tap along a check rail opens its card (${await cardTitle()})`);
+      await shot('check-card');
+      await tapOn('#itemcard button.danger'); await sleep(300);
+      check(/"off":true/.test(await tw('check', ck.key)), `[${tag}] its card's Take out takes it out (${await tw('check', ck.key)})`);
+      await tapOn('#undo'); await sleep(300);
+      check(await tw('check', ck.key) === '{}', `[${tag}] and Undo puts it back (${await tw('check', ck.key)})`);
+      await tapOn('#itemcard .idone').catch(() => {}); await sleep(200);
+    }
+    const fr = await twFull('groove');
+    check(!!fr, `[${tag}] the crossover's frogs are on the plan`);
+    if (fr) {
+      await f.tap(fr.xy); await sleep(300);
+      check(/^Frog/.test(await cardTitle()), `[${tag}] a tap along a frog's flangeway cut opens its card (${await cardTitle()})`);
+      check(await page.locator('#sel-item-del').isHidden(), `[${tag}] a frog has no Delete: it is where two rails cross`);
+      const open = page.locator('#itemcard label', { hasText: 'Open frog' }).locator('input');
+      if (await open.count()) { await open.scrollIntoViewIfNeeded(); await sleep(150); const bx = (await open.boundingBox())!; await f.tap([bx.x + bx.width / 2, bx.y + bx.height / 2]); await sleep(300); }
+      check(/"open":true/.test(await tw('groove', fr.key)), `[${tag}] its card makes it an open frog (${await tw('groove', fr.key)})`);
+      await tapOn('#undo'); await sleep(300);
+      check(await tw('groove', fr.key) === '{}', `[${tag}] and Undo makes it as it was (${await tw('groove', fr.key)})`);
+      await tapOn('#itemcard .idone').catch(() => {}); await sleep(200);
+    }
+    const lv = await twFull('throw');
+    check(!!lv, `[${tag}] the crossover's levers are on the plan`);
+    if (lv) {
+      const was = await tw('throw', lv.key);
+      await f.tap(lv.xy); await sleep(300);
+      check(/^Lever/.test(await cardTitle()), `[${tag}] a tap on a lever opens its card (${await cardTitle()})`);
+      const out = page.locator('#itemcard label', { hasText: 'Out past the track' }).locator('.stepper button').nth(1);
+      if (await out.count()) { await out.scrollIntoViewIfNeeded(); await sleep(150); const ob = (await out.boundingBox())!; await f.tap([ob.x + ob.width / 2, ob.y + ob.height / 2]); await sleep(300); }
+      check(/leverOffset/.test(await tw('throw', lv.key)) && await tw('throw', lv.key) !== was, `[${tag}] its card's + moves the lever out (${await tw('throw', lv.key)})`);
+      await shot('lever-card');
+      await tapOn('#undo'); await sleep(300);
+      check(await tw('throw', lv.key) === was, `[${tag}] and Undo puts it back (${await tw('throw', lv.key)})`);
+      await tapOn('#itemcard .idone').catch(() => {}); await sleep(200);
+    }
     await page.evaluate(() => localStorage.setItem('btd-pick', 'all'));
     await shot('several');
   }

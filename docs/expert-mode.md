@@ -851,3 +851,11 @@ Aaron's answers and need build work.
   then its buttons and Done. With the expert tools shown, chips across the top of the plan pick what a tap takes (the
   Pick list's choices, a word each: `items.ts PICK_CHIPS`; D2 as recommended); a chip also goes to Select. The chips stop short of the legend (its width is the CSS variable `--legend-w`). On a touch
   screen the legend's Pick list is away (the chips do it); with a mouse it stays, kept the same as the chips.
+- **Stage 2 is built: the app's trackwork tapped on the plan.** `Item` has `{ kind: 'tw', tw, key }` (points, a lever
+  and its throw bar, a check rail, a flangeway cut), in the layer Points, levers, check rails. With the expert tools, a
+  tap on points, a lever, a check rail's or flangeway cut's end (or anywhere along either: `canvas.twBodyAt`) selects
+  it instead of taking points out; a drag still moves it as before. Its card is the Trackwork panel's controls for it
+  (`drawTrackwork(list, focus, into)`: the panel drawn with only that item, into the inspector), with Reset this,
+  Take out (points, a check rail) and a way to the Trackwork list. Delete takes points or a check rail out; a lever or
+  a frog can't be, and says why. The throw bar is moved by its number (whole studs) on the lever's card, not by a
+  handle of its own on the plan (the overlay doesn't say where it is).

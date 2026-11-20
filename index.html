@@ -250,9 +250,12 @@
       border: 1px solid var(--c-edit); box-shadow: 0 0 0 1px var(--c-edit), var(--shadow); border-radius: 14px; background: var(--panel); }
     #itemcard[hidden] { display: none; }
     #itemcard > b { font-size: 15px; } #itemcard .istatus { color: var(--c-edit); font-size: 12.5px; margin: 0 0 6px; }
-    #itemcard .field { display: inline-grid; margin-right: 18px; vertical-align: top; }
+    #itemcard .field { display: inline-grid; grid-template-columns: auto auto; margin-right: 18px; vertical-align: top; }
+    #itemcard .field.stack { grid-template-columns: auto; }
     #itemcard .stepper { display: inline-flex; gap: 4px; align-items: center; } #itemcard .stepper input { width: 72px; }
-    #itemcard .row { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; } #itemcard .idone { margin-left: auto; background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+    #itemcard .row { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+    /* (its buttons stay in sight at the sheet's foot however long it is: Delete, Take out, Done) */
+    #itemcard > .row:last-child { position: sticky; bottom: -12px; background: var(--panel); padding: 8px 0 10px; margin-bottom: -10px; z-index: 1; } #itemcard .idone { margin-left: auto; background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
     /* (a track that has cuts, settings or stretches of its own, with the expert tools hidden: said on its card, with Show) */
     .byhand { display: flex; gap: 6px; align-items: center; font-size: 12px; color: var(--muted); padding: 2px 0 4px; } .byhand span { flex: 1; } .byhand button { flex: none; height: 24px; padding: 0 8px; font-size: 12px; }
     #itemcard > b { display: block; margin-bottom: 2px; } #itemcard .desc { display: block; color: var(--muted); font-size: 11.5px; margin: 2px 0 4px; } #itemcard .desc.warn { color: var(--warn); }

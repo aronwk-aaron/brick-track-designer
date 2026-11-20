@@ -28,7 +28,7 @@ import { lockedWhy } from './lock';
 import { type MeasurePoint, measureBetween, measurePoint } from './measure';
 import { applyCarry, type Carry, connectedSet, holds, type Joint, jointNames, joints, LOOP_OPENS_DEFAULT, type LoopOpens, openedBy, planCarry, poseAt, setApart, tidyExpert } from './connections';
 import { moveRailEdit, railEditAt, type RailEdits, type RailWhat, withRailEdit } from './railedits';
-import { alongBeyond, TAP_PX, tapReach, type BoxItem, boxable, dragStretchEnd, dragStretchWhole, handTracks, hitItems, type Hit, type Item, itemsInBox, itemsLabel, jointsOf, moveCuts, sleeperEditAt, sleeperEditOf, type Layer, newStretchAt, type OwnItem, type PickId, PICKS, picks, placeAlong, sameItem, takesFirst, withStretch } from './items';
+import { alongBeyond, isTw, TAP_PX, tapReach, type BoxItem, boxable, dragStretchEnd, dragStretchWhole, handTracks, hitItems, type Hit, type Item, itemsInBox, itemsLabel, jointsOf, moveCuts, sleeperEditAt, sleeperEditOf, type Layer, newStretchAt, type OwnItem, type PickId, PICKS, picks, placeAlong, sameItem, takesFirst, withStretch } from './items';
 import type { Stretch } from './stretches';
 import { COMMON_RADII, type GuideEnd, type GuideResult, type GuideStraight, guidePoint } from './guides';
 import { describe, follow, plan, planAnyway, planAuto, planFreeTurning, planToPose, reversed, trace as traceRaw, type Pose } from './planner';
@@ -160,7 +160,7 @@ interface MultiOrig { cuts: { route: number; at: number }[]; was: Map<number, nu
 const UNCUT_GREY = '#8a8f98';
 export const UNCUT_NOTE = 'Not cut: Cut into print parts is No (Settings)';
 /** What a press on the plan takes hold of (TrackCanvas hitTest). */
-type PlanHit = { kind: 'handle'; handle: Handle } | { kind: 'lever'; it: OverlayItem } | { kind: 'mark'; mark: NonNullable<ReturnType<TrackCanvas['itemAt']>> }
+type PlanHit = { kind: 'handle'; handle: Handle } | { kind: 'lever'; it: OverlayItem } | { kind: 'tw'; it: OverlayItem } | { kind: 'mark'; mark: NonNullable<ReturnType<TrackCanvas['itemAt']>> }
   | { kind: 'end'; route: number; end: 'start' | 'end' } | { kind: 'item'; hit: Hit } | { kind: 'table'; table: number } | { kind: 'route'; route: number };
 const norm180 = (a: number) => ((((a + 180) % 360) + 360) % 360) - 180;
 
@@ -594,7 +594,14 @@ export class TrackCanvas {
     const lever = this.leverAt(w);
     if (lever) return { kind: 'lever', it: lever };
     const mark = this.itemAt(w);
-    if (mark) return { kind: 'mark', mark };
+    // (expert, in Select: a check rail or a flangeway cut tapped anywhere along it, to select it; the nearer of that and
+    // another's end, so a tap on a check rail beside its frog's end takes the check rail)
+    const body = this.expert && this.mode === 'select' ? this.twBodyAt(w) : undefined;
+    if (mark) {
+      const at = mark.prop === 'toe' ? mark.it.at : mark.prop === 'd0' ? mark.it.pts[0] : mark.it.pts[mark.it.pts.length - 1];
+      if (!body || body.it === mark.it || Math.hypot(at[0] / MM - w[0], at[1] / MM - w[1]) <= body.d) return { kind: 'mark', mark };
+    }
+    if (body) return { kind: 'tw', it: body.it };
     const select = this.mode === 'select', hits = select ? this.itemHits(w) : [];
     if (hits[0] && takesFirst(hits[0])) return { kind: 'item', hit: hits[0] };
     // (the track near the point, looked for once as far as a click picks a track: with none that near, there's no end nearer still)
@@ -759,6 +766,11 @@ export class TrackCanvas {
       const why = this.setSleeper(sc, sc.add ? undefined : { at: sc.at, off: true });
       if (why) { this.say(why); return; }
       if (!sc.add) { this.host.changed(true); this.host.item?.(); this.say('Sleeper taken out · Reset on its card puts it back'); return this.draw(); }
+    } else if (sc.kind === 'tw') {
+      // (the app's trackwork: points taken out (both tracks' rails run through), a check rail taken out; a lever or a frog can't be)
+      if (sc.tw === 'points') { if (this.pointsState(sc.key).state !== 'built') return; this.togglePoints(sc.key); this.say('Points taken out · Built on its card puts them back'); this.host.item?.(); return this.draw(); }
+      if (sc.tw === 'check') { const g = ((d.trackwork ??= {}).check ??= {}); g[sc.key] = { ...g[sc.key], off: true }; this.host.changed(true); this.host.item?.(); this.say('Check rail taken out · Reset on its card puts it back'); return this.draw(); }
+      this.say(sc.tw === 'throw' ? 'A lever goes with its points: take the points out to have none' : 'A frog is where two rails cross: it can be open or the rail run through, not taken out'); return;
     } else { const rr = d.routes[sc.route]; if (rr?.stretches) { rr.stretches.splice(sc.k, 1); if (!rr.stretches.length) delete rr.stretches; } }
     this.setItem(undefined); this.host.changed(true); this.draw();
   }
@@ -769,6 +781,7 @@ export class TrackCanvas {
   private nudgeItem(dx: number, dy: number) {
     const it = this.selItemNow, d = this.host.design();
     if (!it || it.kind === 'joint') return;
+    if (it.kind === 'tw') { this.say('Its card has + and − for each of its numbers'); return; }
     if (this.selAlso.length) {
       // (several: all of them, or none)
       const r = this.multiMove(this.multiOrig(), dx, dy);
@@ -901,6 +914,23 @@ export class TrackCanvas {
       if (it.kind === 'points' && !this.hidden.has('points') && near(it.at)) return { it, prop: 'toe' as const, from: w, dir: it.dir ?? [0, 0], base: cur.toe ?? 0 };
     }
     return undefined;
+  }
+  /** (expert) The check rail or flangeway cut whose line a point (studs) is on, to select by a tap anywhere along it. */
+  twBodyAt(w: [number, number]): { it: OverlayItem; d: number } | undefined {
+    if (!this.picks('mark')) return undefined;
+    const t = this.tapAt('mark');
+    // (the nearest within reach: a check rail lies beside its frog's flangeway cut)
+    let best: OverlayItem | undefined, r = t.near;
+    for (const it of this.overlay?.items ?? []) {
+      if ((it.kind !== 'check' && it.kind !== 'groove') || it.pts.length < 2 || this.hidden.has(it.kind === 'check' ? 'checks' : 'grooves')) continue;
+      for (let k = 1; k < it.pts.length; k++) {
+        const a = [it.pts[k - 1][0] / MM, it.pts[k - 1][1] / MM], b = [it.pts[k][0] / MM, it.pts[k][1] / MM], dx = b[0] - a[0], dy = b[1] - a[1], l2 = dx * dx + dy * dy || 1;
+        const u = Math.max(0, Math.min(1, ((w[0] - a[0]) * dx + (w[1] - a[1]) * dy) / l2));
+        const dd = Math.hypot(a[0] + u * dx - w[0], a[1] + u * dy - w[1]);
+        if (dd < r) { r = dd; best = it; }
+      }
+    }
+    return best && { it: best, d: r };
   }
   /** The lever under a point (studs), if any. */
   private leverAt(w: [number, number]) {
@@ -1423,6 +1453,7 @@ export class TrackCanvas {
     // Pressing on a lever: drag it (side, out, along)
     if (hit?.kind === 'lever') { const it = hit.it; this.leverDrag = { it, moved: false, off: [it.at[0] / MM - w[0], it.at[1] / MM - w[1]] }; return; }  // (held where it was grabbed)
     if (hit?.kind === 'mark') { this.itemDrag = { ...hit.mark, sx: e.clientX, sy: e.clientY }; return; }
+    if (hit?.kind === 'tw' && isTw(hit.it.kind)) { this.selectItem({ kind: 'tw', tw: hit.it.kind, key: hit.it.key }); return; }
     // Pressing on a track's end (when not drawing): drag it to reshape the
     // track, or (Draw mode, no drag) carry the track on from there.
     if (hit?.kind === 'end') {
@@ -1648,7 +1679,9 @@ export class TrackCanvas {
     if (pan) { if (pan.right && !pan.moved && this.active) this.stopDrawing(); return; }
     if (this.itemDrag) {
       const id = this.itemDrag, moved = !!id.at; this.itemDrag = undefined;
-      if (!id.moved && id.it.kind === 'points') this.togglePoints(id.it.key);
+      // (a tap, not a drag: with the expert tools it's selected, its card under the plan; else points are taken out or put back)
+      if (!id.moved && this.expert && this.mode === 'select' && isTw(id.it.kind)) this.selectItem({ kind: 'tw', tw: id.it.kind, key: id.it.key });
+      else if (!id.moved && id.it.kind === 'points') this.togglePoints(id.it.key);
       else if (moved) this.host.changed(true);
       return this.draw();
     }
@@ -1659,6 +1692,7 @@ export class TrackCanvas {
     }
     if (this.leverDrag) {
       const ld = this.leverDrag, moved = ld.moved; this.leverDrag = undefined;
+      if (!moved && this.expert && this.mode === 'select') { this.selectItem({ kind: 'tw', tw: 'throw', key: ld.it.key }); return this.draw(); }
       if (moved && ld.at && ld.arm) this.leverPending = { key: ld.it.key, at: ld.at, arm: ld.arm };
       if (moved) this.host.changed(true); return this.draw();
     }
@@ -2152,6 +2186,7 @@ export class TrackCanvas {
     const hit = this.mouse && (this.mode !== 'select' || this.picks('track')) ? this.nearTrack(this.mouse) ?? (this.mode === 'select' ? this.onBand(this.mouse) : undefined) : undefined;
     // (over points: what a click does to them)
     const pi = !this.active && this.mouse ? this.itemAt(this.mouse) : undefined;
+    if (pi && this.expert && this.mode === 'select' && !this.itemDrag?.moved) return `${pi.it.kind === 'points' ? 'Points' : pi.it.kind === 'check' ? 'Check rail' : 'Flangeway cut'}: click to select ${pi.it.kind === 'points' ? 'them' : 'it'} (its card opens under the plan) · drag to ${pi.it.kind === 'points' ? 'move them along' : 'make it longer or shorter'}`;
     if (pi?.it.kind === 'points' && !this.itemDrag?.moved) {
       const st = this.pointsState(pi.it.key);
       if (st.state === 'built') return `Click to take these points out (the rails run through as plain track)${st.forced ? ' · they were forced' : ''} · drag to move them along`;
@@ -2570,7 +2605,9 @@ export class TrackCanvas {
         }
       }
       // the trackwork item picked out in the Trackwork panel
-      const hi = this.overlay.items?.find((it) => it.key === this.highlight);
+      // (and the one selected on the plan, ringed the same, in the accent's place)
+      const selTw = this.selItemNow?.kind === 'tw' ? this.selItemNow : undefined;
+      const hi = this.overlay.items?.find((it) => it.key === this.highlight) ?? (selTw && this.overlay.items?.find((it) => it.kind === selTw.tw && it.key === selTw.key));
       if (hi) {
         if (hi.pts.length > 1) line(w(hi.pts), 'rgba(240,180,0,0.9)', Math.max(4, railW * 2.5));
         const [hx, hy] = this.toScreen(hi.at[0] / MM, hi.at[1] / MM);

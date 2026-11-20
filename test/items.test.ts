@@ -417,3 +417,15 @@ describe('the layer chips', () => {
     expect(new Set(words).size).toBe(PICKS.length);
   });
 });
+
+import { isTw, TW_NAMES } from '../src/app/items';
+describe('the app\'s trackwork as items (expert)', () => {
+  it('is picked with Points, levers, check rails, and named', () => {
+    expect(layerOf('tw')).toBe('mark');
+    expect(isTw('points') && isTw('throw') && isTw('check') && isTw('groove')).toBe(true);
+    expect(isTw('crossing') || isTw(undefined)).toBe(false);
+    const d = { version: 1, gaugeStuds: 4, routes: [] } as unknown as Design;
+    expect(itemLabel(d, { kind: 'tw', tw: 'check', key: 'x' })).toBe(TW_NAMES.check);
+    expect(itemLabel(d, { kind: 'tw', tw: 'points', key: 'x' })).toBe('Points');
+  });
+});

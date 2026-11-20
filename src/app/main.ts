@@ -654,6 +654,18 @@ function renderItemCard() {
   } else if (it.kind === 'sleeper') {
     sleeperControls(box, it, true);
     row.append(showCard(it.route, 'Sleepers'));
+  } else if (it.kind === 'tw') {
+    // (the app's trackwork, tapped on the plan: the Trackwork panel's controls for it, here; points and check rails taken out by Take out)
+    drawTrackwork(twList, { kind: it.tw, key: it.key }, box);
+    if (it.tw === 'points' || it.tw === 'check') {
+      const out = document.createElement('button'); out.type = 'button'; out.className = 'danger'; out.textContent = 'Take out';
+      out.title = it.tw === 'points' ? 'No points here: both tracks\' rails run through as plain track (Undo, or Built on this card, puts them back)' : 'No check rail here (Undo, or Reset this, puts it back)';
+      out.disabled = it.tw === 'points' ? canvas.pointsState(it.key).state !== 'built' : !!design.trackwork?.check?.[it.key]?.off;
+      out.addEventListener('click', () => canvas.deleteItem()); row.append(out);
+    }
+    const tw = document.createElement('button'); tw.type = 'button'; tw.textContent = 'In the Trackwork list'; tw.title = 'Open the Trackwork panel at it';
+    tw.addEventListener('click', () => { const d = $('trackwork') as HTMLDetailsElement; d.open = true; d.scrollIntoView({ block: 'nearest' }); });
+    row.append(tw);
   } else if (it.kind === 'joint') {
     const sj = canvas.jointSelected();
     for (const j of jointsOf(it, js)) small(`${jointWhere(design, j)}, at ${+j.at[0].toFixed(1)}, ${+j.at[1].toFixed(1)} (studs): ${j.apart ? 'taken apart (each moves on its own)' : 'joined (they move together)'}.`);
@@ -663,7 +675,9 @@ function renderItemCard() {
   box.append(row);
   // (what it is to the app: made by hand, nothing automatic to go back to; a sleeper the app lays, edited or not; a joint)
   const status = it.kind === 'sleeper' ? (it.add ? 'Added by hand: Remove takes it away again.' : sleeperEditAt(design.routes[it.route], it) >= 0 ? 'Edited by hand: Reset puts it back as the app lays it.' : 'Laid by the app: change anything to make it yours.')
-    : it.kind === 'joint' ? 'Worked out from where the tracks meet.' : 'Made by hand: Delete takes it away (Undo brings it back).';
+    : it.kind === 'joint' ? 'Worked out from where the tracks meet.'
+    : it.kind === 'tw' ? (isEdit((design.trackwork?.[it.tw] as Record<string, unknown> | undefined)?.[it.key]) ? 'Edited by hand: Reset this puts it back as the app works it out.' : 'Worked out by the app: change anything to make it yours.')
+    : 'Made by hand: Delete takes it away (Undo brings it back).';
   inspectorFinish(box, status);
 }
 const drawItemCard = () => keepingFocus($('itemcard'), renderItemCard);
@@ -2740,7 +2754,8 @@ function updateSelbar() {
   const it = canvas.selItem, label = several.length > 1 ? itemsLabel(several) : it && itemLabel(design, it, canvas.jointList()), itemMode = !!it && !!label && (it.kind !== 'joint' || n === 0);
   bar.classList.toggle('item', itemMode);
   $('sel-item-del').hidden = !itemMode || it.kind === 'joint';
-  for (const id of ['sel-item-left', 'sel-item-up', 'sel-item-down', 'sel-item-right']) $(id).hidden = !itemMode || it.kind === 'joint';
+  for (const id of ['sel-item-left', 'sel-item-up', 'sel-item-down', 'sel-item-right']) $(id).hidden = !itemMode || it.kind === 'joint' || it.kind === 'tw';
+  if (itemMode && it.kind === 'tw') $('sel-item-del').hidden = it.tw !== 'points' && it.tw !== 'check';
   $('sel-item-done').hidden = !itemMode;
   bar.hidden = !itemMode && n === 0 && !clipboard.length && !clipTables.length;
   $('sel-count').textContent = itemMode ? label! : n ? `${n} selected` : 'clipboard:';
@@ -3013,8 +3028,12 @@ function renderTrackwork(list: TwItem[]) {
 let twList: TwItem[] = [];
 const twLater = () => renderTrackwork(twList);
 twReady = true;
-function drawTrackwork(list: TwItem[]) {
-  const body = $('trackwork-body'), scroll = $('trackwork').scrollTop; body.replaceChildren();
+/**
+ * The Trackwork panel; or, with focus, only that one item's controls into `into` (the inspector, when it's selected
+ * on the plan): the same controls, the rest drawn into nothing.
+ */
+function drawTrackwork(list: TwItem[], focus?: { kind: keyof Trackwork; key: string }, into?: HTMLElement) {
+  const body = into ?? $('trackwork-body'), scroll = $('trackwork').scrollTop; if (!focus) body.replaceChildren();
   const tw = design.trackwork ?? {};
   // (a hand edit: anything kept for it in design.trackwork)
   const editedOf = (kind: keyof Trackwork, key: string) => isEdit((tw[kind] as Record<string, unknown> | undefined)?.[key]);
@@ -3030,7 +3049,7 @@ function drawTrackwork(list: TwItem[]) {
   // the bar on top: how many are edited, only those, reset them all
   const js = canvas.jointList();
   twJointShown = canvas.selItem?.kind === 'joint';
-  if (list.length || monoToes().length || left.length) {
+  if (!focus && (list.length || monoToes().length || left.length)) {
     const bar = document.createElement('div'); bar.className = 'twbar';
     const cnt = document.createElement('span'); cnt.className = edits ? 'chipn on' : 'chipn'; cnt.textContent = (edits ? `${edits} edited by hand` : 'Nothing edited: all as worked out') + (left.length ? ` · ${left.length} left over` : '');
     const only = document.createElement('input'); only.type = 'checkbox'; only.checked = twOnlyEdited; only.disabled = !edits;
@@ -3041,7 +3060,7 @@ function drawTrackwork(list: TwItem[]) {
     bar.append(cnt, ol, reset); body.append(bar);
   }
   // the edits left over: what each was, where, and a button to remove it
-  if (left.length) {
+  if (left.length && !focus) {
     const g = document.createElement('details'); g.className = 'twg'; g.open = true;
     const sm = document.createElement('summary'); sm.textContent = 'Left over';
     const c = document.createElement('span'); c.className = 'n ed'; c.textContent = String(left.length); sm.append(c); g.append(sm);
@@ -3058,9 +3077,10 @@ function drawTrackwork(list: TwItem[]) {
     }
     body.append(g);
   }
-  if (!list.length && !monoToes().length) { const n = document.createElement('div'); n.className = 'none'; n.textContent = 'No check rails, flangeway cuts or points in this design.'; body.append(n); $('trackwork-count').textContent = left.length ? ` (${left.length} left over)` : ''; }
+  if (!list.length && !monoToes().length && !focus) { const n = document.createElement('div'); n.className = 'none'; n.textContent = 'No check rails, flangeway cuts or points in this design.'; body.append(n); $('trackwork-count').textContent = left.length ? ` (${left.length} left over)` : ''; }
   // a group of items, folding (its header stays in view)
   const group = (id: string, title: string, n: number, nEdited: number) => {
+    if (focus) return document.createElement('details'); // (the inspector: no groups, drawn into nothing)
     const g = document.createElement('details'); g.className = 'twg'; g.open = twOpen.has(`g:${id}`) || (twOnlyEdited && nEdited > 0);
     const sm = document.createElement('summary'); sm.textContent = title;
     const c = document.createElement('span'); c.className = 'n'; c.textContent = nEdited ? `${n} · ${nEdited} edited` : String(n); if (nEdited) c.classList.add('ed'); sm.append(c);
@@ -3070,6 +3090,14 @@ function drawTrackwork(list: TwItem[]) {
   // an item: its line (name, what it is now, Edited), and its settings under it when open
   // (own: one of two items with the one key (a three-way's two levers): what it's kept open by, and what Reset this does)
   const item = (g: HTMLElement, key: string, title: string, sub: string, edited: boolean, kind?: keyof Trackwork, own?: { id: string; reset: () => void }) => {
+    if (focus) {
+      // (the inspector: only the selected item's controls, under a line saying what it is now; the rest into nothing)
+      const b2 = document.createElement('div'); b2.className = 'twb';
+      if (kind !== focus.kind || key !== focus.key) return b2;
+      const sb = document.createElement('small'); sb.className = 'desc'; sb.textContent = `${title}${sub ? ` · ${sub}` : ''}`; body.append(sb, b2);
+      if (edited && kind) { const r = btn('Reset this', own?.reset ?? (() => resetOne(kind, key)), 'Back to what the app works out'); r.classList.add('reset1'); queueMicrotask(() => b2.append(r)); }
+      return b2;
+    }
     const d = document.createElement('details'); d.className = 'tw' + (edited ? ' edited' : ''); d.open = twOpen.has(`i:${own?.id ?? key}`);
     const sm = document.createElement('summary');
     const t = document.createElement('b'); t.textContent = title;
@@ -3088,13 +3116,13 @@ function drawTrackwork(list: TwItem[]) {
     const i = document.createElement('input'); i.type = 'checkbox'; i.checked = on; if (tip) i.title = tip;
     i.addEventListener('change', () => change(i.checked)); row.append(field(label, i));
   };
-  const show = (edited: boolean) => !twOnlyEdited || edited;
+  const show = (edited: boolean) => !!focus || !twOnlyEdited || edited;
   // (lengths said in studs, as they're set: kept in mm)
   const studsOf = (mm: number) => String(Math.round((mm / 8) * 100) / 100);
   // Joints: each place two tracks are joined (worked out from the tracks: connections.ts), or touch but were taken apart
   {
     const apart = js.filter((j) => j.apart).length, mine = twOnlyEdited ? js.filter((j) => j.apart) : js;
-    if (js.length && (!twOnlyEdited || apart)) {
+    if (js.length && (!twOnlyEdited || apart) && !focus) {
       const g = group('joints', 'Joints between tracks', js.length, 0), name = (i: number) => design.routes[i]?.name || `Route ${i + 1}`;
       if (apart) { const c = g.querySelector('summary .n')!; c.textContent = `${js.length} · ${apart} taken apart`; c.classList.add('ed'); }
       const picked = canvas.selItem?.kind === 'joint' ? jointsOf(canvas.selItem, js) : [];
@@ -3125,7 +3153,7 @@ function drawTrackwork(list: TwItem[]) {
     for (const o of canvas.overlay?.over ?? []) if (!pairs.has(keyOf(...o.routes))) pairs.set(keyOf(...o.routes), { a: o.routes[0], b: o.routes[1], at: o.at, ok: accepted(design, o.routes[0], o.routes[1]) });
     for (const x of design.expert?.accept ?? []) if (!pairs.has(keyOf(...x.routes))) pairs.set(keyOf(...x.routes), { a: x.routes[0], b: x.routes[1], ok: true });
     const mine = [...pairs.values()].filter((p) => show(p.ok));
-    if (mine.length) {
+    if (mine.length && !focus) {
       const nOk = mine.filter((p) => p.ok).length, g = group('close', 'Tracks that run over each other', mine.length, nOk);
       for (const p of mine) {
         const row = item(g, `close:${p.a}:${p.b}`, p.a === p.b ? `${p.a} over itself` : `${p.a} and ${p.b}`, p.ok ? 'accepted: no warning' : 'warned of', p.ok);
@@ -3279,7 +3307,7 @@ function drawTrackwork(list: TwItem[]) {
     });
   }
   // (monorail points: what they are, and that they're built as drawn)
-  if (monoToes().length && !twOnlyEdited) {
+  if (monoToes().length && !twOnlyEdited && !focus) {
     const g = group('mono', 'Monorail points', monoToes().length, 0);
     monoToes().forEach((q, k) => {
       const row = item(g, `mono:${k}`, `Monorail points ${k + 1}`, `at ${(q[0] / 8).toFixed(0)}, ${(q[1] / 8).toFixed(0)} studs`, false);
@@ -3288,6 +3316,7 @@ function drawTrackwork(list: TwItem[]) {
       row.append(n2);
     });
   }
+  if (focus) return;
   $('trackwork').scrollTop = scroll;
   $('trackwork-count').textContent = list.length || monoToes().length ? ` (${edits ? `${edits} edited` : 'none edited'}${left.length ? `, ${left.length} left over` : ''})` : left.length ? ` (${left.length} left over)` : '';
 }

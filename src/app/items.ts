@@ -31,7 +31,14 @@ export type Item =
   /** a sleeper of a track: by its edit's place (`at`, studs along; an added one: `add`), or, not edited yet, by where the app lays it */
   | { kind: 'sleeper'; route: number; at: number; add?: true }
   /** a rail edit of a track: a gap, a stretch of guard rails or a check rail added by hand, by its place in its list */
-  | { kind: 'rail'; route: number; what: RailWhat; k: number };
+  | { kind: 'rail'; route: number; what: RailWhat; k: number }
+  /** the trackwork the app works out, by its key in `Design.trackwork` (expert): points, a lever and its throw bar, a check rail, a flangeway cut (a frog) */
+  | { kind: 'tw'; tw: TwKind; key: string };
+/** The kinds of trackwork the app works out, as `Design.trackwork` keeps their edits. */
+export type TwKind = 'points' | 'throw' | 'check' | 'groove';
+export const isTw = (k: unknown): k is TwKind => k === 'points' || k === 'throw' || k === 'check' || k === 'groove';
+/** What each is called on its own. */
+export const TW_NAMES: Record<TwKind, string> = { points: 'Points', throw: 'Lever and throw bar', check: 'Check rail', groove: 'Frog (flangeway cut)' };
 export type ItemKind = Item['kind'];
 /** The kinds that are selected one at a time, beside the tracks and tables. */
 export type OwnItem = Exclude<Item, { kind: 'route' | 'table' }>;
@@ -201,6 +208,7 @@ export function itemLabel(d: Design, item: Item, js: readonly Joint[] = []): str
     case 'stretch': { const st = d.routes[item.route]?.stretches?.[item.k]; return st ? `Stretch ${item.k + 1} of ${nameOf(d, item.route)}, ${st.from} to ${st.to} studs` : undefined; }
     case 'sleeper': { const r = d.routes[item.route]; if (!r) return undefined; const e = r.sleeperEdits?.[sleeperEditAt(r, item)], txt = e ? sleeperEditText(e) : ''; return `Sleeper of ${nameOf(d, item.route)}, ${+item.at.toFixed(2)} studs from its start${txt ? `: ${txt}` : ''}`; }
     case 'rail': { const e = railEditAt(d.routes[item.route]?.railEdits, item.what, item.k); return e ? `${railEditText(e, item.what)}, on ${nameOf(d, item.route)}` : undefined; }
+    case 'tw': return TW_NAMES[item.tw];
     case 'joint': {
       const mine = jointsOf(item, js), names = [...new Set(mine.flatMap((j) => [j.a, j.b]))].map((i) => nameOf(d, i));
       if (!mine.length) return undefined;
@@ -336,7 +344,7 @@ export type PickId = (typeof PICKS)[number]['id'];
 export const PICK_CHIPS: Record<PickId, string> = { all: 'Everything', track: 'Tracks', cut: 'Cuts', stretch: 'Stretches', sleeper: 'Sleepers', rail: 'Rails', joint: 'Joints', mark: 'Points' };
 export const isPick = (v: unknown): v is PickId => PICKS.some((p) => p.id === v);
 /** The layer an item is in. */
-export const layerOf = (kind: ItemKind): Layer => (kind === 'route' || kind === 'table' ? 'track' : kind === 'cutpath' ? 'cut' : kind);
+export const layerOf = (kind: ItemKind): Layer => (kind === 'route' || kind === 'table' ? 'track' : kind === 'cutpath' ? 'cut' : kind === 'tw' ? 'mark' : kind);
 /**
  * May a click take something of this layer? With the expert tools hidden: tracks, the app's trackwork and joints, as
  * ever, and no cut or stretch; with them shown, what the Pick list says.
