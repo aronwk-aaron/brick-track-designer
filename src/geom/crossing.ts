@@ -621,21 +621,26 @@ export function crossingPiece(s: Scad, routes: Route[], o: CrossingOptions = CRO
     const flushRoot = (P: Pose, start: boolean): Man | false => {
       if (scadParity() || banked) return false;
       const w = c.sleeperLen / 2, strip = (y: number) => atPose(T(s.cube([c.sleeperLen, RAIL_ROOT, PLATE_H]), [-w, y, 0]), P);
-      const beyond = strip(start ? -RAIL_ROOT : 0), behind = strip(start ? 0 : -RAIL_ROOT);
-      // (each other bed by itself: one beside this one, out of the same fan, runs on behind the face, and that's no reason
-      // to leave out the one the face lies flush on. Behind it: a hair of a curved bed's first face, float32's (0.007 of
-      // 10 mm3 at the yards' fans), allowed)
-      const into = routes.flatMap((r2, j) => {
-        if (j === i || hasRoll(r2)) return [];
+      const beyond = strip(start ? -RAIL_ROOT : 0), behind = strip(start ? 0 : -RAIL_ROOT), sv = c.sleeperLen * RAIL_ROOT * PLATE_H;
+      // (each other bed by itself: beyond the face and not behind it (a hair of a curved bed's first face behind it,
+      // float32's, allowed: 0.007 of 10 mm3 at the yards' fans), the face lies flush on it. One behind it that ends here too
+      // is this one's twin out of the same fan)
+      const into: Man[] = [], meet: number[] = [];
+      routes.forEach((r2, j) => {
+        if (j === i || hasRoll(r2)) return;
         const L2 = routeLength(r2), w2 = tOf[j].c.sleeperLen / 2, reach = w + w2 + 2, sP = routeSOf(r2, [P[0], P[1]]), q = routePose(r2, sP);
-        if (Math.hypot(q[0] - P[0], q[1] - P[1]) > reach) return [];
+        if (Math.hypot(q[0] - P[0], q[1] - P[1]) > reach) return;
         const a = Math.max(0, sP - reach), b = Math.min(L2, sP + reach);
         const spans = sleepered ? zones[j].map(([z0, z1]): [number, number] => [Math.max(a, z0), Math.min(b, z1)]).filter(([z0, z1]) => z1 > z0) : [[a, b] as [number, number]];
-        if (!spans.length) return [];
-        const bed = s.union(spans.map(([z0, z1]) => sweepRoute(s, rect(-w2, w2, 0, PLATE_H), r2, z0, z1))), root = s.intersection(beyond, bed), rv = root.volume();
-        return rv > 1e-4 && s.intersection(behind, bed).volume() < 0.01 * rv ? [root] : [];
+        if (!spans.length) return;
+        const bed = s.union(spans.map(([z0, z1]) => sweepRoute(s, rect(-w2, w2, 0, PLATE_H), r2, z0, z1))), rv = s.intersection(beyond, bed).volume(), bv = s.intersection(behind, bed).volume();
+        const endsHere = ([[0, 'start'], [L2, 'end']] as const).some(([at, end]) => { const e = routePose(r2, at); return !!x.innerEnds?.has(`${j}:${end}`) && Math.hypot(e[0] - P[0], e[1] - P[1]) < 0.01; });
+        if (rv > 1e-4 && bv < 0.01 * rv) { into.push(bed); meet.push(j); } else if (endsHere && bv > 0.01 * sv) meet.push(j);
       });
-      return into.length > 0 && s.union(into);
+      // (one root to a seam, from the first of the routes that meet there, into all the beds beyond it together: a root from
+      // each side, or one into each bed, cut from the same strip, lay on each other's faces, and joined they were the seam
+      // over again)
+      return into.length > 0 && meet.every((j) => i < j) && s.intersection(beyond, s.union(into));
     };
     const flushRoots = (a: number, b: number): (Man | false)[] => [
       a <= 0 && !!x.innerEnds?.has(`${i}:start`) && flushRoot(p0, true),
