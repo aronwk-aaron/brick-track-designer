@@ -247,6 +247,8 @@ async function tablet(width: number, height: number, tag: string) {
     at = `${tag}: throwing a switch by touch`;
     type TW = { btdThrow: { sets(): { key: string; places: number; at: number; moving: boolean; setFor?: string; routes: string[] }[]; tapAt(key: string): [number, number] | undefined; part(name: string): number[] | undefined } };
     const sets = () => page.evaluate(() => (window as unknown as TW).btdThrow.sets()), settled = async () => { await page.waitForFunction(() => (window as unknown as TW).btdThrow.sets().every((q) => !q.moving), null, { timeout: 5_000 }).catch(() => {}); await sleep(150); };
+    // (a selected item's card is a sheet over the foot of the 3D view: Done puts it away first)
+    if (await page.locator('#itemcard').isVisible()) { await tapOn('#itemcard .idone'); await sleep(200); }
     const s0 = await sets();
     check(s0.length >= 1 && s0[0].at === 0, `[${tag}] the kit's points can be thrown (${JSON.stringify(s0)})`);
     if (s0.length) {
@@ -284,6 +286,8 @@ async function tablet(width: number, height: number, tag: string) {
     check(await gaps() === '[{"at":22,"side":"both"}]', `[${tag}] a finger drags it along its track (${await gaps()})`);
     const del = (await page.locator('#sel-item-del').boundingBox())!;
     check(del.height >= 36, `[${tag}] the bar's Delete is finger-sized (${Math.round(del.width)}x${Math.round(del.height)})`);
+    const barBox = (await page.locator('#selbar').boundingBox())!;
+    check(del.x + del.width <= barBox.x + barBox.width + 1, `[${tag}] and in sight on the bar, not scrolled off its end (${Math.round(del.x + del.width)} of ${Math.round(barBox.x + barBox.width)})`);
     await tapOn('#sel-item-del'); await sleep(250);
     check(await gaps() === '[]', `[${tag}] and Delete on the bar takes it out (${await gaps()})`);
     await shot('expert');
@@ -336,9 +340,21 @@ async function tablet(width: number, height: number, tag: string) {
     check(!!rb && rb.height >= 44 && rb.width >= 44, `[${tag}] the bar's arrow is 44 px (${rb ? `${Math.round(rb.width)}x${Math.round(rb.height)}` : 'not shown'})`);
     await tapOn('#sel-item-right'); await sleep(150); const moved = await cuts(); await tapOn('#sel-item-left'); await sleep(150);
     check(moved !== '[[24]]' && await cuts() === '[[24]]', `[${tag}] the bar's arrows move it a stud and back (${moved}, ${await cuts()})`);
+    // (the inspector: a sheet at the foot, its number with − and +, Done)
+    const sheet = (await page.locator('#itemcard').boundingBox())!, plan = (await page.locator('#plan').boundingBox())!;
+    check(sheet.y > plan.y + plan.height - 20, `[${tag}] the inspector is a sheet below the plan, not over it (${Math.round(sheet.y)} vs the plan's foot ${Math.round(plan.y + plan.height)})`);
+    const plus = page.locator('#itemcard .stepper button').nth(1), pb = (await plus.boundingBox())!;
+    check(pb.height >= 44 && pb.width >= 44, `[${tag}] the inspector's + is 44 px (${Math.round(pb.width)}x${Math.round(pb.height)})`);
+    await tapOn('#itemcard .stepper button >> nth=1'); await sleep(200); const stepped = await cuts();
+    await tapOn('#itemcard .stepper button >> nth=0'); await sleep(200);
+    check(stepped === '[[25]]' && await cuts() === '[[24]]', `[${tag}] its + and − move the cut a stud and back (${stepped}, ${await cuts()})`);
+    check(/^Made by hand/.test(await page.locator('#itemcard .istatus').innerText()), `[${tag}] the inspector says it's made by hand`);
     await tapOn('#sel-item-done'); await sleep(200);
     check(!/^Cut across/.test(await bar()), `[${tag}] Done lets go of it (${await bar()})`);
-    await page.evaluate(() => { localStorage.setItem('btd-pick', 'all'); }); await page.reload(); await page.waitForSelector('#track'); await tapOn('#mode-select'); await tapOn('#fit'); await sleep(400);
+    const chip = (await page.locator('#layers button[data-pick="all"]').boundingBox())!;
+    check(chip.height >= 44, `[${tag}] the layer chips are 44 px (${Math.round(chip.height)})`);
+    await tapOn('#layers button[data-pick="all"]'); await sleep(200);
+    check(await page.evaluate(() => (window as unknown as { btdCanvas: { pick: string } }).btdCanvas.pick) === 'all', `[${tag}] a tap on the Everything chip picks everything`);
     await f.tap(beside); await sleep(250);
     check(/^A selected|^1 selected/.test(await bar()) || await sel() === '0', `[${tag}] Everything: a tap 17 px from a cut takes the track (${await bar()}; ${await sel()})`);
     await page.evaluate(() => localStorage.setItem('btd-pick', 'cut'));

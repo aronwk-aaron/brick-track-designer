@@ -206,7 +206,7 @@
     button.danger:hover { border-color: var(--err); color: var(--err); }
 
     /* plan and 3D */
-    main { display: grid; grid-template-rows: var(--plan, 3fr) 6px var(--view, 2fr); min-height: 0; min-width: 0; }
+    main { display: grid; grid-template-rows: var(--plan, 3fr) 6px var(--view, 2fr); min-height: 0; min-width: 0; position: relative; }
     main.no3d { grid-template-rows: 1fr 0 0; } main.no3d #view3d, main.no3d #splitter { display: none; }
     #splitter { cursor: row-resize; background: var(--line); touch-action: none; position: relative; z-index: 5; }
     /* (a finger's reach: the bar stays thin, the place to grab it is wider) */
@@ -228,6 +228,12 @@
     #coords { right: 10px; bottom: 10px; color: var(--muted); font-variant-numeric: tabular-nums; pointer-events: none; }
     #selbar { left: 10px; top: 10px; display: flex; gap: 4px; align-items: center; padding: 4px 6px; z-index: 1; flex-wrap: wrap; max-width: calc(100% - 280px); } /* (clear of the legend, which is about 250px wide open) */
     #selbar[hidden] { display: none; }
+    /* (the layer chips: what a tap on the plan takes, with the expert tools shown; across the top, the legend and the bar below them) */
+    #layers { left: 10px; top: 10px; max-width: calc(100% - var(--legend-w, 290px) - 40px); display: flex; gap: 4px; padding: 4px; z-index: 2; overflow-x: auto; scrollbar-width: none; }
+    #layers[hidden] { display: none; } #layers::-webkit-scrollbar { display: none; }
+    #layers button { flex: none; padding: 0 12px; height: 30px; font-size: 13px; border-radius: 15px; }
+    #layers button.on { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+    #plan:has(> #layers:not([hidden])) > #selbar { top: 58px; max-width: calc(100% - var(--legend-w, 290px) - 40px); }
     details.rsub.off > summary { cursor: default; list-style: none; } details.rsub.off > summary::-webkit-details-marker { display: none; } .rswitch { margin: 0 6px 0 0; vertical-align: middle; } .rreset { margin: 2px 0 6px; font-size: 12px; }
     #track:focus-visible { outline: 3px solid var(--accent, #2b5fb8); outline-offset: -3px; }
     #selform { left: 10px; top: 50px; display: flex; gap: 8px; align-items: center; padding: 4px 8px; z-index: 2; flex-wrap: wrap; max-width: calc(100% - 280px); }
@@ -239,7 +245,14 @@
     /* (a cut, a cut path, a stretch or a joint selected: the bar says what it is and has only what can be done with it) */
     #selbar.item > button:not(.foritem) { display: none; } #selbar.item #sel-count { color: var(--ink); font-weight: 600; }
     /* (its card, over the routes' cards) */
-    #itemcard { margin: 10px 10px 0; padding: 8px 11px 10px; border: 1px solid #e8892b; box-shadow: 0 0 0 1px #e8892b; border-radius: 10px; background: var(--raise); }
+    /* (the inspector: a sheet over the foot of the 3D view, the plan's width, so the plan keeps its room; fields in a grid) */
+    #itemcard { position: absolute; left: 8px; right: 8px; bottom: 8px; z-index: 4; max-height: calc(40% - 20px); overflow: auto; padding: 10px 14px 12px;
+      border: 1px solid var(--c-edit); box-shadow: 0 0 0 1px var(--c-edit), var(--shadow); border-radius: 14px; background: var(--panel); }
+    #itemcard[hidden] { display: none; }
+    #itemcard > b { font-size: 15px; } #itemcard .istatus { color: var(--c-edit); font-size: 12.5px; margin: 0 0 6px; }
+    #itemcard .field { display: inline-grid; margin-right: 18px; vertical-align: top; }
+    #itemcard .stepper { display: inline-flex; gap: 4px; align-items: center; } #itemcard .stepper input { width: 72px; }
+    #itemcard .row { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; } #itemcard .idone { margin-left: auto; background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
     /* (a track that has cuts, settings or stretches of its own, with the expert tools hidden: said on its card, with Show) */
     .byhand { display: flex; gap: 6px; align-items: center; font-size: 12px; color: var(--muted); padding: 2px 0 4px; } .byhand span { flex: 1; } .byhand button { flex: none; height: 24px; padding: 0 8px; font-size: 12px; }
     #itemcard > b { display: block; margin-bottom: 2px; } #itemcard .desc { display: block; color: var(--muted); font-size: 11.5px; margin: 2px 0 4px; } #itemcard .desc.warn { color: var(--warn); }
@@ -429,11 +442,19 @@
       button, summary, [role=button], .tcard, #legend-rows > span { -webkit-touch-callout: none; -webkit-user-select: none; user-select: none; }
       /* (the panels' and the plan's own controls: 44 px a finger can't miss; a number box wide enough for its number) */
       aside button, #legend button, #selbar button, #touchbar button, #itemcard button { min-height: 44px; min-width: 44px; }
-      aside select, aside input[type=number], aside input[type=text], #legend select { min-height: 44px; }
-      aside input[type=number] { min-width: 64px; }
-      aside input[type=checkbox], aside input[type=radio] { width: 26px; height: 26px; }
-      aside label:has(> input[type=checkbox]), aside label:has(> input[type=radio]) { min-height: 44px; display: flex; align-items: center; gap: 8px; }
+      aside select, aside input[type=number], aside input[type=text], #legend select, #itemcard select, #itemcard input[type=number], #itemcard input[type=text] { min-height: 44px; }
+      aside input[type=number], #itemcard input[type=number] { min-width: 64px; }
+      aside input[type=checkbox], aside input[type=radio], #itemcard input[type=checkbox] { width: 26px; height: 26px; }
+      aside label:has(> input[type=checkbox]), aside label:has(> input[type=radio]), #itemcard label:has(> input[type=checkbox]) { min-height: 44px; display: flex; align-items: center; gap: 8px; }
       #legend-rows > span { min-height: 44px; box-sizing: border-box; display: flex; align-items: center; padding: 0; }
+      #layers button { height: 44px; border-radius: 22px; padding: 0 16px; font-size: 15px; }
+      /* (a touch screen: the chips across the whole top, the legend and the bar under them) */
+      #layers { max-width: none; right: 10px; }
+      #plan:has(> #layers:not([hidden])) > #selbar, #plan:has(> #layers:not([hidden])) > #legend { top: 72px; }
+      #plan:has(> #layers:not([hidden])) > #selbar { max-width: calc(100% - var(--legend-w, 290px) - 40px); }
+      /* (an item selected: its name gives way, cut short, so its buttons stay in sight) */
+      #selbar.item > #sel-count { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+      #pick-row { display: none !important; } /* (the chips do it, a tap each) */
       /* (the selection bar: one row that scrolls sideways, not three rows of 44 px buttons over the plan) */
       #selbar { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; }
       #selbar::-webkit-scrollbar { display: none; }
@@ -598,7 +619,6 @@
   </header>
   <aside>
     <div class="head"><h2 id="routes-title">Routes</h2><button id="expert-toggle" type="button" aria-pressed="false" aria-label="Expert tools">Expert<span class="xt">tools</span></button><button id="add-route" type="button" title="Add a route by numbers">+ Route</button></div>
-    <div id="itemcard" hidden></div>
     <div id="routes"></div>
     <details id="circle"><summary title="Lay a whole circle of curve in one step, in equal pieces">Full circle</summary><div id="circle-body"></div></details>
     <details id="palette"><summary title="Bought track pieces (LEGO&#39;s and BrickTracks&#39;), laid one at a time on the selected route&#39;s end">Parts palette</summary><div id="palette-body"></div></details>
@@ -796,6 +816,7 @@
         <div id="choices-body"></div>
       </dialog>
       
+      <div id="layers" class="chip" role="toolbar" aria-label="What a tap on the plan takes" hidden></div>
       <div id="selbar" class="chip" hidden>
         <span id="sel-count"></span>
         <button id="sel-copy" type="button" title="Copy (Ctrl+C)">Copy</button><button id="sel-cut" type="button" title="Cut (Ctrl+X)">Cut</button><button id="sel-paste" type="button" title="Paste at the mouse (Ctrl+V)">Paste</button><button id="sel-dup" type="button" title="Duplicate (Ctrl+D)">Duplicate</button><button id="sel-mirror" type="button" title="Mirror left to right (M)">Mirror</button><button id="sel-rotl" type="button" title="Turn 90° left (Shift+R)">⟲ 90°</button><button id="sel-rotr" type="button" title="Turn 90° right (R)">⟳ 90°</button><button id="sel-split" type="button" title="Cut the selected route in two where you click on it (S)">Split</button><button id="sel-parallel" type="button" title="A new track beside the selected one">Parallel…</button><button id="sel-merge" type="button" title="Make two selected routes that meet one">Merge</button><button id="sel-apart" type="button" class="foritem" hidden>Take apart</button><button id="sel-join" type="button" class="foritem" hidden>Join</button><button id="sel-item-left" type="button" class="foritem nudge" title="Move it a stud left, along its track where it goes along one (←)" aria-label="Move left a stud" hidden>←</button><button id="sel-item-up" type="button" class="foritem nudge" title="Move it a stud up (↑)" aria-label="Move up a stud" hidden>↑</button><button id="sel-item-down" type="button" class="foritem nudge" title="Move it a stud down (↓)" aria-label="Move down a stud" hidden>↓</button><button id="sel-item-right" type="button" class="foritem nudge" title="Move it a stud right (→)" aria-label="Move right a stud" hidden>→</button><button id="sel-item-del" type="button" class="danger foritem" title="Take the selected cut, cut path or stretch out (Del)" hidden>Delete</button><button id="sel-item-done" type="button" class="foritem" title="Let go of it (Esc)" hidden>Done</button><button id="sel-savetpl" type="button" title="Keep the selected tracks (and tables) as a template of your own, to open or add later. Kept in this browser only: clearing the browser's data deletes it, and it doesn't move to another browser">Save as template…</button><button id="sel-del" type="button" class="danger" title="Delete (Del)">Delete</button>
@@ -818,6 +839,8 @@
     </div>
     <div id="splitter" title="Drag to resize; double-click to reset"></div>
     <div id="view3d"><div id="buildstatus" class="chip" hidden><span class="spin"></span><span id="build-what">Building…</span> <span id="build-time"></span><span class="bar"><i id="build-bar"></i></span><button id="build-stop" type="button" title="Stop this build (the 3D view stays as it was; Rebuild when you're ready)">Stop</button></div><div id="view3d-top"><div id="views" class="chip"><button id="view-top" type="button" title="Look at the top">Top</button><button id="view-under" type="button" title="Look at the underside, to see where it grips">Underside</button><button id="view-frame" type="button" title="Fit the piece in the view (or double-click it)">Frame</button><button id="report-open" type="button" title="Something looks wrong? Downloads a zip with the design, the settings, what the build said and two pictures, to send to whoever can look into it">Report a problem</button><span class="sep" id="views-sep2"></span><button class="show on" data-show="track" type="button" title="Show or hide the track (bases)">Track</button><button class="show on" data-show="bought" type="button" title="Show or hide the bought parts (LEGO's green, BrickTracks' purple): not printed">Bought</button><button class="show on" data-show="points" type="button" title="Show or hide the points">Points</button><button class="show on" data-show="throw" type="button" title="Show or hide the throws">Throws</button><button class="show on" data-show="lever" type="button" title="Show or hide the levers">Levers</button><button class="show on" id="show-supports" data-show="supports" type="button" title="Show or hide the breakaway print supports (orange): printed with the part, snapped off after">Supports</button><span class="sep"></span><button class="tog on" id="auto-build" type="button">Auto</button><span class="sep"></span><label class="explode" title="Pull the parts apart to see where they separate">Explode <input id="explode" type="range" min="0" max="1" step="0.02" value="0"></label></div><div id="legend3d" class="chip" hidden><div class="lhead"><b>Colours</b><button id="legend3d-fold" type="button" title="Fold the colours away (or open them)">–</button></div><div id="legend3d-rows"></div><small id="throw-note" hidden></small></div></div><div id="status" class="chip"><span id="info"></span><span id="error"></span><button id="rebuild" type="button" hidden>Rebuild</button></div></div>
+    <!-- (the inspector: the selected cut, path, stretch, sleeper, rail edit, joint or trackwork, over the foot of the 3D view) -->
+    <div id="itemcard" class="chip" role="dialog" aria-label="Selected item" hidden></div>
   </main>
   <script type="module" src="/src/app/main.ts"></script>
 </body>

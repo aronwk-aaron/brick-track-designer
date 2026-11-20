@@ -31,7 +31,7 @@ import { BED_KEYS, isRouteKey, MORE_KEYS, OWN_CHECKS, OWN_LABELS, OWN_RANGES, OW
 import { accepted, pruneAccept, renameAccept, setAccept } from './accept';
 import { curvedAt, followShared, followSleeperEdits, pruneShared, renameShared, setShared, sharedOf, type SleeperEdit, sleeperEditText, SLEEPER_LONG, SLEEPER_MOVE, SPAN_MAX } from './sleeperedits';
 import { cleanRailEdits, FLANGEWAY_MIN, followRailEdits, GAP_DEF, GAP_MAX, GAP_MIN, GAP_RADIUS_MIN, GUARD_GAP_MAX, GUARD_GAP_MIN, moveRailEdit, RAIL_RUN_MIN, railEditAt, type RailEdits, type RailGap, railProblem, type RailSide, withRailEdit } from './railedits';
-import { boxable, byHandNote, designByHandNote, EXPERT_SECTIONS, isPick, itemLabel, itemsLabel, jointsOf, jointWhere, PICKS, sleeperEditAt, sleeperEditOf } from './items';
+import { boxable, byHandNote, type PickId, designByHandNote, EXPERT_SECTIONS, isPick, itemLabel, itemsLabel, jointsOf, jointWhere, PICK_CHIPS, PICKS, sleeperEditAt, sleeperEditOf } from './items';
 import { expandStretches, followStretches, liveStretches, lostStretches, type Stretch, STRETCH_KEYS, STRETCH_MIN, stretchProblem } from './stretches';
 import { designOfSelection, listMine, saveMine, type StorageLike } from './mytemplates';
 import { openMineStore } from './minestore';
@@ -661,8 +661,35 @@ function renderItemCard() {
     if (sj?.apart) { const b = document.createElement('button'); b.type = 'button'; b.textContent = 'Join'; b.title = `Join ${sj.names} again: they move together`; b.addEventListener('click', () => canvas.takeApart(false)); row.append(b); }
   }
   box.append(row);
+  // (what it is to the app: made by hand, nothing automatic to go back to; a sleeper the app lays, edited or not; a joint)
+  const status = it.kind === 'sleeper' ? (it.add ? 'Added by hand: Remove takes it away again.' : sleeperEditAt(design.routes[it.route], it) >= 0 ? 'Edited by hand: Reset puts it back as the app lays it.' : 'Laid by the app: change anything to make it yours.')
+    : it.kind === 'joint' ? 'Worked out from where the tracks meet.' : 'Made by hand: Delete takes it away (Undo brings it back).';
+  inspectorFinish(box, status);
 }
-const drawItemCard = () => keepingFocus(document.querySelector('aside')!, renderItemCard);
+const drawItemCard = () => keepingFocus($('itemcard'), renderItemCard);
+/**
+ * The inspector's common parts, after a kind's own fields: − and + beside each number (a step each, as the arrow
+ * keys in the box: kept to its range), a line saying whether it's the app's or by hand, and Done at the end.
+ */
+function inspectorFinish(box: HTMLElement, status: string) {
+  for (const inp of box.querySelectorAll<HTMLInputElement>('input[type=number]')) {
+    if (inp.closest('.stepper')) continue;
+    const wrap = document.createElement('span'); wrap.className = 'stepper';
+    const go = (dir: 1 | -1) => {
+      if (inp.disabled) return;
+      const step = Number(inp.step) || 1, lo = inp.min === '' ? -Infinity : Number(inp.min), hi = inp.max === '' ? Infinity : Number(inp.max);
+      const v = Math.min(hi, Math.max(lo, Math.round(((Number(inp.value) || 0) + dir * step) / step) * step));
+      inp.value = String(+v.toFixed(4)); inp.dispatchEvent(new Event('change'));
+    };
+    const b = (t: string, dir: 1 | -1, what: string) => { const x = document.createElement('button'); x.type = 'button'; x.className = 'step'; x.textContent = t; x.title = what; x.setAttribute('aria-label', `${what}: ${inp.getAttribute('aria-label') ?? inp.title}`); x.disabled = inp.disabled; x.addEventListener('click', () => go(dir)); return x; };
+    inp.replaceWith(wrap); wrap.append(b('−', -1, 'One step less'), inp, b('+', 1, 'One step more'));
+  }
+  const st = document.createElement('div'); st.className = 'istatus'; st.textContent = status;
+  box.querySelector(':scope > b')?.after(st);
+  const done = document.createElement('button'); done.type = 'button'; done.className = 'idone'; done.textContent = 'Done'; done.title = 'Let go of it (Esc): the plan as it is';
+  done.addEventListener('click', () => canvas.selectItem(undefined));
+  (box.querySelector(':scope > .row:last-of-type') ?? box).append(done);
+}
 /** (the selection bar is set up further down: drawn with the forms only once it is) */
 let selbarReady = false;
 
@@ -685,14 +712,14 @@ function setExpert(on: boolean) {
 }
 function syncExpert() {
   const b = $('expert-toggle');
-  $('pick-row').hidden = !expertTools; $('loop-row').hidden = !expertTools; $('dim-plain').hidden = !expertTools;
+  $('pick-row').hidden = !expertTools; $('loop-row').hidden = !expertTools; $('dim-plain').hidden = !expertTools; $('layers').hidden = !expertTools;
   b.classList.toggle('on', expertTools); b.setAttribute('aria-pressed', String(expertTools));
   b.title = expertTools ? 'The expert tools are shown: cuts across a track, cut paths, stretches and a track\'s own settings, on the plan and in the cards. Click to hide them: nothing in the design changes.'
     : 'Show the expert tools: cut a track where you choose, draw cut paths, give a track or a stretch of it its own settings. Hidden, the design is built the same, and a track that has any of these says so on its card.';
 }
 function render() { keepingFocus(document.querySelector('aside')!, drawForms); }
 function drawForms() {
-  renderItemCard(); if (selbarReady) updateSelbar();
+  drawItemCard(); if (selbarReady) updateSelbar();
   renderTables(); renderCutPaths(); renderPalette(); renderCircle();
   // (the rows go: no piece left picked out by one that's gone)
   canvas.highlightSeg = undefined;
@@ -2264,12 +2291,27 @@ $('legend-fold').addEventListener('click', () => foldLegend(!legendEl.classList.
   for (const p of PICKS) { const o = new Option(p.label, p.id); o.title = p.tip; pick.append(o); }
   try { const v = localStorage.getItem('btd-pick'); if (isPick(v)) canvas.pick = v; } catch { /* fine */ }
   pick.value = canvas.pick;
+  // (the chips over the plan: the same choice, a tap each; a tap also goes to Select, where the choice counts)
+  const chips = $('layers');
+  // (the chips stop short of the legend, beside them at the top right: its width kept as a CSS variable)
+  new ResizeObserver(() => { $('plan').style.setProperty('--legend-w', `${legendEl.offsetWidth}px`); }).observe(legendEl);
+  for (const p of PICKS) {
+    const b = document.createElement('button'); b.type = 'button'; b.dataset.pick = p.id; b.textContent = PICK_CHIPS[p.id]; b.title = p.tip;
+    b.addEventListener('click', () => { if (canvas.mode !== 'select') $('mode-select').click(); setPick(p.id); });
+    chips.append(b);
+  }
+  const setPick = (v: PickId) => {
+    canvas.pick = v; pick.value = v;
+    for (const b of chips.querySelectorAll<HTMLButtonElement>('button')) { const on = b.dataset.pick === v; b.classList.toggle('on', on); b.setAttribute('aria-pressed', String(on)); }
+    try { localStorage.setItem('btd-pick', v); } catch { /* fine */ }
+    canvas.draw();
+  };
+  setPick(canvas.pick);
   pick.addEventListener('change', () => {
     if (!isPick(pick.value)) return;
-    canvas.pick = pick.value;
-    try { localStorage.setItem('btd-pick', pick.value); } catch { /* fine */ }
+    setPick(pick.value);
     // (back to the plan: its keys work at once)
-    pick.blur(); canvas.draw();
+    pick.blur();
   });
 }
 // Loops open at (in the legend, with the expert tools shown): where a loop that can't stay closed opens when a track in

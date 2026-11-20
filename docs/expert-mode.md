@@ -839,8 +839,15 @@ Aaron's answers and need build work.
   open ends, points, check rail and flangeway ends, cut path corners, stretch ends), as the route's handles were; the
   check rail and flangeway ends are drawn zoomed out too while Points, levers, check rails is picked. Cuts by hand,
   cut paths and the cuts where tracks join have a colour of their own (`--c-cut`, purple), not the flangeway cuts'
-  red; check rails take `--c-check` (lighter in the dark theme); the legend has rows for cuts by hand and for
-  sleepers, rails and stretches by hand. The selection bar, with an item selected, has arrows (a stud, as the arrow
+  red; check rails take `--c-check` (lighter in the dark theme); the legend has rows, with the expert tools shown, for cuts by
+  hand and for sleepers and rails by hand. The selection bar, with an item selected, has arrows (a stud, as the arrow
   keys) and Done; the hints for a finger point at them, not at keys. Panel controls, the legend's and the bars' are
   44 px on a touch screen; the selection bar is one row that scrolls sideways; the legend starts folded on a touch
   screen. A straight's card has no bank rows; a sleeper's fields say their range and default.
+- **Stage 1 is built: one inspector and layer chips.** The selected cut, cut path, stretch, sleeper, rail edit or
+  joint has its card (`#itemcard`) as a sheet over the foot of the 3D view, the plan's width, so the plan keeps its
+  room (D1 as recommended; its drawback: it covers the foot of the 3D view while something is selected, Done puts it away). The same parts for every kind (`inspectorFinish` in main.ts): its name, a line saying
+  whether it's made by hand, edited by hand or the app's, its numbers each with − and + (a step, held to its range),
+  then its buttons and Done. With the expert tools shown, chips across the top of the plan pick what a tap takes (the
+  Pick list's choices, a word each: `items.ts PICK_CHIPS`; D2 as recommended); a chip also goes to Select. The chips stop short of the legend (its width is the CSS variable `--legend-w`). On a touch
+  screen the legend's Pick list is away (the chips do it); with a mouse it stays, kept the same as the chips.

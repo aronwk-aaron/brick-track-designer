@@ -408,3 +408,12 @@ describe('how near a press takes a marker (tapReach)', () => {
   });
 });
 
+
+import { PICK_CHIPS } from '../src/app/items';
+describe('the layer chips', () => {
+  it('one short word for every Pick, all different', () => {
+    const words = PICKS.map((p) => PICK_CHIPS[p.id]);
+    expect(words.every((w) => w && w.length <= 10 && !w.includes(' '))).toBe(true);
+    expect(new Set(words).size).toBe(PICKS.length);
+  });
+});
