@@ -57,6 +57,8 @@ export interface SplitParts {
   studsOn?: (q: [number, number]) => boolean;
   /** where the bed's studs can't stand for its parts (studsOffOf), in the design's frame: elsewhere in what it adds they do */
   studsOff?: (q: [number, number]) => boolean;
+  /** (expert, stage 5) where no stud of the track's stands at all: under a blade made longer by hand */
+  studsAlsoOff?: (q: [number, number]) => boolean;
   /**
    * (another route's track through its bed: a slip's, a monster's crossing diagonals) studsOff is its adds' boxes, as it
    * was, so every stud the piece had stands where it stood; this is where a stud can't stand for its parts (studsOffOf),
@@ -217,7 +219,7 @@ export function networkSplits(s: Scad, routes: Route[], sol: Solution, p: BasePa
     if (blade !== undefined && !three) return undefined;
     const own = blade === undefined ? own0 : blade === 0 ? 'left' : 'right';
     const tside = own === 'left' ? -1 : own === 'right' ? 1 : three ? 1 : bRight ? -1 : 1;
-    const over: SetOver = { ...(ed?.leverOffset !== undefined && { leverOffset: ed.leverOffset }), ...(ed?.springLength !== undefined && { springLength: ed.springLength }), ...(ed?.single && { single: ed.single }), ...(ed?.heel && { heelShift: ed.heel }), ...(ed?.throwShift && { throwShift: ed.throwShift }), ...(ed?.leverAt !== undefined && { leverAt: ed.leverAt * 8 }) };
+    const over: SetOver = { ...(ed?.leverOffset !== undefined && { leverOffset: ed.leverOffset }), ...(ed?.springLength !== undefined && { springLength: ed.springLength }), ...(ed?.single && { single: ed.single }), ...(ed?.heel && { heelShift: ed.heel }), ...(ed?.bladeHeel && { bladeHeel: ed.bladeHeel }), ...(ed?.throwShift && { throwShift: ed.throwShift }), ...(ed?.leverAt !== undefined && { leverAt: ed.leverAt * 8 }) };
     const specOf = (o: SetOver, ts: number): SetSpec => (three ? [0, 2, 2 + toeShift([P[0], P[1]]), ts, 1, o, blade] : [0, 1, 2 + lead + toeShift([P[0], P[1]]), ts, undefined, o]);
     const spec = (o: SetOver) => specOf(o, tside);
     // (the other track near the points, in their frame; with two branches one side not built as a three-way, the other branch too)
@@ -535,7 +537,20 @@ export function networkSplits(s: Scad, routes: Route[], sol: Solution, p: BasePa
     const wb = crossed ? [bed.bed, place(mech.arm, P), ...mech.steps.map((m) => place(m, P))].filter((m) => !m.isEmpty()).map((m) => m.boundingBox()) : [];
     const offOwn = studsOffOf(s, P, plan.routes, gl.G, gl.bedTop, mech.bed, [mech.pockets, mech.channel, mech.arm, ...mech.steps, ...(mech.rests ? [mech.rests] : []), ...(spr ? [spr] : []), ...(br ? [br] : [])],
       [thr, thp, thr2].filter((m): m is Man => !!m), lev, gm.throwMove(0).slide, mech.armRects);
-    const studsOff = crossed ? (q: [number, number]) => wb.some((bb) => q[0] > bb.min[0] - 3 && q[0] < bb.max[0] + 3 && q[1] > bb.min[1] - 3 && q[1] < bb.max[1] + 3) : offOwn;
+    const studsOff0 = crossed ? (q: [number, number]) => wb.some((bb) => q[0] > bb.min[0] - 3 && q[0] < bb.max[0] + 3 && q[1] > bb.min[1] - 3 && q[1] < bb.max[1] + 3) : offOwn;
+    // (expert, stage 5: a blade made longer by hand reaches on past the points' own bed: no stud of the track's beside it under its plate, wherever it swings)
+    const lenPlates = pp.mechStyle === 'plates' && plan.sets.some((v) => v.heels) ? fdbFootprint(plan).plates : [];
+    const underPlate = (q: [number, number]) => { const l = worldToPose(P, q) as Pt, d = TRACK_DEFAULTS.studD / 2 + (pp.pointClearance ?? 0.3) + 0.3; return lenPlates.some((ring) => {
+      let inside = false;
+      for (let a2 = 0, b2 = ring.length - 1; a2 < ring.length; b2 = a2++) {
+        const [xa, ya] = ring[a2], [xb, yb] = ring[b2];
+        if ((ya > l[1]) !== (yb > l[1]) && l[0] < xa + ((l[1] - ya) * (xb - xa)) / (yb - ya)) inside = !inside;
+        const dx = xb - xa, dy = yb - ya, l2 = dx * dx + dy * dy || 1, u = Math.max(0, Math.min(1, ((l[0] - xa) * dx + (l[1] - ya) * dy) / l2));
+        if (Math.hypot(xa + u * dx - l[0], ya + u * dy - l[1]) < d) return true;
+      }
+      return inside;
+    }); };
+    const studsOff = lenPlates.length ? (q: [number, number]) => studsOff0(q) || underPlate(q) : studsOff0;
     built.push({
       key: JSON.stringify({ rts, used, p: pp, P, routes: [i, j, j2], end, n, of: groups.length, ...(bed.by.length && { clear: bed.by }) }),
       toe: [P[0], P[1]], frame: P, set: plan.sets[0], src: gr.main,
@@ -545,6 +560,8 @@ export function networkSplits(s: Scad, routes: Route[], sol: Solution, p: BasePa
       ...(mech.armRects.length && { armRects: mech.armRects }),
       ...(studsOn && { studsOn }),
       studsOff,
+      // (expert, stage 5: no stud of the track's under a blade made longer by hand, wherever it swings: past the points' own adds too)
+      ...(lenPlates.length && { studsAlsoOff: underPlate }),
       ...(lipMeets && { lipMeets }),
       // (another route's track through its bed: its own keep-out, for the studs put in after all the others: studsAfter)
       ...(crossed && { studsAfter: offOwn }),
@@ -648,6 +665,7 @@ export function networkBody(s: Scad, routes: Route[], sol: Solution, copt: Cross
   const body = crossingPiece(s, routes, copt, sol, grips, { railCuts, innerEnds, adds: adds.filter(ok), ...(blades.length && { blades }), cuts: [...cuts, ...(more.cuts ?? [])].filter(ok), ...(more.keeps?.length && { keeps: more.keeps }), gridPose: more.gridPose, hollows, bedAt: more.bedAt, ...(more.after && { after: more.after }), ...(more.groups && { groups: more.groups }),
     ...(splits.some((sp) => sp.lipMeets) && { lipMeets: (q: [number, number]) => splits.some((sp) => sp.lipMeets?.(q)) }),
     ...(splits.some((sp) => sp.studsOn) && { studsOn: (q: [number, number]) => splits.some((sp) => sp.studsOn?.(q)) }),
+    ...(splits.some((sp) => sp.studsAlsoOff) && { studsAlsoOff: (q: [number, number]) => splits.some((sp) => sp.studsAlsoOff?.(q)) }),
     // (a split without its own (none now): its adds' boxes keep studs off, as they did)
     ...(splits.length && splits.every((sp) => sp.studsOff) && { studsOff: (q: [number, number]) => splits.some((sp) => sp.studsOff!(q)) }),
     ...(splits.length && splits.every((sp) => sp.studsOff) && splits.some((sp) => sp.studsAfter) && { studsAfter: (q: [number, number]) => splits.some((sp) => (sp.studsAfter ?? sp.studsOff)!(q)) }) });

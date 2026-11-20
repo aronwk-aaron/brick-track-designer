@@ -170,6 +170,8 @@ export interface CrossingExtras {
   studsOn?: (q: [number, number]) => boolean;
   /** (the points' adds) where studs can't stand for them (network.ts studsOffOf): in their boxes, studs stand elsewhere; unset, nowhere in their boxes */
   studsOff?: (q: [number, number]) => boolean;
+  /** (expert, stage 5) where no stud stands at all, in or out of the adds' boxes: under a points blade made longer by hand */
+  studsAlsoOff?: (q: [number, number]) => boolean;
   /**
    * (points another route's track runs through: studsOff is their adds' boxes there, as it was) where a stud can't
    * stand for the points' parts, for studs put in after all the others: a spot the boxes alone turned down is tried
@@ -816,6 +818,7 @@ export function crossingPiece(s: Scad, routes: Route[], o: CrossingOptions = CRO
       if (handCheck && byCheckWide(q)) continue;
       // (clear of the end connectors: 8 mm in from each end)
       if (ends.some(({ e, len }) => Math.hypot(q[0] - e[0], q[1] - e[1]) < len && Math.abs(worldToPose(e, q)[1]) < 10)) continue;
+      if (x.studsAlsoOff?.(q)) continue;
       // (in what the points add: only where they say a stud can stand (studsOff), clear of the piece's cuts)
       if (inAdds(q) && (!x.studsOff || x.studsOff(q) || inCuts(q)) && !x.studsOn?.(q)) {
         // (turned down by the boxes alone: tried again after the rest, studsAfter)

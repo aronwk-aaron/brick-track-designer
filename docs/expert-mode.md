@@ -899,3 +899,26 @@ Aaron's answers and need build work.
   sleepers laid by hand' (in the union-order test). Tests: test/free-pieces.test.ts, test/free-parts-build.test.ts, the
   touch smoke. And the selection bar lets a press through beside its buttons (pointer-events), so a thing selected
   under it is still pressed and dragged (the touch smoke does it).
+- **Stage 5 (one blade at a time) is built.** Mapped first: a set's machinery (switch/context.ts pointsSet) works out
+  one heel for both blades (`sHeel`, lengthened by the set's `heelShift`); on spring tines both blades turn about one
+  pivot, with blades on top each blade has its own plate and pin (base.ts fdbLayout `blade(b)`), and narrow gauge has
+  both on one plate (`joinedPoints`, #80). Now `Trackwork.points[key].bladeHeel: [mm, mm]` (0 to 64 each; blade 0 is
+  the first route's rail at -G, part `points-a`; 1 the second's, `points-b`): with blades on top and two moving blades
+  on their own plates, pointsSet gives each blade its own heel (`heels`), and every place a blade's own length counts
+  goes by `heelOf(v, b)`: its plate's layout and pin (fdbLayout), its plate and part (fdbPlate2d, fdbBladePart, the
+  prototype undercut), the rails it replaces from its heel on (the closure rail's start), its notches where other
+  track crosses it, its cut. Where the machinery doesn't give a blade its own (both on one plate, narrow gauge: still
+  two blades, as Aaron asked; on spring tines; a three-way; a single-point switch's fixed blade) nothing changes, and the
+  card says why. Its shape (sprung, rigid, realistic) stays the set's: the two blades share the slider and the
+  hold-down lip (a default; one per blade would split the plate builder by blade). The build puts each blade's line,
+  toe to heel, on the points' overlay item (`blades`, and `fixed`, `joined`), set in build.ts's `lever` hook. Editor:
+  `Item { kind: 'tw', tw: 'points', key, blade }`, picked with Points along a blade (`canvas.bladeAt`; the blades drawn
+  thin while Points is picked), drawn orange with a round handle at its heel to drag it longer (`setBladeHeel`, by
+  quarter studs); its card: Longer than worked out (0 to 8 studs), This blade (moves with the other / moves alone / fixed:
+  `blades` 1 and `single`, the curved blade worked out from the lines), Reset this blade, The points' own card.
+  A lengthened blade's plate reaches past where the points were worked out to end, over the track's own bed: no stud of
+  the track's stands under it wherever it swings (network.ts `studsAlsoOff`, read by crossing.ts beside its other stud
+  rules; the switch base's own long-tie, tie, lead and end studs the same, base.ts `bladePlates`), the points' own bed
+  runs on past its pin (pointsEndY), and no joint of the app's is put within it (build.ts: the solver's spans lengthened
+  by it for planSections). Template (Features): 'Points, one blade longer' (in the union-order test). Tests:
+  test/blades-own-build.test.ts, the touch smoke.

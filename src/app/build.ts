@@ -17,7 +17,7 @@ import { splitSelfCrossing } from '../route/selfcross';
 import { FORCE_ANGLE, FORCE_LAT, solve, SOLVER_DEFAULTS, type Solution, type SplitEdits } from '../route/solver';
 import { GRADE_APART, handForward, handS, hasRoll, heightAt, hostedEnds, poseToWorld, railOffsetOf, railPoint, routeLat, routeLength, routePose, routeRoll, routeSOf, sleeperLenOf, type Pose, worldToPose } from '../route/route';
 import { reversedRoute } from '../switch/reverse';
-import { BASE_DEFAULTS, switchGeometry } from '../switch/base';
+import { BASE_DEFAULTS, heelOf, switchGeometry } from '../switch/base';
 import { switchGlobals } from '../switch/context';
 import { planPieces, subRoute, toFrame } from '../switch/pieces';
 import { networkBody, networkSplits, type SplitParts, throwMoves } from '../switch/network';
@@ -51,7 +51,9 @@ import { BRICKTRACKS_SWITCH, BT_LEAD, type BoughtSwitch, cutOut, findBoughtSwitc
 
 /** An item of trackwork the hand edits apply to: a check rail, a flangeway cut, a points set. */
 export interface TrackworkItem {
-  kind: 'check' | 'groove' | 'points' | 'throw'; key: string; at: [number, number]; pts: [number, number][]; off?: boolean; len?: number; toe?: number; dir?: [number, number];
+  kind: 'check' | 'groove' | 'points' | 'throw'; key: string; at: [number, number]; pts: [number, number][];
+  /** (points, stage 5) each blade's line, closed, toe to heel (mm, world); which is fixed (a single-point switch's); both on one plate (narrow gauge) */
+  blades?: [number, number][][]; fixed?: number; joined?: boolean; off?: boolean; len?: number; toe?: number; dir?: [number, number];
   /** routes: the routes it's between, by their ids (a hand edit is matched to its item by them when a route's reshaped: twfollow.ts): points, the
    * two whose points they are; a flangeway cut, the rail's route and the one whose flanges cut it; a check rail, its route and the one crossing it.
    * Points made by hand (forced); a near miss where points could be forced (cand: whether they can, and how far off it is) */
@@ -1204,7 +1206,7 @@ function editChecks(items: TrackworkItem[], tw: Trackwork, rs: Route[], checks: 
 /** A points set's lever, as planned (switch/base.ts): what its item and keep-outs are made from. */
 interface LeverPlan {
   throwDir: number; leverX: number; throwY: number; leverY?: number; corner?: boolean; forkX?: number; throwStockX: number; throwEdgeX: number; leverMinD: number; tineLen: number; pivotPt: [number, number];
-  ra: Route; rb: Route; sHeel: number; leverTravel: number; fixed?: number; three?: { S: Route; own?: boolean }; fdb?: { pivot: [number, number]; post: [number, number] }[];
+  ra: Route; rb: Route; sHeel: number; sToe?: number; heels?: [number, number]; joined?: boolean; leverTravel: number; fixed?: number; three?: { S: Route; own?: boolean }; fdb?: { pivot: [number, number]; post: [number, number] }[];
 }
 /**
  * A plate-style points set's keep-outs, where no cut goes: the slider's tunnel, from past the far blade to the stock
@@ -2749,8 +2751,8 @@ function buildOne(w: Wasm, design: Design, report: (what: string, frac: number) 
   const toeShift = (q: [number, number]) => tw.points?.[keyOf(q)]?.toe ?? 0;
   // (with the points' own choice of moving blade, a single-point switch's, and their blades lengthened: Trackwork.points single, heel)
   const throwEdit = (q: [number, number]) => {
-    const k = keyOf(q), pt = tw.points?.[k], single = pt?.single, heel = pt?.heel, bladeStyle = pt?.bladeStyle, blades = pt?.blades, mech = pt?.mech;
-    return single || heel || bladeStyle || blades || mech ? { ...tw.throw?.[k], ...(single && { single }), ...(heel && { heel }), ...(bladeStyle && { bladeStyle }), ...(blades && { blades }), ...(mech && { mech }) } : tw.throw?.[k];
+    const k = keyOf(q), pt = tw.points?.[k], single = pt?.single, heel = pt?.heel, bladeStyle = pt?.bladeStyle, blades = pt?.blades, mech = pt?.mech, bladeHeel = pt?.bladeHeel;
+    return single || heel || bladeStyle || blades || mech || bladeHeel ? { ...tw.throw?.[k], ...(single && { single }), ...(heel && { heel }), ...(bladeHeel && { bladeHeel }), ...(bladeStyle && { bladeStyle }), ...(blades && { blades }), ...(mech && { mech }) } : tw.throw?.[k];
   };
   // Pieces: a switch wherever routes split, the rest as fixed trackwork.
   const scad = new Scad(w);
@@ -2804,6 +2806,14 @@ function buildOne(w: Wasm, design: Design, report: (what: string, frac: number) 
   const lever = (key: string, P: Pose, v: LeverPlan) => {
     if (fdbPoints && !v.fdb) cut.keepTines(poseToWorld(P, [0, 0]) as [number, number]);
     leverItem(items, tw, fdbPoints || v.fdb ? cut.pointsAvoid : undefined, track.c.railOffset, key, P, v);
+    // (expert, stage 5: each blade where it lies closed, toe to heel along its rail: the plan picks one blade of the points by it)
+    const pit = items.find((it) => it.kind === 'points' && it.key === key);
+    if (pit && v.sToe !== undefined && !v.three) {
+      const s0 = v.sToe, G = track.c.railOffset;
+      pit.blades = [0, 1].map((b) => { const rt = b === 0 ? v.ra : v.rb, o = b === 0 ? -G : G, s1 = heelOf(v as { sHeel: number; heels?: [number, number] }, b), n = 12; return Array.from({ length: n + 1 }, (_, k) => poseToWorld(P, railPoint(rt, s0 + ((s1 - s0) * k) / n, o)) as [number, number]); });
+      if (v.fixed !== undefined && !v.joined) pit.fixed = v.fixed;
+      if (v.joined) pit.joined = true;
+    }
   };
   const layered = (o.pointsModule ?? 'built-in') === 'layers' && o.ballast !== 'none';
   if ((o.pointsModule ?? 'built-in') === 'layers' && o.ballast === 'none') bedWarnings.add('layered points need ballast (the track alone is too thin to split): built in one piece, the moving parts going in from below');
@@ -2901,7 +2911,11 @@ function buildOne(w: Wasm, design: Design, report: (what: string, frac: number) 
   if (net) {
     prog.steps = 3;
     prog.step(`Building the piece with its ${sol.splits.length} points`);
-    if (inLengths) sectioned(b, 'track', routes, sol.checkRails, net.splits, sol.splits, copt, netKey);
+    // (expert, stage 5: a blade made longer by hand reaches on past where the points were worked out to end: no joint of
+    // the app's in that, where its plate would lie over the next part's end connector)
+    const longer = (sp: (typeof sol.splits)[number]) => { const t = railPoint(routes[sp.routes[0]], sp.merge ? sp.spans[0][1] : sp.spans[0][0], 0); return Math.max(0, ...(tw.points?.[keyOf(t)]?.bladeHeel ?? [0])); };
+    const secSplits = sol.splits.some((sp) => longer(sp) > 0) ? sol.splits.map((sp) => { const x = longer(sp); return x > 0 ? { ...sp, spans: sp.spans.map(([a2, b2]) => (sp.merge ? [a2 - x - 16, b2] : [a2, b2 + x + 16]) as [number, number]) as typeof sp.spans } : sp; }) : sol.splits;
+    if (inLengths) sectioned(b, 'track', routes, sol.checkRails, net.splits, secSplits, copt, netKey);
     else if (!tiled(b, 'track', routes, sol.checkRails, net.splits, copt)) {
       if (plan) throw PLANNED; // (built whole: nothing to share out)
       const whole = cached(`net:${netKey}`, () => { const grips: [number, number][] = [], after: [number, number][] = []; return { body: networkBody(scad, routes, sol, copt, net.splits, grips, { cuts: grooveCuts, keeps: grooveKeeps, innerEnds: dropInner(routes), after }), grips, after }; }, true);

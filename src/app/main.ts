@@ -724,6 +724,40 @@ function renderItemCard() {
       row.append(rs);
     }
     row.append(showCard(it.route, 'Rails'));
+  } else if (it.kind === 'tw' && it.blade !== undefined) {
+    // (stage 5: one blade of points: how much longer it is than worked out, whether it moves, its shape; each locked with why
+    // where the set's machinery doesn't let one blade have its own)
+    const b = it.blade, pit = canvas.overlay?.items?.find((q) => q.kind === 'points' && q.key === it.key), cur = design.trackwork?.points?.[it.key] ?? {};
+    const mech = cur.mech ?? design.options?.mechStyle ?? OPTION_DEFAULTS.mechStyle, two = (cur.blades ?? design.options?.pointBlades ?? OPTION_DEFAULTS.pointBlades) !== 1;
+    const three = new Set(twList.filter((q) => q.kind === 'points' && q.key === it.key).flatMap((q) => q.routes ?? [])).size > 2;
+    const lock = pit?.joined ? 'both blades are on one plate (narrow gauge): they\'re one piece, set on the points\' own card'
+      : three ? 'a three-way\'s blades are worked out together' : mech !== 'plates' ? 'on spring tines both blades turn on one pivot: lengthen both on the points\' own card (Blades lengthened)'
+      : !two || pit?.fixed === b ? 'this blade is fixed (a single-point switch): only the moving one is lengthened' : undefined;
+    const inp = document.createElement('input'); inp.type = 'number'; inp.step = '0.25'; inp.min = '0'; inp.max = '8'; inp.value = String((cur.bladeHeel?.[b] ?? 0) / 8); inp.disabled = !!lock;
+    inp.setAttribute('aria-label', `Blade ${b === 0 ? 'a' : 'b'} longer, studs`);
+    inp.addEventListener('change', () => { const n = Number(inp.value); canvas.setBladeHeel(it.key, b, Number.isFinite(n) ? n : 0); coalesceNext = `blade:${it.key}:${b}`; changed(true); soon(drawItemCard); });
+    const f1 = field('Longer than worked out, studs', inp); f1.classList.add('stack'); f1.append(rangeNote(lock ? `Locked: ${lock}.` : '0 to 8, default 0. Its heel, and its plate\'s pin, that much further on: the blade swings through a smaller angle. Drag its round end on the plan too.')); box.append(f1);
+    // (moves or is fixed: a single-point switch, the other blade the one that moves; the curved route's blade is the one that moves by default)
+    if (!pit?.joined && !three && pit?.blades?.length === 2) {
+      const turn = (l: [number, number][]) => { const h = (a: [number, number], c: [number, number]) => Math.atan2(c[1] - a[1], c[0] - a[0]); const t = Math.abs(h(l[l.length - 2], l[l.length - 1]) - h(l[0], l[1])); return Math.min(t, 2 * Math.PI - t); };
+      const curved = turn(pit.blades[0]) >= turn(pit.blades[1]) ? 0 : 1, fixedNow = two ? undefined : pit.fixed;
+      const sel = document.createElement('select');
+      sel.append(new Option('Moves (both blades move)', 'both'), new Option('Moves (it alone: the other blade fixed)', 'alone'), new Option('Fixed (the other blade moves alone)', 'fixed'));
+      sel.value = fixedNow === undefined ? 'both' : fixedNow === b ? 'fixed' : 'alone';
+      sel.addEventListener('change', () => {
+        const g = ((design.trackwork ??= {}).points ??= {}), e = { ...g[it.key] };
+        if (sel.value === 'both') { delete e.blades; delete e.single; }
+        else { const fixedB = sel.value === 'fixed' ? b : 1 - b; e.blades = 1; if (fixedB === 1 - curved) delete e.single; else e.single = 'straight'; }
+        if (Object.keys(e).length) g[it.key] = e; else delete g[it.key];
+        changed(true); soon(drawItemCard);
+      });
+      const f2 = field('This blade', sel); f2.classList.add('stack'); box.append(f2);
+    }
+    small('Its shape (sprung, rigid, realistic) is the set\'s: the two blades share the slider and the hold-down lip. Set it on the points\' own card.');
+    const ed = (cur.bladeHeel?.[b] ?? 0) > 0;
+    if (ed) { const r = document.createElement('button'); r.type = 'button'; r.className = 'reset1'; r.textContent = 'Reset this blade'; r.title = 'As long as worked out again'; r.addEventListener('click', () => { canvas.setBladeHeel(it.key, b, 0); changed(true); soon(drawItemCard); }); row.append(r); }
+    const all = document.createElement('button'); all.type = 'button'; all.textContent = 'The points\' own card'; all.title = 'Both blades\' settings: shape, mechanism, taken out';
+    all.addEventListener('click', () => canvas.selectItem({ kind: 'tw', tw: 'points', key: it.key })); row.append(all);
   } else if (it.kind === 'tw') {
     // (the app's trackwork, tapped on the plan: the Trackwork panel's controls for it, here; points and check rails taken out by Take out)
     drawTrackwork(twList, { kind: it.tw, key: it.key }, box);
@@ -748,6 +782,7 @@ function renderItemCard() {
     : it.kind === 'joint' ? 'Worked out from where the tracks meet.'
     : it.kind === 'free' ? 'Made by hand: Delete takes it away (Undo brings it back).'
     : it.kind === 'run' ? ((design.routes[it.route]?.railEdits?.out ?? []).some((q) => q.side === it.side) ? (it.out ? `Taken out by hand: Put the rail back, or Reset the ${it.side} rail.` : `Edited by hand: Reset the ${it.side} rail gives it back to the app.`) : 'Laid by the app: change anything to make it yours.')
+    : it.kind === 'tw' && it.blade !== undefined ? ((design.trackwork?.points?.[it.key]?.bladeHeel?.[it.blade] ?? 0) > 0 ? 'Edited by hand: Reset this blade puts it back as worked out.' : 'Worked out by the app: change anything to make it yours.')
     : it.kind === 'tw' ? (isEdit((design.trackwork?.[it.tw] as Record<string, unknown> | undefined)?.[it.key]) ? 'Edited by hand: Reset this puts it back as the app works it out.' : 'Worked out by the app: change anything to make it yours.')
     : 'Made by hand: Delete takes it away (Undo brings it back).';
   inspectorFinish(box, status);
@@ -2834,7 +2869,7 @@ function updateSelbar() {
   bar.classList.toggle('item', itemMode);
   $('sel-item-del').hidden = !itemMode || it.kind === 'joint';
   for (const id of ['sel-item-left', 'sel-item-up', 'sel-item-down', 'sel-item-right']) $(id).hidden = !itemMode || it.kind === 'joint' || it.kind === 'tw';
-  if (itemMode && it.kind === 'tw') $('sel-item-del').hidden = it.tw !== 'points' && it.tw !== 'check';
+  if (itemMode && it.kind === 'tw') $('sel-item-del').hidden = (it.tw !== 'points' && it.tw !== 'check') || it.blade !== undefined;
   $('sel-item-done').hidden = !itemMode;
   bar.hidden = !itemMode && n === 0 && !clipboard.length && !clipTables.length;
   $('sel-count').textContent = itemMode ? label! : n ? `${n} selected` : 'clipboard:';

@@ -72,6 +72,8 @@ export interface SwitchParams {
   throwShift?: number;
   /** (set by hand for a points set, SetOver) the blades lengthened: their heels this much (mm) past where the rails are far enough apart */
   heelShift?: number;
+  /** (expert, stage 5, blades on top) each blade lengthened on its own past the set's heel (mm; blade 0 on the first route's rail at -G, 1 on the second's at +G) */
+  bladeHeel?: [number, number];
   /**
    * (the plate-style points, set by hand for a points set, SetOver) The lever's housing at a corner: its lever this far
    * along the points' frame (mm from where the routes part; less than the throw bar's: back toward the track's end),
@@ -260,6 +262,8 @@ const rotAbout = (pt: Pt, c: Pt, ang: number): Pt => [
  * defaultThrowDir: the throw side when the set doesn't say (switch.scad: -1
  * for a right switch, else +1).
  */
+/** (blades on top) The disc round a blade plate's pin (switch/base.ts FDB.discR): a lengthened blade's points' bed reaches past it. */
+const FDB_DISC_R = 5;
 export function pointsSet(routes: Route[], ps: PointsSet, p: SwitchParams, defaultThrowDir = 1,
   /** (a true three-way's own heel and slider travel; see switch/base.ts) */
   over: { sHeel?: number; leverTravel?: number } = {}) {
@@ -272,6 +276,12 @@ export function pointsSet(routes: Route[], ps: PointsSet, p: SwitchParams, defau
   const sHeel0 = over.sHeel ?? Math.max(firstS(sepR), firstS(sepL), sToe + 20);
   // (lengthened by hand: not past the shorter route's end)
   const sHeel = over.sHeel === undefined && (p.heelShift ?? 0) > 0 ? Math.max(sHeel0, Math.min(lenMin, sHeel0 + p.heelShift!)) : sHeel0;
+  // (each blade lengthened on its own: not past its own route's end; none: the set's heel for both, heelOf)
+  // (blades on top, two moving blades each on its own plate: on spring tines both turn about one pivot; narrow gauge's two are on one plate)
+  const own = p.mechStyle === 'plates' && p.pointBlades !== 1 && !(p.gaugeStuds < 4);
+  const bh = own && over.sHeel === undefined && p.bladeHeel && (p.bladeHeel[0] > 0 || p.bladeHeel[1] > 0) ? p.bladeHeel : undefined;
+  // (and its plate's pin and disc clear of the points' end, its end connector and the studs that stand by it: 3 studs short of the route's end)
+  const heels = bh ? ([0, 1].map((b) => Math.max(sHeel, Math.min(routeLength(b === 0 ? ra : rb) - 24, sHeel + Math.max(0, bh[b])))) as [number, number]) : undefined;
   const toeY = railPoint(ra, sToe, -G)[1];
   const sBpiv = sHeel - 4;
   const a = railPoint(ra, sBpiv, -G), b = railPoint(rb, sBpiv, +G);
@@ -312,7 +322,8 @@ export function pointsSet(routes: Route[], ps: PointsSet, p: SwitchParams, defau
   const leverTravel = over.leverTravel ?? (p.mechStyle === 'plates' ? fdbTravel : throwTravel + 2 * p.springPreload);
   const postX = [tineTip[0] - p.springPreload];
   const swingRange = [0, throwAng];
-  const pointsEndY = pivotPt[1] + Math.max(g.discR, g.heelBarW / 2) + 2;
+  // (a blade made longer by hand: the points' own bed, where no stud stands, on past its pin too)
+  const pointsEndY = Math.max(pivotPt[1], ...(heels ? [railPoint(ra, heels[0] - 4, -G)[1], railPoint(rb, heels[1] - 4, +G)[1]] : [])) + Math.max(g.discR, g.heelBarW / 2, heels ? FDB_DISC_R : 0) + 2;
   const tipGap = Math.min(Math.abs(bladeMidAt(tineTip[1])[0] - railPoint(ra, sOf(ra, tineTip), -G)[0]),
     Math.abs(railPoint(rb, sOf(rb, tineTip), +G)[0] - bladeMidAt(tineTip[1])[0]));
   const throwDir = ps.tside ?? defaultThrowDir;
@@ -367,6 +378,7 @@ export function pointsSet(routes: Route[], ps: PointsSet, p: SwitchParams, defau
     warnings.push('not enough room between the blades for the spring tines; lower point_throw or spring_preload');
   if (!stand && forkMouthHw > g.leverTipD / 2 - 0.25) warnings.push("the fork's mouth is too wide to hold the lever's tip");
   return {
+    ...(heels && { heels }),
     ra, rb, sToe, sHeel, toeY, sBpiv, pivotPt, throwAng, tineLen, yS, tineTip, throwTravel, leverTravel, postX, fdbTravel,
     swingRange, pointsEndY, tipGap, throwDir, throwY, throwStockRt, throwStockX, throwFaceX, leverAng, leverTipZ,
     throwEdgeX, leverMinD, leverX, forkX, corner, leverY, forkLipZ, forkTop, forkMouthHw, stepYa, stepYb, stepXo, armRect, farRect, farStockRt, stand, standE, standZ,

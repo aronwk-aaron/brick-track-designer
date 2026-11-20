@@ -518,6 +518,37 @@ async function tablet(width: number, height: number, tag: string) {
     check(/sleeper/.test(await free()), `[${tag}] and Undo brings it back`);
     await shot('laid-by-hand');
     await tapOn('#itemcard .idone').catch(() => {});
+    // (stage 5: one blade of the points by touch: the Points chip, a tap along a blade selects it alone; + on its card makes
+    // it longer; its round heel end dragged on makes it longer still; Reset this blade; the other blade's as it was)
+    at = `${tag}: one blade at a time by touch`;
+    await page.evaluate(() => { localStorage.setItem('btd-design', JSON.stringify({ version: 1, gaugeStuds: 4, routes: [{ name: 'A', x: 0, y: 0, heading: 0, segs: [{ kind: 'straight', studs: 48 }] }, { name: 'S', x: 0, y: 8, heading: 0, segs: [{ kind: 'curve', radius: 40, angle: -22.5 }] }] })); });
+    await page.reload(); await page.waitForSelector('#track'); await tapOn('#mode-select'); await tapOn('#fit'); await sleep(300);
+    await tapOn('#layers button[data-pick="mark"]'); await sleep(200);
+    type BW = { btdCanvas: { overlay?: { items?: { kind: string; key: string; blades?: [number, number][][] }[] }; toScreen(x: number, y: number): [number, number]; host: { design(): { trackwork?: { points?: Record<string, { bladeHeel?: number[] }> } } } } };
+    const heels = () => page.evaluate(() => JSON.stringify(Object.values((window as unknown as BW).btdCanvas.host.design().trackwork?.points ?? {}).map((e) => e.bladeHeel ?? null)));
+    let mid: [number, number] | undefined;
+    for (let k = 0; k < 100 && !mid; k++) {
+      mid = await page.evaluate(() => { const c = (window as unknown as BW).btdCanvas, r = document.getElementById('track')!.getBoundingClientRect(), l = c.overlay?.items?.find((q) => q.kind === 'points')?.blades?.[0]; if (!l) return undefined; const q = l[Math.floor(l.length * 0.8)], [x, y] = c.toScreen(q[0] / 8, q[1] / 8); return [r.left + x, r.top + y] as [number, number]; });
+      if (!mid) await sleep(200);
+    }
+    check(!!mid, `[${tag}] the points' blades are on the plan`);
+    if (mid) {
+      await f.tap(mid); await sleep(300);
+      check(await page.locator('#sel-item-del').isHidden(), `[${tag}] a blade has no Delete on the bar (its points do)`);
+      check(/^Blade a of the points/.test(await page.locator('#itemcard > b').innerText().catch(() => '')), `[${tag}] a tap along a blade selects it alone (${await page.locator('#itemcard > b').innerText().catch(() => 'no card')})`);
+      await tapOn('#itemcard .stepper button >> nth=1'); await sleep(300);
+      check(await heels() === '[[2,0]]', `[${tag}] + on its card makes it a quarter stud longer (${await heels()})`);
+      const bl = JSON.parse(await page.locator('#track').getAttribute('data-blade') ?? '{}') as { heel?: [number, number] };
+      // (on along the blade, the way it runs at its heel, 30 px)
+      const way = await page.evaluate(() => { const c = (window as unknown as BW).btdCanvas, l = c.overlay?.items?.find((q) => q.kind === 'points')?.blades?.[0]; if (!l) return [0, -1]; const a2 = c.toScreen(l[l.length - 2][0] / 8, l[l.length - 2][1] / 8), b2 = c.toScreen(l[l.length - 1][0] / 8, l[l.length - 1][1] / 8), n = Math.hypot(b2[0] - a2[0], b2[1] - a2[1]) || 1; return [(b2[0] - a2[0]) / n, (b2[1] - a2[1]) / n]; });
+      if (bl.heel) { const tb = (await page.locator('#track').boundingBox())!, h: [number, number] = [tb.x + bl.heel[0], tb.y + bl.heel[1]]; await f.drag(h, [h[0] + way[0] * 30, h[1] + way[1] * 30], { steps: 8 }); await sleep(300); }
+      const after = JSON.parse(await heels()) as (number[] | null)[];
+      check(!!after[0] && after[0][0] > 2 && after[0][1] === 0, `[${tag}] its round heel end dragged on makes it longer, the other blade as it was (${JSON.stringify(after)})`);
+      await shot('one-blade');
+      await tapOn('#itemcard button:has-text("Reset this blade")'); await sleep(300);
+      check(await heels() === '[]' || await heels() === '[null]', `[${tag}] Reset this blade: as worked out (${await heels()})`);
+      await tapOn('#itemcard .idone').catch(() => {});
+    }
     await page.evaluate(() => localStorage.setItem('btd-pick', 'all'));
     await shot('several');
   }

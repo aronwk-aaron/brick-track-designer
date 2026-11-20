@@ -62,7 +62,9 @@ export const BASE_DEFAULTS: BaseParams = {
  * own with two positions; the three-way is then two such sets at one toe.
  */
 export type SetSpec = [number, number, number, number?, number?, SetOver?, (0 | 1)?];
-export interface SetOver { leverOffset?: number; springLength?: number; throwShift?: number; heelShift?: number; /** (blades on top) the lever in a housing at a corner, mm along the points (SwitchParams leverAt) */ leverAt?: number;
+/** (expert, stage 5) Where blade b's heel is (mm along its route): its own, lengthened by hand (PointsSetValues.heels), else the set's. */
+export const heelOf = (v: { sHeel: number; heels?: [number, number] }, b: number) => v.heels?.[b] ?? v.sHeel;
+export interface SetOver { leverOffset?: number; springLength?: number; throwShift?: number; heelShift?: number; /** (expert, stage 5) each blade lengthened on its own (mm): SwitchParams.bladeHeel */ bladeHeel?: [number, number]; /** (blades on top) the lever in a housing at a corner, mm along the points (SwitchParams leverAt) */ leverAt?: number;
   /** (a single-point switch) which route's blade moves: the more curved one's (default), or the straighter one's, the curved route's rail fixed */
   single?: 'curved' | 'straight' }
 
@@ -317,7 +319,7 @@ function fdbLayout(v: SetLike, p: BaseParams, rails: [Route, number, number][], 
     const tip = railPoint(rt, v.sToe, o), sPost = sOf(rt, [0, v.throwY]);
     // (each pin's place and each post's worked out once: the search below asks for the same ones over and over)
     const pivots = new Map<number, Pt>(), postsAt = new Map<number, Pt>();
-    const pivotOf = (shift: number, pin: number) => { const k = shift * 4096 + Math.round(pin * 64); let q = pivots.get(k); if (!q) { q = railPoint(rt, v.sHeel - 4 - shift, o + side * pin); pivots.set(k, q); } return q; };
+    const pivotOf = (shift: number, pin: number) => { const k = shift * 4096 + Math.round(pin * 64); let q = pivots.get(k); if (!q) { q = railPoint(rt, heelOf(v, b) - 4 - shift, o + side * pin); pivots.set(k, q); } return q; };
     const postOf = (postIn: number) => { const k = Math.round(postIn * 4096); let q = postsAt.get(k); if (!q) { q = railPoint(rt, sPost, o + side * postIn); postsAt.set(k, q); } return q; };
     const make = (shift: number, pin: number, postIn: number) => {
       const pivot = pivotOf(shift, pin), post = postOf(postIn);
@@ -333,7 +335,7 @@ function fdbLayout(v: SetLike, p: BaseParams, rails: [Route, number, number][], 
     if (!pts.length) return f0;
     const angles = (f: { ang: number }) => Array.from({ length: 9 }, (_, k) => (dir * n3 * f.ang * k) / 8);
     // (the stock rail it closes on (the other route's, at the same offset), on past the pin: the blade's heel end swings out toward it)
-    const stockBehind = (f: { pivot: Pt }) => { const out: Pt[] = []; for (let s = sOf(stockRt, f.pivot); s <= v.sHeel + 6; s += 0.5) out.push(railPoint(stockRt, s, o)); return out; };
+    const stockBehind = (f: { pivot: Pt }) => { const out: Pt[] = []; for (let s = sOf(stockRt, f.pivot); s <= heelOf(v, b) + 6; s += 0.5) out.push(railPoint(stockRt, s, o)); return out; };
     // the blade's own rail (on the plate, toe to heel) clear of them as it swings
     // (the points near enough the blade's rail to matter: the same for each place tried, but the stock rail's behind the pin)
     const nearBar = (q: Pt) => Math.abs(routeLat(rt, q) - o) < HEAD_HW + hwBar + 12;
@@ -344,7 +346,7 @@ function fdbLayout(v: SetLike, p: BaseParams, rails: [Route, number, number][], 
         const q2 = rotAbout(q, f.pivot, -a);
         if (Math.abs(routeLat(rt, q2) - o) >= HEAD_HW + (fromPlate.has(q) ? c : hwBar)) return true;
         const sq = sOf(rt, q2);
-        return sq < v.sToe || sq > v.sHeel - c;
+        return sq < v.sToe || sq > heelOf(v, b) - c;
       }));
     };
     if (!barOk(f0)) return { ...f0, blocked: 'it crosses the blade' };
@@ -418,7 +420,7 @@ function fdbLayout(v: SetLike, p: BaseParams, rails: [Route, number, number][], 
             return shift ? { ...f, stockKeep: stockBehind(f), stockHw: hw } : f;
           }
         }
-        if (sOf(rt, railPoint(rt, v.sHeel - 4 - shift, o)) - sPost < (sprung ? root : rigidHole(c)) + pinR + FDB_RIM) break;
+        if (sOf(rt, railPoint(rt, heelOf(v, b) - 4 - shift, o)) - sPost < (sprung ? root : rigidHole(c)) + pinR + FDB_RIM) break;
       }
     }
     return { ...f0, blocked: "there's no room for plate round its pin and its post" };
@@ -430,7 +432,7 @@ function sprungFront(v: SetLike, b: number, p: BaseParams, f: FdbBladeLayout) {
   const G = switchGlobals(p).G, c = p.pointClearance, yF = Math.max(v.toeY - 1, 8 + c);
   const rt = v.three ? v.three.S : b === 0 ? v.ra : v.rb, o = b === 0 ? -G : +G, side = b === 0 ? 1 : -1;
   const stockRt = v.three ? (b === 0 ? v.three.L : v.three.R) : b === 0 ? v.rb : v.ra;
-  const s0 = v.sToe - 1, s1 = v.sHeel - c, kFull = Math.max(1, Math.min(6, Math.floor(((sOf(rt, f.post) - 5 - s0) / (s1 - s0)) * 24)));
+  const s0 = v.sToe - 1, s1 = heelOf(v, b) - c, kFull = Math.max(1, Math.min(6, Math.floor(((sOf(rt, f.post) - 5 - s0) / (s1 - s0)) * 24)));
   const k = Math.max(0, ((sOf(rt, [railCross(rt, o, yF)[0], yF]) - s0) / (s1 - s0)) * 24);
   const inW = -HEAD_HW + (0.35 + 0.65 * Math.min(1, k / kFull)) * (2 * HEAD_HW + fdbPlateW(p));
   const sw = swingsOf(v) * f.ang * side, inner: Pt = [railCross(rt, o + side * inW, yF)[0], yF];
@@ -506,7 +508,7 @@ function fdbFootprintOf(v: SetLike, p: BaseParams): { plates: Pt[][]; rails: Pt[
   v.fdb.forEach((f, b) => {
     if (b === v.fixed) return;
     const rt = v.three ? v.three.S : b === 0 ? v.ra : v.rb, o = b === 0 ? -G : +G, side = b === 0 ? 1 : -1;
-    const n = 24, s0 = v.sToe - 1, s1 = v.sHeel - c, kFull = Math.max(1, Math.min(6, Math.floor(((sOf(rt, f.post) - 5 - s0) / (s1 - s0)) * n)));
+    const n = 24, s0 = v.sToe - 1, s1 = heelOf(v, b) - c, kFull = Math.max(1, Math.min(6, Math.floor(((sOf(rt, f.post) - 5 - s0) / (s1 - s0)) * n)));
     const outOff = p.bladeStyle === 'prototype' ? -HEAD_HW - 1.3 : -HEAD_HW, inOff = HEAD_HW + fdbPlateW(p);
     const ss = Array.from({ length: n + 1 }, (_, k) => s0 + ((s1 - s0) * k) / n);
     const outer = ss.map((sv) => railPoint(rt, sv, o + side * outOff));
@@ -717,7 +719,7 @@ export function switchPlan(routes: Route[], specs: SetSpec[], p: BaseParams = BA
   const isStock = (i: number, o: number) => (i === 0 && o > 0) || (i === nRoutes - 1 && o < 0);
   const railFixS = (i: number, o: number) => Math.max(0, ...specs.map((ps, k) => (ps[4] !== undefined
     ? ([ps[0], ps[1], ps[4]].includes(i) && !isStock(i, o) ? sets[k].sHeel : -Infinity)  // a three-way: every rail but the stock rails starts at the heels
-    : (ps[0] === i && o < 0) || (ps[1] === i && o > 0) ? (sets[k].fixed === (o < 0 ? 0 : 1) ? sets[k].sMate! : sets[k].sHeel) : -Infinity)));
+    : (ps[0] === i && o < 0) || (ps[1] === i && o > 0) ? (sets[k].fixed === (o < 0 ? 0 : 1) ? sets[k].sMate! : heelOf(sets[k], o < 0 ? 0 : 1)) : -Infinity)));
 
   // Frogs: [i, j, s along i, point, s along j].
   const frogFn = (i: number, j: number, s: number) => routeLat(routes[j], railPoint(routes[i], s, -G)) - G;
@@ -923,10 +925,10 @@ export function switchPlan(routes: Route[], specs: SetSpec[], p: BaseParams = BA
     // other track near the points (the same list each try), as the plates' layout below is)
     const rails = railsNear(v), memo = foreign.length ? crossMemo.get(foreign) ?? new Map<string, ReturnType<typeof bladeCrossings>>() : undefined;
     if (memo) crossMemo.set(foreign, memo);
-    const cr = [[v.ra, -G], [v.rb, +G]].map(([rt, o]) => {
-      const ask = () => bladeCrossings(rt as Route, o as number, v.sToe, v.sHeel, rails, p.pointThrow);
+    const cr = [[v.ra, -G], [v.rb, +G]].map(([rt, o], b) => {
+      const ask = () => bladeCrossings(rt as Route, o as number, v.sToe, heelOf(v, b), rails, p.pointThrow);
       if (!memo) return ask();
-      const key = JSON.stringify([o, v.sToe, v.sHeel, p.pointThrow, (rt as Route).start, (rt as Route).segments, rails.map(([r, ro, s0]) => [foreign.indexOf(r) >= 0 ? foreign.indexOf(r) : [r.start, r.segments], ro, s0])]);
+      const key = JSON.stringify([o, v.sToe, heelOf(v, b), p.pointThrow, (rt as Route).start, (rt as Route).segments, rails.map(([r, ro, s0]) => [foreign.indexOf(r) >= 0 ? foreign.indexOf(r) : [r.start, r.segments], ro, s0])]);
       let got = memo.get(key);
       if (!got) { got = ask(); memo.set(key, got); }
       // (its notches a list of this plan's own)
@@ -947,7 +949,7 @@ export function switchPlan(routes: Route[], specs: SetSpec[], p: BaseParams = BA
       // and an X yard's levers are tried in a few hundred places, each the same layout, and that took minutes)
       const memos = keepOut.length ? fdbMemo : fdbMemoNear, by = keepOut.length ? keepOut : foreign.length ? foreign : undefined;
       if (by) {
-        const memo = memos.get(by) ?? new Map<string, FdbBladeLayout[]>(), key = JSON.stringify([v.sToe, v.sHeel, v.throwY, v.fdbTravel, v.toeY, v.pointsEndY, v.fixed, v.notches, p, routes.map((r) => [r.start, r.segments, r.extra?.dual ? [r.extra.dualShared, r.extra.dualStuds, r.extra.from, r.extra.to] : 0])]);
+        const memo = memos.get(by) ?? new Map<string, FdbBladeLayout[]>(), key = JSON.stringify([v.sToe, v.sHeel, v.heels, v.throwY, v.fdbTravel, v.toeY, v.pointsEndY, v.fixed, v.notches, p, routes.map((r) => [r.start, r.segments, r.extra?.dual ? [r.extra.dualShared, r.extra.dualStuds, r.extra.from, r.extra.to] : 0])]);
         if (!memo.has(key)) memo.set(key, fdbLayout(v, p, rails, keepOut));
         memos.set(by, memo);
         v.fdb = memo.get(key)!.map((f) => ({ ...f }));
@@ -1347,7 +1349,20 @@ export function switchGeometry(s: Scad, plan: SwitchPlan, extraCuts: Man[] = [])
     if (sq < 0 || sq > routeLength(rt)) return true;
     return Math.abs(Math.abs(routeLat(rt, q)) - G) >= tc.postD / 2 + HEAD_HW + 0.6;
   });
-  const connStuds = () => (connPosts ??= { start: t.endpointPosts().filter((px) => railFree([px, 4]) && claimStud([px, 4], 'start')), ends: plan.endPoses.map((e, k) => t.endpointPosts().filter((px) => { const q = poseToWorld(e, [-px, -4]) as Pt; return railFree(q, k) && claimStud(q, `end${k}`, tc.postD); })) });
+  // (the moving blades' plates, swept over their swing: fdbFootprint; and whether a point is in one or near its edge)
+  let bladePlatesK: Pt[][] | undefined;
+  const bladePlates = () => (bladePlatesK ??= p.mechStyle === 'plates' && plan.sets.some((v) => v.heels) ? fdbFootprint(plan).plates : []);
+  const nearRing = (ring: Pt[], q: Pt, d: number) => {
+    let inside = false;
+    for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+      const [xa, ya] = ring[i], [xb, yb] = ring[j];
+      if ((ya > q[1]) !== (yb > q[1]) && q[0] < xa + ((q[1] - ya) * (xb - xa)) / (yb - ya)) inside = !inside;
+      const dx = xb - xa, dy = yb - ya, l2 = dx * dx + dy * dy || 1, u = Math.max(0, Math.min(1, ((q[0] - xa) * dx + (q[1] - ya) * dy) / l2));
+      if (Math.hypot(xa + u * dx - q[0], ya + u * dy - q[1]) < d) return true;
+    }
+    return inside;
+  };
+  const connStuds = () => (connPosts ??= { start: t.endpointPosts().filter((px) => railFree([px, 4]) && claimStud([px, 4], 'start')), ends: plan.endPoses.map((e, k) => t.endpointPosts().filter((px) => { const q = poseToWorld(e, [-px, -4]) as Pt; return railFree(q, k) && !bladePlates().some((ring) => nearRing(ring, q, TRACK_DEFAULTS.studD / 2 + c + 0.3)) && claimStud(q, `end${k}`, tc.postD); })) });
   const turnoutTies = () => {
     connStuds();
     const railClear = 3.9 + TRACK_DEFAULTS.studD / 2 + 0.3, out: Man[] = [];
@@ -1357,6 +1372,8 @@ export function switchGeometry(s: Scad, plan: SwitchPlan, extraCuts: Man[] = [])
       const xl = span ? span[0] : 0, xr = span ? span[1] : 0;
       if (!sv.some((v) => !v)) continue;
       const postOk = (q: Pt) => {
+        // (not under a moving blade's plate, wherever it swings: a blade made longer by hand (heelOf) reaches over long ties' studs)
+        if (bladePlates().some((ring) => nearRing(ring, q, TRACK_DEFAULTS.studD / 2 + c + 0.3))) return false;
         const lats = routes.map((rt) => routeLat(rt, q));
         return q[0] - TRACK_DEFAULTS.studD / 2 > xl + 0.5 && q[0] + TRACK_DEFAULTS.studD / 2 < xr - 0.5
           && Math.min(...lats.flatMap((l) => [-G, G].map((o) => Math.abs(l - o)))) >= railClear
@@ -1395,7 +1412,7 @@ export function switchGeometry(s: Scad, plan: SwitchPlan, extraCuts: Man[] = [])
         out.push(s.difference(atPose(cube([sleeperLen, sleeperW, PLATE_H], [-sleeperLen / 2, -sleeperW / 2, 0]), ps), [
           ...plan.others(i).map((j) => sweep(sq([sleeperLen + 2, PLATE_H + 10], [-sleeperLen / 2 - 1, -1]), routes[j])),
         ]));
-        for (const k of keep) if (claimStud(poseToWorld(ps, k) as Pt, `tie${i}`)) out.push(atPose(T(t.stud(tc.postD, tc.postH), [k[0], k[1], PLATE_H - 0.2]), ps));
+        for (const k of keep) if (!bladePlates().some((ring) => nearRing(ring, poseToWorld(ps, k) as Pt, TRACK_DEFAULTS.studD / 2 + c + 0.3)) && claimStud(poseToWorld(ps, k) as Pt, `tie${i}`)) out.push(atPose(T(t.stud(tc.postD, tc.postH), [k[0], k[1], PLATE_H - 0.2]), ps));
       }
     });
     return s.union(out);
@@ -1412,7 +1429,7 @@ export function switchGeometry(s: Scad, plan: SwitchPlan, extraCuts: Man[] = [])
     const out: Man[] = [];
     for (const ps of leadTiePoses()) {
       out.push(atPose(cube([sleeperLen, sleeperW, PLATE_H], [-sleeperLen / 2, -sleeperW / 2, 0]), ps));
-      for (const o of offs) for (const dy of [-4, 4]) if (claimStud(poseToWorld(ps, [o, dy]) as Pt, 'lead')) out.push(atPose(T(t.stud(tc.postD, tc.postH), [o, dy, PLATE_H - 0.2]), ps));
+      for (const o of offs) for (const dy of [-4, 4]) if (!bladePlates().some((ring) => nearRing(ring, poseToWorld(ps, [o, dy]) as Pt, TRACK_DEFAULTS.studD / 2 + c + 0.3)) && claimStud(poseToWorld(ps, [o, dy]) as Pt, 'lead')) out.push(atPose(T(t.stud(tc.postD, tc.postH), [o, dy, PLATE_H - 0.2]), ps));
     }
     return s.union(out);
   };
@@ -1619,7 +1636,7 @@ export function switchGeometry(s: Scad, plan: SwitchPlan, extraCuts: Man[] = [])
     const rt = bRt(v, b), o = bO(b), side = bSide(b), fb = fdbBlades(v)[b];
     // (on to where the blade's rail ends at the heel: under all of it)
     // (from just before the toe: the rail's point on plate to its end, nothing of it out over nothing as printed)
-    const n = 24, s0 = v.sToe - 1, s1 = v.sHeel - c;
+    const n = 24, s0 = v.sToe - 1, s1 = heelOf(v, b) - c;
     const edge = (off: number) => Array.from({ length: n + 1 }, (_, k) => railPoint(rt, s0 + ((s1 - s0) * k) / n, o + side * off) as Vec2);
     // (from the blade bar's inner face inward; tapering to the toe)
     // (tapering toward the toe, to full width before the slider's post: its hole in the full plate)
@@ -1674,7 +1691,7 @@ export function switchGeometry(s: Scad, plan: SwitchPlan, extraCuts: Man[] = [])
     const fb = fdbBlades(v)[b], z0 = bedTop + c, z1 = z0 + plateT;
     const rt = bRt(v, b), o = bO(b), oStock = bO(b), sideS = oStock < 0 ? 1 : -1, face = oStock + sideS * (HEAD_HW + c);
     // (prototype blades: tight against the stock rail, tucked under its undercut head, from where the point's wide enough to print)
-    const keep = protoOn ? sweep(protoKeep2d(oStock, sideS, PROTO.fit, z0 - 1, railTop + 1), bOther(v, b), 0, v.sHeel + 5) : undefined;
+    const keep = protoOn ? sweep(protoKeep2d(oStock, sideS, PROTO.fit, z0 - 1, railTop + 1), bOther(v, b), 0, heelOf(v, b) + 5) : undefined;
     // (both the rail and its plate kept off the stock rail it closes on, and clear of the end connector)
     // (with ballast the stock rail's foot flares out above the bed, and the plate is kept off it: there the
     // rail's lower outer corner is bevelled at 45 degrees, from the plate's edge up, so it prints)
@@ -1684,8 +1701,8 @@ export function switchGeometry(s: Scad, plan: SwitchPlan, extraCuts: Man[] = [])
     const flareW = !sprung && z0 < PLATE_H + 2.0 ? rail2d(0).intersect(sq([20, z1 - z0], [-10, z0])).bounds().max[0] - HEAD_HW : 0;
     const bevel = (q: Vec2[]) => s.polygon(sideS > 0 ? q : q.map(([x, y]) => [2 * face - x, y] as Vec2).reverse());
     const offStock = keep ?? sweep(flareW ? bevel([[face + flareW, z0 - 1], [face + flareW, z1], [face, z1 + flareW], [face, z1 + 40], [face + 30, z1 + 40], [face + 30, z0 - 1]])
-      : sq([30, 40], [sideS > 0 ? face : face - 30, z0 - 1]), bOther(v, b), 0, v.sHeel + 5);
-    const bar0 = s.intersection(sweep(sq([2 * HEAD_HW, railTop - z1 + 0.01], [o - HEAD_HW, z1 - 0.01]), rt, protoOn ? protoTip(v, b) : v.sToe, v.sHeel - c), offStock);
+      : sq([30, 40], [sideS > 0 ? face : face - 30, z0 - 1]), bOther(v, b), 0, heelOf(v, b) + 5);
+    const bar0 = s.intersection(sweep(sq([2 * HEAD_HW, railTop - z1 + 0.01], [o - HEAD_HW, z1 - 0.01]), rt, protoOn ? protoTip(v, b) : v.sToe, heelOf(v, b) - c), offStock);
     // (a rail crossing it near the heel: notched for that rail's flanges, closed and open)
     const turns = [0, (b === 0 ? 1 : -1) * swingsOf(v) * fb.ang];
     const bar = notched(bar0, v, b, fb.pivot, turns);
@@ -1695,13 +1712,13 @@ export function switchGeometry(s: Scad, plan: SwitchPlan, extraCuts: Man[] = [])
     // (a straight edge, as far out as the foot reaches over the plate's height: following the foot's shape, its edge would overhang)
     // (prototype blades: tucked under the undercut head as far as the undercut goes; past its end, where the blade has
     // turned away, with ballast kept off the rail as the simple blades' plates are: its foot's flare is above the bed there)
-    const offEdge = (s0: number) => sweep(sq([30, 40], [sideS > 0 ? face + flareW : face - 30 - flareW, z0 - 1]), bOther(v, b), s0, v.sHeel + 5);
+    const offEdge = (s0: number) => sweep(sq([30, 40], [sideS > 0 ? face + flareW : face - 30 - flareW, z0 - 1]), bOther(v, b), s0, heelOf(v, b) + 5);
     // (the keep less the stock rail's side of that edge, past the undercut's end: one cut, no seam where the two meet)
-    const plateOff = protoOn ? (flareW ? s.difference(keep!, [sweep(sq([30, 40], [sideS > 0 ? face + flareW - 30 : face - flareW, z0 - 1]), bOther(v, b), protoPlaneEnd(v, b), v.sHeel + 5)]) : keep!) : offEdge(0);
+    const plateOff = protoOn ? (flareW ? s.difference(keep!, [sweep(sq([30, 40], [sideS > 0 ? face + flareW - 30 : face - flareW, z0 - 1]), bOther(v, b), protoPlaneEnd(v, b), heelOf(v, b) + 5)]) : keep!) : offEdge(0);
     // (and clear of the stock rail's actual shape, foot and all; the prototype's undercut: the keep above. Sprung blades'
     // plate, cut round the foot: its 45-degree shadow up toward the rail too, so the plate's edge doesn't overhang it as printed)
     const stock2d = rail2d(oStock).offset(c, 'Miter', 1000);
-    const stock = protoOn ? s.union([]) : sweep(sprung ? shadow45(stock2d, -sideS, 3) : stock2d, bOther(v, b), 0, v.sHeel + 10);
+    const stock = protoOn ? s.union([]) : sweep(sprung ? shadow45(stock2d, -sideS, 3) : stock2d, bOther(v, b), 0, heelOf(v, b) + 10);
     const plate2d = half?.plate2d ?? fdbPlate2d(v, b);
     let plate = s.difference(s.intersection(s.intersection(T(s.extrude(plate2d, plateT), [0, 0, z0]), plateOff), cube([400, 400, 50], [-200, half?.yFront ?? y0, z0 - 10])), [stock]);
     // (the other blade of a joined pair: its rail on its plain plate, as it lies closed)
@@ -1724,7 +1741,7 @@ export function switchGeometry(s: Scad, plan: SwitchPlan, extraCuts: Man[] = [])
    */
   // (all: every route of the set's, the stock rail's too: for the lip on the bed, which lies under each of them)
   const relief2d = (v: SetV, b: number, all = false): CS => {
-    const o = bO(b), side = bSide(b), n = 32, s0 = Math.max(0, v.sToe - 4), s1 = v.sHeel + 2;
+    const o = bO(b), side = bSide(b), n = 32, s0 = Math.max(0, v.sToe - 4), s1 = heelOf(v, b) + 2;
     const paths = all ? (v.three ? [v.three.S, v.three.L, v.three.R] : [v.ra, v.rb]) : v.three ? [v.three.S, b === 0 ? v.three.R : v.three.L] : [bRt(v, b)];
     return W.CrossSection.union(paths.map((rt) => {
       const edge = (off: number) => Array.from({ length: n + 1 }, (_, k) => railPoint(rt, s0 + ((s1 - s0) * k) / n, o + side * off) as P2);
@@ -1791,7 +1808,7 @@ export function switchGeometry(s: Scad, plan: SwitchPlan, extraCuts: Man[] = [])
   /** Where the blade's top is wide enough to print, from its toe: its point. */
   const protoTip = (v: SetV, b: number) => {
     const rt = bRt(v, b), o = bO(b), sideS = o < 0 ? 1 : -1, st = bOther(v, b);
-    for (let sb = v.sToe; sb < v.sHeel; sb += 0.25) {
+    for (let sb = v.sToe; sb < heelOf(v, b); sb += 0.25) {
       const lat = routeLat(st, railPoint(rt, sb, o));
       if (Math.min(2 * HEAD_HW, sideS * (lat - o) - PROTO.fit) >= PROTO.tipW) return sb;
     }
@@ -1800,8 +1817,8 @@ export function switchGeometry(s: Scad, plan: SwitchPlan, extraCuts: Man[] = [])
   /** How far along the stock rail the undercut runs: until the blade (open or closed) is well clear of it. */
   const protoPlaneEnd = (v: SetV, b: number) => {
     const rt = bRt(v, b), o = bO(b), sideS = o < 0 ? 1 : -1, st = bOther(v, b);
-    for (let sb = v.sToe; sb < v.sHeel; sb += 0.5) if (sideS * (routeLat(st, railPoint(rt, sb, o)) - o) > 2 * HEAD_HW + PROTO.cut + 1) return sOf(st, railPoint(rt, sb, o)) + 1;
-    return v.sHeel;
+    for (let sb = v.sToe; sb < heelOf(v, b); sb += 0.5) if (sideS * (routeLat(st, railPoint(rt, sb, o)) - o) > 2 * HEAD_HW + PROTO.cut + 1) return sOf(st, railPoint(rt, sb, o)) + 1;
+    return heelOf(v, b);
   };
   // The slider goes in from the top: down through the lever's opening in
   // the arm, then (bending a little) along its tunnel under the bed's top,
@@ -2684,7 +2701,7 @@ export function switchGeometry(s: Scad, plan: SwitchPlan, extraCuts: Man[] = [])
    */
   /** What a blade takes out of other track's rails: along it, as wide as it swings; where a rail crosses it near the heel (notches), only the blade's own width, so that rail's gap is short, as at a frog. */
   const bladeCut = (v: SetV, b: number, from = 0): Man => {
-    const rt = bRt(v, b), end = (b === v.fixed ? v.sMate! : v.sHeel) + c, nts = v.notches?.[b] ?? [];
+    const rt = bRt(v, b), end = (b === v.fixed ? v.sMate! : heelOf(v, b)) + c, nts = v.notches?.[b] ?? [];
     if (!nts.length) return sweep(sq([9, 30], [bO(b) - 4.5, -5]), rt, from, end);
     const sN = Math.min(...nts.map((nt) => sOf(rt, nt.at))) - 6, w = HEAD_HW + c + 0.3;
     return s.union([sweep(sq([9, 30], [bO(b) - 4.5, -5]), rt, from, sN), sweep(sq([2 * w, 30], [bO(b) - w, -5]), rt, sN, end)]);

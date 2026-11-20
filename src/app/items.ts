@@ -34,7 +34,7 @@ export type Item =
   /** a rail edit of a track: a gap, a stretch of guard rails or a check rail added by hand, by its place in its list */
   | { kind: 'rail'; route: number; what: RailWhat; k: number }
   /** the trackwork the app works out, by its key in `Design.trackwork` (expert): points, a lever and its throw bar, a check rail, a flangeway cut (a frog) */
-  | { kind: 'tw'; tw: TwKind; key: string }
+  | { kind: 'tw'; tw: TwKind; key: string; /** (stage 5, points) one of the set's two blades: 0 (its part '-a'), 1 ('-b') */ blade?: 0 | 1 }
   /** (stage 3) one running rail of a track: piece k of the rail on `side` (what's left of it between stretches taken out); out: the k-th stretch of it taken out */
   | { kind: 'run'; route: number; side: RailSide; k: number; out?: true }
   /** (stage 4) a rail or a sleeper laid by hand, by its id (Design.expert.free) */
@@ -251,7 +251,7 @@ export function itemLabel(d: Design, item: Item, js: readonly Joint[] = []): str
     case 'stretch': { const st = d.routes[item.route]?.stretches?.[item.k]; return st ? `Stretch ${item.k + 1} of ${nameOf(d, item.route)}, ${st.from} to ${st.to} studs` : undefined; }
     case 'sleeper': { const r = d.routes[item.route]; if (!r) return undefined; const e = r.sleeperEdits?.[sleeperEditAt(r, item)], txt = e ? sleeperEditText(e) : ''; return `Sleeper of ${nameOf(d, item.route)}, ${+item.at.toFixed(2)} studs from its start${txt ? `: ${txt}` : ''}`; }
     case 'rail': { const e = railEditAt(d.routes[item.route]?.railEdits, item.what, item.k); return e ? `${railEditText(e, item.what)}, on ${nameOf(d, item.route)}` : undefined; }
-    case 'tw': return TW_NAMES[item.tw];
+    case 'tw': return item.blade !== undefined ? `Blade ${item.blade === 0 ? 'a' : 'b'} of the points` : TW_NAMES[item.tw];
     case 'free': { const f = d.expert?.free?.find((q) => q.id === item.id); return f ? freeText(f) : undefined; }
     case 'run': {
       const r = d.routes[item.route];

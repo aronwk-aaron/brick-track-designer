@@ -71,7 +71,7 @@ export interface Overlay { grooves: [number, number][][]; checkRails: [number, n
   /** (expert) where tracks run over each other (mm), which two, and whether the pair is accepted (accept.ts) */ over?: { at: [number, number]; routes: [string, string]; ok: boolean }[];
   /** what's wrong, and where (mm): ringed in red */ issues?: { at: [number, number]; r: number; text: string; /** r is the size of the thing itself (a part too big for the bed): ringed whole; else the ring is kept small, on the spot */ area?: boolean }[] }
 /** A trackwork item on the plan (mm); a lever ('throw') has its points' frame and settings, to drag it. */
-export interface OverlayItem { kind: string; key: string; at: [number, number]; pts: [number, number][]; dir?: [number, number];
+export interface OverlayItem { kind: string; key: string; at: [number, number]; pts: [number, number][]; dir?: [number, number]; /** (points) each blade's line (mm), which is fixed, both on one plate */ blades?: [number, number][][]; fixed?: number; joined?: boolean;
   /** points: taken out (off), made by hand (forced), or a near miss where they could be forced (cand) */
   off?: boolean; forced?: boolean; cand?: { ok: boolean; why: string }; routes?: string[]; /** (points) a double slip's other set at the same end */ mate?: string;
   lever?: { frame: [number, number, number]; side: number; stockX: number; edge: number; minD: number; pivotY: number; maxTine: number; leverOffset: number; springLength: number; blade?: 'left' | 'right' } }
@@ -161,7 +161,7 @@ interface MultiOrig { cuts: { route: number; at: number }[]; was: Map<number, nu
 const UNCUT_GREY = '#8a8f98';
 export const UNCUT_NOTE = 'Not cut: Cut into print parts is No (Settings)';
 /** What a press on the plan takes hold of (TrackCanvas hitTest). */
-type PlanHit = { kind: 'handle'; handle: Handle } | { kind: 'lever'; it: OverlayItem } | { kind: 'tw'; it: OverlayItem } | { kind: 'mark'; mark: NonNullable<ReturnType<TrackCanvas['itemAt']>> }
+type PlanHit = { kind: 'handle'; handle: Handle } | { kind: 'lever'; it: OverlayItem } | { kind: 'tw'; it: OverlayItem } | { kind: 'blade'; key: string; blade: 0 | 1; d: number; heel: boolean } | { kind: 'mark'; mark: NonNullable<ReturnType<TrackCanvas['itemAt']>> }
   | { kind: 'end'; route: number; end: 'start' | 'end' } | { kind: 'item'; hit: Hit } | { kind: 'table'; table: number } | { kind: 'route'; route: number };
 const norm180 = (a: number) => ((((a + 180) % 360) + 360) % 360) - 180;
 
@@ -427,7 +427,7 @@ export class TrackCanvas {
     this.placing = { tpl, turn: 0, mirror: false, onto, theirs: openEnds(this.host.design().routes), moved: false, session: new SnapSession() };
     this.draw();
   }
-  private letGoSome() { this.freeArmed = undefined; this.freeDrag = undefined; this.splitArmed = false; this.cutArmed = false; this.stretchArmed = false; this.sleeperArmed = false; this.sleeperDrag = undefined; this.railDrag = undefined; this.stretchNew = undefined; this.stretchDrag = undefined; this.pathDraw = undefined; this.cutDrag = undefined; this.multiDrag = undefined; this.meas = {}; this.active = undefined; }
+  private letGoSome() { this.heelDrag = undefined; this.freeArmed = undefined; this.freeDrag = undefined; this.splitArmed = false; this.cutArmed = false; this.stretchArmed = false; this.sleeperArmed = false; this.sleeperDrag = undefined; this.railDrag = undefined; this.stretchNew = undefined; this.stretchDrag = undefined; this.pathDraw = undefined; this.cutDrag = undefined; this.multiDrag = undefined; this.meas = {}; this.active = undefined; }
   /** Where the template being placed goes now (final: the click that puts it down, which snaps whatever the pointer's speed). */
   private placedNow(final = false): Placed | undefined {
     const p = this.placing;
@@ -638,6 +638,9 @@ export class TrackCanvas {
       if (!body || body.it === mark.it || Math.hypot(at[0] / MM - w[0], at[1] / MM - w[1]) <= body.d) return { kind: 'mark', mark };
     }
     if (body) return { kind: 'tw', it: body.it };
+    // (stage 5: one blade of points, along it; its heel end, selected, to drag it longer)
+    const bl = this.expert && this.mode === 'select' ? this.bladeAt(w) : undefined;
+    if (bl) return { kind: 'blade', ...bl };
     const select = this.mode === 'select', hits = select ? this.itemHits(w) : [];
     if (hits[0] && takesFirst(hits[0])) return { kind: 'item', hit: hits[0] };
     // (the track near the point, looked for once as far as a click picks a track: with none that near, there's no end nearer still)
@@ -821,6 +824,7 @@ export class TrackCanvas {
       this.say(sc.out ? `The ${sc.side} rail is back there · Undo takes it out again` : `That piece of the ${sc.side} rail is taken out · Undo puts it back`);
     } else if (sc.kind === 'tw') {
       // (the app's trackwork: points taken out (both tracks' rails run through), a check rail taken out; a lever or a frog can't be)
+      if (sc.tw === 'points' && sc.blade !== undefined) { this.say('A blade goes with its points: take the points out on their own card, or make this blade fixed'); return; }
       if (sc.tw === 'points') { if (this.pointsState(sc.key).state !== 'built') return; this.togglePoints(sc.key); this.say('Points taken out · Built on its card puts them back'); this.host.item?.(); return this.draw(); }
       if (sc.tw === 'check') { const g = ((d.trackwork ??= {}).check ??= {}); g[sc.key] = { ...g[sc.key], off: true }; this.host.changed(true); this.host.item?.(); this.say('Check rail taken out · Reset on its card puts it back'); return this.draw(); }
       this.say(sc.tw === 'throw' ? 'A lever goes with its points: take the points out to have none' : 'A frog is where two rails cross: it can be open or the rail run through, not taken out'); return;
@@ -999,6 +1003,32 @@ export class TrackCanvas {
     }
     return best && { it: best, d: r };
   }
+  /** (expert, stage 5) The blade of points nearest a point (studs), within reach: its set's key, which blade, how far; part 'heel': at its heel end, to drag it longer. */
+  bladeAt(w: [number, number]): { key: string; blade: 0 | 1; d: number; heel: boolean } | undefined {
+    if (!this.picks('mark') || this.hidden.has('points')) return undefined;
+    const r = this.tapAt('mark').near, sel = this.selItemNow;
+    let best: { key: string; blade: 0 | 1; d: number; heel: boolean } | undefined;
+    for (const it of this.overlay?.items ?? []) for (const [b, line] of (it.kind === 'points' ? it.blades ?? [] : []).entries()) {
+      const pts = line.map((q) => [q[0] / MM, q[1] / MM] as [number, number]), end = pts[pts.length - 1];
+      const mine = sel?.kind === 'tw' && sel.key === it.key && sel.blade === b;
+      if (mine && Math.hypot(end[0] - w[0], end[1] - w[1]) < this.tapAt('mark').point) return { key: it.key, blade: b as 0 | 1, d: 0, heel: true };
+      for (let k = 1; k < pts.length; k++) {
+        const a = pts[k - 1], c = pts[k], dx = c[0] - a[0], dy = c[1] - a[1], l2 = dx * dx + dy * dy || 1, u = Math.max(0, Math.min(1, ((w[0] - a[0]) * dx + (w[1] - a[1]) * dy) / l2));
+        const dd = Math.hypot(a[0] + u * dx - w[0], a[1] + u * dy - w[1]);
+        if (dd < r && (!best || dd < best.d)) best = { key: it.key, blade: b as 0 | 1, d: dd, heel: false };
+      }
+    }
+    return best;
+  }
+  /** (stage 5) One blade of points made longer than worked out, studs (0 to 8; undefined or 0: as worked out): Trackwork.points bladeHeel, mm. */
+  setBladeHeel(key: string, b: 0 | 1, studs: number | undefined) {
+    const d = this.host.design(), g = ((d.trackwork ??= {}).points ??= {}), e = { ...g[key] }, v = Math.max(0, Math.min(8, Math.round((studs ?? 0) * 4) / 4));
+    const bh: [number, number] = [...(e.bladeHeel ?? [0, 0])] as [number, number]; bh[b] = v * MM;
+    if (bh[0] > 0 || bh[1] > 0) e.bladeHeel = bh; else delete e.bladeHeel;
+    if (Object.keys(e).length) g[key] = e; else delete g[key];
+  }
+  /** (stage 5) A blade's heel being dragged: its set, the blade, where the heel was and the way the blade runs there, and how much longer it was (studs). */
+  private heelDrag: { key: string; blade: 0 | 1; at: [number, number]; dir: [number, number]; was: number; moved: boolean } | undefined;
   /** The lever under a point (studs), if any. */
   private leverAt(w: [number, number]) {
     const r = Math.max(1.5, (this.fingers() && this.pick === 'mark' ? TAP_PX.finger : 12) / this.scale);
@@ -1538,6 +1568,18 @@ export class TrackCanvas {
     if (hit?.kind === 'lever') { const it = hit.it; this.leverDrag = { it, moved: false, off: [it.at[0] / MM - w[0], it.at[1] / MM - w[1]] }; return; }  // (held where it was grabbed)
     if (hit?.kind === 'mark') { this.itemDrag = { ...hit.mark, sx: e.clientX, sy: e.clientY }; return; }
     if (hit?.kind === 'tw' && isTw(hit.it.kind)) { this.selectItem({ kind: 'tw', tw: hit.it.kind, key: hit.it.key }); return; }
+    if (hit?.kind === 'blade') {
+      this.selectItem({ kind: 'tw', tw: 'points', key: hit.key, blade: hit.blade });
+      if (hit.heel) {
+        const it = this.overlay?.items?.find((q) => q.kind === 'points' && q.key === hit.key), line = it?.blades?.[hit.blade];
+        if (line && line.length > 1) {
+          const a = line[line.length - 2], c = line[line.length - 1], l = Math.hypot(c[0] - a[0], c[1] - a[1]) || 1;
+          const was = (this.host.design().trackwork?.points?.[hit.key]?.bladeHeel?.[hit.blade] ?? 0) / MM;
+          this.heelDrag = { key: hit.key, blade: hit.blade, at: [c[0] / MM, c[1] / MM], dir: [(c[0] - a[0]) / l, (c[1] - a[1]) / l], was, moved: false };
+        }
+      }
+      return;
+    }
     // Pressing on a track's end (when not drawing): drag it to reshape the
     // track, or (Draw mode, no drag) carry the track on from there.
     if (hit?.kind === 'end') {
@@ -1687,6 +1729,12 @@ export class TrackCanvas {
     if (this.multiDrag) { this.mouse = this.evWorld(e); this.dragMulti(this.mouse); return this.drawSoon(); }
     if (this.stretchDrag) { this.mouse = this.evWorld(e); this.dragStretch(this.mouse); return this.drawSoon(); }
     if (this.sleeperDrag) { this.mouse = this.evWorld(e); this.dragSleeper(this.mouse); return this.drawSoon(); }
+    if (this.heelDrag) {
+      const hd = this.heelDrag, p = this.evWorld(e); this.mouse = p;
+      const along = (p[0] - hd.at[0]) * hd.dir[0] + (p[1] - hd.at[1]) * hd.dir[1];
+      this.setBladeHeel(hd.key, hd.blade, hd.was + along); hd.moved = true;
+      this.host.changed(false); this.host.item?.(); return this.drawSoon();
+    }
     if (this.freeDrag) { this.mouse = this.evWorld(e); this.dragFree(this.mouse); return this.drawSoon(); }
     if (this.railDrag) { this.mouse = this.evWorld(e); this.dragRail(this.mouse); return this.drawSoon(); }
     if (this.stretchNew) { const sn = this.stretchNew, rr = this.host.design().routes[sn.route]; this.mouse = this.evWorld(e); if (rr) sn.s1 = alongBeyond(rr, this.mouse); return this.drawSoon(); }
@@ -1801,6 +1849,7 @@ export class TrackCanvas {
     }
     if (this.stretchDrag) { const moved = this.stretchDrag.moved; this.stretchDrag = undefined; if (moved) this.host.changed(true); return this.draw(); }
     if (this.sleeperDrag) { const moved = this.sleeperDrag.moved; this.sleeperDrag = undefined; if (moved) this.host.changed(true); return this.draw(); }
+    if (this.heelDrag) { const hd = this.heelDrag; this.heelDrag = undefined; if (hd.moved) this.host.changed(true); this.host.item?.(); return this.draw(); }
     if (this.freeDrag) {
       const fd = this.freeDrag; this.freeDrag = undefined;
       // (a rail laid by a tap, not dragged: 8 studs up the plan from where it was tapped, as put down at the press)
@@ -2083,6 +2132,7 @@ export class TrackCanvas {
       this.host.item?.();
       return this.draw();
     }
+    if (e.key === 'Escape' && this.heelDrag) { const hd = this.heelDrag; this.heelDrag = undefined; this.setBladeHeel(hd.key, hd.blade, hd.was); this.host.changed(true); return this.draw(); }
     if (e.key === 'Escape' && this.freeDrag) {
       const fd = this.freeDrag, d = this.host.design(), list = d.expert?.free ?? []; this.freeDrag = undefined;
       const k = list.findIndex((f) => f.id === fd.id);
@@ -2265,6 +2315,8 @@ export class TrackCanvas {
     if (si?.kind === 'rail') return `${si.what === 'gap' ? 'Rail gap' : si.what === 'guard' ? 'Guard rails' : 'Check rail'} selected · drag it along the track, or press an arrow key (a stud; Shift: eight) · Delete takes it out · its side and size are on the track's card, Rails`;
     if (this.freeArmed) return this.freeArmed === 'rail' ? 'Press where the rail starts and drag to where it ends (a tap lays one 8 studs long) · Esc cancels' : 'Tap where the sleeper goes: across the track there, if it\'s on one · Esc cancels';
     if (this.freeDrag?.why) return this.freeDrag.why;
+    if (this.heelDrag) return 'Making the blade longer: let go to keep it · Esc puts it back';
+    if (si?.kind === 'tw' && si.blade !== undefined) return 'One blade of the points · drag its round end along to make it longer · its card has whether it moves';
     if (si?.kind === 'free') return 'Laid by hand · drag it to move it, or a rail\'s round end to make it longer, shorter or turned · Delete takes it away · its card has its numbers';
     if (si?.kind === 'run') return si.out ? 'A stretch of rail taken out · its card types where, or puts the rail back' : 'One rail selected · drag a round end to make it longer or shorter, or the rail to slide it, or press an arrow key · Delete takes it out · its card cuts a stretch out';
     if (si?.kind === 'stretch') return 'Stretch selected · drag it or one of its ends along the track, or press an arrow key (a stud; Shift: eight) · Delete removes it · its settings are in the track\'s card';
@@ -2709,6 +2761,19 @@ export class TrackCanvas {
       }
       // the trackwork item picked out in the Trackwork panel
       // (and the one selected on the plan, ringed the same, in the accent's place)
+      // (stage 5: with Points picked, each set's blades drawn thin, to be tapped; the selected blade orange, a round handle at its heel)
+      if (this.expert && this.pick === 'mark' && this.mode === 'select') for (const it of this.overlay.items ?? []) for (const b0 of it.kind === 'points' ? it.blades ?? [] : []) line(w(b0), ink.mark, 1, [3, 3]);
+      {
+        const sb = this.selItemNow?.kind === 'tw' && this.selItemNow.blade !== undefined ? this.selItemNow : undefined, it = sb && this.overlay.items?.find((q) => q.kind === 'points' && q.key === sb.key), bl = sb && it?.blades?.[sb.blade!];
+        if (bl) {
+          const edit = getComputedStyle(this.el).getPropertyValue('--c-edit').trim() || '#e8892b';
+          line(w(bl), edit, Math.max(4, railW * 2.5));
+          const hd = this.heelDrag, end = bl[bl.length - 1], extra = hd ? ((this.host.design().trackwork?.points?.[sb.key]?.bladeHeel?.[sb.blade!] ?? 0) / MM - hd.was) : 0;
+          const [hx, hy] = this.toScreen(end[0] / MM + (hd ? hd.dir[0] * extra : 0), end[1] / MM + (hd ? hd.dir[1] * extra : 0));
+          c.beginPath(); c.arc(hx, hy, 7 * z, 0, 2 * Math.PI); c.fillStyle = '#fff'; c.fill(); c.strokeStyle = edit; c.lineWidth = 2.5; c.stroke();
+          this.el.dataset.blade = JSON.stringify({ key: sb.key, blade: sb.blade, heel: [Math.round(hx), Math.round(hy)] });
+        } else delete this.el.dataset.blade;
+      }
       const selTw = this.selItemNow?.kind === 'tw' ? this.selItemNow : undefined;
       const hi = this.overlay.items?.find((it) => it.key === this.highlight) ?? (selTw && this.overlay.items?.find((it) => it.kind === selTw.tw && it.key === selTw.key));
       if (hi) {

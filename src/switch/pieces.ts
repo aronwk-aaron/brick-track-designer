@@ -87,7 +87,7 @@ export function gridLever(P: Pose, v0: { leverX: number; throwY: number; leverY?
 }
 
 /** A points set's lever, as moved by hand: which side, how far out, and (by its tines' length) how far along. */
-export interface ThrowEdit { side?: 'left' | 'right'; leverOffset?: number; springLength?: number; /** (the points' own hand edits, Trackwork.points single and heel: a single-point switch's moving blade; the blades lengthened, mm) */ single?: 'curved' | 'straight'; heel?: number;
+export interface ThrowEdit { side?: 'left' | 'right'; leverOffset?: number; springLength?: number; /** (the points' own hand edits, Trackwork.points single and heel: a single-point switch's moving blade; the blades lengthened, mm) */ single?: 'curved' | 'straight'; heel?: number; /** (stage 5) each blade lengthened on its own, mm */ bladeHeel?: [number, number];
   /** (expert, stage 5c) the throw bar moved along, whole studs (+: towards the heel); this set's own blade style and moving blades */
   throwShift?: number; /** (blades on top) the lever in a housing at a corner, studs along the points (Trackwork.throw leverAt) */ leverAt?: number; bladeStyle?: 'simple' | 'prototype' | 'sprung'; blades?: 1 | 2; /** the lever on the side of its track away from this point (mm, the design's frame), where side isn't set */ awayFrom?: [number, number]; /** (blades on top) thrown by hand, a nail switch: no lever (a double slip's diagonal's inner set at an X centre, as the reference's) */ nail?: boolean; /** (expert) this set's own mechanism */ mech?: 'tines' | 'plates'; each?: { left?: { leverOffset?: number }; right?: { leverOffset?: number } } }
 /** A lever's hand edit: the points' own; for one of a three-way's two levers (blade 0 the left one's, 1 the right's) with its own over it (each). */
@@ -187,7 +187,7 @@ export function planPieces(routes: Route[], splits: Split[], p: BaseParams = BAS
         const own = ed?.side ?? routes[kids[Math.min(n, kids.length - 1)].child].throwSide;
         const side = own && own !== 'auto' ? own : p.throwSide;
         if ((side === 'left' || side === 'right') && st[6] === undefined) st[3] = side === 'right' ? 1 : -1;
-        if (ed && (ed.leverOffset !== undefined || ed.springLength !== undefined || ed.single || ed.heel || ed.throwShift || ed.leverAt !== undefined)) st[5] = { ...(ed.leverOffset !== undefined && { leverOffset: ed.leverOffset }), ...(ed.springLength !== undefined && { springLength: ed.springLength }), ...(ed.single && { single: ed.single }), ...(ed.heel && { heelShift: ed.heel }), ...(ed.throwShift && { throwShift: ed.throwShift }), ...(ed.leverAt !== undefined && { leverAt: ed.leverAt * 8 }) };
+        if (ed && (ed.leverOffset !== undefined || ed.springLength !== undefined || ed.single || ed.heel || ed.bladeHeel || ed.throwShift || ed.leverAt !== undefined)) st[5] = { ...(ed.bladeHeel && { bladeHeel: ed.bladeHeel }), ...(ed.leverOffset !== undefined && { leverOffset: ed.leverOffset }), ...(ed.springLength !== undefined && { springLength: ed.springLength }), ...(ed.single && { single: ed.single }), ...(ed.heel && { heelShift: ed.heel }), ...(ed.throwShift && { throwShift: ed.throwShift }), ...(ed.leverAt !== undefined && { leverAt: ed.leverAt * 8 }) };
       });
       const sorted = order.map((k) => frameRoutes[k]);
       // Long enough for the frog and its check rails, and for the ends to be
@@ -218,7 +218,7 @@ export function planPieces(routes: Route[], splits: Split[], p: BaseParams = BAS
           const ed = bladeEdit(throwEdit(setAts[n]), st[6]) ?? {};
           if (ed.leverOffset !== undefined && ed.springLength !== undefined) return;
           const g2 = gridLever(P, built!.plan.sets[n], ed);
-          if (g2.leverOffset !== undefined) { st[5] = { ...g2, ...(ed.single && { single: ed.single }), ...(ed.heel && { heelShift: ed.heel }), ...(ed.throwShift && { throwShift: ed.throwShift }) }; moved = true; }
+          if (g2.leverOffset !== undefined) { st[5] = { ...g2, ...(ed.single && { single: ed.single }), ...(ed.heel && { heelShift: ed.heel }), ...(ed.bladeHeel && { bladeHeel: ed.bladeHeel }), ...(ed.throwShift && { throwShift: ed.throwShift }) }; moved = true; }
         });
         if (moved) built = { ...built, plan: switchPlan(sorted, sets, pg.p) };
       }
