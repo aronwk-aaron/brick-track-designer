@@ -2,7 +2,7 @@
 // landscape and a portrait tablet size with a touch screen (no mouse), everything done with fingers: a template opened from
 // the browser, the plan panned, pinched, a track tapped, double-tapped, held, box-selected, dragged and undone; a part from
 // the palette placed with the touch bar; a track drawn; the menus, the settings, a tip held for, the 3D view turned. The page
-// itself never scrolls or zooms. Any error on the page fails it. SMOKE_MINUTES (default 4) stops it.
+// itself never scrolls or zooms. Any error on the page fails it. SMOKE_MINUTES (default 6) stops it.
 //   pnpm build && npx tsx scripts/touch-smoke.mts      (CHROME: the browser to use; PORT: preview's; SHOTS: a folder for screenshots)
 import { spawn } from 'node:child_process';
 import { existsSync, mkdirSync } from 'node:fs';
@@ -13,7 +13,7 @@ const chrome = process.env.CHROME ?? ['/usr/bin/google-chrome-stable', '/usr/bin
 const preview = spawn('npx', ['vite', 'preview', '--port', port, '--strictPort'], { cwd: root, stdio: 'ignore', detached: true });
 const stopPreview = () => { try { process.kill(-preview.pid!, 'SIGTERM'); } catch { /* (gone already) */ } };
 let at = 'starting';
-const limit = setTimeout(() => { console.error(`::error::the touch smoke test ran past its time and was stopped (at: ${at})`); stopPreview(); process.exit(124); }, Number(process.env.SMOKE_MINUTES ?? 4) * 60_000);
+const limit = setTimeout(() => { console.error(`::error::the touch smoke test ran past its time and was stopped (at: ${at})`); stopPreview(); process.exit(124); }, Number(process.env.SMOKE_MINUTES ?? 6) * 60_000);
 const fails: string[] = [];
 const check = (ok: boolean, what: string) => { console.log(`${ok ? 'ok  ' : 'FAIL'} ${what}`); if (!ok) fails.push(what); };
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
@@ -474,6 +474,49 @@ async function tablet(width: number, height: number, tag: string) {
     check(await outs() === '[]', `[${tag}] Reset the left rail: as the app lays it (${await outs()})`);
     check(/^The right rail/.test(await (async () => { await f.tap(await scr(16, -2.5)); await sleep(300); return page.locator('#sel-count').innerText(); })()), `[${tag}] a tap on the right rail selects that one`);
     await shot('one-rail');
+    await tapOn('#itemcard .idone').catch(() => {});
+    // (stage 4: rails and sleepers laid by hand, by touch: + Rail, a finger drawn from where it starts to where it ends;
+    // dragged along; + Sleeper, a tap; Delete on its card; Undo)
+    at = `${tag}: rails and sleepers laid by hand by touch`;
+    await page.evaluate(() => { localStorage.setItem('btd-design', JSON.stringify({ version: 1, gaugeStuds: 4, routes: [{ name: 'Main', x: 0, y: 0, heading: -90, segs: [{ kind: 'straight', studs: 24 }] }] })); });
+    await page.reload(); await page.waitForSelector('#track'); await tapOn('#mode-select'); await tapOn('#fit'); await sleep(300);
+    const free = () => page.evaluate(() => JSON.stringify((window as unknown as { btdCanvas: { host: { design(): { expert?: { free?: unknown[] } } } } }).btdCanvas.host.design().expert?.free ?? []));
+    await tapOn('#layers button[data-add="rail"]'); await sleep(200);
+    await f.drag(await scr(4, -6), await scr(16, -6), { steps: 10 }); await sleep(300);
+    check(await free() === '[{"id":"f1","kind":"rail","a":[4,-6],"b":[16,-6]}]', `[${tag}] + Rail, a finger drawn from end to end, lays a rail (${await free()})`);
+    check(/^Rail laid by hand/.test(await page.locator('#itemcard > b').innerText().catch(() => '')) && /Made by hand/.test(await page.locator('#itemcard .istatus').innerText()), `[${tag}] and its card opens`);
+    await f.drag(await scr(10, -6), await scr(10, -8.1), { steps: 8 }); await sleep(300);
+    check(await free() === '[{"id":"f1","kind":"rail","a":[4,-8],"b":[16,-8]}]', `[${tag}] dragged, it moves by whole studs (${await free()})`);
+    // (a rail where the selection bar sits once it's selected: pressed through the bar beside its buttons, and dragged)
+    type CW = { btdCanvas: { toWorld(x: number, y: number): [number, number]; toScreen(x: number, y: number): [number, number]; draw(): void; host: { design(): { expert?: { free?: unknown[] } }; changed(r: boolean): void } } };
+    const yu = await (async () => { const bar0 = (await page.locator('#selbar').boundingBox())!; const tb = (await page.locator('#track').boundingBox())!; return page.evaluate(([y, top]) => Math.round((window as unknown as CW).btdCanvas.toWorld(40, y - top)[1]), [bar0.y + bar0.height / 2, tb.y] as [number, number]); })();
+    await page.evaluate((y) => { const c = (window as unknown as CW).btdCanvas, d = c.host.design(); (d.expert ??= {}).free = [...(d.expert.free ?? []), { id: 'f9', kind: 'rail', a: [-8, y], b: [30, y] }]; c.host.changed(true); c.draw(); }, yu);
+    await sleep(300);
+    // (a point of it on the plan that the bar's box is over, but not one of its buttons)
+    const through = () => page.evaluate((yy) => {
+      const c = (window as unknown as CW).btdCanvas, el = document.getElementById('track')!, r = el.getBoundingClientRect(), bar = document.getElementById('selbar')!, bb = bar.getBoundingClientRect();
+      for (let k = 0; k <= 76; k++) { const x = 11 + (k % 2 ? 1 : -1) * Math.ceil(k / 2) * 0.25, [sx, sy] = c.toScreen(x, yy), px = r.left + sx, py = r.top + sy; if (px > bb.left && px < bb.right && py > bb.top && py < bb.bottom && document.elementFromPoint(px, py) === el) return [px, py] as [number, number]; }
+      return undefined;
+    }, yu);
+    let pt = await through();
+    check(!!pt, `[${tag}] a rail lies where the selection bar sits (y ${yu} studs)`);
+    if (pt) {
+      await f.tap(pt); await sleep(300);
+      check(/^Rail laid by hand/.test(await page.locator('#sel-count').innerText()), `[${tag}] a tap on it through the bar, beside its buttons, selects it (${await page.locator('#sel-count').innerText()})`);
+      pt = (await through()) ?? pt;
+      const rail9 = () => page.evaluate(() => JSON.stringify(((window as unknown as CW).btdCanvas.host.design().expert?.free ?? []).find((q) => (q as { id: string }).id === 'f9')));
+      const before = await rail9();
+      await f.drag(pt, [pt[0], pt[1] + 50], { steps: 8 }); await sleep(300);
+      check(await rail9() !== before, `[${tag}] and dragged from there (${await rail9()})`);
+    }
+    await tapOn('#layers button[data-add="sleeper"]'); await sleep(200);
+    await f.tap(await scr(22, -5)); await sleep(300);
+    check(/"kind":"sleeper","at":\[22,-5\]/.test(await free()), `[${tag}] + Sleeper, a tap, lays a sleeper (${await free()})`);
+    await tapOn('#itemcard button.danger'); await sleep(300);
+    check(!/sleeper/.test(await free()), `[${tag}] Delete on its card takes it away (${await free()})`);
+    await tapOn('#undo'); await sleep(300);
+    check(/sleeper/.test(await free()), `[${tag}] and Undo brings it back`);
+    await shot('laid-by-hand');
     await tapOn('#itemcard .idone').catch(() => {});
     await page.evaluate(() => localStorage.setItem('btd-pick', 'all'));
     await shot('several');

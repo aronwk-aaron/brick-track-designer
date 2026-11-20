@@ -228,11 +228,14 @@
     #coords { right: 10px; bottom: 10px; color: var(--muted); font-variant-numeric: tabular-nums; pointer-events: none; }
     #selbar { left: 10px; top: 10px; display: flex; gap: 4px; align-items: center; padding: 4px 6px; z-index: 1; flex-wrap: wrap; max-width: calc(100% - 280px); } /* (clear of the legend, which is about 250px wide open) */
     #selbar[hidden] { display: none; }
+    /* (a press on the bar outside its buttons goes through to the plan: a selected thing under the bar is still pressed and dragged) */
+    #selbar { pointer-events: none; } #selbar > button, #selbar > select, #selbar > input { pointer-events: auto; }
     /* (the layer chips: what a tap on the plan takes, with the expert tools shown; across the top, the legend and the bar below them) */
     #layers { left: 10px; top: 10px; max-width: calc(100% - var(--legend-w, 290px) - 40px); display: flex; gap: 4px; padding: 4px; z-index: 2; overflow-x: auto; scrollbar-width: none; }
     #layers[hidden] { display: none; } #layers::-webkit-scrollbar { display: none; }
     #layers button { flex: none; padding: 0 12px; height: 30px; font-size: 13px; border-radius: 15px; }
     #layers button.on { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+    #layers button.add { margin-left: 6px; border-style: dashed; } #layers button.add + button.add { margin-left: 0; }
     #plan:has(> #layers:not([hidden])) > #selbar { top: 58px; max-width: calc(100% - var(--legend-w, 290px) - 40px); }
     details.rsub.off > summary { cursor: default; list-style: none; } details.rsub.off > summary::-webkit-details-marker { display: none; } .rswitch { margin: 0 6px 0 0; vertical-align: middle; } .rreset { margin: 2px 0 6px; font-size: 12px; }
     #track:focus-visible { outline: 3px solid var(--accent, #2b5fb8); outline-offset: -3px; }

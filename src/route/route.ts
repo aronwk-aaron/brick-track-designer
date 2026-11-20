@@ -81,6 +81,8 @@ export interface RouteHand {
   square?: boolean;
   /** (expert, stage 3) stretches a..b (mm along the drawn route) where one running rail is taken out, down to the bed's top: -1 left, 1 right */
   outs?: { a: number; b: number; side: -1 | 1 }[];
+  /** (stage 4) stretches a..b (mm along the drawn route) a rail or sleeper laid by hand lies over: no joint of the app's there */
+  busy?: { a: number; b: number }[];
 }
 /** (mm) A hand edit this far past a stretch's ends still goes with the stretch (a sleeper is found from its place: the nearest). */
 const HAND_REACH = 48;
@@ -91,10 +93,10 @@ export function subHand(h: RouteHand | undefined, s0: number, s1: number): Route
   const sleepers = h.sleepers?.filter((e) => e.at >= lo && e.at <= hi), shared = h.shared?.filter((e) => e.b >= lo && e.a <= hi);
   // (rails: only what is on this stretch itself)
   const lo0 = Math.min(from, to), hi0 = Math.max(from, to);
-  const gaps = h.gaps?.filter((e) => e.at >= lo0 && e.at <= hi0), checks = h.checks?.filter((e) => e.b > lo0 && e.a < hi0), outs = h.outs?.filter((e) => e.b > lo0 && e.a < hi0);
-  if (!sleepers?.length && !shared?.length && !h.ballast && !gaps?.length && !checks?.length && !outs?.length && !h.square) return undefined;
+  const gaps = h.gaps?.filter((e) => e.at >= lo0 && e.at <= hi0), checks = h.checks?.filter((e) => e.b > lo0 && e.a < hi0), outs = h.outs?.filter((e) => e.b > lo0 && e.a < hi0), busy = h.busy?.filter((e) => e.b > lo0 && e.a < hi0);
+  if (!sleepers?.length && !shared?.length && !h.ballast && !gaps?.length && !checks?.length && !outs?.length && !busy?.length && !h.square) return undefined;
   return { from, to, len: h.len, ...(sleepers?.length && { sleepers }), ...(shared?.length && { shared }), ...(h.ballast && { ballast: h.ballast }),
-    ...(gaps?.length && { gaps }), ...(checks?.length && { checks }), ...(outs?.length && { outs }), ...(h.square && { square: true }) };
+    ...(gaps?.length && { gaps }), ...(checks?.length && { checks }), ...(outs?.length && { outs }), ...(busy?.length && { busy }), ...(h.square && { square: true }) };
 }
 export const reversedHand = (h: RouteHand | undefined): RouteHand | undefined => (h ? { ...h, from: h.to, to: h.from } : undefined);
 /** Does this route run the way it was drawn (its hand edits' sides are its own)? */

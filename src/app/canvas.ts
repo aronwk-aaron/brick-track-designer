@@ -27,6 +27,7 @@ import { reachStuds, SETTLE_MS, SnapSession, SPEED_WINDOW_MS } from './snapfeel'
 import { lockedWhy } from './lock';
 import { type MeasurePoint, measureBetween, measurePoint } from './measure';
 import { applyCarry, type Carry, connectedSet, holds, type Joint, jointNames, joints, LOOP_OPENS_DEFAULT, type LoopOpens, openedBy, planCarry, poseAt, setApart, tidyExpert } from './connections';
+import { type FreeItem, freeProblem, moveFree, nextFreeId, railEndTo, sleeperCorners } from './freeparts';
 import { cleanRailEdits, deleteRailPiece, moveRailEdit, railEditAt, type RailEdits, railPieces, type RailSide, type RailWhat, setRailPiece, slideRailPiece, withRailEdit } from './railedits';
 import { alongBeyond, isTw, TAP_PX, tapReach, type BoxItem, boxable, dragStretchEnd, dragStretchWhole, handTracks, hitItems, type Hit, type Item, itemsInBox, itemsLabel, jointsOf, moveCuts, sleeperEditAt, sleeperEditOf, type Layer, newStretchAt, type OwnItem, type PickId, PICKS, picks, placeAlong, sameItem, takesFirst, withStretch } from './items';
 import type { Stretch } from './stretches';
@@ -426,7 +427,7 @@ export class TrackCanvas {
     this.placing = { tpl, turn: 0, mirror: false, onto, theirs: openEnds(this.host.design().routes), moved: false, session: new SnapSession() };
     this.draw();
   }
-  private letGoSome() { this.splitArmed = false; this.cutArmed = false; this.stretchArmed = false; this.sleeperArmed = false; this.sleeperDrag = undefined; this.railDrag = undefined; this.stretchNew = undefined; this.stretchDrag = undefined; this.pathDraw = undefined; this.cutDrag = undefined; this.multiDrag = undefined; this.meas = {}; this.active = undefined; }
+  private letGoSome() { this.freeArmed = undefined; this.freeDrag = undefined; this.splitArmed = false; this.cutArmed = false; this.stretchArmed = false; this.sleeperArmed = false; this.sleeperDrag = undefined; this.railDrag = undefined; this.stretchNew = undefined; this.stretchDrag = undefined; this.pathDraw = undefined; this.cutDrag = undefined; this.multiDrag = undefined; this.meas = {}; this.active = undefined; }
   /** Where the template being placed goes now (final: the click that puts it down, which snaps whatever the pointer's speed). */
   private placedNow(final = false): Placed | undefined {
     const p = this.placing;
@@ -461,6 +462,12 @@ export class TrackCanvas {
   private sleeperDrag: { route: number; at: number; add?: true; s0: number; orig: SleeperEdit[] | undefined; moved: boolean; why?: string } | undefined;
   /** (expert) Waiting for a click on the selected track, to add a sleeper there. */
   sleeperArmed = false;
+  /** (stage 4) + Rail / + Sleeper: the next press on the plan lays one (a rail: pressed and dragged from end to end) */
+  freeArmed: 'rail' | 'sleeper' | undefined;
+  /** A rail or sleeper laid by hand being dragged: whole, or a rail's end; laying: the rail being drawn out now */
+  private freeDrag: { id: string; part: 'body' | 'from' | 'to'; w0: [number, number]; orig: FreeItem; moved: boolean; why?: string; laying?: boolean } | undefined;
+  /** Arm + Rail or + Sleeper (or let go of it: undefined). */
+  armFree(k: 'rail' | 'sleeper' | undefined) { this.freeArmed = k; this.draw(); }
   /** How track i's sleepers are laid, and whether they go by whole studs (its underside on the baseplate's grid); undefined: it has no separate sleepers (ballast, a solid bed, monorail). */
   sleeperLay(i: number): (SleeperLay & { whole: boolean }) | undefined {
     const d = this.host.design(), r = d.routes[i];
@@ -543,6 +550,17 @@ export class TrackCanvas {
     if (step) rd.moved = true;
     this.host.changed(false); this.host.live?.(rd.route); this.host.item?.();
   }
+  /** A rail or sleeper laid by hand dragged: whole by whole studs (a sleeper by half studs), or a rail's end to the stud nearest the pointer; where it can't be, why. */
+  private dragFree(w: [number, number]) {
+    const fd = this.freeDrag!, list = this.host.design().expert?.free ?? [], k = list.findIndex((f) => f.id === fd.id);
+    if (k < 0) return;
+    let next: FreeItem | undefined;
+    if (fd.part === 'body') { const q = fd.orig.kind === 'sleeper' ? 2 : 1, dx = Math.round((w[0] - fd.w0[0]) * q) / q, dy = Math.round((w[1] - fd.w0[1]) * q) / q; next = moveFree(fd.orig, dx, dy); if (dx || dy) fd.moved = true; }
+    else if (fd.orig.kind === 'rail') { next = railEndTo(fd.orig, fd.part === 'from' ? 'a' : 'b', w); fd.why = next ? undefined : freeProblem({ ...fd.orig, [fd.part === 'from' ? 'a' : 'b']: [Math.round(w[0]), Math.round(w[1])] }); if (next) fd.moved = true; }
+    if (!next) return;
+    list[k] = next;
+    this.host.changed(false); this.host.item?.();
+  }
   /** Add a stretch: the next press on the selected route, dragged along it, lays one from the press to where it's let go (from its card's Bed and underside). */
   stretchArmed = false;
   /** The stretch being dragged out (Add a stretch): its route, and how far along the press was and the pointer is. */
@@ -583,6 +601,7 @@ export class TrackCanvas {
     if (this.picks('stretch')) kinds.push('stretch');
     if (this.picks('sleeper')) kinds.push('sleeper');
     if (this.picks('rail')) kinds.push('rail', 'run');
+    if (this.picks('rail') || this.picks('sleeper')) kinds.push('free');
     // (a joint is under its track's end, which a press takes while tracks are picked: looked for only when they aren't)
     if (this.picks('joint') && !this.picks('track')) kinds.push('joint');
     if (!kinds.length) return [];
@@ -594,7 +613,9 @@ export class TrackCanvas {
       ...(kinds.includes('sleeper') && { sleepersOf: d.routes.map((_, i) => i), layOf: (i: number) => this.sleeperLay(i) }),
       ...(kinds.includes('rail') && { railsOf: d.routes.flatMap((r, i) => (r.railEdits ? [i] : [])) }),
       // (stage 3: every track's running rails, one at a time, while rails are what a tap takes)
-      ...(this.pick === 'rail' && { runsOf: d.routes.map((_, i) => i), railOff: (i: number) => (routeGaugeStuds(d, d.routes[i]) + 1) / 2 }) });
+      ...(this.pick === 'rail' && { runsOf: d.routes.map((_, i) => i), railOff: (i: number) => (routeGaugeStuds(d, d.routes[i]) + 1) / 2 }),
+      // (stage 4: the rails laid by hand with Rails picked, the sleepers with Sleepers)
+      ...(kinds.includes('free') && { freeKinds: [...(this.picks('rail') ? ['rail' as const] : []), ...(this.picks('sleeper') ? ['sleeper' as const] : [])], sleeperW: d.options?.sleeperWidthStuds ?? 2 }) });
   }
   /**
    * What a press at a point of the plan (studs) would take hold of, the first of: a handle of the selected track, a
@@ -654,6 +675,9 @@ export class TrackCanvas {
     } else if (it.kind === 'rail') {
       const rr = d.routes[it.route];
       if (rr.railEdits) this.railDrag = { route: it.route, what: it.what, k: it.k, s0: alongBeyond(rr, w), orig: structuredClone(rr.railEdits), moved: false };
+    } else if (it.kind === 'free') {
+      const f = d.expert?.free?.find((q) => q.id === it.id);
+      if (f) this.freeDrag = { id: it.id, part: h.part === 'from' || h.part === 'to' ? h.part : 'body', w0: w, orig: structuredClone(f), moved: false };
     } else if (it.kind === 'run' && !it.out) {
       // (a running rail's piece: its end, or the whole, dragged along)
       const rr = d.routes[it.route], p = railPieces(cutLength(rr), rr.railEdits, it.side)[it.k];
@@ -785,6 +809,9 @@ export class TrackCanvas {
       const why = this.setSleeper(sc, sc.add ? undefined : { at: sc.at, off: true });
       if (why) { this.say(why); return; }
       if (!sc.add) { this.host.changed(true); this.host.item?.(); this.say('Sleeper taken out · Reset on its card puts it back'); return this.draw(); }
+    } else if (sc.kind === 'free') {
+      // (a rail or sleeper laid by hand: gone)
+      if (d.expert?.free) { d.expert.free = d.expert.free.filter((f) => f.id !== sc.id); tidyExpert(d); }
     } else if (sc.kind === 'run') {
       // (a running rail's piece taken out; a stretch taken out put back)
       const rr = d.routes[sc.route];
@@ -808,6 +835,11 @@ export class TrackCanvas {
     const it = this.selItemNow, d = this.host.design();
     if (!it || it.kind === 'joint') return;
     if (it.kind === 'tw' || (it.kind === 'run' && it.out)) { this.say('Its card has + and − for each of its numbers'); return; }
+    if (it.kind === 'free') {
+      const list = d.expert?.free ?? [], k = list.findIndex((f) => f.id === it.id);
+      if (k < 0) return;
+      list[k] = moveFree(list[k], dx, dy); this.host.changed(true); this.host.item?.(); return this.draw();
+    }
     if (it.kind === 'run') {
       const rr = d.routes[it.route], p = rr && railPieces(cutLength(rr), rr.railEdits, it.side)[it.k];
       if (!rr || !p) return;
@@ -1212,7 +1244,7 @@ export class TrackCanvas {
   /** The buttons for the touch bar now (none with a mouse): what keys do for what's going on. */
   touchTools(): TouchTool[] {
     if (!this.touching && !matchMedia('(pointer: coarse)').matches) return [];
-    const armed = this.splitArmed || this.cutArmed || this.stretchArmed || this.sleeperArmed;
+    const armed = this.splitArmed || this.cutArmed || this.stretchArmed || this.sleeperArmed || !!this.freeArmed;
     const kind = this.placing ? 'place' : this.pathDraw ? 'path' : armed ? 'armed' : this.mode === 'measure' ? 'measure' : this.active ? 'draw' : this.mode === 'select' && this.selection().length && !this.selItemNow ? 'select' : '';
     if (kind !== this.touchKind) { this.touchKind = kind; this.touchAlt = false; this.alt = false; }
     const cancel: TouchTool = { id: 'Escape', label: 'Cancel', title: 'Stop without changing anything (Esc)' };
@@ -1307,7 +1339,8 @@ export class TrackCanvas {
           return;
         }
         // (on empty ground in Select: pan, as the middle button; on track, a lever or points: as the left button)
-        const onSomething = !!(this.handleAt(w) || this.leverAt(w) || this.itemAt(w) || this.nearTrack(w, this.reach(24)) || this.onBand(w) || (this.mode === 'select' && this.itemHits(w).length));
+        // (+ Rail or + Sleeper waiting: the finger lays it, wherever it is)
+        const onSomething = !!(this.freeArmed || this.handleAt(w) || this.leverAt(w) || this.itemAt(w) || this.nearTrack(w, this.reach(24)) || this.onBand(w) || (this.mode === 'select' && this.itemHits(w).length));
         oneButton = this.mode === 'select' && !onSomething ? 1 : 0;
         this.mouse = w;
         const before = this.selection(), itemsBefore = this.selItems().filter(boxable);
@@ -1441,6 +1474,22 @@ export class TrackCanvas {
       const next = [...this.pathDraw, snapToGrid(this.cutGrid(), w)], laid = gridPath(this.cutGrid(), next);
       const why = laid.length > PATH_MAX.pts ? `A cut path has ${PATH_MAX.pts} corners at most: press Enter to end it` : laid.length >= 2 ? this.pathWhy(next) : undefined;
       if (why) this.say(why); else this.pathDraw = next;
+      this.draw(); return;
+    }
+    // (+ Rail: pressed where it starts, dragged out to where it ends (a tap: 8 studs along); + Sleeper: laid where tapped,
+    // across the track there if it's on one)
+    if (this.freeArmed && e.button === 0) {
+      const d = this.host.design(), list = ((d.expert ??= {}).free ??= []), p: [number, number] = [Math.round(w[0]), Math.round(w[1])], id = nextFreeId(list);
+      if (this.freeArmed === 'rail') {
+        const f: FreeItem = { id, kind: 'rail', a: p, b: [p[0], p[1] + 8] };
+        list.push(f); this.selectItem({ kind: 'free', id });
+        this.freeDrag = { id, part: 'to', w0: w, orig: structuredClone(f), moved: false, laying: true };
+      } else {
+        const near = this.nearTrack(w, 6), r = near && d.routes[near.route], hd = r ? placeAlong(r, Math.max(0, alongBeyond(r, w))).heading : 0;
+        const at: [number, number] = [Math.round(w[0] * 2) / 2, Math.round(w[1] * 2) / 2];
+        list.push({ id, kind: 'sleeper', at, heading: Math.round(hd * 100) / 100, len: 8 });
+        this.freeArmed = undefined; this.selectItem({ kind: 'free', id }); this.host.changed(true); this.say('Sleeper laid · drag it, or set it on its card', 5000);
+      }
       this.draw(); return;
     }
     // (Add a sleeper's waiting for a click on the route: one more there, on a half stud (any quarter on a track-lined underside))
@@ -1638,6 +1687,7 @@ export class TrackCanvas {
     if (this.multiDrag) { this.mouse = this.evWorld(e); this.dragMulti(this.mouse); return this.drawSoon(); }
     if (this.stretchDrag) { this.mouse = this.evWorld(e); this.dragStretch(this.mouse); return this.drawSoon(); }
     if (this.sleeperDrag) { this.mouse = this.evWorld(e); this.dragSleeper(this.mouse); return this.drawSoon(); }
+    if (this.freeDrag) { this.mouse = this.evWorld(e); this.dragFree(this.mouse); return this.drawSoon(); }
     if (this.railDrag) { this.mouse = this.evWorld(e); this.dragRail(this.mouse); return this.drawSoon(); }
     if (this.stretchNew) { const sn = this.stretchNew, rr = this.host.design().routes[sn.route]; this.mouse = this.evWorld(e); if (rr) sn.s1 = alongBeyond(rr, this.mouse); return this.drawSoon(); }
     if (this.tableDrag) {
@@ -1751,6 +1801,13 @@ export class TrackCanvas {
     }
     if (this.stretchDrag) { const moved = this.stretchDrag.moved; this.stretchDrag = undefined; if (moved) this.host.changed(true); return this.draw(); }
     if (this.sleeperDrag) { const moved = this.sleeperDrag.moved; this.sleeperDrag = undefined; if (moved) this.host.changed(true); return this.draw(); }
+    if (this.freeDrag) {
+      const fd = this.freeDrag; this.freeDrag = undefined;
+      // (a rail laid by a tap, not dragged: 8 studs up the plan from where it was tapped, as put down at the press)
+      if (fd.laying) { this.freeArmed = undefined; this.host.changed(true); this.say('Rail laid · drag it, or a round end, or set it on its card', 5000); }
+      else if (fd.moved) this.host.changed(true);
+      this.host.item?.(); return this.draw();
+    }
     if (this.railDrag) { const moved = this.railDrag.moved; this.railDrag = undefined; if (moved) this.host.changed(true); this.host.item?.(); return this.draw(); }
     if (this.stretchNew) { this.endNewStretch(); return this.draw(); }
     if (this.tableDrag) { const moved = this.tableDrag.moved; this.tableDrag = undefined; if (moved) this.host.changed(true); return this.draw(); }
@@ -2026,6 +2083,13 @@ export class TrackCanvas {
       this.host.item?.();
       return this.draw();
     }
+    if (e.key === 'Escape' && this.freeDrag) {
+      const fd = this.freeDrag, d = this.host.design(), list = d.expert?.free ?? []; this.freeDrag = undefined;
+      const k = list.findIndex((f) => f.id === fd.id);
+      if (k >= 0) { if (fd.laying) { list.splice(k, 1); tidyExpert(d); this.selectItem(undefined); } else list[k] = fd.orig; }
+      this.freeArmed = undefined; this.host.item?.(); return this.draw();
+    }
+    if (e.key === 'Escape' && this.freeArmed) { this.freeArmed = undefined; return this.draw(); }
     if (e.key === 'Escape' && this.railDrag) {
       // (the rail edit put back where it was)
       const rd = this.railDrag, rr = this.host.design().routes[rd.route]; this.railDrag = undefined;
@@ -2199,6 +2263,9 @@ export class TrackCanvas {
     if (si?.kind === 'sleeper') return 'Sleeper selected · drag it along the track, or press an arrow key · Delete takes it out · longer, turned, without studs: on its card';
     if (this.railDrag?.moved || this.railDrag?.why) return this.railDrag.why ?? 'Moving it along its track: let go to put it down · Esc puts it back';
     if (si?.kind === 'rail') return `${si.what === 'gap' ? 'Rail gap' : si.what === 'guard' ? 'Guard rails' : 'Check rail'} selected · drag it along the track, or press an arrow key (a stud; Shift: eight) · Delete takes it out · its side and size are on the track's card, Rails`;
+    if (this.freeArmed) return this.freeArmed === 'rail' ? 'Press where the rail starts and drag to where it ends (a tap lays one 8 studs long) · Esc cancels' : 'Tap where the sleeper goes: across the track there, if it\'s on one · Esc cancels';
+    if (this.freeDrag?.why) return this.freeDrag.why;
+    if (si?.kind === 'free') return 'Laid by hand · drag it to move it, or a rail\'s round end to make it longer, shorter or turned · Delete takes it away · its card has its numbers';
     if (si?.kind === 'run') return si.out ? 'A stretch of rail taken out · its card types where, or puts the rail back' : 'One rail selected · drag a round end to make it longer or shorter, or the rail to slide it, or press an arrow key · Delete takes it out · its card cuts a stretch out';
     if (si?.kind === 'stretch') return 'Stretch selected · drag it or one of its ends along the track, or press an arrow key (a stud; Shift: eight) · Delete removes it · its settings are in the track\'s card';
     if (this.mode === 'measure') return this.meas.b ? 'Click to measure again · Esc clears' : this.meas.a ? 'Click the second point · it snaps to track ends and centre lines · Esc clears' : 'Click the first point to measure from: it snaps to track ends and centre lines · Esc stops';
@@ -2919,6 +2986,26 @@ export class TrackCanvas {
             else if (this.railDrag?.run?.part && this.railDrag.moved && this.mouse) { const [mx, my] = this.toScreen(this.mouse[0], this.mouse[1]); tag(mx, my + 30, `${+p.from.toFixed(2)} to ${+p.to.toFixed(2)} studs`, '#b23c0a'); }
           } else delete this.el.dataset.run;
         } else delete this.el.dataset.run;
+      }
+      // (stage 4: the rails and sleepers laid by hand: a rail as the track's are drawn, a sleeper as a sleeper; the selected
+      // one orange, a rail with a round handle at each end; where those are on the screen, for the smoke tests)
+      {
+        const edit = getComputedStyle(this.el).getPropertyValue('--c-edit').trim() || '#e8892b', sw = d.options?.sleeperWidthStuds ?? 2;
+        for (const f of d.expert?.free ?? []) {
+          const mine = sc?.kind === 'free' && sc.id === f.id;
+          if (f.kind === 'sleeper') {
+            const cs = sleeperCorners(f, sw).map((q) => this.toScreen(q[0], q[1]));
+            c.beginPath(); cs.forEach(([x, y], k) => (k ? c.lineTo(x, y) : c.moveTo(x, y))); c.closePath();
+            c.fillStyle = mine ? 'rgba(232,137,43,0.55)' : 'rgba(150,128,96,0.55)'; c.fill(); c.strokeStyle = mine ? edit : ink.rail; c.lineWidth = mine ? 2.5 : 1; c.stroke();
+          } else line([f.a, f.b], mine ? edit : ink.rail, mine ? Math.max(4, railW * 2.5) : Math.max(1.5, railW));
+        }
+        const sf = sc?.kind === 'free' ? d.expert?.free?.find((f) => f.id === sc.id) : undefined;
+        if (sf?.kind === 'rail') {
+          const ends = [sf.a, sf.b].map((q) => { const [x, y] = this.toScreen(q[0], q[1]); c.beginPath(); c.arc(x, y, 7 * z, 0, 2 * Math.PI); c.fillStyle = '#fff'; c.fill(); c.strokeStyle = edit; c.lineWidth = 2.5; c.stroke(); return [Math.round(x), Math.round(y)]; });
+          this.el.dataset.free = JSON.stringify({ id: sf.id, ends });
+        } else if (sf) { const [x, y] = this.toScreen(sf.at[0], sf.at[1]); this.el.dataset.free = JSON.stringify({ id: sf.id, ends: [[Math.round(x), Math.round(y)]] }); }
+        else delete this.el.dataset.free;
+        if (this.freeDrag?.why && this.mouse) { const [mx, my] = this.toScreen(this.mouse[0], this.mouse[1]); tag(mx, my + 30, this.freeDrag.why, '#e0452b'); }
       }
       // (several selected: each cut across a track ringed; how many, and where the first is on the screen, for the browser smoke tests)
       if (this.selAlso.length) {

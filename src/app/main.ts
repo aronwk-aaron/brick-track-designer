@@ -30,6 +30,7 @@ import { designOptions, hasPartOwn, ignoredOwn, inForce, liveOwn, partGroups, TO
 import { BED_KEYS, isRouteKey, MORE_KEYS, OWN_CHECKS, OWN_LABELS, OWN_RANGES, OWN_SCALE, OWN_TEXT_MAX, OWN_TEXTS, OWN_UNSET, PART_KEYS, type RouteKey } from './routeown';
 import { accepted, pruneAccept, renameAccept, setAccept } from './accept';
 import { curvedAt, followShared, followSleeperEdits, pruneShared, renameShared, setShared, sharedOf, type SleeperEdit, sleeperEditText, SLEEPER_LONG, SLEEPER_MOVE, SPAN_MAX } from './sleeperedits';
+import { type FreeItem, freeProblem, RAIL_MAX, RAIL_MIN, SLEEPER_LEN } from './freeparts';
 import { cleanRailEdits, cutOutOfPiece, type PiecePut, railPieces, resetRailSide, setRailPiece, FLANGEWAY_MIN, followRailEdits, GAP_DEF, GAP_MAX, GAP_MIN, GAP_RADIUS_MIN, GUARD_GAP_MAX, GUARD_GAP_MIN, moveRailEdit, RAIL_RUN_MIN, railEditAt, type RailEdits, type RailGap, railProblem, type RailSide, withRailEdit } from './railedits';
 import { boxable, byHandNote, type PickId, designByHandNote, EXPERT_SECTIONS, isPick, itemLabel, itemsLabel, jointsOf, jointWhere, PICK_CHIPS, PICKS, sleeperEditAt, sleeperEditOf } from './items';
 import { expandStretches, followStretches, liveStretches, lostStretches, type Stretch, STRETCH_KEYS, STRETCH_MIN, stretchProblem } from './stretches';
@@ -654,6 +655,30 @@ function renderItemCard() {
   } else if (it.kind === 'sleeper') {
     sleeperControls(box, it, true);
     row.append(showCard(it.route, 'Sleepers'));
+  } else if (it.kind === 'free') {
+    // (stage 4: a rail or sleeper laid by hand: where it is, to type; Delete)
+    const list = design.expert?.free ?? [], k = list.findIndex((f) => f.id === it.id), f = list[k];
+    if (f) {
+      const set = (next: FreeItem, tag: string) => { const why = freeProblem(next); if (why) { canvas.say(why); soon(drawItemCard); return; } list[k] = next; coalesceNext = `free:${f.id}:${tag}`; changed(true); soon(drawItemCard); };
+      const numIn = (v: number, step: number, label: string, put: (n: number) => void, lo?: number, hi?: number) => {
+        const inp = document.createElement('input'); inp.type = 'number'; inp.step = String(step); inp.value = String(v); inp.setAttribute('aria-label', label);
+        if (lo !== undefined) inp.min = String(lo); if (hi !== undefined) inp.max = String(hi);
+        inp.addEventListener('change', () => { const n = Number(inp.value); if (inp.value.trim() === '' || !Number.isFinite(n)) { inp.value = String(v); return; } put(n); });
+        return inp;
+      };
+      const pair = (a: HTMLInputElement, b: HTMLInputElement) => { const sp = document.createElement('span'); sp.className = 'pair'; sp.append(a, ', ', b); return sp; };
+      if (f.kind === 'rail') {
+        box.append(field('From x, y', pair(numIn(f.a[0], 1, 'Rail from x', (n) => set({ ...f, a: [n, f.a[1]] }, 'ax')), numIn(f.a[1], 1, 'Rail from y', (n) => set({ ...f, a: [f.a[0], n] }, 'ay')))));
+        box.append(field('To x, y', pair(numIn(f.b[0], 1, 'Rail to x', (n) => set({ ...f, b: [n, f.b[1]] }, 'bx')), numIn(f.b[1], 1, 'Rail to y', (n) => set({ ...f, b: [f.b[0], n] }, 'by')))));
+        small(`Studs on the plan. ${RAIL_MIN} to ${RAIL_MAX} studs long. On a track's part it's part of it; what lies off every part prints on its own. Drag it, or a round end, on the plan.`);
+      } else {
+        box.append(field('Middle x, y', pair(numIn(f.at[0], 0.5, 'Sleeper x', (n) => set({ ...f, at: [n, f.at[1]] }, 'x')), numIn(f.at[1], 0.5, 'Sleeper y', (n) => set({ ...f, at: [f.at[0], n] }, 'y')))));
+        box.append(field('Turned, degrees', numIn(f.heading, 22.5, 'Sleeper turned', (n) => set({ ...f, heading: n }, 'h'))));
+        box.append(field('Long, studs', numIn(f.len, 1, 'Sleeper length', (n) => set({ ...f, len: n }, 'len'), SLEEPER_LEN[0], SLEEPER_LEN[1])));
+        small(`Studs on the plan. ${SLEEPER_LEN[0]} to ${SLEEPER_LEN[1]} studs long, the design's sleeper width (default 2). On a track's part it's part of it; off every part it prints on its own.`);
+      }
+      row.append(del);
+    }
   } else if (it.kind === 'run') {
     // (stage 3: one running rail: a piece of it, its ends to type, cut a stretch out of it, delete it; or a stretch of it
     // taken out, to type where, or put the rail back; and the whole rail as the app lays it again)
@@ -721,6 +746,7 @@ function renderItemCard() {
   // (what it is to the app: made by hand, nothing automatic to go back to; a sleeper the app lays, edited or not; a joint)
   const status = it.kind === 'sleeper' ? (it.add ? 'Added by hand: Remove takes it away again.' : sleeperEditAt(design.routes[it.route], it) >= 0 ? 'Edited by hand: Reset puts it back as the app lays it.' : 'Laid by the app: change anything to make it yours.')
     : it.kind === 'joint' ? 'Worked out from where the tracks meet.'
+    : it.kind === 'free' ? 'Made by hand: Delete takes it away (Undo brings it back).'
     : it.kind === 'run' ? ((design.routes[it.route]?.railEdits?.out ?? []).some((q) => q.side === it.side) ? (it.out ? `Taken out by hand: Put the rail back, or Reset the ${it.side} rail.` : `Edited by hand: Reset the ${it.side} rail gives it back to the app.`) : 'Laid by the app: change anything to make it yours.')
     : it.kind === 'tw' ? (isEdit((design.trackwork?.[it.tw] as Record<string, unknown> | undefined)?.[it.key]) ? 'Edited by hand: Reset this puts it back as the app works it out.' : 'Worked out by the app: change anything to make it yours.')
     : 'Made by hand: Delete takes it away (Undo brings it back).';
@@ -2358,6 +2384,13 @@ $('legend-fold').addEventListener('click', () => foldLegend(!legendEl.classList.
   for (const p of PICKS) {
     const b = document.createElement('button'); b.type = 'button'; b.dataset.pick = p.id; b.textContent = PICK_CHIPS[p.id]; b.title = p.tip;
     b.addEventListener('click', () => { if (canvas.mode !== 'select') $('mode-select').click(); setPick(p.id); });
+    chips.append(b);
+  }
+  // (stage 4: + Rail and + Sleeper beside them: the next press on the plan lays one)
+  for (const [k, label, pickTo] of [['rail', '+ Rail', 'rail'], ['sleeper', '+ Sleeper', 'sleeper']] as const) {
+    const b = document.createElement('button'); b.type = 'button'; b.className = 'add'; b.dataset.add = k; b.textContent = label;
+    b.title = k === 'rail' ? 'Lay a rail by hand: press where it starts and drag to where it ends (a tap lays one 8 studs long). On a track it joins its part; off every track it prints on its own.' : 'Lay a sleeper by hand: tap where it goes (across the track there, if it\'s on one). On a track it joins its part; off every track it prints on its own.';
+    b.addEventListener('click', () => { if (canvas.mode !== 'select') $('mode-select').click(); setPick(pickTo); canvas.armFree(canvas.freeArmed === k ? undefined : k); });
     chips.append(b);
   }
   const setPick = (v: PickId) => {

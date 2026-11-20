@@ -51,20 +51,23 @@ export function planSections(routes: Route[], splits: Split[], half: number, roo
   const halves = routes.map((rt) => (rt.gauge !== undefined && gauge0 !== undefined ? half + (rt.gauge - gauge0) / 2 : half));
   /** where a table seam crosses the track: cut there ('cut'), or not, through points or a crossing ('blocked'); 'split': cut, but between its pieces' joints (a bought piece printed in two) */
   const seams: { at: [number, number]; kind: 'blocked' | 'split' }[] = [];
-  const blocked: { route: number; s: number; why: 'points' | 'beside' }[] = [];
+  const blocked: { route: number; s: number; why: 'points' | 'beside' | 'laid' }[] = [];
   const boxes = routes.map((rt, i) => routesBox([rt], halves[i] + 16, 8));
   const inBox = (j: number, q: [number, number]) => q[0] >= boxes[j][0] && q[0] <= boxes[j][2] && q[1] >= boxes[j][1] && q[1] <= boxes[j][3];
   // (track on a grade: route i at s and route j where it's level with q pass one over the other, GRADE_APART or more apart in height)
   const graded = routes.some((rt) => !!rt.grade);
   const over = (i: number, s: number, j: number, q: [number, number]) => graded && Math.abs(heightAt(routes[i], s) - heightAt(routes[j], routeSOf(routes[j], q))) >= GRADE_APART;
   // the points' stretches (and a connector's length past them), where no cut goes
-  const busy = routes.map(() => [] as [number, number][]);
+  const busy = routes.map(() => [] as [number, number][]), laid = routes.map(() => [] as [number, number][]);
   for (const sp of splits) sp.routes.forEach((ri, k) => busy[ri].push([sp.spans[k][0] - 24, sp.spans[k][1] + 24]));
   // (expert: check rails added by hand: no joint of the app's along one, nor within 2 studs of its ends, where the end
   // connector's row of studs would stand beside it)
   routes.forEach((rt, i) => {
     const h = rt.hand;
     for (const c of h?.checks ?? []) { const a = handS(h!, c.a), b = handS(h!, c.b); busy[i].push([Math.min(a, b) - 16, Math.max(a, b) + 16]); }
+    // (expert, stage 4: a rail or sleeper laid by hand over it: no joint under one, whose rail-end tongue and peg would be
+    // made in it: the app's own kept off it, a hand cut there not made and said, never two parts in each other)
+    for (const c of h?.busy ?? []) { const a = handS(h!, c.a), b = handS(h!, c.b); busy[i].push([Math.min(a, b) - 16, Math.max(a, b) + 16]); laid[i].push([Math.min(a, b) - 16, Math.max(a, b) + 16]); }
   });
   // (expert: guard rails along a stretch come to a point at its ends, 8 studs long: no joint of the app's in a point,
   // whose nose would lie over the next piece's end connector)
@@ -257,7 +260,8 @@ export function planSections(routes: Route[], splits: Split[], half: number, roo
     const mine: number[] = [];
     for (const c2 of hd?.cuts ?? []) {
       if (!(c2 > 1 && c2 < L - 1)) continue;
-      if (busy[i].some(([a, b]) => c2 >= a && c2 <= b)) blocked.push({ route: i, s: c2, why: 'points' });
+      if (laid[i].some(([a, b]) => c2 >= a && c2 <= b)) blocked.push({ route: i, s: c2, why: 'laid' });
+      else if (busy[i].some(([a, b]) => c2 >= a && c2 <= b)) blocked.push({ route: i, s: c2, why: 'points' });
       else if (!clear(i, c2) || isHeld(i, c2)) blocked.push({ route: i, s: c2, why: 'beside' });
       else { mine.push(c2); nat.add(c2); seamAt.add(c2); }
     }

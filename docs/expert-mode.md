@@ -878,3 +878,24 @@ Aaron's answers and need build work.
   types where, or Put the rail back. Template (Features): 'Rails taken out one at a time' (also in
   test/union-order.test.ts). Tests: test/railruns.test.ts (pure), test/rail-runs-build.test.ts (no rail where it's
   taken out, the other rail and the bed whole, across a cut between parts, put back byte for byte), the touch smoke.
+- **Stage 4 (made from nothing) is built.** `Design.expert.free: FreeItem[]` (freeparts.ts): a rail laid by hand
+  (`{ id, kind: 'rail', a, b }`, its centre line, studs on the plan, 2 to 200 long) or a sleeper (`{ id, kind:
+  'sleeper', at, heading, len, w? }`), on a track or off one; `cleanFree` in readDesign. Build (build.ts): `freeSolids`
+  (a rail is RAIL_PROFILE swept from a to b, standing on the floor as the track's own rails do; a sleeper the plate's
+  height), and as a part is baked (`withFree`, from `bake` and `add`): its share of each, over its outline, from 2.2 mm
+  up (above the underside's 2 mm hollow, so the anti-studs stay as they are), and what of one lies off every track's band
+  (`trackBands`) and touches this part only, its whole height, standing on the bed (no supports), run 0.3 mm into the
+  part (D4: a rail across a track with its ends past the sleepers is all that track's part). What's left, off every
+  part or touching two tracks' parts, is a part of its own each piece (`freeLeftovers` in buildAll, lying on the bed:
+  `free-f1`, `free-f1-2`). In every part's key (copt.free) only when there are some: designs without are built and keyed
+  as before. Editor: `Item { kind: 'free', id }`, picked with Rails (a rail) or Sleepers (a sleeper); + Rail (press
+  where it starts, drag to where it ends; a tap lays 8 studs) and + Sleeper (a tap; across the track there if it's on
+  one) beside the chips; dragged whole by whole studs (a sleeper by half studs), a rail by its round ends; its card:
+  where it is, Delete. Over a part's studs: those studs taken off whole (findStuds), none stood there after a cut;
+  where it crosses a track's own running rail it gives way to it (4 mm either side), so a joint's rail tongue is the
+  track's alone. On a track that's cut into parts it joins the section before it's cut (sectioned, buildBody), and the
+  app puts no joint within 2 studs of it (RouteHand.busy, sections.ts); a hand cut there isn't made and is said ("a rail
+  or sleeper laid by hand lies across it there"), never two parts in each other. Template (Features): 'Rails and
+  sleepers laid by hand' (in the union-order test). Tests: test/free-pieces.test.ts, test/free-parts-build.test.ts, the
+  touch smoke. And the selection bar lets a press through beside its buttons (pointer-events), so a thing selected
+  under it is still pressed and dragged (the touch smoke does it).

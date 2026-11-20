@@ -4,7 +4,8 @@
 // rest as fixed trackwork. Runs in the worker (and in tests).
 import { Scad, R, T, type CS, type Man } from '../geom/scad';
 import { sweepRoute } from '../geom/sweep';
-import { DEFAULTS as TRACK_DEFAULTS, PLATE_H, STUD, Track } from '../geom/track';
+import { DEFAULTS as TRACK_DEFAULTS, PLATE_H, RAIL_PROFILE, STUD, Track } from '../geom/track';
+import type { FreeItem } from './freeparts';
 import { CROSSING_DEFAULTS, crossingPiece, joinedEnds, ownSleeperSpots, ROW_CLEAR } from '../geom/crossing';
 import { trackSeat } from '../geom/extras';
 import { DUAL_CROSS, dualBuilt, markClear } from '../geom/extrarails';
@@ -542,7 +543,41 @@ function buildUncut(w: Wasm, design: Design, report: (what: string, frac: number
   }
   return warnings.length ? { ...r, info: { ...r.info, warnings: [...r.info.warnings, ...warnings] } } : r;
 }
+/**
+ * (expert, stage 4) What of the rails and sleepers laid by hand lies off every part (in plan, outside all their
+ * outlines): a part of its own each piece of it, lying on the bed as it prints (Aaron's D4: one that touches nothing
+ * prints alone). What lies over a part is that part's already (withFree).
+ */
+function freeLeftovers<R extends { pieces: Piece[]; info?: { volume?: number } }>(w: Wasm, design: Design, r: R): R {
+  const items = design.expert?.free;
+  if (!items?.length || !r?.pieces) return r;
+  const scad = new Scad(w), o = { ...OPTION_DEFAULTS, ...design.options };
+  arena(w, () => {
+    const fs = freeSolids(scad, items, o.sleeperWidthStuds ?? 2), boxOf = (P: Float32Array) => { const lo = [Infinity, Infinity], hi = [-Infinity, -Infinity]; for (let i = 0; i < P.length; i += 3) for (let k = 0; k < 2; k++) { lo[k] = Math.min(lo[k], P[i + k]); hi[k] = Math.max(hi[k], P[i + k]); } return { lo, hi }; };
+    const parts = r.pieces.filter((p) => !p.lego && p.positions.length).map((p) => ({ p, box: boxOf(p.positions) }));
+    for (const f of fs) {
+      const fb = f.whole.boundingBox(), over = parts.filter((q) => q.box.hi[0] > fb.min[0] && q.box.lo[0] < fb.max[0] && q.box.hi[1] > fb.min[1] && q.box.lo[1] < fb.max[1]);
+      const outlines = over.flatMap((q) => {
+        const P = q.p.positions, mesh = new w.Mesh({ numProp: 3, vertProperties: new Float32Array(P), triVerts: new Uint32Array(P.length / 3).map((_, i) => i) });
+        mesh.merge();
+        const m = new w.Manifold(mesh);
+        return m.status() === 'NoError' ? [m.project()] : [];
+      });
+      const rest = outlines.length ? scad.difference(f.whole, [scad.extrude(w.CrossSection.union(outlines), 200).translate([0, 0, -50])]) : f.whole;
+      const bits = rest.decompose().filter((m) => m.volume() > 1);
+      bits.forEach((m, k) => {
+        const lo = m.boundingBox().min[2], local = m.translate([0, 0, -lo]);
+        r.pieces.push({ name: `free-${f.id}${bits.length > 1 ? `-${k + 1}` : ''}`, color: TRACK_COLOR, positions: meshPositions(m.getMesh()), stl: stlBytes(local.getMesh(), true) });
+        if (r.info && typeof r.info.volume === 'number') r.info.volume += m.volume();
+      });
+    }
+  }, () => []);
+  return r;
+}
 function buildAll(w: Wasm, design: Design, report: (what: string, frac: number) => void, early: ((overlay: unknown) => void) | undefined, opts: BuildOpts): ReturnType<typeof buildWhole> {
+  return freeLeftovers(w, design, buildAll0(w, design, report, early, opts));
+}
+function buildAll0(w: Wasm, design: Design, report: (what: string, frac: number) => void, early: ((overlay: unknown) => void) | undefined, opts: BuildOpts): ReturnType<typeof buildWhole> {
   design = upgradeDesign(design);
   if (design.options?.cutParts === 'no') return buildUncut(w, design, report, early, opts);
   // (expert: a stretch of a track with settings of its own is a track of its own for the build (stretches.ts); what the
@@ -1545,6 +1580,13 @@ interface PieceBuild {
   grooveCuts: Man[]; grooveKeeps: Man[]; grooveEdits: Trackwork['groove'];
   /** the ends of rts left on other track by points taken out (droppedInner) */
   dropInner: (rts: Route[], more?: Iterable<string>) => Set<string>;
+  /** (expert, stage 4) the rails and sleepers laid by hand: whole, and as they join a part over it (from FREE_FLOOR up, above its underside's hollow) */
+  free?: { whole: Man; merge: Man }[];
+  /** with them: where every track's sleepers lie, in plan (its band): a bit of one off every band that touches a part is that part's */
+  bands?: CS;
+  /** and where the tracks' own running rails are (each 4 mm either side of its line): what's laid by hand gives way there,
+   * the track's rail being there already (and a cut's rail-end tongue made of it at a joint) */
+  railLines?: CS;
 }
 
 /** A part too big for the bed: ringed where it is. */
@@ -1603,7 +1645,84 @@ export function setSupportNotes(list: typeof supportNotes) { supportNotes = list
 const said = (b: PieceBuild, b2: { says?: string[] }) => { for (const say of b2.says ?? []) b.bedWarnings.add(say); };
 
 /** A part as plain data (its mesh for the view, its STL, its volume, whether it fits the bed), so its solid can be let go. */
-function bake(b: PieceBuild, m: Man): Baked {
+/** (mm) A rail or sleeper laid by hand joins a part from this high up: clear of its underside's hollow (the studs' 2 mm under it), into its plate. */
+const FREE_FLOOR = 2.2;
+/**
+ * (expert, stage 4) The rails and sleepers laid by hand (Design.expert.free), where they are in the design (mm): whole,
+ * as one printed on its own is; and from FREE_FLOOR up, as one joins a part it lies on. A rail stands on the bed's
+ * floor as the track's own do (its foot down to the underside: RAIL_PROFILE); a sleeper is the plate's height.
+ */
+export function freeSolids(scad: Scad, items: readonly FreeItem[], sleeperWStuds: number): { id: string; whole: Man; merge: Man }[] {
+  const above = scad.cube([1e5, 1e5, 100]).translate([-5e4, -5e4, FREE_FLOOR]);
+  return items.map((f) => {
+    let whole: Man;
+    if (f.kind === 'rail') {
+      const ax = f.a[0] * STUD, ay = f.a[1] * STUD, dx = f.b[0] * STUD - ax, dy = f.b[1] * STUD - ay, len = Math.hypot(dx, dy);
+      const cs = scad.polygon(RAIL_PROFILE.map(([x, y]) => [x, y + PLATE_H] as [number, number]));
+      // (swept along +y from 0, then turned to run from a to b)
+      whole = cs.extrude(len).rotate([90, 0, 0]).translate([0, len, 0]).rotate([0, 0, (Math.atan2(dy, dx) * 180) / Math.PI - 90]).translate([ax, ay, 0]);
+    } else {
+      const w = (f.w ?? sleeperWStuds) * STUD, l = f.len * STUD;
+      whole = scad.cube([l, w, PLATE_H], true).translate([0, 0, PLATE_H / 2]).rotate([0, 0, f.heading]).translate([f.at[0] * STUD, f.at[1] * STUD, 0]);
+    }
+    return { id: f.id, whole, merge: scad.intersection(whole, above) };
+  });
+}
+/** Where every track's sleepers lie, in plan: each route's band, its sleepers' length wide. */
+function trackBands(scad: Scad, routes: Route[], sleeperLen: number): CS {
+  const bands = routes.filter((rt) => rt.segments.length).map((rt) => {
+    const L = routeLength(rt), n = Math.max(2, Math.ceil(L / 4)), hw = sleeperLenOf(rt, sleeperLen) / 2;
+    const side = (off: number) => Array.from({ length: n + 1 }, (_, k) => railPoint(rt, (L * k) / n, off));
+    return scad.polygon([...side(-hw), ...side(hw).reverse()] as [number, number][]);
+  });
+  return scad.w.CrossSection.union(bands);
+}
+/** Where every track's running rails are, in plan: 4 mm either side of each one's line. */
+function railLines(scad: Scad, routes: Route[], railOffset: number): CS {
+  const out = routes.filter((rt) => rt.segments.length).flatMap((rt) => {
+    const L = routeLength(rt), n = Math.max(2, Math.ceil(L / 4)), g = railOffsetOf(rt, railOffset);
+    const side = (off: number) => Array.from({ length: n + 1 }, (_, k) => railPoint(rt, (L * k) / n, off));
+    return [-1, 1].map((sd) => scad.polygon([...side(sd * g - 4), ...side(sd * g + 4).reverse()] as [number, number][]));
+  });
+  return scad.w.CrossSection.union(out);
+}
+/** A part with its share of the rails and sleepers laid by hand that lie over it (in plan, inside its outline), and what of one lies off every track and touches it. */
+function withFree(b: PieceBuild, m: Man): Man {
+  if (!b.free?.length) return m;
+  const bb = m.boundingBox(), grow = 0.5, near = b.free.filter(({ whole: f }) => { const q = f.boundingBox(); return q.max[0] > bb.min[0] - grow && q.min[0] < bb.max[0] + grow && q.max[1] > bb.min[1] - grow && q.min[1] < bb.max[1] + grow; });
+  if (!near.length) return m;
+  const outline = m.project(), prism = (cs: CS) => b.scad.extrude(cs, 200).translate([0, 0, -50]);
+  // (over the part: its share, above the underside's hollow)
+  const share = near.map((f) => b.scad.intersection(f.merge, prism(outline))).filter((x) => x.volume() > 0.01);
+  // (off every track's band, touching this part: the whole height, standing on the bed as the part does (no supports), run
+  // 0.3 mm into the part so the two are one solid, not two faces flush; a bit that touches another track's band too is
+  // left to print on its own, freeLeftovers, rather than be two parts')
+  const others = b.bands ? b.bands.subtract(outline.offset(0.5)) : undefined, inner = outline.offset(-0.3);
+  const ends = near.flatMap((f) => {
+    const off = b.scad.difference(f.whole, [prism(others ? others.add(inner) : inner)]);
+    return off.decompose().filter((q) => {
+      if (q.volume() < 0.01) return false;
+      const pr = q.project();
+      if (pr.intersect(outline).area() < 1e-4) return false;
+      return !others || pr.offset(0.1).intersect(others).area() < 1e-4;
+    });
+  });
+  // (where it crosses a track's own running rail, that rail's there already: it gives way, so a joint's rail tongue cut there is the track's alone)
+  const add2 = [...share, ...ends].map((q) => (b.railLines ? b.scad.difference(q, [prism(b.railLines)]) : q)).filter((q) => q.volume() > 0.01);
+  if (!add2.length) return m;
+  // (the part's studs that what's added would run into: taken off whole, never cut through; a stud there is under the rail)
+  const r = b.track.c.postD / 2, foot = b.scad.w.CrossSection.union(add2.map((q) => q.project())).offset(r + 0.3, 'Round', 2, 24);
+  const under = findStuds(b.scad, m, r, b.track.o.studH, PLATE_H, PLATE_H).filter((st) => foot.intersect(b.scad.w.CrossSection.circle(0.05, 8).translate(st.c)).area() > 0);
+  const bare = under.length ? b.scad.difference(m, under.map((st) => b.scad.cylinder(b.track.o.studH + 1, r + 0.15).translate([st.c[0], st.c[1], PLATE_H + 0.01]))) : m;
+  return b.scad.union([bare, ...add2]);
+}
+/** (stage 4) Where what's laid by hand lies over a part, in plan, a stud's reach round it: no stud stood there after a cut (standStuds). */
+function freeFoot(b: PieceBuild): CS | undefined {
+  if (!b.free?.length) return undefined;
+  return b.scad.w.CrossSection.union(b.free.map((f) => f.whole.project())).offset(b.track.c.postD / 2 + 0.3, 'Round', 2, 24);
+}
+function bake(b: PieceBuild, m0: Man, freeDone = false): Baked {
+  const m = freeDone ? m0 : withFree(b, m0);
   // (the copies it's told apart on let go at once: a part's worth each, and a build has hundreds)
   return arena(b.w, () => {
     const notes: SupportNote[] = [], { positions, supports, file, volume } = viewOf(b.w, m, notes);
@@ -1640,7 +1759,10 @@ function marked(b: PieceBuild, m0: Man): Man {
 }
 
 /** A piece added: local, as printed; world, where it sits in the design. */
-function add(b: PieceBuild, name: string, color: number, local: Man, world: Man, turn?: Piece['turn'], move?: Pick<Piece, 'slide' | 'hinge' | 'set'>) {
+function add(b: PieceBuild, name: string, color: number, local0: Man, world0: Man, turn?: Piece['turn'], move?: Pick<Piece, 'slide' | 'hinge' | 'set'>) {
+  // (a track part that lies where it's built: its share of the rails and sleepers laid by hand; a switch's own parts, built
+  // where they print, not: what lies over one of those is printed on its own, buildAll's leftovers)
+  const local = local0 === world0 && !move && color === TRACK_COLOR ? withFree(b, local0) : local0, world = local0 === world0 ? local : world0;
   // (the copies it's told apart on let go at once, as bake's)
   arena(b.w, () => {
     const notes: SupportNote[] = [], { positions, supports, file, volume } = viewOf(b.w, world, notes);
@@ -1841,7 +1963,7 @@ function sectioned(b: PieceBuild, name: string, all: Route[], checks: CheckRail[
   if (hc) {
     const at = (q: number[]) => `${+(q[0] / 8).toFixed(1)}, ${+(q[1] / 8).toFixed(1)}`;
     for (const c of hc.lost) b.bedWarnings.add(`the hand cut at ${at(c.at)} (studs) on ${c.name} isn't made: it is in points (cut before or after them)`);
-    for (const bl of plan.blocked) b.bedWarnings.add(`the hand cut at ${at(routePose(all[bl.route], bl.s))} (studs) isn't made: ${bl.why === 'points' ? 'it is in points or a crossing (cut before or after them)' : 'the track is one part with the track beside it there'}`);
+    for (const bl of plan.blocked) b.bedWarnings.add(`the hand cut at ${at(routePose(all[bl.route], bl.s))} (studs) isn't made: ${bl.why === 'laid' ? 'a rail or sleeper laid by hand lies across it there (move the cut, or what\'s laid, 2 studs clear)' : bl.why === 'points' ? 'it is in points or a crossing (cut before or after them)' : 'the track is one part with the track beside it there'}`);
   }
   // (where the track's cut across into pieces: for the plan)
   (b.overlay.joints ??= []).push(...plan.pieces.flatMap(([i, a]) => (a > 0 ? [[routePose(all[i], a)[0], routePose(all[i], a)[1]] as [number, number]] : [])));
@@ -2007,7 +2129,8 @@ function sectioned(b: PieceBuild, name: string, all: Route[], checks: CheckRail[
       const keeps = b.grooveKeeps.filter((m) => { const bb = m.boundingBox(); return rts.some((rt) => { const b2 = routesBox([rt], bandHalf + 8); return bb.max[0] >= b2[0] && bb.min[0] <= b2[2] && bb.max[1] >= b2[1] && bb.min[1] <= b2[3]; }); });
       // (the studs stood on its parts once it's cut: standStuds)
       const after: [number, number][] = [];
-      const buildBody = (bedAt?: { p: [number, number]; d: [number, number]; len?: number }[]) => { grips.length = 0; after.length = 0; return networkBody(scad, rts, { crossings: [], grooves: [], splits: [], checkRails: cChecks }, copt, mine, grips, { cuts, keeps, gridPose, innerEnds: secInner, after, ...(bedAt && { bedAt }), ...(groups && { groups }) }); };
+      const buildBody0 = (bedAt?: { p: [number, number]; d: [number, number]; len?: number }[]) => { grips.length = 0; after.length = 0; return networkBody(scad, rts, { crossings: [], grooves: [], splits: [], checkRails: cChecks }, copt, mine, grips, { cuts, keeps, gridPose, innerEnds: secInner, after, ...(bedAt && { bedAt }), ...(groups && { groups }) }); };
+      const buildBody = (bedAt?: { p: [number, number]; d: [number, number]; len?: number }[]) => { const m = buildBody0(bedAt); return b.free?.length ? withFree(b, m) : m; };
       // (bought pieces: each as bought, track only (LEGO's sleepers, as both make theirs); on ballast, the section's ballast
       // printed alone, seated for them all, cut for the bed if it has to be)
       if (apart) {
@@ -2062,6 +2185,9 @@ function sectioned(b: PieceBuild, name: string, all: Route[], checks: CheckRail[
       const step = <T extends Man | Man[]>(f: () => T): T => arena(w, f, (r) => (Array.isArray(r) ? r : [r]));
       // (on sleepers, the bed kept across each hand path's runs, as across the app's own cuts)
       const lined = [...hps, ...jcs];
+      // (stage 4: what's laid by hand that lies over this section joins it before it's cut, so a cut across it cuts it as
+      // the track's own rails are cut; and its parts are baked as they are)
+      const freeIn = !!b.free?.length;
       let body = step(() => buildBody(lined.length && b.sleepered ? lined.flatMap((hp) => hp.pts.slice(1).flatMap((q, k) => { const a = hp.pts[k], len = Math.hypot(q[0] - a[0], q[1] - a[1]); return len > 0.05 ? [{ p: a, d: [(q[0] - a[0]) / len, (q[1] - a[1]) / len] as [number, number], len }] : []; })) : undefined));
       // (on ballast, its ballast clear of a bought switch's beside it, which is a part of its own: up to the sleepers' top)
       if (o.ballast !== 'none' && b.boughtSw.length) {
@@ -2132,7 +2258,8 @@ function sectioned(b: PieceBuild, name: string, all: Route[], checks: CheckRail[
       // (a bit a cut left loose: back on the part across the cut, cutContext rehome)
       parts2 = parts2.length > 1 ? step(() => cx.rehome(parts2, true)) : parts2;
       const kept = parts2.filter((m) => m.numTri() > 0).flatMap((m) => partedAtSwitches(b, m)).flatMap((m) => cx.bodies(m, 600)), id = (k: number) => (kept.length > 1 ? `${base + si + 1}-${k + 1}` : `${base + si + 1}`);
-      return { ms: kept.map((m, k) => arena(w, () => ({ ...bake(b, labelled(b, standStuds(b, m, after), rts, kept.length > 1 ? undefined : sizeOf(rts), id(k))), ...(b.labelOn && { id: id(k) }) }), () => [])), grips, ...(pathsDone && { paths: pathsDone }), ...(jointsDone && { joints: jointsDone }) };
+      const ff = freeIn ? freeFoot(b) : undefined, standAt = ff ? after.filter((q) => ff.intersect(w.CrossSection.circle(0.05, 8).translate(q)).area() === 0) : after;
+      return { ms: kept.map((m, k) => arena(w, () => ({ ...bake(b, labelled(b, standStuds(b, m, standAt), rts, kept.length > 1 ? undefined : sizeOf(rts), id(k)), freeIn), ...(b.labelOn && { id: id(k) }) }), () => [])), grips, ...(pathsDone && { paths: pathsDone }), ...(jointsDone && { joints: jointsDone }) };
     }, () => []), { ms: [], grips: [] }); } catch (err) {
       if (kernelBroke(err)) throw err;
       b.bedWarnings.add(`section ${si + 1} of ${name} failed to build: ${err instanceof Error ? err.message : String(err)}`);
@@ -2695,6 +2822,8 @@ function buildOne(w: Wasm, design: Design, report: (what: string, frac: number) 
     studFit: o.studFit, antistudFit: o.antistudFit, sleepers: o.sleepers, undersideGrid: o.ballast === 'none' ? o.undersideGrid : undefined, sleeperWidthStuds: o.sleeperWidthStuds, sleeperGapStuds: o.sleeperGapStuds,
     // (only what's set: the defaults' build, and its cache keys, as before)
     ...(bufs.length && { buffers: bufs, buffer: { postPlates: o.bufferPostPlates ?? 8, beamBottom: o.bufferBeamBottom ?? 2, beamTop: o.bufferBeamTop ?? 12, pinHoles: o.bufferPinHoles !== false, style: o.bufferStyle ?? 'frame' } }),
+    // (expert, stage 4: the rails and sleepers laid by hand, which the parts take their share of: in every part's key, only when there are some)
+    ...(design.expert?.free?.length && { free: design.expert.free }),
     ...(o.axleHoles && { axleHoles: true }), ...(o.pegOnBallast && { pegOnBallast: true }), ...(o.ballastEnds === 'stepped' && o.ballast !== 'none' && { ballastEnds: 'stepped' as const }), ...(alone && { ballastOnly: o.trackFitTol ?? 0.2 }), ...(o.studsFullPitch && { studsFullPitch: true }) };
   const tp = params;
   const netKey = JSON.stringify({ routes, tp, copt, tw });
@@ -2738,6 +2867,7 @@ function buildOne(w: Wasm, design: Design, report: (what: string, frac: number) 
   for (const wn of railWarnings(design)) bedWarnings.add(wn);
   const labelOn = o.ballast !== 'none' && o.bottomStyle === 'float' && !!o.labelText?.trim();
   const b: PieceBuild = { w, scad, o, gaugeStuds: design.gaugeStuds, track, cut, prog, pieces: [], volume: 0, bedWarnings, overlay, job,
+    ...(design.expert?.free?.length && { free: freeSolids(scad, design.expert.free, o.sleeperWidthStuds ?? 2), bands: trackBands(scad, routes, track.c.sleeperLen), railLines: railLines(scad, routes, track.c.railOffset) }),
     labelOn, ...(opts.mark && { mark: opts.mark, markBoth: opts.markBoth }), num: { part: 0, sec: 0 }, alongTrack, gridPose, sleepered, bufs, grooveCuts, grooveKeeps, grooveEdits: tw.groove, dropInner, tables: design.tables ?? [], boughtSw: bought, trackRoutes: routes, ...(handCuts && { handCuts }), ...(cutPaths?.cut.length && inLengths && { cutPaths: cutPaths.cut }), ...(jointCutList.length > 0 && { jointCuts: jointCutList, jointGroups: { routes: jointRoutes, group: trackGroups(jointRoutes, jointHalves) } }) };
   if (network) {
     net ??= netOf();
