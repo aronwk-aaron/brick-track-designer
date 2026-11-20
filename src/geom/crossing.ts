@@ -603,6 +603,29 @@ export function crossingPiece(s: Scad, routes: Route[], o: CrossingOptions = CRO
     const end = (pg: boolean, sq: boolean, xfs: number[], posts: number[]) => (sq ? t.squareEndpoint(xfs, ex?.guardX, posts) : t.fullEndpoint(pg, xfs, ex?.guardX, posts));
     return { peg, peg0, peg1, sq0, sq1, conn0: T(end(peg0, sq0, xfs0, posts0), [0, 4, 0]), conn1: T(R(end(peg1, sq1, xfs1, posts1), [0, 0, 180]), [0, -4, 0]) };
   };
+  // (fans: routes whose inner ends meet at one spot (a yard's ladder end and the routes out of it, a wide switched
+  // section's three ends). Their beds joined into one solid first, before the rails or anything else goes on: as solids,
+  // one's end face lay flush on the others' start faces, and the routes out of the fan start as the same bed twice, every
+  // face on another; the kernel joined them one way or the other by the order they came in, and left a hole through the
+  // bed beside the seam one way ('Yard R148, three tracks, right' track3: 97 mm2). Joined level (their outlines cut at
+  // half height, joined in 2D, which is exact, and stood up again), no faces are left to choose between)
+  const fanOf: (number | undefined)[] = routes.map(() => undefined);
+  if (!scadParity()) {
+    const ends = routes.flatMap((rt, i) => (hasRoll(rt) ? [] : ([[0, 'start'], [routeLength(rt), 'end']] as const).filter(([, e]) => x.innerEnds?.has(`${i}:${e}`)).map(([at]) => ({ i, q: routePose(rt, at) }))));
+    const up = routes.map((_, i) => i), root = (i: number): number => (up[i] === i ? i : (up[i] = root(up[i])));
+    for (const a of ends) for (const b2 of ends) if (a.i < b2.i && Math.hypot(a.q[0] - b2.q[0], a.q[1] - b2.q[1]) < 0.01) up[root(b2.i)] = root(a.i);
+    const size = new Map<number, number>();
+    routes.forEach((_, i) => size.set(root(i), (size.get(root(i)) ?? 0) + 1));
+    routes.forEach((rt, i) => { if (!hasRoll(rt) && (size.get(root(i)) ?? 0) > 1) fanOf[i] = root(i); });
+  }
+  const fanBeds = new Map<number, Man[]>();
+  const pushBed = (i: number, m: Man) => { const g = fanOf[i]; if (g === undefined) parts.push(m); else fanBeds.set(g, [...(fanBeds.get(g) ?? []), m]); };
+  // (a bed joined level only where it's a slab straight up and down, 0 to PLATE_H: its outline at half height stood up
+  // has its volume. Else (rooted into a connector's back, a bed shaped some other way) joined as solids, as before)
+  const joinBeds = (beds: Man[]): Man => {
+    const flats = beds.map((m) => { const bb = m.boundingBox(); if (Math.abs(bb.min[2]) > 1e-4 || Math.abs(bb.max[2] - PLATE_H) > 1e-4) return undefined; const cs = m.slice(PLATE_H / 2); return Math.abs(cs.area() * PLATE_H - m.volume()) < 0.01 ? cs : undefined; });
+    return flats.every((cs) => !!cs) ? s.extrude(s.w.CrossSection.union(flats as CS[]), PLATE_H) : s.union(beds);
+  };
   routes.forEach((rt, i) => {
     const L = routeLength(rt), ex: ExtraBuilt | undefined = extras[i];
     // (this route's own track: the piece's, or its own gauge's)
@@ -655,8 +678,25 @@ export function crossingPiece(s: Scad, routes: Route[], o: CrossingOptions = CRO
       return [!inStart && !sq0 && atPose(noConn0 ? box(END, -1) : rooted(box(END, -1), true), p0), !inEnd && !sq1 && atPose(noConn1 ? box(END, -END) : rooted(box(END, -END), false), p1),
         bufS && atPose(box(BUFFER_RAIL_END, -1), p0), bufE && atPose(box(BUFFER_RAIL_END, -BUFFER_RAIL_END), p1)];
     };
-    const rails = s.difference(s.union([-g, g].map((x) =>
-      sweepOn(s.polygon(RAIL_PROFILE.map(([px, py]) => [px + x, py + PLATE_H] as Vec2)), i, 0, Infinity, trackBank(c.sleeperLen), true))), railEnds());
+    // (EXPERIMENT FANRAILS: at a fan's inner end, the rails run on RAIL_ROOT into the rails of the fan's routes beyond it)
+    const railRoot = (P: Pose, start: boolean): Man | false => {
+      if (!process.env.FANRAILS || fanOf[i] === undefined) return false;
+      const w = c.sleeperLen, beyond = atPose(T(s.cube([2 * w, RAIL_ROOT, 30]), [-w, start ? -RAIL_ROOT : 0, -5]), P);
+      const into = routes.flatMap((r2, j) => {
+        if (j === i || fanOf[j] !== fanOf[i]) return [];
+        const L2 = routeLength(r2), g2 = gOf[j];
+        return ([[0, 'start'], [L2, 'end']] as const).flatMap(([at, e]) => {
+          const q = routePose(r2, at);
+          if (Math.hypot(q[0] - P[0], q[1] - P[1]) > 0.01) return [];
+          const raw = s.union([-g2, g2].map((x2) => sweepRoute(s, s.polygon(RAIL_PROFILE.map(([px, py]) => [px + x2, py + PLATE_H] as Vec2)), r2, e === 'start' ? 0 : Math.max(0, L2 - 1), e === 'start' ? Math.min(1, L2) : L2)));
+          const r = s.intersection(beyond, raw);
+          return r.volume() > 1e-5 ? [r] : [];
+        });
+      });
+      return into.length > 0 && s.union(into);
+    };
+    const rails = s.difference(s.union([...[-g, g].map((x) =>
+      sweepOn(s.polygon(RAIL_PROFILE.map(([px, py]) => [px + x, py + PLATE_H] as Vec2)), i, 0, Infinity, trackBank(c.sleeperLen), true)), !!x.innerEnds?.has(`${i}:start`) && railRoot(p0, true), !!x.innerEnds?.has(`${i}:end`) && railRoot(p1, false)]), railEnds());
     // (each end flared away from the rail it guards, so a flange coming in is led into the gap, as the switches' are)
     const fl = 4, flare = o.checkRailFlare ?? 1.5;
     const checks = checkRails.filter((cr) => cr.route === i).flatMap((cr) => {
@@ -688,10 +728,10 @@ export function crossingPiece(s: Scad, routes: Route[], o: CrossingOptions = CRO
     const banked = hasRoll(rt), roll0 = banked ? routeRoll(rt, 0) : 0, roll1 = banked ? routeRoll(rt, L) : 0;
     const bedAlong = (a = 0, b = Infinity) => (banked ? bankedBed(s, rt, trackBank(c.sleeperLen), c.sleeperLen / 2, onBallast ? -1 : 0, a, b) : sweepOn(rect(-c.sleeperLen / 2, c.sleeperLen / 2, 0, PLATE_H), i, a, b));
     // Track bed under the route (with sleepers: only where it needs it, sleepers elsewhere).
-    if (!sleepered) parts.push(s.difference(bedAlong(), bedEnds()));
+    if (!sleepered) pushBed(i, s.difference(bedAlong(), bedEnds()));
     else {
       const bed = zones[i].map(([a, b]) => bedAlong(a, b));
-      if (bed.length) parts.push(s.difference(s.union(bed), bedEnds()));
+      if (bed.length) pushBed(i, s.difference(s.union(bed), bedEnds()));
       // (as the whole route has them, unless this stretch of it has an end connector of its own partway along it: a
       // plain track built in lengths, each a piece of its own, LEGO's way; then each piece's own, from its connectors)
       const in0 = x.innerEnds?.has(`${i}:start`) ?? false, in1 = x.innerEnds?.has(`${i}:end`) ?? false;
@@ -707,7 +747,7 @@ export function crossingPiece(s: Scad, routes: Route[], o: CrossingOptions = CRO
       // (a piece too short for a sleeper of its own between its two end connectors, a printed 5.625-degree R40 curve, 31 mm:
       // nothing joined its two sides (an end connector's bar across is one with one side only), and it came out as two
       // halves, a rail each. Its bed laid between its connectors, as a piece on a solid bed has it)
-      if (!laid && !bed.length && !connPlan[i].noConn0 && !connPlan[i].noConn1 && !ownSleeperSpots(rt, in0, in1, o.sleeperGapStuds ?? 2, o.sleeperWidthStuds).length) parts.push(s.difference(bedAlong(), bedEnds()));
+      if (!laid && !bed.length && !connPlan[i].noConn0 && !connPlan[i].noConn1 && !ownSleeperSpots(rt, in0, in1, o.sleeperGapStuds ?? 2, o.sleeperWidthStuds).length) pushBed(i, s.difference(bedAlong(), bedEnds()));
       const atAll = spotsAll.filter((v) => !inTie(i, v));
       // (long ties: square to this route, out under the tracks beside it; clear of every end connector)
       const underServed: number[] = [];
@@ -779,6 +819,7 @@ export function crossingPiece(s: Scad, routes: Route[], o: CrossingOptions = CRO
     const exSolid = ex?.solid && exCuts.length ? s.difference(ex.solid, exCuts) : ex?.solid;
     if (exSolid) parts.push(banked ? aboveZ(s, exSolid, 0) : exSolid); // (banked: turned with the track, kept above the bed's bottom)
   });
+  for (const beds of fanBeds.values()) parts.push(joinBeds(beds));
   // (with sleepers: a check rail sits on bed. One that runs further than CHECK_UNHELD over no sleeper, tie or bed (in the
   // gap between two long ties, where another route's ties were left out) has a sleeper put under its middle: it was a loose
   // length of rail in the part)
