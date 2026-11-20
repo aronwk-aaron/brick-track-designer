@@ -613,10 +613,37 @@ export function crossingPiece(s: Scad, routes: Route[], o: CrossingOptions = CRO
     parts.push(hasRoll(rt) ? aboveZ(s, railsAll, 0) : railsAll); // (banked: the rails' feet, run down through the bed, turned, kept above its bottom)
     const banked = hasRoll(rt), roll0 = banked ? routeRoll(rt, 0) : 0, roll1 = banked ? routeRoll(rt, L) : 0;
     const bedAlong = (a = 0, b = Infinity) => (banked ? bankedBed(s, rt, trackBank(c.sleeperLen), c.sleeperLen / 2, onBallast ? -1 : 0, a, b) : sweepRoute(s, rect(-c.sleeperLen / 2, c.sleeperLen / 2, 0, PLATE_H), rt, a, b));
+    // (an inner end whose end face lies flush on another route's bed, that bed starting exactly there (the routes out of a
+    // yard's fan, whose beds begin where the ladder's ends; a wide switched section's three ends): run on RAIL_ROOT into that bed, inside it only. Flush, the two
+    // beds' faces were joined one way or the other by the last digit, and the part came out with a hole through its bed
+    // beside the seam or not by the order its solids were joined in ('Yard R148, three tracks, right' track3: 97 mm2).
+    // Nowhere else: where the other bed already runs on behind the face, or there's none beyond it, nothing is added)
+    const flushRoot = (P: Pose, start: boolean): Man | false => {
+      if (scadParity() || banked) return false;
+      const w = c.sleeperLen / 2, strip = (y: number) => atPose(T(s.cube([c.sleeperLen, RAIL_ROOT, PLATE_H]), [-w, y, 0]), P);
+      const beyond = strip(start ? -RAIL_ROOT : 0), behind = strip(start ? 0 : -RAIL_ROOT);
+      // (each other bed by itself: one beside this one, out of the same fan, runs on behind the face, and that's no reason
+      // to leave out the one the face lies flush on. Behind it: a hair of a curved bed's first face, float32's (0.007 of
+      // 10 mm3 at the yards' fans), allowed)
+      const into = routes.flatMap((r2, j) => {
+        if (j === i || hasRoll(r2)) return [];
+        const L2 = routeLength(r2), w2 = tOf[j].c.sleeperLen / 2, reach = w + w2 + 2, sP = routeSOf(r2, [P[0], P[1]]), q = routePose(r2, sP);
+        if (Math.hypot(q[0] - P[0], q[1] - P[1]) > reach) return [];
+        const a = Math.max(0, sP - reach), b = Math.min(L2, sP + reach);
+        const spans = sleepered ? zones[j].map(([z0, z1]): [number, number] => [Math.max(a, z0), Math.min(b, z1)]).filter(([z0, z1]) => z1 > z0) : [[a, b] as [number, number]];
+        if (!spans.length) return [];
+        const bed = s.union(spans.map(([z0, z1]) => sweepRoute(s, rect(-w2, w2, 0, PLATE_H), r2, z0, z1))), root = s.intersection(beyond, bed), rv = root.volume();
+        return rv > 1e-4 && s.intersection(behind, bed).volume() < 0.01 * rv ? [root] : [];
+      });
+      return into.length > 0 && s.union(into);
+    };
+    const flushRoots = (a: number, b: number): (Man | false)[] => [
+      a <= 0 && !!x.innerEnds?.has(`${i}:start`) && flushRoot(p0, true),
+      b >= L && !!x.innerEnds?.has(`${i}:end`) && flushRoot(p1, false)];
     // Track bed under the route (with sleepers: only where it needs it, sleepers elsewhere).
-    if (!sleepered) parts.push(s.difference(bedAlong(), bedEnds()));
+    if (!sleepered) { const roots = flushRoots(0, L).filter((m): m is Man => !!m); parts.push(s.difference(roots.length ? s.union([bedAlong(), ...roots]) : bedAlong(), bedEnds())); }
     else {
-      const bed = zones[i].map(([a, b]) => bedAlong(a, b));
+      const bed = zones[i].flatMap(([a, b]) => [bedAlong(a, b), ...flushRoots(a, b)]).filter((m): m is Man => !!m);
       if (bed.length) parts.push(s.difference(s.union(bed), bedEnds()));
       // (as the whole route has them, unless this stretch of it has an end connector of its own partway along it: a
       // plain track built in lengths, each a piece of its own, LEGO's way; then each piece's own, from its connectors)
