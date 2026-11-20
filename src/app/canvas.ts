@@ -27,7 +27,7 @@ import { reachStuds, SETTLE_MS, SnapSession, SPEED_WINDOW_MS } from './snapfeel'
 import { lockedWhy } from './lock';
 import { type MeasurePoint, measureBetween, measurePoint } from './measure';
 import { applyCarry, type Carry, connectedSet, holds, type Joint, jointNames, joints, LOOP_OPENS_DEFAULT, type LoopOpens, openedBy, planCarry, poseAt, setApart, tidyExpert } from './connections';
-import { moveRailEdit, railEditAt, type RailEdits, type RailWhat, withRailEdit } from './railedits';
+import { cleanRailEdits, deleteRailPiece, moveRailEdit, railEditAt, type RailEdits, railPieces, type RailSide, type RailWhat, setRailPiece, slideRailPiece, withRailEdit } from './railedits';
 import { alongBeyond, isTw, TAP_PX, tapReach, type BoxItem, boxable, dragStretchEnd, dragStretchWhole, handTracks, hitItems, type Hit, type Item, itemsInBox, itemsLabel, jointsOf, moveCuts, sleeperEditAt, sleeperEditOf, type Layer, newStretchAt, type OwnItem, type PickId, PICKS, picks, placeAlong, sameItem, takesFirst, withStretch } from './items';
 import type { Stretch } from './stretches';
 import { COMMON_RADII, type GuideEnd, type GuideResult, type GuideStraight, guidePoint } from './guides';
@@ -516,11 +516,24 @@ export class TrackCanvas {
     sd.moved = true; this.host.changed(false); this.host.live?.(sd.route); this.host.item?.();
   }
   /** (expert) A rail edit being dragged along its track (a gap, a stretch of guard rails, a check rail added by hand): which (its place in its list as it was at the press: the list is put in order again as it moves), where the press was along the track, and the track's rail edits as they were. */
-  private railDrag: { route: number; what: RailWhat; k: number; s0: number; orig: RailEdits; moved: boolean; why?: string } | undefined;
+  private railDrag: { route: number; what: RailWhat; k: number; s0: number; orig: RailEdits; moved: boolean; why?: string;
+    /** (stage 3) a running rail's piece instead: its side, its end dragged or the whole, and where it ran at the press */
+    run?: { side: RailSide; part: 'from' | 'to' | 'body'; was: { from: number; to: number } } } | undefined;
   /** The rail edit being dragged, taken to the pointer along its track: a gap by quarter studs, a stretch of rail by whole studs; where it can't be, why is said and it stays. */
   private dragRail(w: [number, number]) {
     const rd = this.railDrag!, r = this.host.design().routes[rd.route];
     if (!r) return;
+    if (rd.run) {
+      // (a running rail: an end dragged longer or shorter, or the whole slid along, by whole studs)
+      const by = Math.round(alongBeyond(r, w) - rd.s0), was = { ...r, railEdits: rd.orig }, ru = rd.run;
+      const put = ru.part === 'body' ? slideRailPiece(was, ru.side, rd.k, by) : setRailPiece(was, ru.side, rd.k, ru.part === 'from' ? ru.was.from + by : ru.was.from, ru.part === 'to' ? ru.was.to + by : ru.was.to);
+      rd.why = put.why;
+      if (!put.edits) return;
+      r.railEdits = put.edits;
+      if (by) rd.moved = true;
+      this.host.changed(false); this.host.live?.(rd.route); this.host.item?.();
+      return;
+    }
     const by = alongBeyond(r, w) - rd.s0, step = rd.what === 'gap' ? Math.round(by * 4) / 4 : Math.round(by);
     const put = moveRailEdit({ ...r, railEdits: rd.orig }, rd.what, rd.k, step);
     rd.why = put.why;
@@ -569,7 +582,7 @@ export class TrackCanvas {
     if (this.picks('cut')) kinds.push('cut', 'cutpath');
     if (this.picks('stretch')) kinds.push('stretch');
     if (this.picks('sleeper')) kinds.push('sleeper');
-    if (this.picks('rail')) kinds.push('rail');
+    if (this.picks('rail')) kinds.push('rail', 'run');
     // (a joint is under its track's end, which a press takes while tracks are picked: looked for only when they aren't)
     if (this.picks('joint') && !this.picks('track')) kinds.push('joint');
     if (!kinds.length) return [];
@@ -579,7 +592,9 @@ export class TrackCanvas {
     const tap = this.tapAt(this.pick === 'all' ? 'track' : this.pick);
     return hitItems(d, w, { near: tap.near, point: tap.point, kinds, paths: this.cutPaths(), joints: kinds.includes('joint') ? this.joints() : [], stretchesOf, selected: this.selItemNow,
       ...(kinds.includes('sleeper') && { sleepersOf: d.routes.map((_, i) => i), layOf: (i: number) => this.sleeperLay(i) }),
-      ...(kinds.includes('rail') && { railsOf: d.routes.flatMap((r, i) => (r.railEdits ? [i] : [])) }) });
+      ...(kinds.includes('rail') && { railsOf: d.routes.flatMap((r, i) => (r.railEdits ? [i] : [])) }),
+      // (stage 3: every track's running rails, one at a time, while rails are what a tap takes)
+      ...(this.pick === 'rail' && { runsOf: d.routes.map((_, i) => i), railOff: (i: number) => (routeGaugeStuds(d, d.routes[i]) + 1) / 2 }) });
   }
   /**
    * What a press at a point of the plan (studs) would take hold of, the first of: a handle of the selected track, a
@@ -639,6 +654,10 @@ export class TrackCanvas {
     } else if (it.kind === 'rail') {
       const rr = d.routes[it.route];
       if (rr.railEdits) this.railDrag = { route: it.route, what: it.what, k: it.k, s0: alongBeyond(rr, w), orig: structuredClone(rr.railEdits), moved: false };
+    } else if (it.kind === 'run' && !it.out) {
+      // (a running rail's piece: its end, or the whole, dragged along)
+      const rr = d.routes[it.route], p = railPieces(cutLength(rr), rr.railEdits, it.side)[it.k];
+      if (p) this.railDrag = { route: it.route, what: 'gap', k: it.k, s0: alongBeyond(rr, w), orig: structuredClone(rr.railEdits ?? {}), moved: false, run: { side: it.side, part: h.part === 'from' || h.part === 'to' ? h.part : 'body', was: p } };
     }
     this.draw();
   }
@@ -766,6 +785,13 @@ export class TrackCanvas {
       const why = this.setSleeper(sc, sc.add ? undefined : { at: sc.at, off: true });
       if (why) { this.say(why); return; }
       if (!sc.add) { this.host.changed(true); this.host.item?.(); this.say('Sleeper taken out · Reset on its card puts it back'); return this.draw(); }
+    } else if (sc.kind === 'run') {
+      // (a running rail's piece taken out; a stretch taken out put back)
+      const rr = d.routes[sc.route];
+      if (!rr) return;
+      const next = sc.out ? cleanRailEdits({ ...rr.railEdits, out: (rr.railEdits?.out ?? []).filter((o) => o !== (rr.railEdits?.out ?? []).filter((q) => q.side === sc.side)[sc.k]) }) : deleteRailPiece(rr, sc.side, sc.k).edits;
+      if (next) rr.railEdits = next; else delete rr.railEdits;
+      this.say(sc.out ? `The ${sc.side} rail is back there · Undo takes it out again` : `That piece of the ${sc.side} rail is taken out · Undo puts it back`);
     } else if (sc.kind === 'tw') {
       // (the app's trackwork: points taken out (both tracks' rails run through), a check rail taken out; a lever or a frog can't be)
       if (sc.tw === 'points') { if (this.pointsState(sc.key).state !== 'built') return; this.togglePoints(sc.key); this.say('Points taken out · Built on its card puts them back'); this.host.item?.(); return this.draw(); }
@@ -781,7 +807,16 @@ export class TrackCanvas {
   private nudgeItem(dx: number, dy: number) {
     const it = this.selItemNow, d = this.host.design();
     if (!it || it.kind === 'joint') return;
-    if (it.kind === 'tw') { this.say('Its card has + and − for each of its numbers'); return; }
+    if (it.kind === 'tw' || (it.kind === 'run' && it.out)) { this.say('Its card has + and − for each of its numbers'); return; }
+    if (it.kind === 'run') {
+      const rr = d.routes[it.route], p = rr && railPieces(cutLength(rr), rr.railEdits, it.side)[it.k];
+      if (!rr || !p) return;
+      const h = (placeAlong(rr, (p.from + p.to) / 2).heading * Math.PI) / 180, along = -dx * Math.sin(h) + dy * Math.cos(h), n = Math.max(Math.abs(dx), Math.abs(dy));
+      if (Math.abs(along) < 0.5 * n) { this.say('This arrow points across the track: press one that points along it'); return; }
+      const put = slideRailPiece(rr, it.side, it.k, Math.sign(along) * n);
+      if (!put.edits) { this.say(put.why ?? 'It can\'t go there'); return; }
+      rr.railEdits = put.edits; this.host.changed(true); this.host.item?.(); return this.draw();
+    }
     if (this.selAlso.length) {
       // (several: all of them, or none)
       const r = this.multiMove(this.multiOrig(), dx, dy);
@@ -1994,8 +2029,8 @@ export class TrackCanvas {
     if (e.key === 'Escape' && this.railDrag) {
       // (the rail edit put back where it was)
       const rd = this.railDrag, rr = this.host.design().routes[rd.route]; this.railDrag = undefined;
-      if (rr) rr.railEdits = rd.orig;
-      this.selItemNow = { kind: 'rail', route: rd.route, what: rd.what, k: rd.k };
+      if (rr) { if (Object.keys(rd.orig).length) rr.railEdits = rd.orig; else delete rr.railEdits; }
+      this.selItemNow = rd.run ? { kind: 'run', route: rd.route, side: rd.run.side, k: rd.k } : { kind: 'rail', route: rd.route, what: rd.what, k: rd.k };
       if (rd.moved) { this.host.changed(true); this.host.live?.(rd.route); }
       this.host.item?.();
       return this.draw();
@@ -2164,6 +2199,7 @@ export class TrackCanvas {
     if (si?.kind === 'sleeper') return 'Sleeper selected · drag it along the track, or press an arrow key · Delete takes it out · longer, turned, without studs: on its card';
     if (this.railDrag?.moved || this.railDrag?.why) return this.railDrag.why ?? 'Moving it along its track: let go to put it down · Esc puts it back';
     if (si?.kind === 'rail') return `${si.what === 'gap' ? 'Rail gap' : si.what === 'guard' ? 'Guard rails' : 'Check rail'} selected · drag it along the track, or press an arrow key (a stud; Shift: eight) · Delete takes it out · its side and size are on the track's card, Rails`;
+    if (si?.kind === 'run') return si.out ? 'A stretch of rail taken out · its card types where, or puts the rail back' : 'One rail selected · drag a round end to make it longer or shorter, or the rail to slide it, or press an arrow key · Delete takes it out · its card cuts a stretch out';
     if (si?.kind === 'stretch') return 'Stretch selected · drag it or one of its ends along the track, or press an arrow key (a stud; Shift: eight) · Delete removes it · its settings are in the track\'s card';
     if (this.mode === 'measure') return this.meas.b ? 'Click to measure again · Esc clears' : this.meas.a ? 'Click the second point · it snaps to track ends and centre lines · Esc clears' : 'Click the first point to measure from: it snaps to track ends and centre lines · Esc stops';
     if (this.handleDrag?.moved && this.handleDrag.why) return this.handleDrag.why;
@@ -2859,6 +2895,31 @@ export class TrackCanvas {
           else if (this.railDrag?.moved) tag(at[0], at[1] + 30, 'at' in e ? `${+e.at.toFixed(2)} studs from its start` : `${e.from} to ${e.to} studs`, '#b23c0a');
         }
       } else delete this.el.dataset.rail;
+      // (stage 3: running rails one at a time: a stretch taken out drawn as a break in the rail, a dashed line along it;
+      // the selected piece orange with a round handle at each end; where its ends are on the screen, for the smoke tests)
+      {
+        const railAt = (rr: DRoute, side: RailSide, a: number, b: number): [number, number][] => {
+          const off = (side === 'left' ? -1 : 1) * gOf(rr), n = Math.max(1, Math.ceil((b - a) / 0.5));
+          return Array.from({ length: n + 1 }, (_, k) => { const q = placeAlong(rr, a + ((b - a) * k) / n), h = (q.heading * Math.PI) / 180; return [q.x + off * Math.cos(h), q.y + off * Math.sin(h)] as [number, number]; });
+        };
+        const edit = getComputedStyle(this.el).getPropertyValue('--c-edit').trim() || '#e8892b';
+        for (const rr of d.routes) for (const o of rr.railEdits?.out ?? []) {
+          const pts = railAt(rr, o.side, o.from, Math.min(o.to, segsStuds(rr.segs)));
+          line(pts, ink.tagBg, railW + 3); line(pts, edit, Math.max(1.5, railW * 0.5), [4, 3]);
+        }
+        if (sc?.kind === 'run') {
+          const rr = d.routes[sc.route], L = rr ? segsStuds(rr.segs) : 0;
+          const p = rr && (sc.out ? (rr.railEdits?.out ?? []).filter((q) => q.side === sc.side)[sc.k] : railPieces(L, rr.railEdits, sc.side)[sc.k]);
+          if (rr && p) {
+            const pts = railAt(rr, sc.side, p.from, Math.min(p.to, L));
+            line(pts, edit, Math.max(4, railW * 2.5), sc.out ? [6, 4] : []);
+            const ends = sc.out ? [] : [pts[0], pts[pts.length - 1]].map((q) => { const [x, y] = this.toScreen(q[0], q[1]); c.beginPath(); c.arc(x, y, 7 * z, 0, 2 * Math.PI); c.fillStyle = '#fff'; c.fill(); c.strokeStyle = edit; c.lineWidth = 2.5; c.stroke(); return [Math.round(x), Math.round(y)]; });
+            this.el.dataset.run = JSON.stringify({ side: sc.side, k: sc.k, from: p.from, to: p.to, ends });
+            if (this.railDrag?.run && this.railDrag.why && this.mouse) { const [mx, my] = this.toScreen(this.mouse[0], this.mouse[1]); tag(mx, my + 30, this.railDrag.why, '#e0452b'); }
+            else if (this.railDrag?.run?.part && this.railDrag.moved && this.mouse) { const [mx, my] = this.toScreen(this.mouse[0], this.mouse[1]); tag(mx, my + 30, `${+p.from.toFixed(2)} to ${+p.to.toFixed(2)} studs`, '#b23c0a'); }
+          } else delete this.el.dataset.run;
+        } else delete this.el.dataset.run;
+      }
       // (several selected: each cut across a track ringed; how many, and where the first is on the screen, for the browser smoke tests)
       if (this.selAlso.length) {
         const pos: [number, number][] = [];

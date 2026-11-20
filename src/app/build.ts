@@ -1072,9 +1072,25 @@ function solveTrackwork(w: Wasm, design: Design, o: PieceOptions, step: (what: s
   // (expert, stage 5b: gaps cut through a rail by hand, down to the bed's top: each one an item on the plan)
   routes.forEach((rt, ri) => {
     const h = rt.hand;
-    if (!h?.gaps?.length) return;
+    if (!h?.gaps?.length && !h?.outs?.length) return;
     const L = routeLength(rt), fwd = handForward(h), g = gOf(ri);
-    for (const gp of h.gaps) {
+    // (stage 3: a stretch of one running rail taken out, as a gap is cut: the rail's whole width above the bed, all along it)
+    for (const o of h.outs ?? []) {
+      const a = Math.max(0, Math.min(handS(h, o.a), handS(h, o.b))), b = Math.min(L, Math.max(handS(h, o.a), handS(h, o.b))), sd = fwd ? o.side : -o.side;
+      if (b - a < 0.01) continue;
+      const cs = scad0.square([6.4, 8]).translate([sd * g - 3.2, PLATE_H]);
+      grooveCuts.push(sweepRoute(scad0, cs, rt, a, b));
+      // (taken out to the track's end: the rail's stub that runs on into its end connector goes too, else it's left loose)
+      for (const [at, out] of [[0, a < 0.01], [L, b > L - 0.01]] as const) {
+        if (!out) continue;
+        const p0 = routePose(rt, at), p1 = routePose(rt, at === 0 ? Math.min(1, L) : Math.max(0, L - 1)), len = Math.hypot(p1[0] - p0[0], p1[1] - p0[1]) || 1;
+        const dx = ((p0[0] - p1[0]) / len) * (at === 0 ? 1 : -1), dy = ((p0[1] - p1[1]) / len) * (at === 0 ? 1 : -1), STUB = 6;
+        // (a straight 6 mm on from the end, the way the track runs out of it)
+        const from: Pose = at === 0 ? [p0[0] + dx * STUB, p0[1] + dy * STUB, p0[2]] : [p0[0], p0[1], p0[2]];
+        grooveCuts.push(sweepRoute(scad0, cs, { id: `${rt.id}~stub`, start: from, segments: [{ kind: 'straight', length: STUB }] }, 0, STUB));
+      }
+    }
+    for (const gp of h.gaps ?? []) {
       const at = handS(h, gp.at);
       if (at < 0 || at > L) continue;
       for (const sd of gp.side ? [fwd ? gp.side : -gp.side] : [-1, 1]) {

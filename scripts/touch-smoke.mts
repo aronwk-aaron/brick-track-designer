@@ -381,9 +381,9 @@ async function tablet(width: number, height: number, tag: string) {
       const card = page.locator('#itemcard');
       check(await card.isVisible() && /^Points/.test(await card.locator(':scope > b').innerText()) && /Worked out by the app/.test(await card.locator('.istatus').innerText()), `[${tag}] a tap on points opens their card under the plan, said to be the app's (${await card.isVisible() ? await card.innerText() : 'no card'})`);
       check(await state() === 'built', `[${tag}] and leaves them built (a tap no longer takes them out)`);
-      await tapOn('#itemcard button.danger'); await sleep(300);
+      await tapOn('#itemcard button.danger'); for (let k = 0; k < 30 && await state() !== 'off'; k++) await sleep(100);
       check(await state() === 'off', `[${tag}] the card's Take out takes them out (${await state()})`);
-      await tapOn('#undo'); await sleep(300);
+      await tapOn('#undo'); for (let k = 0; k < 30 && await state() !== 'built'; k++) await sleep(100);
       check(await state() === 'built', `[${tag}] and Undo puts them back (${await state()})`);
       await shot('points-card');
     }
@@ -445,6 +445,36 @@ async function tablet(width: number, height: number, tag: string) {
       check(await tw('throw', lv.key) === was, `[${tag}] and Undo puts it back (${await tw('throw', lv.key)})`);
       await tapOn('#itemcard .idone').catch(() => {}); await sleep(200);
     }
+    // (stage 3: one running rail at a time by touch: the Rails chip, a tap on the left rail selects it alone; its round
+    // end dragged in shortens it; its card cuts a stretch out of it and deletes a piece; Undo; Reset the left rail)
+    at = `${tag}: one rail at a time by touch`;
+    await page.evaluate(() => { localStorage.setItem('btd-design', JSON.stringify({ version: 1, gaugeStuds: 4, routes: [{ name: 'Main', x: 0, y: 0, heading: -90, segs: [{ kind: 'straight', studs: 32 }] }] })); });
+    await page.reload(); await page.waitForSelector('#track'); await tapOn('#mode-select'); await tapOn('#fit'); await sleep(300);
+    await tapOn('#layers button[data-pick="rail"]'); await sleep(200);
+    const outs = () => page.evaluate(() => JSON.stringify((window as unknown as { btdCanvas: { host: { design(): { routes: { railEdits?: { out?: unknown[] } }[] } } } }).btdCanvas.host.design().routes[0].railEdits?.out ?? []));
+    // (the track runs to the right, x studs along; its left rail 2.5 studs up from its centre line)
+    await f.tap(await scr(16, 2.5)); await sleep(300);
+    check(/^The left rail of Main, 0 to 32 studs/.test(await page.locator('#sel-count').innerText()), `[${tag}] a tap on the left rail selects it alone (${await page.locator('#sel-count').innerText()})`);
+    check(/Laid by the app/.test(await page.locator('#itemcard .istatus').innerText()), `[${tag}] its card says the app laid it`);
+    const run = JSON.parse(await page.locator('#track').getAttribute('data-run') ?? '{"ends":[]}') as { ends: [number, number][] };
+    if (run.ends.length === 2) {
+      const tb = (await page.locator('#track').boundingBox())!, e0: [number, number] = [tb.x + run.ends[0][0], tb.y + run.ends[0][1]];
+      await f.drag(e0, await scr(4.2, 2.5), { steps: 10 }); await sleep(300);
+    }
+    check(await outs() === '[{"side":"left","from":0,"to":4}]', `[${tag}] its round end dragged in shortens it 4 studs (${await outs()})`);
+    check(/Edited by hand/.test(await page.locator('#itemcard .istatus').innerText()), `[${tag}] and its card says it's edited by hand`);
+    await tapOn('#itemcard button:has-text("Cut 2 studs out")'); await sleep(300);
+    check(await outs() === '[{"side":"left","from":0,"to":4},{"side":"left","from":17,"to":19}]', `[${tag}] its card cuts 2 studs out of the middle (${await outs()})`);
+    await tapOn('#itemcard button.danger'); await sleep(300);
+    check(await outs() === '[{"side":"left","from":0,"to":19}]', `[${tag}] Delete takes that piece out (${await outs()})`);
+    await tapOn('#undo'); await sleep(300);
+    check(await outs() === '[{"side":"left","from":0,"to":4},{"side":"left","from":17,"to":19}]', `[${tag}] Undo puts it back (${await outs()})`);
+    await f.tap(await scr(10, 2.5)); await sleep(300);
+    await tapOn('#itemcard button:has-text("Reset the left rail")'); await sleep(300);
+    check(await outs() === '[]', `[${tag}] Reset the left rail: as the app lays it (${await outs()})`);
+    check(/^The right rail/.test(await (async () => { await f.tap(await scr(16, -2.5)); await sleep(300); return page.locator('#sel-count').innerText(); })()), `[${tag}] a tap on the right rail selects that one`);
+    await shot('one-rail');
+    await tapOn('#itemcard .idone').catch(() => {});
     await page.evaluate(() => localStorage.setItem('btd-pick', 'all'));
     await shot('several');
   }

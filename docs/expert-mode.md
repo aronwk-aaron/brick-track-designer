@@ -859,3 +859,22 @@ Aaron's answers and need build work.
   Take out (points, a check rail) and a way to the Trackwork list. Delete takes points or a check rail out; a lever or
   a frog can't be, and says why. The throw bar is moved by its number (whole studs) on the lever's card, not by a
   handle of its own on the plan (the overlay doesn't say where it is).
+- **Stage 3 (one rail at a time) is built.** Aaron's answers (2026-11-20): D3 supports, the throw mechanism's inner
+  parts and the anti-stud tubes stay automatic; D4 a rail or sleeper added joins the part it sits on or touches; D5
+  stages 3 to 7 in order; D6 an automatic item is the user's on its first change, Reset gives it back.
+  `RailEdits.out: { side, from, to }[]` (railedits.ts; studs along the track, whole studs or the track's end): the
+  stretches of one running rail taken out. What's left of a rail is its pieces (`railPieces`); every edit of a piece is
+  a change of its side's stretches: `setRailPiece` (an end longer or shorter, held a stud from the next piece and to the
+  track, a piece a stud long at least), `slideRailPiece`, `cutOutOfPiece` (2 studs out of its middle by default),
+  `deleteRailPiece`, `resetRailSide`; turned, mirrored, split, joined and reshaped as the other rail edits are. Build:
+  `RouteHand.outs` (mm along the drawn route, -1 left, 1 right; `subHand` keeps those over a part's stretch) cut as a
+  gap is, the rail's whole width above the bed's top along the stretch (build.ts, with the gaps), and taken out to the
+  track's end, the rail's stub in its end connector too (6 mm on, else it's left loose: found by the assembled check):
+  the bed, the other rail and the studs are untouched, nothing to print over air. Editor: `Item { kind: 'run', route, side, k, out? }`
+  in the Rails layer (the chip "Rails, one at a time"; Everything doesn't take them): a tap on a running rail selects
+  that piece of it (`hitItems runsOf`), drawn orange with a round handle at each end; an end dragged makes it longer
+  or shorter, the rail dragged slides it, the arrow keys too; its card has From and To, Cut 2 studs out of the middle,
+  Delete, Reset the left/right rail. A stretch taken out is drawn as a dashed break in the rail; tapped, its card
+  types where, or Put the rail back. Template (Features): 'Rails taken out one at a time' (also in
+  test/union-order.test.ts). Tests: test/railruns.test.ts (pure), test/rail-runs-build.test.ts (no rail where it's
+  taken out, the other rail and the bed whole, across a cut between parts, put back byte for byte), the touch smoke.

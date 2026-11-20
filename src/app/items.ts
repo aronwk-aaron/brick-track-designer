@@ -11,7 +11,7 @@ import { follow } from './planner';
 import { cleanCuts, cutLength, cutProblem, liveCuts } from './routecuts';
 import { cutSegs, nearestAlong } from './splitmerge';
 import { type Stretch, STRETCH_MIN } from './stretches';
-import { railEditAt, railEditCount, railEditText, type RailWhat } from './railedits';
+import { railEditAt, railEditCount, railEditText, railPieces, type RailSide, type RailWhat } from './railedits';
 import { planSleepers, type SleeperEdit, sleeperEditText, type SleeperLay, sharedOf } from './sleeperedits';
 import { isEdit } from './twfollow';
 
@@ -33,7 +33,9 @@ export type Item =
   /** a rail edit of a track: a gap, a stretch of guard rails or a check rail added by hand, by its place in its list */
   | { kind: 'rail'; route: number; what: RailWhat; k: number }
   /** the trackwork the app works out, by its key in `Design.trackwork` (expert): points, a lever and its throw bar, a check rail, a flangeway cut (a frog) */
-  | { kind: 'tw'; tw: TwKind; key: string };
+  | { kind: 'tw'; tw: TwKind; key: string }
+  /** (stage 3) one running rail of a track: piece k of the rail on `side` (what's left of it between stretches taken out); out: the k-th stretch of it taken out */
+  | { kind: 'run'; route: number; side: RailSide; k: number; out?: true };
 /** The kinds of trackwork the app works out, as `Design.trackwork` keeps their edits. */
 export type TwKind = 'points' | 'throw' | 'check' | 'groove';
 export const isTw = (k: unknown): k is TwKind => k === 'points' || k === 'throw' || k === 'check' || k === 'groove';
@@ -74,8 +76,10 @@ export interface HitCtx {
   sleepersOf?: readonly number[]; layOf?: (i: number) => SleeperLay | undefined;
   /** the tracks whose rail edits can be picked */
   railsOf?: readonly number[];
+  /** (stage 3) the tracks whose running rails can be picked, one rail at a time, and each one's rails' offset from its centre line (studs) */
+  runsOf?: readonly number[]; railOff?: (i: number) => number;
 }
-const RANK = { corner: 0, selEnd: 1, cut: 2, gap: 2.5, path: 3, joint: 4, end: 5, rail: 5.2, sleeper: 5.5, stretch: 6 };
+const RANK = { corner: 0, selEnd: 1, cut: 2, gap: 2.5, path: 3, joint: 4, end: 5, rail: 5.2, run: 5.3, sleeper: 5.5, stretch: 6 };
 /** Is a hit on the selected item's own corner or end? A press takes those before a track's end under them. */
 export const takesFirst = (h: Hit) => h.rank <= RANK.selEnd;
 /** Half the width of a track's band on the plan (its sleepers), studs: where a click picks the track. */
@@ -163,6 +167,30 @@ export function hitItems(d: Design, w: [number, number], c: HitCtx): Hit[] {
       out.push({ item: { kind: 'rail', route: i, what, k }, part: 'body', d: n.dist, rank: RANK.rail });
     });
   }
+  // (stage 3: a running rail, one at a time: on its line; a piece of it, or a stretch of it taken out, where the press is
+  // along; the selected piece's ends to drag it longer or shorter)
+  if (want('run')) for (const i of c.runsOf ?? []) {
+    const r = d.routes[i];
+    if (!r || r.locked || isMono(r)) continue;
+    const L = cutLength(r);
+    if (Math.hypot(w[0] - r.x, w[1] - r.y) > L + 8) continue;
+    const n = nearestAlong(r, w), off = c.railOff?.(i) ?? bandHalf(d, r) - 1.5;
+    if (n.s < -0.01 || n.s > L + 0.01 || n.dist > off + c.near) continue;
+    const q = placeAlong(r, Math.max(0, Math.min(L, n.s))), h = (q.heading * Math.PI) / 180, lat = (w[0] - q.x) * Math.cos(h) + (w[1] - q.y) * Math.sin(h);
+    const dl = Math.abs(Math.abs(lat) - off);
+    if (dl > c.near) continue;
+    const side: RailSide = lat < 0 ? 'left' : 'right', ps = railPieces(L, r.railEdits, side);
+    const k = ps.findIndex((p) => n.s >= p.from - 0.01 && n.s <= p.to + 0.01);
+    if (k >= 0) {
+      const p = ps[k], mine = sel?.kind === 'run' && !sel.out && sel.route === i && sel.side === side && sel.k === k;
+      if (mine && Math.abs(n.s - p.from) < c.point) out.push({ item: { kind: 'run', route: i, side, k }, part: 'from', d: Math.abs(n.s - p.from), rank: RANK.selEnd });
+      else if (mine && Math.abs(n.s - p.to) < c.point) out.push({ item: { kind: 'run', route: i, side, k }, part: 'to', d: Math.abs(n.s - p.to), rank: RANK.selEnd });
+      else out.push({ item: { kind: 'run', route: i, side, k }, part: 'body', d: dl, rank: RANK.run });
+      continue;
+    }
+    const ok = (r.railEdits?.out ?? []).filter((o) => o.side === side).findIndex((o) => n.s >= o.from && n.s <= o.to);
+    if (ok >= 0) out.push({ item: { kind: 'run', route: i, side, k: ok, out: true }, part: 'body', d: dl, rank: RANK.run });
+  }
   return out.sort((a, b) => a.rank - b.rank || a.d - b.d);
 }
 /** The edit a selected sleeper has (its place in its track's list; -1: none yet, it's as the app lays it). */
@@ -209,6 +237,13 @@ export function itemLabel(d: Design, item: Item, js: readonly Joint[] = []): str
     case 'sleeper': { const r = d.routes[item.route]; if (!r) return undefined; const e = r.sleeperEdits?.[sleeperEditAt(r, item)], txt = e ? sleeperEditText(e) : ''; return `Sleeper of ${nameOf(d, item.route)}, ${+item.at.toFixed(2)} studs from its start${txt ? `: ${txt}` : ''}`; }
     case 'rail': { const e = railEditAt(d.routes[item.route]?.railEdits, item.what, item.k); return e ? `${railEditText(e, item.what)}, on ${nameOf(d, item.route)}` : undefined; }
     case 'tw': return TW_NAMES[item.tw];
+    case 'run': {
+      const r = d.routes[item.route];
+      if (!r) return undefined;
+      if (item.out) { const o = (r.railEdits?.out ?? []).filter((q) => q.side === item.side)[item.k]; return o ? `The ${item.side} rail of ${nameOf(d, item.route)} taken out, ${+o.from.toFixed(2)} to ${+o.to.toFixed(2)} studs` : undefined; }
+      const p = railPieces(cutLength(r), r.railEdits, item.side)[item.k];
+      return p ? `The ${item.side} rail of ${nameOf(d, item.route)}, ${+p.from.toFixed(2)} to ${+p.to.toFixed(2)} studs` : undefined;
+    }
     case 'joint': {
       const mine = jointsOf(item, js), names = [...new Set(mine.flatMap((j) => [j.a, j.b]))].map((i) => nameOf(d, i));
       if (!mine.length) return undefined;
@@ -335,7 +370,7 @@ export const PICKS = [
   { id: 'cut', label: 'Cuts and cut paths', tip: 'Only cuts across a track and cut paths' },
   { id: 'stretch', label: 'Stretches', tip: 'Only stretches with their own settings, on any track' },
   { id: 'sleeper', label: 'Sleepers', tip: 'Only sleepers, on any track on sleepers with gaps: click one to move it, take it out, lengthen or turn it (Everything doesn\'t take them: they lie all along a track)' },
-  { id: 'rail', label: 'Rail gaps, guard and check rails', tip: 'Only the rails edited by hand, on any track: a gap, a stretch of guard rails, a check rail added by hand. Click one to move it along its track or take it out (Everything doesn\'t take them: they lie along a track)' },
+  { id: 'rail', label: 'Rails, one at a time', tip: 'Only rails, on any track: a running rail, one of the pair (drag its round ends to make it longer or shorter, or the rail to slide it; its card cuts a stretch out or deletes it), a gap, a stretch of guard rails, a check rail added by hand (Everything doesn\'t take them: they lie all along a track)' },
   { id: 'joint', label: 'Joints', tip: 'Only the joints between tracks: a click selects one, to take apart or join' },
   { id: 'mark', label: 'Points, levers, check rails', tip: 'Only the trackwork the app works out: points, levers, check rail and flangeway cut ends' },
 ] as const;
@@ -344,7 +379,7 @@ export type PickId = (typeof PICKS)[number]['id'];
 export const PICK_CHIPS: Record<PickId, string> = { all: 'Everything', track: 'Tracks', cut: 'Cuts', stretch: 'Stretches', sleeper: 'Sleepers', rail: 'Rails', joint: 'Joints', mark: 'Points' };
 export const isPick = (v: unknown): v is PickId => PICKS.some((p) => p.id === v);
 /** The layer an item is in. */
-export const layerOf = (kind: ItemKind): Layer => (kind === 'route' || kind === 'table' ? 'track' : kind === 'cutpath' ? 'cut' : kind === 'tw' ? 'mark' : kind);
+export const layerOf = (kind: ItemKind): Layer => (kind === 'route' || kind === 'table' ? 'track' : kind === 'cutpath' ? 'cut' : kind === 'tw' ? 'mark' : kind === 'run' ? 'rail' : kind);
 /**
  * May a click take something of this layer? With the expert tools hidden: tracks, the app's trackwork and joints, as
  * ever, and no cut or stretch; with them shown, what the Pick list says.

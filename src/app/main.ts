@@ -30,7 +30,7 @@ import { designOptions, hasPartOwn, ignoredOwn, inForce, liveOwn, partGroups, TO
 import { BED_KEYS, isRouteKey, MORE_KEYS, OWN_CHECKS, OWN_LABELS, OWN_RANGES, OWN_SCALE, OWN_TEXT_MAX, OWN_TEXTS, OWN_UNSET, PART_KEYS, type RouteKey } from './routeown';
 import { accepted, pruneAccept, renameAccept, setAccept } from './accept';
 import { curvedAt, followShared, followSleeperEdits, pruneShared, renameShared, setShared, sharedOf, type SleeperEdit, sleeperEditText, SLEEPER_LONG, SLEEPER_MOVE, SPAN_MAX } from './sleeperedits';
-import { cleanRailEdits, FLANGEWAY_MIN, followRailEdits, GAP_DEF, GAP_MAX, GAP_MIN, GAP_RADIUS_MIN, GUARD_GAP_MAX, GUARD_GAP_MIN, moveRailEdit, RAIL_RUN_MIN, railEditAt, type RailEdits, type RailGap, railProblem, type RailSide, withRailEdit } from './railedits';
+import { cleanRailEdits, cutOutOfPiece, type PiecePut, railPieces, resetRailSide, setRailPiece, FLANGEWAY_MIN, followRailEdits, GAP_DEF, GAP_MAX, GAP_MIN, GAP_RADIUS_MIN, GUARD_GAP_MAX, GUARD_GAP_MIN, moveRailEdit, RAIL_RUN_MIN, railEditAt, type RailEdits, type RailGap, railProblem, type RailSide, withRailEdit } from './railedits';
 import { boxable, byHandNote, type PickId, designByHandNote, EXPERT_SECTIONS, isPick, itemLabel, itemsLabel, jointsOf, jointWhere, PICK_CHIPS, PICKS, sleeperEditAt, sleeperEditOf } from './items';
 import { expandStretches, followStretches, liveStretches, lostStretches, type Stretch, STRETCH_KEYS, STRETCH_MIN, stretchProblem } from './stretches';
 import { designOfSelection, listMine, saveMine, type StorageLike } from './mytemplates';
@@ -654,6 +654,51 @@ function renderItemCard() {
   } else if (it.kind === 'sleeper') {
     sleeperControls(box, it, true);
     row.append(showCard(it.route, 'Sleepers'));
+  } else if (it.kind === 'run') {
+    // (stage 3: one running rail: a piece of it, its ends to type, cut a stretch out of it, delete it; or a stretch of it
+    // taken out, to type where, or put the rail back; and the whole rail as the app lays it again)
+    const r = design.routes[it.route], L = cutLength(r), outs = (r.railEdits?.out ?? []).filter((q) => q.side === it.side);
+    const put = (p: PiecePut, k = it.k, tag = 'run') => {
+      if (!p.edits && p.why) { canvas.say(p.why); soon(drawItemCard); return; }
+      if (p.edits) r.railEdits = p.edits; else delete r.railEdits;
+      coalesceNext = `run:${it.route}:${it.side}:${tag}`; changed(true); canvas.selectItem(p.edits || !it.out ? { kind: 'run', route: it.route, side: it.side, k } : undefined); soon(render);
+    };
+    const numIn = (v: number, lo: number, hi: number, label: string, set: (n: number) => void) => {
+      const inp = document.createElement('input'); inp.type = 'number'; inp.step = '1'; inp.min = String(lo); inp.max = String(+hi.toFixed(2)); inp.value = String(+v.toFixed(2)); inp.setAttribute('aria-label', label);
+      inp.addEventListener('change', () => { const n = Number(inp.value); if (inp.value.trim() === '' || !Number.isFinite(n)) { inp.value = String(v); return; } set(n); });
+      return inp;
+    };
+    if (!it.out) {
+      const p = railPieces(L, r.railEdits, it.side)[it.k];
+      if (p) {
+        box.append(field('From, studs', numIn(p.from, 0, L, `The ${it.side} rail: from`, (n) => put(setRailPiece(r, it.side, it.k, n, p.to), it.k, 'from'))));
+        box.append(field('To, studs', numIn(p.to, 0, L, `The ${it.side} rail: to`, (n) => put(setRailPiece(r, it.side, it.k, p.from, n), it.k, 'to'))));
+        small(`Whole studs, 0 to ${+L.toFixed(2)}; a stud long at least, a stud from the next piece of this rail. Drag its round ends on the plan to make it longer or shorter, or the rail to slide it.`);
+        const cut = document.createElement('button'); cut.type = 'button'; cut.textContent = 'Cut 2 studs out of the middle'; cut.title = 'Take a 2-stud stretch out of the middle of this rail: two pieces left (an isolating cut, or room for something else)';
+        cut.addEventListener('click', () => put(cutOutOfPiece(r, it.side, it.k), it.k, 'cut'));
+        row.append(cut, del);
+      }
+    } else {
+      const o = outs[it.k];
+      if (o) {
+        const setOut = (from: number, to: number) => {
+          const a = Math.max(0, Math.round(Math.min(from, to))), b = Math.min(L, Math.round(Math.max(from, to)) >= L - 0.5 ? L : Math.round(Math.max(from, to)));
+          const next = cleanRailEdits({ ...r.railEdits, out: [...(r.railEdits?.out ?? []).filter((q) => q !== o), { side: it.side, from: a, to: b }] });
+          put({ edits: next }, Math.max(0, (next?.out ?? []).filter((q) => q.side === it.side).findIndex((q) => q.from <= a && q.to >= b)), 'out');
+        };
+        box.append(field('Taken out from, studs', numIn(o.from, 0, L, `The ${it.side} rail taken out: from`, (n) => setOut(n, o.to))));
+        box.append(field('To, studs', numIn(o.to, 0, L, `The ${it.side} rail taken out: to`, (n) => setOut(o.from, n))));
+        small('No rail here: the bed under it stays. A stud long at least.');
+        const back = document.createElement('button'); back.type = 'button'; back.textContent = 'Put the rail back'; back.title = 'The rail runs here again (Undo takes it out again)';
+        back.addEventListener('click', () => canvas.deleteItem()); row.append(back);
+      }
+    }
+    if (outs.length) {
+      const rs = document.createElement('button'); rs.type = 'button'; rs.className = 'reset1'; rs.textContent = `Reset the ${it.side} rail`; rs.title = 'The whole rail as the app lays it: every stretch taken out put back';
+      rs.addEventListener('click', () => { const next = resetRailSide(r.railEdits, it.side); if (next) r.railEdits = next; else delete r.railEdits; coalesceNext = undefined; changed(true); canvas.selectItem({ kind: 'run', route: it.route, side: it.side, k: 0 }); soon(render); });
+      row.append(rs);
+    }
+    row.append(showCard(it.route, 'Rails'));
   } else if (it.kind === 'tw') {
     // (the app's trackwork, tapped on the plan: the Trackwork panel's controls for it, here; points and check rails taken out by Take out)
     drawTrackwork(twList, { kind: it.tw, key: it.key }, box);
@@ -676,6 +721,7 @@ function renderItemCard() {
   // (what it is to the app: made by hand, nothing automatic to go back to; a sleeper the app lays, edited or not; a joint)
   const status = it.kind === 'sleeper' ? (it.add ? 'Added by hand: Remove takes it away again.' : sleeperEditAt(design.routes[it.route], it) >= 0 ? 'Edited by hand: Reset puts it back as the app lays it.' : 'Laid by the app: change anything to make it yours.')
     : it.kind === 'joint' ? 'Worked out from where the tracks meet.'
+    : it.kind === 'run' ? ((design.routes[it.route]?.railEdits?.out ?? []).some((q) => q.side === it.side) ? (it.out ? `Taken out by hand: Put the rail back, or Reset the ${it.side} rail.` : `Edited by hand: Reset the ${it.side} rail gives it back to the app.`) : 'Laid by the app: change anything to make it yours.')
     : it.kind === 'tw' ? (isEdit((design.trackwork?.[it.tw] as Record<string, unknown> | undefined)?.[it.key]) ? 'Edited by hand: Reset this puts it back as the app works it out.' : 'Worked out by the app: change anything to make it yours.')
     : 'Made by hand: Delete takes it away (Undo brings it back).';
   inspectorFinish(box, status);

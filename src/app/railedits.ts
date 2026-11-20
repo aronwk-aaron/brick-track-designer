@@ -14,7 +14,11 @@ export interface RailGap { at: number; side: RailSide | 'both'; w?: number }
 export interface GuardStretch { from: number; to: number; side?: RailSide; gap?: number }
 /** A check rail added by hand, from `from` to `to` (studs along), inside the rail on `side`, at the design's flangeway. */
 export interface HandCheck { from: number; to: number; side: RailSide }
+/** (expert, stage 3) A stretch of one running rail taken out, `from` to `to` studs along: what's left of that rail is its pieces (railPieces). */
+export interface RailOut { side: RailSide; from: number; to: number }
 export interface RailEdits {
+  /** the running rails taken out along stretches, one rail at a time: shortened, cut back, a stretch cut out, deleted */
+  out?: RailOut[];
   gaps?: RailGap[];
   guards?: GuardStretch[];
   checks?: HandCheck[];
@@ -22,6 +26,8 @@ export interface RailEdits {
   ends?: 'square';
 }
 
+/** (studs) The shortest stretch of a running rail taken out, and the shortest piece of one left: a stud. */
+export const OUT_MIN = 1, PIECE_MIN = 1;
 /** (mm) A gap's width: 0.5 to 3, 1 left out. */
 export const GAP_MIN = 0.5, GAP_MAX = 3, GAP_DEF = 1;
 /** (mm) The narrowest flangeway wheels pass: a guard rail's gap, a frog's flangeway. */
@@ -68,15 +74,23 @@ export function cleanRailEdits(v: unknown): RailEdits | undefined {
     if (e && !checks.some((o) => o.side === e.side && o.from < e.to && e.from < o.to)) checks.push(e);
   }
   gaps.sort((a, b) => a.at - b.at); guards.sort((a, b) => a.from - b.from); checks.sort((a, b) => a.from - b.from);
-  const out: RailEdits = { ...(gaps.length && { gaps }), ...(guards.length && { guards }), ...(checks.length && { checks }), ...(q.ends === 'square' && { ends: 'square' as const }) };
+  // (the running rails' stretches taken out: each side's joined where they meet or overlap, at least OUT_MIN long)
+  const outs: RailOut[] = [];
+  for (const side of ['left', 'right'] as const) {
+    const mine = list(q.out).flatMap((x) => (x.side === side && fin(x.from) && fin(x.to) ? [{ from: r2(Math.max(0, Math.min(MOST, Math.min(x.from, x.to)))), to: r2(Math.max(0, Math.min(MOST, Math.max(x.from, x.to)))) }] : [])).sort((a, b) => a.from - b.from);
+    const merged: { from: number; to: number }[] = [];
+    for (const x of mine) { const last = merged[merged.length - 1]; if (last && x.from <= last.to + 1e-6) last.to = Math.max(last.to, x.to); else merged.push({ ...x }); }
+    for (const x of merged) if (x.to - x.from >= OUT_MIN - 1e-6) outs.push({ side, ...x });
+  }
+  const out: RailEdits = { ...(outs.length && { out: outs }), ...(gaps.length && { gaps }), ...(guards.length && { guards }), ...(checks.length && { checks }), ...(q.ends === 'square' && { ends: 'square' as const }) };
   return Object.keys(out).length ? out : undefined;
 }
 
 /** How many edits a track's rails have (the card's summary, the Expert tools' note). */
-export const railEditCount = (e: RailEdits | undefined) => (e?.gaps?.length ?? 0) + (e?.guards?.length ?? 0) + (e?.checks?.length ?? 0) + (e?.ends ? 1 : 0);
+export const railEditCount = (e: RailEdits | undefined) => (e?.out?.length ?? 0) + (e?.gaps?.length ?? 0) + (e?.guards?.length ?? 0) + (e?.checks?.length ?? 0) + (e?.ends ? 1 : 0);
 export const railsSummary = (r: Pick<DRoute, 'railEdits'>) => {
   const e = r.railEdits, n = (k: number, one: string, many = `${one}s`) => (k ? `${k} ${k === 1 ? one : many}` : '');
-  const parts = [n(e?.gaps?.length ?? 0, 'gap'), n(e?.guards?.length ?? 0, 'guard rail stretch', 'guard rail stretches'), n(e?.checks?.length ?? 0, 'check rail'), e?.ends ? 'square ends' : ''].filter(Boolean);
+  const parts = [n(e?.out?.length ?? 0, 'stretch of rail taken out', 'stretches of rail taken out'), n(e?.gaps?.length ?? 0, 'gap'), n(e?.guards?.length ?? 0, 'guard rail stretch', 'guard rail stretches'), n(e?.checks?.length ?? 0, 'check rail'), e?.ends ? 'square ends' : ''].filter(Boolean);
   return parts.length ? parts.join(', ') : 'as laid';
 };
 
@@ -85,7 +99,7 @@ function mapEdits(e: RailEdits | undefined, at: (c: number) => number, flip: boo
   if (!e) return undefined;
   const sd = <S extends string | undefined>(s: S): S => (flip && (s === 'left' || s === 'right') ? other(s as RailSide) : s) as S;
   const span = (x: { from: number; to: number }) => { const a = at(x.from), b = at(x.to); return { from: Math.min(a, b), to: Math.max(a, b) }; };
-  return cleanRailEdits({ ...e, gaps: e.gaps?.map((g) => ({ ...g, at: at(g.at), side: sd(g.side) })), guards: e.guards?.map((g) => ({ ...g, ...span(g), side: sd(g.side) })), checks: e.checks?.map((c) => ({ ...c, ...span(c), side: sd(c.side) })) });
+  return cleanRailEdits({ ...e, out: e.out?.map((o) => ({ ...span(o), side: sd(o.side) })), gaps: e.gaps?.map((g) => ({ ...g, at: at(g.at), side: sd(g.side) })), guards: e.guards?.map((g) => ({ ...g, ...span(g), side: sd(g.side) })), checks: e.checks?.map((c) => ({ ...c, ...span(c), side: sd(c.side) })) });
 }
 /** Turned end for end (len: its length, studs): from the new start, sides swapped. */
 export const reverseRailEdits = (e: RailEdits | undefined, len: number) => mapEdits(e, (c) => len - c, true);
@@ -98,13 +112,15 @@ export function splitRailEdits(e: RailEdits | undefined, s: number): [RailEdits 
   if (!e) return [undefined, undefined];
   const lo = <T extends { from: number; to: number }>(x: T[] | undefined) => x?.filter((q) => q.from < s).map((q) => ({ ...q, to: Math.min(q.to, Math.floor(s)) }));
   const hi = <T extends { from: number; to: number }>(x: T[] | undefined) => x?.filter((q) => q.to > s).map((q) => ({ ...q, from: Math.max(0, Math.ceil(q.from - s)), to: Math.round(q.to - s) }));
-  return [cleanRailEdits({ ...e, gaps: e.gaps?.filter((g) => g.at < s), guards: lo(e.guards), checks: lo(e.checks) }),
-    cleanRailEdits({ ...e, gaps: e.gaps?.filter((g) => g.at >= s).map((g) => ({ ...g, at: g.at - s })), guards: hi(e.guards), checks: hi(e.checks) })];
+  // (a stretch of rail taken out: cut at s exactly, each side keeping its part)
+  const outLo = e.out?.filter((q) => q.from < s).map((q) => ({ ...q, to: Math.min(q.to, s) })), outHi = e.out?.filter((q) => q.to > s).map((q) => ({ ...q, from: Math.max(0, q.from - s), to: q.to - s }));
+  return [cleanRailEdits({ ...e, out: outLo, gaps: e.gaps?.filter((g) => g.at < s), guards: lo(e.guards), checks: lo(e.checks) }),
+    cleanRailEdits({ ...e, out: outHi, gaps: e.gaps?.filter((g) => g.at >= s).map((g) => ({ ...g, at: g.at - s })), guards: hi(e.guards), checks: hi(e.checks) })];
 }
 /** Two tracks made one (b's on a's end, lenA studs along). Square ends if either had them. */
 export function joinRailEdits(a: RailEdits | undefined, b: RailEdits | undefined, lenA: number): RailEdits | undefined {
   const bb = mapEdits(b, (c) => c + lenA, false);
-  return cleanRailEdits({ gaps: [...(a?.gaps ?? []), ...(bb?.gaps ?? [])], guards: [...(a?.guards ?? []), ...(bb?.guards ?? [])], checks: [...(a?.checks ?? []), ...(bb?.checks ?? [])], ...((a?.ends || b?.ends) && { ends: 'square' }) });
+  return cleanRailEdits({ out: [...(a?.out ?? []), ...(bb?.out ?? [])], gaps: [...(a?.gaps ?? []), ...(bb?.gaps ?? [])], guards: [...(a?.guards ?? []), ...(bb?.guards ?? [])], checks: [...(a?.checks ?? []), ...(bb?.checks ?? [])], ...((a?.ends || b?.ends) && { ends: 'square' }) });
 }
 
 /**
@@ -113,6 +129,7 @@ export function joinRailEdits(a: RailEdits | undefined, b: RailEdits | undefined
  */
 export function railProblem(r: Pick<DRoute, 'segs' | 'railEdits' | 'guardRails' | 'dualGauge'>, e: RailEdits): string | undefined {
   const L = cutLength(r);
+  for (const o of e.out ?? []) if (o.to > L + 0.01) return `A rail is taken out past the track's end: 0 to ${+L.toFixed(2)} studs`;
   for (const g of e.gaps ?? []) if (g.at < 1 || g.at > L - 1) return `A gap goes between the track's end connectors: 1 to ${+(L - 1).toFixed(2)} studs along`;
   for (const g of [...(e.guards ?? []), ...(e.checks ?? [])]) if (g.to > Math.floor(L) + 1e-6) return `A rail runs past the track's end: 0 to ${Math.floor(L)} studs`;
   for (const g of e.guards ?? []) if (g.gap !== undefined && g.gap * 8 < FLANGEWAY_MIN - 1e-6) return `Wheels need ${FLANGEWAY_MIN} mm`;
@@ -158,10 +175,74 @@ export function railEditText(e: RailGap | GuardStretch | HandCheck, what: RailWh
   return what === 'guard' ? `Guard ${st.side ? `rail inside the ${st.side} rail` : 'rails'}, ${st.from} to ${st.to} studs` : `Check rail inside the ${st.side} rail, ${st.from} to ${st.to} studs`;
 }
 
+// ---------- (stage 3) one running rail at a time ----------
+/** A rail's pieces (studs along a track L studs long): what's left of the rail on `side` once its stretches taken out are. */
+export function railPieces(L: number, e: RailEdits | undefined, side: RailSide): { from: number; to: number }[] {
+  const out: { from: number; to: number }[] = [];
+  let at = 0;
+  for (const o of (e?.out ?? []).filter((q) => q.side === side)) { if (o.from > at + 1e-6) out.push({ from: at, to: Math.min(o.from, L) }); at = Math.max(at, o.to); }
+  if (at < L - 1e-6) out.push({ from: at, to: L });
+  return out.filter((q) => q.to - q.from > 1e-6);
+}
+/** The edits with one side's rail as these pieces (the other side's stretches, gaps, guard and check rails kept). */
+function withPieces(e: RailEdits | undefined, L: number, side: RailSide, pieces: { from: number; to: number }[]): RailEdits | undefined {
+  const gaps: RailOut[] = [];
+  let at = 0;
+  for (const p of [...pieces].sort((a, b) => a.from - b.from)) { if (p.from > at + 1e-6) gaps.push({ side, from: at, to: p.from }); at = Math.max(at, p.to); }
+  if (at < L - 1e-6) gaps.push({ side, from: at, to: L });
+  return cleanRailEdits({ ...e, out: [...(e?.out ?? []).filter((o) => o.side !== side), ...gaps] });
+}
+/** A place for a rail's end: a whole stud, or the track's end itself. */
+const stud = (v: number, L: number) => (v >= L - 0.5 ? L : Math.max(0, Math.round(v)));
+export type PiecePut = { edits?: RailEdits; k?: number; why?: string };
+/**
+ * Piece k of the rail on `side` made to run from `from` to `to` (studs: whole studs, or the track's ends): longer,
+ * shorter, or slid along. Held to the track and clear of the pieces beside it (a stud between), at least PIECE_MIN
+ * long; where it can't go, why.
+ */
+export function setRailPiece(r: Pick<DRoute, 'segs' | 'railEdits'>, side: RailSide, k: number, from: number, to: number): PiecePut {
+  const L = cutLength(r), ps = railPieces(L, r.railEdits, side), p = ps[k];
+  if (!p) return { why: 'That rail is gone' };
+  const lo = k > 0 ? ps[k - 1].to + OUT_MIN : 0, hi = k < ps.length - 1 ? ps[k + 1].from - OUT_MIN : L;
+  if (from < -0.5) return { why: 'The track starts here' };
+  if (to > L + 0.5) return { why: 'The track ends here' };
+  let a = stud(from, L), b = stud(to, L);
+  if (a < lo - 1e-6) return { why: k > 0 ? 'The rail before it is there: a stud apart at least' : 'The track starts here' };
+  if (b > hi + 1e-6) return { why: k < ps.length - 1 ? 'The rail after it is there: a stud apart at least' : 'The track ends here' };
+  a = Math.max(lo, a); b = Math.min(hi, b);
+  if (b - a < PIECE_MIN - 1e-6) return { why: `A rail ${PIECE_MIN} stud long at least: delete it to have none` };
+  const next = ps.map((q, n) => (n === k ? { from: a, to: b } : q));
+  return { edits: withPieces(r.railEdits, L, side, next), k };
+}
+/** Piece k slid `by` studs along (whole studs), as long as it was. */
+export function slideRailPiece(r: Pick<DRoute, 'segs' | 'railEdits'>, side: RailSide, k: number, by: number): PiecePut {
+  const p = railPieces(cutLength(r), r.railEdits, side)[k];
+  if (!p) return { why: 'That rail is gone' };
+  const d = Math.round(by);
+  return setRailPiece(r, side, k, p.from + d, p.to + d);
+}
+/** A stretch `len` studs long cut out of piece k at `at` (studs; its middle by default): two pieces left. */
+export function cutOutOfPiece(r: Pick<DRoute, 'segs' | 'railEdits'>, side: RailSide, k: number, at?: number, len = 2): PiecePut {
+  const L = cutLength(r), ps = railPieces(L, r.railEdits, side), p = ps[k];
+  if (!p) return { why: 'That rail is gone' };
+  const mid = at ?? (p.from + p.to) / 2, a = Math.round(mid - len / 2), b = a + Math.max(OUT_MIN, Math.round(len));
+  if (a - p.from < PIECE_MIN - 1e-6 || p.to - b < PIECE_MIN - 1e-6) return { why: `Too short to cut a stretch out of: ${PIECE_MIN} stud of rail each side at least` };
+  return { edits: withPieces(r.railEdits, L, side, [...ps.slice(0, k), { from: p.from, to: a }, { from: b, to: p.to }, ...ps.slice(k + 1)]), k };
+}
+/** Piece k taken out: no rail there. */
+export function deleteRailPiece(r: Pick<DRoute, 'segs' | 'railEdits'>, side: RailSide, k: number): PiecePut {
+  const L = cutLength(r), ps = railPieces(L, r.railEdits, side);
+  if (!ps[k]) return { why: 'That rail is gone' };
+  return { edits: withPieces(r.railEdits, L, side, ps.filter((_, n) => n !== k)) };
+}
+/** The rail on `side` as the app lays it again: its stretches taken out put back. */
+export const resetRailSide = (e: RailEdits | undefined, side: RailSide): RailEdits | undefined => cleanRailEdits({ ...e, out: (e?.out ?? []).filter((o) => o.side !== side) });
+
 /** A track's rail edits for the build (route.ts RouteHand: mm along the drawn route; sides -1 left, 1 right, 0 both). Its guard rails go by its extra rails (design.ts toRoutes: ExtraRails.guardOn). */
-export function handRails(e: RailEdits, flangewayMm: number): Pick<RouteHand, 'gaps' | 'checks' | 'square'> {
+export function handRails(e: RailEdits, flangewayMm: number): Pick<RouteHand, 'gaps' | 'checks' | 'square' | 'outs'> {
   const s = (x: RailSide | 'both' | undefined) => (x === 'left' ? -1 : x === 'right' ? 1 : 0) as -1 | 0 | 1;
   return {
+    ...(e.out?.length && { outs: e.out.map((o) => ({ a: o.from * 8, b: o.to * 8, side: s(o.side) as -1 | 1 })) }),
     ...(e.gaps?.length && { gaps: e.gaps.map((g) => ({ at: g.at * 8, side: s(g.side), w: g.w ?? GAP_DEF })) }),
     ...(e.checks?.length && { checks: e.checks.map((c) => ({ a: c.from * 8, b: c.to * 8, side: s(c.side) as -1 | 1, fw: flangewayMm })) }),
     ...(e.ends && { square: true }),

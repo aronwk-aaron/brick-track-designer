@@ -17,7 +17,7 @@ import { Scad } from '../src/geom/scad';
 import { solid } from './assembled.shared';
 
 const APP = (globalThis as { APP_DEFAULTS?: PieceOptions }).APP_DEFAULTS!;
-const NAMES = ['Switch R72 right', 'Crossing 45° right', 'Oval (LEGO R40)', 'Double turnout R56 and R40, right', 'Wye R40, 8-stud spacing', 'Curve R40, 5.62°'];
+const NAMES = ['Switch R72 right', 'Crossing 45° right', 'Oval (LEGO R40)', 'Double turnout R56 and R40, right', 'Wye R40, 8-stud spacing', 'Curve R40, 5.62°', 'Rails taken out one at a time'];
 type Part = [name: string, volume: number, box: number[]];
 
 describe('parts are the same whichever order their solids are joined in', { timeout: 1200000 }, () => {
