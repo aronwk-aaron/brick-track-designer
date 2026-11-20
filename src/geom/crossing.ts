@@ -678,9 +678,12 @@ export function crossingPiece(s: Scad, routes: Route[], o: CrossingOptions = CRO
       return [!inStart && !sq0 && atPose(noConn0 ? box(END, -1) : rooted(box(END, -1), true), p0), !inEnd && !sq1 && atPose(noConn1 ? box(END, -END) : rooted(box(END, -END), false), p1),
         bufS && atPose(box(BUFFER_RAIL_END, -1), p0), bufE && atPose(box(BUFFER_RAIL_END, -BUFFER_RAIL_END), p1)];
     };
-    // (EXPERIMENT FANRAILS: at a fan's inner end, the rails run on RAIL_ROOT into the rails of the fan's routes beyond it)
+    // (and its rails at a fan's inner end run on RAIL_ROOT into the rails of the fan's routes that go on from there, inside
+    // those only: end to end, a rail's end face lay flush on the next ones' start faces, their feet down in the bed, and
+    // that seam too was joined one way or the other by the order: with the beds joined, 'Yard R148, three tracks, right'
+    // track3 still came out with a hole beside it one way)
     const railRoot = (P: Pose, start: boolean): Man | false => {
-      if (!process.env.FANRAILS || fanOf[i] === undefined) return false;
+      if (fanOf[i] === undefined) return false;
       const w = c.sleeperLen, beyond = atPose(T(s.cube([2 * w, RAIL_ROOT, 30]), [-w, start ? -RAIL_ROOT : 0, -5]), P);
       const into = routes.flatMap((r2, j) => {
         if (j === i || fanOf[j] !== fanOf[i]) return [];
