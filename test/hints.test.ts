@@ -14,6 +14,15 @@ describe('the plan hint for a finger', () => {
     expect(forFingers('Click (or Enter) to put it down · arrows move it · R / Shift+R turn it · M mirrors it · hold Alt for no snapping · Esc cancels')).toBe('Drag it into place (a tap moves it there), then Put down · the bar below turns, mirrors and nudges it');
     expect(forFingers('No track yet: press D (or ✎ Draw) to lay some')).toBe('No track yet: tap ✎ Draw to lay some');
   });
+  it('points a selected cut, path, sleeper or rail edit at the touch bar, not at keys', () => {
+    expect(forFingers('Cut across the track selected · drag it along the track, or press an arrow key (a stud; Shift: eight) · Delete removes it'))
+      .toBe("Cut across the track selected · drag it along the track, or with the bar's arrows · Delete (on the bar) removes it");
+    expect(forFingers('Cut path selected · drag a corner or the path · arrow keys move it a stud · Delete removes it · its joint is on its card'))
+      .toBe("Cut path selected · drag a corner or the path · the bar's arrows move it a stud · Delete (on the bar) removes it · its joint is on its card");
+    expect(forFingers('Sleeper selected · drag it along the track, or press an arrow key · Delete takes it out · longer, turned, without studs: on its card'))
+      .toBe("Sleeper selected · drag it along the track, or with the bar's arrows · Delete (on the bar) takes it out · longer, turned, without studs: on its card");
+    for (const h of ['2 cuts selected · drag one to move them all, or press an arrow key · Delete takes them out · Esc lets go']) expect(forFingers(h)).not.toMatch(/arrow key|Esc/);
+  });
 });
 
 import { segsStuds } from '../src/app/canvas';

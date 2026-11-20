@@ -341,6 +341,18 @@ export const layerOf = (kind: ItemKind): Layer => (kind === 'route' || kind === 
  */
 export const picks = (pick: PickId, layer: Layer, expert: boolean): boolean => (expert ? (pick === 'all' && layer !== 'sleeper' && layer !== 'rail') || pick === layer : layer === 'track' || layer === 'mark' || layer === 'joint');
 
+/**
+ * How near a press must be to a marker on the plan to take it, in screen pixels: `near` for a line (a cut, a path's
+ * run, a stretch, a rail edit, a sleeper's side), `point` for a spot (a corner, an end, a joint, points, a lever).
+ * A finger gets 22 px (a 44 px target) only while the Pick list is on that marker's own layer: then nothing else
+ * is taken anyway. With Everything a finger gets what a mouse does, so a tap beside a marker still takes the track
+ * under it.
+ */
+export const TAP_PX = { near: 8, point: 10, finger: 22 } as const;
+export function tapReach(pick: PickId, layer: Layer, finger: boolean): { near: number; point: number } {
+  return finger && pick === layer ? { near: TAP_PX.finger, point: TAP_PX.finger } : { near: TAP_PX.near, point: TAP_PX.point };
+}
+
 // ---------- several at once ----------
 /** Does the line from a to b touch the box x0, y0 to x1, y1 (an end inside it, or the line across one of its sides)? */
 function segInBox(a: readonly number[], b: readonly number[], x0: number, y0: number, x1: number, y1: number) {

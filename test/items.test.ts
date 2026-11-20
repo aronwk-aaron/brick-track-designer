@@ -391,3 +391,20 @@ describe('several cuts at once', () => {
     expect(itemsLabel([{ kind: 'cutpath', id: 'c1' }, { kind: 'cutpath', id: 'c2' }])).toBe('2 cut paths selected');
   });
 });
+
+import { tapReach, TAP_PX } from '../src/app/items';
+describe('how near a press takes a marker (tapReach)', () => {
+  it('a mouse: the same small reach whatever the Pick list says', () => {
+    for (const pick of ['all', 'cut', 'mark'] as const) expect(tapReach(pick, 'cut', false)).toEqual({ near: TAP_PX.near, point: TAP_PX.point });
+  });
+  it('a finger: 22 px (a 44 px target) only on the marker\'s own layer', () => {
+    expect(tapReach('cut', 'cut', true)).toEqual({ near: 22, point: 22 });
+    expect(tapReach('sleeper', 'sleeper', true)).toEqual({ near: 22, point: 22 });
+    expect(tapReach('mark', 'mark', true)).toEqual({ near: 22, point: 22 });
+  });
+  it('a finger with Everything: a mouse\'s reach, so a tap beside a marker takes the track under it', () => {
+    expect(tapReach('all', 'cut', true)).toEqual({ near: TAP_PX.near, point: TAP_PX.point });
+    expect(tapReach('track', 'cut', true)).toEqual({ near: TAP_PX.near, point: TAP_PX.point });
+  });
+});
+

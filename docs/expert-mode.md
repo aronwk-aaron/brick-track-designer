@@ -825,3 +825,22 @@ route-owned storage, the follow rules and the card section they bring are the pa
   without them).
   `followHandCuts` goes by `DRoute` object identity between finished actions: anything that swaps the design's route
   objects without calling `replaced()` or `changed(true)` loses the follow for that one action (not the cuts).
+
+## 12. The editor on a tablet (UI stages 0 to 2, 2026-11-20)
+
+From the audit and proposal of 2026-11-19 (in Trilium: "Expert mode: UI and place-everything proposal"): stage 0
+touch and marker fixes, stage 1 one inspector and layer chips, stage 2 the app's trackwork tapped on the plan. Stages
+3 to 7 (one rail at a time, things made off a track, one blade, connectors and labels, ballast edges) wait for
+Aaron's answers and need build work.
+
+- **Stage 0 is built.** A finger reaches a marker 22 px away (a 44 px target) only while the Pick list is on its
+  layer (`items.ts tapReach`); with Everything a tap beside a marker still takes the track under it (tested in
+  test/items.test.ts and scripts/touch-smoke.mts). On a touch screen the marks are drawn 1.6 times as big (joints,
+  open ends, points, check rail and flangeway ends, cut path corners, stretch ends), as the route's handles were; the
+  check rail and flangeway ends are drawn zoomed out too while Points, levers, check rails is picked. Cuts by hand,
+  cut paths and the cuts where tracks join have a colour of their own (`--c-cut`, purple), not the flangeway cuts'
+  red; check rails take `--c-check` (lighter in the dark theme); the legend has rows for cuts by hand and for
+  sleepers, rails and stretches by hand. The selection bar, with an item selected, has arrows (a stud, as the arrow
+  keys) and Done; the hints for a finger point at them, not at keys. Panel controls, the legend's and the bars' are
+  44 px on a touch screen; the selection bar is one row that scrolls sideways; the legend starts folded on a touch
+  screen. A straight's card has no bank rows; a sleeper's fields say their range and default.

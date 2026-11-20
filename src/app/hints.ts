@@ -16,5 +16,10 @@ export function forFingers(hint: string): string {
     .replace('keep clicking', 'keep tapping')
     .replace(/\bClick\b/g, 'Tap')
     .replace(/\bclick\b/g, 'tap')
-    .replace(/\bright-click\b/g, 'tap');
+    .replace(/\bright-click\b/g, 'tap')
+    // (a cut, a cut path, a stretch, a sleeper or a rail edit selected: the selection bar has the arrows, Delete and Done)
+    .replace(/,? or press an arrow key(?: \(a stud; Shift: eight\))?/, ", or with the bar's arrows")
+    .replace(' · arrow keys move it a stud', " · the bar's arrows move it a stud")
+    .replace(/ · Delete (removes it|takes it out|takes them out)/, ' · Delete (on the bar) $1')
+    .replace(' · Esc lets go', '');
 }

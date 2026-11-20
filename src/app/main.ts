@@ -1,5 +1,6 @@
 // The editor: routes on the left (in studs and degrees), the plan view and the
 // 3D piece on the right, rebuilt in a worker as you edit.
+import { forFingers } from './hints';
 import * as THREE from 'three';
 import wasmUrl from 'manifold-3d/manifold.wasm?url';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
@@ -259,7 +260,10 @@ function extraRailFields(r: DRoute, body: HTMLElement, which: 'guard' | 'dual') 
 
 /** A curve's bank (superelevation): how far it leans in, and where it ramps from level. Always shown; locked on a straight, the ramps until there's a bank. */
 function bankFields(sg: DSeg, mono: boolean): HTMLElement[] {
-  const curve = sg.kind === 'curve' && !mono ? sg : undefined, noBank = mono ? 'monorail track doesn\'t bank' : 'only curves bank';
+  // (a straight, or monorail track: no bank at all, so no rows for it)
+  const curve = sg.kind === 'curve' && !mono ? sg : undefined;
+  if (!curve) return [];
+  const noBank = 'only curves bank';
   const locked = (el: HTMLElement, why: string | undefined) => {
     if (!why) return el;
     const n = document.createElement('small'); n.className = 'desc why'; n.textContent = `Locked: ${why}.`;
@@ -565,7 +569,7 @@ function renderItemCard() {
     row.append(del, one); box.append(n, row);
     return;
   }
-  const small = (text: string, warn = false) => { const n = document.createElement('small'); n.className = warn ? 'desc warn' : 'desc'; n.textContent = text; box.append(n); return n; };
+  const small = (text: string, warn = false) => { const n = document.createElement('small'); n.className = warn ? 'desc warn' : 'desc'; n.textContent = finger() ? forFingers(text) : text; box.append(n); return n; };
   const title = document.createElement('b'); title.textContent = label.replace(/,.*$/, ''); box.append(title);
   const row = document.createElement('div'); row.className = 'row';
   const del = document.createElement('button'); del.type = 'button'; del.className = 'danger'; del.textContent = 'Delete'; del.title = 'Take it out (Del). Undo brings it back.';
@@ -677,7 +681,7 @@ function setExpert(on: boolean) {
   try { localStorage.setItem('btd-expert', on ? '1' : '0'); } catch { /* fine */ }
   canvas.expert = on;
   if (!on) canvas.stopExpert();
-  syncExpert(); render(); updateSelbar(); canvas.draw();
+  syncExpert(); render(); updateSelbar(); updateLegend(); canvas.draw();
 }
 function syncExpert() {
   const b = $('expert-toggle');
@@ -943,7 +947,7 @@ function sleeperControls(box: HTMLElement, item: { route: number; at: number; ad
       const n = Number(inp.value), v = Number.isFinite(n) ? Math.min(max, Math.max(min, Math.round(n / step) * step)) : 0, { [key]: _was, ...rest } = e;
       apply({ ...rest, ...(v && { [key]: v }) }, key);
     });
-    box.append(field(label, inp));
+    const f = field(label, inp); f.append(rangeNote(`${min} to ${max}, default 0`)); f.classList.add('stack'); box.append(f);
   };
   num('Moved along, studs', 'move', -SLEEPER_MOVE, SLEEPER_MOVE, lay.whole ? 1 : 0.25, lay.whole ? 'Towards the track\'s end (+) or start (−), whole studs: the underside is lined up with the baseplate.' : 'Towards the track\'s end (+) or start (−), any quarter stud: the underside is lined up with the track.');
   num('Longer on the left, studs', 'left', 0, SLEEPER_LONG, 1, 'Whole studs past the sleeper\'s end, on the left facing from the track\'s start.');
@@ -2023,6 +2027,9 @@ function updateLegend() {
   show('legend-points-off', its.some((it) => it.kind === 'points' && it.off));
   show('legend-points-cand', its.some((it) => it.kind === 'points' && it.cand));
   show('legend-edited', Object.values(design.trackwork ?? {}).some((g) => Object.values(g ?? {}).some(isEdit)));
+  // (with the expert tools shown: what the marks made by hand are)
+  show('legend-cuts', expertTools && (design.routes.some((r) => r.cuts?.length) || !!design.expert?.cutPaths?.length));
+  show('legend-byhand', expertTools && (design.routes.some((r) => r.sleeperEdits?.length || r.railEdits) || !!design.expert?.shared?.length));
   show('legend-mono-points', !!(o as { monoPoints?: unknown[] } | undefined)?.monoPoints?.length);
   show('legend-levers', has('throw'));
   show('legend-grip', !!o?.grips?.length);
@@ -2248,7 +2255,8 @@ document.querySelectorAll<HTMLElement>('#legend [data-layer]').forEach((el) => {
 // (the legend folded away, remembered)
 const legendEl = $('legend');
 const foldLegend = (on: boolean) => { legendEl.classList.toggle('folded', on); $('legend-fold').textContent = on ? '+' : '–'; try { localStorage.setItem('btd-legend', on ? '0' : '1'); } catch { /* fine */ } };
-try { foldLegend(localStorage.getItem('btd-legend') === '0'); } catch { /* fine */ }
+// (a touch screen: folded to start with, the plan's small; the Pick list and its buttons stay)
+try { const v = localStorage.getItem('btd-legend'); legendEl.classList.toggle('folded', v === '0' || (v === null && finger())); $('legend-fold').textContent = legendEl.classList.contains('folded') ? '+' : '–'; } catch { /* fine */ }
 $('legend-fold').addEventListener('click', () => foldLegend(!legendEl.classList.contains('folded')));
 // The Pick list (in the legend, with the expert tools shown): what a click on the plan takes; remembered.
 {
@@ -2690,6 +2698,8 @@ function updateSelbar() {
   const it = canvas.selItem, label = several.length > 1 ? itemsLabel(several) : it && itemLabel(design, it, canvas.jointList()), itemMode = !!it && !!label && (it.kind !== 'joint' || n === 0);
   bar.classList.toggle('item', itemMode);
   $('sel-item-del').hidden = !itemMode || it.kind === 'joint';
+  for (const id of ['sel-item-left', 'sel-item-up', 'sel-item-down', 'sel-item-right']) $(id).hidden = !itemMode || it.kind === 'joint';
+  $('sel-item-done').hidden = !itemMode;
   bar.hidden = !itemMode && n === 0 && !clipboard.length && !clipTables.length;
   $('sel-count').textContent = itemMode ? label! : n ? `${n} selected` : 'clipboard:';
   if (itemMode) closeParallel();
@@ -2722,6 +2732,8 @@ $('sel-merge').addEventListener('click', mergeSel);
 $('sel-apart').addEventListener('click', () => canvas.takeApart(true));
 $('sel-join').addEventListener('click', () => canvas.takeApart(false));
 $('sel-item-del').addEventListener('click', () => canvas.deleteItem());
+// (the arrows and Done: what the arrow keys and Esc do, for a finger or a mouse)
+for (const [id, key] of [['sel-item-left', 'ArrowLeft'], ['sel-item-up', 'ArrowUp'], ['sel-item-down', 'ArrowDown'], ['sel-item-right', 'ArrowRight'], ['sel-item-done', 'Escape']] as const) $(id).addEventListener('click', () => canvas.touchDo(key));
 $('sel-rotl').addEventListener('click', () => turnSel(90));
 $('sel-rotr').addEventListener('click', () => turnSel(-90));
 $('sel-del').addEventListener('click', () => { deleteSel(); updateSelbar(); });

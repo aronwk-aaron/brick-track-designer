@@ -321,6 +321,27 @@ async function tablet(width: number, height: number, tag: string) {
     await page.waitForFunction(() => document.getElementById('track')!.dataset.uncut === '1', null, { timeout: 20_000 }).catch(() => {});
     check(await page.evaluate(() => document.getElementById('track')!.dataset.uncut) === '1' && await cuts() === '[[40],[12]]', `[${tag}] Cut into print parts: No greys the cuts on the plan and keeps them in the design (${await cuts()})`);
     await shot('uncut');
+    // (a finger's reach on a marker: 22 px while the Pick list is on its own layer; with Everything a tap that near a cut
+    // still takes the track under it. The touch bar moves a selected cut and takes it out)
+    at = `${tag}: a finger's reach on markers`;
+    await page.evaluate(() => { localStorage.setItem('btd-pick', 'cut');
+      localStorage.setItem('btd-design', JSON.stringify({ version: 1, gaugeStuds: 4, options: { splitTrack: 'lengths' }, routes: [
+        { name: 'A', x: 0, y: 0, heading: -90, segs: [{ kind: 'straight', studs: 48 }], cuts: [24] }] })); });
+    await page.reload(); await page.waitForSelector('#track'); await tapOn('#mode-select'); await tapOn('#fit'); await sleep(400);
+    const pxStud = await page.evaluate(() => (window as unknown as { btdCanvas: { view(): { scale: number } } }).btdCanvas.view().scale);
+    const beside = await scr(24 + 17 / pxStud, 0);
+    await f.tap(beside); await sleep(250);
+    check(/^Cut across/.test(await bar()), `[${tag}] Cuts picked: a tap 17 px from a cut takes the cut (${await bar()})`);
+    const right = page.locator('#sel-item-right'), rb = await right.boundingBox();
+    check(!!rb && rb.height >= 44 && rb.width >= 44, `[${tag}] the bar's arrow is 44 px (${rb ? `${Math.round(rb.width)}x${Math.round(rb.height)}` : 'not shown'})`);
+    await tapOn('#sel-item-right'); await sleep(150); const moved = await cuts(); await tapOn('#sel-item-left'); await sleep(150);
+    check(moved !== '[[24]]' && await cuts() === '[[24]]', `[${tag}] the bar's arrows move it a stud and back (${moved}, ${await cuts()})`);
+    await tapOn('#sel-item-done'); await sleep(200);
+    check(!/^Cut across/.test(await bar()), `[${tag}] Done lets go of it (${await bar()})`);
+    await page.evaluate(() => { localStorage.setItem('btd-pick', 'all'); }); await page.reload(); await page.waitForSelector('#track'); await tapOn('#mode-select'); await tapOn('#fit'); await sleep(400);
+    await f.tap(beside); await sleep(250);
+    check(/^A selected|^1 selected/.test(await bar()) || await sel() === '0', `[${tag}] Everything: a tap 17 px from a cut takes the track (${await bar()}; ${await sel()})`);
+    await page.evaluate(() => localStorage.setItem('btd-pick', 'cut'));
     await page.evaluate(() => localStorage.setItem('btd-pick', 'all'));
     await shot('several');
   }

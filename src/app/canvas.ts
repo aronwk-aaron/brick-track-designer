@@ -28,7 +28,7 @@ import { lockedWhy } from './lock';
 import { type MeasurePoint, measureBetween, measurePoint } from './measure';
 import { applyCarry, type Carry, connectedSet, holds, type Joint, jointNames, joints, LOOP_OPENS_DEFAULT, type LoopOpens, openedBy, planCarry, poseAt, setApart, tidyExpert } from './connections';
 import { moveRailEdit, railEditAt, type RailEdits, type RailWhat, withRailEdit } from './railedits';
-import { alongBeyond, type BoxItem, boxable, dragStretchEnd, dragStretchWhole, handTracks, hitItems, type Hit, type Item, itemsInBox, itemsLabel, jointsOf, moveCuts, sleeperEditAt, sleeperEditOf, type Layer, newStretchAt, type OwnItem, type PickId, PICKS, picks, placeAlong, sameItem, takesFirst, withStretch } from './items';
+import { alongBeyond, TAP_PX, tapReach, type BoxItem, boxable, dragStretchEnd, dragStretchWhole, handTracks, hitItems, type Hit, type Item, itemsInBox, itemsLabel, jointsOf, moveCuts, sleeperEditAt, sleeperEditOf, type Layer, newStretchAt, type OwnItem, type PickId, PICKS, picks, placeAlong, sameItem, takesFirst, withStretch } from './items';
 import type { Stretch } from './stretches';
 import { COMMON_RADII, type GuideEnd, type GuideResult, type GuideStraight, guidePoint } from './guides';
 import { describe, follow, plan, planAnyway, planAuto, planFreeTurning, planToPose, reversed, trace as traceRaw, type Pose } from './planner';
@@ -283,6 +283,10 @@ export class TrackCanvas {
   dimPlain = false;
   /** May a click take something of this layer now? In Select what the Pick list says; drawing and measuring, everything as ever. */
   private picks(layer: Layer) { return picks(this.mode === 'select' ? this.pick : 'all', layer, this.expert); }
+  /** A finger on a touch screen (not a mouse): bigger marks, and bigger reach on a layer picked alone. */
+  private fingers() { return this.touching || matchMedia('(pointer: coarse)').matches; }
+  /** How near a press must be to take a marker of this layer, studs (items.ts tapReach). */
+  private tapAt(layer: Layer) { const t = tapReach(this.mode === 'select' ? this.pick : 'all', layer, this.fingers()); return { near: this.reach(t.near), point: this.reach(t.point) }; }
   private jointsAt(route: number, end: 'start' | 'end'): Joint[] { return this.joints().filter((j) => (j.a === route && j.aEnd === end) || (j.b === route && j.bEnd === end)); }
   /**
    * The selected joint (a joined end clicked; or, with just two tracks selected, where those two meet: a branch's joint is under its
@@ -572,7 +576,8 @@ export class TrackCanvas {
     const d = this.host.design(), sel = this.selection();
     // (stretches: the selected track's; every track's when only stretches are picked)
     const stretchesOf = !this.picks('stretch') ? [] : this.pick === 'stretch' ? d.routes.flatMap((r, i) => (r.stretches?.length ? [i] : [])) : sel.length === 1 && !this.tableSelection().length ? sel : [];
-    return hitItems(d, w, { near: this.reach(8), point: this.reach(10), kinds, paths: this.cutPaths(), joints: kinds.includes('joint') ? this.joints() : [], stretchesOf, selected: this.selItemNow,
+    const tap = this.tapAt(this.pick === 'all' ? 'track' : this.pick);
+    return hitItems(d, w, { near: tap.near, point: tap.point, kinds, paths: this.cutPaths(), joints: kinds.includes('joint') ? this.joints() : [], stretchesOf, selected: this.selItemNow,
       ...(kinds.includes('sleeper') && { sleepersOf: d.routes.map((_, i) => i), layOf: (i: number) => this.sleeperLay(i) }),
       ...(kinds.includes('rail') && { railsOf: d.routes.flatMap((r, i) => (r.railEdits ? [i] : [])) }) });
   }
@@ -881,8 +886,8 @@ export class TrackCanvas {
   }
   /** The check rail end, flangeway cut end or points under a point (studs), to drag. */
   itemAt(w: [number, number]) {
-    const r = Math.max(1, 9 / this.scale), d = this.host.design();
     if (!this.picks('mark')) return undefined;
+    const r = Math.max(1, Math.max(9, this.fingers() && this.pick === 'mark' ? TAP_PX.finger : 0) / this.scale), d = this.host.design();
     const near = (q: [number, number]) => Math.hypot(q[0] / MM - w[0], q[1] / MM - w[1]) < r;
     const unit = (a: [number, number], b: [number, number]): [number, number] => { const l = Math.hypot(a[0] - b[0], a[1] - b[1]) || 1; return [(a[0] - b[0]) / l, (a[1] - b[1]) / l]; };
     for (const it of this.overlay?.items ?? []) {
@@ -899,7 +904,7 @@ export class TrackCanvas {
   }
   /** The lever under a point (studs), if any. */
   private leverAt(w: [number, number]) {
-    const r = Math.max(1.5, 12 / this.scale);
+    const r = Math.max(1.5, (this.fingers() && this.pick === 'mark' ? TAP_PX.finger : 12) / this.scale);
     // (on the knob, or anywhere on the arm)
     const inPoly = (pts: [number, number][]) => {
       let inside = false;
@@ -2199,7 +2204,9 @@ export class TrackCanvas {
     const v = (name: string, fallback: string) => css.getPropertyValue(name).trim() || fallback;
     const ink = { rail: v('--c-rail', '#4a5560'), centre: v('--c-centre', '#b8b8b0'), label: v('--c-label', '#5c5c55'), mark: v('--c-mark', '#111'),
       tagBg: v('--c-tag-bg', 'rgba(255,255,255,0.92)'), band: v('--c-band', 'rgba(120,110,95,0.16)'), ballast: v('--c-ballast', 'rgba(150,128,96,0.30)'), ballastLow: v('--c-ballast-low', 'rgba(150,128,96,0.16)'), sel: v('--c-sel', '#2b5fb8'), selInk: v('--c-sel-ink', '#1d4fae'),
-      mono: v('--c-mono', 'rgba(140,150,170,0.42)'), monoEdge: v('--c-mono-edge', '#5d6678') };
+      mono: v('--c-mono', 'rgba(140,150,170,0.42)'), monoEdge: v('--c-mono-edge', '#5d6678'), check: v('--c-check', '#2b6fe0'), cut: v('--c-cut', '#8a3fd1') };
+    // (a finger: the marks drawn bigger, as the route's handles are)
+    const z = this.fingers() ? 1.6 : 1;
     c.fillStyle = v('--canvas-bg', '#fbfbf8'); c.fillRect(0, 0, W, H);
     // grid: a line every stud (when not too dense), stronger every 8
     const [wx0, wy1] = this.toWorld(0, 0), [wx1, wy0] = this.toWorld(W, H);
@@ -2436,7 +2443,7 @@ export class TrackCanvas {
           const h = (q.heading * Math.PI) / 180, rx = Math.cos(h), ry = Math.sin(h);
           line([[q.x - rx * half, q.y - ry * half], [q.x + rx * half, q.y + ry * half]], '#e8892b', 2.5);
           const [hx, hy] = this.toScreen(q.x, q.y); ends.push([hx, hy]);
-          c.fillStyle = '#fff'; c.strokeStyle = '#e8892b'; c.lineWidth = 2; c.beginPath(); c.rect(hx - 4.5, hy - 4.5, 9, 9); c.fill(); c.stroke();
+          c.fillStyle = '#fff'; c.strokeStyle = '#e8892b'; c.lineWidth = 2; c.beginPath(); c.rect(hx - 4.5 * z, hy - 4.5 * z, 9 * z, 9 * z); c.fill(); c.stroke();
         }
         // (where its ends are on the screen, for the browser smoke test to grab)
         this.el.dataset.stretch = JSON.stringify({ from: st.from, to: st.to, ends: ends.map(([x, y]) => [Math.round(x), Math.round(y)]) });
@@ -2535,8 +2542,8 @@ export class TrackCanvas {
       // (points thrown in the 3D view: the route each is set for, under the rest)
       for (const sr of this.setRoutes) { c.globalAlpha = 0.45; line(w(sr), '#2e9e5b', Math.max(4, 2.2 * this.scale)); c.globalAlpha = 1; }
       if (!this.hidden.has('grooves')) for (const gr of this.overlay.grooves) line(w(gr), '#e0452b', railW * 0.7);
-      if (!this.hidden.has('checks')) for (const cr of this.overlay.checkRails) line(w(cr), '#2b6fe0', Math.max(1, (1 / MM) * this.scale));
-      if (!this.hidden.has('crossings')) for (const p of this.overlay.crossings) { const [sx, sy] = this.toScreen(p[0] / MM, p[1] / MM); c.strokeStyle = ink.mark; c.lineWidth = 1.2; c.beginPath(); c.arc(sx, sy, 5, 0, 2 * Math.PI); c.stroke(); }
+      if (!this.hidden.has('checks')) for (const cr of this.overlay.checkRails) line(w(cr), ink.check, Math.max(1.5, (1 / MM) * this.scale));
+      if (!this.hidden.has('crossings')) for (const p of this.overlay.crossings) { const [sx, sy] = this.toScreen(p[0] / MM, p[1] / MM); c.strokeStyle = ink.mark; c.lineWidth = 1.2; c.beginPath(); c.arc(sx, sy, 5 * z, 0, 2 * Math.PI); c.stroke(); }
       // the anti-stud tubes underneath that grip the plate (Grip: Edges)
       if (!this.hidden.has('grips') && this.scale >= 3) {
         c.strokeStyle = '#2b9e4a'; c.lineWidth = 1.5;
@@ -2578,10 +2585,10 @@ export class TrackCanvas {
           done.add(it.key);
           const st = this.pointsState(it.key), [sx, sy] = this.toScreen(it.at[0] / MM, it.at[1] / MM);
           c.lineWidth = 2; c.setLineDash([]);
-          if (st.state === 'built') { c.fillStyle = '#f0b400'; c.fillRect(sx - 5, sy - 5, 10, 10); if (st.forced) { c.strokeStyle = ink.mark; c.lineWidth = 1.2; c.strokeRect(sx - 6.5, sy - 6.5, 13, 13); } continue; }
+          if (st.state === 'built') { const q = 5 * z; c.fillStyle = '#f0b400'; c.fillRect(sx - q, sy - q, 2 * q, 2 * q); c.strokeStyle = ink.tagBg; c.lineWidth = 1; c.strokeRect(sx - q, sy - q, 2 * q, 2 * q); if (st.forced) { c.strokeStyle = ink.mark; c.lineWidth = 1.2; c.strokeRect(sx - q - 1.5, sy - q - 1.5, 2 * q + 3, 2 * q + 3); } continue; }
           if (st.state === 'off') c.strokeStyle = '#8a8f99';
           else { c.strokeStyle = st.forced && !st.ok ? '#e0452b' : '#f0b400'; if (!st.ok) c.setLineDash([3, 2]); }
-          c.strokeRect(sx - 4.5, sy - 4.5, 9, 9); c.setLineDash([]);
+          c.strokeRect(sx - 4.5 * z, sy - 4.5 * z, 9 * z, 9 * z); c.setLineDash([]);
         }
         // (hand-edited trackwork: a ring in the accent colour round each one changed, so the edits show on the plan)
         {
@@ -2590,7 +2597,7 @@ export class TrackCanvas {
             const e = ((twk as Record<string, Record<string, Record<string, unknown>> | undefined>)[it.kind] ?? {})[it.key];
             if (!isEdit(e)) continue;
             const [sx, sy] = this.toScreen(it.at[0] / MM, it.at[1] / MM);
-            c.strokeStyle = acc; c.lineWidth = 2; c.setLineDash([3, 2]); c.beginPath(); c.arc(sx, sy, 11, 0, 2 * Math.PI); c.stroke(); c.setLineDash([]);
+            c.strokeStyle = acc; c.lineWidth = 2; c.setLineDash([3, 2]); c.beginPath(); c.arc(sx, sy, 11 * z, 0, 2 * Math.PI); c.stroke(); c.setLineDash([]);
           }
         }
         // (monorail points: a yellow diamond, built as drawn: not changed by hand)
@@ -2600,10 +2607,11 @@ export class TrackCanvas {
         }
       }
       // handles: check rail and flangeway cut ends, dragged longer or shorter (and the one being dragged)
-      if (this.scale >= 4) for (const it of this.overlay.items ?? []) {
+      if (this.scale >= 4 || (this.pick === 'mark' && this.mode === 'select')) for (const it of this.overlay.items ?? []) {
         if ((it.kind !== 'check' && it.kind !== 'groove') || it.pts.length < 2 || this.hidden.has(it.kind === 'check' ? 'checks' : 'grooves')) continue;
-        c.fillStyle = it.kind === 'check' ? '#2b6fe0' : '#e0452b';
-        for (const q of [it.pts[0], it.pts[it.pts.length - 1]]) { const [hx, hy] = this.toScreen(q[0] / MM, q[1] / MM); c.fillRect(hx - 2.5, hy - 2.5, 5, 5); }
+        c.fillStyle = it.kind === 'check' ? ink.check : '#e0452b'; c.strokeStyle = ink.tagBg; c.lineWidth = 1;
+        const q = 3.5 * z;
+        for (const p of [it.pts[0], it.pts[it.pts.length - 1]]) { const [hx, hy] = this.toScreen(p[0] / MM, p[1] / MM); c.fillRect(hx - q, hy - q, 2 * q, 2 * q); c.strokeRect(hx - q, hy - q, 2 * q, 2 * q); }
       }
       if (this.itemDrag?.at) { const [hx, hy] = this.toScreen(this.itemDrag.at[0] / MM, this.itemDrag.at[1] / MM); c.strokeStyle = '#f0b400'; c.lineWidth = 2.5; c.beginPath(); c.arc(hx, hy, 7, 0, 2 * Math.PI); c.stroke(); }
       // the lever hovered, dragged or picked out in the Trackwork panel: the branch route whose points it throws, the one whose card sets its side
@@ -2640,12 +2648,12 @@ export class TrackCanvas {
         // (all the rings as one path, all the dots as another: a plan can have hundreds)
         const spots = (pts: [number, number][], r: number) => { c.beginPath(); for (const p of pts) { const [x, y] = this.toScreen(p[0], p[1]); if (inView(x, y)) { c.moveTo(x + r, y); c.arc(x, y, r, 0, 2 * Math.PI); } } };
         c.lineWidth = 1.25;
-        spots(this.openEnds, 3.5); c.fillStyle = ink.tagBg; c.fill(); c.strokeStyle = ink.label; c.stroke();
-        spots(js.filter((j) => !j.apart).map((j) => j.at), 3.5); c.fillStyle = ink.rail; c.fill(); c.strokeStyle = ink.tagBg; c.stroke();
+        spots(this.openEnds, 3.5 * z); c.fillStyle = ink.tagBg; c.fill(); c.strokeStyle = ink.label; c.stroke();
+        spots(js.filter((j) => !j.apart).map((j) => j.at), 4 * z); c.fillStyle = ink.rail; c.fill(); c.strokeStyle = ink.tagBg; c.stroke();
         for (const j of js) {
           if (!j.apart) continue;
           const [x, y] = this.toScreen(j.at[0], j.at[1]);
-          c.beginPath(); c.arc(x, y, 5.5, 0, 2 * Math.PI); c.fillStyle = '#fff'; c.fill(); c.strokeStyle = '#e8892b'; c.lineWidth = 2; c.moveTo(x - 4, y + 4); c.lineTo(x + 4, y - 4); c.stroke();
+          c.beginPath(); c.arc(x, y, 5.5 * z, 0, 2 * Math.PI); c.fillStyle = '#fff'; c.fill(); c.strokeStyle = '#e8892b'; c.lineWidth = 2; c.moveTo(x - 4 * z, y + 4 * z); c.lineTo(x + 4 * z, y - 4 * z); c.stroke();
         }
       }
       if (this.highlightAt) { const [x, y] = this.toScreen(this.highlightAt[0], this.highlightAt[1]); c.strokeStyle = '#f0b400'; c.lineWidth = 2.5; c.beginPath(); c.arc(x, y, 12, 0, 2 * Math.PI); c.stroke(); }
@@ -2670,8 +2678,7 @@ export class TrackCanvas {
       this.el.dataset.handles = JSON.stringify(shown.map((h) => { const [x, y] = this.toScreen(h.at[0], h.at[1]); return { seg: h.seg, kind: h.kind, x: Math.round(x), y: Math.round(y) }; }));
       for (const h of shown) {
         const [hx, hy] = this.toScreen(h.at[0], h.at[1]), kb = this.kbHandle?.seg === h.seg && this.kbHandle.kind === h.kind, on = this.handleDrag ? this.handleDrag.seg === h.seg && this.handleDrag.kind === h.kind : hovered === h || kb;
-        if (kb) { c.save(); c.strokeStyle = '#1d4fae'; c.lineWidth = 2; c.setLineDash([3, 3]); c.beginPath(); c.arc(hx, hy, 13 * (this.touching ? 1.6 : 1), 0, 2 * Math.PI); c.stroke(); c.restore(); }
-        const z = this.touching ? 1.6 : 1;
+        if (kb) { c.save(); c.strokeStyle = '#1d4fae'; c.lineWidth = 2; c.setLineDash([3, 3]); c.beginPath(); c.arc(hx, hy, 13 * z, 0, 2 * Math.PI); c.stroke(); c.restore(); }
         c.beginPath();
         if (h.kind === 'angle') c.arc(hx, hy, (on ? 7 : 5.5) * z, 0, 2 * Math.PI);
         else if (h.kind === 'length') { const q = (on ? 6.5 : 5) * z; c.rect(hx - q, hy - q, 2 * q, 2 * q); }
@@ -2734,7 +2741,7 @@ export class TrackCanvas {
     for (const rr of d.routes) {
       if (!rr.cuts?.length) continue;
       const half = ((rr.gaugeStuds ?? d.gaugeStuds) + 4) / 2 * this.scale;
-      c.strokeStyle = uncut ? UNCUT_GREY : '#d9480f'; c.lineWidth = 2.5; c.setLineDash(rr.cutsLocked ? [] : [5, 3]);
+      c.strokeStyle = uncut ? UNCUT_GREY : ink.cut; c.lineWidth = 2.5; c.setLineDash(rr.cutsLocked ? [] : [5, 3]);
       for (const at of liveCuts(rr)) {
         const [first] = cutSegs(rr.segs, at), q = follow(rr, first), [qx, qy] = this.toScreen(q.x, q.y), ang = (q.heading * Math.PI) / 180;
         const nx = Math.cos(ang) * half, ny = -Math.sin(ang) * half;
@@ -2767,9 +2774,9 @@ export class TrackCanvas {
       for (const p of this.cutPaths()) {
         const also = this.selAlso.some((q) => q.kind === 'cutpath' && q.id === p.id), sel = (sc?.kind === 'cutpath' && sc.id === p.id) || also, dragged = this.cutDrag && this.cutDrag.kind !== 'cut' && this.cutDrag.id === p.id;
         const bad = dragged ? !!this.cutDrag!.why : !!this.overlay?.pathsNot?.some((n) => n.id === p.id);
-        line(p.pts, uncut ? UNCUT_GREY : bad ? '#e0452b' : '#d9480f', sel ? 4 : 2.5);
+        line(p.pts, uncut ? UNCUT_GREY : bad ? '#e0452b' : ink.cut, sel ? 4 : 2.5);
         if (uncut && p.pts.length) uncutAt ??= this.toScreen(p.pts[0][0], p.pts[0][1]) as [number, number];
-        if (sel && !this.selAlso.length) for (const q of p.pts) { const [x, y] = this.toScreen(q[0], q[1]); c.fillStyle = '#fff'; c.strokeStyle = bad ? '#e0452b' : '#d9480f'; c.lineWidth = 2; c.beginPath(); c.rect(x - 4, y - 4, 8, 8); c.fill(); c.stroke(); }
+        if (sel && !this.selAlso.length) for (const q of p.pts) { const [x, y] = this.toScreen(q[0], q[1]), k = 4 * z; c.fillStyle = '#fff'; c.strokeStyle = bad ? '#e0452b' : ink.cut; c.lineWidth = 2; c.beginPath(); c.rect(x - k, y - k, 2 * k, 2 * k); c.fill(); c.stroke(); }
         if (dragged && this.cutDrag!.why && this.mouse) { const [mx, my] = this.toScreen(this.mouse[0], this.mouse[1]); tag(mx, my + 30, this.cutDrag!.why, '#e0452b'); }
       }
       if (uncut && uncutAt) { tag(uncutAt[0], uncutAt[1] + 40, UNCUT_NOTE, UNCUT_GREY); this.el.dataset.uncut = '1'; } else delete this.el.dataset.uncut;
@@ -2777,7 +2784,7 @@ export class TrackCanvas {
       // by hand: the tracks' joints place them); one the build left out, as it parts nothing, thin and dashed)
       {
         const jc = this.overlay?.jointCuts ?? [];
-        for (const q of jc) line(q.pts.map((v): CutPt => [v[0] / MM, v[1] / MM]), q.made ? '#d9480f' : '#b0613a', q.made ? 2.5 : 1.5, q.made ? [] : [3, 4]);
+        for (const q of jc) line(q.pts.map((v): CutPt => [v[0] / MM, v[1] / MM]), ink.cut, q.made ? 2.5 : 1.5, q.made ? [] : [3, 4]);
         // (where they are on the screen, for the browser smoke tests)
         const where = jc.length ? JSON.stringify(jc.map((q) => { const m = q.pts[Math.floor((q.pts.length - 1) / 2)], n = q.pts[Math.floor((q.pts.length - 1) / 2) + 1] ?? m, [x, y] = this.toScreen((m[0] + n[0]) / 2 / MM, (m[1] + n[1]) / 2 / MM); return { x: Math.round(x), y: Math.round(y), made: q.made }; })) : '';
         if (where) { if (this.el.dataset.jointcuts !== where) this.el.dataset.jointcuts = where; } else delete this.el.dataset.jointcuts;
@@ -2831,15 +2838,15 @@ export class TrackCanvas {
       // (the selected cut across a track: ringed)
       if (sc?.kind === 'cut' && !this.selAlso.length) {
         const rr = d.routes[sc.route], at = rr?.cuts?.[sc.k];
-        if (rr && at !== undefined) { const [first] = cutSegs(rr.segs, at), q = follow(rr, first), [qx, qy] = this.toScreen(q.x, q.y); c.strokeStyle = '#d9480f'; c.lineWidth = 2; c.beginPath(); c.arc(qx, qy, 9, 0, 2 * Math.PI); c.stroke(); if (this.cutDrag?.why && this.mouse) tag(qx, qy + 30, this.cutDrag.why, '#e0452b'); else if (this.cutDrag?.moved) tag(qx, qy + 30, `${at} studs from its start`, '#b23c0a'); }
+        if (rr && at !== undefined) { const [first] = cutSegs(rr.segs, at), q = follow(rr, first), [qx, qy] = this.toScreen(q.x, q.y); c.strokeStyle = ink.cut; c.lineWidth = 2; c.beginPath(); c.arc(qx, qy, 9, 0, 2 * Math.PI); c.stroke(); if (this.cutDrag?.why && this.mouse) tag(qx, qy + 30, this.cutDrag.why, '#e0452b'); else if (this.cutDrag?.moved) tag(qx, qy + 30, `${at} studs from its start`, '#b23c0a'); }
       }
       // (the path being drawn: its corners so far, and on to the grid corner under the pointer, as it would be laid)
       if (this.pathDraw) {
         const g = this.cutGrid(), tip = this.mouse ? snapToGrid(g, this.mouse) : undefined, next = [...this.pathDraw, ...(tip ? [tip] : [])];
         const laid = next.length ? gridPath(g, next) : [], why = laid.length >= 2 ? this.pathWhy(next) : undefined;
-        if (laid.length >= 2) line(laid, why ? '#e0452b' : '#d9480f', 2.5, [6, 4]);
-        for (const q of this.pathDraw) { const [x, y] = this.toScreen(q[0], q[1]); c.fillStyle = '#d9480f'; c.beginPath(); c.arc(x, y, 4, 0, 2 * Math.PI); c.fill(); }
-        if (tip) { const [x, y] = this.toScreen(tip[0], tip[1]); c.strokeStyle = why ? '#e0452b' : '#d9480f'; c.lineWidth = 2; c.beginPath(); c.arc(x, y, 5, 0, 2 * Math.PI); c.stroke(); if (why) tag(x, y + 30, why, '#e0452b'); }
+        if (laid.length >= 2) line(laid, why ? '#e0452b' : ink.cut, 2.5, [6, 4]);
+        for (const q of this.pathDraw) { const [x, y] = this.toScreen(q[0], q[1]); c.fillStyle = ink.cut; c.beginPath(); c.arc(x, y, 4, 0, 2 * Math.PI); c.fill(); }
+        if (tip) { const [x, y] = this.toScreen(tip[0], tip[1]); c.strokeStyle = why ? '#e0452b' : ink.cut; c.lineWidth = 2; c.beginPath(); c.arc(x, y, 5, 0, 2 * Math.PI); c.stroke(); if (why) tag(x, y + 30, why, '#e0452b'); }
       }
     }
     // Add a cut: where the selected route would be cut into parts (the whole stud nearest the pointer)
@@ -2848,7 +2855,7 @@ export class TrackCanvas {
       if (cut && rr) {
         const why = cutProblem(rr, cut.s), [first] = cutSegs(rr.segs, cut.s), q = follow(rr, first), [qx, qy] = this.toScreen(q.x, q.y);
         const ang = (q.heading * Math.PI) / 180, nx = Math.cos(ang) * 14, ny = -Math.sin(ang) * 14;
-        c.strokeStyle = why ? '#e0452b' : '#d9480f'; c.lineWidth = 2.5; c.beginPath(); c.moveTo(qx - nx, qy - ny); c.lineTo(qx + nx, qy + ny); c.stroke();
+        c.strokeStyle = why ? '#e0452b' : ink.cut; c.lineWidth = 2.5; c.beginPath(); c.moveTo(qx - nx, qy - ny); c.lineTo(qx + nx, qy + ny); c.stroke();
         tag(qx, qy + 30, why ?? `cut into parts here: ${cut.s} studs from its start`, why ? '#e0452b' : '#b23c0a');
       }
     }
@@ -2858,7 +2865,7 @@ export class TrackCanvas {
       if (cut && rr) {
         const why = splitProblem(rr, cut.s), [first] = cutSegs(rr.segs, cut.s), q = follow(rr, first), [qx, qy] = this.toScreen(q.x, q.y);
         const ang = (q.heading * Math.PI) / 180, nx = Math.cos(ang) * 12, ny = -Math.sin(ang) * 12;
-        c.strokeStyle = why ? '#e0452b' : '#d9480f'; c.lineWidth = 2.5; c.beginPath(); c.moveTo(qx - nx, qy - ny); c.lineTo(qx + nx, qy + ny); c.stroke();
+        c.strokeStyle = why ? '#e0452b' : ink.cut; c.lineWidth = 2.5; c.beginPath(); c.moveTo(qx - nx, qy - ny); c.lineTo(qx + nx, qy + ny); c.stroke();
         tag(qx, qy + 30, why ?? `cut here: ${cut.s} + ${+(routeStuds(rr) - cut.s).toFixed(1)} studs`, why ? '#e0452b' : '#b23c0a');
       }
     }
