@@ -195,7 +195,7 @@ export function bodyCount(m: { getMesh(): { triVerts: Uint32Array; numVert?: num
   return roots.size;
 }
 /** (tests) A copy flat() made that came back another shape: what changed, where, and the flaws in the mesh there. */
-export interface LossyCopy { dv: number; genus: [number, number]; regions: { v: number; min: number[]; max: number[] }[]; flaws: [kind: 'pinch' | 'zero' | 'close', x: number, y: number, z: number][] }
+export interface LossyCopy { dv: number; genus: [number, number]; /** v: how many 2 mm cells */ regions: { v: number; min: number[]; max: number[] }[]; flaws: [kind: 'pinch' | 'zero' | 'close', x: number, y: number, z: number][] }
 let meshCheck: LossyCopy[] | undefined;
 /** (tests) While set, every copy flat() makes is compared with the solid it was made from; one that changed is listed. */
 export function setMeshCheck(list: typeof meshCheck) { meshCheck = list; }
@@ -227,14 +227,31 @@ function flawsOf(g: { numProp: number; vertProperties: Float32Array; triVerts: U
   }
   return [...out.values()];
 }
+// (where it changed, without a boolean (on a big part with a fault in it they ran the kernel out of memory, or for
+// minutes): the triangles of the copy made that aren't among the ones read back, by their corners, in 2 mm cells,
+// each run of cells next to each other one place)
 function checkCopy(m: Solid, out: Solid, g: { numProp: number; vertProperties: Float32Array; triVerts: Uint32Array }) {
   const dv = out.volume() - m.volume(), gi = m.genus(), go = out.genus();
   if (Math.abs(dv) < 0.05 && gi === go) return;
-  const regions: LossyCopy['regions'] = [];
-  for (const X of [m.subtract(out), out.subtract(m)]) { for (const c of X.decompose()) { const v = c.volume(); if (v > 0.05) { const b = c.boundingBox(); regions.push({ v, min: [...b.min], max: [...b.max] }); } c.delete(); } X.delete(); }
-  regions.sort((p, q) => q.v - p.v);
+  const key = (P: Float32Array, np: number, T: Uint32Array, t: number) => [0, 1, 2].map((e) => { const i = T[t + e] * np; return `${P[i]},${P[i + 1]},${P[i + 2]}`; }).sort().join('|');
+  const h = out.getMesh(), back = new Set<string>();
+  for (let t = 0; t < h.triVerts.length; t += 3) back.add(key(h.vertProperties, h.numProp, h.triVerts, t));
+  const P = g.vertProperties, np = g.numProp, T = g.triVerts, cells = new Map<string, [number, number, number, number, number, number]>(), C = 2;
+  for (let t = 0; t < T.length; t += 3) {
+    if (back.has(key(P, np, T, t))) continue;
+    for (let e = 0; e < 3; e++) {
+      const i = T[t + e] * np, x = P[i], y = P[i + 1], z = P[i + 2], k = `${Math.floor(x / C)},${Math.floor(y / C)},${Math.floor(z / C)}`, c = cells.get(k);
+      if (!c) cells.set(k, [x, y, z, x, y, z]); else { c[0] = Math.min(c[0], x); c[1] = Math.min(c[1], y); c[2] = Math.min(c[2], z); c[3] = Math.max(c[3], x); c[4] = Math.max(c[4], y); c[5] = Math.max(c[5], z); }
+    }
+  }
+  // (cells next to each other joined: one place each)
+  const ks = [...cells.keys()], up = new Map(ks.map((k) => [k, k])), find = (k: string): string => { while (up.get(k) !== k) k = up.get(k)!; return k; };
+  for (const k of ks) { const [x, y, z] = k.split(',').map(Number); for (let dx = -1; dx <= 1; dx++) for (let dy = -1; dy <= 1; dy++) for (let dz = -1; dz <= 1; dz++) { const k2 = `${x + dx},${y + dy},${z + dz}`; if (cells.has(k2)) up.set(find(k2), find(k)); } }
+  const groups = new Map<string, { n: number; min: number[]; max: number[] }>();
+  for (const k of ks) { const r = find(k), c = cells.get(k)!, gr = groups.get(r) ?? { n: 0, min: [Infinity, Infinity, Infinity], max: [-Infinity, -Infinity, -Infinity] }; gr.n++; for (let d = 0; d < 3; d++) { gr.min[d] = Math.min(gr.min[d], c[d]); gr.max[d] = Math.max(gr.max[d], c[d + 3]); } groups.set(r, gr); }
+  const regions = [...groups.values()].sort((p, q) => q.n - p.n).slice(0, 8).map((r) => ({ v: r.n, min: r.min, max: r.max }));
   const near = (q: [number, number, number]) => regions.some((r) => [0, 1, 2].every((k) => q[k] >= r.min[k] - 0.5 && q[k] <= r.max[k] + 0.5));
-  meshCheck!.push({ dv, genus: [gi, go], regions: regions.slice(0, 8), flaws: flawsOf(g, near).slice(0, 200) });
+  meshCheck!.push({ dv, genus: [gi, go], regions, flaws: flawsOf(g, near).slice(0, 200) });
 }
 export function flat<M>(w: Wasm, m: M, supports = true): M {
   const g = (m as unknown as { getMesh(): { numProp: number; vertProperties: Float32Array; triVerts: Uint32Array; mergeFromVert: Uint32Array; mergeToVert: Uint32Array } }).getMesh();
