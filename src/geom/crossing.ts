@@ -61,6 +61,8 @@ export interface CrossingOptions extends TrackOptions {
   axleHoles?: boolean;
   /** (clip_and_peg_on_ballast) On ballast: the end connectors keep their snap peg and C-clip. */
   pegOnBallast?: boolean;
+  /** (expert, stage 6) End connectors set by hand, by where they are (mm): with their peg and clip or without, over the default. */
+  pegs?: { at: [number, number]; peg: boolean; /** square rail ends: no tongues either, the rails run flush to the end */ square?: boolean }[];
   /** (expert) On ballast, at a buffer stop's end: the ballast's steps carried on round the end ('stepped'), not cut off square with it. */
   ballastEnds?: 'square' | 'stepped';
   /** (generate_track off, generate_ballast on) The ballast alone, with a seat (this much clear each side, mm) the separately printed track drops into. */
@@ -278,6 +280,12 @@ export function crossingPiece(s: Scad, routes: Route[], o: CrossingOptions = CRO
   // (route ends that end in a buffer stop: no connector, the rails run into its posts, the bed and ballast to the end)
   const bufAt = (q: Pose) => !!o.buffers?.some((b) => Math.hypot(b[0] - q[0], b[1] - q[1]) < 0.5);
   const bufEnd = (i: number, end: 'start' | 'end') => !x.innerEnds?.has(`${i}:${end}`) && bufAt(end === 'start' ? routes[i].start : routePose(routes[i], routeLength(routes[i])));
+  // (expert, stage 6: an end connector set by hand to have its peg and clip, or not, by where it is; else as ever)
+  const pegAt = (i: number, end: 'start' | 'end') => { const q = end === 'start' ? routes[i].start : routePose(routes[i], routeLength(routes[i])); return o.pegs?.find((p) => Math.hypot(p.at[0] - q[0], p.at[1] - q[1]) < 0.5); };
+  const pegSet = (i: number, end: 'start' | 'end') => pegAt(i, end)?.peg;
+  // (square rail ends: where the app asks for them, which has already kept them off where they can't be (app/connectors.ts
+  // squareBlocked: tilted track, extra rails ending in tongues, the ballast alone's seat), and said so)
+  const squareSet = (i: number, end: 'start' | 'end') => !!pegAt(i, end)?.square && !scadParity();
   // (the ballast alone, printed apart from the track: no supports, the track's connectors with their peg and clip for its seat)
   const alone = o.ballastOnly !== undefined;
   if (alone) o = { ...o, supports: false };
@@ -573,7 +581,13 @@ export function crossingPiece(s: Scad, routes: Route[], o: CrossingOptions = CRO
   // (a route's end connectors, each in its end's frame; on ballast no peg and clip, as the switches')
   const connOf = (i: number) => {
     const t = tOf[i], ex: ExtraBuilt | undefined = extras[i], peg = !onBallast || !!o.pegOnBallast || alone, { xfs0, xfs1, posts0, posts1 } = connPlan[i];
-    return { peg, conn0: T(t.fullEndpoint(peg, xfs0, ex?.guardX, posts0), [0, 4, 0]), conn1: T(R(t.fullEndpoint(peg, xfs1, ex?.guardX, posts1), [0, 0, 180]), [0, -4, 0]) };
+    // (each end's own where it's set by hand; not for the ballast alone, whose seat is the track's with its peg and clip)
+    const sq0 = squareSet(i, 'start'), sq1 = squareSet(i, 'end');
+    const peg0 = alone ? peg : sq0 ? false : pegSet(i, 'start') ?? peg, peg1 = alone ? peg : sq1 ? false : pegSet(i, 'end') ?? peg;
+    // (square rail ends: the connector's base alone, and solid under each rail's end where the tongues were, the rail
+    // standing on it to the end: nothing over air)
+    const end = (pg: boolean, sq: boolean, xfs: number[], posts: number[]) => (sq ? t.squareEndpoint(xfs, ex?.guardX, posts) : t.fullEndpoint(pg, xfs, ex?.guardX, posts));
+    return { peg, peg0, peg1, sq0, sq1, conn0: T(end(peg0, sq0, xfs0, posts0), [0, 4, 0]), conn1: T(R(end(peg1, sq1, xfs1, posts1), [0, 0, 180]), [0, -4, 0]) };
   };
   routes.forEach((rt, i) => {
     const L = routeLength(rt), ex: ExtraBuilt | undefined = extras[i];
@@ -622,8 +636,9 @@ export function crossingPiece(s: Scad, routes: Route[], o: CrossingOptions = CRO
     const railEnds = (): (Man | false | undefined)[] => {
       if (scadParity() || hasRoll(rt)) return endBoxes(END, BUFFER_RAIL_END);
       const w = c.sleeperLen + 2 * STUD, box = (d: number, y: number) => T(s.cube([w, d + 1, 30]), [-w / 2, y, -5]);
-      const { noConn0, noConn1 } = connPlan[i];
-      return [!inStart && atPose(noConn0 ? box(END, -1) : rooted(box(END, -1), true), p0), !inEnd && atPose(noConn1 ? box(END, -END) : rooted(box(END, -END), false), p1),
+      const { noConn0, noConn1 } = connPlan[i], sq0 = !noConn0 && squareSet(i, 'start'), sq1 = !noConn1 && squareSet(i, 'end');
+      // (square rail ends: the rails run on to the end, cut square there by the piece's end: flush with the next piece's)
+      return [!inStart && !sq0 && atPose(noConn0 ? box(END, -1) : rooted(box(END, -1), true), p0), !inEnd && !sq1 && atPose(noConn1 ? box(END, -END) : rooted(box(END, -END), false), p1),
         bufS && atPose(box(BUFFER_RAIL_END, -1), p0), bufE && atPose(box(BUFFER_RAIL_END, -BUFFER_RAIL_END), p1)];
     };
     const rails = s.difference(s.union([-g, g].map((x) =>
@@ -720,16 +735,16 @@ export function crossingPiece(s: Scad, routes: Route[], o: CrossingOptions = CRO
     // (at a banked end, a route left banked to its end: turned with the bed)
     // (solid underneath here: the underside's cut under them, below)
     const { xfs0, xfs1, noConn0, noConn1 } = connPlan[i];
-    const { peg, conn0, conn1 } = connOf(i);
+    const { peg0, peg1, sq0, sq1, conn0, conn1 } = connOf(i);
     if (!noConn0) parts.push(atPose(roll0 ? bankedEnd(s, conn0, trackBank(c.sleeperLen), roll0, c.sleeperLen, true) : conn0, p0));
     if (!noConn1) parts.push(atPose(roll1 ? bankedEnd(s, conn1, trackBank(c.sleeperLen), roll1, c.sleeperLen, false) : conn1, p1));
     // (buffer stops, in their end's frame; the peg and clip above the bed on ballast held up by breakaway supports)
     if (bufS) parts.push(atPose(R(bufferStop(t, o.buffer ?? BUFFER_DEFAULTS, onBallast), [0, 0, 180]), p0));
     if (bufE) parts.push(atPose(bufferStop(t, o.buffer ?? BUFFER_DEFAULTS, onBallast), p1));
-    if (onBallast && peg && o.supports) {
+    if (onBallast && (peg0 || peg1) && o.supports) {
       const cs = couplerSupports(t, bottomZ - 0.02);
-      if (cs && !noConn0) parts.push(atPose(T(cs, [0, 4, 0]), p0));
-      if (cs && !noConn1) parts.push(atPose(T(R(cs, [0, 0, 180]), [0, -4, 0]), p1));
+      if (cs && !noConn0 && peg0) parts.push(atPose(T(cs, [0, 4, 0]), p0));
+      if (cs && !noConn1 && peg1) parts.push(atPose(T(R(cs, [0, 0, 180]), [0, -4, 0]), p1));
     }
     if (o.supports) {
       const zs = bottomZ - 0.02;
@@ -738,10 +753,12 @@ export function crossingPiece(s: Scad, routes: Route[], o: CrossingOptions = CRO
       const offClip = (xfs?: number[]) => xfs?.filter((xf) => !(c.hasCoupler && xf > 0 && Math.abs(xf - c.couplerX) < 6.8));
       // (and one by the peg (a dual gauge's third rail's) kept clear of it, as the footing is: its rib and foot ran into
       // the peg, so the end's supports, footing and all, printed as one with the part and lay 7 mm under the next one)
-      const offPeg = (m: Man, dir: number, xfs?: number[]) => (c.hasCoupler && peg && xfs?.length ? s.difference(m, [T(s.cylinder(40, 2.5, 2.5, 32), [dir * c.couplerX, 0, zs - 1])]) : m);
-      const sup0 = (z: number) => offPeg(t.startRailSupports(z, offClip(xfs0)), -1, xfs0), sup1 = (z: number) => offPeg(t.endRailSupports(z, offClip(xfs1)), 1, xfs1);
-      if (!noConn0) parts.push(atPose(roll0 ? s.union([bankedSupports(s, sup0, trackBank(c.sleeperLen), roll0, zs), t.supportFooting(zs, 0, -1)]) : s.union([sup0(zs), t.supportFooting(zs, 0, -1)]), p0));
-      if (!noConn1) parts.push(atPose(roll1 ? s.union([bankedSupports(s, sup1, trackBank(c.sleeperLen), roll1, zs), t.supportFooting(zs, 0, +1)]) : s.union([sup1(zs), t.supportFooting(zs, 0, +1)]), p1));
+      const offPeg = (m: Man, dir: number, xfs: number[] | undefined, peg: boolean) => (c.hasCoupler && peg && xfs?.length ? s.difference(m, [T(s.cylinder(40, 2.5, 2.5, 32), [dir * c.couplerX, 0, zs - 1])]) : m);
+      const sup0 = (z: number) => offPeg(t.startRailSupports(z, offClip(xfs0)), -1, xfs0, peg0), sup1 = (z: number) => offPeg(t.endRailSupports(z, offClip(xfs1)), 1, xfs1, peg1);
+      // (no tongues at a square end: nothing to hold up there. A footing at an end set by hand without its peg and clip a
+      // millimetre shorter (track.ts supportFooting); the app's own ends as ever)
+      if (!noConn0 && !sq0) parts.push(atPose(roll0 ? s.union([bankedSupports(s, sup0, trackBank(c.sleeperLen), roll0, zs), t.supportFooting(zs, 0, -1, !peg0 && pegAt(i, 'start') !== undefined)]) : s.union([sup0(zs), t.supportFooting(zs, 0, -1, !peg0 && pegAt(i, 'start') !== undefined)]), p0));
+      if (!noConn1 && !sq1) parts.push(atPose(roll1 ? s.union([bankedSupports(s, sup1, trackBank(c.sleeperLen), roll1, zs), t.supportFooting(zs, 0, +1, !peg1 && pegAt(i, 'end') !== undefined)]) : s.union([sup1(zs), t.supportFooting(zs, 0, +1, !peg1 && pegAt(i, 'end') !== undefined)]), p1));
     }
     // (its third rail through a crossing, or another's through its own: the flangeways cut through it)
     const exCuts = ex?.solid && (ex.dualBand || dualBands(i).length) ? [...othersBands(i), ...dualBands(i)] : [];

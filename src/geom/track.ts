@@ -185,6 +185,21 @@ export class Track {
     ]);
   }
 
+  /**
+   * (expert, stage 6) An end connector with square rail ends: endpointBase without its peg and clip, and solid under
+   * each running rail's end where the tongues' room was, from the bed up to the rail's foot, so the rail stands on it to
+   * the end face, cut square there with the piece. Butted to the next piece's, the rails meet flush; only the baseplate
+   * holds them in line.
+   */
+  squareEndpoint(xfs: number[] = [], guardX?: number, studs: boolean | number[] = true): Man {
+    const s = this.s, g = this.c.railOffset;
+    return s.union([
+      this.endpointBase(false, xfs, guardX, studs),
+      // (inside the rail's foot, 3.8 each side of its line, and 0.3 up into it: one solid with the rail, no face on face)
+      ...[-g, g].map((x) => T(s.cube([7.6, 8, PLATE_H + 0.3]), [x - 3.8, -4, 0])),
+    ]);
+  }
+
   /** rail_support(width, height, ribs_pos_y): a thin breakaway wall with a rib and a foot (the shape alone: whoever places it makes it a support, supports.ts). */
   railSupport(width: number, height: number, ribsPosY = true): Man {
     const s = this.s, dz = ribsPosY ? -2 : 0;
@@ -225,9 +240,11 @@ export class Track {
   }
 
   /** support_footing(z0, y_end, dir), clear of the peg and clip on the bed. */
-  supportFooting(z0: number, yEnd: number, dir: number): Man {
+  supportFooting(z0: number, yEnd: number, dir: number, noPeg = false): Man {
     const s = this.s, c = this.c;
-    const hw = c.sleeperLen / 2, fw = 6, ft = 0.6, gap = 0.4;
+    // (expert, stage 6: an end without its peg and clip a millimetre shorter: the peg reached out past the end, and on a
+    // curve, without it, the footing's far corner stood past the support's reach from the part)
+    const hw = c.sleeperLen / 2, fw = noPeg ? 5 : 6, ft = 0.6, gap = 0.4;
     const ya = yEnd + dir * 1, yb = yEnd + dir * (1 + fw);
     const m = dir < 0 ? 1 : -1;
     const body = s.union([

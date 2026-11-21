@@ -31,6 +31,8 @@ import { BED_KEYS, isRouteKey, MORE_KEYS, OWN_CHECKS, OWN_LABELS, OWN_RANGES, OW
 import { accepted, pruneAccept, renameAccept, setAccept } from './accept';
 import { curvedAt, followShared, followSleeperEdits, pruneShared, renameShared, setShared, sharedOf, type SleeperEdit, sleeperEditText, SLEEPER_LONG, SLEEPER_MOVE, SPAN_MAX } from './sleeperedits';
 import { type FreeItem, freeProblem, RAIL_MAX, RAIL_MIN, SLEEPER_LEN } from './freeparts';
+import { carryCutJoints, connKind, endKindOf, squareBlocked, type EndKind, jointDefault, JOINT_NAMES, JOINT_TIPS, type JointKind, keepJoints, moveJoint, pegDefault, setCutJoint, setEndKind } from './connectors';
+import { LABEL_CAP, LABEL_TEXT_MAX, labelsOff, labelTextOf, nextLabelId } from './labelitems';
 import { cleanRailEdits, cutOutOfPiece, type PiecePut, railPieces, resetRailSide, setRailPiece, FLANGEWAY_MIN, followRailEdits, GAP_DEF, GAP_MAX, GAP_MIN, GAP_RADIUS_MIN, GUARD_GAP_MAX, GUARD_GAP_MIN, moveRailEdit, RAIL_RUN_MIN, railEditAt, type RailEdits, type RailGap, railProblem, type RailSide, withRailEdit } from './railedits';
 import { boxable, byHandNote, type PickId, designByHandNote, EXPERT_SECTIONS, isPick, itemLabel, itemsLabel, jointsOf, jointWhere, PICK_CHIPS, PICKS, sleeperEditAt, sleeperEditOf } from './items';
 import { expandStretches, followStretches, liveStretches, lostStretches, type Stretch, STRETCH_KEYS, STRETCH_MIN, stretchProblem } from './stretches';
@@ -770,6 +772,75 @@ function renderItemCard() {
     const tw = document.createElement('button'); tw.type = 'button'; tw.textContent = 'In the Trackwork list'; tw.title = 'Open the Trackwork panel at it';
     tw.addEventListener('click', () => { const d = $('trackwork') as HTMLDetailsElement; d.open = true; d.scrollIntoView({ block: 'nearest' }); });
     row.append(tw);
+  } else if (it.kind === 'conn') {
+    // (stage 6: an end connector: its kind; a joint along a track, where it is too)
+    const r = design.routes[it.route], o = design.options ?? {}, def = jointDefault(o), app = canvas.appJoints()[it.route] ?? [];
+    const lengths = (o.splitTrack ?? 'lengths') === 'lengths';
+    const sel = document.createElement('select'); sel.setAttribute('aria-label', 'This connector is');
+    const opt = (v: string, t: string, off?: string) => { const op = new Option(off ? `${t} (${off})` : t, v); op.disabled = !!off; sel.append(op); };
+    if (it.end) {
+      const joined = canvas.jointList().some((j) => (j.a === it.route && j.aEnd === it.end) || (j.b === it.route && j.bEnd === it.end));
+      opt('connector', `${JOINT_NAMES[def]} (the design's)`); opt('peg', JOINT_NAMES.peg); opt('nopeg', JOINT_NAMES.nopeg); opt('square', `${JOINT_NAMES.square}: rails held in line by the plate only`, squareBlocked(design, canvas.jointList(), toRoutes(design), { route: it.route, end: it.end })); opt('buffer', 'Buffer stop', joined ? 'only on an end joined to nothing' : undefined);
+      sel.value = endKindOf(r, it.end);
+      sel.addEventListener('change', () => { const why = setEndKind(design, canvas.jointList(), it.route, it.end!, sel.value as EndKind); if (why) { canvas.say(why); soon(drawItemCard); return; } changed(true); soon(drawItemCard); });
+      box.append(field('This end is', sel));
+      small(`Default: ${JOINT_NAMES[def]} (Peg and clip on ballast ends, in Joints, sets it on ballast). ${((k) => (k === 'buffer' ? '' : JOINT_TIPS[k]))(connKind(design, { route: it.route, end: it.end }))} A joined end is set with the track's end it meets. It moves with its track.`);
+      const reset = document.createElement('button'); reset.type = 'button'; reset.textContent = 'Reset this end'; reset.title = 'Back to the design\'s end connector';
+      reset.disabled = endKindOf(r, it.end) === 'connector';
+      reset.addEventListener('click', () => { setEndKind(design, canvas.jointList(), it.route, it.end!, 'connector'); changed(true); soon(drawItemCard); });
+      row.append(reset);
+    } else {
+      const at = it.at!, L = cutLength(r), own = r.cutJoints?.find((q) => Math.abs(q.at - at) < 1e-3)?.kind;
+      opt('auto', `${JOINT_NAMES[def]} (the design's)`); opt('peg', JOINT_NAMES.peg); opt('nopeg', JOINT_NAMES.nopeg); opt('square', `${JOINT_NAMES.square}: rails held in line by the plate only`, squareBlocked(design, canvas.jointList(), toRoutes(design), { route: it.route }));
+      sel.value = own ?? 'auto'; sel.disabled = !lengths;
+      sel.addEventListener('change', () => {
+        if (it.auto) { keepJoints(r, app); }
+        setCutJoint(r, at, sel.value as JointKind | 'auto'); coalesceNext = `conn:${it.route}:${at}`; changed(true);
+        canvas.selectItem({ kind: 'conn', route: it.route, at }); soon(drawItemCard);
+      });
+      box.append(field('This joint is', sel));
+      const inp = document.createElement('input'); inp.type = 'number'; inp.step = '1'; inp.min = String(CUT_MIN); inp.max = String(Math.max(CUT_MIN, Math.floor(L - CUT_MIN))); inp.value = String(at); inp.setAttribute('aria-label', 'Joint, studs from the track\'s start');
+      inp.disabled = !lengths;
+      inp.addEventListener('change', () => {
+        const n = Math.round(Number(inp.value)), why = inp.value.trim() === '' || !Number.isFinite(n) ? 'Type how far along the joint is, studs' : moveJoint(r, at, n, app);
+        if (why) { canvas.say(why); inp.value = String(at); return; }
+        coalesceNext = `conn:${it.route}:move`; changed(true); canvas.selectItem({ kind: 'conn', route: it.route, at: n }); soon(drawItemCard);
+      });
+      box.append(field('Studs from the start', inp));
+      if (!lengths) small('Locked: with Long track cut into: Print bed size, the parts are cut through, joined as Parts join with says (Joints).', true);
+      else small(`Whole studs, ${CUT_MIN} to ${Math.floor(L - CUT_MIN)}, ${CUT_MIN} from the track's ends and other joints at least. An ordinary track end each side. Default kind: ${JOINT_NAMES[def]}. ${((k) => (k === 'buffer' ? '' : JOINT_TIPS[k]))(connKind(design, { route: it.route, at }))} ${it.auto ? 'The first change makes the track\'s joints yours, kept where they are (its card\'s Automatic cuts gives them back).' : 'Drag it along the track, or press an arrow key.'}`);
+      row.append(del);
+    }
+  } else if (it.kind === 'label') {
+    // (stage 6: a label: its text, size and way; the app's become one placed by hand on the first change)
+    const off = labelsOff(design.options), lb = canvas.labelList().find((q) => (it.id ? q.item.id === it.id : !q.item.id && q.item.part === it.part));
+    const l = it.id ? design.expert?.labels?.find((q) => q.id === it.id) : undefined;
+    // (the one to change: this, or (the app's) one placed by hand where it is, made now)
+    const mine = () => { const list = ((design.expert ??= {}).labels ??= []); if (it.id) return list.find((q) => q.id === it.id); if (!lb) return undefined; const id = nextLabelId(list); list.push({ id, at: lb.at, heading: lb.heading }); canvas.selectItem({ kind: 'label', id }); return list[list.length - 1]; };
+    if (off) small(`Not engraved: ${off}.`, true);
+    if (l?.off) {
+      small('This part has no label: the app\'s was taken off here.');
+      const back = document.createElement('button'); back.type = 'button'; back.textContent = 'Put the label back'; back.title = 'The app\'s label on this part again';
+      back.addEventListener('click', () => { canvas.deleteItem(); });
+      row.append(back);
+    } else {
+      const txt = document.createElement('input'); txt.type = 'text'; txt.maxLength = LABEL_TEXT_MAX; txt.value = l?.text ?? ''; txt.placeholder = lb?.text ?? 'the part\'s own'; txt.setAttribute('aria-label', 'Label text'); txt.disabled = !!off;
+      txt.addEventListener('change', () => { const m = mine(); if (!m) return; const t = labelTextOf(txt.value); if (t) m.text = t; else delete m.text; coalesceNext = `label:${m.id}:text`; changed(true); soon(drawItemCard); });
+      box.append(field('Text', txt));
+      const cap = document.createElement('input'); cap.type = 'number'; cap.step = '0.5'; cap.min = String(LABEL_CAP[0]); cap.max = String(LABEL_CAP[1]); cap.value = l?.cap !== undefined ? String(l.cap) : ''; cap.placeholder = 'fits'; cap.setAttribute('aria-label', 'Capitals, mm'); cap.disabled = !!off;
+      cap.addEventListener('change', () => { const m = mine(); if (!m) return; const n = Number(cap.value); if (cap.value.trim() === '' || !Number.isFinite(n)) delete m.cap; else m.cap = Math.min(LABEL_CAP[1], Math.max(LABEL_CAP[0], Math.round(n * 2) / 2)); coalesceNext = `label:${m.id}:cap`; changed(true); soon(drawItemCard); });
+      box.append(field('Capitals, mm', cap));
+      const turn = document.createElement('input'); turn.type = 'number'; turn.step = '22.5'; turn.value = String(l?.heading ?? lb?.heading ?? 0); turn.setAttribute('aria-label', 'Label turned, degrees'); turn.disabled = !!off;
+      turn.addEventListener('change', () => { const m = mine(); if (!m) return; const n = Number(turn.value); if (!Number.isFinite(n)) return; m.heading = Math.round(((((n % 360) + 540) % 360) - 180) * 100) / 100; coalesceNext = `label:${m.id}:turn`; changed(true); soon(drawItemCard); });
+      box.append(field('Runs at, degrees', turn));
+      small(`Text: up to ${LABEL_TEXT_MAX} letters, capitals; empty: the part's own label (default). Capitals ${LABEL_CAP[0]} to ${LABEL_CAP[1]} mm; empty: as big as fits (default, up to ${LABEL_CAP[1]}). Engraved 0.9 mm into the part's flat underside, mirrored to read from below; only where all of it is over solid underside. Drag it on the plan, or press an arrow key.`);
+      // (said by the last build, by where it is; else it's on no part, or the build after the last change isn't done)
+      const said = l && lastBuild.warnings.find((q) => q.startsWith(`a label placed by hand at ${l.at[0].toFixed(0)}, ${l.at[1].toFixed(0)} (studs)`));
+      if (said) small(`Not engraved: ${said.replace(/^.*?isn't engraved: /, '')}.`, true);
+      else if (lb?.missing && !off) small('Not engraved (yet): it lies under no part, or the build isn\'t done. Put it on a track.', true);
+      if (l) { const reset = document.createElement('button'); reset.type = 'button'; reset.textContent = 'Back to the app\'s label'; reset.title = 'Take this one away: the part has the app\'s own label again (where labels are on)'; reset.addEventListener('click', () => { design.expert!.labels = (design.expert?.labels ?? []).filter((q) => q.id !== l.id); tidyExpert(design); canvas.selectItem(undefined); changed(true); }); row.append(reset); }
+      del.textContent = l ? 'Delete' : 'Take off'; row.append(del);
+    }
   } else if (it.kind === 'joint') {
     const sj = canvas.jointSelected();
     for (const j of jointsOf(it, js)) small(`${jointWhere(design, j)}, at ${+j.at[0].toFixed(1)}, ${+j.at[1].toFixed(1)} (studs): ${j.apart ? 'taken apart (each moves on its own)' : 'joined (they move together)'}.`);
@@ -781,6 +852,8 @@ function renderItemCard() {
   const status = it.kind === 'sleeper' ? (it.add ? 'Added by hand: Remove takes it away again.' : sleeperEditAt(design.routes[it.route], it) >= 0 ? 'Edited by hand: Reset puts it back as the app lays it.' : 'Laid by the app: change anything to make it yours.')
     : it.kind === 'joint' ? 'Worked out from where the tracks meet.'
     : it.kind === 'free' ? 'Made by hand: Delete takes it away (Undo brings it back).'
+    : it.kind === 'conn' ? (it.end ? (endKindOf(design.routes[it.route], it.end) !== 'connector' ? 'Set by hand: Reset this end gives the design\'s back.' : 'The design\'s end connector: change its kind to make it yours.') : it.auto ? 'Worked out by the app: change anything to make it yours.' : (design.routes[it.route]?.cutJoints ?? []).some((q) => Math.abs(q.at - it.at!) < 1e-3) ? 'A hand cut with a kind of its own: the design\'s kind on its card gives it back.' : 'A hand cut: Delete takes it out; the track card\'s Automatic cuts gives the joints back to the app.')
+    : it.kind === 'label' ? (it.id ? (design.expert?.labels?.find((q) => q.id === it.id)?.off ? 'Taken off by hand: Put the label back.' : 'Placed by hand: Back to the app\'s label gives the part its own again.') : 'Placed by the app: change anything to make it yours.')
     : it.kind === 'run' ? ((design.routes[it.route]?.railEdits?.out ?? []).some((q) => q.side === it.side) ? (it.out ? `Taken out by hand: Put the rail back, or Reset the ${it.side} rail.` : `Edited by hand: Reset the ${it.side} rail gives it back to the app.`) : 'Laid by the app: change anything to make it yours.')
     : it.kind === 'tw' && it.blade !== undefined ? ((design.trackwork?.points?.[it.key]?.bladeHeel?.[it.blade] ?? 0) > 0 ? 'Edited by hand: Reset this blade puts it back as worked out.' : 'Worked out by the app: change anything to make it yours.')
     : it.kind === 'tw' ? (isEdit((design.trackwork?.[it.tw] as Record<string, unknown> | undefined)?.[it.key]) ? 'Edited by hand: Reset this puts it back as the app works it out.' : 'Worked out by the app: change anything to make it yours.')
@@ -1431,10 +1504,10 @@ function makeCard(r: DRoute, i: number): HTMLElement {
       // (each end: an ordinary end connector, or a buffer stop)
       for (const [prop, label] of [['startEnd', 'Starts in'], ['endEnd', 'Ends in']] as const) {
         const es = document.createElement('select');
-        for (const [v, t] of [['connector', 'An end connector'], ['buffer', 'A buffer stop']]) es.append(new Option(t, v));
+        for (const [v, t] of [['connector', `An end connector (${pegDefault(design.options) ? 'with' : 'no'} peg and clip: the design's)`], ['peg', 'An end connector with its peg and clip'], ['nopeg', 'An end connector, rail tongues only'], ['square', 'Square rail ends (rails held in line by the plate only)'], ['buffer', 'A buffer stop']]) es.append(new Option(t, v));
         es.value = r[prop] ?? 'connector';
-        es.title = 'An ordinary end connector, to join more track, or a buffer stop: the rails run into two posts joined by a buffer beam, its last two studs (the Buffer stops settings)';
-        es.addEventListener('change', () => { if (es.value === 'buffer') r[prop] = 'buffer'; else delete r[prop]; changed(true); });
+        es.title = 'An ordinary end connector, to join more track (with its peg and clip, or rail tongues only), or a buffer stop: the rails run into two posts joined by a buffer beam, its last two studs (the Buffer stops settings)';
+        es.addEventListener('change', () => { if (es.value === 'connector') delete r[prop]; else r[prop] = es.value as EndKind; changed(true); });
         const f = field(label, es); f.classList.add('stack'); ends.append(f);
       }
     }
@@ -1665,10 +1738,21 @@ function followRails(record: boolean) {
 function noteStretches() { stretchesWere = new Map(design.routes.filter((r) => r.stretches?.length).map((r) => [r, { segs: JSON.stringify(r.segs), st: JSON.stringify(r.stretches) }])); }
 /** The routes with hand cuts noted as they are now (an action finished, or another design opened). */
 function noteHandCuts() { cutsWere = new Map(design.routes.filter((r) => r.cuts?.length).map((r) => [r, { segs: JSON.stringify(r.segs), cuts: JSON.stringify(r.cuts) }])); }
+/** (stage 6) Each route's hand cuts as they were at the last change: a cut moved takes its own joint kind with it (connectors.ts carryCutJoints). */
+const cutsSeen = new WeakMap<DRoute, number[]>();
+function followCutJoints() {
+  for (const r of design.routes) {
+    const now = r.cuts ?? [], was = cutsSeen.get(r);
+    if (r.cutJoints && was && JSON.stringify(was) !== JSON.stringify(now)) { const cj = carryCutJoints(r.cutJoints, was, now); if (cj) r.cutJoints = cj; else delete r.cutJoints; }
+    else if (r.cutJoints && !now.length) delete r.cutJoints;
+    cutsSeen.set(r, [...now]);
+  }
+}
 function changed(rerender = false, record = true, build = true) {
   // (the trackwork's hand edits go with their track: each one's place worked out again from the route it's on)
   followTrackwork(design, canvas?.overlay?.items ?? []);
   followHandCuts(record);
+  followCutJoints();
   followOwnStretches(record);
   followSleepers(record);
   followRails(record);
@@ -2428,6 +2512,12 @@ $('legend-fold').addEventListener('click', () => foldLegend(!legendEl.classList.
     b.addEventListener('click', () => { if (canvas.mode !== 'select') $('mode-select').click(); setPick(pickTo); canvas.armFree(canvas.freeArmed === k ? undefined : k); });
     chips.append(b);
   }
+  // (stage 6: + Joint and + Label: the next tap on a track adds one there)
+  for (const [k, label, tip] of [['conn', '+ Joint', 'Add a joint: tap a track where its parts should join (an ordinary track end each side; the track\'s other joints kept where they are).'], ['label', '+ Label', 'Add a label: tap a track where it goes, under that part (a flat underside only).']] as const) {
+    const b = document.createElement('button'); b.type = 'button'; b.className = 'add'; b.dataset.add = k; b.textContent = label; b.title = tip;
+    b.addEventListener('click', () => { if (canvas.mode !== 'select') $('mode-select').click(); setPick(k); canvas.armAdd(canvas.addArmed === k ? undefined : k); });
+    chips.append(b);
+  }
   const setPick = (v: PickId) => {
     canvas.pick = v; pick.value = v;
     for (const b of chips.querySelectorAll<HTMLButtonElement>('button')) { const on = b.dataset.pick === v; b.classList.toggle('on', on); b.setAttribute('aria-pressed', String(on)); }
@@ -2870,6 +2960,8 @@ function updateSelbar() {
   $('sel-item-del').hidden = !itemMode || it.kind === 'joint';
   for (const id of ['sel-item-left', 'sel-item-up', 'sel-item-down', 'sel-item-right']) $(id).hidden = !itemMode || it.kind === 'joint' || it.kind === 'tw';
   if (itemMode && it.kind === 'tw') $('sel-item-del').hidden = (it.tw !== 'points' && it.tw !== 'check') || it.blade !== undefined;
+  // (stage 6: a track's own end can't be deleted, nor moved on its own: it goes with its track)
+  if (itemMode && it.kind === 'conn' && it.end) for (const id of ['sel-item-del', 'sel-item-left', 'sel-item-up', 'sel-item-down', 'sel-item-right']) $(id).hidden = true;
   $('sel-item-done').hidden = !itemMode;
   bar.hidden = !itemMode && n === 0 && !clipboard.length && !clipTables.length;
   $('sel-count').textContent = itemMode ? label! : n ? `${n} selected` : 'clipboard:';

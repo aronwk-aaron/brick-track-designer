@@ -28,8 +28,11 @@ import { lockedWhy } from './lock';
 import { type MeasurePoint, measureBetween, measurePoint } from './measure';
 import { applyCarry, type Carry, connectedSet, holds, type Joint, jointNames, joints, LOOP_OPENS_DEFAULT, type LoopOpens, openedBy, planCarry, poseAt, setApart, tidyExpert } from './connections';
 import { type FreeItem, freeProblem, moveFree, nextFreeId, railEndTo, sleeperCorners } from './freeparts';
+import { addJoint, type Conn, connectorsOf, connKind, deleteJoint, endKindOf, moveJoint } from './connectors';
+import { type LabelItem, labelBox, labelsOff, moveLabel, nextLabelId } from './labelitems';
+import { jointsOnAll } from './handcuts';
 import { cleanRailEdits, deleteRailPiece, moveRailEdit, railEditAt, type RailEdits, railPieces, type RailSide, type RailWhat, setRailPiece, slideRailPiece, withRailEdit } from './railedits';
-import { alongBeyond, isTw, TAP_PX, tapReach, type BoxItem, boxable, dragStretchEnd, dragStretchWhole, handTracks, hitItems, type Hit, type Item, itemsInBox, itemsLabel, jointsOf, moveCuts, sleeperEditAt, sleeperEditOf, type Layer, newStretchAt, type OwnItem, type PickId, PICKS, picks, placeAlong, sameItem, takesFirst, withStretch } from './items';
+import { alongBeyond, bandHalf, isTw, TAP_PX, tapReach, type BoxItem, boxable, dragStretchEnd, dragStretchWhole, handTracks, hitItems, type Hit, type Item, itemsInBox, itemsLabel, jointsOf, moveCuts, sleeperEditAt, sleeperEditOf, type Layer, newStretchAt, type OwnItem, type PickId, PICKS, picks, placeAlong, sameItem, takesFirst, withStretch } from './items';
 import type { Stretch } from './stretches';
 import { COMMON_RADII, type GuideEnd, type GuideResult, type GuideStraight, guidePoint } from './guides';
 import { describe, follow, plan, planAnyway, planAuto, planFreeTurning, planToPose, reversed, trace as traceRaw, type Pose } from './planner';
@@ -68,6 +71,8 @@ export interface Overlay { grooves: [number, number][][]; checkRails: [number, n
   cutting?: { grid: [number, number, number]; railG: number; no: NoCut }; pathsNot?: { id: string; why: string }[];
   /** the cuts worked out where tracks join inside trackwork (Cut where tracks join in trackwork, jointcuts.ts): each one's joint and corners (mm), and whether the build made it */
   jointCuts?: { at: [number, number]; pts: [number, number][]; made: boolean }[];
+  /** (stage 6) the labels engraved under the parts: where (mm), the way they run (degrees), their text and capitals' height (mm); a hand label's id, else the part it's under */
+  labels?: { at: [number, number]; heading: number; text: string; cap: number; id?: string; part?: string }[];
   /** (expert) where tracks run over each other (mm), which two, and whether the pair is accepted (accept.ts) */ over?: { at: [number, number]; routes: [string, string]; ok: boolean }[];
   /** what's wrong, and where (mm): ringed in red */ issues?: { at: [number, number]; r: number; text: string; /** r is the size of the thing itself (a part too big for the bed): ringed whole; else the ring is kept small, on the spot */ area?: boolean }[] }
 /** A trackwork item on the plan (mm); a lever ('throw') has its points' frame and settings, to drag it. */
@@ -427,7 +432,7 @@ export class TrackCanvas {
     this.placing = { tpl, turn: 0, mirror: false, onto, theirs: openEnds(this.host.design().routes), moved: false, session: new SnapSession() };
     this.draw();
   }
-  private letGoSome() { this.heelDrag = undefined; this.freeArmed = undefined; this.freeDrag = undefined; this.splitArmed = false; this.cutArmed = false; this.stretchArmed = false; this.sleeperArmed = false; this.sleeperDrag = undefined; this.railDrag = undefined; this.stretchNew = undefined; this.stretchDrag = undefined; this.pathDraw = undefined; this.cutDrag = undefined; this.multiDrag = undefined; this.meas = {}; this.active = undefined; }
+  private letGoSome() { this.addArmed = undefined; this.connDrag = undefined; this.labelDrag = undefined; this.heelDrag = undefined; this.freeArmed = undefined; this.freeDrag = undefined; this.splitArmed = false; this.cutArmed = false; this.stretchArmed = false; this.sleeperArmed = false; this.sleeperDrag = undefined; this.railDrag = undefined; this.stretchNew = undefined; this.stretchDrag = undefined; this.pathDraw = undefined; this.cutDrag = undefined; this.multiDrag = undefined; this.meas = {}; this.active = undefined; }
   /** Where the template being placed goes now (final: the click that puts it down, which snaps whatever the pointer's speed). */
   private placedNow(final = false): Placed | undefined {
     const p = this.placing;
@@ -467,7 +472,35 @@ export class TrackCanvas {
   /** A rail or sleeper laid by hand being dragged: whole, or a rail's end; laying: the rail being drawn out now */
   private freeDrag: { id: string; part: 'body' | 'from' | 'to'; w0: [number, number]; orig: FreeItem; moved: boolean; why?: string; laying?: boolean } | undefined;
   /** Arm + Rail or + Sleeper (or let go of it: undefined). */
-  armFree(k: 'rail' | 'sleeper' | undefined) { this.freeArmed = k; this.draw(); }
+  armFree(k: 'rail' | 'sleeper' | undefined) { this.freeArmed = k; this.addArmed = undefined; this.draw(); }
+  /** (stage 6) + Joint / + Label: the next tap on the plan adds one there */
+  addArmed: 'conn' | 'label' | undefined;
+  /** Arm + Joint or + Label (or let go of it: undefined). */
+  armAdd(k: 'conn' | 'label' | undefined) { this.addArmed = k; this.freeArmed = undefined; this.draw(); }
+  /** A joint along a track being dragged along it: where it was (studs along), where the press was, the track's cuts as they were. */
+  private connDrag: { route: number; at: number; s0: number; orig: Pick<DRoute, 'cuts' | 'cutsLocked' | 'cutJoints'>; moved: boolean; why?: string } | undefined;
+  /** A label being dragged: a hand label (id), or the app's (made one on the first move: from, where it was); w0, where the press was. */
+  private labelDrag: { id?: string; from?: { at: [number, number]; heading: number }; w0: [number, number]; orig?: LabelItem; moved: boolean } | undefined;
+  private appJointsKey = ''; private appJointsNow: number[][] = [];
+  /** (stage 6) The build's joints on each track (studs along it), from the overlay. */
+  appJoints(): number[][] {
+    const d = this.host.design(), js = this.overlay?.joints ?? [], key = JSON.stringify([js.length, js[0], js[js.length - 1], d.routes.map((r) => [r.x, r.y, r.heading, r.segs])]);
+    if (key !== this.appJointsKey) { this.appJointsKey = key; this.appJointsNow = js.length ? jointsOnAll(d, js) : d.routes.map(() => []); }
+    return this.appJointsNow;
+  }
+  /** (stage 6) Every end connector on the plan. */
+  connList(): Conn[] { return connectorsOf(this.host.design(), this.joints(), this.appJoints()); }
+  /** (stage 6) Every label on the plan: the ones the build engraved (the app's and those placed by hand), and those placed by hand it didn't (missing) or taken off. */
+  labelList(): { item: { kind: 'label'; id?: string; part?: string }; at: [number, number]; heading: number; text: string; cap?: number; missing?: boolean; off?: boolean }[] {
+    const d = this.host.design(), ov = this.overlay?.labels ?? [], hand = d.expert?.labels ?? [];
+    const out: ReturnType<TrackCanvas['labelList']> = ov.filter((p) => !p.id || hand.some((l) => l.id === p.id)).map((p) => {
+      const l = p.id ? hand.find((q) => q.id === p.id) : undefined;
+      // (one placed by hand and moved since the build: where it is now)
+      return { item: p.id ? { kind: 'label' as const, id: p.id } : { kind: 'label' as const, part: p.part }, at: l ? l.at : [p.at[0] / MM, p.at[1] / MM], heading: l ? l.heading : p.heading, text: l?.text ?? p.text, cap: l?.cap ?? p.cap };
+    });
+    for (const l of hand) if (!ov.some((p) => p.id === l.id)) out.push({ item: { kind: 'label', id: l.id }, at: l.at, heading: l.heading, text: l.off ? 'NO LABEL' : l.text ?? 'LABEL', cap: l.cap, ...(l.off ? { off: true } : { missing: true }) });
+    return out;
+  }
   /** How track i's sleepers are laid, and whether they go by whole studs (its underside on the baseplate's grid); undefined: it has no separate sleepers (ballast, a solid bed, monorail). */
   sleeperLay(i: number): (SleeperLay & { whole: boolean }) | undefined {
     const d = this.host.design(), r = d.routes[i];
@@ -561,6 +594,32 @@ export class TrackCanvas {
     list[k] = next;
     this.host.changed(false); this.host.item?.();
   }
+  /** (stage 6) A joint along a track dragged: to the whole stud nearest the pointer along it; the track's joints its own from the first move (D6). */
+  private dragConn(w: [number, number]) {
+    const cd = this.connDrag!, d = this.host.design(), rr = d.routes[cd.route];
+    if (!rr) return;
+    const s = Math.round(cd.at + alongBeyond(rr, w) - cd.s0), cur = this.selItemNow?.kind === 'conn' ? this.selItemNow.at : undefined;
+    if (cur === undefined || Math.abs(s - cur) < 1e-3) return;
+    const put = (v: Pick<DRoute, 'cuts' | 'cutsLocked' | 'cutJoints'>) => { for (const k of ['cuts', 'cutsLocked', 'cutJoints'] as const) { if (v[k] !== undefined) (rr as unknown as Record<string, unknown>)[k] = structuredClone(v[k]); else delete rr[k]; } };
+    const was = structuredClone({ cuts: rr.cuts, cutsLocked: rr.cutsLocked, cutJoints: rr.cutJoints });
+    put(cd.orig);
+    const why = Math.abs(s - cd.at) < 1e-3 ? undefined : moveJoint(rr, cd.at, s, this.appJoints()[cd.route] ?? []);
+    if (why) { cd.why = why; put(was); this.host.item?.(); return; }
+    cd.why = undefined; cd.moved = true;
+    this.selItemNow = { kind: 'conn', route: cd.route, at: s };
+    this.host.changed(false); this.host.item?.();
+  }
+  /** (stage 6) A label dragged by half studs; the app's made one placed by hand on the first move (D6). */
+  private dragLabel(w: [number, number]) {
+    const ld = this.labelDrag!, d = this.host.design(), dx = Math.round((w[0] - ld.w0[0]) * 2) / 2, dy = Math.round((w[1] - ld.w0[1]) * 2) / 2;
+    if (!dx && !dy && !ld.moved) return;
+    const list = ((d.expert ??= {}).labels ??= []);
+    if (!ld.id && ld.from) { const id = nextLabelId(list); list.push({ id, at: [...ld.from.at], heading: ld.from.heading }); ld.id = id; ld.orig = structuredClone(list[list.length - 1]); this.selItemNow = { kind: 'label', id }; }
+    const k = list.findIndex((l) => l.id === ld.id);
+    if (k < 0 || !ld.orig) return;
+    list[k] = moveLabel(ld.orig, dx, dy); ld.moved = true;
+    this.host.changed(false); this.host.item?.();
+  }
   /** Add a stretch: the next press on the selected route, dragged along it, lays one from the press to where it's let go (from its card's Bed and underside). */
   stretchArmed = false;
   /** The stretch being dragged out (Add a stretch): its route, and how far along the press was and the pointer is. */
@@ -604,6 +663,9 @@ export class TrackCanvas {
     if (this.picks('rail') || this.picks('sleeper')) kinds.push('free');
     // (a joint is under its track's end, which a press takes while tracks are picked: looked for only when they aren't)
     if (this.picks('joint') && !this.picks('track')) kinds.push('joint');
+    // (stage 6: end connectors and labels, each with its own chip)
+    if (this.picks('conn')) kinds.push('conn');
+    if (this.picks('label')) kinds.push('label');
     if (!kinds.length) return [];
     const d = this.host.design(), sel = this.selection();
     // (stretches: the selected track's; every track's when only stretches are picked)
@@ -615,7 +677,8 @@ export class TrackCanvas {
       // (stage 3: every track's running rails, one at a time, while rails are what a tap takes)
       ...(this.pick === 'rail' && { runsOf: d.routes.map((_, i) => i), railOff: (i: number) => (routeGaugeStuds(d, d.routes[i]) + 1) / 2 }),
       // (stage 4: the rails laid by hand with Rails picked, the sleepers with Sleepers)
-      ...(kinds.includes('free') && { freeKinds: [...(this.picks('rail') ? ['rail' as const] : []), ...(this.picks('sleeper') ? ['sleeper' as const] : [])], sleeperW: d.options?.sleeperWidthStuds ?? 2 }) });
+      ...(kinds.includes('free') && { freeKinds: [...(this.picks('rail') ? ['rail' as const] : []), ...(this.picks('sleeper') ? ['sleeper' as const] : [])], sleeperW: d.options?.sleeperWidthStuds ?? 2 }),
+      ...(kinds.includes('conn') && { conns: this.connList() }), ...(kinds.includes('label') && { labels: this.labelList() }) });
   }
   /**
    * What a press at a point of the plan (studs) would take hold of, the first of: a handle of the selected track, a
@@ -681,6 +744,13 @@ export class TrackCanvas {
     } else if (it.kind === 'free') {
       const f = d.expert?.free?.find((q) => q.id === it.id);
       if (f) this.freeDrag = { id: it.id, part: h.part === 'from' || h.part === 'to' ? h.part : 'body', w0: w, orig: structuredClone(f), moved: false };
+    } else if (it.kind === 'conn' && it.at !== undefined) {
+      // (stage 6: a joint along a track, dragged along it; a track's own end moves with its track)
+      const rr = d.routes[it.route];
+      if (rr) this.connDrag = { route: it.route, at: it.at, s0: alongBeyond(rr, w), orig: structuredClone({ cuts: rr.cuts, cutsLocked: rr.cutsLocked, cutJoints: rr.cutJoints }), moved: false };
+    } else if (it.kind === 'label') {
+      const l = it.id ? d.expert?.labels?.find((q) => q.id === it.id) : undefined, p = !it.id ? this.labelList().find((q) => !q.item.id && q.item.part === it.part) : undefined;
+      if (l || p) this.labelDrag = { ...(l ? { id: l.id, orig: structuredClone(l) } : { from: { at: p!.at, heading: p!.heading } }), w0: w, moved: false };
     } else if (it.kind === 'run' && !it.out) {
       // (a running rail's piece: its end, or the whole, dragged along)
       const rr = d.routes[it.route], p = railPieces(cutLength(rr), rr.railEdits, it.side)[it.k];
@@ -815,6 +885,19 @@ export class TrackCanvas {
     } else if (sc.kind === 'free') {
       // (a rail or sleeper laid by hand: gone)
       if (d.expert?.free) { d.expert.free = d.expert.free.filter((f) => f.id !== sc.id); tidyExpert(d); }
+    } else if (sc.kind === 'conn') {
+      // (stage 6: a joint along a track taken out, the parts either side one where that fits the bed; a track's own end can't be)
+      const rr = d.routes[sc.route];
+      if (!rr) return;
+      if (sc.end) { this.say('A track\'s end always has a connector or a buffer stop: change its kind on its card'); return; }
+      const o = d.options ?? {}, why = deleteJoint(rr, sc.at!, this.appJoints()[sc.route] ?? [], [o.printBedX ?? 256, o.printBedY ?? 256], bandHalf(d, rr));
+      if (why) { this.say(why); return; }
+      this.say('Joint taken out · Undo puts it back');
+    } else if (sc.kind === 'label') {
+      // (stage 6: one placed by hand gone (the app's own back, if labels are on); the app's taken off)
+      const list = ((d.expert ??= {}).labels ??= []);
+      if (sc.id) { const was = list.find((l) => l.id === sc.id); d.expert.labels = list.filter((l) => l.id !== sc.id); tidyExpert(d); this.say(was?.off ? 'The app\'s label is back on this part' : 'Label taken away · Undo brings it back'); }
+      else { const p = this.labelList().find((q) => !q.item.id && q.item.part === sc.part); if (!p) return; list.push({ id: nextLabelId(list), at: p.at, heading: p.heading, off: true }); this.say('Label taken off this part · its card puts it back'); }
     } else if (sc.kind === 'run') {
       // (a running rail's piece taken out; a stretch taken out put back)
       const rr = d.routes[sc.route];
@@ -843,6 +926,22 @@ export class TrackCanvas {
       const list = d.expert?.free ?? [], k = list.findIndex((f) => f.id === it.id);
       if (k < 0) return;
       list[k] = moveFree(list[k], dx, dy); this.host.changed(true); this.host.item?.(); return this.draw();
+    }
+    if (it.kind === 'conn') {
+      const rr = d.routes[it.route];
+      if (!rr) return;
+      if (it.end) { this.say('A track\'s end moves with its track: drag the track\'s end handle'); return; }
+      const h = (placeAlong(rr, it.at!).heading * Math.PI) / 180, along = -dx * Math.sin(h) + dy * Math.cos(h), n = Math.max(Math.abs(dx), Math.abs(dy));
+      if (Math.abs(along) < 0.5 * n) { this.say('This arrow points across the track: press one that points along it'); return; }
+      const to = Math.round(it.at! + Math.sign(along) * n), why = moveJoint(rr, it.at!, to, this.appJoints()[it.route] ?? []);
+      if (why) { this.say(why); return; }
+      this.selItemNow = { kind: 'conn', route: it.route, at: to }; this.host.changed(true); this.host.item?.(); return this.draw();
+    }
+    if (it.kind === 'label') {
+      const list = ((d.expert ??= {}).labels ??= []);
+      let k = it.id ? list.findIndex((l) => l.id === it.id) : -1;
+      if (k < 0) { const p = this.labelList().find((q) => !q.item.id && q.item.part === it.part); if (!p) return; list.push({ id: nextLabelId(list), at: p.at, heading: p.heading }); k = list.length - 1; }
+      list[k] = moveLabel(list[k], dx, dy); this.selItemNow = { kind: 'label', id: list[k].id }; this.host.changed(true); this.host.item?.(); return this.draw();
     }
     if (it.kind === 'run') {
       const rr = d.routes[it.route], p = rr && railPieces(cutLength(rr), rr.railEdits, it.side)[it.k];
@@ -1274,7 +1373,7 @@ export class TrackCanvas {
   /** The buttons for the touch bar now (none with a mouse): what keys do for what's going on. */
   touchTools(): TouchTool[] {
     if (!this.touching && !matchMedia('(pointer: coarse)').matches) return [];
-    const armed = this.splitArmed || this.cutArmed || this.stretchArmed || this.sleeperArmed || !!this.freeArmed;
+    const armed = this.splitArmed || this.cutArmed || this.stretchArmed || this.sleeperArmed || !!this.freeArmed || !!this.addArmed;
     const kind = this.placing ? 'place' : this.pathDraw ? 'path' : armed ? 'armed' : this.mode === 'measure' ? 'measure' : this.active ? 'draw' : this.mode === 'select' && this.selection().length && !this.selItemNow ? 'select' : '';
     if (kind !== this.touchKind) { this.touchKind = kind; this.touchAlt = false; this.alt = false; }
     const cancel: TouchTool = { id: 'Escape', label: 'Cancel', title: 'Stop without changing anything (Esc)' };
@@ -1370,7 +1469,7 @@ export class TrackCanvas {
         }
         // (on empty ground in Select: pan, as the middle button; on track, a lever or points: as the left button)
         // (+ Rail or + Sleeper waiting: the finger lays it, wherever it is)
-        const onSomething = !!(this.freeArmed || this.handleAt(w) || this.leverAt(w) || this.itemAt(w) || this.nearTrack(w, this.reach(24)) || this.onBand(w) || (this.mode === 'select' && this.itemHits(w).length));
+        const onSomething = !!(this.freeArmed || this.addArmed || this.handleAt(w) || this.leverAt(w) || this.itemAt(w) || this.nearTrack(w, this.reach(24)) || this.onBand(w) || (this.mode === 'select' && this.itemHits(w).length));
         oneButton = this.mode === 'select' && !onSomething ? 1 : 0;
         this.mouse = w;
         const before = this.selection(), itemsBefore = this.selItems().filter(boxable);
@@ -1504,6 +1603,24 @@ export class TrackCanvas {
       const next = [...this.pathDraw, snapToGrid(this.cutGrid(), w)], laid = gridPath(this.cutGrid(), next);
       const why = laid.length > PATH_MAX.pts ? `A cut path has ${PATH_MAX.pts} corners at most: press Enter to end it` : laid.length >= 2 ? this.pathWhy(next) : undefined;
       if (why) this.say(why); else this.pathDraw = next;
+      this.draw(); return;
+    }
+    // (stage 6: + Joint: a joint where the track is tapped, on the whole stud nearest; + Label: a label there, along the track)
+    if (this.addArmed && e.button === 0) {
+      const d = this.host.design(), near = this.nearTrack(w, Math.max(3, this.reach(24))), r = near ? d.routes[near.route] : undefined;
+      if (!near || !r || isMono(r)) { this.say(this.addArmed === 'conn' ? 'Tap on a track, where the joint goes (Esc cancels)' : 'A label goes under a part: tap on a track (Esc cancels)'); return; }
+      const s = Math.max(0, Math.min(cutLength(r), alongBeyond(r, w)));
+      if (this.addArmed === 'conn') {
+        const at = Math.round(s), why = addJoint(r, at, this.appJoints()[near.route] ?? []);
+        if (why) { this.say(why); return; }
+        this.addArmed = undefined; this.selectItem({ kind: 'conn', route: near.route, at }); this.host.changed(true); this.say('Joint added · drag it along the track, or change its kind on its card', 5000);
+      } else {
+        const off = labelsOff(d.options);
+        if (off) { this.say(`No label: ${off}`); return; }
+        const list = ((d.expert ??= {}).labels ??= []), id = nextLabelId(list), q = placeAlong(r, s);
+        list.push({ id, at: [Math.round(q.x * 2) / 2, Math.round(q.y * 2) / 2], heading: Math.round(q.heading * 100) / 100, ...(!d.options?.labelText?.trim() && { text: 'LABEL' }) });
+        this.addArmed = undefined; this.selectItem({ kind: 'label', id }); this.host.changed(true); this.say('Label added · drag it, or set its text and size on its card', 5000);
+      }
       this.draw(); return;
     }
     // (+ Rail: pressed where it starts, dragged out to where it ends (a tap: 8 studs along); + Sleeper: laid where tapped,
@@ -1736,6 +1853,8 @@ export class TrackCanvas {
       this.host.changed(false); this.host.item?.(); return this.drawSoon();
     }
     if (this.freeDrag) { this.mouse = this.evWorld(e); this.dragFree(this.mouse); return this.drawSoon(); }
+    if (this.connDrag) { this.mouse = this.evWorld(e); this.dragConn(this.mouse); return this.drawSoon(); }
+    if (this.labelDrag) { this.mouse = this.evWorld(e); this.dragLabel(this.mouse); return this.drawSoon(); }
     if (this.railDrag) { this.mouse = this.evWorld(e); this.dragRail(this.mouse); return this.drawSoon(); }
     if (this.stretchNew) { const sn = this.stretchNew, rr = this.host.design().routes[sn.route]; this.mouse = this.evWorld(e); if (rr) sn.s1 = alongBeyond(rr, this.mouse); return this.drawSoon(); }
     if (this.tableDrag) {
@@ -1850,6 +1969,8 @@ export class TrackCanvas {
     if (this.stretchDrag) { const moved = this.stretchDrag.moved; this.stretchDrag = undefined; if (moved) this.host.changed(true); return this.draw(); }
     if (this.sleeperDrag) { const moved = this.sleeperDrag.moved; this.sleeperDrag = undefined; if (moved) this.host.changed(true); return this.draw(); }
     if (this.heelDrag) { const hd = this.heelDrag; this.heelDrag = undefined; if (hd.moved) this.host.changed(true); this.host.item?.(); return this.draw(); }
+    if (this.connDrag) { const cd = this.connDrag; this.connDrag = undefined; if (cd.moved) this.host.changed(true); else if (cd.why) this.say(cd.why); this.host.item?.(); return this.draw(); }
+    if (this.labelDrag) { const ld = this.labelDrag; this.labelDrag = undefined; if (ld.moved) this.host.changed(true); this.host.item?.(); return this.draw(); }
     if (this.freeDrag) {
       const fd = this.freeDrag; this.freeDrag = undefined;
       // (a rail laid by a tap, not dragged: 8 studs up the plan from where it was tapped, as put down at the press)
@@ -2140,6 +2261,18 @@ export class TrackCanvas {
       this.freeArmed = undefined; this.host.item?.(); return this.draw();
     }
     if (e.key === 'Escape' && this.freeArmed) { this.freeArmed = undefined; return this.draw(); }
+    if (e.key === 'Escape' && this.addArmed) { this.addArmed = undefined; return this.draw(); }
+    if (e.key === 'Escape' && this.connDrag) {
+      const cd = this.connDrag, rr = this.host.design().routes[cd.route]; this.connDrag = undefined;
+      if (rr) { for (const k of ['cuts', 'cutsLocked', 'cutJoints'] as const) { if (cd.orig[k] !== undefined) (rr as unknown as Record<string, unknown>)[k] = structuredClone(cd.orig[k]); else delete rr[k]; } this.selItemNow = { kind: 'conn', route: cd.route, at: cd.at }; }
+      this.host.item?.(); return this.draw();
+    }
+    if (e.key === 'Escape' && this.labelDrag) {
+      const ld = this.labelDrag, d = this.host.design(), list = d.expert?.labels ?? []; this.labelDrag = undefined;
+      const k = list.findIndex((l) => l.id === ld.id);
+      if (k >= 0) { if (ld.from) { list.splice(k, 1); tidyExpert(d); this.selItemNow = undefined; } else if (ld.orig) list[k] = ld.orig; }
+      this.host.item?.(); return this.draw();
+    }
     if (e.key === 'Escape' && this.railDrag) {
       // (the rail edit put back where it was)
       const rd = this.railDrag, rr = this.host.design().routes[rd.route]; this.railDrag = undefined;
@@ -2313,6 +2446,10 @@ export class TrackCanvas {
     if (si?.kind === 'sleeper') return 'Sleeper selected · drag it along the track, or press an arrow key · Delete takes it out · longer, turned, without studs: on its card';
     if (this.railDrag?.moved || this.railDrag?.why) return this.railDrag.why ?? 'Moving it along its track: let go to put it down · Esc puts it back';
     if (si?.kind === 'rail') return `${si.what === 'gap' ? 'Rail gap' : si.what === 'guard' ? 'Guard rails' : 'Check rail'} selected · drag it along the track, or press an arrow key (a stud; Shift: eight) · Delete takes it out · its side and size are on the track's card, Rails`;
+    if (this.addArmed) return this.addArmed === 'conn' ? 'Tap on a track where the joint goes: the parts either side join there · Esc cancels' : 'Tap on a track where the label goes: under that part · Esc cancels';
+    if (this.connDrag?.why) return this.connDrag.why;
+    if (si?.kind === 'conn') return si.end ? 'Track end selected · its card sets its kind: with or without the peg and clip, or a buffer stop' : 'Joint selected · drag it along the track, or press an arrow key · Delete takes it out · its kind is on its card';
+    if (si?.kind === 'label') return 'Label selected · drag it to move it, or press an arrow key · Delete takes it off · its text and size are on its card';
     if (this.freeArmed) return this.freeArmed === 'rail' ? 'Press where the rail starts and drag to where it ends (a tap lays one 8 studs long) · Esc cancels' : 'Tap where the sleeper goes: across the track there, if it\'s on one · Esc cancels';
     if (this.freeDrag?.why) return this.freeDrag.why;
     if (this.heelDrag) return 'Making the blade longer: let go to keep it · Esc puts it back';
@@ -3071,6 +3208,59 @@ export class TrackCanvas {
         } else if (sf) { const [x, y] = this.toScreen(sf.at[0], sf.at[1]); this.el.dataset.free = JSON.stringify({ id: sf.id, ends: [[Math.round(x), Math.round(y)]] }); }
         else delete this.el.dataset.free;
         if (this.freeDrag?.why && this.mouse) { const [mx, my] = this.toScreen(this.mouse[0], this.mouse[1]); tag(mx, my + 30, this.freeDrag.why, '#e0452b'); }
+      }
+      // (stage 6: the end connectors, with Connectors picked or one selected: a bar across the track, a dot where the peg and
+      // clip are (filled: with them; a ring: rail tongues only), a buffer stop's bar thick; the app's joints dashed; the
+      // selected one orange with a round handle. Labels, with Labels picked or one selected: their text where it's engraved,
+      // the way it runs (the app's grey, by hand orange; one not engraved dashed red, one taken off struck through). Where
+      // each is on the screen, for the smoke tests.)
+      {
+        const edit = getComputedStyle(this.el).getPropertyValue('--c-edit').trim() || '#e8892b';
+        const showC = this.expert && this.mode === 'select' && (this.pick === 'conn' || sc?.kind === 'conn');
+        if (showC) {
+          const pos: [number, number, string][] = [];
+          for (const cn of this.connList()) {
+            const mine = sc?.kind === 'conn' && sc.route === cn.route && (cn.end ? sc.end === cn.end : sc.at !== undefined && cn.at !== undefined && Math.abs(sc.at - cn.at) < 1e-3);
+            if (!mine && this.pick !== 'conn') continue;
+            const r = d.routes[cn.route], half = ((r?.gaugeStuds ?? d.gaugeStuds) + 3) / 2, h = (cn.heading * Math.PI) / 180, ax = Math.cos(h) * half, ay = Math.sin(h) * half;
+            const kind = r && cn.end ? endKindOf(r, cn.end) : 'connector', col = mine ? edit : cn.auto ? ink.mark : '#b23c0a';
+            const [x0, y0] = this.toScreen(cn.x - ax, cn.y - ay), [x1, y1] = this.toScreen(cn.x + ax, cn.y + ay), [cx, cy] = this.toScreen(cn.x, cn.y);
+            c.save(); c.strokeStyle = col; c.lineWidth = kind === 'buffer' ? 5 : mine ? 3 : 2; if (cn.auto && !mine) c.setLineDash([4, 3]);
+            c.beginPath(); c.moveTo(x0, y0); c.lineTo(x1, y1); c.stroke(); c.restore();
+            const rr = Math.max(4, 5 * z);
+            // (with its peg and clip: a dot; rail tongues only: a ring; square rail ends: a square)
+            const ck = connKind(d, cn);
+            if (ck === 'square') { c.fillStyle = '#fff'; c.fillRect(cx - rr, cy - rr, 2 * rr, 2 * rr); c.strokeStyle = col; c.lineWidth = 2; c.strokeRect(cx - rr, cy - rr, 2 * rr, 2 * rr); }
+            else if (kind !== 'buffer') { c.beginPath(); c.arc(cx, cy, rr, 0, 2 * Math.PI); if (ck === 'peg') { c.fillStyle = col; c.fill(); } else { c.fillStyle = '#fff'; c.fill(); c.strokeStyle = col; c.lineWidth = 2; c.stroke(); } }
+            if (mine) { c.beginPath(); c.arc(cx, cy, 12 * z, 0, 2 * Math.PI); c.strokeStyle = edit; c.lineWidth = 2.5; c.stroke(); }
+            pos.push([Math.round(cx), Math.round(cy), cn.end ? `${cn.route}:${cn.end}` : `${cn.route}@${cn.at}${cn.auto ? 'a' : ''}`]);
+          }
+          this.el.dataset.conns = JSON.stringify(pos);
+          if (this.connDrag?.why && this.mouse) { const [mx, my] = this.toScreen(this.mouse[0], this.mouse[1]); tag(mx, my + 30, this.connDrag.why, '#e0452b'); }
+        } else delete this.el.dataset.conns;
+        const showL = this.expert && this.mode === 'select' && (this.pick === 'label' || sc?.kind === 'label');
+        if (showL) {
+          const pos: [number, number, string][] = [];
+          for (const lb of this.labelList()) {
+            const mine = sc?.kind === 'label' && (sc.id ? sc.id === lb.item.id : !lb.item.id && sc.part === lb.item.part);
+            if (!mine && this.pick !== 'label') continue;
+            const [cx, cy] = this.toScreen(lb.at[0], lb.at[1]), bx = labelBox(lb.text, lb.cap), col = mine ? edit : lb.missing ? '#e0452b' : lb.item.id ? '#b23c0a' : ink.mark;
+            // (the text along its way on the screen, kept the right way up to read)
+            const hh = (lb.heading * Math.PI) / 180, [fx, fy] = this.toScreen(lb.at[0] - Math.sin(hh), lb.at[1] + Math.cos(hh));
+            let ang = Math.atan2(fy - cy, fx - cx);
+            if (ang > Math.PI / 2 || ang < -Math.PI / 2) ang += Math.PI;
+            c.save(); c.translate(cx, cy); c.rotate(ang);
+            const wpx = Math.max(36, bx.len * this.scale), hpx = Math.max(16, bx.h * this.scale * 1.6);
+            c.strokeStyle = col; c.lineWidth = mine ? 2.5 : 1.5; if (lb.missing) c.setLineDash([4, 3]);
+            c.strokeRect(-wpx / 2 - 3, -hpx / 2 - 2, wpx + 6, hpx + 4); c.setLineDash([]);
+            c.fillStyle = col; c.font = `${Math.max(11, Math.min(16, hpx * 0.8))}px sans-serif`; c.textAlign = 'center'; c.textBaseline = 'middle';
+            c.fillText(lb.text, 0, 0, Math.max(20, wpx + 4));
+            if (lb.off) { c.beginPath(); c.moveTo(-wpx / 2, 0); c.lineTo(wpx / 2, 0); c.stroke(); }
+            c.restore();
+            pos.push([Math.round(cx), Math.round(cy), lb.item.id ?? `app:${lb.item.part}`]);
+          }
+          this.el.dataset.labels = JSON.stringify(pos);
+        } else delete this.el.dataset.labels;
       }
       // (several selected: each cut across a track ringed; how many, and where the first is on the screen, for the browser smoke tests)
       if (this.selAlso.length) {

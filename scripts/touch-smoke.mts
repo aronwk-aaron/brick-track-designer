@@ -51,7 +51,7 @@ async function tablet(width: number, height: number, tag: string) {
   page.on('console', (m) => { if (m.type() === 'error' && !/GPU|WebGL|swiftshader/i.test(m.text())) errors.push(m.text()); });
   page.on('dialog', (d) => { void d.accept(); });
   const shot = async (n: string) => { if (shots) await page.screenshot({ path: `${shots}/${tag}-${n}.png` }); };
-  const centre = async (sel: string): Promise<[number, number]> => { const b = await page.locator(sel).first().boundingBox(); if (!b) throw new Error(`${sel} isn't shown`); return [b.x + b.width / 2, b.y + b.height / 2]; };
+  const centre = async (sel: string): Promise<[number, number]> => { await page.locator(sel).first().scrollIntoViewIfNeeded().catch(() => {}); const b = await page.locator(sel).first().boundingBox(); if (!b) throw new Error(`${sel} isn't shown`); return [b.x + b.width / 2, b.y + b.height / 2]; };
   const tapOn = async (sel: string) => { await f.tap(await centre(sel)); await sleep(150); };
   const view = () => page.evaluate(() => { const c = (window as unknown as { btdCanvas: C }).btdCanvas; return { s: c.scale, ox: c.ox, oy: c.oy }; });
   const sel = () => page.evaluate(() => (window as unknown as { btdCanvas: C }).btdCanvas.selection().join(','));
@@ -547,6 +547,71 @@ async function tablet(width: number, height: number, tag: string) {
       await shot('one-blade');
       await tapOn('#itemcard button:has-text("Reset this blade")'); await sleep(300);
       check(await heels() === '[]' || await heels() === '[null]', `[${tag}] Reset this blade: as worked out (${await heels()})`);
+      await tapOn('#itemcard .idone').catch(() => {});
+    }
+    // (stage 6: end connectors and labels by touch: the Connectors chip, a tap on a joined end sets its kind (both tracks'
+    // ends there); the app's joint dragged along (the track's joints made its own, D6), deleted, + Joint; then a flat
+    // underside: the Labels chip, the app's label dragged (one placed by hand now), + Label)
+    at = `${tag}: connectors and labels by touch`;
+    await page.evaluate(() => { localStorage.setItem('btd-design', JSON.stringify({ version: 1, gaugeStuds: 4, options: { legoTrack: 'print', pieceLengthStuds: 16 }, routes: [{ name: 'A', x: 0, y: 0, heading: 0, segs: [{ kind: 'straight', studs: 32 }] }, { name: 'B', x: 0, y: 32, heading: 0, segs: [{ kind: 'straight', studs: 16 }] }] })); });
+    await page.reload(); await page.waitForSelector('#track'); await tapOn('#mode-select'); await tapOn('#fit'); await sleep(300);
+    await tapOn('#layers button[data-pick="conn"]'); await sleep(200);
+    type SW = { btdCanvas: { host: { design(): { routes: { cuts?: number[]; cutsLocked?: boolean; startEnd?: string; endEnd?: string }[]; expert?: { labels?: unknown[] } } } } };
+    const routesNow = () => page.evaluate(() => JSON.stringify((window as unknown as SW).btdCanvas.host.design().routes.map((r) => [r.cuts ?? null, r.cutsLocked ?? null, r.startEnd ?? null, r.endEnd ?? null])));
+    const spot = async (attr: string, id: string) => {
+      for (let k = 0; k < 150; k++) {
+        const v = JSON.parse(await page.locator('#track').getAttribute(attr) ?? '[]') as [number, number, string][], q = v.find((e) => e[2] === id);
+        if (q) { const tb = (await page.locator('#track').boundingBox())!; return [tb.x + q[0], tb.y + q[1]] as [number, number]; }
+        await sleep(200);
+      }
+      return undefined;
+    };
+    const joinedEnd = await spot('data-conns', '0:end');
+    check(!!joinedEnd, `[${tag}] the connectors are on the plan (${await page.locator('#track').getAttribute('data-conns')})`);
+    if (joinedEnd) {
+      await f.tap(joinedEnd); await sleep(300);
+      check(/^End of A/.test(await page.locator('#itemcard > b').innerText().catch(() => '')), `[${tag}] a tap on a joined end selects it (${await page.locator('#itemcard > b').innerText().catch(() => 'no card')})`);
+      check(await page.locator('#sel-item-del').isHidden() || await page.locator('#sel-item-del').isDisabled(), `[${tag}] a track's end has nothing to delete on the bar`);
+      await page.locator('#itemcard select').selectOption('nopeg'); await sleep(300);
+      check(/^\[\[null,null,null,"nopeg"\],\[null,null,"nopeg",null\]\]$/.test(await routesNow()), `[${tag}] rail tongues only: set on both tracks' ends there (${await routesNow()})`);
+      await shot('connector-end');
+    }
+    const app = await spot('data-conns', '0@16a');
+    check(!!app, `[${tag}] the app's joint is on the plan, dashed`);
+    if (app) {
+      await f.tap(app); await sleep(300);
+      check(/^Joint 16 studs along A/.test(await page.locator('#itemcard > b').innerText().catch(() => '')) && /Worked out by the app/.test(await page.locator('#itemcard .istatus').innerText().catch(() => '')), `[${tag}] a tap selects the app's joint, the app's (${await page.locator('#itemcard > b').innerText().catch(() => 'no card')})`);
+      const sc = await page.evaluate(() => { const c = (window as unknown as { btdCanvas: { view(): { scale: number } } }).btdCanvas; return c.view().scale; });
+      await f.drag(app, [app[0], app[1] - sc * 3], { steps: 10 }); await sleep(300);
+      check(/^\[\[\[19\],true,/.test(await routesNow()), `[${tag}] dragged 3 studs along: a hand cut there, the track's joints its own (${await routesNow()})`);
+      await shot('connector-joint');
+      await tapOn('#itemcard button.danger'); await sleep(300);
+      check(/^\[\[null,true,/.test(await routesNow()), `[${tag}] Delete on its card takes it out, the 32 studs one part on the bed (${await routesNow()})`);
+      await tapOn('#layers button[data-add="conn"]'); await sleep(200);
+      await f.tap(await scr(0, 10)); await sleep(300);
+      check(/^\[\[\[10\],true,/.test(await routesNow()), `[${tag}] + Joint, a tap on the track, adds one there (${await routesNow()})`);
+      await tapOn('#itemcard .idone').catch(() => {});
+    }
+    await page.evaluate(() => { localStorage.setItem('btd-design', JSON.stringify({ version: 1, gaugeStuds: 4, options: { legoTrack: 'print', pieceLengthStuds: 16, ballast: 'buddy', bottomStyle: 'float', labelText: 'YARD' }, routes: [{ name: 'A', x: 0, y: 0, heading: 0, segs: [{ kind: 'straight', studs: 32 }] }] })); });
+    await page.reload(); await page.waitForSelector('#track'); await tapOn('#mode-select'); await tapOn('#fit'); await sleep(300);
+    await tapOn('#layers button[data-pick="label"]'); await sleep(200);
+    const labelsNow = () => page.evaluate(() => JSON.stringify((window as unknown as SW).btdCanvas.host.design().expert?.labels ?? []));
+    let lab: [number, number] | undefined;
+    for (let k = 0; k < 300 && !lab; k++) {
+      const v = JSON.parse(await page.locator('#track').getAttribute('data-labels') ?? '[]') as [number, number, string][], q = v.find((e) => e[2].startsWith('app:'));
+      if (q) { const tb = (await page.locator('#track').boundingBox())!; lab = [tb.x + q[0], tb.y + q[1]]; } else await sleep(200);
+    }
+    check(!!lab, `[${tag}] the app's labels are on the plan, once built`);
+    if (lab) {
+      await f.tap(lab); await sleep(300);
+      check(/^Label under /.test(await page.locator('#itemcard > b').innerText().catch(() => '')), `[${tag}] a tap on one selects it (${await page.locator('#itemcard > b').innerText().catch(() => 'no card')})`);
+      await f.drag(lab, [lab[0] + 1, lab[1] - 40], { steps: 10 }); await sleep(300);
+      check(/^\[\{"id":"l1","at":\[/.test(await labelsNow()), `[${tag}] dragged, it's one placed by hand (${await labelsNow()})`);
+      await shot('label');
+      await tapOn('#itemcard .idone').catch(() => {});
+      await tapOn('#layers button[data-add="label"]'); await sleep(200);
+      await f.tap(await scr(0, 24)); await sleep(300);
+      check(/"id":"l2"/.test(await labelsNow()), `[${tag}] + Label, a tap on the track, adds one there (${await labelsNow()})`);
       await tapOn('#itemcard .idone').catch(() => {});
     }
     await page.evaluate(() => localStorage.setItem('btd-pick', 'all'));

@@ -4,6 +4,7 @@ import type { RouteEnds } from '../route/route';
 import { type BankRamps, type Design, type DRoute, dualRailOffsets, isMono, RAIL_DEFAULTS, routeGaugeStuds } from './design';
 import { follow, reversed } from './planner';
 import { cutLength, reverseCuts } from './routecuts';
+import { reverseCutJoints } from './connectors';
 import { reverseStretches } from './stretches';
 import { mirrorSleeperEdits, reverseSleeperEdits } from './sleeperedits';
 import { mirrorRailEdits, reverseRailEdits } from './railedits';
@@ -31,6 +32,7 @@ export function reversedRoute(r: DRoute): DRoute {
   if (r.monoHeight !== undefined && r.monoHeightEnd !== undefined) { out.monoHeight = r.monoHeightEnd; out.monoHeightEnd = r.monoHeight; }
   // (its hand cuts: each as far from the new start as it was from the old end)
   if (r.cuts) { const cuts = reverseCuts(r.cuts, cutLength(r)); if (cuts) out.cuts = cuts; else delete out.cuts; }
+  if (r.cutJoints) { const cj = reverseCutJoints(r.cutJoints, cutLength(r)); if (cj) out.cutJoints = cj; else delete out.cutJoints; }
   if (r.stretches) { const st = reverseStretches(r.stretches, cutLength(r)); if (st) out.stretches = st.map((x) => ({ ...x, own: otherSides(x.own) })); else delete out.stretches; }
   // (its sleepers edited by hand: from the new start, their sides swapped; and its ballast's own width each side)
   if (r.sleeperEdits) { const es = reverseSleeperEdits(r.sleeperEdits, cutLength(r)); if (es) out.sleeperEdits = es; else delete out.sleeperEdits; }
