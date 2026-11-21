@@ -258,8 +258,12 @@ export function crossingPiece(s: Scad, routes: Route[], o: CrossingOptions = CRO
   const runOnPast = (cs: CS, i: number, a = 0, bank?: Bank) => {
     const rt = routes[i], L = routeLength(rt), sg = rt.segments[rt.segments.length - 1];
     if (!(nextOf[i] >= 0) || !sg || hasRoll(rt)) return undefined;
-    const on: Route['segments'][number] = sg.kind === 'straight' ? { kind: 'straight', length: FUSE_ON } : { kind: 'arc', radius: sg.radius, angle: (Math.sign(sg.angle) * FUSE_ON * 180) / (Math.PI * sg.radius) };
-    return sweepRoute(s, cs, { ...rt, segments: [...rt.segments, on] }, Math.max(a, L - FUSE_ON), L + FUSE_ON, bank);
+    // (one sweep of one segment, FUSE_ON back to FUSE_ON on: the route with a segment added, swept from FUSE_ON back, ran
+    // its last segment on into the added one by sweepRoute's own 0.02 mm, the two lying on each other there, their end
+    // faces at one place: slivers too fine for a file, which the cuts after (cutter.ts cellOf) read back another shape)
+    const a0 = Math.max(a, L - FUSE_ON), len = L + FUSE_ON - a0;
+    const on: Route['segments'][number] = sg.kind === 'straight' ? { kind: 'straight', length: len } : { kind: 'arc', radius: sg.radius, angle: (Math.sign(sg.angle) * len * 180) / (Math.PI * sg.radius) };
+    return sweepRoute(s, cs, { ...rt, start: routePose(rt, a0), segments: [on] }, 0, Infinity, bank);
   };
   const sweepOn = (cs: CS, i: number, a = 0, b = Infinity, bank?: Bank) => {
     const m = sweepRoute(s, cs, routes[i], a, b, bank), past = b >= routeLength(routes[i]) - 1e-6 ? runOnPast(cs, i, a, bank) : undefined;
