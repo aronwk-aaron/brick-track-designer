@@ -522,7 +522,7 @@ export function crossingPiece(s: Scad, routes: Route[], o: CrossingOptions = CRO
   const extras = routes.map((_, i) => extraRails(s, tOf[i], routes, i, !!x.innerEnds?.has(`${i}:start`), !!x.innerEnds?.has(`${i}:end`), { w: o.flangeway, depth: o.flangewayDepth }));
   // (a third rail through a crossing: its own flangeway (the narrow gauge's wheels') cut through the other routes' rails
   // and third rails, as each route's flangeways are; and theirs through it)
-  const dualBands = (i: number) => extras.flatMap((ex, j) => (j !== i && ex?.dualBand && meet(boxes[i], boxes[j]) ? [ex.dualBand] : []));
+  const dualBands = (i: number) => extras.flatMap((ex, j) => (j !== i && ex?.dualBand && meet(boxes[i], boxes[j]) && !fused(i, j) ? [ex.dualBand] : []));
   // Studs never overlap or touch (studs.ts): each one takes its place, and none stands closer than STUD_APART to one
   // already there. First the end connectors' rows, whole where they can be (two ends side by side at an angle: the
   // later one's studs that would stand in the first one's left out); then the sleepers' and ties'; then the bed's.
