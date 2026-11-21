@@ -194,10 +194,53 @@ export function bodyCount(m: { getMesh(): { triVerts: Uint32Array; numVert?: num
   for (let t = 0; t < tv.length; t += 3) roots.add(find(tv[t]));
   return roots.size;
 }
+/** (tests) A copy flat() made that came back another shape: what changed, where, and the flaws in the mesh there. */
+export interface LossyCopy { dv: number; genus: [number, number]; regions: { v: number; min: number[]; max: number[] }[]; flaws: [kind: 'pinch' | 'zero' | 'close', x: number, y: number, z: number][] }
+let meshCheck: LossyCopy[] | undefined;
+/** (tests) While set, every copy flat() makes is compared with the solid it was made from; one that changed is listed. */
+export function setMeshCheck(list: typeof meshCheck) { meshCheck = list; }
+// (what a copy read back in can't keep: an edge of more than two triangles once the corners are joined by where they are
+// (two parts of the solid meeting at an edge or a corner: 'pinch'), a triangle's edge whose ends round to one point
+// ('zero'), or two corners nearer than the kernel's tolerance for a float32 mesh ('close'). Read back, each is collapsed
+// or joined; mostly nothing else moves, but where one does, the part around it comes out another shape)
+const CLOSE = 1.3e-4;
+function flawsOf(g: { numProp: number; vertProperties: Float32Array; triVerts: Uint32Array }, inside: (q: [number, number, number]) => boolean): LossyCopy['flaws'] {
+  const P = g.vertProperties, np = g.numProp, T = g.triVerts, n = P.length / np, out = new Map<string, LossyCopy['flaws'][number]>();
+  const at = (i: number): [number, number, number] => [P[i * np], P[i * np + 1], P[i * np + 2]];
+  const add = (kind: 'pinch' | 'zero' | 'close', i: number) => { const q = at(i); if (!inside(q)) return; const k = `${kind}:${q.map((v) => v.toFixed(3)).join(',')}`; if (!out.has(k)) out.set(k, [kind, ...q]); };
+  const id = new Map<string, number>(), wid = new Int32Array(n);
+  for (let i = 0; i < n; i++) { const k = `${P[i * np]},${P[i * np + 1]},${P[i * np + 2]}`; let v = id.get(k); if (v === undefined) { v = i; id.set(k, v); } wid[i] = v; }
+  const edges = new Map<string, number>();
+  for (let t = 0; t < T.length; t += 3) for (let e = 0; e < 3; e++) {
+    const a = wid[T[t + e]], b = wid[T[t + ((e + 1) % 3)]];
+    if (a === b) { add('zero', T[t + e]); continue; }
+    const k = a < b ? `${a}:${b}` : `${b}:${a}`; edges.set(k, (edges.get(k) ?? 0) + 1);
+  }
+  for (const [k, c] of edges) if (c > 2) add('pinch', +k.split(':')[0]);
+  const cells = new Map<string, number[]>(), cell = (x: number) => Math.floor(x / CLOSE), firsts = [...new Set(wid)].filter((i) => inside(at(i)));
+  for (const i of firsts) { const k = `${cell(P[i * np])},${cell(P[i * np + 1])},${cell(P[i * np + 2])}`; (cells.get(k) ?? cells.set(k, []).get(k)!).push(i); }
+  for (const i of firsts) {
+    const cx = cell(P[i * np]), cy = cell(P[i * np + 1]), cz = cell(P[i * np + 2]);
+    for (let dx = -1; dx <= 1; dx++) for (let dy = -1; dy <= 1; dy++) for (let dz = -1; dz <= 1; dz++) for (const j of cells.get(`${cx + dx},${cy + dy},${cz + dz}`) ?? []) {
+      if (j > i && Math.hypot(P[i * np] - P[j * np], P[i * np + 1] - P[j * np + 1], P[i * np + 2] - P[j * np + 2]) < CLOSE) add('close', i);
+    }
+  }
+  return [...out.values()];
+}
+function checkCopy(m: Solid, out: Solid, g: { numProp: number; vertProperties: Float32Array; triVerts: Uint32Array }) {
+  const dv = out.volume() - m.volume(), gi = m.genus(), go = out.genus();
+  if (Math.abs(dv) < 0.05 && gi === go) return;
+  const regions: LossyCopy['regions'] = [];
+  for (const X of [m.subtract(out), out.subtract(m)]) { for (const c of X.decompose()) { const v = c.volume(); if (v > 0.05) { const b = c.boundingBox(); regions.push({ v, min: [...b.min], max: [...b.max] }); } c.delete(); } X.delete(); }
+  regions.sort((p, q) => q.v - p.v);
+  const near = (q: [number, number, number]) => regions.some((r) => [0, 1, 2].every((k) => q[k] >= r.min[k] - 0.5 && q[k] <= r.max[k] + 0.5));
+  meshCheck!.push({ dv, genus: [gi, go], regions: regions.slice(0, 8), flaws: flawsOf(g, near).slice(0, 200) });
+}
 export function flat<M>(w: Wasm, m: M, supports = true): M {
   const g = (m as unknown as { getMesh(): { numProp: number; vertProperties: Float32Array; triVerts: Uint32Array; mergeFromVert: Uint32Array; mergeToVert: Uint32Array } }).getMesh();
   const mesh = new w.Mesh({ numProp: g.numProp, vertProperties: g.vertProperties, triVerts: g.triVerts, mergeFromVert: g.mergeFromVert, mergeToVert: g.mergeToVert });
   const out = made(new w.Manifold(mesh));
+  if (meshCheck) checkCopy(m as unknown as Solid, out as unknown as Solid, g);
   // (its supports with it, flat too; supports false: the part alone)
   const sp = supports ? supportsOf(m as unknown as Solid) : undefined;
   if (sp) sups.set(out, flat(w, sp));
