@@ -6,6 +6,7 @@ import { joinedEnds, joinProblem, reversedRoute } from './routeedits';
 import { joinAnchors, reverseAnchors, splitAnchors } from './twfollow';
 import { renameApart, splitApart } from './connections';
 import { cutLength, joinCuts, reverseCuts, splitCuts } from './routecuts';
+import { joinCutJoints, reverseCutJoints, splitCutJoints } from './connectors';
 import { joinStretches, reverseStretches, splitStretches } from './stretches';
 import { renameAccept, splitAccept } from './accept';
 import { joinRailEdits, reverseRailEdits, splitRailEdits } from './railedits';
@@ -95,6 +96,7 @@ export function splitRoute(d: Design, i: number, at: number, nameB?: string): { 
   const a = r;
   // (its hand cuts: each half its own, the second's from its own start)
   if (r.cuts) { const [ca, cb] = splitCuts(r.cuts, s); if (ca) a.cuts = ca; else delete a.cuts; if (cb) b.cuts = cb; else delete b.cuts; }
+  if (r.cutJoints) { const [ja, jb] = splitCutJoints(r.cutJoints, s); if (ja) a.cutJoints = ja; else delete a.cutJoints; if (jb) b.cutJoints = jb; else delete b.cutJoints; }
   if (r.stretches) { const [ta, tb] = splitStretches(r.stretches, s); if (ta) a.stretches = ta; else delete a.stretches; if (tb) b.stretches = tb; else delete b.stretches; }
   // (its sleepers edited by hand: each on the half it's on)
   if (r.sleeperEdits) { const [ea, eb] = splitSleeperEdits(r.sleeperEdits, s); if (ea) a.sleeperEdits = ea; else delete a.sleeperEdits; if (eb) b.sleeperEdits = eb; else delete b.sleeperEdits; }
@@ -176,6 +178,8 @@ function joinWith(d: Design, a: number, b: number, bEnd: 'start' | 'end'): numbe
     const both = !!routes[a].cutsLocked && !!rb.cutsLocked, lenB = cutLength(rb);
     const cuts = joinCuts(routes[a].cuts, bEnd === 'start' ? rb.cuts : reverseCuts(rb.cuts, lenB), cutLength(routes[a]), both);
     if (cuts) routes[a].cuts = cuts; else delete routes[a].cuts;
+    const cj = joinCutJoints(routes[a].cutJoints, bEnd === 'start' ? rb.cutJoints : reverseCutJoints(rb.cutJoints, lenB), cutLength(routes[a]));
+    if (cj) routes[a].cutJoints = cj; else delete routes[a].cutJoints;
     if (both) routes[a].cutsLocked = true; else delete routes[a].cutsLocked;
   }
   // (their stretches with their own settings: b's on from a's end)

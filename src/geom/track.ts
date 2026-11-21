@@ -185,6 +185,21 @@ export class Track {
     ]);
   }
 
+  /**
+   * (expert, stage 6) An end connector with square rail ends: endpointBase without its peg and clip, and solid under
+   * each running rail's end where the tongues' room was, from the bed up to the rail's foot, so the rail stands on it to
+   * the end face, cut square there with the piece. Butted to the next piece's, the rails meet flush; only the baseplate
+   * holds them in line.
+   */
+  squareEndpoint(xfs: number[] = [], guardX?: number, studs: boolean | number[] = true): Man {
+    const s = this.s, g = this.c.railOffset;
+    return s.union([
+      this.endpointBase(false, xfs, guardX, studs),
+      // (inside the rail's foot, 3.8 each side of its line, and 0.3 up into it: one solid with the rail, no face on face)
+      ...[-g, g].map((x) => T(s.cube([7.6, 8, PLATE_H + 0.3]), [x - 3.8, -4, 0])),
+    ]);
+  }
+
   /** rail_support(width, height, ribs_pos_y): a thin breakaway wall with a rib and a foot (the shape alone: whoever places it makes it a support, supports.ts). */
   railSupport(width: number, height: number, ribsPosY = true): Man {
     const s = this.s, dz = ribsPosY ? -2 : 0;

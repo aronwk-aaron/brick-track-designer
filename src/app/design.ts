@@ -13,6 +13,8 @@ import { clampDesign } from './limits';
 import { cleanCuts } from './routecuts';
 import { cleanApart, cleanPaths, type Expert } from './cutpaths';
 import { cleanFree, freeBusy } from './freeparts';
+import { cleanCutJoints, cleanEndKind, type CutJoint, type EndKind } from './connectors';
+import { cleanLabels } from './labelitems';
 import { BANK_KEYS, cleanOwn, type Own } from './routeown';
 import { cleanStretches, type Stretch } from './stretches';
 import { cleanShared, cleanSleeperEdits, handSleepers, type SleeperEdit } from './sleeperedits';
@@ -40,8 +42,8 @@ export interface DRoute {
   /** When this route branches off another (a switch): which side its lever goes (auto: the options' setting). */
   throwSide?: 'auto' | 'left' | 'right';
   /** What the route's start / end is: an ordinary end connector (default), or a buffer stop (buffer.scad: the rails run into two posts joined by a buffer beam, no connector). */
-  startEnd?: 'connector' | 'buffer';
-  endEnd?: 'connector' | 'buffer';
+  startEnd?: EndKind;
+  endEnd?: EndKind;
   /** Bridge guard rails: one inside each running rail (straight.scad's guard_rails; the rest left out = the defaults in RAIL_DEFAULTS). */
   guardRails?: boolean;
   /** Which ends of the route as drawn the guard rails come to a point at (guard_rail_ends). */
@@ -69,6 +71,8 @@ export interface DRoute {
   locked?: boolean;
   /** (expert) Where its track is cut into parts by hand, studs along it from its start: an ordinary track end both sides, as between two track pieces (routecuts.ts). Left out: none. */
   cuts?: number[];
+  /** (expert, stage 6) Its hand cuts' own joints (connectors.ts): with the peg and clip or rail tongues only, by where each cut is. Left out: the design's. */
+  cutJoints?: CutJoint[];
   /** (expert) Cut only where its hand cuts are (and at the tables' seams): no automatic lengths. Left out: the app cuts it too. */
   cutsLocked?: boolean;
   /** (expert) Its own settings, over the design's (routeown.ts ROUTE_KEYS: its ballast or sleepers, underside, bought or printed, its banks' ramps; overrides.ts says what's in force). Left out: the design's. */
@@ -324,8 +328,10 @@ export function readDesign(v: unknown): Design {
     // (its hand cuts: the numbers among them, in order; their lock only a plain true)
     // (its own settings: the ones a track may have, each a value it takes; the rest left out, so the design's: routeown.ts)
     // (its sleepers edited by hand: the well-formed ones, sleeperedits.ts)
-    const { gaugeStuds: gs, locked, cuts: cuts0, cutsLocked, own: own0, stretches: st0, sleeperEdits: se0, railEdits: re0, ...r1 } = r, railEdits = cleanRailEdits(re0), cuts = cleanCuts(cuts0), own = cleanOwn(own0), stretches = cleanStretches(st0), sleeperEdits = cleanSleeperEdits(se0);
-    return { ...r1, ...(fin(gs) && { gaugeStuds: gs }), ...(locked === true && { locked }), ...(cuts && { cuts }), ...(cutsLocked === true && { cutsLocked }), ...(own && { own }), ...(stretches && { stretches }), ...(sleeperEdits && { sleeperEdits }), ...(railEdits && { railEdits }), name: typeof r.name === 'string' ? r.name : '' } as unknown as DRoute;
+    const { gaugeStuds: gs, locked, cuts: cuts0, cutsLocked, own: own0, stretches: st0, sleeperEdits: se0, railEdits: re0, cutJoints: cj0, startEnd: se1, endEnd: ee1, ...r1 } = r, railEdits = cleanRailEdits(re0), cuts = cleanCuts(cuts0), own = cleanOwn(own0), stretches = cleanStretches(st0), sleeperEdits = cleanSleeperEdits(se0);
+    // (stage 6: a track end's kind and its hand cuts' joints, only as they may be)
+    const startEnd = cleanEndKind(se1), endEnd = cleanEndKind(ee1), cutJoints = cleanCutJoints(cj0, cuts);
+    return { ...r1, ...(startEnd && { startEnd }), ...(endEnd && { endEnd }), ...(cutJoints && { cutJoints }), ...(fin(gs) && { gaugeStuds: gs }), ...(locked === true && { locked }), ...(cuts && { cuts }), ...(cutsLocked === true && { cutsLocked }), ...(own && { own }), ...(stretches && { stretches }), ...(sleeperEdits && { sleeperEdits }), ...(railEdits && { railEdits }), name: typeof r.name === 'string' ? r.name : '' } as unknown as DRoute;
   });
   const d = { ...v, version: 1, gaugeStuds: fin(v.gaugeStuds) ? v.gaugeStuds : 4, routes } as Record<string, unknown>;
   if (typeof d.name !== 'string') delete d.name;
@@ -374,7 +380,9 @@ export function readDesign(v: unknown): Design {
     const accept = obj(d.expert) ? cleanAccept(d.expert.accept, names) : undefined;
     // (and the rails and sleepers laid by hand: freeparts.ts cleanFree)
     const free = obj(d.expert) ? cleanFree(d.expert.free) : undefined;
-    if (cutPaths || apart || shared || accept || free) d.expert = { ...(cutPaths && { cutPaths }), ...(apart && { apart }), ...(shared && { shared }), ...(accept && { accept }), ...(free && { free }) }; else delete d.expert;
+    // (and the labels placed by hand: labelitems.ts cleanLabels)
+    const labels = obj(d.expert) ? cleanLabels(d.expert.labels) : undefined;
+    if (cutPaths || apart || shared || accept || free || labels) d.expert = { ...(cutPaths && { cutPaths }), ...(apart && { apart }), ...(shared && { shared }), ...(accept && { accept }), ...(free && { free }), ...(labels && { labels }) }; else delete d.expert;
   }
   // (its numbers held to their ranges, as the fields hold what's typed: limits.ts)
   return upgradeDesign(clampDesign(d as unknown as Design));
@@ -834,7 +842,7 @@ export const TEMPLATE_GROUPS: [string, string[]][] = [
   ['Crossings', ['90° crossing', '22.5° crossing', 'Double slip (22.5°)', 'Double slip (45°, R40)', 'Crossing on a curve']],
   ['Switches', ['Left switch (LEGO)', 'Right switch (LEGO)', 'Wye switch', 'Three-way switch', 'Three-way switch (one throw)', 'Three-way switch (tandem, two throws)']],
   ['Layouts', ['Oval (LEGO R40)', 'Crossover (R40)', 'Double crossover (R56)', 'Yard ladder (R40)', 'Yard (R56)', 'X yard (6 tracks, double slips)', 'Wye with a crossover', 'Double-track return loop (turning right)', 'Double-track return loop (turning left)']],
-  ['Features', ['Grade up at 2.5%', 'Helix (R104, two turns)', 'Siding ending in a buffer stop', 'Bridge with guard rails', 'Straight cut into parts by hand', 'Curve and straights cut into parts by hand', 'Double track, one on sleepers, one on ballast', 'Station track on a solid bed, the line beyond on sleepers', 'Wye, the line into it on a solid bed', 'Track on sleepers, a stretch of it on a solid bed', 'Sleepers edited by hand', 'Double track on shared sleepers', 'Siding on ballast wider on one side, stepped round its buffer stop', 'Rails edited by hand', 'Rails taken out one at a time', 'Rails and sleepers laid by hand', 'Points, one blade longer', 'Crossover with points of their own', 'Dual gauge track', 'Dual gauge crossing 90°', 'Dual gauge crossing 45°', 'Dual gauge track, narrow gauge centred', 'Dual gauge crossing 90°, narrow gauge centred', ...Object.keys(GAUGE_SPLITS), ...Object.keys(DUAL_BRANCHES), 'Narrow gauge beside and across standard track', 'Banked curve', 'Crossing on sleepers']],
+  ['Features', ['Grade up at 2.5%', 'Helix (R104, two turns)', 'Siding ending in a buffer stop', 'Bridge with guard rails', 'Straight cut into parts by hand', 'Curve and straights cut into parts by hand', 'Double track, one on sleepers, one on ballast', 'Station track on a solid bed, the line beyond on sleepers', 'Wye, the line into it on a solid bed', 'Track on sleepers, a stretch of it on a solid bed', 'Sleepers edited by hand', 'Double track on shared sleepers', 'Siding on ballast wider on one side, stepped round its buffer stop', 'Rails edited by hand', 'Rails taken out one at a time', 'Rails and sleepers laid by hand', 'Points, one blade longer', 'Connectors set by hand', 'Labels placed by hand', 'Crossover with points of their own', 'Dual gauge track', 'Dual gauge crossing 90°', 'Dual gauge crossing 45°', 'Dual gauge track, narrow gauge centred', 'Dual gauge crossing 90°, narrow gauge centred', ...Object.keys(GAUGE_SPLITS), ...Object.keys(DUAL_BRANCHES), 'Narrow gauge beside and across standard track', 'Banked curve', 'Crossing on sleepers']],
   ['Monorail', ['Monorail oval on supports', 'Monorail siding (points and a short curve)', 'Monorail level crossing (experimental)']],
   ['Test prints', ['Test print 1: stud and anti-stud fits', 'Test print 2: track joints', 'Test print 3: switch as built', 'Test print 4: points three ways', 'Test print 5: seat for a LEGO curve', 'Test print 6: seat fits', 'Test print 7: clearance round the points', 'Test print 8: flangeway width', 'Test print 9: monorail hole fit', 'Test print 10: LEGO tolerance']],
   ['TrixBrix trackwork', ['Switch R40 left', 'Switch R40 right', 'Switch R40 left, 28-stud straight', 'Switch R40 right, 28-stud straight', 'Yard switch R40 left', 'Yard switch R40 right', 'Switch R56 left', 'Switch R56 right', 'Switch R72 left', 'Switch R72 right', 'Switch R104 left', 'Switch R104 right', 'Switch R104 left, lever on the straight side', 'Switch R104 right, lever on the straight side', 'Switch R120 left', 'Switch R120 right', 'Switch R148 left', 'Switch R148 right', 'Switch R148 left, lever on the straight side', 'Switch R148 right, lever on the straight side', 'Curved switch R40 45° left', 'Curved switch R40 45° right', 'Curved switch R40 90° left', 'Curved switch R40 90° right', 'Curved switch R56 90° left', 'Curved switch R56 90° right', 'Curved switch R104 90° left', 'Curved switch R104 90° right', 'Wye R40', 'Wye R40, 8-stud spacing', 'Wye R104', 'Wye R40 left, R56 right', 'Wye R56 left, R40 right', 'Wye R104 left, R120 right', 'Wye R120 left, R104 right', 'Three-way R40', 'Three-way R104', 'Switch to the next track, no gap, left', 'Switch to the next track, no gap, right', 'Switch, 2-stud gap, left', 'Switch, 2-stud gap, right', 'Switch, 4-stud gap, left', 'Switch, 4-stud gap, right', 'Three-way, no gap', 'Three-way, 2-stud gap', 'Three-way, 4-stud gap', 'Crossing 90°, 8 studs', 'Crossing 45° left', 'Crossing 45° right', 'Crossing 45°, 27 studs', 'Crossing 22.5° left', 'Crossing 22.5° right', 'Star crossing 22.5°', 'Curved crossing R24', 'Curved crossing R40', 'Curved crossing R56', 'Curved crossing R72', 'Curved crossing R88', 'Curved crossing R104', 'Crossing of two R120 curves', 'Pass-through crossing R56 left', 'Pass-through crossing R72 (A) left', 'Pass-through crossing R72 (B) left', 'Pass-through crossing R120 left', 'Pass-through crossing R56 right', 'Pass-through crossing R72 (A) right', 'Pass-through crossing R72 (B) right', 'Pass-through crossing R120 right', 'T-junction core R56', 'Double slip R40 45°', 'Single slip R40 45°', 'Double slip R104 left', 'Double slip R104 right', 'Double crossover R40', 'Crossover, 4-stud gap, left', 'Crossover, 4-stud gap, right', 'Buffer stop', 'Narrow-gauge crossing 90°', 'Narrow-gauge crossing of standard track 90°', 'Narrow-gauge crossing of standard track 45° left', 'Narrow-gauge crossing of standard track 45° right', 'Narrow-gauge buffer stop', 'Narrow-gauge switch R36 left', 'Narrow-gauge switch R36 right', 'Narrow-gauge switch R48 left', 'Narrow-gauge switch R48 right', 'Narrow-gauge switch R84 left', 'Narrow-gauge switch R84 right', 'Narrow-gauge wye R36', 'Narrow-gauge switch R36 left, lever on the branch side', 'Narrow-gauge switch R36 right, lever on the branch side', 'Narrow-gauge double crossover R36', 'Narrow-gauge crossing 22.5° left', 'Narrow-gauge crossing 22.5° right', 'Narrow-gauge crossing 33.75° left', 'Narrow-gauge crossing 33.75° right', 'Wye R104, 8-stud gap', 'Dual gauge switch R40 left', 'Dual gauge switch R40 right', 'Dual gauge turnout R36 left', 'Dual gauge turnout R36 right', 'Dual gauge slide, centre to left', 'Dual gauge slide, centre to right', 'Dual gauge switch R36, narrow gauge branch, left', 'Dual gauge switch R36, narrow gauge branch, right', 'Crossover, three tracks, R104', 'Switch R104 left, base and detachable modules', 'Switch R104 right, base and detachable modules', 'Three-way R104, base and detachable modules', 'Double slip R104 left, middle and detachable sections', 'Double slip R104 right, middle and detachable sections', 'Double slip crossover R104', 'Double slip monster crossover R104', ...Object.keys(REF_KITS), ...Object.keys(REF_MODULES), ...Object.keys(REF1_PLAIN), ...Object.keys(REF1_SETS), ...Object.keys(REF_COMBOS), ...Object.keys(REF_LOOPS), ...Object.keys(REF_JOINTS)]],
@@ -1134,6 +1142,16 @@ export const TEMPLATES: Record<string, Design> = {
   // (expert, stage 5: one blade of the points made longer than worked out, its plate's pin and heel 2 studs further on)
   'Points, one blade longer': { version: 1, gaugeStuds: 4, routes: [{ name: 'Straight', x: 0, y: 0, heading: 0, segs: [{ kind: 'straight', studs: 48 }] },
     { name: 'Branch', x: 0, y: 8, heading: 0, segs: [{ kind: 'curve', radius: 40, angle: -22.5 }] }], trackwork: { points: { '0,64': { bladeHeel: [16, 0] } } } },
+  // (expert, stage 6: end connectors set by hand: a straight's joint and its end square rail ends, the curve on from it
+  // square at its start (built alike: one joint), rail tongues only at its far end)
+  'Connectors set by hand': { version: 1, gaugeStuds: 4, options: { legoTrack: 'print', splitTrack: 'lengths' }, routes: [
+    { name: 'Straight', x: 0, y: 0, heading: 0, segs: [{ kind: 'straight', studs: 32 }], cuts: [16], cutsLocked: true, cutJoints: [{ at: 16, kind: 'square' }], endEnd: 'square' },
+    { name: 'Curve', x: 0, y: 32, heading: 0, segs: [{ kind: 'curve', radius: 40, angle: 45 }], startEnd: 'square', endEnd: 'nopeg' }] },
+  // (expert, stage 6: labels placed by hand, on a flat underside: one with its own text on the first part, the app's taken
+  // off the second; the joint between them square rail ends, on ballast)
+  'Labels placed by hand': { version: 1, gaugeStuds: 4, options: { legoTrack: 'print', splitTrack: 'lengths', ballast: 'buddy', bottomStyle: 'float', labelText: 'YARD' }, routes: [
+    { name: 'Straight', x: 0, y: 0, heading: 0, segs: [{ kind: 'straight', studs: 32 }], cuts: [16], cutsLocked: true, cutJoints: [{ at: 16, kind: 'square' }] }],
+    expert: { labels: [{ id: 'l1', at: [0, 6], heading: 0, text: 'SIDING A1' }, { id: 'l2', at: [0, 24], heading: 0, off: true }] } },
   // (expert, stage 4: rails and sleepers laid by hand: a third rail down the middle of a straight and a rail across it,
   // its ends past the sleepers standing on the bed, all the straight's part; a rail and two sleepers off any track, each
   // a part of its own)

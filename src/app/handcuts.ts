@@ -58,6 +58,16 @@ export function jointsOn(d: Design, i: number, joints: [number, number][]): numb
   return joints.flatMap((q) => { const { s, off } = onRoute(rt, q); return off < 0.05 ? [Math.round((s / 8) * 1000) / 1000] : []; });
 }
 
+/** (stage 6) The build's joints on every route of a design, studs along each (jointsOn for them all, the routes made once). */
+export function jointsOnAll(d: Design, joints: readonly [number, number][]): number[][] {
+  const rts = toRoutes(d);
+  return d.routes.map((_, i) => {
+    const rt = rts[i];
+    if (!rt?.segments.length || isMono(d.routes[i])) return [];
+    return joints.flatMap((q) => { const { s, off } = onRoute(rt, q); return off < 0.05 ? [Math.round((s / 8) * 1000) / 1000] : []; });
+  });
+}
+
 /**
  * A design's cut paths for the build (undefined: it has none): each laid on the build's stud grid (gp, mm: a file's
  * corners a hair off it, or a path left behind by track since moved, are put on the nearest grid corners, so no cut

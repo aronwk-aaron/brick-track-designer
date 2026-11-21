@@ -922,3 +922,26 @@ Aaron's answers and need build work.
   runs on past its pin (pointsEndY), and no joint of the app's is put within it (build.ts: the solver's spans lengthened
   by it for planSections). Template (Features): 'Points, one blade longer' (in the union-order test). Tests:
   test/blades-own-build.test.ts, the touch smoke.
+- **Stage 6 (connectors and labels as things of their own) is built.** End connectors (connectors.ts): each track's own
+  ends and each joint where its track is cut into parts (its hand cuts, and the app's own: `Overlay.joints`, on each
+  track by handcuts.ts `jointsOnAll`), as `Item { kind: 'conn', route, end? | at?, auto? }` in the layer Connectors
+  (its own chip; Everything doesn't take them). What each is: an end connector with its rail tongues and its peg and
+  clip, one with rail tongues only, or (a track's end joined to nothing) a buffer stop. Kept as a track end's own
+  `startEnd` / `endEnd` (`'peg'`, `'nopeg'` beside `'connector'` and `'buffer'`: they go with the track when it's turned,
+  split or joined, as a buffer stop does; set on a joined end, the end it meets is set too) and a hand cut's in
+  `DRoute.cutJoints: { at, kind }[]` (carried when its cut moves: `carryCutJoints`, from main.ts changed; turned, split
+  and joined with the cuts). The build is told where (`pegEnds`, as `bufferEnds`): crossing.ts gives each end its own
+  peg and clip by where it is (`o.pegs`), and no coupler supports under an end without them; every other end as ever.
+  A joint is dragged along its track by whole studs (or typed, or the arrow keys); the first change of one of the app's
+  makes the track's joints its own where they are (`keepJoints`: its hand cuts, Only these; D6), so the others don't
+  move; Delete takes a joint out only where the part left fits the print bed (`stretchFitsBed`, said otherwise); + Joint
+  adds one with a tap on a track, on a whole stud (2 studs from its ends and other joints, as a hand cut). A track's own
+  end moves with its track and can't be deleted (said). Only with Long track cut into: Track pieces (else locked, with
+  why). Labels (labelitems.ts): `Design.expert.labels: { id, at, heading, text?, cap?, off? }[]`, as `Item { kind:
+  'label', id? | part? }` in the layer Labels. The build says where each part's label went (`Overlay.labels`, from
+  labels.ts `labelCut`'s `where`, carried with a part's baked data through the jobs); the app's are tapped there, and
+  become placed by hand on their first change (dragged by half studs, or its text, capitals' height (2.5 to 6 mm, as
+  big as fits by default) or way typed). One placed by hand is engraved where it is under the part its middle is over
+  (labels.ts `labelCutAt`: one line, mirrored to read from below, only where all of it is over solid underside; else
+  not, and said) instead of the app's; one taken off (`off`) leaves that part without. Only on a flat underside (said,
+  greyed). Tests: test/connectors-labels.test.ts, test/connectors-labels-build.test.ts, the touch smoke.

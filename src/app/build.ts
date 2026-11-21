@@ -42,7 +42,10 @@ import { findStuds, wholeStuds } from '../geom/studs';
 import { dualEndMismatches } from './routeedits';
 import { dualBranches } from './dualbranch';
 import { bankRolls, type Design, OPTION_DEFAULTS, type PieceOptions, type Trackwork, bufferEnds, isMono, routeGaugeStuds, toRoutes, upgradeDesign } from './design';
-import { labelCut, labelLines } from '../geom/labels';
+import { labelCut, labelCutAt, labelLines, type LabelPlace } from '../geom/labels';
+import type { LabelItem } from './labelitems';
+import { pegEnds, squareWarnings } from './connectors';
+import { joints as designJoints } from './connections';
 import { buildMonorail, clearMonoCache } from './monobuild';
 import { tableAt, tableOf, tableOutline, type Table } from './tables';
 import { buildScope, clearSolids, jobScope, SolidCache } from './solidcache';
@@ -986,6 +989,8 @@ export interface Overlay {
   jointCuts?: { at: [number, number]; pts: [number, number][]; made: boolean }[];
   /** (expert) where tracks run over each other (mm), which two (by name), and whether that pair is accepted (accept.ts: no warning then, a mark on the plan) */
   over?: { at: [number, number]; routes: [string, string]; ok: boolean }[];
+  /** (expert, stage 6) the labels engraved under the parts, where each went (labelled) */
+  labels?: PlacedLabel[];
 }
 
 /** A hand edit's key: where the item is (its middle, mm, "x,y"). */
@@ -1534,7 +1539,11 @@ type CutContext = ReturnType<typeof cutContext>;
 /** A part as plain data (baked): its mesh for the view, its STL, its volume, whether it fits the bed. */
 /** turn: how far its file's turned to fit the bed (degrees; cutContext turnOf); tight: one too big, its tightest box */
 /** says: what the build says of it (a support that had no room, where the part now needs the slicer's: unsupported) */
-type Baked = { positions: Float32Array; supports?: Float32Array; stl: Uint8Array; volume: number; fits: boolean; box: { min: number[]; max: number[] }; turn?: number; tight?: number[]; says?: string[] };
+type Baked = { positions: Float32Array; supports?: Float32Array; stl: Uint8Array; volume: number; fits: boolean; box: { min: number[]; max: number[] }; turn?: number; tight?: number[]; says?: string[];
+  /** (expert, stage 6) where its label went (mm, the design's frame; for the plan), and the hand labels it took (by id) */
+  labels?: PlacedLabel[] };
+/** (expert, stage 6) A label as engraved, for the plan (Overlay.labels): where (mm), its way (degrees, as the plan's headings), its text and capitals' height (mm); id: a hand label's, else the app's; part: the part it's under. */
+export interface PlacedLabel { at: [number, number]; heading: number; text: string; cap: number; id?: string; part?: string }
 
 /**
  * One build's pieces as they're made: what makes, cuts, labels and caches
@@ -1556,6 +1565,8 @@ interface PieceBuild {
   job: <T>(key: string, cost: number, f: () => T, none: T) => T;
   /** labels engraved under the parts (name, label_*) */
   labelOn: boolean;
+  /** (expert, stage 6) the labels placed by hand, or the app's taken off (Design.expert.labels), on a flat underside; undefined: none */
+  labels?: LabelItem[];
   /** (a test-print kit's coupon) its number, marked on its track parts (marked); markBoth: on both its sides */
   mark?: number; markBoth?: boolean;
   /**
@@ -1724,12 +1735,12 @@ function freeFoot(b: PieceBuild): CS | undefined {
   return b.scad.w.CrossSection.union(b.free.map((f) => f.whole.project())).offset(b.track.c.postD / 2 + 0.3, 'Round', 2, 24);
 }
 function bake(b: PieceBuild, m0: Man, freeDone = false): Baked {
-  const m = freeDone ? m0 : withFree(b, m0);
+  const m = freeDone ? m0 : withFree(b, m0), labels = labelPlaces.get(m0);
   // (the copies it's told apart on let go at once: a part's worth each, and a build has hundreds)
   return arena(b.w, () => {
     const notes: SupportNote[] = [], { positions, supports, file, volume } = viewOf(b.w, m, notes);
     const fits = b.cut.fitsBed(m), turn = b.cut.turnOf(m), says = unsupported(b.w, m, notes);
-    return { positions, supports, stl: stlBytes(file.getMesh(), true, turn), volume, fits, box: m.boundingBox(), ...(turn && { turn }), ...(!fits && { tight: b.cut.tightOf(m) }), ...(says.length && { says }) };
+    return { positions, supports, stl: stlBytes(file.getMesh(), true, turn), volume, fits, box: m.boundingBox(), ...(turn && { turn }), ...(!fits && { tight: b.cut.tightOf(m) }), ...(says.length && { says }), ...(labels && { labels }) };
   }, () => []);
 }
 
@@ -1775,22 +1786,58 @@ function add(b: PieceBuild, name: string, color: number, local0: Man, world0: Ma
     // (each file lying on the bed: a part modelled where it sits in the track (the blades on the bed's top, say) came in floating)
     if (!f || f.turn !== bedTurn) { f = { stl: stlBytes((local === world ? file : printed(b.w, local)).getMesh(), true, bedTurn), turn: bedTurn }; stlOf.set(local, f); }
     b.pieces.push({ name, color, positions, stl: f.stl.slice(), ...(supports && { supports }), ...(turn && { turn }), ...move, ...(bedTurn && { bedTurn }) });
+    labelsSeen(b, labelPlaces.get(local0) ?? labelPlaces.get(world0), name);
     b.volume += local === world ? volume : local.volume() + (supportsOf(local)?.volume() ?? 0);
   }, () => []);
 }
 
 // Labels (name, label_*), engraved under the parts with a flat underside: the name, and the size, the gauge and,
 // on a part cut from a bigger one, its number; where they don't fit, the number alone.
-function labelled(b: PieceBuild, m0: Man, rts: Route[], size?: string, num?: string): Man {
+function labelled(b: PieceBuild, m0: Man, rts: Route[], size?: string, num?: string, pose?: Pose): Man {
   const o = b.o, m = b.mark ? marked(b, m0) : m0;
-  if (!b.labelOn || !rts.length) return m;
+  // (expert, stage 6: the labels placed by hand, or taken off, whose middle is over this part: only where it's built where
+  // it lies in the design (pose: a switch's base built in its own frame, which keeps the app's))
+  const hand = !pose && b.labels?.length && rts.length ? b.labels.filter((l) => overFloor(b, m, [l.at[0] * 8, l.at[1] * 8])) : [];
+  if ((!b.labelOn && !hand.length) || !rts.length) return m;
   const no = o.labelParts !== false && num ? `#${num}` : undefined;
   // (the gauge: the piece's routes' own, mixed gauges; the design's where they differ among themselves)
   const gs = new Set(rts.map((rt) => rt.gauge)), ln = gs.size === 1 && rts[0].gauge !== undefined ? rts[0].gauge / 8 - 1 : b.gaugeStuds;
   const lines = labelLines(b.track.c.sleeperLen, o.labelText ?? '', [o.labelSize !== false ? size ?? '' : '', o.labelGauge ? `Ln${ln}` : '', no ?? ''], gs.size === 1 ? rts : rts.map(({ gauge: _g, ...rt }) => rt));
-  const cut = labelCut(b.scad, m, rts, lines, no);
-  return cut ? b.scad.difference(m, [cut]) : m;
+  const places: PlacedLabel[] = [];
+  const heading = (dir: [number, number]) => Math.round(((Math.atan2(-dir[0], dir[1]) * 180) / Math.PI) * 100) / 100;
+  if (hand.length) {
+    // (each placed by hand engraved where it is, its own text or the part's own on one line; none of the app's then)
+    const cuts: Man[] = [];
+    for (const l of hand) {
+      if (l.off) continue;
+      const text = l.text ?? (lines.map((q) => q.text).join(' ') || no || '');
+      const h = (l.heading * Math.PI) / 180, dir: [number, number] = [-Math.sin(h), Math.cos(h)], at: [number, number] = [l.at[0] * 8, l.at[1] * 8];
+      const got = text ? labelCutAt(b.scad, m, text, at, dir, l.cap) : undefined;
+      if (got) { cuts.push(got.cut); places.push({ at, heading: l.heading, text, cap: got.cap, id: l.id }); }
+      else b.bedWarnings.add(`a label placed by hand at ${l.at[0].toFixed(0)}, ${l.at[1].toFixed(0)} (studs) isn't engraved: ${text ? 'it doesn\'t fit over the part\'s solid underside there (move it, or make it smaller)' : 'it has no text'}`);
+    }
+    const out = cuts.length ? b.scad.difference(m, cuts) : m;
+    if (places.length) labelPlaces.set(out, places);
+    return out;
+  }
+  const cut = labelCut(b.scad, m, rts, lines, no, (p: LabelPlace) => {
+    const at = pose ? poseToWorld(pose, p.at) as [number, number] : p.at, tip = pose ? poseToWorld(pose, [p.at[0] + p.dir[0], p.at[1] + p.dir[1]]) as [number, number] : [p.at[0] + p.dir[0], p.at[1] + p.dir[1]];
+    places.push({ at: [at[0], at[1]], heading: heading([tip[0] - at[0], tip[1] - at[1]]), text: p.text, cap: p.cap });
+  });
+  const out = cut ? b.scad.difference(m, [cut]) : m;
+  if (places.length) labelPlaces.set(out, places);
+  return out;
 }
+/** (expert, stage 6) Where each labelled part's labels went (labelled), for its baked data and the plan. */
+const labelPlaces = new WeakMap<Man, PlacedLabel[]>();
+/** Is q (mm, as the part) over the part's floor, its bottom 0.3 mm up? */
+function overFloor(b: PieceBuild, m: Man, q: [number, number]): boolean {
+  const bb = m.boundingBox();
+  if (q[0] < bb.min[0] || q[0] > bb.max[0] || q[1] < bb.min[1] || q[1] > bb.max[1]) return false;
+  return !b.scad.w.CrossSection.square([0.4, 0.4], true).translate(q).intersect(m.slice(bb.min[2] + 0.3)).isEmpty();
+}
+/** A part's labels on the plan (Overlay.labels), its name with them. */
+function labelsSeen(b: PieceBuild, ls: PlacedLabel[] | undefined, part: string) { if (ls?.length) (b.overlay.labels ??= []).push(...ls.map((l) => ({ ...l, part }))); }
 
 /**
  * A part with the studs put on after the cuts (crossing.ts after: the ones outside the stock rails of points another
@@ -2125,7 +2172,7 @@ function sectioned(b: PieceBuild, name: string, all: Route[], checks: CheckRail[
     const jcs = (b.jointCuts ?? []).filter((c) => [c.at, ...(c.more ?? [])].some((at) => at[0] >= sb[0] && at[0] <= sb[2] && at[1] >= sb[1] && at[1] <= sb[3]
       && new Set(ps.filter(([pi, a, b2]) => [a, b2].some((sv) => { const q = routePose(all[pi], sv); return Math.hypot(q[0] - at[0], q[1] - at[1]) < 1; })).map(([pi]) => pi)).size > 1));
     const sk = `sec:${JSON.stringify({ rts, cChecks, m: mine.map((x) => [x.key, x.inner, x.bladeCuts.map(([i]) => i)]), copt, g: b.grooveCuts.length || b.grooveKeeps.length ? b.grooveEdits : 0, di: [...secInner],
-      gp: gridPose, bp, bxy: [o.baseplateX, o.baseplateY], joint: o.joint, ...(apart && { seat: o.trackFitTol ?? 0.2, seated, bb: o.boughtBallast }), ...(o.ballast !== 'none' && (b.boughtSw.length || seated) && { sw: groundKey(b, routesBox(rts, bandHalf + 64), seated) }), bed: [o.printBedX, o.printBedY], zs, ...(b.boughtSw.length > 0 && { pt: partingsNear(b, sb) }), ...(b.labelOn && { lab: [o.labelText, o.labelSize, o.labelGauge, o.labelParts, base + si + 1] }), ...(hps.length > 0 && { hps }), ...(jcs.length > 0 && { jcs, no: b.overlay.cutting?.no.moving }), ...(groups && { groups }), ...(fuse.size > 0 && { fuse: [...fuse] }) })}`;
+      gp: gridPose, bp, bxy: [o.baseplateX, o.baseplateY], joint: o.joint, ...(apart && { seat: o.trackFitTol ?? 0.2, seated, bb: o.boughtBallast }), ...(o.ballast !== 'none' && (b.boughtSw.length || seated) && { sw: groundKey(b, routesBox(rts, bandHalf + 64), seated) }), bed: [o.printBedX, o.printBedY], zs, ...(b.boughtSw.length > 0 && { pt: partingsNear(b, sb) }), ...((b.labelOn || b.labels) && { lab: [o.labelText, o.labelSize, o.labelGauge, o.labelParts, base + si + 1, ...(b.labels ? [b.labels] : [])] }), ...(hps.length > 0 && { hps }), ...(jcs.length > 0 && { jcs, no: b.overlay.cutting?.no.moving }), ...(groups && { groups }), ...(fuse.size > 0 && { fuse: [...fuse] }) })}`;
     let part: { ms: (Baked & { id?: string; lego?: LegoPart[]; seats?: Pose[] })[]; grips: [number, number][]; paths?: HandPathDone[]; joints?: { id: string; made: boolean }[] };
     const cost = rts.reduce((t, rt) => t + routeLength(rt), 0) + 400 * mine.length;
     try { part = b.job(sk, cost, () => arena(w, () => {
@@ -2281,6 +2328,7 @@ function sectioned(b: PieceBuild, name: string, all: Route[], checks: CheckRail[
       const lift = liftOf(rts, b2.positions);
       if (!lego) said(b, b2);
       b.pieces.push({ name: lego ? `track-bought-${lego[0].part.replace(/\s+/g, '')}-${++b.num.part}` : seated ? `${name}${b2.id ?? ++b.num.part}-ballast` : b2.id ? `${name}${b2.id}` : `${name}${++b.num.part}`, color: lego ? boughtColor(lego) : TRACK_COLOR, positions: b2.positions.slice(), stl: b2.stl.slice(), ...(b2.supports && !lego && { supports: b2.supports.slice() }), ...(lego && { lego }), ...(lift && { lift }), ...(apart && b2.seats && { seats: b2.seats }), ...(b2.turn && !lego && { bedTurn: b2.turn }) });
+      labelsSeen(b, b2.labels, b.pieces[b.pieces.length - 1].name);
       const bought = !!lego;
       if (!bought) b.volume += b2.volume;
       if (!b2.fits) b.bedWarnings.add(`some sections don't fit the ${o.printBedX} x ${o.printBedY} print bed: there's nowhere left to cut them`);
@@ -2340,7 +2388,7 @@ function tiled(b: PieceBuild, name: string, all: Route[], checks: CheckRail[], s
     // it by what each is made from, network.ts SplitParts key; where no rail-end tongue goes, near it))
     const zs = cx.zones.filter((z) => z.box[2] >= R[0] - MARGIN && z.box[0] <= R[2] + MARGIN && z.box[3] >= R[1] - MARGIN && z.box[1] <= R[3] + MARGIN).map((z) => [z.rt.id, z.s0, z.s1, z.box]);
     const tk = `tile:${JSON.stringify({ r: cr.routes, c: cr.checks, i: [...tileInner], ...(tileFuse.size > 0 && { fu: [...tileFuse] }), R, lines, near: tileSplits.map((sp) => [sp.key, sp.inner, sp.bladeCuts.map(([i]) => i)]),
-      copt, joint: o.joint, tongueRails: o.tongueRails, g: b.grooveCuts.length || b.grooveKeeps.length ? b.grooveEdits : 0, gp: gridPose, bed: [o.printBedX, o.printBedY], zs, ...(b.boughtSw.length > 0 && { pt: partingsNear(b, kbox) }), ...(nearSw && { sw: groundKey(b, kbox) }), ...(b.labelOn && { lab: [o.labelText, o.labelSize, o.labelGauge, o.labelParts, base + ci + 1] }) })}`;
+      copt, joint: o.joint, tongueRails: o.tongueRails, g: b.grooveCuts.length || b.grooveKeeps.length ? b.grooveEdits : 0, gp: gridPose, bed: [o.printBedX, o.printBedY], zs, ...(b.boughtSw.length > 0 && { pt: partingsNear(b, kbox) }), ...(nearSw && { sw: groundKey(b, kbox) }), ...((b.labelOn || b.labels) && { lab: [o.labelText, o.labelSize, o.labelGauge, o.labelParts, base + ci + 1, ...(b.labels ? [b.labels] : [])] }) })}`;
     let part: { ms: (Baked & { id?: string; bought?: boolean })[]; grips: [number, number][] };
     // (how long it takes, about: its track, and points most of all)
     const cost = cr.routes.reduce((t, rt) => t + routeLength(rt), 0) + 400 * near.length;
@@ -2371,7 +2419,7 @@ function tiled(b: PieceBuild, name: string, all: Route[], checks: CheckRail[], s
     b.overlay.grips.push(...part.grips);
     out.push(...part.ms);
   });
-  for (const b2 of out) { said(b, b2); b.pieces.push({ name: b2.id && (out.length > 1 || base > 0) ? `${name}${b2.id}` : out.length > 1 || b.num.part > 0 ? `${name}${++b.num.part}` : name, color: TRACK_COLOR, positions: b2.positions.slice(), stl: b2.stl.slice(), ...(b2.supports && { supports: b2.supports.slice() }), ...(b2.turn && { bedTurn: b2.turn }) }); b.volume += b2.volume; }
+  for (const b2 of out) { said(b, b2); b.pieces.push({ name: b2.id && (out.length > 1 || base > 0) ? `${name}${b2.id}` : out.length > 1 || b.num.part > 0 ? `${name}${++b.num.part}` : name, color: TRACK_COLOR, positions: b2.positions.slice(), stl: b2.stl.slice(), ...(b2.supports && { supports: b2.supports.slice() }), ...(b2.turn && { bedTurn: b2.turn }) }); b.volume += b2.volume; labelsSeen(b, b2.labels, b.pieces[b.pieces.length - 1].name); }
   for (const b2 of out) if (!b2.fits) bedIssue(b, b2.box, b2.tight);
   if (out.some((b2) => !b2.fits)) b.bedWarnings.add(plan.why === 'bed'
     ? `some parts don't fit the ${o.printBedX} x ${o.printBedY} print bed without cutting along the track (it isn't)`
@@ -2424,7 +2472,7 @@ function buildSwitches(b: PieceBuild, switches: ReturnType<typeof planPieces>['s
       add(b, `${tag}-lid`, TRACK_COLOR, ls.deck, ls.deck);
     } else if (cx.bp || !bases.every(cx.fitsBed)) addTrack(b, `${tag}-base`, place(gm.whole, sw.pose), sw.covers.map(([ri, a, bb]) => subRoute(routes[ri], a, bb)), switchSize(sw.plan.routes));
     else bases.forEach((m, j) => {
-      const lm = labelled(b, m, sw.plan.routes, bases.length > 1 ? undefined : switchSize(sw.plan.routes), bases.length > 1 ? `${j + 1}` : undefined);
+      const lm = labelled(b, m, sw.plan.routes, bases.length > 1 ? undefined : switchSize(sw.plan.routes), bases.length > 1 ? `${j + 1}` : undefined, sw.pose);
       add(b, bases.length > 1 ? `${tag}-base${j + 1}` : `${tag}-base`, TRACK_COLOR, lm, place(lm, sw.pose));
     });
     gm.sets.forEach(({ thr, thrPrint, thp, thpPrint, rod, rodPrint, pp, print, lever, bracket, spring, springPrint, turns, move }, k) => {
@@ -2764,7 +2812,7 @@ function buildOne(w: Wasm, design: Design, report: (what: string, frac: number) 
   const scad = new Scad(w);
   const params = switchParams(o, design.gaugeStuds, alone);
   // (route ends that end in a buffer stop, by where they are)
-  const bufs = bufferEnds(design);
+  const bufs = bufferEnds(design), pegs = pegEnds(design);
 
   let pc = planPieces(routes, sol.splits, params, toeShift, throwEdit, true);
   prog.steps = 2 + pc.switches.length + (pc.rest.length ? 1 : 0);
@@ -2840,6 +2888,8 @@ function buildOne(w: Wasm, design: Design, report: (what: string, frac: number) 
     ...(bufs.length && { buffers: bufs, buffer: { postPlates: o.bufferPostPlates ?? 8, beamBottom: o.bufferBeamBottom ?? 2, beamTop: o.bufferBeamTop ?? 12, pinHoles: o.bufferPinHoles !== false, style: o.bufferStyle ?? 'frame' } }),
     // (expert, stage 4: the rails and sleepers laid by hand, which the parts take their share of: in every part's key, only when there are some)
     ...(design.expert?.free?.length && { free: design.expert.free }),
+    // (expert, stage 6: the end connectors set by hand to have their peg and clip or not, by where they are: only when there are some)
+    ...(pegs.length && { pegs }),
     ...(o.axleHoles && { axleHoles: true }), ...(o.pegOnBallast && { pegOnBallast: true }), ...(o.ballastEnds === 'stepped' && o.ballast !== 'none' && { ballastEnds: 'stepped' as const }), ...(alone && { ballastOnly: o.trackFitTol ?? 0.2 }), ...(o.studsFullPitch && { studsFullPitch: true }) };
   const tp = params;
   const netKey = JSON.stringify({ routes, tp, copt, tw });
@@ -2881,10 +2931,12 @@ function buildOne(w: Wasm, design: Design, report: (what: string, frac: number) 
   // (expert: the sleepers edited by hand that can't be made as they're asked for: said)
   for (const wn of sleeperWarnings(design, o)) bedWarnings.add(wn);
   for (const wn of railWarnings(design)) bedWarnings.add(wn);
+  // (expert, stage 6: square rail ends asked for where they can't be: said, built with tongues there)
+  for (const wn of squareWarnings(design, designJoints(design))) bedWarnings.add(wn);
   const labelOn = o.ballast !== 'none' && o.bottomStyle === 'float' && !!o.labelText?.trim();
   const b: PieceBuild = { w, scad, o, gaugeStuds: design.gaugeStuds, track, cut, prog, pieces: [], volume: 0, bedWarnings, overlay, job,
     ...(design.expert?.free?.length && { free: freeSolids(scad, design.expert.free, o.sleeperWidthStuds ?? 2), bands: trackBands(scad, routes, track.c.sleeperLen), railLines: railLines(scad, routes, track.c.railOffset) }),
-    labelOn, ...(opts.mark && { mark: opts.mark, markBoth: opts.markBoth }), num: { part: 0, sec: 0 }, alongTrack, gridPose, sleepered, bufs, grooveCuts, grooveKeeps, grooveEdits: tw.groove, dropInner, tables: design.tables ?? [], boughtSw: bought, trackRoutes: routes, ...(handCuts && { handCuts }), ...(cutPaths?.cut.length && inLengths && { cutPaths: cutPaths.cut }), ...(jointCutList.length > 0 && { jointCuts: jointCutList, jointGroups: { routes: jointRoutes, group: trackGroups(jointRoutes, jointHalves) } }) };
+    labelOn, ...(o.ballast !== 'none' && o.bottomStyle === 'float' && design.expert?.labels?.length && { labels: design.expert.labels }), ...(opts.mark && { mark: opts.mark, markBoth: opts.markBoth }), num: { part: 0, sec: 0 }, alongTrack, gridPose, sleepered, bufs, grooveCuts, grooveKeeps, grooveEdits: tw.groove, dropInner, tables: design.tables ?? [], boughtSw: bought, trackRoutes: routes, ...(handCuts && { handCuts }), ...(cutPaths?.cut.length && inLengths && { cutPaths: cutPaths.cut }), ...(jointCutList.length > 0 && { jointCuts: jointCutList, jointGroups: { routes: jointRoutes, group: trackGroups(jointRoutes, jointHalves) } }) };
   if (network) {
     net ??= netOf();
     for (const sp of net.levers) lever(keyOf(sp.toe), sp.frame, sp.set);
