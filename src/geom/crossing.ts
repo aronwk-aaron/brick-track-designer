@@ -189,12 +189,12 @@ export interface CrossingExtras {
   /** (the ballast alone) the seat to cut, from the bed up, in place of the track's own outline: a bought piece's footprint */
   seat?: Man;
   /**
-   * route ends ("i:end") where the next piece of the same track runs on from it inside the piece (two pieces of one
+   * each route that the next piece of the same track runs on from inside the piece, and that piece (by index) (two pieces of one
    * track built together, app/sections.ts): its rails, bed and ballast run FUSE_ON on into that one, so the two fuse
    * into one solid there. Laid end to end only, their faces met all but exactly on a curve (each piece's swept from its
    * own start), and the part had a wall of no thickness across the track there: edges shared by four triangles
    */
-  fuse?: Set<string>;
+  fuse?: Map<number, number>;
 }
 
 /** (mm) How far a piece's rails, bed and ballast run on into the next piece of its track (CrossingExtras.fuse), as sweepRoute runs each segment into the next. */
@@ -321,7 +321,8 @@ export function crossingPiece(s: Scad, routes: Route[], o: CrossingOptions = CRO
   // rails. They cut each other's rails' ends there, the faces all but on each other, and left edges shared by four
   // triangles at the joint)
   // (the piece each one runs on into, fused (x.fuse); and each fused run of pieces' first, its chain)
-  const nextOf = routes.map((rt, p) => { if (!x0.fuse?.has(`${p}:end`)) return -1; const e = routePose(rt, routeLength(rt)); return routes.findIndex((r2, q) => q !== p && Math.hypot(r2.start[0] - e[0], r2.start[1] - e[1]) < 0.01); });
+  // (by the build's own pairing, not where they meet: at a toe, every track setting out from there starts on the one end)
+  const nextOf = routes.map((_, p) => { const q = x0.fuse?.get(p); return q !== undefined && q >= 0 && q < routes.length && q !== p ? q : -1; });
   const chainOf = routes.map((_, i) => i);
   for (let n = 0; n < routes.length; n++) nextOf.forEach((q, p) => { if (q >= 0) chainOf[q] = chainOf[p]; });
   const inChain = (i: number) => nextOf[i] >= 0 || nextOf.includes(i), fused = (i: number, j: number) => inChain(i) && inChain(j) && chainOf[i] === chainOf[j];

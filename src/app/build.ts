@@ -2078,7 +2078,7 @@ function sectioned(b: PieceBuild, name: string, all: Route[], checks: CheckRail[
     const secInner = b.dropInner(rts);
     // (where a piece of a track runs on into the next piece of it inside this section (both overlap other track's base,
     // sections.ts): the two fused there (crossing.ts CrossingExtras.fuse), the plan's joint between them as it was)
-    const fuse = new Set(ps.flatMap(([pi, , b2], k) => (ps.some(([pj, a2]) => pj === pi && a2 === b2) ? [`${k}:end`] : [])));
+    const fuse = new Map(ps.flatMap(([pi, , b2], k): [number, number][] => { const j = ps.findIndex(([pj, a2]) => pj === pi && a2 === b2); return j >= 0 ? [[k, j]] : []; }));
     // (where its pieces end inside it, at a joint with the track on from them: a track's end running into the track
     // beside or across it. No cut through that end's connector: cut there, its rail-end tongues and its peg and clip,
     // which stand out past the end, were left loose in the part past the cut (endKeeps))
@@ -2291,8 +2291,8 @@ function sectioned(b: PieceBuild, name: string, all: Route[], checks: CheckRail[
 // A big piece in tiles (src/app/tiles.ts): each cell of the cuts built
 // from the track near it only, cut to the cell with its joints. false: it
 // needs no cutting (build it whole).
-/** fuse: the ends of pieces of all that run on into the next piece of their track, fused there (CrossingExtras.fuse), as a section's. */
-function tiled(b: PieceBuild, name: string, all: Route[], checks: CheckRail[], splits: SplitParts[], copt: typeof CROSSING_DEFAULTS, big = false, fuse?: Set<string>) {
+/** fuse: the pieces of all that run on into the next piece of their track, and that piece, fused there (CrossingExtras.fuse), as a section's. */
+function tiled(b: PieceBuild, name: string, all: Route[], checks: CheckRail[], splits: SplitParts[], copt: typeof CROSSING_DEFAULTS, big = false, fuse?: Map<number, number>) {
   const { w, scad, o, track, cut: cx } = b, { join } = cx;
   let bx = routesBox(all, Math.max(...all.map((rt) => sleeperLenOf(rt, track.c.sleeperLen))) / 2 + 24);
   for (const sp of splits) for (const m of sp.adds) { const bb = m.boundingBox(); bx = [Math.min(bx[0], bb.min[0]), Math.min(bx[1], bb.min[1]), Math.max(bx[2], bb.max[0]), Math.max(bx[3], bb.max[1])]; }
@@ -2331,8 +2331,8 @@ function tiled(b: PieceBuild, name: string, all: Route[], checks: CheckRail[], s
       });
       return { ...sp, inner, bladeCuts: sp.bladeCuts.filter(([i]) => cr.map[i] >= 0).map(([i, m]) => [cr.map[i], m] as [number, Man]) };
     });
-    // (a piece's end fused to the next piece of its track, where the tile has that end whole)
-    const tileFuse = new Set([...(fuse ?? [])].flatMap((e) => { const k = Number(e.split(':')[0]), kj = cr.map[k]; return kj >= 0 && cr.ranges[kj][1] === routeLength(all[k]) ? [`${kj}:end`] : []; }));
+    // (a piece fused to the next piece of its track, where the tile has that end of it and the next one's start whole)
+    const tileFuse = new Map([...(fuse ?? [])].flatMap(([k, j]): [number, number][] => { const kj = cr.map[k], jj = cr.map[j]; return kj >= 0 && jj >= 0 && cr.ranges[kj][1] === routeLength(all[k]) && cr.ranges[jj][0] === 0 ? [[kj, jj]] : []; }));
     const tileCuts = b.grooveCuts.filter((m) => nearCell(m.boundingBox(), R, MARGIN)), tileKeeps = b.grooveKeeps.filter((m) => nearCell(m.boundingBox(), R, MARGIN)), tileInner = b.dropInner(cr.routes, cr.inner);
     // (on ballast, its ballast clear of a bought switch's beside it, as a section's)
     const kbox = [R[0] - MARGIN, R[1] - MARGIN, R[2] + MARGIN, R[3] + MARGIN], nearSw = o.ballast !== 'none' && b.boughtSw.length > 0;
