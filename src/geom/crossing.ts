@@ -188,7 +188,17 @@ export interface CrossingExtras {
   blades?: Man[];
   /** (the ballast alone) the seat to cut, from the bed up, in place of the track's own outline: a bought piece's footprint */
   seat?: Man;
+  /**
+   * route ends ("i:end") where the next piece of the same track runs on from it inside the piece (two pieces of one
+   * track built together, app/sections.ts): its rails, bed and ballast run FUSE_ON on into that one, so the two fuse
+   * into one solid there. Laid end to end only, their faces met all but exactly on a curve (each piece's swept from its
+   * own start), and the part had a wall of no thickness across the track there: edges shared by four triangles
+   */
+  fuse?: Set<string>;
 }
+
+/** (mm) How far a piece's rails, bed and ballast run on into the next piece of its track (CrossingExtras.fuse), as sweepRoute runs each segment into the next. */
+export const FUSE_ON = 0.02;
 
 /** Route ends that another route runs on from, end to end (a route drawn in two, the track into a wye's toe): "i:start" / "i:end". */
 export function joinedEnds(routes: Route[]): Set<string> {
@@ -242,6 +252,14 @@ export function crossingPiece(s: Scad, routes: Route[], o: CrossingOptions = CRO
   const x: CrossingExtras = { ...x0, innerEnds: joined };
   // (ends that run on into another route's end, or a loop's own: its bed runs on through there, no rim across it)
   const runOn = joinedEnds(routes);
+  // (a route's sweep from a to b; at an end in x.fuse, on FUSE_ON past it along its last segment, a piece of its own:
+  // the route's own sweep as ever, so its faces are as they were up to its end)
+  const sweepOn = (cs: CS, i: number, a = 0, b = Infinity, bank?: Bank) => {
+    const rt = routes[i], m = sweepRoute(s, cs, rt, a, b, bank), L = routeLength(rt), sg = rt.segments[rt.segments.length - 1];
+    if (!(nextOf[i] >= 0) || b < L - 1e-6 || !sg || hasRoll(rt)) return m;
+    const on: Route['segments'][number] = sg.kind === 'straight' ? { kind: 'straight', length: FUSE_ON } : { kind: 'arc', radius: sg.radius, angle: (Math.sign(sg.angle) * FUSE_ON * 180) / (Math.PI * sg.radius) };
+    return s.union([m, sweepRoute(s, cs, { ...rt, segments: [...rt.segments, on] }, Math.max(a, L - FUSE_ON), L + FUSE_ON, bank)]);
+  };
   const t = new Track(s, o), c = t.c;
   // (mixed gauges: a route with a gauge of its own (Route.gauge) has its own track: its rails' offset, its sleepers'
   // length, its end connectors. The rest, and every route of a design with one gauge, the piece's)
@@ -294,7 +312,16 @@ export function crossingPiece(s: Scad, routes: Route[], o: CrossingOptions = CRO
   // route against every other is most of the work)
   const boxes = routes.map((rt, i) => routesBox([rt], lenOf[i] / 2 + 4));
   const meet = (a: number[], b: number[]) => a[0] <= b[2] && b[0] <= a[2] && a[1] <= b[3] && b[1] <= a[3];
-  const othersBands = (i: number) => bands.filter((_, j) => j !== i && meet(boxes[i], boxes[j]));
+  // (nor one piece of a track by the next piece of it, fused to it (x.fuse): one track's flangeways don't cut its own
+  // rails. They cut each other's rails' ends there, the faces all but on each other, and left edges shared by four
+  // triangles at the joint)
+  // (the piece each one runs on into, fused (x.fuse); and each fused run of pieces' first, its chain)
+  const nextOf = routes.map((rt, p) => { if (!x0.fuse?.has(`${p}:end`)) return -1; const e = routePose(rt, routeLength(rt)); return routes.findIndex((r2, q) => q !== p && Math.hypot(r2.start[0] - e[0], r2.start[1] - e[1]) < 0.01); });
+  const chainOf = routes.map((_, i) => i);
+  for (let n = 0; n < routes.length; n++) nextOf.forEach((q, p) => { if (q >= 0) chainOf[q] = chainOf[p]; });
+  const inChain = (i: number) => nextOf[i] >= 0 || nextOf.includes(i), fused = (i: number, j: number) => inChain(i) && inChain(j) && chainOf[i] === chainOf[j];
+  const fusedInto = (i: number) => nextOf.includes(i);
+  const othersBands = (i: number) => bands.filter((_, j) => j !== i && meet(boxes[i], boxes[j]) && !fused(i, j));
   const nearCuts = (i: number, ms: Man[]) => ms.filter((m) => { const bb = m.boundingBox(); return meet(boxes[i], [bb.min[0], bb.min[1], bb.max[0], bb.max[1]]); });
 
   // On ballast (track_lib.scad's, as the switches have it): two plates
@@ -491,6 +518,7 @@ export function crossingPiece(s: Scad, routes: Route[], o: CrossingOptions = CRO
   };
   // (with sleepers: each route's rails' solid's place in parts, and its check rails as cut, for the stubs taken out after)
   const railsAt: number[] = [], checksCut: Man[] = [];
+  const chains = new Map<number, { at: number; raw: Man[]; cuts: Man[] }>();
   const extras = routes.map((_, i) => extraRails(s, tOf[i], routes, i, !!x.innerEnds?.has(`${i}:start`), !!x.innerEnds?.has(`${i}:end`), { w: o.flangeway, depth: o.flangewayDepth }));
   // (a third rail through a crossing: its own flangeway (the narrow gauge's wheels') cut through the other routes' rails
   // and third rails, as each route's flangeways are; and theirs through it)
@@ -594,11 +622,18 @@ export function crossingPiece(s: Scad, routes: Route[], o: CrossingOptions = CRO
         bufS && atPose(box(BUFFER_RAIL_END, -1), p0), bufE && atPose(box(BUFFER_RAIL_END, -BUFFER_RAIL_END), p1)];
     };
     const rails = s.difference(s.union([-g, g].map((x) =>
-      sweepRoute(s, s.polygon(RAIL_PROFILE.map(([px, py]) => [px + x, py + PLATE_H] as Vec2)), rt, 0, Infinity, trackBank(c.sleeperLen)))), railEnds());
+      sweepOn(s.polygon(RAIL_PROFILE.map(([px, py]) => [px + x, py + PLATE_H] as Vec2)), i, 0, Infinity, trackBank(c.sleeperLen)))), railEnds());
     // (each end flared away from the rail it guards, so a flange coming in is led into the gap, as the switches' are)
     const fl = 4, flare = o.checkRailFlare ?? 1.5;
     const checks = checkRails.filter((cr) => cr.route === i).flatMap((cr) => {
       const sec = (x: number) => rect(cr.offset + x, cr.offset + cr.width + x, PLATE_H - 0.01, RAIL_TOP), away = -cr.side * flare, bk = trackBank(c.sleeperLen);
+      // (one that runs on into the next piece of its track, fused to it (x.fuse): on into it there, no flare at that end,
+      // nor at the next one's start: one check rail through the joint)
+      const on0 = cr.s0 <= 1e-6 && fusedInto(i), on1 = cr.s1 >= L - 1e-6 && nextOf[i] >= 0;
+      if (on0 || on1) {
+        const slice = (a: number, x: number) => sweepRoute(s, sec(x), rt, a - 0.05, a + 0.05, bk), fl0 = on0 || !flare ? 0 : fl, fl1 = on1 || !flare ? 0 : fl;
+        return [sweepOn(sec(0), i, cr.s0 + fl0, on1 ? Infinity : cr.s1 - fl1, bk), ...(fl0 ? [s.w.Manifold.hull([slice(cr.s0 + 0.05, away), slice(cr.s0 + fl, 0)])] : []), ...(fl1 ? [s.w.Manifold.hull([slice(cr.s1 - fl, 0), slice(cr.s1 - 0.05, away)])] : [])];
+      }
       if (!flare || cr.s1 - cr.s0 < 3 * fl) return [sweepRoute(s, sec(0), rt, cr.s0, cr.s1, bk)];
       const slice = (a: number, x: number) => sweepRoute(s, sec(x), rt, a - 0.05, a + 0.05, bk);
       return [sweepRoute(s, sec(0), rt, cr.s0 + fl, cr.s1 - fl, bk),
@@ -607,14 +642,20 @@ export function crossingPiece(s: Scad, routes: Route[], o: CrossingOptions = CRO
     // (expert: a rail kept through another route's flangeway, by hand: that flangeway cut round it)
     const kept = x.keeps?.length ? nearCuts(i, x.keeps) : [], cutBy = kept.length ? othersBands(i).map((m) => s.difference(m, kept)) : othersBands(i);
     const railCutsI = [...cutBy, ...dualBands(i), ...nearCuts(i, x.railCuts?.get(i) ?? [])];
-    const railsAll = s.difference(s.union([rails, ...checks]), railCutsI);
+    // (pieces of one track fused (x.fuse): their rails as one, each other route's flangeways cut from them all at once.
+    // Cut each on its own, the same flangeway's faces in the two met at the joint all but on each other: edges shared by
+    // four triangles there)
+    const ch = inChain(i) ? (chains.get(chainOf[i]) ?? (chains.set(chainOf[i], { at: -1, raw: [], cuts: [] }), chains.get(chainOf[i])!)) : undefined;
+    if (ch) { ch.raw.push(s.union([rails, ...checks])); ch.cuts.push(...railCutsI); }
+    const railsAll = ch && ch.raw.length > 1 ? s.difference(s.union(ch.raw), ch.cuts) : s.difference(s.union([rails, ...checks]), railCutsI);
     // (only where one of its check rails runs into another route's flangeway or rail, which can cut a bit off it: looked at
     // along its line first, no solid made (geom/kernel.ts bodyCount, why))
     const bitable = (cr: (typeof checkRails)[number]) => { const mid = cr.offset + cr.width / 2; for (let v = Math.max(0, cr.s0); v <= Math.min(L, cr.s1); v += 0.5) { const q = railPoint(rt, v, mid) as Vec2; if (routes.some((r2, j) => { if (j === i) return false; const sj = routeSOf(r2, q); if (sj < 0 || sj > routeLength(r2)) return false; const l = Math.abs(routeLat(r2, q)); return l >= gOf[j] - HEAD_HW - o.flangeway - cr.width - 1 && l <= gOf[j] + HEAD_HW + cr.width + 1; })) return true; } return false; };
     if (sleepered && checks.length) { railsAt[i] = parts.length; if (checkRails.some((cr) => cr.route === i && bitable(cr))) checksCut[i] = s.difference(s.union(checks), railCutsI); }
-    parts.push(hasRoll(rt) ? aboveZ(s, railsAll, 0) : railsAll); // (banked: the rails' feet, run down through the bed, turned, kept above its bottom)
+    if (ch && ch.at >= 0) { parts[ch.at] = hasRoll(rt) ? aboveZ(s, railsAll, 0) : railsAll; if (railsAt[i] !== undefined) railsAt[i] = ch.at; } else { if (ch) ch.at = parts.length;
+    parts.push(hasRoll(rt) ? aboveZ(s, railsAll, 0) : railsAll); } // (banked: the rails' feet, run down through the bed, turned, kept above its bottom)
     const banked = hasRoll(rt), roll0 = banked ? routeRoll(rt, 0) : 0, roll1 = banked ? routeRoll(rt, L) : 0;
-    const bedAlong = (a = 0, b = Infinity) => (banked ? bankedBed(s, rt, trackBank(c.sleeperLen), c.sleeperLen / 2, onBallast ? -1 : 0, a, b) : sweepRoute(s, rect(-c.sleeperLen / 2, c.sleeperLen / 2, 0, PLATE_H), rt, a, b));
+    const bedAlong = (a = 0, b = Infinity) => (banked ? bankedBed(s, rt, trackBank(c.sleeperLen), c.sleeperLen / 2, onBallast ? -1 : 0, a, b) : sweepOn(rect(-c.sleeperLen / 2, c.sleeperLen / 2, 0, PLATE_H), i, a, b));
     // Track bed under the route (with sleepers: only where it needs it, sleepers elsewhere).
     if (!sleepered) parts.push(s.difference(bedAlong(), bedEnds()));
     else {
@@ -1121,8 +1162,8 @@ export function crossingPiece(s: Scad, routes: Route[], o: CrossingOptions = CRO
     const W = s.w, studR = t.o.studD / 2, RIM = 1.39;
     const layer2d = (i: number) => rect(-topWOf(i) / 2, topWOf(i) / 2, bz0, bz0 + thick).add(rect(-midHalf(i, -1), midHalf(i, 1), bz0, bz0 + thick / 2));
     // (a banked route's top layer above z = 0 is its bed, turned: only the layers below are swept here)
-    const layers = routes.map((rt, i) => sweepRoute(s, hasRoll(rt) ? rect(-midHalf(i, -1), midHalf(i, 1), bz0, bz0 + thick / 2) : layer2d(i), rt));
-    const buddies = buddy ? routes.map((rt, i) => sweepRoute(s, rect(-botHalf(i, -1), botHalf(i, 1), bottomZ, bz0), rt)) : [];
+    const layers = routes.map((rt, i) => sweepOn(hasRoll(rt) ? rect(-midHalf(i, -1), midHalf(i, 1), bz0, bz0 + thick / 2) : layer2d(i), i));
+    const buddies = buddy ? routes.map((_, i) => sweepOn(rect(-botHalf(i, -1), botHalf(i, 1), bottomZ, bz0), i)) : [];
     // (expert, Ballast at a buffer stop: Stepped round the end: each layer carried on past the end as far as it stands out at the sides)
     const roundEnds = o.ballastEnds === 'stepped' ? routes.flatMap((rt, i) => (['start', 'end'] as const).filter((end) => bufEnd(i, end)).map((end) => ({ i, e: end === 'start' ? reversePose(routePose(rt, 0)) : routePose(rt, routeLength(rt)), sg: end === 'start' ? -1 : 1 }))) : [];
     const endSteps = roundEnds.flatMap(({ i, e, sg }) => {

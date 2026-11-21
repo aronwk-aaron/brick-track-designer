@@ -608,15 +608,14 @@ export const RAIL_KNOWN: Record<string, (keyof typeof RAIL_KINDS)[]> = { 'Double
  * track 118 to 103 (93). As found, so unchanged: the return loops (103, 102), Double crossover (R56) (101), T-junction
  * core R56 (35), the compact R40 corners (30, 22).)
  */
-// ('X yard (6 tracks, double slips)': 26, exactly as found, 2026-11-21, since it's built as Aaron asked (Bought track:
-// LEGO's only): not this layout's own but main's lego-only path's. A printed switch's branch is two pieces in one part
-// there, and they end face to face inside it, a wall of no thickness across the track (track10 and track11 at the
-// corner switches, 7 and 17; track8 and track21 1 each). A lone 'Switch R104 left' with these options has 44. Follow-up:
-// fix that wall (sections.ts / build.ts / pathsplit.ts cutOnKerfs), then this allowance comes off: 5 as before)
+// ('X yard (6 tracks, double slips)': off the list again, 2026-11-21. Built as Aaron asked (Bought track: LEGO's only), a
+// printed switch's branch is two pieces in one part, and they ended face to face inside it, a wall of no thickness across
+// the track: 26 found (track10 and track11 at the corner switches, 7 and 17). The two are fused now (crossing.ts
+// CrossingExtras.fuse; lego-only-switch.test.ts): 2 found, track8 and track21 1 each under the ballast, under EDGES_FEW)
 // ('Wye R40, 8-stud spacing': 27 found since its rails run on into their end connectors' tongues (16 allowed before): all in
 // track1, at its underside (the first at -58.4, 45.5, 0), where nothing was changed: the kernel's result there differs with
 // the rails' mesh above it)
-export const EDGES: Record<string, number> = { 'Modular wye R40, lever on the left': 5, 'Modular wye R40, lever on the right': 5, 'Test print 7: clearance round the points': 8, 'Curve R40, 5.62°': 14, 'X yard (6 tracks, double slips)': 26, 'Yard (R56)': 96, 'Double-track return loop (turning left)': 109, 'Double-track return loop (turning right)': 109, 'Double crossover (R56)': 106, 'Wye with a crossover': 63, 'Yard ladder (R40)': 16, 'Wye R40, 8-stud spacing': 30, 'T-junction core R56': 38, 'Pass-through crossing R72 (B) right': 30, 'Siding ending in a buffer stop': 16, 'Pass-through crossing R72 (B) left': 9, 'Crossing 45° left': 11, 'Double crossover R40': 6, 'Wye R40 left, R56 right': 8, 'Crossing 45° right': 15, 'Banked curve': 6, 'Pass-through crossing R120 right': 6, 'Wye R104 left, R120 right': 5, 'Narrow-gauge crossing 33.75° left': 6, 'Wye R40': 6, 'Narrow-gauge switch R48 left': 5, 'Narrow-gauge wye R36': 5,
+export const EDGES: Record<string, number> = { 'Modular wye R40, lever on the left': 5, 'Modular wye R40, lever on the right': 5, 'Test print 7: clearance round the points': 8, 'Curve R40, 5.62°': 14, 'Yard (R56)': 96, 'Double-track return loop (turning left)': 109, 'Double-track return loop (turning right)': 109, 'Double crossover (R56)': 106, 'Wye with a crossover': 63, 'Yard ladder (R40)': 16, 'Wye R40, 8-stud spacing': 30, 'T-junction core R56': 38, 'Pass-through crossing R72 (B) right': 30, 'Siding ending in a buffer stop': 16, 'Pass-through crossing R72 (B) left': 9, 'Crossing 45° left': 11, 'Double crossover R40': 6, 'Wye R40 left, R56 right': 8, 'Crossing 45° right': 15, 'Banked curve': 6, 'Pass-through crossing R120 right': 6, 'Wye R104 left, R120 right': 5, 'Narrow-gauge crossing 33.75° left': 6, 'Wye R40': 6, 'Narrow-gauge switch R48 left': 5, 'Narrow-gauge wye R36': 5,
   // (mixed gauges: as the same layout at one gauge has them, in the sleepered crossing's part; and the 45° crossing as the standard ones)
   'Narrow gauge beside and across standard track': 103, 'Narrow-gauge crossing of standard track 45° right': 20,
   // (the right hand's sleepered part where the gauges part: corners of its bed meeting on the baseplate, as the 45° crossings')
