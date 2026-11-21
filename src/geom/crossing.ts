@@ -254,11 +254,16 @@ export function crossingPiece(s: Scad, routes: Route[], o: CrossingOptions = CRO
   const runOn = joinedEnds(routes);
   // (a route's sweep from a to b; at an end in x.fuse, on FUSE_ON past it along its last segment, a piece of its own:
   // the route's own sweep as ever, so its faces are as they were up to its end)
-  const sweepOn = (cs: CS, i: number, a = 0, b = Infinity, bank?: Bank) => {
-    const rt = routes[i], m = sweepRoute(s, cs, rt, a, b, bank), L = routeLength(rt), sg = rt.segments[rt.segments.length - 1];
-    if (!(nextOf[i] >= 0) || b < L - 1e-6 || !sg || hasRoll(rt)) return m;
+  // (its piece past the end alone, from FUSE_ON back: none where it isn't fused)
+  const runOnPast = (cs: CS, i: number, a = 0, bank?: Bank) => {
+    const rt = routes[i], L = routeLength(rt), sg = rt.segments[rt.segments.length - 1];
+    if (!(nextOf[i] >= 0) || !sg || hasRoll(rt)) return undefined;
     const on: Route['segments'][number] = sg.kind === 'straight' ? { kind: 'straight', length: FUSE_ON } : { kind: 'arc', radius: sg.radius, angle: (Math.sign(sg.angle) * FUSE_ON * 180) / (Math.PI * sg.radius) };
-    return s.union([m, sweepRoute(s, cs, { ...rt, segments: [...rt.segments, on] }, Math.max(a, L - FUSE_ON), L + FUSE_ON, bank)]);
+    return sweepRoute(s, cs, { ...rt, segments: [...rt.segments, on] }, Math.max(a, L - FUSE_ON), L + FUSE_ON, bank);
+  };
+  const sweepOn = (cs: CS, i: number, a = 0, b = Infinity, bank?: Bank) => {
+    const m = sweepRoute(s, cs, routes[i], a, b, bank), past = b >= routeLength(routes[i]) - 1e-6 ? runOnPast(cs, i, a, bank) : undefined;
+    return past ? s.union([m, past]) : m;
   };
   const t = new Track(s, o), c = t.c;
   // (mixed gauges: a route with a gauge of its own (Route.gauge) has its own track: its rails' offset, its sleepers'
@@ -320,7 +325,6 @@ export function crossingPiece(s: Scad, routes: Route[], o: CrossingOptions = CRO
   const chainOf = routes.map((_, i) => i);
   for (let n = 0; n < routes.length; n++) nextOf.forEach((q, p) => { if (q >= 0) chainOf[q] = chainOf[p]; });
   const inChain = (i: number) => nextOf[i] >= 0 || nextOf.includes(i), fused = (i: number, j: number) => inChain(i) && inChain(j) && chainOf[i] === chainOf[j];
-  const fusedInto = (i: number) => nextOf.includes(i);
   const othersBands = (i: number) => bands.filter((_, j) => j !== i && meet(boxes[i], boxes[j]) && !fused(i, j));
   const nearCuts = (i: number, ms: Man[]) => ms.filter((m) => { const bb = m.boundingBox(); return meet(boxes[i], [bb.min[0], bb.min[1], bb.max[0], bb.max[1]]); });
 
@@ -627,17 +631,14 @@ export function crossingPiece(s: Scad, routes: Route[], o: CrossingOptions = CRO
     const fl = 4, flare = o.checkRailFlare ?? 1.5;
     const checks = checkRails.filter((cr) => cr.route === i).flatMap((cr) => {
       const sec = (x: number) => rect(cr.offset + x, cr.offset + cr.width + x, PLATE_H - 0.01, RAIL_TOP), away = -cr.side * flare, bk = trackBank(c.sleeperLen);
-      // (one that runs on into the next piece of its track, fused to it (x.fuse): on into it there, no flare at that end,
-      // nor at the next one's start: one check rail through the joint)
-      const on0 = cr.s0 <= 1e-6 && fusedInto(i), on1 = cr.s1 >= L - 1e-6 && nextOf[i] >= 0;
-      if (on0 || on1) {
-        const slice = (a: number, x: number) => sweepRoute(s, sec(x), rt, a - 0.05, a + 0.05, bk), fl0 = on0 || !flare ? 0 : fl, fl1 = on1 || !flare ? 0 : fl;
-        return [sweepOn(sec(0), i, cr.s0 + fl0, on1 ? Infinity : cr.s1 - fl1, bk), ...(fl0 ? [s.w.Manifold.hull([slice(cr.s0 + 0.05, away), slice(cr.s0 + fl, 0)])] : []), ...(fl1 ? [s.w.Manifold.hull([slice(cr.s1 - fl, 0), slice(cr.s1 - 0.05, away)])] : [])];
-      }
-      if (!flare || cr.s1 - cr.s0 < 3 * fl) return [sweepRoute(s, sec(0), rt, cr.s0, cr.s1, bk)];
+      const flared = !!flare && cr.s1 - cr.s0 >= 3 * fl;
+      // (one that runs on into the next piece of its track, fused to it (x.fuse): on FUSE_ON into the next one's, as it is
+      // at its end, flared or not: the two flare alike there, and where the section is cut there its parts are as they were)
+      const past = cr.s1 >= L - 1e-6 ? runOnPast(sec(flared ? away : 0), i, 0, bk) : undefined;
+      if (!flared) return [sweepRoute(s, sec(0), rt, cr.s0, cr.s1, bk), ...(past ? [past] : [])];
       const slice = (a: number, x: number) => sweepRoute(s, sec(x), rt, a - 0.05, a + 0.05, bk);
       return [sweepRoute(s, sec(0), rt, cr.s0 + fl, cr.s1 - fl, bk),
-        s.w.Manifold.hull([slice(cr.s0 + 0.05, away), slice(cr.s0 + fl, 0)]), s.w.Manifold.hull([slice(cr.s1 - fl, 0), slice(cr.s1 - 0.05, away)])];
+        s.w.Manifold.hull([slice(cr.s0 + 0.05, away), slice(cr.s0 + fl, 0)]), s.w.Manifold.hull([slice(cr.s1 - fl, 0), slice(cr.s1 - 0.05, away)]), ...(past ? [past] : [])];
     });
     // (expert: a rail kept through another route's flangeway, by hand: that flangeway cut round it)
     const kept = x.keeps?.length ? nearCuts(i, x.keeps) : [], cutBy = kept.length ? othersBands(i).map((m) => s.difference(m, kept)) : othersBands(i);
