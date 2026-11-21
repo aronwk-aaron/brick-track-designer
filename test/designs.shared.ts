@@ -30,7 +30,7 @@ export const KNOWN_SAVED: Record<string, Known & { warnings?: RegExp[] }> = {
   'monster-switch-6-tracks.btd.json': { problems: [],
     warnings: [/blades are rigid/, /a sprung blade's front has no lip/],
     why: 'the build says it: rigid blades where the sprung plates don\'t fit, and a sprung blade with no lip; its parts go together' },
-  'monster-switch-6-tracks-double-slips.btd.json': { problems: [/^points(5|19)-throw and points(11|26)-throw(-posts)? overlap/, /^points(5|11|19|26)-throw(-posts)? slid [\d.]+ mm: [\d.]+ mm3 in points(5|11|19|26)-throw/, /^points(11|26) isn't moved by its slider/],
+  'monster-switch-6-tracks-double-slips.btd.json': { problems: [/^points(5|19)-throw and points(11|26)-throw(-posts)? overlap/, /^points(5|11|19|26)-throw(-posts)? slid [\d.]+ mm: [\d.]+ mm3 in points(5|11|19|26)-throw/],
     warnings: [/blades are rigid/, /the lever of the points at 45, 156 \(studs\) is in the way/, /the lever of the points at 35, 132 \(studs\) is in the way/, /the throws of the points at 48, 155 \(studs\) and 45, 156 \(studs\) run into each other/, /the throws of the points at 32, 133 \(studs\) and 35, 132 \(studs\) run into each other/],
     why: 'the build says it: the double slips\' throws run into each other (points5 and points11, points19 and points26: their sliders cross, 27 mm3 shared, neither slides), and two levers are in the way of trains on another track' },
 };

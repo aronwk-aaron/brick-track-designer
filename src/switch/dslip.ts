@@ -169,7 +169,7 @@ export const SLIP_LEVER_OFFSET = 24, SLIP_LEVER_AT = 5.5;
  * out exactly as its switch-motor points: (7, 10) from the crossing by the straight track, (10.5, 6.5) by the diagonal. */
 export const REF_LEVER_PAST_FROG = 24, REF_LEVER_OUT = 56, REF_LEVER_GRID = 4;
 /** The build's options slipTrackwork follows: the levers as the reference's (the sleepers' half length, mm: where leverOffset is measured from). */
-export interface SlipOpts { reference?: { edge: number } }
+export interface SlipOpts { reference?: { edge: number }; /** (slipLevers 'straight') each lever straight out from its points, as any switch's: no housing at the corner, no rod */ straight?: boolean }
 /** A check rail opposite an acute frog that runs on into the blade ends this much (mm) short of the blade's toe, at least 9 shorter, as the reference's does at its tongue's toe. */
 const CHECK_BEFORE_TOE = 1, CHECK_SHORTER = 9;
 
@@ -248,7 +248,13 @@ export function slipTrackwork(routes: Route[], sol: Solution, slips: DoubleSlip[
     // (the levers as the reference's (slipLevers 'reference'): where refPivot puts them, unless pulled in as above)
     const rp = opts.reference && lo === SLIP_LEVER_OFFSET ? refPivot(routes, sol, ds, st, opts.reference.edge) : undefined;
     const off = rp ? { leverOffset: rp.leverOffset } : lo === undefined ? {} : { leverOffset: lo }, at = rp ? rp.leverAt : SLIP_LEVER_AT;
-    tw.throw[st.key] = st.atX || was?.nail ? { nail: true } : was?.side && was.side !== st.outside ? { awayFrom: [Math.round(st.away[0]), Math.round(st.away[1])], ...off, leverAt: at }
+    // (slipLevers 'straight': the lever beside its throw bar, the arm square out from the points, outside, as any switch's;
+    // where other track's in the way, the slider runs under it to a lever past it (boxedThrow 'slider'). An X centre's sets
+    // too, none thrown by hand (Aaron, 2026-11-20), on whichever side the app finds room: between the diagonals there's
+    // seldom room outside; where there's none on either, it's said)
+    if (opts.straight && st.atX && !was) tw.throw[st.key] = {};
+    else if (opts.straight) tw.throw[st.key] = was?.nail ? { nail: true } : was?.side && was.side !== st.outside ? { awayFrom: [Math.round(st.away[0]), Math.round(st.away[1])] } : { side: st.outside };
+    else tw.throw[st.key] = st.atX || was?.nail ? { nail: true } : was?.side && was.side !== st.outside ? { awayFrom: [Math.round(st.away[0]), Math.round(st.away[1])], ...off, leverAt: at }
       : { side: st.outside, ...off, leverAt: at };
     // (the check rail on this track that would run on into the blade: ended short of its toe)
     const sp = sol.splits[st.split], L = routeLength(routes[st.track]), sa = sp.merge ? L - sp.spans[0][1] : sp.spans[0][0], toeS = sa + 2 + st.lead + toe;

@@ -1351,7 +1351,7 @@ export function switchGeometry(s: Scad, plan: SwitchPlan, extraCuts: Man[] = [])
   });
   // (the moving blades' plates, swept over their swing: fdbFootprint; and whether a point is in one or near its edge)
   let bladePlatesK: Pt[][] | undefined;
-  const bladePlates = () => (bladePlatesK ??= p.mechStyle === 'plates' && plan.sets.some((v) => v.heels) ? fdbFootprint(plan).plates : []);
+  const bladePlates = () => (bladePlatesK ??= p.mechStyle === 'plates' ? fdbFootprint(plan).plates : []);
   const nearRing = (ring: Pt[], q: Pt, d: number) => {
     let inside = false;
     for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {

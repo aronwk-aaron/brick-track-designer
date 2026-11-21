@@ -321,7 +321,19 @@ export function networkSplits(s: Scad, routes: Route[], sol: Solution, p: BasePa
   if (preps.some((q) => q.how === 'tines')) warnings.push("a double slip's points are built on tines under the bed, the blades notched for the other track's flanges: blades on top don't fit between its rails");
   const crowded = preps.filter((q) => q.alone && q.keep.length && q.blockedOf(q.st.plan)).map((q) => studsAt(q.gr.main));
   if (crowded.length) warnings.push(`the points at ${crowded.slice(0, 4).join('; ')}${crowded.length > 4 ? ' …' : ''} have no room for their blades' plates beside the next points' blades: they'd hit; move them apart, or use 'tines' points`);
+  /**
+   * (blades on top) Is each moving blade's post far enough from its pin for the blade to follow its slider? The slider
+   * moved along toward the heels (throwShift) brings the post nearer the pin: 17 mm from it on the X yard's facing slips
+   * (2 studs in), the blade swung through twice the angle and caught on its slider as it went (1 mm3). Moves that left
+   * posts at 18.5 and 19.5 mm (Double crossover R40) and 21.5 and 22.6 (Double slip (22.5°)) go together, each blade
+   * following its slider (assembled.shared.ts moves); the app's own places are 28 mm and more. A move that leaves a
+   * post nearer than POST_R_MIN isn't made.
+   */
+  const POST_R_MIN = 18;
+  const postsFar = (pl: SwitchPlan) => pl.p.mechStyle !== 'plates' || !pl.sets[0].fdb || pl.sets[0].fdb.every((f, b) => b === pl.sets[0].fixed || f.blocked || Math.hypot(f.post[0] - f.pivot[0], f.post[1] - f.pivot[1]) >= POST_R_MIN);
   /** How many places a points set's lever has clear of trains on other track (its side or the other, its slider moved along). */
+  // (how many clear places a lever has, to place the ones with fewest first: counted as before, whatever the posts (POST_R_MIN):
+  // the order the levers are placed in left as it was, so a design whose levers fit stays as it was)
   const room = (q: (typeof preps)[number]) => {
     const { own, rts, foreign, P, blockedOf, specOf, st, keep } = q;
     if (blockedOf(st.plan)) return Infinity;
@@ -353,9 +365,10 @@ export function networkSplits(s: Scad, routes: Route[], sol: Solution, p: BasePa
         const { leverAt: _la, ...rest } = base;
         const o2 = { ...(cn ? base : rest), ...(sh && { throwShift: sh }), ...(ex && { leverOffset: out0 + ex }) }, pl = switchPlan(rts, [specOf(o2, sd)], st.pp, 1, foreign, keep);
         if (ex && pl.sets[0].under && !pl.sets[0].underOk) continue;
-        if (!blockedOf(pl) && !inWay(pl, foreign, P, ed?.leverAt !== undefined)) { st.tside = sd; st.over = o2; st.used = specOf(o2, sd); st.plan = pl; found = true; }
+        if (!blockedOf(pl) && postsFar(pl) && !inWay(pl, foreign, P, ed?.leverAt !== undefined)) { st.tside = sd; st.over = o2; st.used = specOf(o2, sd); st.plan = pl; found = true; }
       }
       if (!found) {
+        failedAt.set(q, warnings.length);
         // (a three-way's two levers, one each side: its side isn't a choice)
         if (q.blade !== undefined) warnings.push(`the ${q.blade === 0 ? 'left' : 'right'} lever of the three-way at ${studsAt(gr.main)} is in the way of ${why0 === 'train' ? 'a train on another track' : 'another points\' lever'}: move the points, or set Three-way switches worked by to One lever`);
         else warnings.push(why0 === 'train' ? `the lever of the points at ${studsAt(gr.main)} is in the way of a train on another track: set its side on the route card, or move the points`
@@ -365,13 +378,41 @@ export function networkSplits(s: Scad, routes: Route[], sol: Solution, p: BasePa
     // (the lever on a stud of the design's grid, unless moved by hand)
     if (gridLevers && !(ed?.leverOffset !== undefined && ed?.springLength !== undefined)) {
       const g2 = gridLever(P, st.plan.sets[0], ed ?? {});
-      if (g2.leverOffset !== undefined) { st.used = specOf({ ...st.over, ...g2 }, st.tside); st.plan = switchPlan(rts, [st.used], st.pp, 1, foreign, keep); }
+            if (g2.leverOffset !== undefined) { st.used = specOf({ ...st.over, ...g2 }, st.tside); st.plan = switchPlan(rts, [st.used], st.pp, 1, foreign, keep); }
     }
+    armAt.set(q, arms.length);
     arms.push(armOf(st.plan, P));
   };
+  // (the levers that found no clear place, and where each one's warning is; where each lever's arm is in the list)
+  const failedAt = new Map<(typeof preps)[number], number>(), armAt = new Map<(typeof preps)[number], number>();
   // (only where some are in another's way does the order matter: then the ones with the fewest clear places first)
   const rooms = preps.map((q) => (inWay(q.st.plan, q.foreign, q.P, q.ed?.leverAt !== undefined) ? room(q) : Infinity));
   preps.map((_, k) => k).sort((a, b) => rooms[a] - rooms[b]).forEach((k) => placeLever(preps[k]));
+  // (a lever with no clear place for another points' lever in its way (the X yard's centre, its sets on the two tracks
+  // and the diagonals beside them): that one placed again after it, each of the levers near in turn, where both then
+  // have a clear place; else as it was, and said)
+  for (const [q, wi] of [...failedAt]) {
+    // (only where it's another lever in its way: one in the way of trains is left as it was, and said)
+    if (warnings[wi] === undefined || !/on another points' lever/.test(warnings[wi])) continue;
+    const snap = (x: (typeof preps)[number]) => ({ tside: x.st.tside, over: x.st.over, used: x.st.used, plan: x.st.plan });
+    for (const o of preps) {
+      if (o === q || o.three || Math.hypot(o.P[0] - q.P[0], o.P[1] - q.P[1]) > 400 || armAt.get(o) === undefined) continue;
+      const sq = snap(q), so = snap(o), ka = armAt.get(o)!, armO = arms[ka], qa = armAt.get(q), armQ = qa !== undefined ? arms[qa] : undefined, n0 = arms.length, nW = warnings.length;
+      // (the other's arm and this one's out of the way; this one placed, then the other placed again clear of it: each
+      // placed lever's arm goes on the end of the list)
+      const gone: [[number, number], [number, number]] = [[1e9, 1e9], [1e9, 1e9]];
+      arms[ka] = gone; if (qa !== undefined) arms[qa] = gone;
+      failedAt.delete(q); placeLever(q);
+      const qOk = !failedAt.has(q);
+      if (qOk) { failedAt.delete(o); placeLever(o); }
+      if (qOk && !failedAt.has(o)) { warnings[wi] = ''; break; }
+      // (not both: as they were)
+      Object.assign(q.st, sq); Object.assign(o.st, so);
+      arms.length = n0; arms[ka] = armO; armAt.set(o, ka); if (qa !== undefined) { arms[qa] = armQ!; armAt.set(q, qa); }
+      warnings.length = nW; failedAt.set(q, wi); failedAt.delete(o);
+    }
+  }
+  for (let k = warnings.length - 1; k >= 0; k--) if (warnings[k] === '') warnings.splice(k, 1);
   // (blades on top: two points' throws that run into each other, as a double slip's middle points' sliders cross under
   // its crossing, can't both move: no room for a throw there. Nail switches (Points with no room for a throw), their
   // sliders only under their own points; else said)
@@ -400,7 +441,7 @@ export function networkSplits(s: Scad, routes: Route[], sol: Solution, p: BasePa
         const cur = (q.st.used[5] ?? {}) as SetOver, others = preps.flatMap((o, m) => (m === k ? [] : [armOf(o.st.plan, o.P)]));
         for (const sh of [1, -1, 2, -2, 3, -3, 4, -4, 5, -5]) {
           const o2: SetOver = { ...cur, throwShift: (cur.throwShift ?? 0) + sh }, used = q.specOf(o2, q.st.tside), pl = switchPlan(q.rts, [used], q.st.pp, 1, q.foreign, q.keep);
-          if (q.blockedOf(pl) || pl.setData[0].throwY === q.st.plan.setData[0].throwY) continue;
+          if (q.blockedOf(pl) || !postsFar(pl) || pl.setData[0].throwY === q.st.plan.setData[0].throwY) continue;
           const arm = armOf(pl, q.P);
           if (inWay(pl, q.foreign, q.P, ed?.leverAt !== undefined) === 'train' || others.some((o) => segGap(o, arm) < ARM_GAP)) continue;
           const gm = switchGeometry(s, pl), th = place(gm.throwPart(0), q.P), was = [ths[k], bbs[k]] as const;
@@ -538,8 +579,10 @@ export function networkSplits(s: Scad, routes: Route[], sol: Solution, p: BasePa
     const offOwn = studsOffOf(s, P, plan.routes, gl.G, gl.bedTop, mech.bed, [mech.pockets, mech.channel, mech.arm, ...mech.steps, ...(mech.rests ? [mech.rests] : []), ...(spr ? [spr] : []), ...(br ? [br] : [])],
       [thr, thp, thr2].filter((m): m is Man => !!m), lev, gm.throwMove(0).slide, mech.armRects);
     const studsOff0 = crossed ? (q: [number, number]) => wb.some((bb) => q[0] > bb.min[0] - 3 && q[0] < bb.max[0] + 3 && q[1] > bb.min[1] - 3 && q[1] < bb.max[1] + 3) : offOwn;
-    // (expert, stage 5: a blade made longer by hand reaches on past the points' own bed: no stud of the track's beside it under its plate, wherever it swings)
-    const lenPlates = pp.mechStyle === 'plates' && plan.sets.some((v) => v.heels) ? fdbFootprint(plan).plates : [];
+    // (no stud of the track's under any moving blade's plate, wherever it swings: a blade made longer by hand reaching on
+    // past the points' own bed (stage 5), and any set's plate swinging over the track's bed beside its points (the X
+    // yard's centre, its tracks' sets with levers, 2026-11-20))
+    const lenPlates = pp.mechStyle === 'plates' ? fdbFootprint(plan).plates : [];
     const underPlate = (q: [number, number]) => { const l = worldToPose(P, q) as Pt, d = TRACK_DEFAULTS.studD / 2 + (pp.pointClearance ?? 0.3) + 0.3; return lenPlates.some((ring) => {
       let inside = false;
       for (let a2 = 0, b2 = ring.length - 1; a2 < ring.length; b2 = a2++) {

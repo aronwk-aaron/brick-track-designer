@@ -9,7 +9,7 @@
 // would be (cutter.ts pathJoints).
 import { T, type CS, type Man, type Scad } from './scad';
 import { PLATE_H, type Track } from './track';
-import { jointKit, pathJoints, tidy, type Joint, type Run } from './cutter';
+import { jointKit, pathJoints, railNubsOff, tidy, type Joint, type Run } from './cutter';
 import { findStuds, type Stud } from './studs';
 import type { Route } from '../route/route';
 import { railOffsetOf, routeLength, routePose } from '../route/route';
@@ -234,7 +234,13 @@ export function splitOnPath(s: Scad, m: Man, routes: Route[], path: [number, num
   }
   const j = join ? pathJoints(s, join.t, m, routes, runs, join.joint, join.flatRails, join.noTongue, taken) : undefined;
   const body = j?.cut ? s.difference(m, [j.cut]) : m;
-  let a = s.intersection(body, region(0)), b = s.difference(body, [region(0.1)]);
+  // (a nub of rail head the cut leaves at its edge taken off, as cutPiece's are: its box reaches one of the path's runs)
+  const atPath = (cs: [number, number][]) => runs.some((r) => {
+    const e: [number, number] = [r.p[0] + r.d[0] * r.len, r.p[1] + r.d[1] * r.len], k = r.d[0] !== 0 ? 1 : 0;
+    const lo = Math.min(r.p[1 - k], e[1 - k]), hi = Math.max(r.p[1 - k], e[1 - k]), c = cs.map((q) => q[k]), u = cs.map((q) => q[1 - k]);
+    return Math.min(...c) - 0.3 <= r.p[k] && Math.max(...c) + 0.3 >= r.p[k] && Math.max(...u) >= lo && Math.min(...u) <= hi;
+  });
+  let a = railNubsOff(s, s.intersection(body, region(0)), join?.t.o.flangewayDepth, atPath), b = railNubsOff(s, s.difference(body, [region(0.1)]), join?.t.o.flangewayDepth, atPath);
   if (j?.add[0].length) a = tidy(s, s.union([a, ...j.add[0]]));
   if (j?.add[1].length) b = tidy(s, s.union([b, ...j.add[1]]));
   return { parts: [a, b].filter((p) => p.volume() > 300), path, runs, couplers: j?.couplers ?? 0, tongues: j?.tongues ?? 0, holes: j?.holes ?? [], tongueAt: j?.tongueAt ?? [] };

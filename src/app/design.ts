@@ -189,7 +189,7 @@ export interface PieceOptions {
   /** (blades on top, the lever built in) The lever's housing: the arm out to the lever ('arm', default), or a cross-bar 16 studs long with a 4 x 3 stud block at each end, the lever in the block on its side ('crossbar', as the reference range's). */
   leverHousing?: 'arm' | 'crossbar';
   /** (blades on top) A double slip's levers, where they're worked out: in a housing at each corner, 5.5 studs in from where the roads part ('corner', default), or where the reference's are ('reference': 3 studs past the acute frog, 7 studs out, on the nearest half stud). */
-  slipLevers?: 'corner' | 'reference';
+  slipLevers?: 'corner' | 'reference' | 'straight';
   /** (track cut into pieces) A double slip's sections, where its points are past the frogs: as the design's own cuts make them ('none', default), or as the reference's ('reference': its middle, 8 studs on the bisector, cut out on the stud grid). */
   slipCuts?: 'none' | 'reference';
   /** Points with no room for a throw (its arm across other track, a double slip's in its middle): a nail switch ('nail') or the slider under that track to a lever past it ('slider', default). */
@@ -698,10 +698,14 @@ export function slipMonster(): Design {
  * onto the last), a full R104 double slip wherever a diagonal crosses a track, so a train can go from any track to any
  * other either way, through the centre too (where the diagonals cross, between the third and fourth tracks).
  */
-export function slipXYard(): Design {
-  const [x1, c1] = slipDiagonal('X1', 0, 24, -1, 4), [x2, c2] = slipDiagonal('X2', 80, 24, 1, 4);
-  const tracks: DRoute[] = Array.from({ length: 6 }, (_, k) => ({ name: `T${k + 1}`, x: 16 * k, y: 0, heading: 0, segs: [{ kind: 'straight', studs: 288 }] }));
-  return { version: 1, gaugeStuds: 4, options: { pointBlades: 1, ballast: 'ballast', legoTrack: 'print' }, routes: [...tracks, x1, x2,
+export function slipXYard(n = 6): Design {
+  // (n tracks: the template's 6; fewer for tests, the same yard in small (slip-levers-facing.test.ts))
+  const w = 16 * (n - 1), [x1, c1] = slipDiagonal('X1', 0, 24, -1, n - 2), [x2, c2] = slipDiagonal('X2', w, 24, 1, n - 2);
+  const tracks: DRoute[] = Array.from({ length: n }, (_, k) => ({ name: `T${k + 1}`, x: 16 * k, y: 0, heading: 0, segs: [{ kind: 'straight', studs: 48 * n }] }));
+  // (as Aaron asked, 2026-11-20: parts joined by straight cuts and LEGO axles; every throw straight out from its points,
+  // as any switch's (slipLevers 'straight'); the plain straights between the slips LEGO's own, bought (Bought: LEGO's
+  // only), in whole 16-stud pieces (Long track cut into: Track pieces))
+  return { version: 1, gaugeStuds: 4, options: { pointBlades: 1, ballast: 'ballast', legoTrack: 'lego-only', joint: 'flataxle', slipLevers: 'straight', splitTrack: 'lengths' }, routes: [...tracks, x1, x2,
     ...c1.flatMap((c) => slipRoads(`X1-T${c[0] / 16 + 1}`, c, -1)), ...c2.flatMap((c) => slipRoads(`X2-T${c[0] / 16 + 1}`, c, 1))] };
 }
 /** The R104 double slip cut into its kit's three sections (TEMPLATES): r104Slip, with track cut into pieces and the two cut paths. */

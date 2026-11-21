@@ -360,18 +360,9 @@ export function cutPiece(s: Scad, t: Track, body: Man, routes: Route[], lines: C
   });
   // (the rail tops: a nub at a cut's edge is taken off down to the flangeways' floor, the rail left running through
   // under it as it does along the flangeways either side)
-  const railTop = PLATE_H + 6.4, zHead = railTop - 0.5, zFloor = railTop - (t.o.flangewayDepth ?? 3);
   const straight = frames.filter((f) => !f.L.comb);
-  const nubless = (cell: Man) => {
-    if (!straight.length || cell.boundingBox().max[2] < zHead) return cell;
-    const nubs = cell.slice(zHead).decompose().filter((q) => {
-      if (q.area() >= NUB_AREA || q.area() < 0.01) return false;
-      const b = q.bounds(), cs: [number, number][] = [[b.min[0], b.min[1]], [b.max[0], b.min[1]], [b.min[0], b.max[1]], [b.max[0], b.max[1]]];
-      // (at a cut's edge: its box reaches the line)
-      return straight.some((f) => { const vs = cs.map((p) => f.toLocal(p)[1]); return Math.min(...vs.map(Math.abs)) < 0.3 || Math.min(...vs) * Math.max(...vs) < 0; });
-    });
-    return nubs.length ? s.difference(cell, nubs.map((q) => T(s.extrude(q.offset(0.05, 'Miter', 4), railTop + 2 - zFloor), [0, 0, zFloor]))) : cell;
-  };
+  // (at a cut's edge: its box reaches the line)
+  const nubless = (cell: Man) => !straight.length ? cell : railNubsOff(s, cell, t.o.flangewayDepth, (cs) => straight.some((f) => { const vs = cs.map((p) => f.toLocal(p)[1]); return Math.min(...vs.map(Math.abs)) < 0.3 || Math.min(...vs) * Math.max(...vs) < 0; }));
   const cells: Man[] = [];
   for (const cell0 of parts) {
     const cell = nubless(cell0);
@@ -403,6 +394,23 @@ export function cutPiece(s: Scad, t: Track, body: Man, routes: Route[], lines: C
 }
 
 /** A part with nothing loose: the bits under a few mm3 a cut left over dropped. */
+/**
+ * A part with the nubs of rail head a cut left at its edge taken off (NUB_AREA): each down to the flangeways' floor, the
+ * rail left running through under it as it does along the flangeways either side. atCut: whether a nub (its box's
+ * corners, mm) is at a cut's edge. (cutPiece's straight cuts, and pathsplit.ts's stepped ones: a fit-to-bed path
+ * through a double slip's obtuse crossing, just past its frog, left one on the X yard's track 5, 2026-11-20.)
+ */
+export function railNubsOff(s: Scad, cell: Man, flangewayDepth: number | undefined, atCut: (corners: [number, number][]) => boolean): Man {
+  const railTop = PLATE_H + 6.4, zHead = railTop - 0.5, zFloor = railTop - (flangewayDepth ?? 3);
+  if (cell.boundingBox().max[2] < zHead) return cell;
+  const nubs = cell.slice(zHead).decompose().filter((q) => {
+    if (q.area() >= NUB_AREA || q.area() < 0.01) return false;
+    const b = q.bounds();
+    return atCut([[b.min[0], b.min[1]], [b.max[0], b.min[1]], [b.min[0], b.max[1]], [b.max[0], b.max[1]]]);
+  });
+  return nubs.length ? s.difference(cell, nubs.map((q) => T(s.extrude(q.offset(0.05, 'Miter', 4), railTop + 2 - zFloor), [0, 0, zFloor]))) : cell;
+}
+
 export function tidy(s: Scad, whole: Man): Man {
   // (on a flat copy: kernel.ts flat. It and the bits not kept let go at once: a big piece's cells each held a copy and
   // its bits till the whole cut was done, the most the kernel's memory reached on a crossover)

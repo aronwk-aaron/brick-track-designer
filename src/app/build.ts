@@ -1080,7 +1080,7 @@ function solveTrackwork(w: Wasm, design: Design, o: PieceOptions, step: (what: s
       const h = (sl.bisector * Math.PI) / 180, side = (st: typeof sl.sets[number]) => { const [x, y] = st.key.split(',').map(Number); return Math.sign(-(x - sl.centre[0]) * Math.sin(h) + (y - sl.centre[1]) * Math.cos(h)); };
       for (const a of sl.sets) for (const b2 of sl.sets) if (a.key !== b2.key && side(a) === side(b2) && sl.sets.filter((st) => side(st) === side(a)).length === 2) mates.set(a.key, b2.key);
     }
-    if (slips.length) Object.assign(tw, underHand(tw, slipTrackwork(routes, sol, slips, o.slipLevers === 'reference' ? { reference: { edge: gauge / 2 + 12 } } : {}))); }
+    if (slips.length) Object.assign(tw, underHand(tw, slipTrackwork(routes, sol, slips, o.slipLevers === 'reference' ? { reference: { edge: gauge / 2 + 12 } } : o.slipLevers === 'straight' ? { straight: true } : {}))); }
   // What the canvas draws over the track, in mm: flangeway cuts, check rails,
   // rail crossings and points.
   const g = gauge / 2, gOf = (i: number) => railOffsetOf(routes[i], g);

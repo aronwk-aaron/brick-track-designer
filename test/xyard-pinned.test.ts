@@ -18,6 +18,15 @@
 // (track3, 2026-11-19, approved by Aaron: 86234.15 -> 86651.66, its edge rim back. The rim along its cut edges had come out
 // empty (underside.ts edgeGrip: its outline's spike of no area grew to a negative area). Its box, and every other part, as
 // they were.)
+// (2026-11-20, asked for by Aaron: "for the big yard X, you can set it to do straight cuts with axle connections, and
+// then make all of the throws just normal and come straight out, not of the arm to the side stuff" and "make it so it
+// will use lego parts for the straights". The template's options now: Parts join with: Straight cuts + LEGO axles
+// (joint 'flataxle'), Double slip levers: Straight out (slipLevers 'straight': no housings at the corners, no rods;
+// every set with a lever, the X's centre too: its two diagonal sets' sliders in two parts under the diagonal, and its
+// two sets on tracks 3 and 4 (at 32, 144 and 48, 144 studs) said to be on another points' lever, as Aaron chose to keep
+// them), Bought track: LEGO's only (legoTrack 'lego-only': its plain straights 64 LEGO 53401s on LEGO plates), Long
+// track cut into: Track pieces. Pinned again from that build: 198 parts, 134 printed (24 track, 36 blades, 36 sliders,
+// 36 levers, 2 sliders' posts), where it had 216 printed.)
 import { describe, expect, it } from 'vitest';
 import fs from 'node:fs';
 import { kernel } from '../src/geom/kernel';

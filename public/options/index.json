@@ -133,7 +133,8 @@
  ],
  "slipLevers": [
   "corner",
-  "reference"
+  "reference",
+  "straight"
  ],
  "boxedThrow": [
   "nail",
