@@ -614,6 +614,64 @@ async function tablet(width: number, height: number, tag: string) {
       check(/"id":"l2"/.test(await labelsNow()), `[${tag}] + Label, a tap on the track, adds one there (${await labelsNow()})`);
       await tapOn('#itemcard .idone').catch(() => {});
     }
+    // (stage 7: ballast edges and stud-off areas by touch: the Ballast chip, a tap on the right edge, dragged out 2 studs
+    // (the track's own, D6), + on its card, over a stretch only, Reset; the Studs chip, + Studs off, a tap adds one,
+    // a corner dragged out on whole studs, Delete; a switch's own area can't be deleted, its card adds one round it)
+    at = `${tag}: ballast edges and stud-off areas by touch`;
+    await page.evaluate(() => { localStorage.setItem('btd-design', JSON.stringify({ version: 1, gaugeStuds: 4, options: { legoTrack: 'print', pieceLengthStuds: 16, ballast: 'ballast' }, routes: [{ name: 'A', x: 0, y: 0, heading: 0, segs: [{ kind: 'straight', studs: 32 }] }] })); });
+    await page.reload(); await page.waitForSelector('#track'); await tapOn('#mode-select'); await tapOn('#fit'); await sleep(300);
+    await tapOn('#layers button[data-pick="ballast"]'); await sleep(200);
+    type S7 = { btdCanvas: { view(): { scale: number }; toScreen(x: number, y: number): [number, number]; host: { design(): { routes: { own?: Record<string, unknown>; stretches?: { from: number; to: number; own: Record<string, unknown> }[] }[]; expert?: { studsOff?: { id: string; x0: number; y0: number; x1: number; y1: number }[] } } } } };
+    const edgesNow = () => page.evaluate(() => { const r = (window as unknown as S7).btdCanvas.host.design().routes[0]; return JSON.stringify([r.own ?? null, r.stretches ?? null]); });
+    const edgeR = await spot('data-edges', '0:right');
+    check(!!edgeR, `[${tag}] the ballast edges are on the plan (${await page.locator('#track').getAttribute('data-edges')})`);
+    if (edgeR) {
+      await f.tap(edgeR); await sleep(300);
+      check(/^Right ballast edge of A/.test(await page.locator('#itemcard > b').innerText().catch(() => '')) && /As the track has it/.test(await page.locator('#itemcard .istatus').innerText().catch(() => '')), `[${tag}] a tap on the right edge selects it (${await page.locator('#itemcard > b').innerText().catch(() => 'no card')})`);
+      const sc = await page.evaluate(() => (window as unknown as S7).btdCanvas.view().scale);
+      await f.drag(edgeR, [edgeR[0] + sc * 2, edgeR[1]], { steps: 10 }); await sleep(300);
+      check(await edgesNow() === '[{"ballastRightStuds":3},null]', `[${tag}] dragged out 2 studs: 3 past the sleepers, the track's own (${await edgesNow()})`);
+      await shot('ballast-edge');
+      await tapOn('#itemcard .stepper button:last-of-type'); await sleep(300);
+      check(await edgesNow() === '[{"ballastRightStuds":4},null]', `[${tag}] + on its card: a stud more (${await edgesNow()})`);
+      await tapOn('#itemcard button:has-text("Change it over a stretch only")'); await sleep(300);
+      check(/^\[\{"ballastRightStuds":4\},\[\{"from":\d+,"to":\d+,"own":\{"ballastRightStuds":4\}\}\]\]$/.test(await edgesNow()) && /Over the stretch/.test(await page.locator('#itemcard').innerText().catch(() => '')), `[${tag}] over a stretch only: one made where it was tapped, the edge on it selected (${await edgesNow()})`);
+      await tapOn('#itemcard button:has-text("Reset this edge")'); await sleep(300);
+      check(await edgesNow() === '[{"ballastRightStuds":4},null]', `[${tag}] Reset this edge: the stretch had nothing else, so it's gone (${await edgesNow()})`);
+      await tapOn('#itemcard .idone').catch(() => {});
+    }
+    await tapOn('#layers button[data-pick="studs"]'); await sleep(200);
+    const areasNow = () => page.evaluate(() => JSON.stringify((window as unknown as S7).btdCanvas.host.design().expert?.studsOff ?? []));
+    await tapOn('#layers button[data-add="studsoff"]'); await sleep(200);
+    await f.tap(await scr(10.2, 10.3)); await sleep(300);
+    check(await areasNow() === '[{"id":"s1","x0":9,"y0":9,"x1":11,"y1":11}]', `[${tag}] + Studs off, a tap: an area 2 by 2 there, on whole studs (${await areasNow()})`);
+    {
+      const c0 = await scr(11, 11), c1 = await scr(13.2, 12.9);
+      await f.drag(c0, c1, { steps: 10 }); await sleep(300);
+      check(await areasNow() === '[{"id":"s1","x0":9,"y0":9,"x1":13,"y1":13}]', `[${tag}] its corner dragged: to the whole stud nearest (${await areasNow()})`);
+      await shot('studs-off');
+      await tapOn('#itemcard button.danger'); await sleep(300);
+      check(await areasNow() === '[]', `[${tag}] Delete on its card takes it away (${await areasNow()})`);
+    }
+    await page.evaluate(() => { localStorage.setItem('btd-design', JSON.stringify({ version: 1, gaugeStuds: 4, options: { legoTrack: 'print' }, routes: [{ name: 'Straight', x: 0, y: 0, heading: 0, segs: [{ kind: 'straight', studs: 32 }] }, { name: 'Branch', x: 0, y: 0, heading: 0, segs: [{ kind: 'curve', radius: 40, angle: 33.75 }], throwSide: 'left' }] })); });
+    await page.reload(); await page.waitForSelector('#track'); await tapOn('#mode-select'); await tapOn('#fit'); await sleep(300);
+    await tapOn('#layers button[data-pick="studs"]'); await sleep(200);
+    let appA: [number, number] | undefined;
+    for (let k = 0; k < 300 && !appA; k++) {
+      const v = JSON.parse(await page.locator('#track').getAttribute('data-areas') ?? '[]') as [number, number, string][], q = v.find((e) => e[2].startsWith('app:'));
+      if (q) { const tb = (await page.locator('#track').boundingBox())!; appA = [tb.x + q[0], tb.y + q[1]]; } else await sleep(200);
+    }
+    check(!!appA, `[${tag}] the points' own stud-off area is on the plan, once worked out`);
+    if (appA) {
+      // (its toe: inside the blades' band, a little on along the straight)
+      const inA = await scr(0, 4);
+      await f.tap(inA); await sleep(300);
+      check(/The app's/.test(await page.locator('#itemcard .istatus').innerText().catch(() => '')) && await page.locator('#sel-item-del').isHidden(), `[${tag}] a tap on it selects the app's, nothing to delete (${await page.locator('#itemcard > b').innerText().catch(() => 'no card')})`);
+      await shot('studs-off-app');
+      await tapOn('#itemcard button:has-text("Clear more round it")'); await sleep(300);
+      check(/^\[\{"id":"s1",/.test(await areasNow()), `[${tag}] Clear more round it: an area of your own over it (${await areasNow()})`);
+      await tapOn('#itemcard .idone').catch(() => {});
+    }
     await page.evaluate(() => localStorage.setItem('btd-pick', 'all'));
     await shot('several');
   }

@@ -45,6 +45,7 @@ import { bankRolls, type Design, OPTION_DEFAULTS, type PieceOptions, type Trackw
 import { labelCut, labelCutAt, labelLines, type LabelPlace } from '../geom/labels';
 import type { LabelItem } from './labelitems';
 import { pegEnds, squareWarnings } from './connectors';
+import { studsOffMm } from './studsoff';
 import { joints as designJoints } from './connections';
 import { buildMonorail, clearMonoCache } from './monobuild';
 import { tableAt, tableOf, tableOutline, type Table } from './tables';
@@ -2812,7 +2813,7 @@ function buildOne(w: Wasm, design: Design, report: (what: string, frac: number) 
   const scad = new Scad(w);
   const params = switchParams(o, design.gaugeStuds, alone);
   // (route ends that end in a buffer stop, by where they are)
-  const bufs = bufferEnds(design), pegs = pegEnds(design);
+  const bufs = bufferEnds(design), pegs = pegEnds(design), studsOff = studsOffMm(design.expert?.studsOff);
 
   let pc = planPieces(routes, sol.splits, params, toeShift, throwEdit, true);
   prog.steps = 2 + pc.switches.length + (pc.rest.length ? 1 : 0);
@@ -2831,9 +2832,11 @@ function buildOne(w: Wasm, design: Design, report: (what: string, frac: number) 
   // (expert: sleepers edited by hand or a ballast width of its own on a switch's routes: a network piece, which lays them (a switch built on its own has its own bed);
   // and a rail run through a frog by hand: the network's rails are cut by the other routes' flangeways, which can be kept off it)
   const handOnSwitch = pc.switches.some((sw) => sw.covers.some(([ri]) => !!routes[ri].hand));
+  // (expert, stage 7: a stud-off area by hand over a switch: a network piece, whose studs it keeps off (a switch built on its own lays its own))
+  const offOnSwitch = studsOff.length > 0 && pc.switches.some((sw) => sw.covers.some(([ri, a, b2]) => Array.from({ length: Math.max(2, Math.ceil((b2 - a) / 8)) + 1 }, (_, k) => routePose(routes[ri], a + ((b2 - a) * k) / Math.max(2, Math.ceil((b2 - a) / 8)))).some((q) => studsOff.some((r) => q[0] > r[0] - 64 && q[0] < r[2] + 64 && q[1] > r[1] - 64 && q[1] < r[3] + 64))));
   const ownGaugeSwitch = sol.splits.some((sp) => sp.routes.some((ri) => routes[ri].gauge !== undefined));
   const network = sol.splits.length > 0 && (sol.splits.some((sp) => sp.merge) || pc.warnings.some((w2) => !/print bed/.test(w2))
-    || sol.crossings.some((c) => groupOf(c.a.route) !== groupOf(c.b.route)) || bufOnSwitch || extraOnSwitch || ownGaugeSwitch || handOnSwitch || grooveKeeps.length > 0
+    || sol.crossings.some((c) => groupOf(c.a.route) !== groupOf(c.b.route)) || bufOnSwitch || extraOnSwitch || ownGaugeSwitch || handOnSwitch || offOnSwitch || grooveKeeps.length > 0
     // (expert, stage 5c: a points set with its own blade shape or moving blades: a network piece, which plans each set with its own)
     || Object.values(tw.points ?? {}).some((e) => !!(e.bladeStyle || e.blades || (e.mech && e.mech !== (params.mechStyle ?? 'plates')))));
   const bedWarnings = new Set<string>();
@@ -2890,6 +2893,8 @@ function buildOne(w: Wasm, design: Design, report: (what: string, frac: number) 
     ...(design.expert?.free?.length && { free: design.expert.free }),
     // (expert, stage 6: the end connectors set by hand to have their peg and clip or not, by where they are: only when there are some)
     ...(pegs.length && { pegs }),
+    // (expert, stage 7: the areas kept free of studs by hand: only when there are some)
+    ...(studsOff.length && { studsOff }),
     ...(o.axleHoles && { axleHoles: true }), ...(o.pegOnBallast && { pegOnBallast: true }), ...(o.ballastEnds === 'stepped' && o.ballast !== 'none' && { ballastEnds: 'stepped' as const }), ...(alone && { ballastOnly: o.trackFitTol ?? 0.2 }), ...(o.studsFullPitch && { studsFullPitch: true }) };
   const tp = params;
   const netKey = JSON.stringify({ routes, tp, copt, tw });

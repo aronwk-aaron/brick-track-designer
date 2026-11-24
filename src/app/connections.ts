@@ -159,6 +159,7 @@ export function tidyExpert(d: Design) {
   if (!e.accept?.length) delete e.accept;
   if (!e.free?.length) delete e.free;
   if (!e.labels?.length) delete e.labels;
+  if (!e.studsOff?.length) delete e.studsOff;
   if (!Object.keys(e).length) delete d.expert;
 }
 

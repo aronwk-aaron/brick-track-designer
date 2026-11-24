@@ -33,13 +33,15 @@ import { curvedAt, followShared, followSleeperEdits, pruneShared, renameShared, 
 import { type FreeItem, freeProblem, RAIL_MAX, RAIL_MIN, SLEEPER_LEN } from './freeparts';
 import { carryCutJoints, connKind, endKindOf, squareBlocked, type EndKind, jointDefault, JOINT_NAMES, JOINT_TIPS, type JointKind, keepJoints, moveJoint, pegDefault, setCutJoint, setEndKind } from './connectors';
 import { LABEL_CAP, LABEL_TEXT_MAX, labelsOff, labelTextOf, nextLabelId } from './labelitems';
+import { EDGE_DEFAULT, EDGE_RANGE, edgeBuffers, edgeNow, edgeOwn, edgeShapeBlocked, edgeShapeNow, edgeStretch, resetEdge, setEdge, setEdgeShape } from './ballastedges';
+import { APP_AREA_WHY, AREA_NEW, AREA_SIDE, appAreaBox, areaProblem, nextAreaId } from './studsoff';
 import { cleanRailEdits, cutOutOfPiece, type PiecePut, railPieces, resetRailSide, setRailPiece, FLANGEWAY_MIN, followRailEdits, GAP_DEF, GAP_MAX, GAP_MIN, GAP_RADIUS_MIN, GUARD_GAP_MAX, GUARD_GAP_MIN, moveRailEdit, RAIL_RUN_MIN, railEditAt, type RailEdits, type RailGap, railProblem, type RailSide, withRailEdit } from './railedits';
 import { boxable, byHandNote, type PickId, designByHandNote, EXPERT_SECTIONS, isPick, itemLabel, itemsLabel, jointsOf, jointWhere, PICK_CHIPS, PICKS, sleeperEditAt, sleeperEditOf } from './items';
 import { expandStretches, followStretches, liveStretches, lostStretches, type Stretch, STRETCH_KEYS, STRETCH_MIN, stretchProblem } from './stretches';
 import { designOfSelection, listMine, saveMine, type StorageLike } from './mytemplates';
 import { openMineStore } from './minestore';
 import { parallelRoute } from './parallelroute';
-import { mergeProblem, mergeRoutes, splitRoute } from './splitmerge';
+import { mergeProblem, mergeRoutes, nearestAlong, splitRoute } from './splitmerge';
 import { jointsOn } from './handcuts';
 import { type CutPath, movedPath, PATH_JOINTS, type PathJoint, pathTracks, type PlacedRoute, sharedMove } from './cutpaths';
 import { addCut, alongAfter, cleanCuts, clearCuts, CUT_MIN, cutLength, cutProblem, followCuts, lostCuts, setCut } from './routecuts';
@@ -841,6 +843,104 @@ function renderItemCard() {
       if (l) { const reset = document.createElement('button'); reset.type = 'button'; reset.textContent = 'Back to the app\'s label'; reset.title = 'Take this one away: the part has the app\'s own label again (where labels are on)'; reset.addEventListener('click', () => { design.expert!.labels = (design.expert?.labels ?? []).filter((q) => q.id !== l.id); tidyExpert(design); canvas.selectItem(undefined); changed(true); }); row.append(reset); }
       del.textContent = l ? 'Delete' : 'Take off'; row.append(del);
     }
+  } else if (it.kind === 'ballast') {
+    // (stage 7: a ballast edge: how far it reaches past the sleepers, over the whole track or a stretch; its shape at a buffer stop)
+    const r = design.routes[it.route], now = edgeNow(design, it), L = cutLength(r), key = it.side === 'left' ? 'ballastLeftStuds' : 'ballastRightStuds';
+    const des = design.options?.[key] ?? EDGE_DEFAULT;
+    const inp = document.createElement('input'); inp.type = 'number'; inp.step = '1'; inp.min = String(EDGE_RANGE[0]); inp.max = String(EDGE_RANGE[1]); inp.value = String(now.studs);
+    inp.setAttribute('aria-label', `Ballast past the sleepers, ${it.side}, studs`);
+    inp.addEventListener('change', () => {
+      const why = inp.value.trim() === '' ? 'Type how far past the sleepers, studs' : setEdge(design, it, Number(inp.value));
+      if (why) { canvas.say(why); inp.value = String(now.studs); return; }
+      coalesceNext = `edge:${it.route}:${it.side}:${it.k ?? 't'}`; changed(true); soon(drawItemCard);
+    });
+    box.append(field('Past the sleepers, studs', inp));
+    const where = now.from === 'stretch' ? 'this stretch\'s own' : now.from === 'track' ? (it.k !== undefined ? 'the track\'s' : 'this track\'s own') : now.from === 'design' ? 'the design\'s' : 'the default';
+    small(`Whole studs, ${EDGE_RANGE[0]} to ${EDGE_RANGE[1]}; default ${EDGE_DEFAULT}${des !== EDGE_DEFAULT ? ` (the design's: ${des})` : ''}. 0 is level with the sleepers' ends: never narrower. Now: ${where}. Drag the edge out or in on the plan, or press an arrow key.`);
+    if (it.k !== undefined) {
+      // (the stretch it's over: where, to type; the stretch's other settings are on the track's card)
+      const st = r.stretches![it.k];
+      const num = (which: 'from' | 'to') => {
+        const n0 = document.createElement('input'); n0.type = 'number'; n0.step = '1'; n0.min = '0'; n0.max = String(Math.ceil(L)); n0.value = String(st[which]);
+        n0.setAttribute('aria-label', `Stretch ${which === 'from' ? 'starts' : 'ends'}, studs`);
+        n0.addEventListener('change', () => {
+          const n = Math.round(Number(n0.value)), from = which === 'from' ? n : st.from, to = which === 'to' ? n : st.to;
+          const why = n0.value.trim() === '' || !Number.isFinite(n) ? 'Type how far along, studs' : stretchProblem(r, from, to, it.k);
+          if (why) { canvas.say(why); n0.value = String(st[which]); return; }
+          st.from = from; st.to = to; r.stretches!.sort((a, b) => a.from - b.from);
+          coalesceNext = `edge:${it.route}:${it.k}:${which}`; changed(true); canvas.selectItem({ kind: 'ballast', route: it.route, side: it.side, k: r.stretches!.indexOf(st) }); soon(drawItemCard);
+        });
+        return n0;
+      };
+      const pair = document.createElement('span'); pair.className = 'pair'; pair.append(num('from'), ' to ', num('to'));
+      { const fl = field('Over the stretch, studs', pair); fl.classList.add('stack'); box.append(fl); }
+      small(`Whole studs, 0 to ${Math.ceil(L)}, at least ${STRETCH_MIN} long, not over another stretch. A stretch is a piece of its own: the track is cut there, an ordinary track end each side.`);
+    } else {
+      const only = document.createElement('button'); only.type = 'button'; only.textContent = 'Change it over a stretch only';
+      only.title = 'Make a stretch of this track round where you tapped (8 studs; its ends typed after), and change the edge there only. The track is cut at the stretch\'s ends: an ordinary track end each side.';
+      only.addEventListener('click', () => {
+        const w = canvas.pressedAt, s0 = w ? nearestAlong(r, w).s : L / 2, got = edgeStretch(r, s0);
+        if ('problem' in got) { canvas.say(got.problem); return; }
+        setEdge(design, { route: it.route, side: it.side, k: got.k }, now.studs);
+        changed(true); canvas.selectItem({ kind: 'ballast', route: it.route, side: it.side, k: got.k }); canvas.say('A stretch made here: change its edge, and type where it starts and ends', 5000);
+      });
+      row.append(only);
+    }
+    // (its shape at a buffer stop: the one choice the app has for an edge's shape, both sides at once)
+    {
+      const sel = document.createElement('select'); sel.setAttribute('aria-label', 'Ballast at a buffer stop');
+      const blocked = edgeShapeBlocked(design, it);
+      for (const [v, t] of [['square', 'Square: cut off with the end (default)'], ['stepped', 'Stepped: carried on round the buffer stop']] as const) sel.append(new Option(t, v));
+      sel.value = edgeShapeNow(design, it); sel.disabled = !!blocked;
+      sel.addEventListener('change', () => { const why = setEdgeShape(design, it, sel.value as 'square' | 'stepped'); if (why) { canvas.say(why); soon(drawItemCard); return; } changed(true); soon(drawItemCard); });
+      box.append(field('At a buffer stop', sel));
+      small(blocked ? `Locked: ${blocked}.` : `Both sides at once, at the buffer stop${edgeBuffers(design, it).length > 1 ? 's' : ''} ${it.k !== undefined ? 'this stretch ends in' : 'this track ends in'}. Default: Square.`, !!blocked);
+    }
+    const reset = document.createElement('button'); reset.type = 'button'; reset.textContent = 'Reset this edge'; reset.title = it.k !== undefined ? 'The track\'s edge here again (a stretch left with nothing of its own is taken away)' : 'The design\'s edge again';
+    reset.disabled = !edgeOwn(design, it);
+    reset.addEventListener('click', () => {
+      const got = resetEdge(design, it); changed(true);
+      if (got.gone) { canvas.selectItem({ kind: 'ballast', route: it.route, side: it.side }); canvas.say('The stretch had nothing else of its own: it\'s gone, the track is one piece there again'); }
+      soon(drawItemCard);
+    });
+    row.append(reset, showCard(it.route, 'Bed and underside'));
+  } else if (it.kind === 'studsoff') {
+    // (stage 7: a stud-off area: by hand, where and how big (whole studs); the app's, why it stays)
+    const a = it.id ? design.expert?.studsOff?.find((q) => q.id === it.id) : undefined;
+    if (!a) {
+      small(APP_AREA_WHY);
+      const app = canvas.appAreaList().find((q) => q.key === it.app);
+      const more = document.createElement('button'); more.type = 'button'; more.textContent = 'Clear more round it'; more.title = 'Add a stud-off area of your own over this one and a stud round it: then drag it or its corners';
+      more.disabled = !app;
+      more.addEventListener('click', () => {
+        if (!app) return;
+        const list = ((design.expert ??= {}).studsOff ??= []), id = nextAreaId(list), b = { id, ...appAreaBox(app) };
+        const why = areaProblem(b);
+        if (why) { canvas.say(why); return; }
+        list.push(b); changed(true); canvas.selectItem({ kind: 'studsoff', id });
+      });
+      row.append(more);
+    } else {
+      const num = (k: 'x0' | 'y0' | 'w' | 'h', label: string) => {
+        const n0 = document.createElement('input'); n0.type = 'number'; n0.step = '1';
+        if (k === 'w' || k === 'h') { n0.min = String(AREA_SIDE[0]); n0.max = String(AREA_SIDE[1]); }
+        n0.value = String(k === 'w' ? a.x1 - a.x0 : k === 'h' ? a.y1 - a.y0 : a[k]); n0.setAttribute('aria-label', label);
+        n0.addEventListener('change', () => {
+          const n = Number(n0.value), w0 = a.x1 - a.x0, h0 = a.y1 - a.y0;
+          const to = k === 'x0' ? { ...a, x0: n, x1: n + w0 } : k === 'y0' ? { ...a, y0: n, y1: n + h0 } : k === 'w' ? { ...a, x1: a.x0 + n } : { ...a, y1: a.y0 + n };
+          const why = n0.value.trim() === '' || !Number.isFinite(n) ? 'Type a number of studs' : areaProblem(to);
+          if (why) { canvas.say(why); soon(drawItemCard); return; }
+          Object.assign(a, to); coalesceNext = `area:${a.id}:${k}`; changed(true); soon(drawItemCard);
+        });
+        return n0;
+      };
+      const at = document.createElement('span'); at.className = 'pair'; at.append(num('x0', 'Stud-off area, left side x, studs'), ', ', num('y0', 'Stud-off area, near side y, studs'));
+      box.append(field('Corner x, y', at));
+      const size = document.createElement('span'); size.className = 'pair'; size.append(num('w', 'Stud-off area, studs across'), ' by ', num('h', 'Stud-off area, studs up'));
+      box.append(field('Size, studs', size));
+      small(`Whole studs on the plan, so no stud is ever cut: each is all in (left off) or all out. Size ${AREA_SIDE[0]} to ${AREA_SIDE[1]} studs each way; a new one is ${AREA_NEW} by ${AREA_NEW}. No stud stands on a part's top inside it: on the bed, sleepers, ties or end connectors. Drag it or a corner, or press an arrow key.`);
+      row.append(del);
+    }
   } else if (it.kind === 'joint') {
     const sj = canvas.jointSelected();
     for (const j of jointsOf(it, js)) small(`${jointWhere(design, j)}, at ${+j.at[0].toFixed(1)}, ${+j.at[1].toFixed(1)} (studs): ${j.apart ? 'taken apart (each moves on its own)' : 'joined (they move together)'}.`);
@@ -853,6 +953,8 @@ function renderItemCard() {
     : it.kind === 'joint' ? 'Worked out from where the tracks meet.'
     : it.kind === 'free' ? 'Made by hand: Delete takes it away (Undo brings it back).'
     : it.kind === 'conn' ? (it.end ? (endKindOf(design.routes[it.route], it.end) !== 'connector' ? 'Set by hand: Reset this end gives the design\'s back.' : 'The design\'s end connector: change its kind to make it yours.') : it.auto ? 'Worked out by the app: change anything to make it yours.' : (design.routes[it.route]?.cutJoints ?? []).some((q) => Math.abs(q.at - it.at!) < 1e-3) ? 'A hand cut with a kind of its own: the design\'s kind on its card gives it back.' : 'A hand cut: Delete takes it out; the track card\'s Automatic cuts gives the joints back to the app.')
+    : it.kind === 'ballast' ? (edgeOwn(design, it) ? 'Set by hand: Reset this edge gives back what\'s over it.' : 'As the track has it: change it to make it this one\'s own.')
+    : it.kind === 'studsoff' ? (it.id ? 'Made by hand: Delete takes it away (Undo brings it back).' : 'The app\'s: kept for the points\' moving parts.')
     : it.kind === 'label' ? (it.id ? (design.expert?.labels?.find((q) => q.id === it.id)?.off ? 'Taken off by hand: Put the label back.' : 'Placed by hand: Back to the app\'s label gives the part its own again.') : 'Placed by the app: change anything to make it yours.')
     : it.kind === 'run' ? ((design.routes[it.route]?.railEdits?.out ?? []).some((q) => q.side === it.side) ? (it.out ? `Taken out by hand: Put the rail back, or Reset the ${it.side} rail.` : `Edited by hand: Reset the ${it.side} rail gives it back to the app.`) : 'Laid by the app: change anything to make it yours.')
     : it.kind === 'tw' && it.blade !== undefined ? ((design.trackwork?.points?.[it.key]?.bladeHeel?.[it.blade] ?? 0) > 0 ? 'Edited by hand: Reset this blade puts it back as worked out.' : 'Worked out by the app: change anything to make it yours.')
@@ -2262,6 +2364,7 @@ function updateLegend() {
   // (with the expert tools shown: what the marks made by hand are)
   show('legend-cuts', expertTools && (design.routes.some((r) => r.cuts?.length) || !!design.expert?.cutPaths?.length));
   show('legend-byhand', expertTools && (design.routes.some((r) => r.sleeperEdits?.length || r.railEdits) || !!design.expert?.shared?.length));
+  show('legend-studsoff', expertTools && (canvas.pick === 'studs' || !!design.expert?.studsOff?.length));
   show('legend-mono-points', !!(o as { monoPoints?: unknown[] } | undefined)?.monoPoints?.length);
   show('legend-levers', has('throw'));
   show('legend-grip', !!o?.grips?.length);
@@ -2518,13 +2621,20 @@ $('legend-fold').addEventListener('click', () => foldLegend(!legendEl.classList.
     b.addEventListener('click', () => { if (canvas.mode !== 'select') $('mode-select').click(); setPick(k); canvas.armAdd(canvas.addArmed === k ? undefined : k); });
     chips.append(b);
   }
-  const setPick = (v: PickId) => {
+  // (stage 7: + Studs off: the next tap on the plan adds a stud-off area there)
+  {
+    const b = document.createElement('button'); b.type = 'button'; b.className = 'add'; b.dataset.add = 'studsoff'; b.textContent = '+ Studs off';
+    b.title = 'Keep studs off an area: tap where, then drag it or its corners. Whole studs, so no stud is ever cut.';
+    b.addEventListener('click', () => { if (canvas.mode !== 'select') $('mode-select').click(); setPick('studs'); canvas.armAdd(canvas.addArmed === 'studsoff' ? undefined : 'studsoff'); });
+    chips.append(b);
+  }
+  const setPick = (v: PickId, legend = true) => {
     canvas.pick = v; pick.value = v;
     for (const b of chips.querySelectorAll<HTMLButtonElement>('button')) { const on = b.dataset.pick === v; b.classList.toggle('on', on); b.setAttribute('aria-pressed', String(on)); }
     try { localStorage.setItem('btd-pick', v); } catch { /* fine */ }
-    canvas.draw();
+    canvas.draw(); if (legend) updateLegend();
   };
-  setPick(canvas.pick);
+  setPick(canvas.pick, false);
   pick.addEventListener('change', () => {
     if (!isPick(pick.value)) return;
     setPick(pick.value);
@@ -2962,6 +3072,8 @@ function updateSelbar() {
   if (itemMode && it.kind === 'tw') $('sel-item-del').hidden = (it.tw !== 'points' && it.tw !== 'check') || it.blade !== undefined;
   // (stage 6: a track's own end can't be deleted, nor moved on its own: it goes with its track)
   if (itemMode && it.kind === 'conn' && it.end) for (const id of ['sel-item-del', 'sel-item-left', 'sel-item-up', 'sel-item-down', 'sel-item-right']) $(id).hidden = true;
+  // (stage 7: the app's stud-off area stays where its points are: nothing to move or delete)
+  if (itemMode && it.kind === 'studsoff' && !it.id) for (const id of ['sel-item-del', 'sel-item-left', 'sel-item-up', 'sel-item-down', 'sel-item-right']) $(id).hidden = true;
   $('sel-item-done').hidden = !itemMode;
   bar.hidden = !itemMode && n === 0 && !clipboard.length && !clipTables.length;
   $('sel-count').textContent = itemMode ? label! : n ? `${n} selected` : 'clipboard:';

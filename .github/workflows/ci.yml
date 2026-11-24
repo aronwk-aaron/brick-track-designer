@@ -102,7 +102,7 @@ jobs:
       # (the same on a tablet's touch screen, fingers only, landscape and portrait)
       - run: npx tsx scripts/touch-smoke.mts
         env:
-          SMOKE_MINUTES: 9
+          SMOKE_MINUTES: 11
 
   osv-scan:
     name: OSV-Scanner (deps + actions)

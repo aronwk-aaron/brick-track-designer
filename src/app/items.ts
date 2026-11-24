@@ -17,6 +17,8 @@ import { planSleepers, type SleeperEdit, sleeperEditText, type SleeperLay, share
 import { isEdit } from './twfollow';
 import { type Conn, connText } from './connectors';
 import { labelDistance, labelItemText } from './labelitems';
+import { type Edge, type EdgeSide, edgeText } from './ballastedges';
+import { type AppArea, appAreaDistance, areaDistance, areaText, cornersOf, type StudsOffArea } from './studsoff';
 
 type End = 'start' | 'end';
 /**
@@ -44,7 +46,11 @@ export type Item =
   /** (stage 6) an end connector: a track's own end, or a joint where its track is cut into parts (at: studs along it; auto: one of the app's, no hand cut there yet) */
   | { kind: 'conn'; route: number; end?: End; at?: number; auto?: true }
   /** (stage 6) a label under a part: placed by hand (id, Design.expert.labels), or the app's (part: the part it's under, as the build named it) */
-  | { kind: 'label'; id?: string; part?: string };
+  | { kind: 'label'; id?: string; part?: string }
+  /** (stage 7) a ballast edge: a track's side, the whole track's own (k left out) or a stretch's (k: its place in the track's list) */
+  | { kind: 'ballast'; route: number; side: EdgeSide; k?: number }
+  /** (stage 7) a stud-off area: made by hand (id, Design.expert.studsOff), or the app's room for a points set's moving parts (app: the points' key) */
+  | { kind: 'studsoff'; id?: string; app?: string };
 /** The kinds of trackwork the app works out, as `Design.trackwork` keeps their edits. */
 export type TwKind = 'points' | 'throw' | 'check' | 'groove';
 export const isTw = (k: unknown): k is TwKind => k === 'points' || k === 'throw' || k === 'check' || k === 'groove';
@@ -93,8 +99,12 @@ export interface HitCtx {
   conns?: readonly Conn[];
   /** (stage 6) the labels on the plan: each one's item, where it is (studs), its way (degrees), its text and capitals' height (mm) */
   labels?: readonly { item: Extract<OwnItem, { kind: 'label' }>; at: [number, number]; heading: number; text: string; cap?: number }[];
+  /** (stage 7) the ballast edges on the plan (ballastedges.ts ballastEdges) */
+  edges?: readonly Edge[];
+  /** (stage 7) the stud-off areas made by hand, and the app's for its points' moving parts */
+  studsOff?: readonly StudsOffArea[]; appAreas?: readonly AppArea[];
 }
-const RANK = { corner: 0, selEnd: 1, cut: 2, gap: 2.5, path: 3, joint: 4, conn: 4.5, end: 5, label: 5.05, free: 5.1, rail: 5.2, run: 5.3, sleeper: 5.5, stretch: 6 };
+const RANK = { corner: 0, selEnd: 1, cut: 2, gap: 2.5, path: 3, joint: 4, conn: 4.5, end: 5, label: 5.05, free: 5.1, rail: 5.2, run: 5.3, ballast: 5.4, sleeper: 5.5, area: 5.6, appArea: 5.7, stretch: 6 };
 /** Is a hit on the selected item's own corner or end? A press takes those before a track's end under them. */
 export const takesFirst = (h: Hit) => h.rank <= RANK.selEnd;
 /** Half the width of a track's band on the plan (its sleepers), studs: where a click picks the track. */
@@ -225,6 +235,28 @@ export function hitItems(d: Design, w: [number, number], c: HitCtx): Hit[] {
     const dd = labelDistance(lb, lb.text, lb.cap, w);
     if (dd < c.near) out.push({ item: lb.item, part: 'body', d: dd, rank: RANK.label });
   }
+  // (stage 7: a ballast edge, on its line, where along it the press is; on the side of the centre line it's on)
+  if (want('ballast')) for (const e of c.edges ?? []) {
+    const r = d.routes[e.route];
+    if (!r || r.locked) continue;
+    if (Math.hypot(w[0] - r.x, w[1] - r.y) > cutLength(r) + e.off + 8) continue;
+    const n = nearestAlong(r, w);
+    if (n.s < e.from - 0.01 || n.s > e.to + 0.01) continue;
+    const q = placeAlong(r, n.s), h = (q.heading * Math.PI) / 180, lat = (w[0] - q.x) * Math.cos(h) + (w[1] - q.y) * Math.sin(h);
+    if ((e.side === 'left') !== (lat < 0)) continue;
+    const dl = Math.abs(Math.abs(lat) - e.off);
+    if (dl < c.near) out.push({ item: { kind: 'ballast', route: e.route, side: e.side, ...(e.k !== undefined && { k: e.k }) }, part: 'body', d: dl, rank: RANK.ballast });
+  }
+  // (stage 7: a stud-off area by hand, in it or on its sides; the selected one's corners to drag; the app's, in its room)
+  if (want('studsoff')) {
+    for (const a of c.studsOff ?? []) {
+      const mine = sel?.kind === 'studsoff' && sel.id === a.id;
+      if (mine) { const ks = cornersOf(a).map((q, k) => ({ k, dd: Math.hypot(q[0] - w[0], q[1] - w[1]) })).filter((x) => x.dd < c.point).sort((x, y) => x.dd - y.dd); if (ks.length) { out.push({ item: { kind: 'studsoff', id: a.id }, part: 'corner', corner: ks[0].k, d: ks[0].dd, rank: RANK.selEnd }); continue; } }
+      const dd = areaDistance(a, w);
+      if (dd < c.near) out.push({ item: { kind: 'studsoff', id: a.id }, part: 'body', d: dd, rank: RANK.area });
+    }
+    for (const a of c.appAreas ?? []) { const dd = appAreaDistance(a, w); if (dd < c.near) out.push({ item: { kind: 'studsoff', app: a.key }, part: 'body', d: dd, rank: RANK.appArea }); }
+  }
   return out.sort((a, b) => a.rank - b.rank || a.d - b.d);
 }
 /** The edit a selected sleeper has (its place in its track's list; -1: none yet, it's as the app lays it). */
@@ -274,6 +306,8 @@ export function itemLabel(d: Design, item: Item, js: readonly Joint[] = []): str
     case 'free': { const f = d.expert?.free?.find((q) => q.id === item.id); return f ? freeText(f) : undefined; }
     case 'conn': return d.routes[item.route] ? connText(d, item) : undefined;
     case 'label': { if (!item.id) return labelItemText(undefined, item.part); const l = d.expert?.labels?.find((q) => q.id === item.id); return l ? labelItemText(l) : undefined; }
+    case 'ballast': return edgeText(d, item);
+    case 'studsoff': { if (!item.id) return 'Stud-off area, the points\' room (the app\'s)'; const a = d.expert?.studsOff?.find((q) => q.id === item.id); return a ? areaText(a) : undefined; }
     case 'run': {
       const r = d.routes[item.route];
       if (!r) return undefined;
@@ -400,7 +434,7 @@ export const EXPERT_SECTIONS: readonly string[] = ['bed', 'more', 'sleepers', 'r
 
 // ---------- the Pick list: what a click on the plan takes ----------
 /** What's on the plan to pick, in layers: more come with the later stages (sleepers, rails, ballast). */
-export type Layer = 'track' | 'cut' | 'stretch' | 'sleeper' | 'rail' | 'joint' | 'mark' | 'conn' | 'label';
+export type Layer = 'track' | 'cut' | 'stretch' | 'sleeper' | 'rail' | 'joint' | 'mark' | 'conn' | 'label' | 'ballast' | 'studs';
 export const PICKS = [
   { id: 'all', label: 'Everything', tip: 'A click takes whatever is under it: a track, a cut, a stretch, points or a lever' },
   { id: 'track', label: 'Tracks and tables', tip: 'Only tracks, their ends and handles, and tables' },
@@ -412,18 +446,20 @@ export const PICKS = [
   { id: 'mark', label: 'Points, levers, check rails', tip: 'Only the trackwork the app works out: points, levers, check rail and flangeway cut ends' },
   { id: 'conn', label: 'Connectors', tip: 'Only end connectors: a track\'s ends and the joints where it\'s cut into parts. Tap one to change its kind (with or without the peg and clip, or a buffer stop); drag a joint along its track; + Joint adds one (Everything doesn\'t take them: they sit on the tracks\' ends)' },
   { id: 'label', label: 'Labels', tip: 'Only the labels engraved under the parts (a flat underside): tap one to change its text or size, drag it to move it; + Label adds one (Everything doesn\'t take them)' },
+  { id: 'ballast', label: 'Ballast edges', tip: 'Only the edges of the ballast, each side of a track on ballast: tap one to make it wider or narrower (drag it out or in), on the whole track or over a stretch, or to set its shape at a buffer stop (Everything doesn\'t take them: they lie all along a track)' },
+  { id: 'studs', label: 'Stud-off areas', tip: 'Only the areas kept free of studs: the app\'s, where the points\' blades, throw bar and lever move (they stay), and yours: + Studs off adds one, drag it or its corners, on whole studs (Everything doesn\'t take them)' },
 ] as const;
 export type PickId = (typeof PICKS)[number]['id'];
 /** Each Pick's chip over the plan (expert tools shown): one short word, the list's tip as its title. */
-export const PICK_CHIPS: Record<PickId, string> = { all: 'Everything', track: 'Tracks', cut: 'Cuts', stretch: 'Stretches', sleeper: 'Sleepers', rail: 'Rails', joint: 'Joints', mark: 'Points', conn: 'Connectors', label: 'Labels' };
+export const PICK_CHIPS: Record<PickId, string> = { all: 'Everything', track: 'Tracks', cut: 'Cuts', stretch: 'Stretches', sleeper: 'Sleepers', rail: 'Rails', joint: 'Joints', mark: 'Points', conn: 'Connectors', label: 'Labels', ballast: 'Ballast', studs: 'Studs' };
 export const isPick = (v: unknown): v is PickId => PICKS.some((p) => p.id === v);
 /** The layer an item is in. */
-export const layerOf = (kind: ItemKind): Layer => (kind === 'route' || kind === 'table' ? 'track' : kind === 'cutpath' ? 'cut' : kind === 'tw' ? 'mark' : kind === 'run' || kind === 'free' ? 'rail' : kind);
+export const layerOf = (kind: ItemKind): Layer => (kind === 'route' || kind === 'table' ? 'track' : kind === 'cutpath' ? 'cut' : kind === 'tw' ? 'mark' : kind === 'run' || kind === 'free' ? 'rail' : kind === 'studsoff' ? 'studs' : kind);
 /**
  * May a click take something of this layer? With the expert tools hidden: tracks, the app's trackwork and joints, as
  * ever, and no cut or stretch; with them shown, what the Pick list says.
  */
-export const picks = (pick: PickId, layer: Layer, expert: boolean): boolean => (expert ? (pick === 'all' && layer !== 'sleeper' && layer !== 'rail' && layer !== 'conn' && layer !== 'label') || pick === layer : layer === 'track' || layer === 'mark' || layer === 'joint');
+export const picks = (pick: PickId, layer: Layer, expert: boolean): boolean => (expert ? (pick === 'all' && layer !== 'sleeper' && layer !== 'rail' && layer !== 'conn' && layer !== 'label' && layer !== 'ballast' && layer !== 'studs') || pick === layer : layer === 'track' || layer === 'mark' || layer === 'joint');
 
 /**
  * How near a press must be to a marker on the plan to take it, in screen pixels: `near` for a line (a cut, a path's

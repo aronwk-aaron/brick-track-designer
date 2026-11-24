@@ -945,3 +945,32 @@ Aaron's answers and need build work.
   (labels.ts `labelCutAt`: one line, mirrored to read from below, only where all of it is over solid underside; else
   not, and said) instead of the app's; one taken off (`off`) leaves that part without. Only on a flat underside (said,
   greyed). Tests: test/connectors-labels.test.ts, test/connectors-labels-build.test.ts, the touch smoke.
+- **Stage 7 (ballast edges and stud-off areas as things of their own) is built.** Ballast edges (ballastedges.ts): each
+  side of each piece of track on ballast (the track before, between and after its stretches, and each stretch), as
+  `Item { kind: 'ballast', route, side, k? }` in the layer Ballast (its own chip; Everything doesn't take them: they lie
+  all along a track). An edge is the settings it was already: `ballastLeftStuds` / `ballastRightStuds` (0 to 8 studs past
+  the sleepers, default 1; 0 is level with the sleepers' ends, never narrower) on the track (`DRoute.own`) or on a stretch
+  (`DRoute.stretches[k].own`), so the build is as it was: nothing new to build. Drag it out (wider) or in (narrower) by
+  whole studs, or + and − on its card, or an arrow key pointing out or in; the first change makes it the track's or the
+  stretch's own (D6). Change it over a stretch only: a stretch made round where it was tapped (8 studs, its ends typed
+  after; `edgeStretch`, kept 2 studs from the track's ends and the stretches there), a piece of its own as every stretch is
+  (an ordinary track end each side). Its shape at a buffer stop (`ballastEnds`: Square, Stepped round the stop; both sides
+  at once) is the one edge shape the app has: chosen only where its stretch of track ends in a buffer stop, else greyed
+  with why. Reset (and Delete) gives back what's over it; a stretch left with nothing of its own is taken away (it only
+  cut the track). Stud-off areas (studsoff.ts): `Design.expert.studsOff: { id, x0, y0, x1, y1 }[]`, whole studs on the
+  plan, 1 to 64 a side, as `Item { kind: 'studsoff', id }` in the layer Studs (its chip); + Studs off adds one 2 by 2 with a tap,
+  dragged whole or by a corner (each to the whole stud nearest; held at 1 and 64, and why), typed on its card, Delete.
+  Never cut through a stud: its sides are between studs, and the build (crossing.ts `o.studsOff`, `handOff`) leaves out
+  each stud whose middle is inside, whole: the bed's, the sleepers' and ties', an end connector's row, a short piece's
+  one row, the points' late studs (`after`). A switch an area is over is built as a network piece (build.ts
+  `offOnSwitch`), whose studs come through the same place. Left as they are: the studs that hold a layered points' lid
+  on, a buffer stop's posts' tops (parts of a mechanism, D3). The app's own areas are shown (grey) and tapped as
+  `Item { kind: 'studsoff', app: key }`: each built points set's room for its moving parts, from the build's plan (the
+  blades' no-cut band along both routes, toe to past the heel, out past the stock rails: `Overlay.cutting.no.blades`;
+  the lever's arm as built, `throw` items' `pts`). They can't be taken away, moved or made smaller (said, plainly; the
+  bar has no Delete or arrows for one); Clear more round it adds one by hand over its box and a stud round it. Areas
+  stay where they are on the plan when a track is moved (as labels and things laid by hand). Parts stay printable as
+  they were: only whole studs go. Template (Features): 'Ballast edges and stud-off areas by hand' (in the union-order
+  test). Tests: test/ballast-studsoff.test.ts, test/ballast-studsoff-build.test.ts (16 studs off take 16 times one's
+  volume, the other part and the area taken away byte for byte, an area over a switch, an edge 2 studs wider is 16 mm
+  wider, reset byte for byte), the touch smoke.

@@ -20,7 +20,7 @@
       --bg: #eef0f3; --panel: #ffffff; --raise: #f6f7f9; --hover: #eceef2; --line: #dfe3e8; --ink: #1c2026; --muted: #69727d;
       --accent: #2563eb; --accent-soft: rgba(37,99,235,0.10); --accent-ink: #ffffff; --brand: #d01012; --err: #c0392b; --warn: #a15c00;
       --chip: rgba(255,255,255,0.88); --shadow: 0 1px 2px rgba(16,24,40,0.06), 0 2px 8px rgba(16,24,40,0.08); --radius: 8px;
-      --canvas-bg: #fbfbf8; --view-bg: #f2f3f5; --c-check: #2b6fe0; --c-cut: #8a3fd1; --c-edit: #e8892b;
+      --canvas-bg: #fbfbf8; --view-bg: #f2f3f5; --c-check: #2b6fe0; --c-cut: #8a3fd1; --c-edit: #e8892b; --c-studsoff: #0f766e;
     }
     /* dark: the system's, unless the toolbar's switch says light or dark */
     @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
@@ -30,7 +30,7 @@
       --view-bg: #1b1e23;
       --canvas-bg: #14171b; --c-grid: #1f2328; --c-grid8: #2c3138; --c-rail: #c9d0d6; --c-centre: #5a5f66; --c-label: #aab1b8;
       --c-mark: #e6e8ea; --c-tag-bg: rgba(23,26,31,0.94); --c-band: rgba(200,205,210,0.10); --c-sel: #7fa9f5; --c-sel-ink: #9bbcff;
-      --c-check: #6fa3ff; --c-cut: #c08cf5; --c-edit: #f0a050;
+      --c-check: #6fa3ff; --c-cut: #c08cf5; --c-edit: #f0a050; --c-studsoff: #3fc1b0;
     } }
     :root[data-theme="dark"] {
       --bg: #0f1115; --panel: #171a1f; --raise: #1d2127; --hover: #252a31; --line: #2c3139; --ink: #e5e8eb; --muted: #97a0aa;
@@ -39,7 +39,7 @@
       --view-bg: #1b1e23;
       --canvas-bg: #14171b; --c-grid: #1f2328; --c-grid8: #2c3138; --c-rail: #c9d0d6; --c-centre: #5a5f66; --c-label: #aab1b8;
       --c-mark: #e6e8ea; --c-tag-bg: rgba(23,26,31,0.94); --c-band: rgba(200,205,210,0.10); --c-sel: #7fa9f5; --c-sel-ink: #9bbcff;
-      --c-check: #6fa3ff; --c-cut: #c08cf5; --c-edit: #f0a050;
+      --c-check: #6fa3ff; --c-cut: #c08cf5; --c-edit: #f0a050; --c-studsoff: #3fc1b0;
     }
     :root { color-scheme: light dark; } :root[data-theme="light"] { color-scheme: light; } :root[data-theme="dark"] { color-scheme: dark; }
     * { box-sizing: border-box; }
@@ -681,6 +681,7 @@
           <span id="legend-jointcuts" hidden><i style="background:var(--c-cut);height:3px"></i>cut where tracks join (Settings)</span>
           <span id="legend-cuts" hidden><i style="background:var(--c-cut);height:3px"></i>cut by hand (across a track, or a cut path)</span>
           <span id="legend-byhand" hidden><i style="background:var(--c-edit)"></i>by hand: sleepers, rail gaps, guard and check rails</span>
+          <span id="legend-studsoff" hidden><i style="background:var(--c-studsoff);height:9px;opacity:.6"></i>no studs here (stud-off area; grey: the points' room)</span>
           <span id="legend-joints" data-layer="joints"><i class="joint"></i>joint (the tracks move together)</span>
           <span id="legend-joints-apart" class="sub"><i class="joint apart"></i>taken apart · <i class="joint open"></i>open end</span>
           <span id="legend-points" data-layer="points"><i class="sq"></i>points (built as a switch)</span>

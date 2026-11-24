@@ -25,7 +25,7 @@ import { Scad } from '../src/geom/scad';
 import { solid } from './assembled.shared';
 
 const APP = (globalThis as { APP_DEFAULTS?: PieceOptions }).APP_DEFAULTS!;
-const NAMES = ['Switch R72 right', 'Crossing 45° right', 'Oval (LEGO R40)', 'Double turnout R56 and R40, right', 'Wye R40, 8-stud spacing', 'Curve R40, 5.62°', 'Rails taken out one at a time', 'Rails and sleepers laid by hand', 'Yard R148, three tracks, right', 'Points, one blade longer', 'Connectors set by hand', 'Labels placed by hand'];
+const NAMES = ['Switch R72 right', 'Crossing 45° right', 'Oval (LEGO R40)', 'Double turnout R56 and R40, right', 'Wye R40, 8-stud spacing', 'Curve R40, 5.62°', 'Rails taken out one at a time', 'Rails and sleepers laid by hand', 'Yard R148, three tracks, right', 'Points, one blade longer', 'Connectors set by hand', 'Labels placed by hand', 'Ballast edges and stud-off areas by hand'];
 type Part = [name: string, volume: number, box: number[], body?: Manifold];
 const KNOWN: Record<string, Record<string, number>> = JSON.parse(fs.readFileSync(new URL('./fixtures/union-order-known.json', import.meta.url), 'utf8'));
 // (cut level every 0.2 mm, off the round heights: not the 3D booleans of the two, which of two near-same solids aren't

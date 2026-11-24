@@ -69,6 +69,8 @@ export interface CrossingOptions extends TrackOptions {
   ballastOnly?: number;
   /** No two studs closer than a stud's pitch (studpitch.ts): the ones that would be left out, and the ballast's rows spaced a pitch or more. Off: only never touching. */
   studsFullPitch?: boolean;
+  /** (expert, stage 7) Areas kept free of studs, by hand (mm, the design's frame, [x0, y0, x1, y1]): a stud whose middle is inside one isn't made, whole (an end connector's, a sleeper's, a tie's, the bed's). */
+  studsOff?: [number, number, number, number][];
 }
 
 export const CROSSING_DEFAULTS: CrossingOptions = { ...DEFAULTS, flangeway: 3, flangewayDepth: 3, checkRailW: 1, supports: true, grip: 'edges' };
@@ -545,6 +547,8 @@ export function crossingPiece(s: Scad, routes: Route[], o: CrossingOptions = CRO
   // (an end's stud against another end's: only where they'd run into each other. Two ends side by side, their rows
   // in line, have studs a hair apart, each on its own part once the piece is cut between them)
   const claim = (q: [number, number], d = apart) => { if (taken.near(q, d)) return false; taken.add(q); return true; };
+  // (expert, stage 7: a stud whose middle is in an area kept free of studs by hand isn't made at all: whole, never cut)
+  const handOff = o.studsOff?.length ? (q: readonly number[]) => o.studsOff!.some((r) => q[0] > r[0] && q[0] < r[2] && q[1] > r[1] && q[1] < r[3]) : () => false;
   const oneRows = new Map<number, { P: Pose; xs: number[] }>(), rowStuds: [number, number][] = [];
   /** (an end's stud at q clear of the other routes' rails, as the bed's studs are: a branch's end beside the straight, in a
    * short coupon, had a stud standing against the straight's rail) */
@@ -570,12 +574,12 @@ export function crossingPiece(s: Scad, routes: Route[], o: CrossingOptions = CRO
     const oneRow = !noConn0 && !noConn1 && L - STUD < STUD - ROW_CLEAR;
     const all0 = tt.endpointPosts(xfs0, ex?.guardX), all1 = tt.endpointPosts(xfs1, ex?.guardX);
     if (oneRow) {
-      const Pm = routePose(rt, L / 2), xs = all0.filter((px) => all1.some((q) => Math.abs(q + px) < 1e-6)).filter((px) => claim(poseToWorld(Pm, [px, 0]) as [number, number], tt.c.postD));
+      const Pm = routePose(rt, L / 2), xs = all0.filter((px) => all1.some((q) => Math.abs(q + px) < 1e-6)).filter((px) => !handOff(poseToWorld(Pm, [px, 0])) && claim(poseToWorld(Pm, [px, 0]) as [number, number], tt.c.postD));
       oneRows.set(i, { P: Pm, xs });
       rowStuds.push(...xs.map((px) => poseToWorld(Pm, [px, 0]) as [number, number]));
     }
-    const posts0 = oneRow || noConn0 ? [] : all0.filter((px) => { const q = poseToWorld(e0, [px, 4]) as [number, number]; return clearOfRails(i, q) && !x.lipMeets?.(q) && claim(q, tt.c.postD); });
-    const posts1 = oneRow || noConn1 ? [] : all1.filter((px) => { const q = poseToWorld(e1, [-px, -4]) as [number, number]; return clearOfRails(i, q) && !x.lipMeets?.(q) && claim(q, tt.c.postD); });
+    const posts0 = oneRow || noConn0 ? [] : all0.filter((px) => { const q = poseToWorld(e0, [px, 4]) as [number, number]; return clearOfRails(i, q) && !x.lipMeets?.(q) && !handOff(q) && claim(q, tt.c.postD); });
+    const posts1 = oneRow || noConn1 ? [] : all1.filter((px) => { const q = poseToWorld(e1, [-px, -4]) as [number, number]; return clearOfRails(i, q) && !x.lipMeets?.(q) && !handOff(q) && claim(q, tt.c.postD); });
     return { xfs0, xfs1, noConn0, noConn1, oneRow, posts0, posts1 };
   });
   // (a route's end connectors, each in its end's frame; on ballast no peg and clip, as the switches')
@@ -725,7 +729,7 @@ export function crossingPiece(s: Scad, routes: Route[], o: CrossingOptions = CRO
       const sleeperPostOk = (P: Pose) => ((hosted.length && checkRails.length) || handCheck ? (p: Vec2) => (exOk?.(P)(p) ?? true) && !byCheckRail(poseToWorld(P, p)) && !(handCheck && byCheckWide(poseToWorld(P, p))) : exOk?.(P));
       // (banked: each sleeper turned by the roll at it)
       // (and each stud clear of the ones there already: an end's row, a sleeper's before it)
-      const clearOk = (P: Pose) => { const ok = sleeperPostOk(P); return (p: Vec2) => (ok?.(p) ?? true) && claim(poseToWorld(P, p) as [number, number]); };
+      const clearOk = (P: Pose) => { const ok = sleeperPostOk(P); return (p: Vec2) => (ok?.(p) ?? true) && !handOff(poseToWorld(P, p)) && claim(poseToWorld(P, p) as [number, number]); };
       // (one under another route's tie's end (underServed): bare, the ties' studs about it; with its own, they stood
       // against the tie's beside them)
       if (at.length) parts.push(s.union(at.map((v) => { const P = routePose(rt, v), sl = t.sleeper(bareAt.has(v) || underServed.includes(v) ? () => false : clearOk(P)); return atPose(banked ? bankedSleeper(s, sl, trackBank(c.sleeperLen), routeRoll(rt, v), c.sleeperLen, c.sleeperW) : sl, P); })));
@@ -786,7 +790,7 @@ export function crossingPiece(s: Scad, routes: Route[], o: CrossingOptions = CRO
     // two into one; nor one near an end, where the connector holds it)
     const v = Math.min(Math.max((Math.max(0, cr.s0) + Math.min(L, cr.s1)) / 2, BED_END + c.sleeperW), L - BED_END - c.sleeperW), P = routePose(rt, v), half = lenOf[i] / 2;
     if (Array.from({ length: 9 }, (_, k) => -half + (k * half) / 4).some((o2) => inEndBox(P, o2))) continue;
-    const okPost = (p: Vec2) => { const q = poseToWorld(P, p) as [number, number]; return !byCheckRail(q) && claim(q); };
+    const okPost = (p: Vec2) => { const q = poseToWorld(P, p) as [number, number]; return !byCheckRail(q) && !handOff(q) && claim(q); };
     const sl = tOf[i].sleeper(okPost);
     tiesBuilt.push({ i, P, lo: -half, hi: half }); sleeperAt.push({ i, v, lo: -half, hi: half });
     parts.push(atPose(hasRoll(rt) ? bankedSleeper(s, sl, trackBank(lenOf[i]), routeRoll(rt, v), lenOf[i], cOf[i].sleeperW) : sl, P));
@@ -878,7 +882,7 @@ export function crossingPiece(s: Scad, routes: Route[], o: CrossingOptions = CRO
       if (handCheck && byCheckWide(q)) continue;
       // (clear of the end connectors: 8 mm in from each end)
       if (ends.some(({ e, len }) => Math.hypot(q[0] - e[0], q[1] - e[1]) < len && Math.abs(worldToPose(e, q)[1]) < 10)) continue;
-      if (x.studsAlsoOff?.(q)) continue;
+      if (x.studsAlsoOff?.(q) || handOff(q)) continue;
       // (in what the points add: only where they say a stud can stand (studsOff), clear of the piece's cuts)
       if (inAdds(q) && (!x.studsOff || x.studsOff(q) || inCuts(q)) && !x.studsOn?.(q)) {
         // (turned down by the boxes alone: tried again after the rest, studsAfter)
@@ -898,7 +902,7 @@ export function crossingPiece(s: Scad, routes: Route[], o: CrossingOptions = CRO
     // each standing free, 0.15 clear, so each adds a whole stud's volume and nothing else)
     // (not made here, x.after: stood on the parts once the piece is cut; none on banked track)
     if (x.after && !routes.some(hasRoll)) for (const q of after) {
-      if (!free(q, 0.15)) continue;
+      if (!free(q, 0.15) || handOff(q)) continue;
       if ([...studPts, ...x.after].some((p) => Math.hypot(p[0] - q[0], p[1] - q[1]) < c.postD + 0.6)) continue;
       if (bufPoses.some(({ e, t: tb }) => inBufferPost(tb, worldToPose(e, q), c.postD / 2 + 0.6, (o.buffer ?? BUFFER_DEFAULTS).style ?? 'frame'))) continue;
       if (byCheckRail(q)) continue;

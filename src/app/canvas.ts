@@ -31,6 +31,8 @@ import { type FreeItem, freeProblem, moveFree, nextFreeId, railEndTo, sleeperCor
 import { addJoint, type Conn, connectorsOf, connKind, deleteJoint, endKindOf, moveJoint } from './connectors';
 import { type LabelItem, labelBox, labelsOff, moveLabel, nextLabelId } from './labelitems';
 import { jointsOnAll } from './handcuts';
+import { ballastEdges, type Edge, type EdgeRef, edgeNow, resetEdge, setEdge, EDGE_RANGE } from './ballastedges';
+import { APP_AREA_WHY, type AppArea, appAreas, areaAt, areaProblem, cornersOf, type Corner, dragCorner, moveArea, nextAreaId, type StudsOffArea } from './studsoff';
 import { cleanRailEdits, deleteRailPiece, moveRailEdit, railEditAt, type RailEdits, railPieces, type RailSide, type RailWhat, setRailPiece, slideRailPiece, withRailEdit } from './railedits';
 import { alongBeyond, bandHalf, isTw, TAP_PX, tapReach, type BoxItem, boxable, dragStretchEnd, dragStretchWhole, handTracks, hitItems, type Hit, type Item, itemsInBox, itemsLabel, jointsOf, moveCuts, sleeperEditAt, sleeperEditOf, type Layer, newStretchAt, type OwnItem, type PickId, PICKS, picks, placeAlong, sameItem, takesFirst, withStretch } from './items';
 import type { Stretch } from './stretches';
@@ -432,7 +434,7 @@ export class TrackCanvas {
     this.placing = { tpl, turn: 0, mirror: false, onto, theirs: openEnds(this.host.design().routes), moved: false, session: new SnapSession() };
     this.draw();
   }
-  private letGoSome() { this.addArmed = undefined; this.connDrag = undefined; this.labelDrag = undefined; this.heelDrag = undefined; this.freeArmed = undefined; this.freeDrag = undefined; this.splitArmed = false; this.cutArmed = false; this.stretchArmed = false; this.sleeperArmed = false; this.sleeperDrag = undefined; this.railDrag = undefined; this.stretchNew = undefined; this.stretchDrag = undefined; this.pathDraw = undefined; this.cutDrag = undefined; this.multiDrag = undefined; this.meas = {}; this.active = undefined; }
+  private letGoSome() { this.addArmed = undefined; this.edgeDrag = undefined; this.areaDrag = undefined; this.connDrag = undefined; this.labelDrag = undefined; this.heelDrag = undefined; this.freeArmed = undefined; this.freeDrag = undefined; this.splitArmed = false; this.cutArmed = false; this.stretchArmed = false; this.sleeperArmed = false; this.sleeperDrag = undefined; this.railDrag = undefined; this.stretchNew = undefined; this.stretchDrag = undefined; this.pathDraw = undefined; this.cutDrag = undefined; this.multiDrag = undefined; this.meas = {}; this.active = undefined; }
   /** Where the template being placed goes now (final: the click that puts it down, which snaps whatever the pointer's speed). */
   private placedNow(final = false): Placed | undefined {
     const p = this.placing;
@@ -474,13 +476,30 @@ export class TrackCanvas {
   /** Arm + Rail or + Sleeper (or let go of it: undefined). */
   armFree(k: 'rail' | 'sleeper' | undefined) { this.freeArmed = k; this.addArmed = undefined; this.draw(); }
   /** (stage 6) + Joint / + Label: the next tap on the plan adds one there */
-  addArmed: 'conn' | 'label' | undefined;
-  /** Arm + Joint or + Label (or let go of it: undefined). */
-  armAdd(k: 'conn' | 'label' | undefined) { this.addArmed = k; this.freeArmed = undefined; this.draw(); }
+  addArmed: 'conn' | 'label' | 'studsoff' | undefined;
+  /** Arm + Joint, + Label or (stage 7) + Studs off (or let go of it: undefined). */
+  armAdd(k: 'conn' | 'label' | 'studsoff' | undefined) { this.addArmed = k; this.freeArmed = undefined; this.draw(); }
   /** A joint along a track being dragged along it: where it was (studs along), where the press was, the track's cuts as they were. */
   private connDrag: { route: number; at: number; s0: number; orig: Pick<DRoute, 'cuts' | 'cutsLocked' | 'cutJoints'>; moved: boolean; why?: string } | undefined;
   /** A label being dragged: a hand label (id), or the app's (made one on the first move: from, where it was); w0, where the press was. */
   private labelDrag: { id?: string; from?: { at: [number, number]; heading: number }; w0: [number, number]; orig?: LabelItem; moved: boolean } | undefined;
+  /** (stage 7) A ballast edge dragged out or in: where the press was, its reach then, its track's own settings and stretches as they were. */
+  private edgeDrag: { ref: EdgeRef; w0: [number, number]; studs0: number; orig: Pick<DRoute, 'own' | 'stretches'>; moved: boolean; why?: string } | undefined;
+  /** (stage 7) A stud-off area dragged: whole, or a corner; where the press was, the area as it was. */
+  private areaDrag: { id: string; corner?: Corner; w0: [number, number]; orig: StudsOffArea; moved: boolean; why?: string } | undefined;
+  private edgesKey = ''; private edgesNow: Edge[] = [];
+  /** (stage 7) Every ballast edge on the plan (ballastedges.ts). */
+  edgeList(): Edge[] {
+    const d = this.host.design(), key = JSON.stringify([d.routes, d.options, d.gaugeStuds]);
+    if (key !== this.edgesKey) { this.edgesKey = key; this.edgesNow = ballastEdges(d); }
+    return this.edgesNow;
+  }
+  private areasOv: unknown; private areasNow: AppArea[] = [];
+  /** (stage 7) The app's stud-off areas: each built points set's room for its moving parts, from the last build. */
+  appAreaList(): AppArea[] {
+    if (this.areasOv !== this.overlay) { this.areasOv = this.overlay; this.areasNow = appAreas(this.overlay as Parameters<typeof appAreas>[0]); }
+    return this.areasNow;
+  }
   private appJointsKey = ''; private appJointsNow: number[][] = [];
   /** (stage 6) The build's joints on each track (studs along it), from the overlay. */
   appJoints(): number[][] {
@@ -609,6 +628,31 @@ export class TrackCanvas {
     this.selItemNow = { kind: 'conn', route: cd.route, at: s };
     this.host.changed(false); this.host.item?.();
   }
+  /** (stage 7) A ballast edge dragged: its reach past the sleepers by whole studs, out from the track wider, in narrower (D6: the track's or the stretch's own from the first change). */
+  private dragEdge(w: [number, number]) {
+    const ed = this.edgeDrag!, d = this.host.design(), rr = d.routes[ed.ref.route];
+    if (!rr) return;
+    const lat = (p: [number, number]) => { const q = placeAlong(rr, Math.max(0, Math.min(cutLength(rr), nearestAlong(rr, p).s))), h = (q.heading * Math.PI) / 180; return (p[0] - q.x) * Math.cos(h) + (p[1] - q.y) * Math.sin(h); };
+    const out = (ed.ref.side === 'right' ? 1 : -1) * (lat(w) - lat(ed.w0)), want = Math.round(ed.studs0 + out);
+    const v = Math.min(EDGE_RANGE[1], Math.max(EDGE_RANGE[0], want));
+    ed.why = want < EDGE_RANGE[0] ? 'The ballast can\'t be narrower than the sleepers: 0 is level with their ends' : want > EDGE_RANGE[1] ? `The ballast reaches ${EDGE_RANGE[1]} studs past the sleepers at most` : undefined;
+    if (v === edgeNow(d, ed.ref).studs) return;
+    setEdge(d, ed.ref, v); ed.moved = true;
+    this.host.changed(false); this.host.item?.();
+  }
+  /** (stage 7) A stud-off area dragged: whole by whole studs, or a corner to the whole stud nearest; held to 1 to 64 studs a side, why said. */
+  private dragArea(w: [number, number]) {
+    const ad = this.areaDrag!, d = this.host.design(), list = d.expert?.studsOff ?? [], k = list.findIndex((a) => a.id === ad.id);
+    if (k < 0) return;
+    const put = ad.corner !== undefined ? dragCorner(ad.orig, ad.corner, w) : { area: moveArea(ad.orig, w[0] - ad.w0[0], w[1] - ad.w0[1]), why: undefined as string | undefined };
+    const why = put.why ?? areaProblem(put.area);
+    ad.why = why;
+    if (why && !put.why) return;
+    const cur = list[k];
+    if (cur.x0 === put.area.x0 && cur.x1 === put.area.x1 && cur.y0 === put.area.y0 && cur.y1 === put.area.y1) return;
+    list[k] = put.area; ad.moved = true;
+    this.host.changed(false); this.host.item?.();
+  }
   /** (stage 6) A label dragged by half studs; the app's made one placed by hand on the first move (D6). */
   private dragLabel(w: [number, number]) {
     const ld = this.labelDrag!, d = this.host.design(), dx = Math.round((w[0] - ld.w0[0]) * 2) / 2, dy = Math.round((w[1] - ld.w0[1]) * 2) / 2;
@@ -666,6 +710,9 @@ export class TrackCanvas {
     // (stage 6: end connectors and labels, each with its own chip)
     if (this.picks('conn')) kinds.push('conn');
     if (this.picks('label')) kinds.push('label');
+    // (stage 7: ballast edges and stud-off areas, each with its own chip)
+    if (this.picks('ballast')) kinds.push('ballast');
+    if (this.picks('studs')) kinds.push('studsoff');
     if (!kinds.length) return [];
     const d = this.host.design(), sel = this.selection();
     // (stretches: the selected track's; every track's when only stretches are picked)
@@ -678,7 +725,8 @@ export class TrackCanvas {
       ...(this.pick === 'rail' && { runsOf: d.routes.map((_, i) => i), railOff: (i: number) => (routeGaugeStuds(d, d.routes[i]) + 1) / 2 }),
       // (stage 4: the rails laid by hand with Rails picked, the sleepers with Sleepers)
       ...(kinds.includes('free') && { freeKinds: [...(this.picks('rail') ? ['rail' as const] : []), ...(this.picks('sleeper') ? ['sleeper' as const] : [])], sleeperW: d.options?.sleeperWidthStuds ?? 2 }),
-      ...(kinds.includes('conn') && { conns: this.connList() }), ...(kinds.includes('label') && { labels: this.labelList() }) });
+      ...(kinds.includes('conn') && { conns: this.connList() }), ...(kinds.includes('label') && { labels: this.labelList() }),
+      ...(kinds.includes('ballast') && { edges: this.edgeList() }), ...(kinds.includes('studsoff') && { studsOff: d.expert?.studsOff ?? [], appAreas: this.appAreaList() }) });
   }
   /**
    * What a press at a point of the plan (studs) would take hold of, the first of: a handle of the selected track, a
@@ -719,9 +767,11 @@ export class TrackCanvas {
     return tr && { kind: 'route', route: tr.route };
   }
   /** A press on a cut, a cut path, a stretch or a joint: it's selected, and dragged from there (a cut along its track, a path or its corner on the stud grid, a stretch or its end along its track). */
+  /** (stage 7) Where the last item was pressed on the plan (studs): a ballast edge's card makes a stretch there. */
+  pressedAt: [number, number] | undefined;
   private pressItem(h: Hit, w: [number, number], add = false) {
     const d = this.host.design(), it = h.item;
-    this.pressed = it;
+    this.pressed = it; this.pressedAt = w;
     // (Shift: a cut or a cut path added to the ones selected, or taken out; not dragged)
     if (add && boxable(it)) { this.toggleItem(it); return; }
     // (one of several selected: they're all dragged from there; let go without a move, it's selected alone)
@@ -751,6 +801,14 @@ export class TrackCanvas {
     } else if (it.kind === 'label') {
       const l = it.id ? d.expert?.labels?.find((q) => q.id === it.id) : undefined, p = !it.id ? this.labelList().find((q) => !q.item.id && q.item.part === it.part) : undefined;
       if (l || p) this.labelDrag = { ...(l ? { id: l.id, orig: structuredClone(l) } : { from: { at: p!.at, heading: p!.heading } }), w0: w, moved: false };
+    } else if (it.kind === 'ballast') {
+      // (stage 7: a ballast edge, dragged out from the track or in towards it)
+      const rr = d.routes[it.route];
+      if (rr) this.edgeDrag = { ref: { route: it.route, side: it.side, ...(it.k !== undefined && { k: it.k }) }, w0: w, studs0: edgeNow(d, it).studs, orig: structuredClone({ own: rr.own, stretches: rr.stretches }), moved: false };
+    } else if (it.kind === 'studsoff' && it.id) {
+      // (stage 7: a stud-off area by hand, whole or by a corner; the app's isn't moved)
+      const a = d.expert?.studsOff?.find((q) => q.id === it.id);
+      if (a) this.areaDrag = { id: a.id, ...(h.part === 'corner' && { corner: h.corner as Corner }), w0: w, orig: { ...a }, moved: false };
     } else if (it.kind === 'run' && !it.out) {
       // (a running rail's piece: its end, or the whole, dragged along)
       const rr = d.routes[it.route], p = railPieces(cutLength(rr), rr.railEdits, it.side)[it.k];
@@ -893,6 +951,17 @@ export class TrackCanvas {
       const o = d.options ?? {}, why = deleteJoint(rr, sc.at!, this.appJoints()[sc.route] ?? [], [o.printBedX ?? 256, o.printBedY ?? 256], bandHalf(d, rr));
       if (why) { this.say(why); return; }
       this.say('Joint taken out · Undo puts it back');
+    } else if (sc.kind === 'ballast') {
+      // (stage 7: an edge can't be taken away: Delete gives back what's over it, its track's or the design's)
+      const was = edgeNow(d, sc);
+      if (was.from !== (sc.k !== undefined ? 'stretch' : 'track')) { this.say('This edge is as its track has it: make it wider or narrower on its card, or drag it out or in'); return; }
+      const r = resetEdge(d, sc);
+      this.say(r.gone ? 'The edge is as the track\'s again; the stretch had nothing else of its own, so it\'s gone · Undo brings it back' : 'The edge is as the track\'s again · Undo brings it back');
+    } else if (sc.kind === 'studsoff') {
+      // (stage 7: one by hand taken away; the app's can't be)
+      if (!sc.id) { this.say(APP_AREA_WHY); return; }
+      d.expert!.studsOff = (d.expert?.studsOff ?? []).filter((a) => a.id !== sc.id); tidyExpert(d);
+      this.say('Stud-off area taken away: studs stand there again · Undo brings it back');
     } else if (sc.kind === 'label') {
       // (stage 6: one placed by hand gone (the app's own back, if labels are on); the app's taken off)
       const list = ((d.expert ??= {}).labels ??= []);
@@ -936,6 +1005,24 @@ export class TrackCanvas {
       const to = Math.round(it.at! + Math.sign(along) * n), why = moveJoint(rr, it.at!, to, this.appJoints()[it.route] ?? []);
       if (why) { this.say(why); return; }
       this.selItemNow = { kind: 'conn', route: it.route, at: to }; this.host.changed(true); this.host.item?.(); return this.draw();
+    }
+    if (it.kind === 'ballast') {
+      // (stage 7: an arrow pointing out from the track makes the edge reach a stud further, one pointing in a stud less)
+      const rr = d.routes[it.route], e = this.edgeList().find((q) => q.route === it.route && q.side === it.side && q.k === it.k);
+      if (!rr || !e) return;
+      const h = (placeAlong(rr, (e.from + e.to) / 2).heading * Math.PI) / 180, across = dx * Math.cos(h) + dy * Math.sin(h), n = Math.max(Math.abs(dx), Math.abs(dy));
+      if (Math.abs(across) < 0.5 * n) { this.say('This arrow points along the track: press one that points out from it (wider) or in (narrower)'); return; }
+      const why = setEdge(d, it, edgeNow(d, it).studs + Math.sign(across) * (it.side === 'right' ? 1 : -1) * Math.min(n, 8));
+      if (why) { this.say(why); return; }
+      this.host.changed(true); this.host.item?.(); return this.draw();
+    }
+    if (it.kind === 'studsoff') {
+      if (!it.id) { this.say(APP_AREA_WHY); return; }
+      const list = d.expert?.studsOff ?? [], k = list.findIndex((a) => a.id === it.id);
+      if (k < 0) return;
+      const to = moveArea(list[k], dx, dy), why = areaProblem(to);
+      if (why) { this.say(why); return; }
+      list[k] = to; this.host.changed(true); this.host.item?.(); return this.draw();
     }
     if (it.kind === 'label') {
       const list = ((d.expert ??= {}).labels ??= []);
@@ -1606,6 +1693,13 @@ export class TrackCanvas {
       this.draw(); return;
     }
     // (stage 6: + Joint: a joint where the track is tapped, on the whole stud nearest; + Label: a label there, along the track)
+    // (stage 7: + Studs off: an area 2 studs each way where the plan is tapped, its sides on whole studs, on a track or off one)
+    if (this.addArmed === 'studsoff' && e.button === 0) {
+      const d = this.host.design(), list = ((d.expert ??= {}).studsOff ??= []), a = areaAt(nextAreaId(list), w), why = areaProblem(a);
+      if (why) { this.say(why); return; }
+      list.push(a); this.addArmed = undefined; this.selectItem({ kind: 'studsoff', id: a.id }); this.host.changed(true);
+      this.say('Stud-off area added · drag it, or its corners to make it bigger, on whole studs', 5000); this.draw(); return;
+    }
     if (this.addArmed && e.button === 0) {
       const d = this.host.design(), near = this.nearTrack(w, Math.max(3, this.reach(24))), r = near ? d.routes[near.route] : undefined;
       if (!near || !r || isMono(r)) { this.say(this.addArmed === 'conn' ? 'Tap on a track, where the joint goes (Esc cancels)' : 'A label goes under a part: tap on a track (Esc cancels)'); return; }
@@ -1855,6 +1949,8 @@ export class TrackCanvas {
     if (this.freeDrag) { this.mouse = this.evWorld(e); this.dragFree(this.mouse); return this.drawSoon(); }
     if (this.connDrag) { this.mouse = this.evWorld(e); this.dragConn(this.mouse); return this.drawSoon(); }
     if (this.labelDrag) { this.mouse = this.evWorld(e); this.dragLabel(this.mouse); return this.drawSoon(); }
+    if (this.edgeDrag) { this.mouse = this.evWorld(e); this.dragEdge(this.mouse); return this.drawSoon(); }
+    if (this.areaDrag) { this.mouse = this.evWorld(e); this.dragArea(this.mouse); return this.drawSoon(); }
     if (this.railDrag) { this.mouse = this.evWorld(e); this.dragRail(this.mouse); return this.drawSoon(); }
     if (this.stretchNew) { const sn = this.stretchNew, rr = this.host.design().routes[sn.route]; this.mouse = this.evWorld(e); if (rr) sn.s1 = alongBeyond(rr, this.mouse); return this.drawSoon(); }
     if (this.tableDrag) {
@@ -1971,6 +2067,8 @@ export class TrackCanvas {
     if (this.heelDrag) { const hd = this.heelDrag; this.heelDrag = undefined; if (hd.moved) this.host.changed(true); this.host.item?.(); return this.draw(); }
     if (this.connDrag) { const cd = this.connDrag; this.connDrag = undefined; if (cd.moved) this.host.changed(true); else if (cd.why) this.say(cd.why); this.host.item?.(); return this.draw(); }
     if (this.labelDrag) { const ld = this.labelDrag; this.labelDrag = undefined; if (ld.moved) this.host.changed(true); this.host.item?.(); return this.draw(); }
+    if (this.edgeDrag) { const ed = this.edgeDrag; this.edgeDrag = undefined; if (ed.moved) this.host.changed(true); if (ed.why) this.say(ed.why); this.host.item?.(); return this.draw(); }
+    if (this.areaDrag) { const ad = this.areaDrag; this.areaDrag = undefined; if (ad.moved) this.host.changed(true); if (ad.why) this.say(ad.why); this.host.item?.(); return this.draw(); }
     if (this.freeDrag) {
       const fd = this.freeDrag; this.freeDrag = undefined;
       // (a rail laid by a tap, not dragged: 8 studs up the plan from where it was tapped, as put down at the press)
@@ -2267,6 +2365,16 @@ export class TrackCanvas {
       if (rr) { for (const k of ['cuts', 'cutsLocked', 'cutJoints'] as const) { if (cd.orig[k] !== undefined) (rr as unknown as Record<string, unknown>)[k] = structuredClone(cd.orig[k]); else delete rr[k]; } this.selItemNow = { kind: 'conn', route: cd.route, at: cd.at }; }
       this.host.item?.(); return this.draw();
     }
+    if (e.key === 'Escape' && this.edgeDrag) {
+      const ed = this.edgeDrag, rr = this.host.design().routes[ed.ref.route]; this.edgeDrag = undefined;
+      if (rr) for (const k of ['own', 'stretches'] as const) { if (ed.orig[k] !== undefined) (rr as unknown as Record<string, unknown>)[k] = structuredClone(ed.orig[k]); else delete rr[k]; }
+      this.host.item?.(); return this.draw();
+    }
+    if (e.key === 'Escape' && this.areaDrag) {
+      const ad = this.areaDrag, list = this.host.design().expert?.studsOff ?? [], k = list.findIndex((a) => a.id === ad.id); this.areaDrag = undefined;
+      if (k >= 0) list[k] = ad.orig;
+      this.host.item?.(); return this.draw();
+    }
     if (e.key === 'Escape' && this.labelDrag) {
       const ld = this.labelDrag, d = this.host.design(), list = d.expert?.labels ?? []; this.labelDrag = undefined;
       const k = list.findIndex((l) => l.id === ld.id);
@@ -2446,6 +2554,11 @@ export class TrackCanvas {
     if (si?.kind === 'sleeper') return 'Sleeper selected · drag it along the track, or press an arrow key · Delete takes it out · longer, turned, without studs: on its card';
     if (this.railDrag?.moved || this.railDrag?.why) return this.railDrag.why ?? 'Moving it along its track: let go to put it down · Esc puts it back';
     if (si?.kind === 'rail') return `${si.what === 'gap' ? 'Rail gap' : si.what === 'guard' ? 'Guard rails' : 'Check rail'} selected · drag it along the track, or press an arrow key (a stud; Shift: eight) · Delete takes it out · its side and size are on the track's card, Rails`;
+    if (this.addArmed === 'studsoff') return 'Tap where studs should be kept off: an area 2 studs each way, on whole studs, that you then drag or make bigger · Esc cancels';
+    if (this.edgeDrag?.moved || this.edgeDrag?.why) return this.edgeDrag.why ?? 'Drag out from the track for wider ballast, in for narrower: whole studs, let go to keep it · Esc puts it back';
+    if (this.areaDrag?.why) return this.areaDrag.why;
+    if (si?.kind === 'ballast') return 'Ballast edge selected · drag it out (wider) or in (narrower), or press an arrow key · its card makes it change over a stretch only, or sets its shape at a buffer stop · Delete gives the track\'s back';
+    if (si?.kind === 'studsoff') return si.id ? 'Stud-off area selected · drag it, or a corner to make it bigger or smaller (whole studs), or press an arrow key · Delete takes it away' : 'The points\' room for their moving parts: studs are kept out of it · it can\'t be taken away or made smaller · its card adds an area round it';
     if (this.addArmed) return this.addArmed === 'conn' ? 'Tap on a track where the joint goes: the parts either side join there · Esc cancels' : 'Tap on a track where the label goes: under that part · Esc cancels';
     if (this.connDrag?.why) return this.connDrag.why;
     if (si?.kind === 'conn') return si.end ? 'Track end selected · its card sets its kind: with or without the peg and clip, or a buffer stop' : 'Joint selected · drag it along the track, or press an arrow key · Delete takes it out · its kind is on its card';
@@ -3261,6 +3374,64 @@ export class TrackCanvas {
           }
           this.el.dataset.labels = JSON.stringify(pos);
         } else delete this.el.dataset.labels;
+      }
+      // (stage 7: the ballast edges, with Ballast picked or one selected: a line along each side of the ballast, the
+      // track's own and each stretch's (one of its own orange-brown, the selected one orange, thicker, with its reach in
+      // studs); the stud-off areas, with Studs off picked or one selected: the app's (the points' room for their moving
+      // parts) shaded grey, the ones by hand shaded and outlined, the selected one orange with a round handle at each
+      // corner. Where each is on the screen, for the smoke tests.)
+      {
+        const edit = getComputedStyle(this.el).getPropertyValue('--c-edit').trim() || '#e8892b', offC = getComputedStyle(this.el).getPropertyValue('--c-studsoff').trim() || '#0f766e';
+        const showE = this.expert && this.mode === 'select' && (this.pick === 'ballast' || sc?.kind === 'ballast');
+        if (showE) {
+          const pos: [number, number, string][] = [];
+          for (const e of this.edgeList()) {
+            const r = d.routes[e.route];
+            if (!r) continue;
+            const mine = sc?.kind === 'ballast' && sc.route === e.route && sc.side === e.side && sc.k === e.k;
+            if (!mine && this.pick !== 'ballast') continue;
+            const own = edgeNow(d, e).from === (e.k !== undefined ? 'stretch' : 'track'), sg = e.side === 'right' ? 1 : -1, pts: [number, number][] = [];
+            const n = Math.max(2, Math.ceil((e.to - e.from) / 0.5));
+            for (let k = 0; k <= n; k++) { const q = placeAlong(r, e.from + ((e.to - e.from) * k) / n), h = (q.heading * Math.PI) / 180; pts.push(this.toScreen(q.x + sg * e.off * Math.cos(h), q.y + sg * e.off * Math.sin(h))); }
+            c.save(); c.strokeStyle = mine ? edit : own ? '#b23c0a' : ink.mark; c.lineWidth = (mine ? 4 : 2) * z; if (!own && !mine) c.setLineDash([6, 4]);
+            c.beginPath(); pts.forEach(([x, y], k) => (k ? c.lineTo(x, y) : c.moveTo(x, y))); c.stroke(); c.restore();
+            const [mx, my] = pts[Math.floor(pts.length / 2)];
+            if (mine) { c.beginPath(); c.arc(mx, my, 12 * z, 0, 2 * Math.PI); c.fillStyle = '#fff'; c.fill(); c.strokeStyle = edit; c.lineWidth = 2.5; c.stroke(); c.fillStyle = edit; c.font = `${Math.round(11 * z)}px sans-serif`; c.textAlign = 'center'; c.textBaseline = 'middle'; c.fillText(String(e.studs), mx, my); }
+            pos.push([Math.round(mx), Math.round(my), `${e.route}:${e.side}${e.k !== undefined ? `:${e.k}` : ''}`]);
+          }
+          this.el.dataset.edges = JSON.stringify(pos);
+          if (this.edgeDrag?.why && this.mouse) { const [mx, my] = this.toScreen(this.mouse[0], this.mouse[1]); tag(mx, my + 30, this.edgeDrag.why, '#e0452b'); }
+        } else delete this.el.dataset.edges;
+        const showS = this.expert && this.mode === 'select' && (this.pick === 'studs' || sc?.kind === 'studsoff');
+        if (showS) {
+          const pos: [number, number, string][] = [];
+          for (const a of this.appAreaList()) {
+            const mine = sc?.kind === 'studsoff' && sc.app === a.key;
+            if (!mine && this.pick !== 'studs') continue;
+            c.save(); c.globalAlpha = 0.28; c.strokeStyle = mine ? edit : '#7b8794'; c.fillStyle = mine ? edit : '#7b8794'; c.lineCap = 'round'; c.lineJoin = 'round';
+            for (const b of a.bands) { c.lineWidth = 2 * b.half * this.scale; c.beginPath(); b.line.forEach((q, k) => { const [x, y] = this.toScreen(q[0], q[1]); if (k) c.lineTo(x, y); else c.moveTo(x, y); }); c.stroke(); }
+            for (const ring of a.arms) { c.beginPath(); ring.forEach((q, k) => { const [x, y] = this.toScreen(q[0], q[1]); if (k) c.lineTo(x, y); else c.moveTo(x, y); }); c.closePath(); c.fill(); }
+            c.restore();
+            const [ax, ay] = this.toScreen(a.at[0], a.at[1]);
+            pos.push([Math.round(ax), Math.round(ay), `app:${a.key}`]);
+          }
+          for (const a of d.expert?.studsOff ?? []) {
+            const mine = sc?.kind === 'studsoff' && sc.id === a.id;
+            if (!mine && this.pick !== 'studs') continue;
+            const [x0, y0] = this.toScreen(a.x0, a.y0), [x1, y1] = this.toScreen(a.x1, a.y1), col = mine ? edit : offC;
+            const L = Math.min(x0, x1), T = Math.min(y0, y1), W = Math.abs(x1 - x0), H = Math.abs(y1 - y0);
+            c.save(); c.globalAlpha = 0.2; c.fillStyle = col; c.fillRect(L, T, W, H); c.restore();
+            // (hatched, so it reads as "nothing here" in either theme)
+            c.save(); c.beginPath(); c.rect(L, T, W, H); c.clip(); c.strokeStyle = col; c.globalAlpha = 0.55; c.lineWidth = 1;
+            for (let t = -H; t < W; t += 10) { c.beginPath(); c.moveTo(L + t, T + H); c.lineTo(L + t + H, T); c.stroke(); }
+            c.restore();
+            c.save(); c.strokeStyle = col; c.lineWidth = (mine ? 3 : 2) * z; c.strokeRect(L, T, W, H); c.restore();
+            if (mine) for (const q of cornersOf(a)) { const [hx, hy] = this.toScreen(q[0], q[1]); c.beginPath(); c.arc(hx, hy, Math.min(9 * z, Math.max(4, Math.min(W, H) / 4)), 0, 2 * Math.PI); c.fillStyle = '#fff'; c.fill(); c.strokeStyle = edit; c.lineWidth = 2.5; c.stroke(); }
+            pos.push([Math.round((x0 + x1) / 2), Math.round((y0 + y1) / 2), a.id]);
+          }
+          this.el.dataset.areas = JSON.stringify(pos);
+          if (this.areaDrag?.why && this.mouse) { const [mx, my] = this.toScreen(this.mouse[0], this.mouse[1]); tag(mx, my + 30, this.areaDrag.why, '#e0452b'); }
+        } else delete this.el.dataset.areas;
       }
       // (several selected: each cut across a track ringed; how many, and where the first is on the screen, for the browser smoke tests)
       if (this.selAlso.length) {
