@@ -259,14 +259,24 @@ export function crossingPiece(s: Scad, routes: Route[], o: CrossingOptions = CRO
   // (a route's sweep from a to b; at an end in x.fuse, on FUSE_ON past it along its last segment, a piece of its own:
   // the route's own sweep as ever, so its faces are as they were up to its end)
   // (its piece past the end alone, from FUSE_ON back: none where it isn't fused)
-  const runOnPast = (cs: CS, i: number, a = 0, bank?: Bank) => {
+  // (rails: rail true. A rail on a curve running on into the next piece's curve: the route with a segment added, swept from
+  // FUSE_ON back, so one sweep starts at the joint itself. Swept as one segment, its chord crossed the joint a hair off the
+  // two pieces' own ends, and where another route's flangeway cuts the rail there (an R104 switch's branch built in two
+  // lengths, its joint across the straight's rail) the cut left a strip on the joint: edges shared by more than two
+  // triangles)
+  const runOnPast = (cs: CS, i: number, a = 0, bank?: Bank, rail = false) => {
     const rt = routes[i], L = routeLength(rt), sg = rt.segments[rt.segments.length - 1];
     if (!(nextOf[i] >= 0) || !sg || hasRoll(rt)) return undefined;
-    const on: Route['segments'][number] = sg.kind === 'straight' ? { kind: 'straight', length: FUSE_ON } : { kind: 'arc', radius: sg.radius, angle: (Math.sign(sg.angle) * FUSE_ON * 180) / (Math.PI * sg.radius) };
-    return sweepRoute(s, cs, { ...rt, segments: [...rt.segments, on] }, Math.max(a, L - FUSE_ON), L + FUSE_ON, bank);
+    const seg = (l: number): Route['segments'][number] => (sg.kind === 'straight' ? { kind: 'straight', length: l } : { kind: 'arc', radius: sg.radius, angle: (Math.sign(sg.angle) * l * 180) / (Math.PI * sg.radius) });
+    const a0 = Math.max(a, L - FUSE_ON);
+    if (rail && sg.kind === 'arc' && routes[nextOf[i]].segments[0]?.kind === 'arc') return sweepRoute(s, cs, { ...rt, segments: [...rt.segments, seg(FUSE_ON)] }, a0, L + FUSE_ON, bank);
+    // (anywhere else one sweep of one segment, FUSE_ON back to FUSE_ON on: the route with a segment added, swept from FUSE_ON
+    // back, ran its last segment on into the added one by sweepRoute's own 0.02 mm, the two lying on each other there, their
+    // end faces at one place: slivers too fine for a file, which the cuts after (cutter.ts cellOf) read back another shape)
+    return sweepRoute(s, cs, { ...rt, start: routePose(rt, a0), segments: [seg(L + FUSE_ON - a0)] }, 0, Infinity, bank);
   };
-  const sweepOn = (cs: CS, i: number, a = 0, b = Infinity, bank?: Bank) => {
-    const m = sweepRoute(s, cs, routes[i], a, b, bank), past = b >= routeLength(routes[i]) - 1e-6 ? runOnPast(cs, i, a, bank) : undefined;
+  const sweepOn = (cs: CS, i: number, a = 0, b = Infinity, bank?: Bank, rail = false) => {
+    const m = sweepRoute(s, cs, routes[i], a, b, bank), past = b >= routeLength(routes[i]) - 1e-6 ? runOnPast(cs, i, a, bank, rail) : undefined;
     return past ? s.union([m, past]) : m;
   };
   const t = new Track(s, o), c = t.c;
@@ -646,7 +656,7 @@ export function crossingPiece(s: Scad, routes: Route[], o: CrossingOptions = CRO
         bufS && atPose(box(BUFFER_RAIL_END, -1), p0), bufE && atPose(box(BUFFER_RAIL_END, -BUFFER_RAIL_END), p1)];
     };
     const rails = s.difference(s.union([-g, g].map((x) =>
-      sweepOn(s.polygon(RAIL_PROFILE.map(([px, py]) => [px + x, py + PLATE_H] as Vec2)), i, 0, Infinity, trackBank(c.sleeperLen)))), railEnds());
+      sweepOn(s.polygon(RAIL_PROFILE.map(([px, py]) => [px + x, py + PLATE_H] as Vec2)), i, 0, Infinity, trackBank(c.sleeperLen), true))), railEnds());
     // (each end flared away from the rail it guards, so a flange coming in is led into the gap, as the switches' are)
     const fl = 4, flare = o.checkRailFlare ?? 1.5;
     const checks = checkRails.filter((cr) => cr.route === i).flatMap((cr) => {
@@ -654,7 +664,7 @@ export function crossingPiece(s: Scad, routes: Route[], o: CrossingOptions = CRO
       const flared = !!flare && cr.s1 - cr.s0 >= 3 * fl;
       // (one that runs on into the next piece of its track, fused to it (x.fuse): on FUSE_ON into the next one's, as it is
       // at its end, flared or not: the two flare alike there, and where the section is cut there its parts are as they were)
-      const past = cr.s1 >= L - 1e-6 ? runOnPast(sec(flared ? away : 0), i, 0, bk) : undefined;
+      const past = cr.s1 >= L - 1e-6 ? runOnPast(sec(flared ? away : 0), i, 0, bk, true) : undefined;
       if (!flared) return [sweepRoute(s, sec(0), rt, cr.s0, cr.s1, bk), ...(past ? [past] : [])];
       const slice = (a: number, x: number) => sweepRoute(s, sec(x), rt, a - 0.05, a + 0.05, bk);
       return [sweepRoute(s, sec(0), rt, cr.s0 + fl, cr.s1 - fl, bk),
