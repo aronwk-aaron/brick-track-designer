@@ -213,6 +213,53 @@ export function joinedEnds(routes: Route[]): Set<string> {
   return out;
 }
 
+/** (mm) Route ends nearer than this, at a spot with an inner end, are one joint. */
+const MEET = 0.01;
+/** The furthest (mm) meetExactly moves any point of a route: hundredths, never anything to see. */
+const MEET_MOVE = 0.01;
+/**
+ * The routes with the ends that meet inside the piece (inner, "route:start") meeting exactly: each later one moved onto
+ * the first one there, and turned onto its line. A design's poses are kept rounded, and a track worked out from one joint
+ * reaches the next a hair off: in 'Wide switched parallel curve section with three ends' 0.0006 mm, in 'Yard R148, three
+ * tracks, right' 0.0002 degrees. Two end faces that far apart are a slit across the whole bed, finer than a file can hold:
+ * the kernel joined it one way or the other by the order the solids came in, and the part's mesh, read back in for the
+ * next cut, closed it up as another shape (a hole through the bed, a wedge of it gone, a wall across the hollow).
+ * A route that would go further than MEET_MOVE, or leave another joint it makes, stays as it is; turned only where it
+ * stays within that.
+ */
+export function meetExactly(routes: Route[], inner: Set<string>): Route[] {
+  const out = [...routes], endsOf = (rt: Route) => [routePose(rt, 0), routePose(rt, routeLength(rt))];
+  const at = routes.map(endsOf), was = at;
+  const now = [...at], turn = (a: number) => ((a % 360) + 540) % 360 - 180;
+  const near = (p: Pose, q: Pose) => Math.hypot(p[0] - q[0], p[1] - q[1]);
+  const key = (i: number, m: number) => `${i}:${m ? 'end' : 'start'}`;
+  const isJoint = (i: number, m: number, j: number, n: number) => (inner.has(key(i, m)) || inner.has(key(j, n))) && near(was[i][m], was[j][n]) < MEET;
+  const placed = new Set<number>(), left = routes.map((_, i) => i);
+  while (left.length) {
+    // (the next route: one with an end at one already placed, else the first left)
+    const hit = left.flatMap((i) => [0, 1].flatMap((m) => [...placed].flatMap((j) => [0, 1].filter((n) => isJoint(i, m, j, n)).map((n) => ({ i, m, j, n })))))[0];
+    const i = hit ? hit.i : left[0];
+    if (hit) {
+      const e = now[i][hit.m], f = now[hit.j][hit.n], d0 = turn(f[2] - e[2]), dh = Math.abs(d0) < 90 ? d0 : turn(d0 + 180);
+      const moved = (a: number): Route => {
+        const c = Math.cos((a * Math.PI) / 180), sn = Math.sin((a * Math.PI) / 180), st = out[i].start, dx = st[0] - e[0], dy = st[1] - e[1];
+        return { ...out[i], start: [f[0] + dx * c - dy * sn, f[1] + dx * sn + dy * c, st[2] + a] };
+      };
+      const fits = (rt: Route) => endsOf(rt).every((q, m) => near(q, was[i][m]) <= MEET_MOVE
+        && routes.every((_, j) => j === i || [0, 1].every((n) => !isJoint(i, m, j, n) || near(q, now[j][n]) < MEET)));
+      const off = near(e, f), L = routeLength(out[i]);
+      // (within rounding of a double: as it is)
+      if (off > 1e-9 || (Math.abs(dh) > 1e-9 && Math.abs(dh) * L < 0.6)) {
+        const rt = [Math.abs(dh) * L < 0.6 ? dh : 0, 0].map(moved).find(fits);
+        if (rt) { out[i] = rt; now[i] = endsOf(rt); }
+      }
+    }
+    placed.add(i);
+    left.splice(left.indexOf(i), 1);
+  }
+  return out;
+}
+
 /**
  * Sleeper centres along a route of length L (mm), as straight.scad's
  * sleeper_js: gapStuds apart, the first that far from the end connector (half
@@ -253,6 +300,7 @@ export function crossingPiece(s: Scad, routes: Route[], o: CrossingOptions = CRO
   // (route ends that another route runs on from, end to end (a route drawn in two, the track into a wye's toe): inner
   // ends too, the piece one through there, not two connectors laid over each other inside it)
   const joined = new Set([...(x0.innerEnds ?? []), ...joinedEnds(routes)]);
+  if (!scadParity()) routes = meetExactly(routes, joined);
   const x: CrossingExtras = { ...x0, innerEnds: joined };
   // (ends that run on into another route's end, or a loop's own: its bed runs on through there, no rim across it)
   const runOn = joinedEnds(routes);
@@ -678,28 +726,16 @@ export function crossingPiece(s: Scad, routes: Route[], o: CrossingOptions = CRO
       return [!inStart && !sq0 && atPose(noConn0 ? box(END, -1) : rooted(box(END, -1), true), p0), !inEnd && !sq1 && atPose(noConn1 ? box(END, -END) : rooted(box(END, -END), false), p1),
         bufS && atPose(box(BUFFER_RAIL_END, -1), p0), bufE && atPose(box(BUFFER_RAIL_END, -BUFFER_RAIL_END), p1)];
     };
-    // (and its rails at a fan's inner end run on RAIL_ROOT into the rails of the fan's routes that go on from there, inside
-    // those only: end to end, a rail's end face lay flush on the next ones' start faces, their feet down in the bed, and
-    // that seam too was joined one way or the other by the order: with the beds joined, 'Yard R148, three tracks, right'
-    // track3 still came out with a hole beside it one way)
-    const railRoot = (P: Pose, start: boolean): Man | false => {
-      if (fanOf[i] === undefined) return false;
-      const w = c.sleeperLen, beyond = atPose(T(s.cube([2 * w, RAIL_ROOT, 30]), [-w, start ? -RAIL_ROOT : 0, -5]), P);
-      const into = routes.flatMap((r2, j) => {
-        if (j === i || fanOf[j] !== fanOf[i]) return [];
-        const L2 = routeLength(r2), g2 = gOf[j];
-        return ([[0, 'start'], [L2, 'end']] as const).flatMap(([at, e]) => {
-          const q = routePose(r2, at);
-          if (Math.hypot(q[0] - P[0], q[1] - P[1]) > 0.01) return [];
-          const raw = s.union([-g2, g2].map((x2) => sweepRoute(s, s.polygon(RAIL_PROFILE.map(([px, py]) => [px + x2, py + PLATE_H] as Vec2)), r2, e === 'start' ? 0 : Math.max(0, L2 - 1), e === 'start' ? Math.min(1, L2) : L2)));
-          const r = s.intersection(beyond, raw);
-          return r.volume() > 1e-5 ? [r] : [];
-        });
-      });
-      return into.length > 0 && s.union(into);
+    // (and its rails at a fan's inner end run on RAIL_ROOT into the rails that go on from there: end to end, a rail's end
+    // face lay flush on the next ones' start faces, their feet down in the bed, and that seam too was joined one way or
+    // the other by the order. Not past an end no route runs on from, nor where the two are fused already (x.fuse))
+    const railOn = (P: Pose, end: 'start' | 'end') => {
+      if (fanOf[i] === undefined || !runOn.has(`${i}:${end}`) || (end === 'end' ? nextOf[i] >= 0 : nextOf.includes(i))) return false;
+      const q = poseToWorld(P, [0, end === 'start' ? -RAIL_ROOT : -2 * RAIL_ROOT]), on: Route = { ...rt, start: [q[0], q[1], P[2]], segments: [{ kind: 'straight', length: 3 * RAIL_ROOT }] };
+      return s.union([-g, g].map((x2) => sweepRoute(s, s.polygon(RAIL_PROFILE.map(([px, py]) => [px + x2, py + PLATE_H] as Vec2)), on)));
     };
-    const rails = s.difference(s.union([...[-g, g].map((x) =>
-      sweepOn(s.polygon(RAIL_PROFILE.map(([px, py]) => [px + x, py + PLATE_H] as Vec2)), i, 0, Infinity, trackBank(c.sleeperLen), true)), !!x.innerEnds?.has(`${i}:start`) && railRoot(p0, true), !!x.innerEnds?.has(`${i}:end`) && railRoot(p1, false)]), railEnds());
+    const rails = s.difference(s.union([railOn(p0, 'start'), railOn(p1, 'end'), ...[-g, g].map((x) =>
+      sweepOn(s.polygon(RAIL_PROFILE.map(([px, py]) => [px + x, py + PLATE_H] as Vec2)), i, 0, Infinity, trackBank(c.sleeperLen), true))]), railEnds());
     // (each end flared away from the rail it guards, so a flange coming in is led into the gap, as the switches' are)
     const fl = 4, flare = o.checkRailFlare ?? 1.5;
     const checks = checkRails.filter((cr) => cr.route === i).flatMap((cr) => {
