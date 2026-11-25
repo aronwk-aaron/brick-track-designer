@@ -229,8 +229,7 @@ const MEET_MOVE = 0.01;
  */
 export function meetExactly(routes: Route[], inner: Set<string>): Route[] {
   const out = [...routes], endsOf = (rt: Route) => [routePose(rt, 0), routePose(rt, routeLength(rt))];
-  const at = routes.map(endsOf), was = at;
-  const now = [...at], turn = (a: number) => ((a % 360) + 540) % 360 - 180;
+  const was = routes.map(endsOf), now = [...was], turn = (a: number) => ((a % 360) + 540) % 360 - 180;
   const near = (p: Pose, q: Pose) => Math.hypot(p[0] - q[0], p[1] - q[1]);
   const key = (i: number, m: number) => `${i}:${m ? 'end' : 'start'}`;
   const isJoint = (i: number, m: number, j: number, n: number) => (inner.has(key(i, m)) || inner.has(key(j, n))) && near(was[i][m], was[j][n]) < MEET;
