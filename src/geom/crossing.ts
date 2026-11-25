@@ -215,8 +215,8 @@ export function joinedEnds(routes: Route[]): Set<string> {
 
 /** (mm) Route ends nearer than this, at a spot with an inner end, are one joint. */
 const MEET = 0.01;
-/** The furthest (mm) meetExactly moves any point of a route: hundredths, never anything to see. */
-const MEET_MOVE = 0.01;
+/** The furthest (mm) meetExactly moves any point of a route: the rounding of a kept pose, and what a turn within it comes to at the far end. More is a joint laid out so (a switch off its stud grid to meet a curve: moved, its studs and underside came out other ones). */
+const MEET_MOVE = 0.002;
 /**
  * The routes with the ends that meet inside the piece (inner, "route:start") meeting exactly: each later one moved onto
  * the first one there, and turned onto its line. A design's poses are kept rounded, and a track worked out from one joint
