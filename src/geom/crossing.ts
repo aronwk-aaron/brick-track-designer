@@ -668,7 +668,10 @@ export function crossingPiece(s: Scad, routes: Route[], o: CrossingOptions = CRO
     routes.forEach((rt, i) => { if (!hasRoll(rt) && (size.get(root(i)) ?? 0) > 1) fanOf[i] = root(i); });
   }
   const fanBeds = new Map<number, Man[]>();
-  const pushBed = (i: number, m: Man) => { const g = fanOf[i]; if (g === undefined) parts.push(m); else fanBeds.set(g, [...(fanBeds.get(g) ?? []), m]); };
+  const pushBed = (i: number, m: Man) => { const g = onBallast ? undefined : fanOf[i]; if (g === undefined) parts.push(m); else fanBeds.set(g, [...(fanBeds.get(g) ?? []), m]); };
+  // (not on ballast: there the bed is one with the ballast's top layer, its bottom on that layer's top, and joined level its
+  // outline's edges no longer the layer's: the cells cut from it read back with pinched edges there ('aaron3-tongues' track8,
+  // a monster switch's: hundreds of mm3 one way and not the other))
   // (a bed joined level only where it's a slab straight up and down, 0 to PLATE_H: its outline at half height stood up
   // has its volume. Else (rooted into a connector's back, a bed shaped some other way) joined as solids, as before)
   const joinBeds = (beds: Man[]): Man => {
