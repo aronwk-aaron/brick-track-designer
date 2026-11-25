@@ -14,7 +14,7 @@ export type Rect = [number, number, number, number]; // x0, y0, x1, y1
 
 export { routesBox };
 
-export interface CutPlan { xs: number[]; ys: number[]; why: 'bed' | 'baseplate'; /** which of them are baseplate edges (always joined with peg and clip) */ edges?: Set<number>; /** which run along the track: interlocking fingers (the plate-style) */ combs?: Set<number> }
+export interface CutPlan { xs: number[]; ys: number[]; why: 'bed' | 'baseplate'; /** which of them are baseplate edges (always joined with peg and clip) */ edges?: Set<number>; /** which run along the track: interlocking fingers (the plate-style) */ combs?: Set<number>; /** (cut to the bed) a stud on and a stud back from cut i of cuts (along axis), where a cut can go: the more even first; no part over the bed's length that wasn't, none under MIN_PART, a comb left */ beside?: (cuts: number[], i: number, axis: 0 | 1) => number[] }
 
 /** The shortest part a cut may leave (mm): no slivers of track. */
 const MIN_PART = 40;
@@ -119,6 +119,12 @@ export function planCuts(b: Rect, bedX: number, bedY: number, bp: number, ox: nu
     for (let k = prev[cand.length - 1]; k > 0; k = prev[k]) out.push(cand[k]);
     return out.reverse();
   };
+  const besideIn = (lens: [number, number]) => (cuts: number[], i: number, axis: 0 | 1): number[] => {
+    const v = cuts[i], len = lens[axis], a = i ? cuts[i - 1] : b[axis], z = i < cuts.length - 1 ? cuts[i + 1] : b[axis + 2];
+    if (combs.has(v)) return [];
+    return [v + 8, v - 8].filter((w) => ok(w, axis) && w - a >= MIN_PART && z - w >= MIN_PART && w - a <= Math.max(len, v - a) && z - w <= Math.max(len, z - v))
+      .sort((p, q) => Math.max(p - a, z - p) - Math.max(q - a, z - q));
+  };
   if (!bp) {
     const W = b[2] - b[0], H = b[3] - b[1], room = Math.max(bedX, bedY) - joints, small = Math.min(bedX, bedY) - joints;
     const nx = Math.max(1, Math.ceil(W / (H > W ? small : room))), ny = Math.max(1, Math.ceil(H / (H > W ? room : small)));
@@ -165,12 +171,12 @@ export function planCuts(b: Rect, bedX: number, bedY: number, bp: number, ox: nu
         // (as long as the cells' where that makes as many: the cuts where they were)
         const axis: 0 | 1 = W >= H ? 0 : 1, lo = b[axis], hi = b[axis + 2], len = nT === (axis === 0 ? nx : ny) ? room : (hi - lo) / nT + 4;
         (axis === 0 ? xs : ys).push(...(evenCuts(lo, hi, len, axis) ?? greedy(lo, hi, len, axis, nT)));
-        return { xs: spaced(xs, b[0], b[2]), ys: spaced(ys, b[1], b[3]), why: 'bed', combs };
+        return { xs: spaced(xs, b[0], b[2]), ys: spaced(ys, b[1], b[3]), why: 'bed', combs, beside: besideIn([len, len]) };
       }
     }
     xs.push(...(evenCuts(b[0], b[2], H > W ? small : room, 0) ?? greedy(b[0], b[2], H > W ? small : room, 0, nx)));
     ys.push(...(evenCuts(b[1], b[3], H > W ? room : small, 1) ?? greedy(b[1], b[3], H > W ? room : small, 1, ny)));
-    return { xs: spaced(xs, b[0], b[2]), ys: spaced(ys, b[1], b[3]), why: 'bed', combs };
+    return { xs: spaced(xs, b[0], b[2]), ys: spaced(ys, b[1], b[3]), why: 'bed', combs, beside: besideIn([H > W ? small : room, H > W ? room : small]) };
   }
   // (the baseplate edges are where they are; the cuts across a baseplate too
   // big for the bed move to go across the track, or are left out)

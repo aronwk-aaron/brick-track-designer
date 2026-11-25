@@ -20,6 +20,26 @@ export interface CutLine { p: [number, number]; d: [number, number]; span?: [num
 
 const deg = (r: number) => (r * 180) / Math.PI;
 
+/**
+ * The planes x = v (axis 0) and y = v (axis 1) the piece has a face on: a cut there lies on the face. (The cut's cell on
+ * the far side kept the face as a sheet with nothing behind it, which flat() read back another shape: a LEGO-style
+ * track's ties end on the stud grid, and a bed cut along a tie's end lost 600 mm3 of the cell past it)
+ */
+export function facePlanes(m: Man): (v: number, axis: 0 | 1) => boolean {
+  const g = m.getMesh(), P = g.vertProperties, np = g.numProp, Tv = g.triVerts, on = [new Map<number, number>(), new Map<number, number>()];
+  for (let t = 0; t < Tv.length; t += 3) {
+    const a = Tv[t] * np, b = Tv[t + 1] * np, c = Tv[t + 2] * np;
+    for (const k of [0, 1]) {
+      const v = P[a + k];
+      if (Math.abs(P[b + k] - v) > 1e-3 || Math.abs(P[c + k] - v) > 1e-3) continue;
+      // (its area, across the plane: the other two of x, y, z)
+      const [i, j] = k === 0 ? [1, 2] : [0, 2], area = Math.abs((P[b + i] - P[a + i]) * (P[c + j] - P[a + j]) - (P[c + i] - P[a + i]) * (P[b + j] - P[a + j])) / 2, key = Math.round(v * 100);
+      on[k].set(key, (on[k].get(key) ?? 0) + area);
+    }
+  }
+  return (v, axis) => (on[axis].get(Math.round(v * 100)) ?? 0) > 0.01;
+}
+
 /** (mm3) A cell or side this small (a corner the lines just clip, a stud or two of bed) is kept with the part beside it. */
 const SMALL_CELL = 2000;
 /** (mm3) Only a part under this is taken apart to look for a loose chunk in it: taking a big one apart took minutes. */

@@ -159,3 +159,35 @@ export function wholeStuds(s: Scad, studs: Stud[], parts: Man[], r: number, h: n
     return !fits || fits(withStuds) ? withStuds : q;
   }, (m) => [m]));
 }
+
+/**
+ * Of studs (findStuds, on the piece before it's cut), how many stand whole on one of its parts, and how many only partly
+ * (r: a stud's radius): by how much of a stud's circle the part that has most of it has, half way up.
+ */
+export function studsLeft(s: Scad, studs: Stud[], parts: Man[], r: number): { whole: number; partial: number } {
+  return arena(s.w, () => {
+    const full = Math.PI * r * r, most = studs.map(() => 0);
+    for (const p of parts) {
+      const bb = p.boundingBox(), slices = new Map<number, { box: ReturnType<Man['slice']>; whole: Pt[] }>();
+      studs.forEach(({ c, mid }, i) => {
+        if (most[i] >= 0.97 || c[0] < bb.min[0] - r || c[0] > bb.max[0] + r || c[1] < bb.min[1] - r || c[1] > bb.max[1] + r) return;
+        let e = slices.get(mid);
+        if (!e) {
+          // (the round outlines first, as they're found: most studs. The rest measured in the kernel)
+          const box = p.slice(mid), whole: Pt[] = [];
+          for (const q of box.toPolygons() as Pt[][]) {
+            if (q.length < 12) continue;
+            const a = q.reduce((t, u, k) => { const n = q[(k + 1) % q.length]; return t + u[0] * n[1] - n[0] * u[1]; }, 0) / 2;
+            if (a > 0.97 * full && a < 1.01 * full) { const xs = q.map((u) => u[0]), ys = q.map((u) => u[1]); whole.push([(Math.min(...xs) + Math.max(...xs)) / 2, (Math.min(...ys) + Math.max(...ys)) / 2]); }
+          }
+          e = { box, whole }; slices.set(mid, e);
+        }
+        if (e.whole.some((q) => Math.hypot(q[0] - c[0], q[1] - c[1]) < 0.2)) { most[i] = 1; return; }
+        const circ = s.w.CrossSection.circle(r + 0.05, 32).translate(c), x = e.box.intersect(circ);
+        most[i] = Math.max(most[i], x.area() / full);
+        circ.delete(); x.delete();
+      });
+    }
+    return { whole: most.filter((a) => a >= 0.97).length, partial: most.filter((a) => a > 0.02 && a < 0.97).length };
+  }, () => []);
+}
