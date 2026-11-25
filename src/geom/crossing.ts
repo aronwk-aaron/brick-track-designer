@@ -233,7 +233,9 @@ export function meetExactly(routes: Route[], inner: Set<string>): Route[] {
   const near = (p: Pose, q: Pose) => Math.hypot(p[0] - q[0], p[1] - q[1]);
   const key = (i: number, m: number) => `${i}:${m ? 'end' : 'start'}`;
   const isJoint = (i: number, m: number, j: number, n: number) => (inner.has(key(i, m)) || inner.has(key(j, n))) && near(was[i][m], was[j][n]) < MEET;
-  const placed = new Set<number>(), left = routes.map((_, i) => i);
+  // (the ones on the half-stud grid stay where they are: their studs and underside are placed by it)
+  const onGrid = (rt: Route) => [rt.start[0], rt.start[1]].every((v) => Math.abs(v / 4 - Math.round(v / 4)) < 1e-9);
+  const placed = new Set(routes.flatMap((rt, i) => (onGrid(rt) ? [i] : []))), left = routes.flatMap((_, i) => (placed.has(i) ? [] : [i]));
   while (left.length) {
     // (the next route: one with an end at one already placed, else the first left)
     const hit = left.flatMap((i) => [0, 1].flatMap((m) => [...placed].flatMap((j) => [0, 1].filter((n) => isJoint(i, m, j, n)).map((n) => ({ i, m, j, n })))))[0];
