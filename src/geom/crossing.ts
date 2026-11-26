@@ -1223,6 +1223,7 @@ export function crossingPiece(s: Scad, routes: Route[], o: CrossingOptions = CRO
     beds.push((keep.length ? strip.subtract(s.w.CrossSection.union(keep)) : strip).rotate(P[2]).translate([P[0], P[1]]));
   }
   const cuts: Man[] = [];
+  let joinedConn = false;
   if ((beds.length || oneRows.size) && spots.length) {
     const is = spots.map((q) => q.i), js = spots.map((q) => q.j);
     // (whole tubes only: a sleeper has no floor under the rails' feet, and a tube half under one is a broken ring; a thin
@@ -1242,9 +1243,17 @@ export function crossingPiece(s: Scad, routes: Route[], o: CrossingOptions = CRO
     const hg = hollowGrid(s, t, beds.length ? s.w.CrossSection.union(beds) : foot.subtract(foot), world, Math.min(...is), Math.max(...is), Math.min(...js), Math.max(...js), o.grip, { ok: okAll, skip: inConn, foot, stubs: anyBank, bare: !beds.length });
     grips?.push(...hg.grips);
     // (nothing to cut: a piece that's all channel, no stud of the plate's standing in its walls)
-    if (!hg.cut.isEmpty()) cuts.push(T(s.extrude(tidy(hg.tubes ? hg.cut.subtract(hg.tubes) : hg.cut), cavH), [0, 0, -0.01]));
+    // (where the hollow meets an end connector's channel (a sleeper's hollow up against the connector's back), the two
+    // drawn up as one: drawn up apart, their faces met on the plane between, and the piece cut by both kept a sheet of
+    // no thickness there, which read back one way or the other ('Narrow-gauge crossing 45° right over two standard
+    // tracks', its narrow-gauge stub's connectors either side of its one sleeper))
+    if (!hg.cut.isEmpty()) {
+      const hc = tidy(hg.tubes ? hg.cut.subtract(hg.tubes) : hg.cut), cc = connCSAll.length ? s.w.CrossSection.union(connCSAll) : undefined;
+      joinedConn = !!cc && hc.intersect(cc.offset(1e-4, 'Miter', 2)).area() > 0;
+      cuts.push(T(s.extrude(joinedConn ? s.w.CrossSection.union([hc, cc!]) : hc, cavH), [0, 0, -0.01]));
+    }
   }
-  if (connCut) cuts.push(connCut);
+  if (connCut && !joinedConn) cuts.push(connCut);
   return s.difference(body, [...roofed(cuts), ...(x.cuts ?? [])]);
 
   /**
