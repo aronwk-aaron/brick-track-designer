@@ -830,7 +830,18 @@ export function crossingPiece(s: Scad, routes: Route[], o: CrossingOptions = CRO
       const clearOk = (P: Pose) => { const ok = sleeperPostOk(P); return (p: Vec2) => (ok?.(p) ?? true) && !handOff(poseToWorld(P, p)) && claim(poseToWorld(P, p) as [number, number]); };
       // (one under another route's tie's end (underServed): bare, the ties' studs about it; with its own, they stood
       // against the tie's beside them)
-      if (at.length) parts.push(s.union(at.map((v) => { const P = routePose(rt, v), sl = t.sleeper(bareAt.has(v) || underServed.includes(v) ? () => false : clearOk(P)); return atPose(banked ? bankedSleeper(s, sl, trackBank(c.sleeperLen), routeRoll(rt, v), c.sleeperLen, c.sleeperW) : sl, P); })));
+      // (a sleeper flush with an end connector's back (a piece 4 studs long, one sleeper in its middle, the connectors
+      // either side of it) run on RAIL_ROOT into the connector, inside it only, as the bed is: face to face, the two
+      // were joined with a sheet of no thickness between them, which the cuts after read back one way or the other
+      // ('Narrow-gauge crossing 45° right over two standard tracks', its narrow-gauge stub))
+      const sleeperRoot = (v: number) => {
+        const half = c.sleeperW / 2, at0 = !connPlan[i].noConn0 && Math.abs(v - half - STUD) < 1e-6, at1 = !connPlan[i].noConn1 && Math.abs(L - v - half - STUD) < 1e-6;
+        if (banked || scadParity() || (!at0 && !at1)) return [];
+        const { conn0, conn1 } = connOf(i), w = c.sleeperLen + 2 * STUD;
+        return [at0 && atPose(s.intersection(conn0, T(s.cube([w, RAIL_ROOT, 30]), [-w / 2, STUD - RAIL_ROOT, -5])), p0),
+          at1 && atPose(s.intersection(conn1, T(s.cube([w, RAIL_ROOT, 30]), [-w / 2, -STUD, -5])), p1)];
+      };
+      if (at.length) parts.push(s.union(at.flatMap((v) => { const P = routePose(rt, v), sl = t.sleeper(bareAt.has(v) || underServed.includes(v) ? () => false : clearOk(P)); return [atPose(banked ? bankedSleeper(s, sl, trackBank(c.sleeperLen), routeRoll(rt, v), c.sleeperLen, c.sleeperW) : sl, P), ...sleeperRoot(v)]; })));
     }
     // End connectors and breakaway supports, at both ends.
     // (on ballast: no peg and clip, as the switches')
