@@ -646,6 +646,28 @@ export function crossingPiece(s: Scad, routes: Route[], o: CrossingOptions = CRO
     const posts1 = oneRow || noConn1 ? [] : all1.filter((px) => { const q = poseToWorld(e1, [-px, -4]) as [number, number]; return clearOfRails(i, q) && !x.lipMeets?.(q) && !handOff(q) && claim(q, tt.c.postD); });
     return { xfs0, xfs1, noConn0, noConn1, oneRow, posts0, posts1 };
   });
+  // (with sleepers, in a piece of several tracks: a sleeper that would lie flush on an end connector's back, where
+  // nothing but that sleeper lies between the connector and the joint into the next track (a narrow-gauge stub 4 studs
+  // long) is solid bed instead, from the connector to the joint. A plain piece of track (a 4-stud straight, a short
+  // curve, a buffer stop) keeps its sleeper. Face to face, the sleeper and the connector were joined with a sheet
+  // of no thickness between them, which the piece's cuts read back one way or the other ('Narrow-gauge crossing 45°
+  // right over two standard tracks'))
+  if (sleepered && !scadParity() && routes.length > 1) routes.forEach((rt, i) => {
+    if (laidOf[i] || hasRoll(rt)) return;
+    const L = routeLength(rt), half = cOf[i].sleeperW / 2, { noConn0, noConn1 } = connPlan[i];
+    const in0 = x.innerEnds?.has(`${i}:start`) ?? false, in1 = x.innerEnds?.has(`${i}:end`) ?? false;
+    const spots = ownSleeperSpots(rt, in0, in1, o.sleeperGapStuds ?? 2, o.sleeperWidthStuds).filter((v) => !inZone(i, v));
+    const add: [number, number][] = [];
+    // (only the one sleeper there; the route runs on from its other end into the next track)
+    const lone = spots.length === 1;
+    if (lone && !noConn0 && runOn.has(`${i}:end`) && Math.abs(spots[0] - half - STUD) < 1e-6) add.push([0, L]);
+    if (lone && !noConn1 && runOn.has(`${i}:start`) && Math.abs(L - spots[0] - half - STUD) < 1e-6) add.push([0, L]);
+    if (!add.length) return;
+    if (process.env.FLUSHLOG) console.log('FLUSHBED', i, L.toFixed(2), JSON.stringify(add.map((r) => r.map((q) => +q.toFixed(2)))));
+    const all = [...zones[i], ...add].sort((a, b) => a[0] - b[0]), merged: [number, number][] = [];
+    for (const [a, b] of all) { const last = merged[merged.length - 1]; if (last && a <= last[1] + 1e-6) last[1] = Math.max(last[1], b); else merged.push([a, b]); }
+    zones[i] = merged;
+  });
   // (a route's end connectors, each in its end's frame; on ballast no peg and clip, as the switches')
   const connOf = (i: number) => {
     const t = tOf[i], ex: ExtraBuilt | undefined = extras[i], peg = !onBallast || !!o.pegOnBallast || alone, { xfs0, xfs1, posts0, posts1 } = connPlan[i];
