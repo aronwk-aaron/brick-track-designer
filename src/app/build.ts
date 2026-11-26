@@ -668,7 +668,10 @@ function buildGroups(w: Wasm, design: Design, report: (what: string, frac: numbe
     const mine = paths.filter((_, k) => near[k].some((r) => g.routes.includes(r)) || (i === 0 && !near[k].length));
     // (what else is between tracks goes by their names, with every group: the sleepers they share, the pairs that run close on purpose)
     const { cutPaths: _cp, apart: _ap, ...between } = design.expert ?? {}, exp = { ...between, ...(mine.length && { cutPaths: mine }) };
-    const sub: Design = { ...design, routes: g.routes.map((r) => withoutPartOwn(design.routes[r])), options: g.options, ...(design.expert && { expert: Object.keys(exp).length ? exp : undefined }) };
+    // (each track where the whole design has it, its joints met (route/meet.ts): met again within the group alone, a
+    // track joined to another group's came out a hair from where the other group has it)
+    const met = (r: number) => { const d0 = design.routes[r], st = rts[r]?.start; return st && !isMono(d0) && pg.groups.length > 1 ? { ...d0, x: st[0] / 8, y: st[1] / 8, heading: st[2] } : d0; };
+    const sub: Design = { ...design, routes: g.routes.map((r) => withoutPartOwn(met(r))), options: g.options, ...(design.expert && { expert: Object.keys(exp).length ? exp : undefined }) };
     settingsKey = keyOfSettings(sub, opts);
     try {
       built.push(buildTrain(w, sub, (what, f) => report(what, (i + f) / pg.groups.length), (ov) => { earlies[i] = ov as Record<string, unknown>; early?.(merged()); }, opts));
