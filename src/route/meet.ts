@@ -31,14 +31,14 @@ export function meetRoutes(routes: Route[], ok: (i: number) => boolean = () => t
   const cells = new Map<string, { i: number; m: number }[]>();
   const cell = (p: Pose) => [Math.floor(p[0] / MEET), Math.floor(p[1] / MEET)];
   for (const i of idx) for (const m of [0, 1]) { const [cx, cy] = cell(was.get(i)![m]), k = `${cx},${cy}`; cells.set(k, [...(cells.get(k) ?? []), { i, m }]); }
-  const joints = new Map<number, { m: number; j: number; n: number }[]>(idx.map((i) => [i, []]));
+  const joints = new Map<number, { m: number; j: number; n: number; opp: boolean }[]>(idx.map((i) => [i, []]));
   let any = false;
   for (const i of idx) for (const m of [0, 1]) {
     const e = was.get(i)![m], [cx, cy] = cell(e), leave = m ? e[2] + 180 : e[2];
     for (let dx = -1; dx <= 1; dx++) for (let dy = -1; dy <= 1; dy++) for (const { i: j, m: n } of cells.get(`${cx + dx},${cy + dy}`) ?? []) {
       if (j === i) continue;
       const f = was.get(j)![n], d = Math.abs(turn((n ? f[2] + 180 : f[2]) - leave));
-      if (near(e, f) < MEET && (d > 179.5 || d < 0.5)) { joints.get(i)!.push({ m, j, n }); if (near(e, f) > 1e-9 || Math.abs(turn(e[2] - f[2])) % 180 > 1e-9) any = true; }
+      if (near(e, f) < MEET && (d > 179.5 || d < 0.5)) { joints.get(i)!.push({ m, j, n, opp: d > 179.5 }); if (near(e, f) > 1e-9 || Math.abs(turn(e[2] - f[2])) % 180 > 1e-9) any = true; }
     }
   }
   if (!any) return routes;
@@ -54,7 +54,12 @@ export function meetRoutes(routes: Route[], ok: (i: number) => boolean = () => t
       const c = Math.cos((a * Math.PI) / 180), sn = Math.sin((a * Math.PI) / 180), st = out[i].start, dx = st[0] - e[0], dy = st[1] - e[1];
       return { ...out[i], start: [f[0] + dx * c - dy * sn, f[1] + dx * sn + dy * c, st[2] + a] };
     };
-    const fits = (rt: Route) => { const q = endsOf(rt); return q.every((p, k) => near(p, was.get(i)![k]) <= MEET_MOVE) && joints.get(i)!.every(({ m: k, j, n }) => near(q[k], now.get(j)![n]) < MEET); };
+    // (and no end run into the next track's, end to end, where it wasn't: a gap left as it was, not closed past the
+    // other's end. A loop of pieces whose joints don't all close (the 'T-junction R40 and R56' set's, 0.008 mm apart)
+    // had two parts overlapping by that much at the one left)
+    const gap = (p: Pose, k: number, f2: Pose) => { const h = ((k ? p[2] : p[2] + 180) * Math.PI) / 180; return (f2[0] - p[0]) * -Math.sin(h) + (f2[1] - p[1]) * Math.cos(h); };
+    const fits = (rt: Route) => { const q = endsOf(rt); return q.every((p, k) => near(p, was.get(i)![k]) <= MEET_MOVE) && joints.get(i)!.every(({ m: k, j, n, opp }) => near(q[k], now.get(j)![n]) < MEET
+      && (!opp || gap(q[k], k, now.get(j)![n]) >= Math.min(0, gap(was.get(i)![k], k, was.get(j)![n])) - 1e-9)); };
     const rt = [Math.abs(dh) * L < 0.6 ? dh : 0, 0].map(moved).find(fits);
     if (rt) { out[i] = rt; now.set(i, endsOf(rt)); }
   };
