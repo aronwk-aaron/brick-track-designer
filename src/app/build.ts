@@ -28,6 +28,7 @@ import { blocks as tileBlocks, cropRoutes, nearCell, planCuts, routesBox, type R
 import type { CheckRail, Split } from '../route/solver';
 import { planSections } from './sections';
 import type { Route } from '../route/route';
+import { meetRoutes, metAs } from '../route/meet';
 import { cutPiece, type CutLine, facePlanes, tidy } from '../geom/cutter';
 import { type DesignCuts, designCuts, designPaths, handCutsFor } from './handcuts';
 import { type NoCut, gridPath, pathProblem, pathTracks } from './cutpaths';
@@ -668,10 +669,7 @@ function buildGroups(w: Wasm, design: Design, report: (what: string, frac: numbe
     const mine = paths.filter((_, k) => near[k].some((r) => g.routes.includes(r)) || (i === 0 && !near[k].length));
     // (what else is between tracks goes by their names, with every group: the sleepers they share, the pairs that run close on purpose)
     const { cutPaths: _cp, apart: _ap, ...between } = design.expert ?? {}, exp = { ...between, ...(mine.length && { cutPaths: mine }) };
-    // (each track where the whole design has it, its joints met (route/meet.ts): met again within the group alone, a
-    // track joined to another group's came out a hair from where the other group has it)
-    const met = (r: number) => { const d0 = design.routes[r], st = rts[r]?.start; return st && !isMono(d0) && pg.groups.length > 1 ? { ...d0, x: st[0] / 8, y: st[1] / 8, heading: st[2] } : d0; };
-    const sub: Design = { ...design, routes: g.routes.map((r) => withoutPartOwn(met(r))), options: g.options, ...(design.expert && { expert: Object.keys(exp).length ? exp : undefined }) };
+    const sub: Design = { ...design, routes: g.routes.map((r) => withoutPartOwn(design.routes[r])), options: g.options, ...(design.expert && { expert: Object.keys(exp).length ? exp : undefined }) };
     settingsKey = keyOfSettings(sub, opts);
     try {
       built.push(buildTrain(w, sub, (what, f) => report(what, (i + f) / pg.groups.length), (ov) => { earlies[i] = ov as Record<string, unknown>; early?.(merged()); }, opts));
@@ -1017,6 +1015,11 @@ function solveTrackwork(w: Wasm, design: Design, o: PieceOptions, step: (what: s
   const gauge = (design.gaugeStuds + 1) * 8;
   // (a track drawn short of where another joins its line: carried on to the join, and said; carryon.ts)
   { const co = carriedOn(routes, gauge); routes = co.routes; bankWarnings.push(...co.warnings); }
+  // (the joints met exactly (route/meet.ts), before the trackwork's worked out from them; metOf gives any reader of the
+  // design's own routes in the build the same moves)
+  const unmet = routes;
+  routes = meetRoutes(routes);
+  const met = routes, metOf = (raw: Route[]) => metAs(raw, unmet, met);
   const solverOpts = { gauge, step: 0.5, flangeway: o.flangeway, checkRailLen: o.checkRailLen, checkRailW: o.checkRailW };
   step('Working out the trackwork');
   // Hand edits (design.trackwork), by where each item is.
@@ -1175,7 +1178,7 @@ function solveTrackwork(w: Wasm, design: Design, o: PieceOptions, step: (what: s
   // the heel along both its routes and out to the rails; and every rail crossing)
   const bladeLine = (r: number, a: number, b2: number) => { const L = routeLength(routes[r]), s0 = Math.max(0, a), s1 = Math.min(L, b2), n = Math.max(1, Math.ceil((s1 - s0) / 8)); return Array.from({ length: n + 1 }, (_, k) => railPoint(routes[r], s0 + ((s1 - s0) * k) / n, 0)); };
   overlay.cutting = { grid: gridPose, railG: g, no: { blades: sol.splits.flatMap((sp) => sp.routes.map((r, n) => ({ line: bladeLine(r, sp.spans[n][0], sp.spans[n][1]), half: gOf(r) + 4 }))), frogs: sol.crossings.map((c) => c.point) } };
-  return { routes, sol, solverOpts, tw, items, overlay, grooveCuts, grooveKeeps, forceWarnings, bankWarnings, bought, gridPose };
+  return { routes, sol, solverOpts, tw, items, overlay, grooveCuts, grooveKeeps, forceWarnings, bankWarnings, bought, gridPose, metOf };
 }
 
 /** Apply the check rail edits to a solution's check rails (in place), noting each for the Trackwork panel. */
@@ -2843,7 +2846,7 @@ function buildOne(w: Wasm, design: Design, report: (what: string, frac: number) 
   const t0 = performance.now();
   const prog = progressOf(report);
   const o = { ...OPTION_DEFAULTS, ...design.options };
-  const { routes, sol, solverOpts, tw, items, overlay, grooveCuts, grooveKeeps, forceWarnings, bankWarnings, bought, gridPose } = solveTrackwork(w, design, o, prog.step);
+  const { routes, sol, solverOpts, tw, items, overlay, grooveCuts, grooveKeeps, forceWarnings, bankWarnings, bought, gridPose, metOf } = solveTrackwork(w, design, o, prog.step);
   const dropInner = (rts: Route[], more: Iterable<string> = []) => droppedInner(routes, sol.dropped ?? [], rts, more);
   const toeShift = (q: [number, number]) => tw.points?.[keyOf(q)]?.toe ?? 0;
   // (with the points' own choice of moving blade, a single-point switch's, and their blades lengthened: Trackwork.points single, heel)
@@ -2855,7 +2858,7 @@ function buildOne(w: Wasm, design: Design, report: (what: string, frac: number) 
   const scad = new Scad(w);
   const params = switchParams(o, design.gaugeStuds, alone);
   // (route ends that end in a buffer stop, by where they are)
-  const bufs = bufferEnds(design), pegs = pegEnds(design), studsOff = studsOffMm(design.expert?.studsOff);
+  const bufs = bufferEnds(design, metOf(toRoutes(design))), pegs = pegEnds(design), studsOff = studsOffMm(design.expert?.studsOff);
 
   let pc = planPieces(routes, sol.splits, params, toeShift, throwEdit, true);
   prog.steps = 2 + pc.switches.length + (pc.rest.length ? 1 : 0);
@@ -2960,7 +2963,7 @@ function buildOne(w: Wasm, design: Design, report: (what: string, frac: number) 
     track.c.railOffset, overlay.cutting!.no, (design.expert?.cutPaths ?? []).map((p) => gridPath([gridPose[0] / 8, gridPose[1] / 8, gridPose[2]], p.pts))) : [];
   const cutPaths = overlay.cutting && designPaths(slipPaths.length ? { ...design, expert: { ...design.expert, cutPaths: [...(design.expert?.cutPaths ?? []), ...slipPaths] } } : design, gridPose, routes, track.c.railOffset, overlay.cutting.no, !!o.pathSquare, new Set(slipPaths.filter((q) => q.slip).map((q) => q.id)));
   if (cutPaths && !inLengths) bedWarnings.add('the cut paths are made only with Long track cut into: Track pieces');
-  const jointRoutes = jointOn ? toRoutes(design).filter((rt, i) => rt.segments.length > 0 && !isMono(design.routes[i])) : [];
+  const jointRoutes = jointOn ? metOf(toRoutes(design)).filter((rt, i) => rt.segments.length > 0 && !isMono(design.routes[i])) : [];
   const jointHalves = jointRoutes.map((rt) => cut.bandHalf0 + ((rt.gauge ?? track.c.trackGauge) - track.c.trackGauge) / 2);
   const jointCutList = jointOn ? (() => {
     const drs = jointRoutes;

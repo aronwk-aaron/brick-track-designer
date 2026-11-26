@@ -23,7 +23,6 @@ import { cleanAccept } from './accept';
 import { cleanRailEdits, handRails, type RailEdits } from './railedits';
 import type { ExtraRails, Roll, Route, RouteEnds, Segment } from '../route/route';
 import { routeLength, routePose } from '../route/route';
-import { meetRoutes } from '../route/meet';
 
 export const STUD = 8;
 
@@ -408,9 +407,9 @@ export function setSystem(r: DRoute, system: 'train' | 'monorail') {
 }
 
 /** The buffer stops' positions (mm): the route ends set to end in one (by where they are, as routes are turned round and cut up). */
-export function bufferEnds(d: Design): [number, number][] {
+export function bufferEnds(d: Design, rts: Route[] = toRoutes(d)): [number, number][] {
   const out: [number, number][] = [];
-  toRoutes(d).forEach((rt, i) => {
+  rts.forEach((rt, i) => {
     const r = d.routes[i];
     // (a monorail has none, whatever's left on its route from when it was train track)
     if (!rt.segments.length || isMono(r)) return;
@@ -424,10 +423,6 @@ export function bufferEnds(d: Design): [number, number][] {
 export const routeGaugeStuds = (d: Design, r: DRoute) => (r.gaugeStuds !== undefined && !isMono(r) ? r.gaugeStuds : d.gaugeStuds);
 
 export function toRoutes(d: Design): Route[] {
-  // (their joints met exactly, inside only: route/meet.ts. The train track's: a monorail is laid apart)
-  return meetRoutes(toRoutes0(d), (i) => !isMono(d.routes[i]));
-}
-function toRoutes0(d: Design): Route[] {
   return d.routes.map((r, i) => {
     const rolls = bankRolls(d, r).rolls;
     const rt: Route = {

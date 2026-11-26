@@ -708,7 +708,11 @@ export function crossingPiece(s: Scad, routes: Route[], o: CrossingOptions = CRO
     // the other by the order. Not past an end no route runs on from, nor where the two are fused already (x.fuse))
     const railOn = (P: Pose, end: 'start' | 'end') => {
       if (fanOf[i] === undefined || !runOn.has(`${i}:${end}`) || (end === 'end' ? nextOf[i] >= 0 : nextOf.includes(i))) return false;
-      const q = poseToWorld(P, [0, end === 'start' ? -RAIL_ROOT : -2 * RAIL_ROOT]), on: Route = { ...rt, start: [q[0], q[1], P[2]], segments: [{ kind: 'straight', length: 3 * RAIL_ROOT }] };
+      // (along its own end segment, RAIL_ROOT past its end: a curve on round on its radius, as runOnPast's; from the start,
+      // back the way it came, the arc turning the other way)
+      const sg = end === 'end' ? rt.segments[rt.segments.length - 1] : rt.segments[0], back = end === 'start' ? -1 : 1;
+      const ext: Route['segments'][number] = sg.kind === 'straight' ? { kind: 'straight', length: RAIL_ROOT } : { kind: 'arc', radius: sg.radius, angle: (back * Math.sign(sg.angle) * RAIL_ROOT * 180) / (Math.PI * sg.radius) };
+      const on: Route = { ...rt, start: end === 'end' ? P : [P[0], P[1], P[2] + 180], segments: [ext] };
       return s.union([-g, g].map((x2) => sweepRoute(s, s.polygon(RAIL_PROFILE.map(([px, py]) => [px + x2, py + PLATE_H] as Vec2)), on)));
     };
     const rails = s.difference(s.union([railOn(p0, 'start'), railOn(p1, 'end'), ...[-g, g].map((x) =>

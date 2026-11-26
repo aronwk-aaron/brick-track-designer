@@ -3,8 +3,9 @@
 // tracks, right' 0.0002 degrees. Two end faces that far apart are a slit across the whole bed, finer than a file can
 // hold: the kernel joined it one way or the other by the order the solids came in, and a part's mesh, read back in for
 // the next cut, closed it up as another shape (a hole through the bed, a wedge of it gone, a wall across the hollow).
-// Done once, where the design's routes are made (design.ts toRoutes), so every section, tile and cut has each track
-// where the others have it. Inside only: the design itself, what the page draws from it and its file keep their poses.
+// Done once in a build, once its tracks are joined up (build.ts solveTrackwork), and every reader of the design's routes
+// in the build given the same (metAs), so every section, tile and cut has each track where the others have it. Inside
+// the build only: the design itself, what the page draws from it and its file keep their poses.
 import { hasRoll, poseToWorld, routeLength, routePose, worldToPose, type Pose, type Route } from './route';
 
 /** (mm) Route ends nearer than this, leaving the place opposite ways (one runs on from the other) or the same way (a switch's two from its toe), are one joint. */
@@ -71,4 +72,25 @@ export function meetRoutes(routes: Route[], ok: (i: number) => boolean = () => t
     for (const { i, m, n } of next) { if (placed.has(i)) continue; place(i, m, now.get(j)![n]); placed.add(i); queue.push(i); }
   }
   return out;
+}
+
+/**
+ * The design's own routes (toRoutes) with the moves meetRoutes made to the build's (before: the build's routes as they
+ * were, after: as met), matched by id: a route turned round for the build (orient) by its end, one cut in two (a
+ * self-crossing route, "id:k") by the piece that starts where it does. One with no match is as it was.
+ */
+export function metAs(raw: Route[], before: Route[], after: Route[]): Route[] {
+  const same = (p: Pose, q: Pose, turned: boolean) => Math.hypot(p[0] - q[0], p[1] - q[1]) < 1e-9 && Math.abs((((p[2] - q[2] + (turned ? 180 : 0)) % 360) + 540) % 360 - 180) < 1e-9;
+  return raw.map((r) => {
+    if (!r.segments.length) return r;
+    for (let k = 0; k < before.length; k++) {
+      const b = before[k], id = b.id;
+      if (id !== r.id && !id.startsWith(r.id + ':') && !id.startsWith(r.id + '~')) continue;
+      if (b.start === after[k].start) continue;
+      if (same(b.start, r.start, false)) return { ...r, start: after[k].start };
+      const e = routePose(b, routeLength(b));
+      if (same(e, r.start, true)) { const m = routePose(after[k], routeLength(after[k])); return { ...r, start: [m[0], m[1], m[2] + 180] }; }
+    }
+    return r;
+  });
 }
