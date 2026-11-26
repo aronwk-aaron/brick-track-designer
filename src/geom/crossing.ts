@@ -213,59 +213,6 @@ export function joinedEnds(routes: Route[]): Set<string> {
   return out;
 }
 
-/** (mm) Route ends nearer than this, at a spot with an inner end, are one joint. */
-const MEET = 0.01;
-/** The furthest (mm) meetExactly moves any point of a route: the rounding of a kept pose, and what a turn within it comes to at the far end. More is a joint laid out so (a switch off its stud grid to meet a curve: moved, its studs and underside came out other ones). */
-const MEET_MOVE = 0.01;
-/**
- * The routes with the ends that meet inside the piece (inner, "route:start") meeting exactly: each later one moved onto
- * the first one there, and turned onto its line. A design's poses are kept rounded, and a track worked out from one joint
- * reaches the next a hair off: in 'Wide switched parallel curve section with three ends' 0.0006 mm, in 'Yard R148, three
- * tracks, right' 0.0002 degrees. Two end faces that far apart are a slit across the whole bed, finer than a file can hold:
- * the kernel joined it one way or the other by the order the solids came in, and the part's mesh, read back in for the
- * next cut, closed it up as another shape (a hole through the bed, a wedge of it gone, a wall across the hollow).
- * A route that would go further than MEET_MOVE, or leave another joint it makes, stays as it is; turned only where it
- * stays within that.
- */
-export function meetExactly(routes: Route[], inner: Set<string>, grid?: Pose): Route[] {
-  const out = [...routes], endsOf = (rt: Route) => [routePose(rt, 0), routePose(rt, routeLength(rt))];
-  const was = routes.map(endsOf), now = [...was], turn = (a: number) => ((a % 360) + 540) % 360 - 180;
-  const near = (p: Pose, q: Pose) => Math.hypot(p[0] - q[0], p[1] - q[1]);
-  const key = (i: number, m: number) => `${i}:${m ? 'end' : 'start'}`;
-  const isJoint = (i: number, m: number, j: number, n: number) => (inner.has(key(i, m)) || inner.has(key(j, n))) && near(was[i][m], was[j][n]) < MEET;
-  // (the first route, whose start the underside's grid is on (unless it's given), and the ones with an end on that grid
-  // or on the half-stud grid stay where they are: their end connectors' undersides and studs are placed by it, to a
-  // millionth. Moved a hair off it, an end connector's underside came out as one off the grid ('Wide switched triple
-  // parallel curve section': a wall across the hollow at its fan's seam; 'Modular triple crossover R40': 4 studs fewer))
-  const G = grid ?? routes[0].start, mod = (v: number, m: number) => { const e = ((v % m) + m) % m; return Math.min(e, m - e) < 1e-6; };
-  const onGrid = (rt: Route, i: number) => (i === 0 && !grid) || [rt.start[0], rt.start[1]].every((v) => mod(v, 4))
-    || endsOf(rt).some((e) => [-4, 4].some((dy) => [4, 12].every((lx) => worldToPose(G, poseToWorld(e, [lx, dy])).every((v) => mod(v - 4, STUD)))));
-  const placed = new Set(routes.flatMap((rt, i) => (onGrid(rt, i) ? [i] : []))), left = routes.flatMap((_, i) => (placed.has(i) ? [] : [i]));
-  while (left.length) {
-    // (the next route: one with an end at one already placed, else the first left)
-    const hit = left.flatMap((i) => [0, 1].flatMap((m) => [...placed].flatMap((j) => [0, 1].filter((n) => isJoint(i, m, j, n)).map((n) => ({ i, m, j, n })))))[0];
-    const i = hit ? hit.i : left[0];
-    if (hit) {
-      const e = now[i][hit.m], f = now[hit.j][hit.n], d0 = turn(f[2] - e[2]), dh = Math.abs(d0) < 90 ? d0 : turn(d0 + 180);
-      const moved = (a: number): Route => {
-        const c = Math.cos((a * Math.PI) / 180), sn = Math.sin((a * Math.PI) / 180), st = out[i].start, dx = st[0] - e[0], dy = st[1] - e[1];
-        return { ...out[i], start: [f[0] + dx * c - dy * sn, f[1] + dx * sn + dy * c, st[2] + a] };
-      };
-      const fits = (rt: Route) => endsOf(rt).every((q, m) => near(q, was[i][m]) <= MEET_MOVE
-        && routes.every((_, j) => j === i || [0, 1].every((n) => !isJoint(i, m, j, n) || near(q, now[j][n]) < MEET)));
-      const off = near(e, f), L = routeLength(out[i]);
-      // (within rounding of a double: as it is)
-      if (off > 1e-9 || (Math.abs(dh) > 1e-9 && Math.abs(dh) * L < 0.6)) {
-        const rt = [Math.abs(dh) * L < 0.6 ? dh : 0, 0].map(moved).find(fits);
-        if (rt) { out[i] = rt; now[i] = endsOf(rt); }
-      }
-    }
-    placed.add(i);
-    left.splice(left.indexOf(i), 1);
-  }
-  return out;
-}
-
 /**
  * Sleeper centres along a route of length L (mm), as straight.scad's
  * sleeper_js: gapStuds apart, the first that far from the end connector (half

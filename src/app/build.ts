@@ -6,7 +6,7 @@ import { Scad, R, T, type CS, type Man } from '../geom/scad';
 import { sweepRoute } from '../geom/sweep';
 import { DEFAULTS as TRACK_DEFAULTS, PLATE_H, RAIL_PROFILE, STUD, Track } from '../geom/track';
 import type { FreeItem } from './freeparts';
-import { CROSSING_DEFAULTS, crossingPiece, joinedEnds, meetExactly, ownSleeperSpots, ROW_CLEAR } from '../geom/crossing';
+import { CROSSING_DEFAULTS, crossingPiece, joinedEnds, ownSleeperSpots, ROW_CLEAR } from '../geom/crossing';
 import { trackSeat } from '../geom/extras';
 import { DUAL_CROSS, dualBuilt, markClear } from '../geom/extrarails';
 import { arena, bodyCount, flat, kernelBroke, made, supportsOf, type Wasm } from '../geom/kernel';
@@ -1014,13 +1014,6 @@ function solveTrackwork(w: Wasm, design: Design, o: PieceOptions, step: (what: s
   const gauge = (design.gaugeStuds + 1) * 8;
   // (a track drawn short of where another joins its line: carried on to the join, and said; carryon.ts)
   { const co = carriedOn(routes, gauge); routes = co.routes; bankWarnings.push(...co.warnings); }
-  // (track ends that join made to join exactly, once for the whole design, so every section and tile built from a track
-  // has it where the others do (crossing.ts meetExactly): a design's poses are kept rounded, and a track worked out
-  // from one joint reached the next a hair off, a slit across the bed finer than a file holds)
-  // (and routes that leave one place the same way, a switch's two from its toe: the same track there)
-  { const ends = routes.flatMap((rt, i) => [{ k: `${i}:start`, p: routePose(rt, 0), leave: routePose(rt, 0)[2] }, { k: `${i}:end`, p: routePose(rt, routeLength(rt)), leave: routePose(rt, routeLength(rt))[2] + 180 }]);
-    const twins = new Set(ends.filter((a) => ends.some((b) => b !== a && Math.hypot(a.p[0] - b.p[0], a.p[1] - b.p[1]) < 0.01 && Math.abs(((((a.leave - b.leave) % 360) + 540) % 360) - 180) < 0.5)).map((a) => a.k));
-    routes = meetExactly(routes, new Set([...joinedEnds(routes), ...twins])); }
   const solverOpts = { gauge, step: 0.5, flangeway: o.flangeway, checkRailLen: o.checkRailLen, checkRailW: o.checkRailW };
   step('Working out the trackwork');
   // Hand edits (design.trackwork), by where each item is.
