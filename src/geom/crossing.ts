@@ -227,15 +227,20 @@ const MEET_MOVE = 0.01;
  * A route that would go further than MEET_MOVE, or leave another joint it makes, stays as it is; turned only where it
  * stays within that.
  */
-export function meetExactly(routes: Route[], inner: Set<string>): Route[] {
+export function meetExactly(routes: Route[], inner: Set<string>, grid?: Pose): Route[] {
   const out = [...routes], endsOf = (rt: Route) => [routePose(rt, 0), routePose(rt, routeLength(rt))];
   const was = routes.map(endsOf), now = [...was], turn = (a: number) => ((a % 360) + 540) % 360 - 180;
   const near = (p: Pose, q: Pose) => Math.hypot(p[0] - q[0], p[1] - q[1]);
   const key = (i: number, m: number) => `${i}:${m ? 'end' : 'start'}`;
   const isJoint = (i: number, m: number, j: number, n: number) => (inner.has(key(i, m)) || inner.has(key(j, n))) && near(was[i][m], was[j][n]) < MEET;
-  // (the ones on the half-stud grid stay where they are: their studs and underside are placed by it)
-  const onGrid = (rt: Route) => [rt.start[0], rt.start[1]].every((v) => Math.abs(v / 4 - Math.round(v / 4)) < 1e-9);
-  const placed = new Set(routes.flatMap((rt, i) => (onGrid(rt) ? [i] : []))), left = routes.flatMap((_, i) => (placed.has(i) ? [] : [i]));
+  // (the first route, whose start the underside's grid is on (unless it's given), and the ones with an end on that grid
+  // or on the half-stud grid stay where they are: their end connectors' undersides and studs are placed by it, to a
+  // millionth. Moved a hair off it, an end connector's underside came out as one off the grid ('Wide switched triple
+  // parallel curve section': a wall across the hollow at its fan's seam; 'Modular triple crossover R40': 4 studs fewer))
+  const G = grid ?? routes[0].start, mod = (v: number, m: number) => { const e = ((v % m) + m) % m; return Math.min(e, m - e) < 1e-6; };
+  const onGrid = (rt: Route, i: number) => (i === 0 && !grid) || [rt.start[0], rt.start[1]].every((v) => mod(v, 4))
+    || endsOf(rt).some((e) => [-4, 4].some((dy) => [4, 12].every((lx) => worldToPose(G, poseToWorld(e, [lx, dy])).every((v) => mod(v - 4, STUD)))));
+  const placed = new Set(routes.flatMap((rt, i) => (onGrid(rt, i) ? [i] : []))), left = routes.flatMap((_, i) => (placed.has(i) ? [] : [i]));
   while (left.length) {
     // (the next route: one with an end at one already placed, else the first left)
     const hit = left.flatMap((i) => [0, 1].flatMap((m) => [...placed].flatMap((j) => [0, 1].filter((n) => isJoint(i, m, j, n)).map((n) => ({ i, m, j, n })))))[0];
@@ -301,7 +306,7 @@ export function crossingPiece(s: Scad, routes: Route[], o: CrossingOptions = CRO
   // (route ends that another route runs on from, end to end (a route drawn in two, the track into a wye's toe): inner
   // ends too, the piece one through there, not two connectors laid over each other inside it)
   const joined = new Set([...(x0.innerEnds ?? []), ...joinedEnds(routes)]);
-  if (!scadParity()) routes = meetExactly(routes, joined);
+  if (!scadParity()) routes = meetExactly(routes, joined, x0.gridPose);
   const x: CrossingExtras = { ...x0, innerEnds: joined };
   // (ends that run on into another route's end, or a loop's own: its bed runs on through there, no rim across it)
   const runOn = joinedEnds(routes);
