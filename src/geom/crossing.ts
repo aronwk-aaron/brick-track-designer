@@ -306,7 +306,6 @@ export function crossingPiece(s: Scad, routes: Route[], o: CrossingOptions = CRO
   // (route ends that another route runs on from, end to end (a route drawn in two, the track into a wye's toe): inner
   // ends too, the piece one through there, not two connectors laid over each other inside it)
   const joined = new Set([...(x0.innerEnds ?? []), ...joinedEnds(routes)]);
-  if (!scadParity()) routes = meetExactly(routes, joined, x0.gridPose);
   const x: CrossingExtras = { ...x0, innerEnds: joined };
   // (ends that run on into another route's end, or a loop's own: its bed runs on through there, no rim across it)
   const runOn = joinedEnds(routes);
