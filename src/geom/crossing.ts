@@ -646,6 +646,34 @@ export function crossingPiece(s: Scad, routes: Route[], o: CrossingOptions = CRO
     const posts1 = oneRow || noConn1 ? [] : all1.filter((px) => { const q = poseToWorld(e1, [-px, -4]) as [number, number]; return clearOfRails(i, q) && !x.lipMeets?.(q) && !handOff(q) && claim(q, tt.c.postD); });
     return { xfs0, xfs1, noConn0, noConn1, oneRow, posts0, posts1 };
   });
+  // (with sleepers: a sleeper that would lie flush on an end connector's back (a narrow-gauge stub 4 studs long, its one
+  // sleeper a stud in from its connector) is solid bed instead, from the connector on to where the next sleeper's gap,
+  // the bed or the track it runs into carries on. Face to face, the sleeper and the connector were joined with a sheet
+  // of no thickness between them, which the piece's cuts read back one way or the other ('Narrow-gauge crossing 45°
+  // right over two standard tracks'))
+  if (sleepered && !scadParity()) routes.forEach((rt, i) => {
+    if (laidOf[i] || hasRoll(rt)) return;
+    const L = routeLength(rt), half = cOf[i].sleeperW / 2, { noConn0, noConn1 } = connPlan[i];
+    const in0 = x.innerEnds?.has(`${i}:start`) ?? false, in1 = x.innerEnds?.has(`${i}:end`) ?? false;
+    const spots = ownSleeperSpots(rt, in0, in1, o.sleeperGapStuds ?? 2, o.sleeperWidthStuds).filter((v) => !inZone(i, v));
+    const add: [number, number][] = [];
+    // (from a flush sleeper's far side on: to the bed or the end that carries on, if no other sleeper comes first)
+    const onTo = (from: number, dir: number) => {
+      const next = spots.filter((v) => (v - from) * dir > 1e-6).sort((a, b) => (a - b) * dir)[0];
+      const beds = zones[i].map(([a, b]) => (dir > 0 ? a : b)).filter((e) => (e - from) * dir > -1e-6 && (next === undefined || (e - next) * dir < 0)).sort((a, b) => (a - b) * dir);
+      if (beds.length) return beds[0];
+      return next === undefined && (dir > 0 ? runOn.has(`${i}:end`) : runOn.has(`${i}:start`)) ? (dir > 0 ? L : 0) : from;
+    };
+    const v0 = !noConn0 ? spots.find((v) => Math.abs(v - half - STUD) < 1e-6) : undefined;
+    if (v0 !== undefined) add.push([0, onTo(v0 + half, 1)]);
+    const v1 = !noConn1 ? spots.find((v) => Math.abs(L - v - half - STUD) < 1e-6) : undefined;
+    if (v1 !== undefined) add.push([onTo(v1 - half, -1), L]);
+    if (!add.length) return;
+    if (process.env.FLUSHLOG) console.log('FLUSHBED', i, L.toFixed(2), JSON.stringify(add.map((r) => r.map((q) => +q.toFixed(2)))));
+    const all = [...zones[i], ...add].sort((a, b) => a[0] - b[0]), merged: [number, number][] = [];
+    for (const [a, b] of all) { const last = merged[merged.length - 1]; if (last && a <= last[1] + 1e-6) last[1] = Math.max(last[1], b); else merged.push([a, b]); }
+    zones[i] = merged;
+  });
   // (a route's end connectors, each in its end's frame; on ballast no peg and clip, as the switches')
   const connOf = (i: number) => {
     const t = tOf[i], ex: ExtraBuilt | undefined = extras[i], peg = !onBallast || !!o.pegOnBallast || alone, { xfs0, xfs1, posts0, posts1 } = connPlan[i];
