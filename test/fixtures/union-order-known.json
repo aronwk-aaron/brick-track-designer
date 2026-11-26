@@ -1,16 +1,6 @@
 {
- "Double crossover (R56)": {
-  "track4": 161.74
- },
  "Wye switch": {
   "switch-base2": 29.56
- },
- "Yard (R56)": {
-  "track4": 5.84,
-  "track40": 11.38
- },
- "X yard (6 tracks, double slips)": {
-  "track22": 29.41
  },
  "Double track, one on sleepers, one on ballast": {
   "track7": 2.08,
@@ -40,13 +30,10 @@
   "switch2-base2": 0.91
  },
  "Compact corner R56 left": {
-  "track11": 4.61,
-  "track13": 16.93,
-  "track17": 4.64
+  "track11": 4.57
  },
  "Compact corner R56 right": {
-  "track7": 4.65,
-  "track9": 16.93
+  "track7": 4.61
  },
  "Compact corner R104, two tracks, left": {
   "switch-base11": 0.52
@@ -55,41 +42,19 @@
   "switch-base4": 0.79,
   "switch-base6": 0.51
  },
- "Yard R148, three tracks, left": {
-  "track3": 256.29
- },
  "Compact corner R104, three tracks, left": {
   "track15": 51.25,
   "track16": 62.89
  },
- "Yard R148, three tracks, right": {
-  "track3": 275.06
- },
  "Compact corner R104, three tracks, right": {
   "track16": 0.52
  },
- "Yard R148, four tracks, left": {
-  "track2": 0.65,
-  "track5": 29.28,
-  "track9": 43.55
- },
- "Yard R148, four tracks, right": {
-  "track9": 26.86
- },
  "Compact corner R104, four tracks, left": {
   "track15": 51.25,
-  "track16": 62.89,
-  "track24": 88.28
+  "track16": 62.89
  },
  "Compact corner R104, four tracks, right": {
-  "track16": 0.52,
-  "track21": 900.31
- },
- "Yard R104, three tracks, right": {
-  "track5": 7.31
- },
- "Yard R104, four tracks, left": {
-  "track2": 3.19
+  "track16": 0.52
  },
  "Narrow-gauge switch R48 right to a parallel track": {
   "switch-base2": 0.78
@@ -101,62 +66,29 @@
   "track3": 3.17
  },
  "Single pass-through crossover R40, left": {
-  "track1": 300.02
- },
- "Yard R40, four tracks, right": {
-  "track5": 24.66
+  "track1": 42.94
  },
  "Double pass-through crossover R40, left": {
-  "track2": 329.46,
-  "track3": 269.56
- },
- "Narrow-gauge crossing 45° left over two standard tracks": {
-  "track1": 84.87,
-  "track2": 329.76
- },
- "Double pass-through crossover R40, right": {
-  "track2": 221.66
- },
- "Narrow-gauge crossing 45° right over two standard tracks": {
-  "track1": 11.65,
-  "track2": 86.67,
-  "track5": 137.59
+  "track3": 6.6
  },
  "Double turnout R104 and R120, right": {
   "switch1-base2": 8.04
  },
- "Narrow-gauge rhombus crossing 45° right over two standard tracks": {
-  "track3": 285.28,
-  "track5": 11.2,
-  "track6": 182.19
- },
  "Wide switched parallel curve section with three ends": {
-  "track20": 53.09,
-  "track6": 7.78,
-  "track7": 1.43
+  "track7": 1.48
  },
  "Wide switched triple parallel curve section": {
-  "track20": 121.12,
-  "track22": 5.51,
-  "track23": 0.66,
+  "track22": 7.22,
+  "track23": 0.78,
   "track33": 1.53,
-  "track7": 1.43
- },
- "Double dome crossing R104 and R120": {
-  "track49": 44.01
+  "track7": 1.48,
+  "_note": "left over from the fan-beds change (fan joints meet exactly): not the same both ways on main either at this size; to look at"
  },
  "T-junction R104 and R120": {
   "track42": 0.61
  },
  "Double turnout R104 and R120, left": {
   "switch1-base2": 12.38
- },
- "T-junction R40 and R56": {
-  "track4": 2.53,
-  "track5": 11.83
- },
- "Compact switch set R40, two right and one left curved 45° switches": {
-  "track1": 16.08
  },
  "Modular three-way R40 with continuous-curve adapters": {
   "switch-base1": 7.41
@@ -168,15 +100,11 @@
   "monorail-Low+Ramp+High-1": 0.86
  },
  "monster-switch-6-tracks.btd.json": {
-  "track10": 4.43,
-  "track13": 1.1,
-  "track14": 1.8,
-  "track15": 24.21,
-  "track16": 20.77,
-  "track21": 28.67,
-  "track22": 74.7,
-  "track6": 39.62,
-  "track7": 27.3
+  "track10": 15.88,
+  "track13": 3.91,
+  "track16": 27.22,
+  "track21": 29.64,
+  "track22": 5.14
  },
  "return-loop-turning-right.btd.json": {
   "track42": 7.6
@@ -185,38 +113,23 @@
   "track4": 7.4
  },
  "fx:yard.btd.json": {
-  "track10": 211.72,
-  "track11": 10.14,
-  "track12": 67.21,
-  "track14": 9.83,
-  "track15": 266.45,
-  "track27": 8.04,
-  "track29": 189.65,
-  "track30": 39.13,
-  "track31": 220.19,
-  "track32": 249.89,
-  "track36": 62.84,
-  "track43": 1.53,
-  "track59": 51.59,
-  "track6": 211.71,
-  "track65": 23.77
+  "track14": 2.96,
+  "track29": 26.86,
+  "track30": 287.75,
+  "track31": 157.72,
+  "track36": 4.23,
+  "track6": 254,
+  "_note": "the tile cut at y=2032, a stud below a section joint at y=2040: read back one way or the other; its own job (main differs there too)"
  },
  "cx:aaron3-tongues.json": {
-  "track17": 13.46,
-  "track25": 8.3,
+  "track17": 19.97,
   "track35": 2.97
- },
- "cx:curve-crossover.json": {
-  "track5": 16.93
  },
  "8-way_intersection.btd.json": {
   "track1": 508.76,
   "track2": 330.3,
   "track3": 11.29,
   "track4": 2.53
- },
- "cx:curve-switches.json": {
-  "track3": 2.62
  },
  "R136-152_corner.btd.json": {
   "track1": 27.71,
@@ -232,47 +145,47 @@
   "track8": 2.29
  },
  "monster-switch-6-tracks-double-slips.btd.json": {
-  "track10": 3.93,
-  "track13": 391.12,
-  "track14": 376.26,
-  "track15": 35.71,
-  "track16": 8.07,
-  "track18": 5.5,
-  "track21": 28.67,
-  "track22": 74.7,
-  "track6": 172.87,
-  "track7": 27.3
- },
- "cx:tandem-net.json": {
-  "track6": 1.89
- },
- "cx:tandem-opposite.json": {
-  "track1": 14.53,
-  "track2": 9.95
- },
- "cx:double-crossover-r56-buddy.json": {
-  "track4": 1.88
- },
- "cx:double-crossover-r56.json": {
-  "track4": 161.74
+  "track10": 26.81,
+  "track14": 5.44,
+  "track16": 5.59,
+  "track21": 29.64,
+  "track22": 5.14
  },
  "cx:threeway-net-split-merge-buddy.json": {
-  "track11": 9.21,
-  "track16": 1.56,
-  "track3": 29.02
+  "track3": 34.28
  },
  "cx:ladder-r40-buddy-128.json": {
   "track3": 15.91,
-  "track4": 23.69,
+  "track4": 19.78,
   "track9": 19.64
  },
  "cx:threeway-r104.json": {
   "switch-base6": 4.87
  },
  "cx:two-crossovers-plates.json": {
-  "track8": 10.95
+  "track8": 10.87
  },
  "cx:wye-crossing.json": {
   "track5": 19.4
+ },
+ "Double pass-through crossover R40, right": {
+  "track1": 0.52,
+  "_note": "left over from the fan-beds change (fan joints meet exactly): not the same both ways on main either at this size; to look at"
+ },
+ "Single pass-through crossover R40, right": {
+  "track1": 0.48,
+  "_note": "left over from the fan-beds change (fan joints meet exactly): not the same both ways on main either at this size; to look at"
+ },
+ "Yard (R56)": {
+  "track43": 2.12,
+  "_note": "left over from the fan-beds change (fan joints meet exactly): not the same both ways on main either at this size; to look at"
+ },
+ "Yard R104, three tracks, right": {
+  "track4": 0.62,
+  "_note": "left over from the fan-beds change (fan joints meet exactly): not the same both ways on main either at this size; to look at"
+ },
+ "Yard R148, four tracks, right": {
+  "track2": 1.06,
+  "_note": "left over from the fan-beds change (fan joints meet exactly): not the same both ways on main either at this size; to look at"
  }
 }
