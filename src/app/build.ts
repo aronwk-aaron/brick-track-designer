@@ -1019,7 +1019,7 @@ function solveTrackwork(w: Wasm, design: Design, o: PieceOptions, step: (what: s
   // from one joint reached the next a hair off, a slit across the bed finer than a file holds)
   // (and routes that leave one place the same way, a switch's two from its toe: the same track there)
   { const ends = routes.flatMap((rt, i) => [{ k: `${i}:start`, p: routePose(rt, 0), leave: routePose(rt, 0)[2] }, { k: `${i}:end`, p: routePose(rt, routeLength(rt)), leave: routePose(rt, routeLength(rt))[2] + 180 }]);
-    const twins = new Set(ends.filter((a) => ends.some((b) => b !== a && Math.hypot(a.p[0] - b.p[0], a.p[1] - b.p[1]) < 0.01 && Math.abs(((((a.leave - b.leave) % 360) + 540) % 360) - 180) > 179.5)).map((a) => a.k));
+    const twins = new Set(ends.filter((a) => ends.some((b) => b !== a && Math.hypot(a.p[0] - b.p[0], a.p[1] - b.p[1]) < 0.01 && Math.abs(((((a.leave - b.leave) % 360) + 540) % 360) - 180) < 0.5)).map((a) => a.k));
     routes = meetExactly(routes, new Set([...joinedEnds(routes), ...twins])); }
   const solverOpts = { gauge, step: 0.5, flangeway: o.flangeway, checkRailLen: o.checkRailLen, checkRailW: o.checkRailW };
   step('Working out the trackwork');
