@@ -683,6 +683,7 @@ export function crossingPiece(s: Scad, routes: Route[], o: CrossingOptions = CRO
     const flats = beds.map((m) => { const bb = m.boundingBox(); if (Math.abs(bb.min[2]) > 1e-4 || Math.abs(bb.max[2] - PLATE_H) > 1e-4) return undefined; const cs = m.slice(PLATE_H / 2); return Math.abs(cs.area() * PLATE_H - m.volume()) < 0.01 ? cs : undefined; });
     return flats.every((cs) => !!cs) ? s.extrude(s.w.CrossSection.union(flats as CS[]), PLATE_H) : s.union(beds);
   };
+  const solidBed = new Set<number>();
   routes.forEach((rt, i) => {
     const L = routeLength(rt), ex: ExtraBuilt | undefined = extras[i];
     // (this route's own track: the piece's, or its own gauge's)
@@ -784,7 +785,15 @@ export function crossingPiece(s: Scad, routes: Route[], o: CrossingOptions = CRO
       // plain track built in lengths, each a piece of its own, LEGO's way; then each piece's own, from its connectors)
       const in0 = x.innerEnds?.has(`${i}:start`) ?? false, in1 = x.innerEnds?.has(`${i}:end`) ?? false;
       const laid = laidOf[i], bareAt = new Set<number>();
-      const spotsAll = (laid ? laid.filter((q) => !shapedSleeper(q.e)).map((q) => { if (q.e?.bare) bareAt.add(q.v); return q.v; }) : ownSleeperSpots(rt, in0, in1, o.sleeperGapStuds ?? 2, o.sleeperWidthStuds))
+      // (a piece whose only sleeper would lie between its two end connectors touching both (a narrow-gauge stub 4 studs
+      // long): its bed laid between them instead, as a piece too short for a sleeper has. The sleeper's faces lay flush on
+      // both connectors' backs, and the part was joined with sheets of no thickness there, read back one way or the
+      // other ('Narrow-gauge crossing 45° right over two standard tracks'))
+      const own = laid ? [] : ownSleeperSpots(rt, in0, in1, o.sleeperGapStuds ?? 2, o.sleeperWidthStuds);
+      const pinched = !laid && !bed.length && !connPlan[i].noConn0 && !connPlan[i].noConn1 && own.length > 0
+        && own.every((v) => Math.abs(v - c.sleeperW / 2 - STUD) < 1e-6 && Math.abs(L - v - c.sleeperW / 2 - STUD) < 1e-6);
+      if (pinched) { solidBed.add(i); pushBed(i, s.difference(bedAlong(), bedEnds())); }
+      const spotsAll = pinched ? [] : (laid ? laid.filter((q) => !shapedSleeper(q.e)).map((q) => { if (q.e?.bare) bareAt.add(q.v); return q.v; }) : ownSleeperSpots(rt, in0, in1, o.sleeperGapStuds ?? 2, o.sleeperWidthStuds))
         .filter((v) => !inZone(i, v) && !sharedV[i].has(v) && !noOwn[i].some(([a, b]) => v >= a && v <= b));
       // (expert: the ones with a shape of their own, longer on a side or square to the grid: each a tie, where the bed isn't solid)
       for (const q of laid ?? []) {
@@ -1057,7 +1066,7 @@ export function crossingPiece(s: Scad, routes: Route[], o: CrossingOptions = CRO
   // each route's bed, less the rim, cut square to each end's frame (on a
   // curve a cut across the bed at one arc length isn't square to the end)
   // (whether a route that has a hollow of its own runs on from the joint at e: any other end there, or a loop's own)
-  const hollowed = (i: number) => { const L = routeLength(routes[i]), cut = BED_END + WALL; return !(sleepered && !zones[i].length) && L > (bufEnd(i, 'start') ? WALL : cut) + (bufEnd(i, 'end') ? WALL : cut); };
+  const hollowed = (i: number) => { const L = routeLength(routes[i]), cut = BED_END + WALL; return !(sleepered && !zones[i].length && !solidBed.has(i)) && L > (bufEnd(i, 'start') ? WALL : cut) + (bufEnd(i, 'end') ? WALL : cut); };
   const hollowOn = (e: Pose, leave: number) => routes.some((rt, j) => hollowed(j) && [0, routeLength(rt)].filter((v) => runOn.has(`${j}:${v ? 'end' : 'start'}`)).some((v) => { const q = routePose(rt, v), lq = v ? q[2] + 180 : q[2]; return Math.hypot(q[0] - e[0], q[1] - e[1]) < 0.01 && Math.abs(((((lq - leave) % 360) + 540) % 360) - 180) > 179.5; }));
   const beds = routes.map((rt) => {
     const L = routeLength(rt), cut = BED_END + WALL, i0 = routes.indexOf(rt), hw = hwOf(i0);
@@ -1068,8 +1077,8 @@ export function crossingPiece(s: Scad, routes: Route[], o: CrossingOptions = CRO
     const side = (o2: number, a = 0, b = L) => Array.from({ length: n + 1 }, (_, k) => railPoint(rt, a + ((b - a) * k) / n, o2) as Vec2);
     // (with sleepers, only where the bed is, a rim across each of its ends that isn't the route's end)
     const i = routes.indexOf(rt);
-    if (sleepered && !zones[i].length) return undefined;
-    let bed = !sleepered ? s.polygon([...side(-hw), ...side(hw).reverse()])
+    if (sleepered && !zones[i].length && !solidBed.has(i)) return undefined;
+    let bed = !sleepered || solidBed.has(i) ? s.polygon([...side(-hw), ...side(hw).reverse()])
       : s.w.CrossSection.union(zones[i].map(([a, b]) => [a > 0 ? a + WALL : a, b < L ? b - WALL : b]).filter(([a, b]) => b > a + 1).map(([a, b]) => s.polygon([...side(-hw, a, b), ...side(hw, a, b).reverse()])));
     for (const [e, k] of [[routePose(rt, 0), 1], [routePose(rt, L), -1]] as const) {
       // (a loop's start and end are one place: their half-planes, opposite ways, left no hollow at all)
