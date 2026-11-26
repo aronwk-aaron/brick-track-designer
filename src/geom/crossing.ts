@@ -1056,6 +1056,9 @@ export function crossingPiece(s: Scad, routes: Route[], o: CrossingOptions = CRO
   const hwOf = (i: number) => lenOf[i] / 2 - WALL;
   // each route's bed, less the rim, cut square to each end's frame (on a
   // curve a cut across the bed at one arc length isn't square to the end)
+  // (whether a route that has a hollow of its own runs on from the joint at e: any other end there, or a loop's own)
+  const hollowed = (i: number) => { const L = routeLength(routes[i]), cut = BED_END + WALL; return !(sleepered && !zones[i].length) && L > (bufEnd(i, 'start') ? WALL : cut) + (bufEnd(i, 'end') ? WALL : cut); };
+  const hollowOn = (e: Pose, leave: number) => routes.some((rt, j) => hollowed(j) && [0, routeLength(rt)].filter((v) => runOn.has(`${j}:${v ? 'end' : 'start'}`)).some((v) => { const q = routePose(rt, v), lq = v ? q[2] + 180 : q[2]; return Math.hypot(q[0] - e[0], q[1] - e[1]) < 0.01 && Math.abs(((((lq - leave) % 360) + 540) % 360) - 180) > 179.5; }));
   const beds = routes.map((rt) => {
     const L = routeLength(rt), cut = BED_END + WALL, i0 = routes.indexOf(rt), hw = hwOf(i0);
     // (a buffered end has no connector: the hollow runs on under the buffer's slab to the rim at the end, as the rest)
@@ -1070,10 +1073,14 @@ export function crossingPiece(s: Scad, routes: Route[], o: CrossingOptions = CRO
       : s.w.CrossSection.union(zones[i].map(([a, b]) => [a > 0 ? a + WALL : a, b < L ? b - WALL : b]).filter(([a, b]) => b > a + 1).map(([a, b]) => s.polygon([...side(-hw, a, b), ...side(hw, a, b).reverse()])));
     for (const [e, k] of [[routePose(rt, 0), 1], [routePose(rt, L), -1]] as const) {
       // (a loop's start and end are one place: their half-planes, opposite ways, left no hollow at all)
-      if (runOn.has(`${i0}:${k > 0 ? 'start' : 'end'}`)) continue;
+      // (where it runs on into a route with no hollow of its own (a stub a stud long, all end connector), the hollow ends
+      // RAIL_ROOT short of the joint: ended on it, its face lay on the connector's back, and the cells cut from the piece
+      // read back with a sheet of no thickness there ('Wide switched triple parallel curve section', its fan's seam))
+      const runs = runOn.has(`${i0}:${k > 0 ? 'start' : 'end'}`);
+      if (runs && hollowOn(e, k > 0 ? e[2] : e[2] + 180)) continue;
       const big = 4 * (L + lenOf[i0]);
       // the half-plane beyond the cut, in the end's frame (+y into the route at the start)
-      const keep = s.w.CrossSection.square([2 * big, big]).translate([-big, cutAt(k)]).rotate(k > 0 ? 0 : 180).rotate(e[2]).translate([e[0], e[1]]);
+      const keep = s.w.CrossSection.square([2 * big, big]).translate([-big, runs ? RAIL_ROOT : cutAt(k)]).rotate(k > 0 ? 0 : 180).rotate(e[2]).translate([e[0], e[1]]);
       bed = bed.intersect(keep);
     }
     return bed;
