@@ -592,6 +592,27 @@ export function crossingPiece(s: Scad, routes: Route[], o: CrossingOptions = CRO
     const posts1 = oneRow || noConn1 ? [] : all1.filter((px) => { const q = poseToWorld(e1, [-px, -4]) as [number, number]; return clearOfRails(i, q) && !x.lipMeets?.(q) && !handOff(q) && claim(q, tt.c.postD); });
     return { xfs0, xfs1, noConn0, noConn1, oneRow, posts0, posts1 };
   });
+  // (with sleepers, in a piece of several tracks: a sleeper that would lie flush on an end connector's back, where
+  // nothing but that sleeper lies between the connector and the joint into the next track (a narrow-gauge stub 4 studs
+  // long) is solid bed instead, from the connector to the joint. A plain piece of track (a 4-stud straight, a short
+  // curve, a buffer stop) keeps its sleeper. Face to face, the sleeper and the connector were joined with a sheet
+  // of no thickness between them, which the piece's cuts read back one way or the other ('Narrow-gauge crossing 45°
+  // right over two standard tracks'))
+  if (sleepered && !scadParity() && routes.length > 1) routes.forEach((rt, i) => {
+    if (laidOf[i] || hasRoll(rt)) return;
+    const L = routeLength(rt), half = cOf[i].sleeperW / 2, { noConn0, noConn1 } = connPlan[i];
+    const in0 = x.innerEnds?.has(`${i}:start`) ?? false, in1 = x.innerEnds?.has(`${i}:end`) ?? false;
+    const spots = ownSleeperSpots(rt, in0, in1, o.sleeperGapStuds ?? 2, o.sleeperWidthStuds).filter((v) => !inZone(i, v));
+    const add: [number, number][] = [];
+    // (only the one sleeper there; the route runs on from its other end into the next track)
+    const lone = spots.length === 1;
+    if (lone && !noConn0 && runOn.has(`${i}:end`) && Math.abs(spots[0] - half - STUD) < 1e-6) add.push([0, L]);
+    if (lone && !noConn1 && runOn.has(`${i}:start`) && Math.abs(L - spots[0] - half - STUD) < 1e-6) add.push([0, L]);
+    if (!add.length) return;
+    const all = [...zones[i], ...add].sort((a, b) => a[0] - b[0]), merged: [number, number][] = [];
+    for (const [a, b] of all) { const last = merged[merged.length - 1]; if (last && a <= last[1] + 1e-6) last[1] = Math.max(last[1], b); else merged.push([a, b]); }
+    zones[i] = merged;
+  });
   // (a route's end connectors, each in its end's frame; on ballast no peg and clip, as the switches')
   const connOf = (i: number) => {
     const t = tOf[i], ex: ExtraBuilt | undefined = extras[i], peg = !onBallast || !!o.pegOnBallast || alone, { xfs0, xfs1, posts0, posts1 } = connPlan[i];
@@ -602,6 +623,32 @@ export function crossingPiece(s: Scad, routes: Route[], o: CrossingOptions = CRO
     // standing on it to the end: nothing over air)
     const end = (pg: boolean, sq: boolean, xfs: number[], posts: number[]) => (sq ? t.squareEndpoint(xfs, ex?.guardX, posts) : t.fullEndpoint(pg, xfs, ex?.guardX, posts));
     return { peg, peg0, peg1, sq0, sq1, conn0: T(end(peg0, sq0, xfs0, posts0), [0, 4, 0]), conn1: T(R(end(peg1, sq1, xfs1, posts1), [0, 0, 180]), [0, -4, 0]) };
+  };
+  // (fans: routes whose inner ends meet at one spot (a yard's ladder end and the routes out of it, a wide switched
+  // section's three ends). Their beds joined into one solid first, before the rails or anything else goes on: as solids,
+  // one's end face lay flush on the others' start faces, and the routes out of the fan start as the same bed twice, every
+  // face on another; the kernel joined them one way or the other by the order they came in, and left a hole through the
+  // bed beside the seam one way ('Yard R148, three tracks, right' track3: 97 mm2). Joined level (their outlines cut at
+  // half height, joined in 2D, which is exact, and stood up again), no faces are left to choose between)
+  const fanOf: (number | undefined)[] = routes.map(() => undefined);
+  if (!scadParity()) {
+    const ends = routes.flatMap((rt, i) => (hasRoll(rt) ? [] : ([[0, 'start'], [routeLength(rt), 'end']] as const).filter(([, e]) => x.innerEnds?.has(`${i}:${e}`)).map(([at]) => ({ i, q: routePose(rt, at) }))));
+    const up = routes.map((_, i) => i), root = (i: number): number => (up[i] === i ? i : (up[i] = root(up[i])));
+    for (const a of ends) for (const b2 of ends) if (a.i < b2.i && Math.hypot(a.q[0] - b2.q[0], a.q[1] - b2.q[1]) < 0.01) up[root(b2.i)] = root(a.i);
+    const size = new Map<number, number>();
+    routes.forEach((_, i) => size.set(root(i), (size.get(root(i)) ?? 0) + 1));
+    routes.forEach((rt, i) => { if (!hasRoll(rt) && (size.get(root(i)) ?? 0) > 1) fanOf[i] = root(i); });
+  }
+  const fanBeds = new Map<number, Man[]>();
+  const pushBed = (i: number, m: Man) => { const g = onBallast ? undefined : fanOf[i]; if (g === undefined) parts.push(m); else fanBeds.set(g, [...(fanBeds.get(g) ?? []), m]); };
+  // (not on ballast: there the bed is one with the ballast's top layer, its bottom on that layer's top, and joined level its
+  // outline's edges no longer the layer's: the cells cut from it read back with pinched edges there ('aaron3-tongues' track8,
+  // a monster switch's: hundreds of mm3 one way and not the other))
+  // (a bed joined level only where it's a slab straight up and down, 0 to PLATE_H: its outline at half height stood up
+  // has its volume. Else (rooted into a connector's back, a bed shaped some other way) joined as solids, as before)
+  const joinBeds = (beds: Man[]): Man => {
+    const flats = beds.map((m) => { const bb = m.boundingBox(); if (Math.abs(bb.min[2]) > 1e-4 || Math.abs(bb.max[2] - PLATE_H) > 1e-4) return undefined; const cs = m.slice(PLATE_H / 2); return Math.abs(cs.area() * PLATE_H - m.volume()) < 0.01 ? cs : undefined; });
+    return flats.every((cs) => !!cs) ? s.extrude(s.w.CrossSection.union(flats as CS[]), PLATE_H) : s.union(beds);
   };
   routes.forEach((rt, i) => {
     const L = routeLength(rt), ex: ExtraBuilt | undefined = extras[i];
@@ -688,10 +735,10 @@ export function crossingPiece(s: Scad, routes: Route[], o: CrossingOptions = CRO
     const banked = hasRoll(rt), roll0 = banked ? routeRoll(rt, 0) : 0, roll1 = banked ? routeRoll(rt, L) : 0;
     const bedAlong = (a = 0, b = Infinity) => (banked ? bankedBed(s, rt, trackBank(c.sleeperLen), c.sleeperLen / 2, onBallast ? -1 : 0, a, b) : sweepOn(rect(-c.sleeperLen / 2, c.sleeperLen / 2, 0, PLATE_H), i, a, b));
     // Track bed under the route (with sleepers: only where it needs it, sleepers elsewhere).
-    if (!sleepered) parts.push(s.difference(bedAlong(), bedEnds()));
+    if (!sleepered) pushBed(i, s.difference(bedAlong(), bedEnds()));
     else {
       const bed = zones[i].map(([a, b]) => bedAlong(a, b));
-      if (bed.length) parts.push(s.difference(s.union(bed), bedEnds()));
+      if (bed.length) pushBed(i, s.difference(s.union(bed), bedEnds()));
       // (as the whole route has them, unless this stretch of it has an end connector of its own partway along it: a
       // plain track built in lengths, each a piece of its own, LEGO's way; then each piece's own, from its connectors)
       const in0 = x.innerEnds?.has(`${i}:start`) ?? false, in1 = x.innerEnds?.has(`${i}:end`) ?? false;
@@ -707,7 +754,7 @@ export function crossingPiece(s: Scad, routes: Route[], o: CrossingOptions = CRO
       // (a piece too short for a sleeper of its own between its two end connectors, a printed 5.625-degree R40 curve, 31 mm:
       // nothing joined its two sides (an end connector's bar across is one with one side only), and it came out as two
       // halves, a rail each. Its bed laid between its connectors, as a piece on a solid bed has it)
-      if (!laid && !bed.length && !connPlan[i].noConn0 && !connPlan[i].noConn1 && !ownSleeperSpots(rt, in0, in1, o.sleeperGapStuds ?? 2, o.sleeperWidthStuds).length) parts.push(s.difference(bedAlong(), bedEnds()));
+      if (!laid && !bed.length && !connPlan[i].noConn0 && !connPlan[i].noConn1 && !ownSleeperSpots(rt, in0, in1, o.sleeperGapStuds ?? 2, o.sleeperWidthStuds).length) pushBed(i, s.difference(bedAlong(), bedEnds()));
       const atAll = spotsAll.filter((v) => !inTie(i, v));
       // (long ties: square to this route, out under the tracks beside it; clear of every end connector)
       const underServed: number[] = [];
@@ -779,6 +826,7 @@ export function crossingPiece(s: Scad, routes: Route[], o: CrossingOptions = CRO
     const exSolid = ex?.solid && exCuts.length ? s.difference(ex.solid, exCuts) : ex?.solid;
     if (exSolid) parts.push(banked ? aboveZ(s, exSolid, 0) : exSolid); // (banked: turned with the track, kept above the bed's bottom)
   });
+  for (const beds of fanBeds.values()) parts.push(joinBeds(beds));
   // (with sleepers: a check rail sits on bed. One that runs further than CHECK_UNHELD over no sleeper, tie or bed (in the
   // gap between two long ties, where another route's ties were left out) has a sleeper put under its middle: it was a loose
   // length of rail in the part)
@@ -967,6 +1015,9 @@ export function crossingPiece(s: Scad, routes: Route[], o: CrossingOptions = CRO
   const hwOf = (i: number) => lenOf[i] / 2 - WALL;
   // each route's bed, less the rim, cut square to each end's frame (on a
   // curve a cut across the bed at one arc length isn't square to the end)
+  // (whether a route that has a hollow of its own runs on from the joint at e: any other end there, or a loop's own)
+  const hollowed = (i: number) => { const L = routeLength(routes[i]), cut = BED_END + WALL; return !(sleepered && !zones[i].length) && L > (bufEnd(i, 'start') ? WALL : cut) + (bufEnd(i, 'end') ? WALL : cut); };
+  const hollowOn = (e: Pose, leave: number) => routes.some((rt, j) => hollowed(j) && [0, routeLength(rt)].filter((v) => runOn.has(`${j}:${v ? 'end' : 'start'}`)).some((v) => { const q = routePose(rt, v), lq = v ? q[2] + 180 : q[2]; return Math.hypot(q[0] - e[0], q[1] - e[1]) < 0.01 && Math.abs(((((lq - leave) % 360) + 540) % 360) - 180) > 179.5; }));
   const beds = routes.map((rt) => {
     const L = routeLength(rt), cut = BED_END + WALL, i0 = routes.indexOf(rt), hw = hwOf(i0);
     // (a buffered end has no connector: the hollow runs on under the buffer's slab to the rim at the end, as the rest)
@@ -981,10 +1032,14 @@ export function crossingPiece(s: Scad, routes: Route[], o: CrossingOptions = CRO
       : s.w.CrossSection.union(zones[i].map(([a, b]) => [a > 0 ? a + WALL : a, b < L ? b - WALL : b]).filter(([a, b]) => b > a + 1).map(([a, b]) => s.polygon([...side(-hw, a, b), ...side(hw, a, b).reverse()])));
     for (const [e, k] of [[routePose(rt, 0), 1], [routePose(rt, L), -1]] as const) {
       // (a loop's start and end are one place: their half-planes, opposite ways, left no hollow at all)
-      if (runOn.has(`${i0}:${k > 0 ? 'start' : 'end'}`)) continue;
+      // (where it runs on into a route with no hollow of its own (a stub a stud long, all end connector), the hollow ends
+      // RAIL_ROOT short of the joint: ended on it, its face lay on the connector's back, and the cells cut from the piece
+      // read back with a sheet of no thickness there ('Wide switched triple parallel curve section', its fan's seam))
+      const runs = runOn.has(`${i0}:${k > 0 ? 'start' : 'end'}`);
+      if (runs && hollowOn(e, k > 0 ? e[2] : e[2] + 180)) continue;
       const big = 4 * (L + lenOf[i0]);
       // the half-plane beyond the cut, in the end's frame (+y into the route at the start)
-      const keep = s.w.CrossSection.square([2 * big, big]).translate([-big, cutAt(k)]).rotate(k > 0 ? 0 : 180).rotate(e[2]).translate([e[0], e[1]]);
+      const keep = s.w.CrossSection.square([2 * big, big]).translate([-big, runs ? RAIL_ROOT : cutAt(k)]).rotate(k > 0 ? 0 : 180).rotate(e[2]).translate([e[0], e[1]]);
       bed = bed.intersect(keep);
     }
     return bed;
